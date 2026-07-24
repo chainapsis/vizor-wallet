@@ -5,16 +5,16 @@ class _MobileMigrationBatchProgress {
     required this.completedBatches,
     required this.totalBatches,
     required this.currentBatchNumber,
+    required this.currentBatchStartIndex,
     required this.currentBatchPartCount,
-    required this.completedCurrentBatchParts,
     required this.currentBatchParts,
   });
 
   final int completedBatches;
   final int totalBatches;
   final int currentBatchNumber;
+  final int currentBatchStartIndex;
   final int currentBatchPartCount;
-  final int completedCurrentBatchParts;
   final List<rust_sync.MigrationPartStatus> currentBatchParts;
 }
 
@@ -372,8 +372,9 @@ class _MobileMigrationRedesignedStatusState
         totalParts: _totalParts(widget.status),
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
+        currentBatchStartIndex: batchProgress.currentBatchStartIndex,
         currentBatchPartCount: batchProgress.currentBatchPartCount,
-        completedCurrentBatchParts: batchProgress.completedCurrentBatchParts,
+        completedRingSegments: _completedRingSegments(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
@@ -416,8 +417,9 @@ class _MobileMigrationRedesignedStatusState
         totalParts: _totalParts(widget.status),
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
+        currentBatchStartIndex: batchProgress.currentBatchStartIndex,
         currentBatchPartCount: batchProgress.currentBatchPartCount,
-        completedCurrentBatchParts: batchProgress.completedCurrentBatchParts,
+        completedRingSegments: _completedRingSegments(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
@@ -492,8 +494,9 @@ class _MobileMigrationRedesignedStatusState
       totalParts: _totalParts(widget.status),
       completedBatches: batchProgress.completedBatches,
       totalBatches: batchProgress.totalBatches,
+      currentBatchStartIndex: batchProgress.currentBatchStartIndex,
       currentBatchPartCount: batchProgress.currentBatchPartCount,
-      completedCurrentBatchParts: batchProgress.completedCurrentBatchParts,
+      completedRingSegments: _completedRingSegments(widget.status),
       highlightCurrentBatch:
           !signingAllKeystoneTransactions && !resigningKeystoneTransactions,
       migratedAmountText: _migratedAmountText(widget.status),
@@ -754,6 +757,26 @@ class _MobileMigrationRedesignedStatusState
     return status.confirmedTxCount;
   }
 
+  Set<int> _completedRingSegments(rust_sync.MigrationStatus status) {
+    if (status.parts.isEmpty) {
+      return {
+        for (
+          var index = 0;
+          index < status.confirmedTxCount.clamp(0, _totalParts(status));
+          index++
+        )
+          index,
+      };
+    }
+    final ordered = [...status.parts]
+      ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
+    return {
+      for (var index = 0; index < ordered.length; index++)
+        if (ordered[index].state == rust_sync.MigrationPartState.completed)
+          index,
+    };
+  }
+
   rust_sync.MigrationPartStatus? _actionPart(rust_sync.MigrationStatus status) {
     final ordered = [...status.parts]
       ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
@@ -838,17 +861,6 @@ class _MobileMigrationRedesignedStatusState
     final currentBatchPartCount = currentBatchParts.isEmpty
         ? inferredCurrentBatchPartCount
         : currentBatchParts.length;
-    final completedCurrentBatchParts = currentBatchParts.isEmpty
-        ? (_completedParts(status) - currentBatchStart).clamp(
-            0,
-            currentBatchPartCount,
-          )
-        : currentBatchParts
-              .where(
-                (part) => part.state == rust_sync.MigrationPartState.completed,
-              )
-              .length;
-
     var completedBatches = 0;
     if (ordered.isEmpty) {
       final completedParts = _completedParts(status).clamp(0, totalParts);
@@ -882,8 +894,8 @@ class _MobileMigrationRedesignedStatusState
       completedBatches: completedBatches.clamp(0, totalBatches),
       totalBatches: totalBatches,
       currentBatchNumber: currentBatchIndex + 1,
+      currentBatchStartIndex: currentBatchStart,
       currentBatchPartCount: currentBatchPartCount,
-      completedCurrentBatchParts: completedCurrentBatchParts,
       currentBatchParts: currentBatchParts,
     );
   }

@@ -590,7 +590,6 @@ class _MigrationPreparationDial extends StatelessWidget {
               activeColor: const Color(0xFF00A460),
               segments: 8,
               progress: progress,
-              segmentGap: 0.15,
             ),
           ),
           SizedBox(
@@ -705,8 +704,9 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.totalParts = 24,
     this.completedBatches,
     this.totalBatches,
+    this.currentBatchStartIndex,
     this.currentBatchPartCount,
-    this.completedCurrentBatchParts,
+    this.completedRingSegments,
     this.highlightCurrentBatch = true,
     this.migratedAmountText,
     this.totalAmountText,
@@ -728,8 +728,9 @@ class _MigrationProgressPreview extends StatelessWidget {
   final int totalParts;
   final int? completedBatches;
   final int? totalBatches;
+  final int? currentBatchStartIndex;
   final int? currentBatchPartCount;
-  final int? completedCurrentBatchParts;
+  final Set<int>? completedRingSegments;
   final bool highlightCurrentBatch;
   final String? migratedAmountText;
   final String? totalAmountText;
@@ -762,17 +763,27 @@ class _MigrationProgressPreview extends StatelessWidget {
         (resolvedCompletedParts >= totalParts
             ? resolvedTotalBatches
             : resolvedCompletedParts ~/ _migrationPartsPerBatch);
+    final resolvedCurrentBatchStartIndex =
+        currentBatchStartIndex ??
+        math.min(
+          math.max(0, totalParts - 1),
+          resolvedCompletedBatches * _migrationPartsPerBatch,
+        );
     final resolvedBatchPartCount =
         currentBatchPartCount ??
         (state == _MigrationProgressState.needsInput
             ? math.min(3, totalParts)
             : math.min(_migrationPartsPerBatch, totalParts));
-    final resolvedCompletedCurrentBatchParts =
-        completedCurrentBatchParts ??
-        (resolvedCompletedParts % _migrationPartsPerBatch).clamp(
-          0,
-          resolvedBatchPartCount,
-        );
+    final resolvedCompletedRingSegments =
+        completedRingSegments ??
+        {
+          for (
+            var index = 0;
+            index < resolvedCompletedParts.clamp(0, totalParts);
+            index++
+          )
+            index,
+        };
     final body = _MigrationPreviewPage(
       navTitle: 'Migration in progress…',
       onBack: onBack,
@@ -801,16 +812,17 @@ class _MigrationProgressPreview extends StatelessWidget {
         _ => null,
       },
       child: state == _MigrationProgressState.syncing
-          ? _MigrationSyncingContent(compact: compact)
+          ? _MigrationSyncingContent(compact: compact, totalParts: totalParts)
           : Column(
               children: [
                 _MigrationBatchDial(
                   state: state,
                   completedBatches: resolvedCompletedBatches,
                   totalBatches: resolvedTotalBatches,
+                  totalParts: totalParts,
+                  currentBatchStartIndex: resolvedCurrentBatchStartIndex,
                   currentBatchPartCount: resolvedBatchPartCount,
-                  completedCurrentBatchParts:
-                      resolvedCompletedCurrentBatchParts,
+                  completedSegments: resolvedCompletedRingSegments,
                   highlightCurrentBatch: highlightCurrentBatch,
                   dimension: compact ? 192 : 256,
                   migratedAmountText: migratedAmountText,
@@ -853,8 +865,10 @@ class _MigrationBatchDial extends StatelessWidget {
     required this.state,
     required this.completedBatches,
     required this.totalBatches,
+    required this.totalParts,
+    required this.currentBatchStartIndex,
     required this.currentBatchPartCount,
-    required this.completedCurrentBatchParts,
+    required this.completedSegments,
     this.highlightCurrentBatch = true,
     this.dimension = 256,
     this.migratedAmountText,
@@ -864,8 +878,10 @@ class _MigrationBatchDial extends StatelessWidget {
   final _MigrationProgressState state;
   final int completedBatches;
   final int totalBatches;
+  final int totalParts;
+  final int currentBatchStartIndex;
   final int currentBatchPartCount;
-  final int completedCurrentBatchParts;
+  final Set<int> completedSegments;
   final bool highlightCurrentBatch;
   final double dimension;
   final String? migratedAmountText;
@@ -887,19 +903,16 @@ class _MigrationBatchDial extends StatelessWidget {
     )..layout();
     final splitAmount =
         amountPainter.width > dimension * 0.75 || combinedAmount.length >= 18;
-    final completedSegments = {
-      for (
-        var index = 0;
-        index < completedCurrentBatchParts.clamp(0, _migrationPartsPerBatch);
-        index++
-      )
-        index,
-    };
     final highlightedSegments = needsInput && highlightCurrentBatch
         ? {
             for (
-              var index = 0;
-              index < currentBatchPartCount.clamp(0, _migrationPartsPerBatch);
+              var index = currentBatchStartIndex;
+              index <
+                  math.min(
+                    totalParts,
+                    currentBatchStartIndex +
+                        currentBatchPartCount.clamp(0, _migrationPartsPerBatch),
+                  );
               index++
             )
               index,
@@ -912,7 +925,7 @@ class _MigrationBatchDial extends StatelessWidget {
         children: [
           _AnimatedMigrationAttentionRing(
             dimension: dimension,
-            segments: currentBatchPartCount.clamp(1, _migrationPartsPerBatch),
+            segments: math.max(1, totalParts),
             completedSegments: completedSegments,
             highlightedSegments: highlightedSegments,
           ),
@@ -974,9 +987,13 @@ class _MigrationBatchDial extends StatelessWidget {
 }
 
 class _MigrationSyncingContent extends StatelessWidget {
-  const _MigrationSyncingContent({required this.compact});
+  const _MigrationSyncingContent({
+    required this.compact,
+    required this.totalParts,
+  });
 
   final bool compact;
+  final int totalParts;
 
   @override
   Widget build(BuildContext context) {
@@ -989,11 +1006,14 @@ class _MigrationSyncingContent extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               CustomPaint(
+                key: const ValueKey(
+                  'mobile_ironwood_migration_sync_progress_ring',
+                ),
                 size: Size.square(dialDimension),
                 painter: _MigrationRingPainter(
                   trackColor: context.colors.border.subtle,
                   activeColor: context.colors.border.subtle,
-                  segments: 8,
+                  segments: math.max(1, totalParts),
                 ),
               ),
               Column(
@@ -2066,7 +2086,6 @@ class _MigrationRingPainter extends CustomPainter {
     this.highlightColor,
     this.highlightOpacity = 1,
     this.progress,
-    this.segmentGap,
   });
 
   final Color trackColor;
@@ -2077,22 +2096,33 @@ class _MigrationRingPainter extends CustomPainter {
   final Color? highlightColor;
   final double highlightOpacity;
   final double? progress;
-  final double? segmentGap;
+  final double visibleSegmentGap = 4;
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
     final radius = math.min(size.width, size.height) / 2 - 7;
     final rect = Rect.fromCircle(center: center, radius: radius);
-    final gap = segmentGap ?? (segments == 1 ? 0.08 : 0.10);
-    final segmentSweep = (math.pi * 2 / segments) - gap;
+    const strokeWidth = 12.0;
+    final segmentPitch = math.pi * 2 / segments;
+    final roundCapGap = (strokeWidth + math.max(0, visibleSegmentGap)) / radius;
+    final useRoundCaps = segments == 1 || roundCapGap <= segmentPitch * 0.8;
+    final gap = segments == 1
+        ? 0.0
+        : useRoundCaps
+        ? roundCapGap
+        : math.min(
+            math.max(0, visibleSegmentGap) / radius,
+            segmentPitch * 0.35,
+          );
+    final segmentSweep = math.max(0.0, segmentPitch - gap);
     final clampedProgress = progress?.clamp(0.0, 1.0).toDouble();
     for (var index = 0; index < segments; index++) {
-      final start = -math.pi / 2 + index * (math.pi * 2 / segments) + gap / 2;
+      final start = -math.pi / 2 + index * segmentPitch + gap / 2;
       final paint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 12;
+        ..strokeCap = useRoundCaps ? StrokeCap.round : StrokeCap.butt
+        ..strokeWidth = strokeWidth;
       if (clampedProgress != null) {
         paint.color = trackColor;
         canvas.drawArc(rect, start, segmentSweep, false, paint);
@@ -2130,7 +2160,7 @@ class _MigrationRingPainter extends CustomPainter {
         highlightColor != oldDelegate.highlightColor ||
         highlightOpacity != oldDelegate.highlightOpacity ||
         progress != oldDelegate.progress ||
-        segmentGap != oldDelegate.segmentGap;
+        visibleSegmentGap != oldDelegate.visibleSegmentGap;
   }
 }
 

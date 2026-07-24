@@ -2824,7 +2824,13 @@ void main() {
             widget.painter.runtimeType.toString() == '_MigrationRingPainter',
       ),
     );
-    expect((ring.painter as dynamic).segments, 2);
+    final painter = ring.painter as dynamic;
+    expect(painter.segments, 10);
+    expect(painter.completedSegments, {
+      for (var index = 0; index < 8; index++) index,
+    });
+    expect(painter.highlightedSegments, {8, 9});
+    expect(painter.visibleSegmentGap, 4);
     expect(tester.getCenter(find.text('2 ZEC (20%)')).dx, greaterThan(250));
   });
 
@@ -3276,7 +3282,7 @@ void main() {
       );
       final painter = ring.painter as dynamic;
       expect(painter.progress as double, closeTo(5 / 9, 0.0001));
-      expect(painter.segmentGap as double, 0.15);
+      expect(painter.visibleSegmentGap as double, 4);
     },
   );
 
@@ -3355,6 +3361,13 @@ void main() {
       await tester.pump(const Duration(milliseconds: 850));
 
       expect(find.text('Syncing the migration progress.'), findsOneWidget);
+      final ring = tester.widget<CustomPaint>(
+        find.byKey(
+          const ValueKey('mobile_ironwood_migration_sync_progress_ring'),
+        ),
+      );
+      expect((ring.painter as dynamic).segments, 3);
+      expect((ring.painter as dynamic).visibleSegmentGap, 4);
     },
   );
 
