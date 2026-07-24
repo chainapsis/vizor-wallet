@@ -385,6 +385,7 @@ class _MobileMigrationRedesignedStatusState
         onBack: () => context.go('/home'),
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
@@ -411,6 +412,7 @@ class _MobileMigrationRedesignedStatusState
         onBack: () => context.go('/home'),
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
         currentBatchStartIndex: batchProgress.currentBatchStartIndex,
@@ -456,6 +458,7 @@ class _MobileMigrationRedesignedStatusState
         onBack: () => context.go('/home'),
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
         currentBatchStartIndex: batchProgress.currentBatchStartIndex,
@@ -532,6 +535,7 @@ class _MobileMigrationRedesignedStatusState
       onBack: () => context.go('/home'),
       completedParts: _completedParts(widget.status),
       totalParts: _totalParts(widget.status),
+      segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
       completedBatches: batchProgress.completedBatches,
       totalBatches: batchProgress.totalBatches,
       currentBatchStartIndex: batchProgress.currentBatchStartIndex,
@@ -1021,6 +1025,32 @@ class _MobileMigrationRedesignedStatusState
         math.max(status.parts.length, status.targetValuesZatoshi.length),
       ),
     );
+  }
+
+  List<BigInt>? _migrationRingSegmentValues(rust_sync.MigrationStatus status) {
+    final totalParts = _totalParts(status);
+    final targetValues = status.targetValuesZatoshi;
+    final values = targetValues.length == totalParts
+        ? List<BigInt>.of(targetValues)
+        : null;
+    if (status.parts.isEmpty) return values;
+
+    final orderedParts = [...status.parts]
+      ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
+    final hasCompletePartValues =
+        orderedParts.length == totalParts &&
+        orderedParts.indexed.every((entry) => entry.$2.partIndex == entry.$1);
+    if (hasCompletePartValues) {
+      return [for (final part in orderedParts) part.valueZatoshi];
+    }
+    if (values == null) return null;
+
+    for (final part in status.parts) {
+      if (part.partIndex >= 0 && part.partIndex < totalParts) {
+        values[part.partIndex] = part.valueZatoshi;
+      }
+    }
+    return values;
   }
 
   String _migratedAmountText(rust_sync.MigrationStatus status) {

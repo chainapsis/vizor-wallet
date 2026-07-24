@@ -72,8 +72,13 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           actionBatchValue: '50 ZEC (100%)',
         ),
       MobileIronwoodMigrationPreviewSurface.migrationBroadcasting =>
-        const _MigrationProgressPreview(
+        _MigrationProgressPreview(
           state: _MigrationProgressState.broadcasting,
+          totalParts: 8,
+          segmentValuesZatoshi: [
+            for (final value in const [1, 3, 2, 5, 1, 4, 2, 6])
+              BigInt.from(value),
+          ],
         ),
       MobileIronwoodMigrationPreviewSurface.migrationComplete =>
         const _MigrationCompletePreview(),
@@ -977,6 +982,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.currentBatchStartIndex,
     this.currentBatchPartCount,
     this.completedRingSegments,
+    this.segmentValuesZatoshi,
     this.highlightCurrentBatch = true,
     this.migratedAmountText,
     this.totalAmountText,
@@ -1001,6 +1007,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final int? currentBatchStartIndex;
   final int? currentBatchPartCount;
   final Set<int>? completedRingSegments;
+  final List<BigInt>? segmentValuesZatoshi;
   final bool highlightCurrentBatch;
   final String? migratedAmountText;
   final String? totalAmountText;
@@ -1054,6 +1061,10 @@ class _MigrationProgressPreview extends StatelessWidget {
           )
             index,
         };
+    final resolvedSegmentWeights = _normalizedMigrationRingWeights(
+      segments: math.max(1, totalParts),
+      valuesZatoshi: segmentValuesZatoshi,
+    );
     final body = _MigrationPreviewPage(
       navTitle: 'Migration in progress…',
       onBack: onBack,
@@ -1082,7 +1093,10 @@ class _MigrationProgressPreview extends StatelessWidget {
         _ => null,
       },
       child: state == _MigrationProgressState.syncing
-          ? _MigrationSyncingContent(compact: compact, totalParts: totalParts)
+          ? _MigrationSyncingContent(
+              compact: compact,
+              segmentWeights: resolvedSegmentWeights,
+            )
           : Column(
               children: [
                 _MigrationBatchDial(
@@ -1093,6 +1107,7 @@ class _MigrationProgressPreview extends StatelessWidget {
                   currentBatchStartIndex: resolvedCurrentBatchStartIndex,
                   currentBatchPartCount: resolvedBatchPartCount,
                   completedSegments: resolvedCompletedRingSegments,
+                  segmentWeights: resolvedSegmentWeights,
                   highlightCurrentBatch: highlightCurrentBatch,
                   dimension: compact ? 192 : 256,
                   migratedAmountText: migratedAmountText,
@@ -1139,6 +1154,7 @@ class _MigrationBatchDial extends StatelessWidget {
     required this.currentBatchStartIndex,
     required this.currentBatchPartCount,
     required this.completedSegments,
+    required this.segmentWeights,
     this.highlightCurrentBatch = true,
     this.dimension = 256,
     this.migratedAmountText,
@@ -1152,6 +1168,7 @@ class _MigrationBatchDial extends StatelessWidget {
   final int currentBatchStartIndex;
   final int currentBatchPartCount;
   final Set<int> completedSegments;
+  final List<double> segmentWeights;
   final bool highlightCurrentBatch;
   final double dimension;
   final String? migratedAmountText;
@@ -1195,7 +1212,7 @@ class _MigrationBatchDial extends StatelessWidget {
         children: [
           _AnimatedMigrationAttentionRing(
             dimension: dimension,
-            segments: math.max(1, totalParts),
+            segmentWeights: segmentWeights,
             completedSegments: completedSegments,
             highlightedSegments: highlightedSegments,
           ),
@@ -1259,11 +1276,11 @@ class _MigrationBatchDial extends StatelessWidget {
 class _MigrationSyncingContent extends StatelessWidget {
   const _MigrationSyncingContent({
     required this.compact,
-    required this.totalParts,
+    required this.segmentWeights,
   });
 
   final bool compact;
-  final int totalParts;
+  final List<double> segmentWeights;
 
   @override
   Widget build(BuildContext context) {
@@ -1283,7 +1300,7 @@ class _MigrationSyncingContent extends StatelessWidget {
                 painter: _MigrationRingPainter(
                   trackColor: context.colors.border.subtle,
                   activeColor: context.colors.border.subtle,
-                  segments: math.max(1, totalParts),
+                  segmentWeights: segmentWeights,
                 ),
               ),
               Column(
@@ -2260,13 +2277,13 @@ class _MigrationValueRow extends StatelessWidget {
 class _AnimatedMigrationAttentionRing extends StatefulWidget {
   const _AnimatedMigrationAttentionRing({
     required this.dimension,
-    required this.segments,
+    required this.segmentWeights,
     required this.completedSegments,
     required this.highlightedSegments,
   });
 
   final double dimension;
-  final int segments;
+  final List<double> segmentWeights;
   final Set<int> completedSegments;
   final Set<int> highlightedSegments;
 
@@ -2335,7 +2352,7 @@ class _AnimatedMigrationAttentionRingState
         painter: _MigrationRingPainter(
           trackColor: context.colors.border.subtle,
           activeColor: const Color(0xFF00A460),
-          segments: widget.segments,
+          segmentWeights: widget.segmentWeights,
           completedSegments: widget.completedSegments,
           highlightedSegments: widget.highlightedSegments,
           highlightColor: context.colors.text.accent,
@@ -2350,7 +2367,7 @@ class _MigrationRingPainter extends CustomPainter {
   const _MigrationRingPainter({
     required this.trackColor,
     required this.activeColor,
-    required this.segments,
+    required this.segmentWeights,
     this.completedSegments = const {},
     this.highlightedSegments = const {},
     this.highlightColor,
@@ -2359,12 +2376,14 @@ class _MigrationRingPainter extends CustomPainter {
 
   final Color trackColor;
   final Color activeColor;
-  final int segments;
+  final List<double> segmentWeights;
   final Set<int> completedSegments;
   final Set<int> highlightedSegments;
   final Color? highlightColor;
   final double highlightOpacity;
   final double visibleSegmentGap = 4;
+
+  int get segments => segmentWeights.length;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2383,9 +2402,11 @@ class _MigrationRingPainter extends CustomPainter {
             math.max(0, visibleSegmentGap) / radius,
             segmentPitch * 0.35,
           );
-    final segmentSweep = math.max(0.0, segmentPitch - gap);
+    final sweepBudget = math.max(0.0, math.pi * 2 - segments * gap);
+    var cursor = -math.pi / 2;
     for (var index = 0; index < segments; index++) {
-      final start = -math.pi / 2 + index * segmentPitch + gap / 2;
+      final segmentSweep = segmentWeights[index] * sweepBudget;
+      final start = cursor + gap / 2;
       final paint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = useRoundCaps ? StrokeCap.round : StrokeCap.butt
@@ -2396,6 +2417,7 @@ class _MigrationRingPainter extends CustomPainter {
           ? (highlightColor ?? activeColor).withValues(alpha: highlightOpacity)
           : trackColor;
       canvas.drawArc(rect, start, segmentSweep, false, paint);
+      cursor += segmentSweep + gap;
     }
   }
 
@@ -2403,13 +2425,43 @@ class _MigrationRingPainter extends CustomPainter {
   bool shouldRepaint(_MigrationRingPainter oldDelegate) {
     return trackColor != oldDelegate.trackColor ||
         activeColor != oldDelegate.activeColor ||
-        segments != oldDelegate.segments ||
+        !_sameDoubleList(segmentWeights, oldDelegate.segmentWeights) ||
         completedSegments != oldDelegate.completedSegments ||
         highlightedSegments != oldDelegate.highlightedSegments ||
         highlightColor != oldDelegate.highlightColor ||
         highlightOpacity != oldDelegate.highlightOpacity ||
         visibleSegmentGap != oldDelegate.visibleSegmentGap;
   }
+}
+
+List<double> _normalizedMigrationRingWeights({
+  required int segments,
+  required List<BigInt>? valuesZatoshi,
+}) {
+  final safeSegments = math.max(1, segments);
+  List<double> equalWeights() =>
+      List<double>.filled(safeSegments, 1 / safeSegments);
+  if (valuesZatoshi == null ||
+      valuesZatoshi.length != safeSegments ||
+      valuesZatoshi.any((value) => value <= BigInt.zero)) {
+    return equalWeights();
+  }
+  final total = valuesZatoshi.fold<BigInt>(
+    BigInt.zero,
+    (sum, value) => sum + value,
+  );
+  if (total <= BigInt.zero) return equalWeights();
+  final totalDouble = total.toDouble();
+  if (!totalDouble.isFinite || totalDouble <= 0) return equalWeights();
+  return [for (final value in valuesZatoshi) value.toDouble() / totalDouble];
+}
+
+bool _sameDoubleList(List<double> first, List<double> second) {
+  if (first.length != second.length) return false;
+  for (var index = 0; index < first.length; index++) {
+    if (first[index] != second[index]) return false;
+  }
+  return true;
 }
 
 class _MigrationWaitLoopPainter extends CustomPainter {

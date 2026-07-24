@@ -3253,6 +3253,67 @@ void main() {
     expect(tester.getCenter(find.text('2 ZEC (20%)')).dx, greaterThan(250));
   });
 
+  testWidgets(
+    'sizes migration ring segments by note balance in part-index order',
+    (tester) async {
+      _useMobileViewport(tester);
+      final parts = [
+        rust_sync.MigrationPartStatus(
+          partIndex: 2,
+          scheduleOrder: 0,
+          valueZatoshi: BigInt.from(300_000_000),
+          state: rust_sync.MigrationPartState.completed,
+          confirmationCount: 3,
+          confirmationTarget: 3,
+        ),
+        rust_sync.MigrationPartStatus(
+          partIndex: 0,
+          scheduleOrder: 2,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: rust_sync.MigrationPartState.scheduled,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+        rust_sync.MigrationPartStatus(
+          partIndex: 1,
+          scheduleOrder: 1,
+          valueZatoshi: BigInt.from(200_000_000),
+          state: rust_sync.MigrationPartState.needsInput,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+      ];
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            parts: parts,
+            targetValues: const [100_000_000, 200_000_000, 300_000_000],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ring = tester.widget<CustomPaint>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is CustomPaint &&
+              widget.painter.runtimeType.toString() == '_MigrationRingPainter',
+        ),
+      );
+      final painter = ring.painter as dynamic;
+      final weights = painter.segmentWeights as List<double>;
+      expect(weights, hasLength(3));
+      expect(weights[0], closeTo(1 / 6, 0.000001));
+      expect(weights[1], closeTo(2 / 6, 0.000001));
+      expect(weights[2], closeTo(3 / 6, 0.000001));
+      expect(weights.reduce((sum, value) => sum + value), closeTo(1, 1e-12));
+      expect(painter.completedSegments, {2});
+    },
+  );
+
   testWidgets('records a Keystone signing action while status is visible', (
     tester,
   ) async {
