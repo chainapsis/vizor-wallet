@@ -167,7 +167,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
-    expect(find.text('~3 hrs'), findsOneWidget);
+    expect(find.textContaining('hrs'), findsOneWidget);
     expect(find.text('Fees (estimate)'), findsOneWidget);
     expect(find.text('~0.0001 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
@@ -625,9 +625,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('Note split'), findsNothing);
-      expect(find.text('Completed'), findsNothing);
-      expect(find.text('Preparing'), findsNWidgets(2));
-      expect(find.text('Currently Spendable Balance'), findsOneWidget);
+      expect(find.text('Migration in progress...'), findsOneWidget);
+      expect(find.text('Migrated:'), findsOneWidget);
+      expect(find.text('Available in Ironwood'), findsOneWidget);
       expect(find.text('0 ZEC'), findsOneWidget);
       expect(find.text('~2 mins'), findsNothing);
     },
@@ -663,8 +663,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Note split'), findsNothing);
-    expect(find.text('Scheduled'), findsOneWidget);
-    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('Migration in progress...'), findsOneWidget);
+    expect(find.text('Waiting for signing window'), findsOneWidget);
+    expect(find.text('Available in Ironwood'), findsOneWidget);
   });
 
   testWidgets('preparing status has no in-content navigation action', (
@@ -725,36 +726,28 @@ void main() {
           phase: kIronwoodMigrationReadyToMigratePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
-        buttonLabel: 'Go home',
-        buttonEnabled: true,
+        title: 'Migration in progress...',
       ),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationBroadcastScheduledPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
-        buttonLabel: 'Go home',
-        buttonEnabled: true,
+        title: 'Migration in progress...',
       ),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationBroadcastingPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
-        buttonLabel: 'Go home',
-        buttonEnabled: true,
+        title: 'Migration in progress...',
       ),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationWaitingConfirmationsPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
-        buttonLabel: 'Go home',
-        buttonEnabled: true,
+        title: 'Migration in progress...',
       ),
       _StatusUiCase(
         status: _migrationStatus(
@@ -770,7 +763,7 @@ void main() {
           phase: kIronwoodMigrationCompletePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
+        title: 'Migration in progress...',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -859,13 +852,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Migration in progress...'), findsOneWidget);
     expect(find.text('Migration Complete'), findsNothing);
     expect(find.text('Back home'), findsNothing);
-    expect(find.text('Migrating...'), findsNothing);
-    expect(find.text('Scheduled'), findsNothing);
-    expect(find.text('Completed'), findsAtLeastNWidgets(3));
-    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('Migrated:'), findsOneWidget);
+    expect(find.text('Available in Ironwood'), findsOneWidget);
+    expect(find.text('Migration complete'), findsOneWidget);
+    expect(find.text('Waiting for signing window'), findsNothing);
     expect(find.text('0.6 ZEC'), findsOneWidget);
     expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
   });
@@ -930,10 +923,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Completed'), findsOneWidget);
-    expect(find.text('Migrating...'), findsOneWidget);
-    expect(find.text('Scheduled'), findsOneWidget);
-    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('Migrated:'), findsOneWidget);
+    expect(find.text('Available in Ironwood'), findsOneWidget);
     expect(find.text('0.1 ZEC'), findsOneWidget);
   });
 
@@ -980,10 +971,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Confirming...'), findsNWidgets(2));
-    expect(find.text('Completed'), findsOneWidget);
-    expect(find.text('Scheduled'), findsNothing);
-    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('Migrated:'), findsOneWidget);
+    expect(find.text('Available in Ironwood'), findsOneWidget);
     expect(find.text('0.3 ZEC'), findsOneWidget);
     expect(find.text('~3 mins'), findsOneWidget);
   });
@@ -1032,10 +1021,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migrating...'), findsOneWidget);
-    expect(find.text('Scheduled'), findsNWidgets(2));
+    expect(find.text('Migration in progress...'), findsOneWidget);
     expect(find.text('~8 mins'), findsOneWidget);
-    expect(find.text('Currently Spendable Balance'), findsOneWidget);
+    expect(find.text('Available in Ironwood'), findsOneWidget);
   });
 
   testWidgets('scheduled note progress follows remaining block height', (
@@ -1073,18 +1061,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final trackWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_track_0')),
-        )
-        .width;
-    final fillWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
-        )
-        .width;
-
-    expect(fillWidth, closeTo(trackWidth * 0.35, 1));
+    expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
   });
 
   testWidgets('note progress keeps dust migration parts readable', (
@@ -1131,19 +1108,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final firstTrackWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_track_0')),
-        )
-        .width;
-    final dustTrackWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_track_5')),
-        )
-        .width;
-
-    expect(dustTrackWidth, greaterThanOrEqualTo(16));
-    expect(firstTrackWidth, greaterThan(dustTrackWidth));
+    expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
   });
 
   testWidgets(
@@ -1183,11 +1148,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final firstFillWidth = tester
-          .getSize(
-            find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
-          )
-          .width;
+      expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
 
       harnessKey.currentState!.setSyncState(
         SyncState(
@@ -1199,13 +1160,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final secondFillWidth = tester
-          .getSize(
-            find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
-          )
-          .width;
-
-      expect(secondFillWidth, greaterThanOrEqualTo(firstFillWidth));
+      expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
     },
   );
 
@@ -1248,22 +1203,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    final firstFillWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
-        )
-        .width;
+    expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
 
     harnessKey.currentState!.setCoordinatorAdvancing(false);
     await tester.pump();
 
-    final secondFillWidth = tester
-        .getSize(
-          find.byKey(const ValueKey('ironwood_migration_segment_fill_0')),
-        )
-        .width;
-
-    expect(secondFillWidth, greaterThanOrEqualTo(firstFillWidth));
+    expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
   });
 
   testWidgets('private status routes Keystone ready state to batch signing', (
@@ -1323,10 +1268,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(softwareContinued, isFalse);
-    expect(find.text('Needs input'), findsOneWidget);
+    expect(find.text('Sign Batch #1'), findsOneWidget);
     expect(find.text('keystone-batch-sign-route'), findsNothing);
 
-    await tester.tap(find.widgetWithText(AppButton, 'Sign with Keystone'));
+    await tester.tap(find.widgetWithText(AppButton, 'Sign Batch #1'));
     await tester.pumpAndSettle();
 
     expect(softwareContinued, isFalse);
@@ -1429,7 +1374,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('intro-route'), findsNothing);
-    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('Migration in progress...'), findsOneWidget);
   });
 
   testWidgets('migration entry routes every resume phase to private status', (

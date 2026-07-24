@@ -151,6 +151,26 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildIronwoodMigrationPrivateStatusNeedsInputUseCase,
   ),
   FigmaCompareScenario(
+    id: 'ironwood-migration-post-prepare-waiting',
+    description: 'Ironwood migration waiting for the next signing window',
+    builder: buildIronwoodMigrationPostPrepareWaitingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-post-prepare-signing',
+    description: 'Ironwood Keystone migration batch ready to sign',
+    builder: buildIronwoodMigrationPostPrepareSigningUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-post-prepare-progressed',
+    description: 'Ironwood migration after the first batch is available',
+    builder: buildIronwoodMigrationPostPrepareProgressedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-post-prepare-active',
+    description: 'Ironwood migration with a later batch in progress',
+    builder: buildIronwoodMigrationPostPrepareActiveUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-ironwood-migration-intro',
     description: 'Mobile About Ironwood migration screen',
     builder: buildMobileIronwoodMigrationIntroUseCase,

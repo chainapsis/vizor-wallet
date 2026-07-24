@@ -877,6 +877,45 @@ Widget buildIronwoodMigrationPrivateStatusNeedsInputUseCase(
   );
 }
 
+Widget buildIronwoodMigrationPostPrepareWaitingUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareWaitingStatus(),
+  );
+}
+
+Widget buildIronwoodMigrationPostPrepareSigningUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareSigningStatus(),
+    isHardware: true,
+  );
+}
+
+Widget buildIronwoodMigrationPostPrepareProgressedUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareProgressedStatus(),
+  );
+}
+
+Widget buildIronwoodMigrationPostPrepareActiveUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareActiveStatus(),
+  );
+}
+
 Widget buildMobileIronwoodMigrationIntroUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.intro,
@@ -3098,6 +3137,90 @@ rust_sync.MigrationStatus _previewPrivateMigrationNeedsInputStatus() {
     ],
   );
 }
+
+rust_sync.MigrationStatus _previewPostPrepareWaitingStatus() =>
+    _previewPostPrepareStatus(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      parts: _previewPostPrepareParts(),
+    );
+
+rust_sync.MigrationStatus _previewPostPrepareSigningStatus() =>
+    _previewPostPrepareStatus(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      parts: _previewPostPrepareParts(
+        firstState: rust_sync.MigrationPartState.needsInput,
+      ),
+    );
+
+rust_sync.MigrationStatus _previewPostPrepareProgressedStatus() =>
+    _previewPostPrepareStatus(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      parts: _previewPostPrepareParts(completedNoteCount: 1),
+    );
+
+rust_sync.MigrationStatus _previewPostPrepareActiveStatus() =>
+    _previewPostPrepareStatus(
+      phase: kIronwoodMigrationWaitingConfirmationsPhase,
+      parts: _previewPostPrepareParts(
+        completedNoteCount: 1,
+        activeNoteIndex: 1,
+      ),
+    );
+
+const _postPrepareNoteValues = <int>[
+  4_000_000_000,
+  3_500_000_000,
+  2_500_000_000,
+];
+
+List<rust_sync.MigrationPartStatus> _previewPostPrepareParts({
+  rust_sync.MigrationPartState firstState =
+      rust_sync.MigrationPartState.scheduled,
+  int completedNoteCount = 0,
+  int? activeNoteIndex,
+}) => [
+  for (var index = 0; index < _postPrepareNoteValues.length; index++)
+    _previewMigrationPart(
+      index,
+      _postPrepareNoteValues[index],
+      index < completedNoteCount
+          ? rust_sync.MigrationPartState.completed
+          : index == activeNoteIndex
+          ? rust_sync.MigrationPartState.confirming
+          : index == 0
+          ? firstState
+          : rust_sync.MigrationPartState.scheduled,
+    ),
+];
+
+rust_sync.MigrationStatus _previewPostPrepareStatus({
+  required String phase,
+  required List<rust_sync.MigrationPartStatus> parts,
+}) => rust_sync.MigrationStatus(
+  phase: phase,
+  activeRunId: 'post-prepare-preview-run',
+  targetValuesZatoshi: frb.Uint64List.fromList(_postPrepareNoteValues),
+  preparedNoteCount: _postPrepareNoteValues.length,
+  denominationConfirmationCount: 3,
+  denominationConfirmationTarget: 3,
+  denominationSplitCompletedCount: 1,
+  denominationSplitTotalCount: 1,
+  pendingTxCount: _postPrepareNoteValues.length,
+  broadcastedTxCount: 1,
+  confirmedTxCount: parts
+      .where((part) => part.state == rust_sync.MigrationPartState.completed)
+      .length,
+  totalCount: _postPrepareNoteValues.length,
+  signedChildPcztCount: 0,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 50,
+  scheduleMeanDelayBlocks: 108,
+  scheduleMaxDelayBlocks: 432,
+  maxPreparedNotesPerRun: 64,
+  scheduledBroadcasts: const [],
+  parts: parts,
+);
 
 rust_sync.MigrationPartStatus _previewMigrationPart(
   int partIndex,
