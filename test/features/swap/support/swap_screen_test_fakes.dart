@@ -462,6 +462,18 @@ class _FailingQuoteSwapProvider extends _FakeSwapProvider {
   }
 }
 
+class _LowAmountQuoteSwapProvider extends _FakeSwapProvider {
+  @override
+  Future<SwapQuote> quote(SwapQuoteRequest request) async {
+    requests.add(request);
+    throw const OneClickApiException(
+      'NEAR Intents quote failed (400): amount is too low',
+      statusCode: 400,
+      providerMessage: 'Amount is too low for bridge',
+    );
+  }
+}
+
 class _DeferredStatusSwapProvider extends _FakeSwapProvider {
   _DeferredStatusSwapProvider(this.snapshot);
 

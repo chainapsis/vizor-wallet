@@ -10,6 +10,7 @@ import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/models/address_book_label_lookup.dart';
 import '../../swap/models/swap_address_formatting.dart';
 import '../models/pay_recent_recipients.dart';
+import 'pay_wizard_page.dart';
 
 /// Step 2 "Select Recipient" of the desktop pay wizard — Figma 6241:85245
 /// plus the 2B1/2B2/2B3 field states (85845 / 104834 / 86376).
@@ -265,16 +266,19 @@ class PayRecipientActions extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (quoteError != null) ...[
-          SizedBox(
-            width: PayWizardActionMetrics.width,
-            child: Text(
-              quoteError!,
-              key: const ValueKey('pay_recipient_quote_error'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.destructive,
+          ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: PayWizardPage.innerWidth,
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: Text(
+                quoteError!,
+                key: const ValueKey('pay_recipient_quote_error'),
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.destructive,
+                ),
               ),
             ),
           ),

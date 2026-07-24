@@ -679,6 +679,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPayRecipientNewAddressUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Recipient quote error',
+                      builder: buildPayRecipientQuoteErrorUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Review quote',
                       builder: buildPayReviewUseCase,
                     ),

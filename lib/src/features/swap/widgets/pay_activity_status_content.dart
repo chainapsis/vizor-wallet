@@ -94,7 +94,7 @@ class PayActivityStatusContent extends StatelessWidget {
               leading: SwapAssetIcon(
                 asset: amountAsset,
                 size: 32,
-                showChainBadge: false,
+                showChainBadge: true,
               ),
               bottomLeftText: amountFiatText,
             ),

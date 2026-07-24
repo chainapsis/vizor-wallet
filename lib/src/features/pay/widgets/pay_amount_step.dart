@@ -338,8 +338,6 @@ class PayAmountStep extends StatelessWidget {
             Text(
               quoteError,
               key: const ValueKey('pay_amount_error'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 color: colors.text.destructive,
@@ -418,7 +416,7 @@ class _PayAssetSelector extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.xxs),
             AppIcon(
-              AppIcons.doubleArrowVertical,
+              AppIcons.expand,
               size: 16,
               color: colors.icon.regular,
             ),
