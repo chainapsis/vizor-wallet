@@ -54,6 +54,44 @@ void main() {
   );
 
   test(
+    'Android reads preparation runtime state from the native worker',
+    () async {
+      var getterCalls = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isIOS: () => false,
+        isAndroid: () => true,
+        getPreparationRuntimeState:
+            ({required network, required accountUuid, required runId}) async {
+              getterCalls++;
+              expect(network, 'test');
+              expect(accountUuid, 'account-1');
+              expect(runId, 'run-1');
+              return IronwoodMigrationPreparationRuntimeState.scheduled;
+            },
+      );
+
+      final state = await service.preparationRuntimeState(
+        accountUuid: 'account-1',
+        runId: 'run-1',
+      );
+
+      expect(state, IronwoodMigrationPreparationRuntimeState.scheduled);
+      expect(getterCalls, 1);
+    },
+  );
+
+  test(
     'status resolves wallet db path before calling Rust status API',
     () async {
       String? seenDbPath;
@@ -281,6 +319,35 @@ void main() {
 
       expect(preparationStartCount, 1);
       expect(events, ['startBackgroundPreparation']);
+    },
+  );
+
+  test(
+    'Android software start hands confirmation waiting to background preparation',
+    () async {
+      var preparationStartCount = 0;
+      final service = _notificationAuthorizationService(
+        isIOS: false,
+        isAndroid: true,
+        statuses: [
+          _migrationStatus(),
+          _migrationStatus(
+            phase: 'waiting_denom_confirmations',
+            activeRunId: 'run-1',
+          ),
+        ],
+        startBackgroundPreparation: () async {
+          preparationStartCount++;
+          return true;
+        },
+      );
+
+      await service.startSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(preparationStartCount, 1);
     },
   );
 
@@ -708,6 +775,43 @@ void main() {
       expect(preparationStartCount, 1);
     },
   );
+
+  test('Android lifecycle recovery restores bound preparation', () async {
+    final store = await _boundBackgroundCredentialStore();
+    var preparationStartCount = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(
+                phase: 'waiting_denom_confirmations',
+                activeRunId: 'run-1',
+              ),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: store,
+      isMobile: () => true,
+      isIOS: () => false,
+      isAndroid: () => true,
+      startBackgroundPreparation: () async {
+        preparationStartCount++;
+        return true;
+      },
+      getNotificationAuthorizationStatus: () async =>
+          IronwoodMigrationNotificationAuthorizationStatus.authorized,
+    );
+
+    await service.resumeBackgroundPreparationIfNeeded(
+      network: 'test',
+      accountUuid: 'account-1',
+    );
+
+    expect(preparationStartCount, 1);
+  });
 
   test('explicit recovery binds a provisional preparation manifest', () async {
     final store = _backgroundCredentialStore();

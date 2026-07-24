@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -484,6 +485,7 @@ class IronwoodMigrationBackgroundLifecycle {
   final bool _isIOS;
   final bool _isAndroid;
   final List<Duration> _resumeRetryDelays;
+  final Queue<String> _androidQuiescenceLeaseIds = Queue<String>();
 
   bool get isQuiescenceManagedByCaller =>
       Zone.current[_callerManagedQuiescenceZoneKey] == true;
@@ -496,8 +498,13 @@ class IronwoodMigrationBackgroundLifecycle {
   }
 
   Future<void> quiesce() async {
-    if (!_isIOS) return;
-    final quiesced = await _channel.invokeMethod<bool>('quiesce');
+    if (!_isIOS && !_isAndroid) return;
+    final leaseId = _isAndroid ? _newAndroidQuiescenceLeaseId() : null;
+    if (leaseId != null) _androidQuiescenceLeaseIds.addLast(leaseId);
+    final quiesced = await _channel.invokeMethod<bool>(
+      'quiesce',
+      leaseId == null ? null : {'leaseId': leaseId},
+    );
     if (quiesced != true) {
       throw StateError(
         'Failed to pause Ironwood migration before wallet data changed.',
@@ -506,13 +513,26 @@ class IronwoodMigrationBackgroundLifecycle {
   }
 
   Future<void> resumeAfterMutation() async {
-    if (!_isIOS) return;
+    if (!_isIOS && !_isAndroid) return;
+    final leaseId = _isAndroid && _androidQuiescenceLeaseIds.isNotEmpty
+        ? _androidQuiescenceLeaseIds.first
+        : null;
     Object? lastError;
     for (final delay in _resumeRetryDelays) {
       if (delay != Duration.zero) await Future<void>.delayed(delay);
       try {
-        final resumed = await _channel.invokeMethod<bool>('resume');
-        if (resumed == true) return;
+        final resumed = await _channel.invokeMethod<bool>(
+          'resume',
+          leaseId == null ? null : {'leaseId': leaseId},
+        );
+        if (resumed == true) {
+          if (leaseId != null &&
+              _androidQuiescenceLeaseIds.isNotEmpty &&
+              _androidQuiescenceLeaseIds.first == leaseId) {
+            _androidQuiescenceLeaseIds.removeFirst();
+          }
+          return;
+        }
         lastError = StateError('Native migration resume returned false.');
       } catch (error) {
         lastError = error;
@@ -525,6 +545,15 @@ class IronwoodMigrationBackgroundLifecycle {
   }
 
   Future<void> resumeAfterFailedMutation() => resumeAfterMutation();
+
+  static String _newAndroidQuiescenceLeaseId() {
+    final bytes = Uint8List(16);
+    final random = Random.secure();
+    for (var index = 0; index < bytes.length; index++) {
+      bytes[index] = random.nextInt(256);
+    }
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
 
   Future<void> revokeAccount({
     required String network,

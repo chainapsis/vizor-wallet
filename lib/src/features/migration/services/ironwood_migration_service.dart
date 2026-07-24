@@ -573,6 +573,7 @@ class IronwoodMigrationService {
       isMobile() && supportsBackgroundMigration();
 
   bool get _usesNativeMigrationOutbox => isIOS() || isAndroid();
+  bool get _usesNativePreparation => isIOS() || isAndroid();
 
   Future<IronwoodMigrationNotificationAuthorizationStatus>
   notificationAuthorizationStatus() {
@@ -602,7 +603,7 @@ class IronwoodMigrationService {
     required String accountUuid,
     required String runId,
   }) {
-    if (!isIOS()) {
+    if (!_usesNativePreparation) {
       return Future.value(IronwoodMigrationPreparationRuntimeState.idle);
     }
     return getPreparationRuntimeState(
@@ -675,7 +676,7 @@ class IronwoodMigrationService {
     required String network,
     required String accountUuid,
   }) async {
-    if (!isIOS() || !isMobile()) return;
+    if (!_usesNativePreparation || !isMobile()) return;
 
     final dbPath = await getWalletDbPath();
     final context = _MigrationCredentialContext(
@@ -1743,7 +1744,7 @@ class IronwoodMigrationService {
   Future<void> _reconcileBackgroundPreparationBestEffort(
     rust_sync.MigrationStatus status,
   ) async {
-    if (!isIOS() || !isMobile()) return;
+    if (!_usesNativePreparation || !isMobile()) return;
     if (status.phase != kIronwoodMigrationWaitingDenomConfirmationsPhase) {
       return;
     }
@@ -1854,7 +1855,7 @@ Future<bool> _defaultScheduleBackgroundMigration() async {
 }
 
 Future<bool> _defaultStartBackgroundPreparation() async {
-  if (!Platform.isIOS) return false;
+  if (!Platform.isIOS && !Platform.isAndroid) return false;
   return await _backgroundMigrationChannel.invokeMethod<bool>(
         'startPreparation',
       ) ??
@@ -1862,7 +1863,7 @@ Future<bool> _defaultStartBackgroundPreparation() async {
 }
 
 Future<void> _defaultCancelBackgroundMigration() async {
-  if (!Platform.isIOS) return;
+  if (!Platform.isIOS && !Platform.isAndroid) return;
   await _backgroundMigrationChannel.invokeMethod<void>('cancel');
 }
 
@@ -1872,7 +1873,9 @@ _defaultGetPreparationRuntimeState({
   required String accountUuid,
   required String runId,
 }) async {
-  if (!Platform.isIOS) return IronwoodMigrationPreparationRuntimeState.idle;
+  if (!Platform.isIOS && !Platform.isAndroid) {
+    return IronwoodMigrationPreparationRuntimeState.idle;
+  }
   final value = await _backgroundMigrationChannel.invokeMethod<String>(
     'getPreparationRuntimeState',
     {'network': network, 'accountUuid': accountUuid, 'runId': runId},

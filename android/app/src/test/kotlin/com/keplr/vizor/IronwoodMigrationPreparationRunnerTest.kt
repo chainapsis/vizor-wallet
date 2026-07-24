@@ -1,10 +1,14 @@
 package com.keplr.vizor
 
 import androidx.work.NetworkType
+import androidx.work.WorkInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class IronwoodMigrationPreparationRunnerTest {
     @Test
@@ -17,6 +21,105 @@ class IronwoodMigrationPreparationRunnerTest {
         )
         assertTrue(request.tags.contains(IronwoodMigrationPreparationScheduler.WORK_TAG))
         assertEquals(0, request.workSpec.initialDelay)
+    }
+
+    @Test
+    fun schedulerRuntimeStatePrioritizesRunningWork() {
+        assertEquals(
+            "running",
+            IronwoodMigrationPreparationScheduler.runtimeState(
+                listOf(WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING),
+            ),
+        )
+    }
+
+    @Test
+    fun schedulerRuntimeStateReportsQueuedWorkAsScheduled() {
+        assertEquals(
+            "scheduled",
+            IronwoodMigrationPreparationScheduler.runtimeState(
+                listOf(WorkInfo.State.BLOCKED, WorkInfo.State.ENQUEUED),
+            ),
+        )
+    }
+
+    @Test
+    fun schedulerRuntimeStateIgnoresTerminalWork() {
+        assertEquals(
+            "idle",
+            IronwoodMigrationPreparationScheduler.runtimeState(
+                listOf(
+                    WorkInfo.State.SUCCEEDED,
+                    WorkInfo.State.FAILED,
+                    WorkInfo.State.CANCELLED,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun preparationQuiesceCancelsAndDrainsTheActiveRun() {
+        val started = CountDownLatch(1)
+        val cancelled = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val run = executor.submit {
+                IronwoodMigrationPreparationExecutionCoordinator.tryRun(
+                    cancel = { cancelled.countDown() },
+                ) { isCancelled ->
+                    started.countDown()
+                    while (!isCancelled()) Thread.yield()
+                    finished.countDown()
+                }
+            }
+            assertTrue(started.await(1, TimeUnit.SECONDS))
+
+            IronwoodMigrationPreparationExecutionCoordinator.quiesceAndDrain()
+
+            assertTrue(cancelled.await(1, TimeUnit.SECONDS))
+            assertTrue(finished.await(1, TimeUnit.SECONDS))
+            run.get(1, TimeUnit.SECONDS)
+            assertTrue(
+                IronwoodMigrationPreparationExecutionCoordinator.isQuiescing,
+            )
+        } finally {
+            IronwoodMigrationPreparationExecutionCoordinator.resume()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun nestedPreparationRevocationPreservesOuterQuiescence() {
+        try {
+            IronwoodMigrationPreparationExecutionCoordinator.quiesceAndDrain()
+
+            IronwoodMigrationPreparationExecutionCoordinator.runQuiesced { }
+
+            assertTrue(
+                IronwoodMigrationPreparationExecutionCoordinator.isQuiescing,
+            )
+        } finally {
+            IronwoodMigrationPreparationExecutionCoordinator.resume()
+        }
+    }
+
+    @Test
+    fun onlyTheLastAndroidQuiescenceLeaseAllowsResume() {
+        val firstLease = "test-first-lease"
+        val secondLease = "test-second-lease"
+        try {
+            assertTrue(IronwoodMigrationQuiescenceLeases.acquire(firstLease))
+            assertFalse(IronwoodMigrationQuiescenceLeases.acquire(secondLease))
+            assertFalse(IronwoodMigrationQuiescenceLeases.isLast(firstLease))
+
+            assertFalse(IronwoodMigrationQuiescenceLeases.release(firstLease))
+            assertTrue(IronwoodMigrationQuiescenceLeases.isLast(secondLease))
+            assertTrue(IronwoodMigrationQuiescenceLeases.release(secondLease))
+        } finally {
+            IronwoodMigrationQuiescenceLeases.release(firstLease)
+            IronwoodMigrationQuiescenceLeases.release(secondLease)
+        }
     }
 
     @Test

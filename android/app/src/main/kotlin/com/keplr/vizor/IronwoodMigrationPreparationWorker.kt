@@ -15,11 +15,16 @@ import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.Worker
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import org.json.JSONObject
 
 internal data class IronwoodMigrationPreparationManifest(
@@ -96,6 +101,66 @@ internal enum class IronwoodMigrationPreparationOutcome {
     NEEDS_USER_ACTION,
     CANCELLED,
     RETRY,
+}
+
+internal object IronwoodMigrationPreparationExecutionCoordinator {
+    private val runLock = ReentrantLock()
+    private val quiescing = AtomicBoolean()
+    private val activeCancellation = AtomicReference<(() -> Unit)?>(null)
+
+    val isQuiescing: Boolean
+        get() = quiescing.get()
+
+    fun <T> tryRun(
+        cancel: () -> Unit,
+        block: (isCancelled: () -> Boolean) -> T,
+    ): T? {
+        if (quiescing.get() || !runLock.tryLock()) return null
+        if (quiescing.get()) {
+            runLock.unlock()
+            return null
+        }
+        activeCancellation.set(cancel)
+        if (quiescing.get()) {
+            activeCancellation.compareAndSet(cancel, null)
+            runLock.unlock()
+            return null
+        }
+        return try {
+            block { quiescing.get() }
+        } finally {
+            activeCancellation.compareAndSet(cancel, null)
+            runLock.unlock()
+        }
+    }
+
+    fun quiesceAndDrain() {
+        quiescing.set(true)
+        val cancellation = runCatching {
+            activeCancellation.get()?.invoke()
+        }
+        runLock.withLock { }
+        cancellation.getOrThrow()
+    }
+
+    fun <T> runQuiesced(block: () -> T): T {
+        val wasQuiescing = quiescing.getAndSet(true)
+        val cancellation = runCatching {
+            activeCancellation.get()?.invoke()
+        }
+        return try {
+            runLock.withLock {
+                cancellation.getOrThrow()
+                block()
+            }
+        } finally {
+            if (!wasQuiescing) quiescing.set(false)
+        }
+    }
+
+    fun resume() {
+        quiescing.set(false)
+    }
 }
 
 /**
@@ -266,23 +331,61 @@ internal object IronwoodMigrationPreparationScheduler {
     private const val RETRY_DELAY_MINUTES = 1L
 
     fun enqueue(context: Context) {
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.KEEP,
-            request(),
-        )
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(
+                UNIQUE_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                request(),
+            )
+            .result
+            .get()
     }
 
     fun enqueueContinuation(context: Context) {
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
-            request(initialDelayMinutes = RETRY_DELAY_MINUTES),
-        )
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(
+                UNIQUE_WORK_NAME,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                request(initialDelayMinutes = RETRY_DELAY_MINUTES),
+            )
+            .result
+            .get()
     }
 
     fun cancel(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
+    }
+
+    fun cancelAndWait(context: Context) {
+        WorkManager.getInstance(context)
+            .cancelUniqueWork(UNIQUE_WORK_NAME)
+            .result
+            .get()
+    }
+
+    fun runtimeState(context: Context): String {
+        val states = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork(UNIQUE_WORK_NAME)
+            .get()
+            .map { it.state }
+        return runtimeState(states)
+    }
+
+    internal fun runtimeState(states: Iterable<WorkInfo.State>): String {
+        var scheduled = false
+        states.forEach { state ->
+            when (state) {
+                WorkInfo.State.RUNNING -> return "running"
+                WorkInfo.State.ENQUEUED,
+                WorkInfo.State.BLOCKED,
+                -> scheduled = true
+                WorkInfo.State.SUCCEEDED,
+                WorkInfo.State.FAILED,
+                WorkInfo.State.CANCELLED,
+                -> Unit
+            }
+        }
+        return if (scheduled) "scheduled" else "idle"
     }
 
     internal fun request(initialDelayMinutes: Long = 0): OneTimeWorkRequest =
@@ -316,13 +419,17 @@ class IronwoodMigrationPreparationWorker(
             val manifests = IronwoodMigrationSecureStore(applicationContext)
                 .readAllManifests()
                 .map(IronwoodMigrationPreparationManifest::decode)
-            val outcome = IronwoodMigrationPreparationRunner(
-                native = bridge,
-                isStopped = { isStopped },
-                onOperationStarted = { native = bridge },
-                onOperationEnded = { native = null },
-            ).run(manifests)
-            outcome.toWorkerResult()
+            IronwoodMigrationPreparationExecutionCoordinator.tryRun(
+                cancel = { bridge.cancelOperation() },
+            ) { isCoordinatorCancelled ->
+                val outcome = IronwoodMigrationPreparationRunner(
+                    native = bridge,
+                    isStopped = { isStopped || isCoordinatorCancelled() },
+                    onOperationStarted = { native = bridge },
+                    onOperationEnded = { native = null },
+                ).run(manifests)
+                outcome.toWorkerResult()
+            } ?: Result.success()
         } catch (error: IllegalArgumentException) {
             Result.failure(workDataOf(OUTPUT_ERROR to (error.message ?: "Invalid manifest.")))
         } catch (error: Exception) {

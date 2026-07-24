@@ -12,6 +12,35 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
+
+internal object IronwoodMigrationQuiescenceLeases {
+    private val lock = ReentrantLock()
+    private val activeLeaseIds = linkedSetOf<String>()
+
+    fun acquire(leaseId: String): Boolean = lock.withLock {
+        if (!activeLeaseIds.add(leaseId)) return false
+        activeLeaseIds.size == 1
+    }
+
+    fun contains(leaseId: String): Boolean = lock.withLock {
+        leaseId in activeLeaseIds
+    }
+
+    fun isLast(leaseId: String): Boolean = lock.withLock {
+        activeLeaseIds.size == 1 && leaseId in activeLeaseIds
+    }
+
+    fun release(leaseId: String): Boolean = lock.withLock {
+        activeLeaseIds.remove(leaseId)
+        activeLeaseIds.isEmpty()
+    }
+
+    fun hasActiveLeases(): Boolean = lock.withLock {
+        activeLeaseIds.isNotEmpty()
+    }
+}
 
 internal class IronwoodMigrationSecureStoreChannel(
     private val context: Context,
@@ -51,6 +80,78 @@ internal class IronwoodMigrationSecureStoreChannel(
                         string(arguments, "accountUuid"),
                     )
                     true
+                }
+            }
+            "startPreparation" -> {
+                {
+                    if (IronwoodMigrationPreparationExecutionCoordinator.isQuiescing) {
+                        false
+                    } else {
+                        IronwoodMigrationPreparationScheduler.enqueue(context)
+                        true
+                    }
+                }
+            }
+            "cancel" -> {
+                {
+                    val shouldResume = hasScheduledPreparation()
+                    IronwoodMigrationPreparationExecutionCoordinator.runQuiesced {
+                        IronwoodMigrationPreparationScheduler.cancelAndWait(context)
+                    }
+                    if (shouldResume) resumeRemainingPreparation()
+                    true
+                }
+            }
+            "quiesce" -> {
+                {
+                    val leaseId = quiescenceLeaseId(call)
+                    val firstLease = IronwoodMigrationQuiescenceLeases.acquire(leaseId)
+                    if (firstLease) {
+                        val previousState = store.readBackgroundWorkResumeState()
+                        try {
+                            store.writeBackgroundWorkResumeState(
+                                IronwoodMigrationBackgroundWorkResumeState(
+                                    preparationWasScheduled =
+                                        previousState?.preparationWasScheduled == true ||
+                                        hasScheduledPreparation(),
+                                ),
+                            )
+                        } catch (error: Exception) {
+                            IronwoodMigrationQuiescenceLeases.release(leaseId)
+                            throw error
+                        }
+                        IronwoodMigrationPreparationExecutionCoordinator
+                            .quiesceAndDrain()
+                        IronwoodMigrationOutboxExecutionCoordinator.quiesceAndDrain()
+                        IronwoodMigrationPreparationScheduler.cancelAndWait(context)
+                        IronwoodMigrationOutboxScheduler.cancelAndWait(context)
+                    }
+                    true
+                }
+            }
+            "resume" -> {
+                {
+                    resumeQuiescedWork(optionalQuiescenceLeaseId(call))
+                }
+            }
+            "getPreparationRuntimeState" -> {
+                {
+                    val arguments = arguments(call)
+                    val network = network(arguments)
+                    val accountUuid = string(arguments, "accountUuid")
+                    val runId = string(arguments, "runId")
+                    val manifest = store.readManifest(network, accountUuid)
+                        ?.let(IronwoodMigrationPreparationManifest::decode)
+                    if (
+                        manifest == null ||
+                        manifest.network != network ||
+                        manifest.accountUuid != accountUuid ||
+                        manifest.expectedRunId != runId
+                    ) {
+                        "idle"
+                    } else {
+                        IronwoodMigrationPreparationScheduler.runtimeState(context)
+                    }
                 }
             }
             "stageOutboxBatch" -> {
@@ -178,22 +279,35 @@ internal class IronwoodMigrationSecureStoreChannel(
                     val arguments = arguments(call)
                     val network = network(arguments)
                     val accountUuid = string(arguments, "accountUuid")
-                    IronwoodMigrationOutboxScheduler.cancel(context)
+                    val shouldResumePreparation =
+                        !IronwoodMigrationPreparationExecutionCoordinator
+                            .isQuiescing &&
+                            hasScheduledPreparation()
                     var hasRemainingWork = false
-                    IronwoodMigrationOutboxExecutionCoordinator.cancelAndDrain {
-                        hasRemainingWork = outboxRepository.update { snapshot ->
-                            val batchIds = snapshot.batches.filter {
-                                it.network == network && it.accountUuid == accountUuid
-                            }.map { it.batchId }.toSet()
-                            snapshot.batches.removeAll { it.batchId in batchIds }
-                            snapshot.receipts.removeAll { it.batchId in batchIds }
-                            if (snapshot.lastAttemptedScopeKey == "$network:$accountUuid") {
-                                snapshot.lastAttemptedScopeKey = null
+                    IronwoodMigrationPreparationExecutionCoordinator.runQuiesced {
+                        IronwoodMigrationOutboxExecutionCoordinator.cancelAndDrain {
+                            IronwoodMigrationPreparationScheduler
+                                .cancelAndWait(context)
+                            IronwoodMigrationOutboxScheduler.cancelAndWait(context)
+                            hasRemainingWork = outboxRepository.update { snapshot ->
+                                val batchIds = snapshot.batches.filter {
+                                    it.network == network &&
+                                        it.accountUuid == accountUuid
+                                }.map { it.batchId }.toSet()
+                                snapshot.batches.removeAll { it.batchId in batchIds }
+                                snapshot.receipts.removeAll { it.batchId in batchIds }
+                                if (
+                                    snapshot.lastAttemptedScopeKey ==
+                                    "$network:$accountUuid"
+                                ) {
+                                    snapshot.lastAttemptedScopeKey = null
+                                }
+                                IronwoodOutboxState.hasRunnableWork(snapshot)
                             }
-                            IronwoodOutboxState.hasRunnableWork(snapshot)
+                            store.revokeAccount(network, accountUuid)
                         }
-                        store.revokeAccount(network, accountUuid)
                     }
+                    if (shouldResumePreparation) resumeRemainingPreparation()
                     if (hasRemainingWork) {
                         IronwoodMigrationOutboxScheduler.enqueueContinuation(context, 0)
                     }
@@ -202,9 +316,13 @@ internal class IronwoodMigrationSecureStoreChannel(
             }
             "revokeAll" -> {
                 {
-                    IronwoodMigrationOutboxScheduler.cancel(context)
-                    IronwoodMigrationOutboxExecutionCoordinator.cancelAndDrain {
-                        store.revokeAll()
+                    IronwoodMigrationPreparationExecutionCoordinator.runQuiesced {
+                        IronwoodMigrationOutboxExecutionCoordinator.cancelAndDrain {
+                            IronwoodMigrationPreparationScheduler
+                                .cancelAndWait(context)
+                            IronwoodMigrationOutboxScheduler.cancelAndWait(context)
+                            store.revokeAll()
+                        }
                     }
                     IronwoodMigrationOutboxNotifier(context).cancelAll()
                     true
@@ -234,13 +352,38 @@ internal class IronwoodMigrationSecureStoreChannel(
         IronwoodMigrationOutboxScheduler.enqueue(context)
     }
 
+    private fun hasScheduledPreparation(): Boolean =
+        IronwoodMigrationPreparationScheduler.runtimeState(context) != "idle"
+
+    private fun resumeRemainingPreparation(immediate: Boolean = false) {
+        if (IronwoodMigrationPreparationExecutionCoordinator.isQuiescing) return
+        val hasActiveManifest = store.readAllManifests().any { encoded ->
+            runCatching {
+                IronwoodMigrationPreparationManifest.decode(encoded).expectedRunId != null
+            }.getOrDefault(false)
+        }
+        if (hasActiveManifest) {
+            if (immediate) {
+                IronwoodMigrationPreparationScheduler.enqueue(context)
+            } else {
+                IronwoodMigrationPreparationScheduler.enqueueContinuation(context)
+            }
+        }
+    }
+
     fun close() {
         executor.shutdown()
     }
 
-    fun resumePendingNotifications() {
+    fun resumePendingWork() {
         executor.execute {
             runCatching {
+                if (
+                    !IronwoodMigrationQuiescenceLeases.hasActiveLeases() &&
+                    store.readBackgroundWorkResumeState() != null
+                ) {
+                    resumeQuiescedWork(leaseId = null)
+                }
                 if (
                     outboxRepository.read().let(
                         IronwoodOutboxState::hasPendingNotifications,
@@ -250,6 +393,66 @@ internal class IronwoodMigrationSecureStoreChannel(
                 }
             }
         }
+    }
+
+    private fun resumeQuiescedWork(leaseId: String?): Boolean {
+        if (leaseId != null && !IronwoodMigrationQuiescenceLeases.contains(leaseId)) {
+            return true
+        }
+        if (
+            leaseId != null &&
+            !IronwoodMigrationQuiescenceLeases.isLast(leaseId)
+        ) {
+            IronwoodMigrationQuiescenceLeases.release(leaseId)
+            return true
+        }
+        if (leaseId == null && IronwoodMigrationQuiescenceLeases.hasActiveLeases()) {
+            return false
+        }
+
+        val resumeState = store.readBackgroundWorkResumeState()
+        IronwoodMigrationPreparationExecutionCoordinator.resume()
+        IronwoodMigrationOutboxExecutionCoordinator.resume()
+        try {
+            if (resumeState?.preparationWasScheduled == true) {
+                resumeRemainingPreparation(immediate = true)
+            }
+            if (
+                outboxRepository.read().let(
+                    IronwoodOutboxState::hasRunnableWork,
+                )
+            ) {
+                IronwoodMigrationOutboxScheduler.enqueueContinuation(context, 0)
+            }
+            store.clearBackgroundWorkResumeState()
+        } catch (error: Exception) {
+            val requiesceError = runCatching {
+                IronwoodMigrationPreparationExecutionCoordinator.quiesceAndDrain()
+                IronwoodMigrationOutboxExecutionCoordinator.quiesceAndDrain()
+                IronwoodMigrationPreparationScheduler.cancelAndWait(context)
+                IronwoodMigrationOutboxScheduler.cancelAndWait(context)
+            }.exceptionOrNull()
+            if (requiesceError != null) error.addSuppressed(requiesceError)
+            throw error
+        }
+        if (leaseId != null) {
+            IronwoodMigrationQuiescenceLeases.release(leaseId)
+        }
+        return true
+    }
+
+    private fun quiescenceLeaseId(call: MethodCall): String =
+        optionalQuiescenceLeaseId(call)
+            ?: throw IllegalArgumentException("Missing quiescence lease ID.")
+
+    private fun optionalQuiescenceLeaseId(call: MethodCall): String? {
+        val arguments = call.arguments ?: return null
+        if (arguments !is Map<*, *>) {
+            throw IllegalArgumentException("Invalid quiescence arguments.")
+        }
+        return (arguments["leaseId"] as? String)
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("Missing quiescence lease ID.")
     }
 
     private fun validateManifest(

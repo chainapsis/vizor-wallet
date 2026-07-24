@@ -147,6 +147,10 @@ internal class IronwoodMigrationSecureStoreException(
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
+internal data class IronwoodMigrationBackgroundWorkResumeState(
+    val preparationWasScheduled: Boolean,
+)
+
 /**
  * Encrypted, account-scoped storage for native Ironwood migration work.
  *
@@ -264,6 +268,38 @@ internal class IronwoodMigrationSecureStore(
     }
 
     fun readOutboxSnapshot(): ByteArray? = get(OUTBOX_SNAPSHOT_KEY)
+
+    fun writeBackgroundWorkResumeState(
+        state: IronwoodMigrationBackgroundWorkResumeState,
+    ) {
+        put(
+            BACKGROUND_WORK_RESUME_STATE_KEY,
+            byteArrayOf(
+                BACKGROUND_WORK_RESUME_STATE_VERSION.toByte(),
+                if (state.preparationWasScheduled) 1 else 0,
+            ),
+        )
+    }
+
+    fun readBackgroundWorkResumeState(): IronwoodMigrationBackgroundWorkResumeState? {
+        val payload = get(BACKGROUND_WORK_RESUME_STATE_KEY) ?: return null
+        if (
+            payload.size != 2 ||
+            payload[0].toInt() != BACKGROUND_WORK_RESUME_STATE_VERSION ||
+            payload[1].toInt() !in 0..1
+        ) {
+            throw IronwoodMigrationSecureStoreException(
+                "Invalid background work resume state.",
+            )
+        }
+        return IronwoodMigrationBackgroundWorkResumeState(
+            preparationWasScheduled = payload[1].toInt() == 1,
+        )
+    }
+
+    fun clearBackgroundWorkResumeState() {
+        remove(BACKGROUND_WORK_RESUME_STATE_KEY)
+    }
 
     fun revokeAccount(network: String, accountUuid: String) = lock.withLock {
         val recordKey = manifestKey(network, accountUuid)
@@ -558,6 +594,9 @@ internal class IronwoodMigrationSecureStore(
         const val MANIFEST_PREFIX = "$RECORD_VERSION:manifest:"
         const val MANIFEST_INDEX_KEY = "$RECORD_VERSION:index:manifests"
         const val OUTBOX_SNAPSHOT_KEY = "$RECORD_VERSION:outbox-snapshot"
+        const val BACKGROUND_WORK_RESUME_STATE_KEY =
+            "$RECORD_VERSION:background-work-resume-state"
+        const val BACKGROUND_WORK_RESUME_STATE_VERSION = 1
         val STORE_LOCK = ReentrantLock()
     }
 }

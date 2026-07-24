@@ -174,7 +174,7 @@ class MainActivity : FlutterFragmentActivity() {
             ::ironwoodMigrationSecureStoreChannel.isInitialized &&
             notificationAuthorizationStatus() == NOTIFICATION_AUTHORIZED
         ) {
-            ironwoodMigrationSecureStoreChannel.resumePendingNotifications()
+            ironwoodMigrationSecureStoreChannel.resumePendingWork()
         }
     }
 
@@ -191,7 +191,7 @@ class MainActivity : FlutterFragmentActivity() {
                 status == NOTIFICATION_AUTHORIZED &&
                 ::ironwoodMigrationSecureStoreChannel.isInitialized
             ) {
-                ironwoodMigrationSecureStoreChannel.resumePendingNotifications()
+                ironwoodMigrationSecureStoreChannel.resumePendingWork()
             }
             result?.success(status)
             return

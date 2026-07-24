@@ -486,6 +486,27 @@ class IronwoodMigrationOutboxTest {
         )
     }
 
+    @Test
+    fun foregroundRunDoesNotSubmitWhileMutationIsQuiesced() {
+        repository.update {
+            it.batches += batch(item(scheduledHeight = 100, expiryHeight = 69_120))
+        }
+        val transport = FakeTransport(height = 100)
+        IronwoodMigrationOutboxExecutionCoordinator.quiesceAndDrain()
+
+        val result = try {
+            IronwoodMigrationOutboxRunner(
+                repository = repository,
+                transport = transport,
+            ).runOnceWaitingForActiveRun()
+        } finally {
+            IronwoodMigrationOutboxExecutionCoordinator.resume()
+        }
+
+        assertEquals(IronwoodMigrationOutboxOutcome.RETRY, result.outcome)
+        assertTrue(transport.sent.isEmpty())
+    }
+
     private fun batch(
         item: IronwoodOutboxItem?,
         nextProofHeight: Long? = null,

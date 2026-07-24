@@ -67,6 +67,29 @@ class IronwoodMigrationSecureStoreTest {
     }
 
     @Test
+    fun backgroundWorkResumeStateSurvivesStoreRecreation() {
+        store.writeBackgroundWorkResumeState(
+            IronwoodMigrationBackgroundWorkResumeState(
+                preparationWasScheduled = true,
+            ),
+        )
+
+        val reopened = IronwoodMigrationSecureStore(
+            keyProvider = keyProvider,
+            directory = directory,
+        )
+
+        assertEquals(
+            IronwoodMigrationBackgroundWorkResumeState(
+                preparationWasScheduled = true,
+            ),
+            reopened.readBackgroundWorkResumeState(),
+        )
+        reopened.clearBackgroundWorkResumeState()
+        assertNull(reopened.readBackgroundWorkResumeState())
+    }
+
+    @Test
     fun authenticatedEncryptionRejectsTamperedCiphertext() {
         store.writeManifest("test", "account-1", """{"value":"one"}""")
         directory.listFiles()!!

@@ -360,6 +360,46 @@ void main() {
     expect(resumeCalls, 2);
   });
 
+  test(
+    'Android migration resume retries a transient channel failure',
+    () async {
+      const channel = MethodChannel(
+        'test/background_migration/android_resume_retry',
+      );
+      var resumeCalls = 0;
+      final resumeLeaseIds = <String?>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method != 'resume') return true;
+            resumeCalls += 1;
+            resumeLeaseIds.add(
+              (call.arguments as Map<Object?, Object?>?)?['leaseId'] as String?,
+            );
+            if (resumeCalls == 1) {
+              throw PlatformException(code: 'temporarily_unavailable');
+            }
+            return true;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final lifecycle = IronwoodMigrationBackgroundLifecycle(
+        channel: channel,
+        isIOS: false,
+        isAndroid: true,
+        resumeRetryDelays: const [Duration.zero, Duration.zero],
+      );
+
+      await lifecycle.quiesce();
+      await lifecycle.resumeAfterMutation();
+
+      expect(resumeCalls, 2);
+      expect(resumeLeaseIds.first, isNotEmpty);
+      expect(resumeLeaseIds.toSet(), hasLength(1));
+    },
+  );
+
   test('caller-managed quiescence stays scoped to its async action', () async {
     final lifecycle = IronwoodMigrationBackgroundLifecycle(
       isIOS: false,
@@ -418,9 +458,79 @@ void main() {
         await store.read(network: 'test', accountUuid: 'account-1'),
         isNull,
       );
-      expect(calls.single.method, 'revokeAccount');
+      expect(calls.map((call) => call.method), ['quiesce', 'revokeAccount']);
     },
   );
+
+  test('Android quiesce and resume use native lifecycle steps', () async {
+    const channel = MethodChannel(
+      'test/background_migration/android_quiesce_resume',
+    );
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: false,
+      isAndroid: true,
+    );
+
+    await lifecycle.quiesce();
+    await lifecycle.resumeAfterMutation();
+
+    expect(calls.map((call) => call.method), ['quiesce', 'resume']);
+    final quiesceLeaseId =
+        (calls.first.arguments as Map<Object?, Object?>)['leaseId'];
+    final resumeLeaseId =
+        (calls.last.arguments as Map<Object?, Object?>)['leaseId'];
+    expect(quiesceLeaseId, isA<String>());
+    expect(resumeLeaseId, quiesceLeaseId);
+  });
+
+  test('overlapping Android quiescence uses distinct native leases', () async {
+    const channel = MethodChannel(
+      'test/background_migration/android_overlapping_quiescence',
+    );
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: false,
+      isAndroid: true,
+    );
+
+    await lifecycle.quiesce();
+    await lifecycle.quiesce();
+    await lifecycle.resumeAfterMutation();
+    await lifecycle.resumeAfterMutation();
+
+    final quiesceLeaseIds = calls
+        .where((call) => call.method == 'quiesce')
+        .map((call) => (call.arguments as Map<Object?, Object?>)['leaseId'])
+        .toList();
+    final resumeLeaseIds = calls
+        .where((call) => call.method == 'resume')
+        .map((call) => (call.arguments as Map<Object?, Object?>)['leaseId'])
+        .toList();
+    expect(quiesceLeaseIds, hasLength(2));
+    expect(quiesceLeaseIds.toSet(), hasLength(2));
+    expect(resumeLeaseIds, quiesceLeaseIds);
+  });
 
   test('iOS wallet reset fails closed when native revocation fails', () async {
     const channel = MethodChannel('test/background_migration/revoke_all');

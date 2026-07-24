@@ -98,13 +98,23 @@ internal object IronwoodMigrationOutboxExecutionCoordinator {
     }
 
     fun cancelAndDrain(block: () -> Unit) {
-        quiescing.set(true)
+        val wasQuiescing = quiescing.getAndSet(true)
         cancellationEpoch.incrementAndGet()
         try {
             runLock.withLock(block)
         } finally {
-            quiescing.set(false)
+            if (!wasQuiescing) quiescing.set(false)
         }
+    }
+
+    fun quiesceAndDrain() {
+        quiescing.set(true)
+        cancellationEpoch.incrementAndGet()
+        runLock.withLock { }
+    }
+
+    fun resume() {
+        quiescing.set(false)
     }
 }
 
@@ -122,9 +132,10 @@ internal class IronwoodMigrationOutboxRunner(
     }
 
     fun runOnceWaitingForActiveRun(): IronwoodMigrationOutboxRunResult =
-        IronwoodMigrationOutboxExecutionCoordinator.runExclusive {
-            runOnceLocked(isStopped)
-        }
+        IronwoodMigrationOutboxExecutionCoordinator.runWhenAvailable {
+            coordinatorCancelled ->
+            runOnceLocked { isStopped() || coordinatorCancelled() }
+        } ?: result(IronwoodMigrationOutboxOutcome.RETRY)
 
     private fun runOnceLocked(cancelled: () -> Boolean): IronwoodMigrationOutboxRunResult {
         if (cancelled()) return result(IronwoodMigrationOutboxOutcome.CANCELLED)
@@ -404,15 +415,25 @@ internal object IronwoodMigrationOutboxScheduler {
     }
 
     fun enqueueContinuation(context: Context, delayMs: Long) {
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
-            request(delayMs),
-        )
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(
+                UNIQUE_WORK_NAME,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                request(delayMs),
+            )
+            .result
+            .get()
     }
 
     fun cancel(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
+    }
+
+    fun cancelAndWait(context: Context) {
+        WorkManager.getInstance(context)
+            .cancelUniqueWork(UNIQUE_WORK_NAME)
+            .result
+            .get()
     }
 
     internal fun request(delayMs: Long = 0): OneTimeWorkRequest =
