@@ -7,6 +7,9 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 # Unreleased
 
 ## Changed
+- Updated the pinned librustzcash family to `zcash_primitives 0.30.0` and
+  `pczt 0.8.0`. Downstream workspaces must select a compatible family revision
+  in their root `[patch.crates-io]` table.
 - Aligned the Ironwood crate line on `voting-circuits 0.9.0-rc.3`,
   `pir-client 0.4.0-rc.2`, `pir-types 0.3.0-rc.2`, and a pinned librustzcash
   revision containing Ironwood historical note selection. Wallet integrations
