@@ -1518,8 +1518,8 @@ void main() {
     );
     expect(
       find.text(
-        'Splits transactions into multiple parts to minimize traceability, '
-        'but takes longer.',
+        'Splits transactions into multiple parts to minimize traceability '
+        'but will take several hours to days.',
       ),
       findsOneWidget,
     );
@@ -1530,7 +1530,8 @@ void main() {
     );
     expect(
       find.text(
-        'Migrates your entire balance in one batch. Fast, but less private.',
+        'Migrates your entire balance in one batch. '
+        'Fast (~10 mins) but less private.',
       ),
       findsOneWidget,
     );
@@ -1553,7 +1554,7 @@ void main() {
           .widget<Text>(
             find.text(
               'Migrates your entire balance in one batch. '
-              'Fast, but less private.',
+              'Fast (~10 mins) but less private.',
             ),
           )
           .style
@@ -3068,7 +3069,7 @@ void main() {
     await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.preparing));
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(
       find.text(
         'Preparing your balance for migration. This step usually takes '
@@ -3141,7 +3142,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(find.text('Migration 12 notes'), findsOneWidget);
     expect(find.text('142.20 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
@@ -3229,7 +3230,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(find.text('Fast Migration'), findsNothing);
   });
 
@@ -5741,6 +5742,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Preparation is done'), findsOneWidget);
+      expect(
+        find.text(
+          'Preparation is complete, but we are waiting for the next '
+          'available signing window.\nWe\'ll let you know when it\'s time '
+          'to take action.',
+        ),
+        findsOneWidget,
+      );
 
       syncNotifier.emit(
         SyncState(
@@ -6491,7 +6500,10 @@ void main() {
     expect(find.text('8.24 ZEC'), findsOneWidget);
     expect(find.text('Est. completion'), findsOneWidget);
     expect(
-      find.textContaining('Confirmations are still arriving'),
+      find.text(
+        'Confirmations are still arriving.\nYou can leave Vizor and check '
+        'again later.',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('Signing window expected'), findsNothing);
@@ -7303,6 +7315,21 @@ void main() {
         status: _status(
           phase: kIronwoodMigrationBroadcastingPhase,
           nextActionHeight: 3_000_020,
+          targetValues: List<int>.filled(9, 100_000_000),
+          parts: [
+            for (var index = 0; index < 9; index++)
+              rust_sync.MigrationPartStatus(
+                partIndex: index,
+                valueZatoshi: BigInt.from(100_000_000),
+                state: index < 8
+                    ? rust_sync.MigrationPartState.completed
+                    : rust_sync.MigrationPartState.scheduled,
+                txidHex: 'tx-$index',
+                scheduledHeight: 3_000_000 + index,
+                confirmationCount: index < 8 ? 3 : 0,
+                confirmationTarget: 3,
+              ),
+          ],
         ),
         syncState: SyncState(
           accountUuid: 'account-1',
@@ -7315,6 +7342,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Next migration'), findsOneWidget);
+    expect(find.text('All clear. Processing batch #2'), findsOneWidget);
     // The timing and the notification promise are stated once each.
     expect(
       find.text(
@@ -7348,6 +7376,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('All clear. Processing batch #1'), findsOneWidget);
     expect(
       find.text(
         'Next migration step expected in\n'
@@ -7389,6 +7418,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('All clear. Processing batch #1'), findsOneWidget);
     expect(
       find.text('Next migration step expected in\n~25 minutes.'),
       findsOneWidget,
