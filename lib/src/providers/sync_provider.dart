@@ -880,6 +880,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   'Sync: stream ended without applied isComplete, cleaning up',
                 );
                 _stopMempoolObserver();
+                final previousState = state.value;
+                if (previousState != null) {
+                  state = AsyncData(previousState.withSyncActivityStopped());
+                }
               }
             },
             onError: (e) {
