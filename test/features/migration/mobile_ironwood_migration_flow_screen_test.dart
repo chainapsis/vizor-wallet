@@ -262,6 +262,26 @@ class _SuccessfulEntrySyncTestMigrationCoordinator
   }
 }
 
+class _ProofPermitTestMigrationCoordinator
+    extends IronwoodMigrationCoordinator {
+  int refreshCount = 0;
+
+  IronwoodMigrationCoordinatorState get exposedState => state;
+
+  @override
+  IronwoodMigrationCoordinatorState build() {
+    return const IronwoodMigrationCoordinatorState(
+      foregroundProgressPermits: {'account-1'},
+      childProofBatchPermits: {'account-1'},
+    );
+  }
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {
+    refreshCount++;
+  }
+}
+
 class _ControlledRefreshTestMigrationCoordinator
     extends IronwoodMigrationCoordinator {
   final List<Completer<void>> refreshes = [];
@@ -2104,6 +2124,7 @@ void main() {
       _useMobileViewport(tester);
       var committed = false;
       var completionCount = 0;
+      final coordinator = _ProofPermitTestMigrationCoordinator();
       final credentialStore = _FailingBindCredentialStore(failAtBindCall: 1);
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
@@ -2169,6 +2190,7 @@ void main() {
         _productionApp(
           initialLocation: '/migration/private/keystone/denominations/sign',
           migrationService: service,
+          migrationCoordinator: () => coordinator,
           hardware: true,
           realKeystoneDenominationRoute: true,
           statusLoader: () async => committed
@@ -2197,6 +2219,14 @@ void main() {
       expect(completionCount, 1);
       expect(credentialStore.bindCallCount, 1);
       expect(
+        coordinator.exposedState.childProofBatchPermits,
+        isNot(contains('account-1')),
+      );
+      expect(
+        coordinator.exposedState.foregroundProgressPermits,
+        contains('account-1'),
+      );
+      expect(
         find.byType(MobileIronwoodMigrationKeystoneDenominationSignScreen),
         findsNothing,
       );
@@ -2213,6 +2243,7 @@ void main() {
       _useMobileViewport(tester);
       var committed = false;
       var completionCount = 0;
+      final coordinator = _ProofPermitTestMigrationCoordinator();
       final credentialStore = _FailingBindCredentialStore(
         failAtBindCall: 2,
         initialRunId: 'run-1',
@@ -2281,6 +2312,7 @@ void main() {
         _productionApp(
           initialLocation: '/migration/private/keystone/batch/sign',
           migrationService: service,
+          migrationCoordinator: () => coordinator,
           hardware: true,
           realKeystoneBatchRoute: true,
           statusLoader: () async => status(),
@@ -2303,6 +2335,15 @@ void main() {
 
       expect(completionCount, 1);
       expect(credentialStore.bindCallCount, 2);
+      expect(coordinator.refreshCount, greaterThanOrEqualTo(1));
+      expect(
+        coordinator.exposedState.childProofBatchPermits,
+        isNot(contains('account-1')),
+      );
+      expect(
+        coordinator.exposedState.foregroundProgressPermits,
+        contains('account-1'),
+      );
       expect(
         find.byType(MobileIronwoodMigrationKeystoneBatchSignScreen),
         findsNothing,

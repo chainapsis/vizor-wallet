@@ -602,7 +602,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         approvedSchedule: widget.approvedSchedule,
       );
       if (!mounted) return;
-      _finishCommittedRequest(accountUuid);
+      await _finishCommittedRequest(accountUuid);
     } catch (e, st) {
       log(
         'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
@@ -650,7 +650,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         'completion returned an error after the durable migration state '
         'advanced; treating the request as committed: $originalError',
       );
-      _finishCommittedRequest(accountUuid);
+      await _finishCommittedRequest(accountUuid);
       return true;
     } catch (statusError, st) {
       log(
@@ -674,10 +674,14 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     };
   }
 
-  void _finishCommittedRequest(String accountUuid) {
-    ref
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .grantChildProofBatchPermit(accountUuid);
+  Future<void> _finishCommittedRequest(String accountUuid) async {
+    final coordinator = ref.read(ironwoodMigrationCoordinatorProvider.notifier);
+    coordinator.clearChildProofBatchPermit(accountUuid);
+    if (widget.step == _KeystonePrivateSignStep.denominations) {
+      coordinator.grantForegroundProgressPermit(accountUuid);
+    }
+    await coordinator.refreshNow();
+    if (!mounted) return;
     _stopProofPolling();
     _requestCompleted = true;
     _pendingSignedMessages = null;
