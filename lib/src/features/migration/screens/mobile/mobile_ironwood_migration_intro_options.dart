@@ -209,22 +209,39 @@ class _MobileMigrationOptionsState
       return;
     }
 
+    IronwoodMigrationNotificationAuthorizationStatus authorization;
     try {
-      final authorization = await ref
+      authorization = await ref
           .read(ironwoodMigrationServiceProvider)
           .notificationAuthorizationStatus();
-      if (!mounted) return;
-      context.go(
-        authorization.allowsBackgroundMigration
-            ? '/migration/private/start'
-            : '/migration/private/notifications',
-        extra: plan,
-      );
     } catch (_) {
       if (!mounted) return;
       // Permission status is fail-closed: if native status cannot be read,
       // show the explanation screen and keep background work disabled.
       context.go('/migration/private/notifications', extra: plan);
+      return;
+    }
+
+    try {
+      if (!mounted) return;
+      if (!authorization.allowsBackgroundMigration) {
+        context.go('/migration/private/notifications', extra: plan);
+        return;
+      }
+      await _continuePrivateMigrationAfterNotificationGate(ref, plan);
+      if (!mounted) return;
+      context.go(
+        plan.denominationSplitStageCount == 0
+            ? '/migration/private/status'
+            : '/migration/private/start',
+        extra: plan,
+      );
+    } catch (error) {
+      debugPrint('Failed to activate direct-note migration: $error');
+      if (!mounted) return;
+      setState(() {
+        _continueError = "Couldn't start the migration. Try again.";
+      });
     } finally {
       if (mounted) setState(() => _isContinuing = false);
     }
@@ -296,4 +313,47 @@ class _MobileMigrationOptionsState
       ),
     );
   }
+}
+
+Future<void> _continuePrivateMigrationAfterNotificationGate(
+  WidgetRef ref,
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) async {
+  if (plan.denominationSplitStageCount != 0) return;
+
+  final accountState = await ref.read(accountProvider.future);
+  final accountUuid = accountState.activeAccountUuid;
+  if (accountUuid == null) {
+    throw StateError('No active account is selected.');
+  }
+
+  if (accountState.activeAccount?.isHardware ?? false) {
+    final service = ref.read(ironwoodMigrationServiceProvider);
+    final request = await service.prepareKeystoneDenominationPrivateMigration(
+      accountUuid: accountUuid,
+    );
+    if (request.messages.isNotEmpty) {
+      throw StateError(
+        'Direct-note migration unexpectedly requires preparation signatures.',
+      );
+    }
+    await service.completeKeystoneDenominationPrivateMigration(
+      accountUuid: accountUuid,
+      requestId: request.requestId,
+      signedMessages: const [],
+      approvedSchedule: plan.scheduledTransfers,
+    );
+  } else {
+    await ref
+        .read(ironwoodMigrationCoordinatorProvider.notifier)
+        .startSoftwareMigration(
+          accountUuid: accountUuid,
+          approvedSchedule: plan.scheduledTransfers,
+        );
+  }
+
+  ref.invalidate(ironwoodMigrationRouteCtaProvider);
+  ref.invalidate(ironwoodHomeMigrationCtaProvider);
+  ref.invalidate(ironwoodMigrationFlowDataProvider);
+  ref.invalidate(ironwoodMigrationPrivatePlanProvider);
 }

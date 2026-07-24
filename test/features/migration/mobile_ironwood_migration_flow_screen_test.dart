@@ -235,6 +235,7 @@ final _data = IronwoodMigrationFlowData(
 rust_sync.OrchardMigrationPrivatePlan _planWith({
   int plannedBatchCount = 12,
   int denominationSplitStageCount = 1,
+  int? denominationSplitLayerCount,
   int signingBatchLimit = 12,
   int blockOffsetAdjustment = 0,
   int proofReadinessDelayBlocks = 146,
@@ -249,12 +250,13 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   estimatedTotalFeeZatoshi: BigInt.from(14_420_000),
   plannedBatchCount: plannedBatchCount,
   denominationSplitStageCount: denominationSplitStageCount,
+  denominationSplitLayerCount:
+      denominationSplitLayerCount ?? denominationSplitStageCount,
   signingBatchLimit: signingBatchLimit,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
   proofReadinessDelayBlocks: proofReadinessDelayBlocks,
   estimatedProofReadyHeight: estimatedProofReadyHeight,
-  maxPreparedNotesPerRun: 12,
   scheduledTransfers: [
     for (var i = 0; i < plannedBatchCount; i++)
       rust_sync.MigrationScheduledTransfer(
@@ -287,6 +289,7 @@ rust_sync.MigrationStatus _status({
   int? nextActionPartIndex,
   int pendingTxCount = 2,
   int signedChildPcztCount = 0,
+  int pendingSplitStageCount = 2,
   String? message,
   List<rust_sync.MigrationScheduledBroadcast>? scheduledBroadcasts,
 }) {
@@ -304,12 +307,11 @@ rust_sync.MigrationStatus _status({
     confirmedTxCount: 1,
     totalCount: 3,
     signedChildPcztCount: signedChildPcztCount,
-    pendingSplitStageCount: 2,
+    pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
     signingBatchLimit: 12,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 12,
     nextActionHeight: nextActionHeight,
     estimatedCompletionHeight: estimatedCompletionHeight,
     nextActionPartIndex: nextActionPartIndex,
@@ -372,7 +374,6 @@ rust_sync.MigrationStatus _visualMigrationStatus() {
     signingBatchLimit: 12,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 12,
     scheduledBroadcasts: [
       for (var i = 0; i < values.length; i++)
         rust_sync.MigrationScheduledBroadcast(
@@ -1133,6 +1134,63 @@ void main() {
     expect(find.text('Review Migration Plan'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
+  });
+
+  testWidgets('starts a direct-note private plan without showing preparation', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final directNotePlan = _planWith(denominationSplitStageCount: 0);
+    final readyStatus = _status(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      pendingSplitStageCount: 0,
+    );
+    var started = false;
+    var startCount = 0;
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(
+          ios: true,
+          onStart: (accountUuid, approvedSchedule) async {
+            expect(accountUuid, 'account-1');
+            expect(approvedSchedule, directNotePlan.scheduledTransfers);
+            started = true;
+            startCount++;
+            return _migrationResult();
+          },
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        ),
+        privatePlan: directNotePlan,
+        startedStatus: readyStatus,
+        ctaBuilder: () => started
+            ? IronwoodHomeMigrationCtaState.resume(
+                network: 'main',
+                accountUuid: 'account-1',
+                status: readyStatus,
+              )
+            : const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_private_option')),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(startCount, 1);
+    expect(find.text('Preparing your migration'), findsNothing);
+    expect(find.text('Migration in progress…'), findsOneWidget);
   });
 
   testWidgets(

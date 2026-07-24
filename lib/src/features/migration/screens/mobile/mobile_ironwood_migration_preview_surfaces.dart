@@ -217,7 +217,7 @@ class _MobileMigrationNotificationPermissionScreenState
           .notificationAuthorizationStatus();
       if (!mounted) return;
       if (status.allowsBackgroundMigration) {
-        context.go('/migration/private/start', extra: widget.privatePlan);
+        await _continueAfterNotificationGate();
       }
     } catch (_) {
       // Native status is fail-closed; keep the explanatory screen visible.
@@ -238,7 +238,7 @@ class _MobileMigrationNotificationPermissionScreenState
           : await service.requestNotificationPermission();
       if (!mounted) return;
       if (status.allowsBackgroundMigration) {
-        context.go('/migration/private/start', extra: widget.privatePlan);
+        await _continueAfterNotificationGate();
         return;
       }
       if (status == IronwoodMigrationNotificationAuthorizationStatus.denied) {
@@ -280,10 +280,31 @@ class _MobileMigrationNotificationPermissionScreenState
         await _allowNotifications();
         return;
       case _NotificationConfirmationAction.continueWithout:
-        if (mounted) {
-          context.go('/migration/private/start', extra: widget.privatePlan);
-        }
+        await _continueAfterNotificationGate();
         return;
+    }
+  }
+
+  Future<void> _continueAfterNotificationGate() async {
+    final plan = widget.privatePlan;
+    if (plan == null || plan.denominationSplitStageCount != 0) {
+      if (mounted) {
+        context.go('/migration/private/start', extra: plan);
+      }
+      return;
+    }
+
+    if (!_busy && mounted) setState(() => _busy = true);
+    try {
+      await _continuePrivateMigrationAfterNotificationGate(ref, plan);
+      if (!mounted) return;
+      context.go('/migration/private/status', extra: plan);
+    } catch (error) {
+      debugPrint('Failed to activate direct-note migration: $error');
+      if (!mounted) return;
+      context.go('/migration/private/start', extra: plan);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
