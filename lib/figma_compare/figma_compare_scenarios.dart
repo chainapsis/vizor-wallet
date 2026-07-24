@@ -245,7 +245,7 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
     id: 'mobile-ironwood-migration-preparation-complete',
     description: 'Mobile migration preparation complete modal',
-    builder: buildMobileIronwoodMigrationPreparationCompleteUseCase,
+    builder: buildMobileIronwoodMigrationPreparationCompleteCaptureUseCase,
     desktop: false,
     mobile: true,
   ),

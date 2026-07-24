@@ -164,6 +164,39 @@ class MobileModalCard extends StatelessWidget {
   }
 }
 
+/// Shared inline presentation for deterministic previews and full-screen
+/// routes that need the standard floating mobile modal without pushing a
+/// second route.
+///
+/// The scrim, bottom anchoring, side inset, safe-area gap, surface, radius and
+/// shadow stay owned by the same primitives as [showAppMobileSheet]. Callers
+/// provide only the obscured [background] and modal [child].
+class MobileModalOverlay extends StatelessWidget {
+  const MobileModalOverlay({
+    required this.background,
+    required this.child,
+    super.key,
+  });
+
+  final Widget background;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        background,
+        ColoredBox(color: context.colors.background.neutralScrim),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: MobileModalCard(child: child),
+        ),
+      ],
+    );
+  }
+}
+
 /// Figma `Shadow Overlay` inner shadow (#FFFFFF26, blur radius 2) — a
 /// soft rim that separates the card from the scrim without a hard stroke.
 class _ModalInnerHighlightPainter extends CustomPainter {

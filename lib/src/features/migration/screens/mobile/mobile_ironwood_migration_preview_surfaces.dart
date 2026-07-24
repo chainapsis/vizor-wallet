@@ -1339,13 +1339,13 @@ class _PreparationCompleteModalBody extends StatelessWidget {
           Text(
             'Preparation is done',
             textAlign: TextAlign.center,
-            style: AppTypography.displayLarge.copyWith(
+            style: AppTypography.headlineLarge.copyWith(
               color: context.colors.text.accent,
             ),
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'What’s next?',
+            'What’s Next?',
             textAlign: TextAlign.center,
             style: AppTypography.headlineSmall.copyWith(
               color: context.colors.text.secondary,
@@ -1390,7 +1390,7 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(seconds: 30),
     )..repeat();
   }
 
@@ -1412,84 +1412,51 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 325,
-      height: 313,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) => Stack(
-          fit: StackFit.expand,
-          children: [
-            CustomPaint(
+    return SizedBox.square(
+      dimension: 298,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          RotationTransition(
+            key: const ValueKey('mobile_ironwood_preparation_complete_orbit'),
+            turns: _controller,
+            child: CustomPaint(
               painter: _MigrationWaitLoopPainter(
-                phase: _controller.value,
-                color: context.colors.text.accent,
-              ),
-            ),
-            Positioned(
-              left: 47,
-              top: 25,
-              child: Transform.rotate(
-                angle: -0.34,
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'Wait',
-                        style: TextStyle(color: context.colors.icon.success),
-                      ),
-                      const TextSpan(text: ' for the window'),
-                    ],
-                  ),
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: context.colors.text.accent,
-                  ),
+                lineColor: context.colors.text.accent,
+                successColor: context.colors.icon.success,
+                labelStyle: AppTypography.bodyLarge.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            Positioned(
-              left: 54,
-              bottom: 24,
-              child: Transform.rotate(
-                angle: 0.34,
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'Sign',
-                        style: TextStyle(color: context.colors.icon.success),
-                      ),
-                      const TextSpan(text: ' the batch of transactions'),
-                    ],
-                  ),
-                  style: AppTypography.bodyMediumStrong.copyWith(
-                    color: context.colors.text.accent,
-                  ),
+          ),
+          Center(
+            key: const ValueKey('mobile_ironwood_preparation_complete_center'),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(
+                  AppIcons.history,
+                  size: 24,
+                  color: context.colors.text.secondary,
                 ),
-              ),
-            ),
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AppIcon(
-                    AppIcons.history,
-                    size: 24,
-                    color: context.colors.text.accent,
-                  ),
-                  const SizedBox(height: AppSpacing.s),
-                  Text(
-                    'Repeat several times,\nwaiting could take 2–10 hours',
+                const SizedBox(height: AppSpacing.s),
+                SizedBox(
+                  width: 177,
+                  child: Text(
+                    'Repeat several times,\n'
+                    'waiting could take 2–10\n'
+                    'hours',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1719,26 +1686,16 @@ class _MigrationModalPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        background,
-        ColoredBox(color: context.colors.background.neutralScrim),
-        Align(
-          alignment: Alignment.bottomCenter,
-          child: MobileModalCard(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.sm,
-                AppSpacing.base,
-                AppSpacing.sm,
-                AppSpacing.base,
-              ),
-              child: child,
-            ),
-          ),
-        ),
-      ],
+    return MobileModalOverlay(
+      background: background,
+      child: MobileModalScaffold(
+        title: '',
+        showTitle: false,
+        showClose: false,
+        bottomPadding: AppSpacing.base,
+        onClose: _noopMigrationPreviewAction,
+        child: child,
+      ),
     );
   }
 }
@@ -1905,34 +1862,67 @@ class _MigrationRingPainter extends CustomPainter {
 }
 
 class _MigrationWaitLoopPainter extends CustomPainter {
-  const _MigrationWaitLoopPainter({required this.phase, required this.color});
+  const _MigrationWaitLoopPainter({
+    required this.lineColor,
+    required this.successColor,
+    required this.labelStyle,
+  });
 
-  final double phase;
-  final Color color;
+  final Color lineColor;
+  final Color successColor;
+  final TextStyle labelStyle;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final loopRect = Rect.fromLTWH(30, 14, size.width - 60, size.height - 28);
-    final path = Path()..addOval(loopRect);
-    const dash = 10.0;
-    const gap = 8.0;
+    final loopRect = Rect.fromCircle(
+      center: size.center(Offset.zero),
+      radius: 132,
+    );
+    const dash = 3.5;
+    const gap = 4.5;
     final cycle = dash + gap;
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
+      ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round
-      ..color = color;
-    for (final metric in path.computeMetrics()) {
-      var distance = -(phase * cycle);
+      ..color = lineColor;
+
+    void drawDashedArc(double startAngle, double sweepAngle) {
+      final path = Path()..addArc(loopRect, startAngle, sweepAngle);
+      final metric = path.computeMetrics().first;
+      var distance = 0.0;
       while (distance < metric.length) {
-        final start = math.max(0.0, distance);
+        final start = distance;
         final end = math.min(metric.length, distance + dash);
-        if (end > start) {
-          canvas.drawPath(metric.extractPath(start, end), paint);
-        }
+        canvas.drawPath(metric.extractPath(start, end), paint);
         distance += cycle;
       }
     }
+
+    final topSegments = [
+      _MigrationArcTextSegment('Wait', successColor),
+      _MigrationArcTextSegment(' for the window', lineColor),
+    ];
+    final bottomSegments = [
+      _MigrationArcTextSegment('Sign', successColor),
+      _MigrationArcTextSegment(' the batch of transactions', lineColor),
+    ];
+    const textRadius = 131.0;
+    const labelClearance = 12.0;
+    final clearanceAngle = labelClearance / textRadius;
+    final topHalfAngle = _measureArcTextAdvance(topSegments) / textRadius / 2;
+    final bottomHalfAngle =
+        _measureArcTextAdvance(bottomSegments) / textRadius / 2;
+    final rightArcStart = -math.pi / 2 + topHalfAngle + clearanceAngle;
+    final rightArcEnd = math.pi / 2 - bottomHalfAngle - clearanceAngle;
+    final leftArcStart = math.pi / 2 + bottomHalfAngle + clearanceAngle;
+    final leftArcEnd = math.pi * 3 / 2 - topHalfAngle - clearanceAngle;
+
+    // Derive the side arcs from the rendered label widths. The lower label is
+    // substantially longer, so fixed angles can let its first or last glyphs
+    // collide with the dashed stroke.
+    drawDashedArc(rightArcStart, rightArcEnd - rightArcStart);
+    drawDashedArc(leftArcStart, leftArcEnd - leftArcStart);
 
     void drawArrow(double angle) {
       final center = loopRect.center;
@@ -1945,23 +1935,117 @@ class _MigrationWaitLoopPainter extends CustomPainter {
       final arrowPath = Path()
         ..moveTo(point.dx, point.dy)
         ..lineTo(
-          point.dx - tangent.dx * 8 + normal.dx * 4,
-          point.dy - tangent.dy * 8 + normal.dy * 4,
+          point.dx - tangent.dx * 6 + normal.dx * 6,
+          point.dy - tangent.dy * 6 + normal.dy * 6,
         )
         ..moveTo(point.dx, point.dy)
         ..lineTo(
-          point.dx - tangent.dx * 8 - normal.dx * 4,
-          point.dy - tangent.dy * 8 - normal.dy * 4,
+          point.dx - tangent.dx * 6 - normal.dx * 6,
+          point.dy - tangent.dy * 6 - normal.dy * 6,
         );
       canvas.drawPath(arrowPath, paint);
     }
 
-    drawArrow(-2.38);
-    drawArrow(0.76);
+    drawArrow(rightArcEnd);
+    drawArrow(leftArcEnd);
+
+    _paintArcText(
+      canvas,
+      center: loopRect.center,
+      radius: textRadius,
+      centerAngle: -math.pi / 2,
+      clockwise: true,
+      segments: topSegments,
+    );
+    _paintArcText(
+      canvas,
+      center: loopRect.center,
+      radius: textRadius,
+      centerAngle: math.pi / 2,
+      clockwise: false,
+      segments: bottomSegments,
+    );
+  }
+
+  double _measureArcTextAdvance(List<_MigrationArcTextSegment> segments) {
+    var totalAdvance = 0.0;
+    for (final segment in segments) {
+      for (final rune in segment.text.runes) {
+        final painter = TextPainter(
+          text: TextSpan(text: String.fromCharCode(rune), style: labelStyle),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        totalAdvance += painter.width;
+      }
+    }
+    return totalAdvance;
+  }
+
+  void _paintArcText(
+    Canvas canvas, {
+    required Offset center,
+    required double radius,
+    required double centerAngle,
+    required bool clockwise,
+    required List<_MigrationArcTextSegment> segments,
+  }) {
+    final glyphs = <_MigrationArcGlyph>[];
+    for (final segment in segments) {
+      for (final rune in segment.text.runes) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(rune),
+            style: labelStyle.copyWith(color: segment.color),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        glyphs.add(_MigrationArcGlyph(painter));
+      }
+    }
+
+    final totalAdvance = glyphs.fold<double>(
+      0,
+      (sum, glyph) => sum + glyph.painter.width,
+    );
+    final direction = clockwise ? 1.0 : -1.0;
+    var angle = centerAngle - direction * totalAdvance / radius / 2;
+    for (final glyph in glyphs) {
+      final advanceAngle = glyph.painter.width / radius;
+      angle += direction * advanceAngle / 2;
+      final position = Offset(
+        center.dx + math.cos(angle) * radius,
+        center.dy + math.sin(angle) * radius,
+      );
+      canvas
+        ..save()
+        ..translate(position.dx, position.dy)
+        ..rotate(angle + direction * math.pi / 2);
+      glyph.painter.paint(
+        canvas,
+        Offset(-glyph.painter.width / 2, -glyph.painter.height / 2),
+      );
+      canvas.restore();
+      angle += direction * advanceAngle / 2;
+    }
   }
 
   @override
   bool shouldRepaint(_MigrationWaitLoopPainter oldDelegate) {
-    return phase != oldDelegate.phase || color != oldDelegate.color;
+    return lineColor != oldDelegate.lineColor ||
+        successColor != oldDelegate.successColor ||
+        labelStyle != oldDelegate.labelStyle;
   }
+}
+
+class _MigrationArcTextSegment {
+  const _MigrationArcTextSegment(this.text, this.color);
+
+  final String text;
+  final Color color;
+}
+
+class _MigrationArcGlyph {
+  const _MigrationArcGlyph(this.painter);
+
+  final TextPainter painter;
 }

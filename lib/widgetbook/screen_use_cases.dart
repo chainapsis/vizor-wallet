@@ -996,6 +996,17 @@ Widget buildMobileIronwoodMigrationPreparationCompleteUseCase(
   );
 }
 
+Widget buildMobileIronwoodMigrationPreparationCompleteCaptureUseCase(
+  BuildContext context,
+) {
+  return MediaQuery(
+    data: MediaQuery.of(context).copyWith(disableAnimations: true),
+    child: _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+      MobileIronwoodMigrationPreviewSurface.preparationCompleteModal,
+    ),
+  );
+}
+
 Widget buildMobileIronwoodMigrationWaitingNotificationsOnUseCase(
   BuildContext context,
 ) {
