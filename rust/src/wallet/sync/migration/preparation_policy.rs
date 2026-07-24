@@ -58,6 +58,20 @@ fn preparation_schedule_parameters(
     }
 }
 
+pub(crate) fn estimated_preparation_spacing_delay_blocks(
+    network: WalletNetwork,
+    preparation_policy: PreparationTimingPolicy,
+    transaction_count: u32,
+) -> Result<u32, String> {
+    if preparation_policy == PreparationTimingPolicy::Immediate {
+        return Ok(0);
+    }
+    preparation_schedule_parameters(network, configured_timing_policy(network))
+        .0
+        .checked_mul(transaction_count)
+        .ok_or_else(|| "Migration preparation spacing estimate overflow".to_string())
+}
+
 fn preparation_delay_with_rng<R: RngCore + CryptoRng + ?Sized>(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,

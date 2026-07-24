@@ -1792,7 +1792,15 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
   return IronwoodMigrationService(
     getWalletDbPath: getWalletDbPath,
     getStatus: rust_sync.getOrchardMigrationStatus,
-    getPrivatePlan: rust_sync.getOrchardMigrationPrivatePlan,
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) =>
+            rust_sync.getOrchardMigrationPrivatePlan(
+              dbPath: dbPath,
+              network: network,
+              accountUuid: accountUuid,
+              spacePreparationBroadcasts:
+                  kAppFormFactor == AppFormFactor.desktop,
+            ),
     secureStore: AppSecureStore.instance,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
     getSessionPassword: () => ref

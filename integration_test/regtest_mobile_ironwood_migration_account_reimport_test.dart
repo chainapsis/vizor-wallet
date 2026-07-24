@@ -73,6 +73,7 @@ void main() {
         dbPath: await getWalletDbPath(),
         network: mobileE2eNetwork,
         accountUuid: originalAccountUuid,
+        spacePreparationBroadcasts: false,
       );
       expect(originalPlan, isNotNull);
       expect(originalPlan!.plannedBatchCount, greaterThanOrEqualTo(3));
@@ -243,6 +244,7 @@ void main() {
         dbPath: dbPath,
         network: mobileE2eNetwork,
         accountUuid: reimportedAccountUuid,
+        spacePreparationBroadcasts: false,
       );
       expect(freshPlan, isNotNull);
       expect(freshPlan!.totalInputZatoshi, recoveredBalance.orchard);

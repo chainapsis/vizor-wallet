@@ -2,6 +2,7 @@ pub(crate) fn get_orchard_migration_private_plan(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
@@ -74,28 +75,28 @@ pub(crate) fn get_orchard_migration_private_plan(
         .map_err(|_| "Denomination split stage count exceeds u32".to_string())?;
     let denomination_split_layer_count = u32::try_from(padded_plan.layer_count)
         .map_err(|_| "Denomination split layer count exceeds u32".to_string())?;
-    let estimated_final_preparation_mined_height = u32::from(target_height)
-        .checked_add(
-            denomination_split_layer_count
-                .saturating_sub(1)
-                .checked_mul(super::migration::denomination_confirmations_required())
-                .ok_or("Migration preparation height overflow")?,
-        )
-        .ok_or("Migration preparation height overflow")?;
+    let direct_note_mined_heights = padded_plan
+        .direct_migration_inputs
+        .iter()
+        .map(|direct| {
+            orchard_notes
+                .get(direct.input_index)
+                .ok_or("Direct migration input index is out of range")?
+                .mined_height()
+                .map(u32::from)
+                .ok_or_else(|| "Direct migration input mined height is unavailable".to_string())
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let (proof_readiness_delay_blocks, estimated_proof_ready_height) =
-        if denomination_split_layer_count == 0 {
-            (0, None)
-        } else {
-            let delay = super::migration::proof_readiness_delay_blocks(
-                network,
-                estimated_final_preparation_mined_height,
-            )?;
-            let ready_height = super::migration::estimated_proof_ready_height(
-                network,
-                estimated_final_preparation_mined_height,
-            )?;
-            (delay, Some(ready_height))
-        };
+        private_plan_proof_timing(
+            network,
+            preparation_timing_policy,
+            u32::from(target_height),
+            u32::from(anchor_height),
+            denomination_split_stage_count,
+            denomination_split_layer_count,
+            &direct_note_mined_heights,
+        )?;
     let migration_fee_zatoshi = u64::from(migration_fee_estimate)
         .checked_mul(u64::from(planned_batch_count))
         .ok_or("Migration fee estimate overflow")?;
@@ -128,6 +129,63 @@ pub(crate) fn get_orchard_migration_private_plan(
         estimated_proof_ready_height,
         scheduled_transfers,
     }))
+}
+
+fn private_plan_proof_timing(
+    network: WalletNetwork,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    target_height: u32,
+    trusted_height: u32,
+    stage_count: u32,
+    layer_count: u32,
+    direct_note_mined_heights: &[u32],
+) -> Result<(u32, Option<u32>), String> {
+    let spacing_delay = super::migration::estimated_preparation_spacing_delay_blocks(
+        network,
+        preparation_timing_policy,
+        stage_count,
+    )?;
+    let confirmation_lag = super::migration::denomination_confirmations_required().saturating_sub(1);
+
+    let mut final_ready_height = direct_note_mined_heights
+        .iter()
+        .map(|height| super::migration::estimated_proof_ready_height(network, *height))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .max();
+    let readiness_baseline = if layer_count == 0 {
+        trusted_height
+    } else {
+        let final_mined_height = target_height
+            .checked_add(
+                layer_count
+                    .saturating_sub(1)
+                    .checked_mul(super::migration::denomination_confirmations_required())
+                    .ok_or("Migration preparation height overflow")?,
+            )
+            .and_then(|height| height.checked_add(spacing_delay))
+            .ok_or("Migration preparation height overflow")?;
+        let generated_ready_height =
+            super::migration::estimated_proof_ready_height(network, final_mined_height)?;
+        final_ready_height = Some(
+            final_ready_height
+                .map_or(generated_ready_height, |height| height.max(generated_ready_height)),
+        );
+        final_mined_height
+            .checked_add(confirmation_lag)
+            .ok_or("Migration preparation trusted height overflow")?
+    };
+
+    let Some(final_ready_height) = final_ready_height else {
+        return Ok((0, None));
+    };
+    let anchor_wait = final_ready_height.saturating_sub(readiness_baseline);
+    Ok((
+        spacing_delay
+            .checked_add(anchor_wait)
+            .ok_or("Migration proof readiness delay overflow")?,
+        Some(final_ready_height),
+    ))
 }
 
 fn immediate_migration_plan_for_values(

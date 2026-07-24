@@ -383,10 +383,12 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncGetOrchardMigrationPrivatePlan(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 /// Foreground-only migration preparation for the Swift-owned outbox.
@@ -1610,8 +1612,8 @@ class OrchardMigrationPrivatePlan {
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
 
-  /// Estimated blocks after preparation confirmation, derived from the
-  /// projected final prepared-note height rather than a fixed bucket count.
+  /// Estimated preparation spacing plus the remaining blocks until every
+  /// funding note can use a valid migration anchor.
   final int proofReadinessDelayBlocks;
 
   /// Estimated absolute height at which the projected final prepared note

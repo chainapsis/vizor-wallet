@@ -793,8 +793,8 @@ pub struct OrchardMigrationPrivatePlan {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
-    /// Estimated blocks after preparation confirmation, derived from the
-    /// projected final prepared-note height rather than a fixed bucket count.
+    /// Estimated preparation spacing plus the remaining blocks until every
+    /// funding note can use a valid migration anchor.
     pub proof_readiness_delay_blocks: u32,
     /// Estimated absolute height at which the projected final prepared note
     /// can first use a valid migration anchor.
@@ -1224,39 +1224,46 @@ pub fn get_orchard_migration_private_plan(
     db_path: String,
     network: String,
     account_uuid: String,
+    space_preparation_broadcasts: bool,
 ) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        wallet_sync::get_orchard_migration_private_plan(&db_path, network, &account_uuid).map(
-            |plan| {
-                plan.map(|plan| OrchardMigrationPrivatePlan {
-                    target_values_zatoshi: plan.target_values_zatoshi,
-                    total_input_zatoshi: plan.total_input_zatoshi,
-                    total_migratable_zatoshi: plan.total_migratable_zatoshi,
-                    orchard_change_zatoshi: plan.orchard_change_zatoshi,
-                    denomination_split_fee_zatoshi: plan.denomination_split_fee_zatoshi,
-                    migration_fee_zatoshi: plan.migration_fee_zatoshi,
-                    estimated_total_fee_zatoshi: plan.estimated_total_fee_zatoshi,
-                    planned_batch_count: plan.planned_batch_count,
-                    denomination_split_stage_count: plan.denomination_split_stage_count,
-                    denomination_split_layer_count: plan.denomination_split_layer_count,
-                    signing_batch_limit: plan.signing_batch_limit,
-                    schedule_mean_delay_blocks: plan.schedule_mean_delay_blocks,
-                    schedule_max_delay_blocks: plan.schedule_max_delay_blocks,
-                    proof_readiness_delay_blocks: plan.proof_readiness_delay_blocks,
-                    estimated_proof_ready_height: plan.estimated_proof_ready_height,
-                    scheduled_transfers: plan
-                        .scheduled_transfers
-                        .into_iter()
-                        .map(|entry| MigrationScheduledTransfer {
-                            part_index: entry.part_index.unwrap_or(0),
-                            value_zatoshi: entry.value_zatoshi,
-                            block_offset: entry.block_offset,
-                        })
-                        .collect(),
-                })
-            },
+        wallet_sync::get_orchard_migration_private_plan(
+            &db_path,
+            network,
+            &account_uuid,
+            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
+                space_preparation_broadcasts,
+            ),
         )
+        .map(|plan| {
+            plan.map(|plan| OrchardMigrationPrivatePlan {
+                target_values_zatoshi: plan.target_values_zatoshi,
+                total_input_zatoshi: plan.total_input_zatoshi,
+                total_migratable_zatoshi: plan.total_migratable_zatoshi,
+                orchard_change_zatoshi: plan.orchard_change_zatoshi,
+                denomination_split_fee_zatoshi: plan.denomination_split_fee_zatoshi,
+                migration_fee_zatoshi: plan.migration_fee_zatoshi,
+                estimated_total_fee_zatoshi: plan.estimated_total_fee_zatoshi,
+                planned_batch_count: plan.planned_batch_count,
+                denomination_split_stage_count: plan.denomination_split_stage_count,
+                denomination_split_layer_count: plan.denomination_split_layer_count,
+                signing_batch_limit: plan.signing_batch_limit,
+                schedule_mean_delay_blocks: plan.schedule_mean_delay_blocks,
+                schedule_max_delay_blocks: plan.schedule_max_delay_blocks,
+                proof_readiness_delay_blocks: plan.proof_readiness_delay_blocks,
+                estimated_proof_ready_height: plan.estimated_proof_ready_height,
+                scheduled_transfers: plan
+                    .scheduled_transfers
+                    .into_iter()
+                    .map(|entry| MigrationScheduledTransfer {
+                        part_index: entry.part_index.unwrap_or(0),
+                        value_zatoshi: entry.value_zatoshi,
+                        block_offset: entry.block_offset,
+                    })
+                    .collect(),
+            })
+        })
     })
 }
 

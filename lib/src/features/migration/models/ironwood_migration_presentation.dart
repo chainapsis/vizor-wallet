@@ -127,11 +127,12 @@ int _migrationPlanCompletionBlocks(rust_sync.OrchardMigrationPrivatePlan plan) {
 
 int migrationPlanPreparationDelayBlocks(
   rust_sync.OrchardMigrationPrivatePlan plan,
-) => plan.denominationSplitLayerCount <= 0
-    ? 0
-    : plan.denominationSplitLayerCount * _preparationConfirmationBlocks +
-          _preparationBroadcastBufferBlocks +
-          plan.proofReadinessDelayBlocks;
+) =>
+    (plan.denominationSplitLayerCount <= 0
+        ? 0
+        : plan.denominationSplitLayerCount * _preparationConfirmationBlocks +
+              _preparationBroadcastBufferBlocks) +
+    plan.proofReadinessDelayBlocks;
 
 int migrationPlanPartDelayBlocks({
   required int preparationDelayBlocks,

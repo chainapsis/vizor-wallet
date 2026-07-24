@@ -530,6 +530,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String network,
     required String accountUuid,
+    required bool spacePreparationBroadcasts,
   });
 
   Future<MigrationStatus> crateApiSyncGetOrchardMigrationStatus({
@@ -3947,6 +3948,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String network,
     required String accountUuid,
+    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3955,6 +3957,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3968,7 +3971,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncGetOrchardMigrationPrivatePlanConstMeta,
-        argValues: [dbPath, network, accountUuid],
+        argValues: [dbPath, network, accountUuid, spacePreparationBroadcasts],
         apiImpl: this,
       ),
     );
@@ -3977,7 +3980,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncGetOrchardMigrationPrivatePlanConstMeta =>
       const TaskConstMeta(
         debugName: "get_orchard_migration_private_plan",
-        argNames: ["dbPath", "network", "accountUuid"],
+        argNames: [
+          "dbPath",
+          "network",
+          "accountUuid",
+          "spacePreparationBroadcasts",
+        ],
       );
 
   @override

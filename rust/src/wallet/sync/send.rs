@@ -306,8 +306,8 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
-    /// Estimated blocks from trusted preparation confirmation until the
-    /// boundary containing the final prepared note becomes usable.
+    /// Estimated preparation spacing plus the remaining blocks until every
+    /// funding note can use a valid migration anchor.
     pub proof_readiness_delay_blocks: u32,
     /// Estimated absolute height at which the projected final prepared note
     /// can first use a valid migration anchor.

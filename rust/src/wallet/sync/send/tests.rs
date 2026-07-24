@@ -181,6 +181,60 @@ fn foreground_migration_policy_keeps_existing_batch_behavior() {
 }
 
 #[test]
+fn private_plan_timing_accounts_for_spaced_preparation_transactions() {
+    let immediate = private_plan_proof_timing(
+        WalletNetwork::Main,
+        migration::PreparationTimingPolicy::Immediate,
+        1008,
+        1006,
+        5,
+        1,
+        &[],
+    )
+    .unwrap();
+    let spaced = private_plan_proof_timing(
+        WalletNetwork::Main,
+        migration::PreparationTimingPolicy::Zip318Spaced,
+        1008,
+        1006,
+        5,
+        1,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(immediate, (144, Some(1154)));
+    assert_eq!(spaced, (288, Some(1298)));
+}
+
+#[test]
+fn private_plan_timing_uses_direct_note_mined_height_without_split_layers() {
+    let waiting = private_plan_proof_timing(
+        WalletNetwork::Main,
+        migration::PreparationTimingPolicy::Immediate,
+        1008,
+        1010,
+        0,
+        0,
+        &[1008],
+    )
+    .unwrap();
+    let already_ready = private_plan_proof_timing(
+        WalletNetwork::Main,
+        migration::PreparationTimingPolicy::Immediate,
+        1008,
+        1010,
+        0,
+        0,
+        &[700],
+    )
+    .unwrap();
+
+    assert_eq!(waiting, (144, Some(1154)));
+    assert_eq!(already_ready, (0, Some(866)));
+}
+
+#[test]
 fn incrementally_persisted_children_can_resume_proving() {
     let run = crate::wallet::sync::migration::ActiveRun {
         run_id: "run-1".to_string(),

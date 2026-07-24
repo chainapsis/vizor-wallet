@@ -2730,6 +2730,7 @@ fn wire__crate__api__sync__get_orchard_migration_private_plan_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_space_preparation_broadcasts = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -2737,6 +2738,7 @@ fn wire__crate__api__sync__get_orchard_migration_private_plan_impl(
                         api_db_path,
                         api_network,
                         api_account_uuid,
+                        api_space_preparation_broadcasts,
                     )?;
                     Ok(output_ok)
                 })())
