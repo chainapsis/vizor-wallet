@@ -3620,7 +3620,17 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         }
     }
     let denomination_confirmation_target = denomination_confirmations_required();
-    let denomination_split_progress = denomination_split_progress_for_run(conn, &run.run_id)?;
+    // A private-migration draft is persisted before Keystone signs its
+    // denomination PCZTs. It deliberately has no staged transactions yet;
+    // stage progress is only meaningful after draft finalization.
+    let denomination_split_progress = if matches!(
+        phase.as_str(),
+        PHASE_AWAITING_PREPARATION | PHASE_AWAITING_DENOMINATION_SIGNATURE
+    ) {
+        DenominationSplitProgress::default()
+    } else {
+        denomination_split_progress_for_run(conn, &run.run_id)?
+    };
     let denomination_confirmation_count = if denomination_split_progress.total_count > 0 {
         if denomination_split_progress.completed_count == denomination_split_progress.total_count {
             denomination_confirmation_target

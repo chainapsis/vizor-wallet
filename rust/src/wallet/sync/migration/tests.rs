@@ -3258,6 +3258,12 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
     );
     drop(conn);
 
+    let draft_status =
+        migration_status(&db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
+    assert_eq!(draft_status.phase, PHASE_AWAITING_PREPARATION);
+    assert_eq!(draft_status.denomination_split_total_count, 0);
+    assert_eq!(draft_status.denomination_split_completed_count, 0);
+
     let expected_txid = "11".repeat(32);
     let plan = DenominationPlan {
         migration_outputs: target_values,
