@@ -81,14 +81,20 @@ pub(crate) fn get_orchard_migration_private_plan(
                 .ok_or("Migration preparation height overflow")?,
         )
         .ok_or("Migration preparation height overflow")?;
-    let proof_readiness_delay_blocks = if denomination_split_stage_count == 0 {
-        0
-    } else {
-        super::migration::proof_readiness_delay_blocks(
-            network,
-            estimated_final_preparation_mined_height,
-        )?
-    };
+    let (proof_readiness_delay_blocks, estimated_proof_ready_height) =
+        if denomination_split_stage_count == 0 {
+            (0, None)
+        } else {
+            let delay = super::migration::proof_readiness_delay_blocks(
+                network,
+                estimated_final_preparation_mined_height,
+            )?;
+            let ready_height = super::migration::estimated_proof_ready_height(
+                network,
+                estimated_final_preparation_mined_height,
+            )?;
+            (delay, Some(ready_height))
+        };
     let migration_fee_zatoshi = u64::from(migration_fee_estimate)
         .checked_mul(u64::from(planned_batch_count))
         .ok_or("Migration fee estimate overflow")?;
@@ -117,6 +123,7 @@ pub(crate) fn get_orchard_migration_private_plan(
         schedule_mean_delay_blocks: super::migration::schedule_parameters(network).0,
         schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
         proof_readiness_delay_blocks,
+        estimated_proof_ready_height,
         max_prepared_notes_per_run: super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_transfers,
     }))

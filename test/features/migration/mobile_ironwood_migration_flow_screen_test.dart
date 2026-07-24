@@ -234,6 +234,8 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   int denominationSplitStageCount = 1,
   int signingBatchLimit = 12,
   int blockOffsetAdjustment = 0,
+  int proofReadinessDelayBlocks = 146,
+  int? estimatedProofReadyHeight = 290,
 }) => rust_sync.OrchardMigrationPrivatePlan(
   targetValuesZatoshi: frb.Uint64List.fromList([]),
   totalInputZatoshi: BigInt.from(14_223_000_000),
@@ -247,7 +249,8 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   signingBatchLimit: signingBatchLimit,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
-  proofReadinessDelayBlocks: 146,
+  proofReadinessDelayBlocks: proofReadinessDelayBlocks,
+  estimatedProofReadyHeight: estimatedProofReadyHeight,
   maxPreparedNotesPerRun: 12,
   scheduledTransfers: [
     for (var i = 0; i < plannedBatchCount; i++)
@@ -652,6 +655,7 @@ IronwoodMigrationService _migrationService({
   IronwoodMigrationPreparationRuntimeStateGetter? getPreparationRuntimeState,
   IronwoodMigrationPreparationForegroundContinuationAcknowledger?
   acknowledgePreparationForegroundContinuation,
+  Future<rust_sync.OrchardMigrationPrivatePlan?> Function()? onGetPrivatePlan,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -660,7 +664,7 @@ IronwoodMigrationService _migrationService({
             _status(phase: kIronwoodMigrationWaitingDenomConfirmationsPhase),
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
-            _plan,
+            await onGetPrivatePlan?.call() ?? _plan,
     getImmediatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
             _immediatePlan,
@@ -1535,6 +1539,176 @@ void main() {
     expect(find.text('Start migration').hitTestable(), findsOneWidget);
   });
 
+  testWidgets('replaces review timing when the projected anchor changes', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final refreshedPlan = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+    var planLoadCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(),
+        privatePlanLoader: () {
+          planLoadCount++;
+          return planLoadCount == 1
+              ? Future.value(_plan)
+              : refreshedPlan.future;
+        },
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Review Migration Plan')),
+    );
+    final syncNotifier =
+        container.read(syncProvider.notifier) as FakeSyncNotifier;
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+        isSyncComplete: false,
+      ),
+    );
+    await tester.pump();
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+      ),
+    );
+    await tester.pump();
+
+    refreshedPlan.complete(
+      _planWith(proofReadinessDelayBlocks: 287, estimatedProofReadyHeight: 434),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Migration plan updated'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_part_status_cell_0')),
+        matching: find.text('~7 hrs'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Start migration').hitTestable(), findsOneWidget);
+  });
+
+  testWidgets(
+    'refreshes remaining timing without replacing the reviewed schedule',
+    (tester) async {
+      _useMobileViewport(tester);
+      final refreshedPlan = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+      var planLoadCount = 0;
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/review',
+          migrationService: _migrationService(),
+          privatePlanLoader: () {
+            planLoadCount++;
+            return planLoadCount == 1
+                ? Future.value(_plan)
+                : refreshedPlan.future;
+          },
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            isSyncComplete: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.text('Review Migration Plan')),
+      );
+      final syncNotifier =
+          container.read(syncProvider.notifier) as FakeSyncNotifier;
+      syncNotifier.emit(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          isSyncComplete: false,
+        ),
+      );
+      await tester.pump();
+      syncNotifier.emit(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+        ),
+      );
+      await tester.pump();
+
+      refreshedPlan.complete(
+        _planWith(
+          proofReadinessDelayBlocks: 100,
+          estimatedProofReadyHeight: 290,
+          blockOffsetAdjustment: 500,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Migration plan updated'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_ironwood_part_status_cell_0')),
+          matching: find.text('~3 hrs'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('mobile_ironwood_part_status_cell_1')),
+          matching: find.text('~6 hrs'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('rechecks the projected anchor before starting migration', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var startCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/review',
+        migrationService: _migrationService(
+          onGetPrivatePlan: () async => _planWith(
+            proofReadinessDelayBlocks: 287,
+            estimatedProofReadyHeight: 434,
+          ),
+          onStart: (_, _) async {
+            startCount++;
+            return _migrationResult();
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Start migration'));
+    await tester.pumpAndSettle();
+
+    expect(startCount, 0);
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+    expect(find.textContaining('Migration plan updated'), findsOneWidget);
+    expect(find.text('Start migration').hitTestable(), findsOneWidget);
+  });
+
   testWidgets('routes private migration by actual notification authorization', (
     tester,
   ) async {
@@ -2352,6 +2526,8 @@ void main() {
       _productionApp(
         initialLocation: '/migration/private/review',
         migrationService: _migrationService(
+          onGetPrivatePlan: () async =>
+              _planWith(blockOffsetAdjustment: 75),
           onStart: (accountUuid, approvedSchedule) async {
             startedAccountUuid = accountUuid;
             startedSchedule = approvedSchedule;

@@ -8786,8 +8786,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
     return OrchardMigrationPrivatePlan(
       targetValuesZatoshi: dco_decode_list_prim_u_64_strict(arr[0]),
       totalInputZatoshi: dco_decode_u_64(arr[1]),
@@ -8802,8 +8802,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduleMeanDelayBlocks: dco_decode_u_32(arr[10]),
       scheduleMaxDelayBlocks: dco_decode_u_32(arr[11]),
       proofReadinessDelayBlocks: dco_decode_u_32(arr[12]),
-      maxPreparedNotesPerRun: dco_decode_u_32(arr[13]),
-      scheduledTransfers: dco_decode_list_migration_scheduled_transfer(arr[14]),
+      estimatedProofReadyHeight: dco_decode_opt_box_autoadd_u_32(arr[13]),
+      maxPreparedNotesPerRun: dco_decode_u_32(arr[14]),
+      scheduledTransfers: dco_decode_list_migration_scheduled_transfer(arr[15]),
     );
   }
 
@@ -11431,6 +11432,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
     var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
     var var_proofReadinessDelayBlocks = sse_decode_u_32(deserializer);
+    var var_estimatedProofReadyHeight = sse_decode_opt_box_autoadd_u_32(
+      deserializer,
+    );
     var var_maxPreparedNotesPerRun = sse_decode_u_32(deserializer);
     var var_scheduledTransfers = sse_decode_list_migration_scheduled_transfer(
       deserializer,
@@ -11449,6 +11453,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
       scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
       proofReadinessDelayBlocks: var_proofReadinessDelayBlocks,
+      estimatedProofReadyHeight: var_estimatedProofReadyHeight,
       maxPreparedNotesPerRun: var_maxPreparedNotesPerRun,
       scheduledTransfers: var_scheduledTransfers,
     );
@@ -13930,6 +13935,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
     sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);
     sse_encode_u_32(self.proofReadinessDelayBlocks, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.estimatedProofReadyHeight, serializer);
     sse_encode_u_32(self.maxPreparedNotesPerRun, serializer);
     sse_encode_list_migration_scheduled_transfer(
       self.scheduledTransfers,

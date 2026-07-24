@@ -144,14 +144,21 @@ class _MobileMigrationPrivateReviewState
       }
 
       final refreshedFingerprint = _mobilePrivatePlanFingerprint(refreshedPlan);
+      final displayedPlan = _displayedPlan;
       final planChanged =
           _analysisComplete &&
-          _displayedPlanFingerprint != null &&
-          _displayedPlanFingerprint != refreshedFingerprint;
+          displayedPlan != null &&
+          (_displayedPlanFingerprint != refreshedFingerprint ||
+              _mobilePrivatePlanAnchorChanged(displayedPlan, refreshedPlan));
       setState(() {
-        if (_displayedPlan == null || planChanged) {
+        if (displayedPlan == null || planChanged) {
           _displayedPlan = refreshedPlan;
           _displayedPlanFingerprint = refreshedFingerprint;
+        } else {
+          _displayedPlan = _mobilePrivatePlanWithRefreshedTiming(
+            displayedPlan,
+            refreshedPlan,
+          );
         }
         _isRefreshingPlan = false;
         _planRefreshFailed = false;
@@ -193,6 +200,7 @@ class _MobileMigrationPrivateReviewState
     IronwoodMigrationStatusRequest? statusRequest;
     String? softwareAccountUuid;
     var softwareStartAttempted = false;
+    var activePlan = plan;
     setState(() {
       _isStarting = true;
       _startError = null;
@@ -205,6 +213,12 @@ class _MobileMigrationPrivateReviewState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
+      final verifiedPlan = await _verifyPlanBeforeStart(
+        plan,
+        accountUuid: accountUuid,
+      );
+      if (!mounted || verifiedPlan == null) return;
+      activePlan = verifiedPlan;
       statusRequest = IronwoodMigrationStatusRequest(
         network: ref.read(ironwoodMigrationInputsProvider).network,
         accountUuid: accountUuid,
@@ -212,7 +226,7 @@ class _MobileMigrationPrivateReviewState
       if (accountState.activeAccount?.isHardware ?? false) {
         context.go(
           '/migration/private/keystone/denominations/sign',
-          extra: plan.scheduledTransfers,
+          extra: verifiedPlan.scheduledTransfers,
         );
         return;
       }
@@ -223,14 +237,14 @@ class _MobileMigrationPrivateReviewState
           .read(ironwoodMigrationCoordinatorProvider.notifier)
           .startSoftwareMigration(
             accountUuid: accountUuid,
-            approvedSchedule: plan.scheduledTransfers,
+            approvedSchedule: verifiedPlan.scheduledTransfers,
           );
       if (!mounted) return;
       if (!await _migrationMayHaveStarted(statusRequest)) {
         throw StateError('Migration did not create an active run.');
       }
       if (!mounted) return;
-      _openMigrationStatus(plan);
+      _openMigrationStatus(verifiedPlan);
     } catch (error) {
       if (!mounted) return;
       final request = statusRequest;
@@ -240,7 +254,7 @@ class _MobileMigrationPrivateReviewState
           await _migrationMayHaveStarted(request)) {
         unawaited(_recoverBackgroundTrackingBestEffort(softwareAccountUuid));
         if (!mounted) return;
-        _openMigrationStatus(plan);
+        _openMigrationStatus(activePlan);
         return;
       }
       if (!mounted) return;
@@ -254,6 +268,54 @@ class _MobileMigrationPrivateReviewState
         });
       }
     }
+  }
+
+  Future<rust_sync.OrchardMigrationPrivatePlan?> _verifyPlanBeforeStart(
+    rust_sync.OrchardMigrationPrivatePlan displayedPlan, {
+    required String accountUuid,
+  }) async {
+    final refreshedPlan = await ref
+        .read(ironwoodMigrationServiceProvider)
+        .privatePlan(
+          network: ref.read(ironwoodMigrationInputsProvider).network,
+          accountUuid: accountUuid,
+        );
+    if (!mounted) return null;
+    if (refreshedPlan == null) {
+      setState(() {
+        _planRefreshFailed = true;
+        _planRefreshMessage =
+            'The migration plan is no longer available. Try again.';
+      });
+      return null;
+    }
+
+    final refreshedFingerprint = _mobilePrivatePlanFingerprint(refreshedPlan);
+    final planChanged =
+        _mobilePrivatePlanFingerprint(displayedPlan) != refreshedFingerprint ||
+        _mobilePrivatePlanAnchorChanged(displayedPlan, refreshedPlan);
+    if (planChanged) {
+      setState(() {
+        _displayedPlan = refreshedPlan;
+        _displayedPlanFingerprint = refreshedFingerprint;
+        _planRefreshFailed = false;
+        _planRefreshMessage =
+            'Migration plan updated. Review the changes before starting.';
+      });
+      return null;
+    }
+
+    final verifiedPlan = _mobilePrivatePlanWithRefreshedTiming(
+      displayedPlan,
+      refreshedPlan,
+    );
+    setState(() {
+      _displayedPlan = verifiedPlan;
+      _displayedPlanFingerprint = refreshedFingerprint;
+      _planRefreshFailed = false;
+      _planRefreshMessage = null;
+    });
+    return verifiedPlan;
   }
 
   Future<bool> _migrationMayHaveStarted(
@@ -472,6 +534,40 @@ String _mobilePrivatePlanFingerprint(
     targetValues.join(','),
     transferValues.join(','),
   ].join('|');
+}
+
+bool _mobilePrivatePlanAnchorChanged(
+  rust_sync.OrchardMigrationPrivatePlan previous,
+  rust_sync.OrchardMigrationPrivatePlan refreshed,
+) {
+  final previousHeight = previous.estimatedProofReadyHeight;
+  final refreshedHeight = refreshed.estimatedProofReadyHeight;
+  if (previousHeight == null && refreshedHeight == null) return false;
+  return previousHeight != refreshedHeight;
+}
+
+rust_sync.OrchardMigrationPrivatePlan _mobilePrivatePlanWithRefreshedTiming(
+  rust_sync.OrchardMigrationPrivatePlan displayed,
+  rust_sync.OrchardMigrationPrivatePlan refreshed,
+) {
+  return rust_sync.OrchardMigrationPrivatePlan(
+    targetValuesZatoshi: displayed.targetValuesZatoshi,
+    totalInputZatoshi: displayed.totalInputZatoshi,
+    totalMigratableZatoshi: displayed.totalMigratableZatoshi,
+    orchardChangeZatoshi: displayed.orchardChangeZatoshi,
+    denominationSplitFeeZatoshi: displayed.denominationSplitFeeZatoshi,
+    migrationFeeZatoshi: displayed.migrationFeeZatoshi,
+    estimatedTotalFeeZatoshi: displayed.estimatedTotalFeeZatoshi,
+    plannedBatchCount: displayed.plannedBatchCount,
+    denominationSplitStageCount: displayed.denominationSplitStageCount,
+    signingBatchLimit: displayed.signingBatchLimit,
+    scheduleMeanDelayBlocks: displayed.scheduleMeanDelayBlocks,
+    scheduleMaxDelayBlocks: displayed.scheduleMaxDelayBlocks,
+    proofReadinessDelayBlocks: refreshed.proofReadinessDelayBlocks,
+    estimatedProofReadyHeight: refreshed.estimatedProofReadyHeight,
+    maxPreparedNotesPerRun: displayed.maxPreparedNotesPerRun,
+    scheduledTransfers: displayed.scheduledTransfers,
+  );
 }
 
 bool _keystoneTwoRoundPlanSupported(

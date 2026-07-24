@@ -1616,6 +1616,10 @@ class OrchardMigrationPrivatePlan {
   /// Estimated blocks after preparation confirmation, derived from the
   /// projected final prepared-note height rather than a fixed bucket count.
   final int proofReadinessDelayBlocks;
+
+  /// Estimated absolute height at which the projected final prepared note
+  /// can first use a valid migration anchor.
+  final int? estimatedProofReadyHeight;
   final int maxPreparedNotesPerRun;
   final List<MigrationScheduledTransfer> scheduledTransfers;
 
@@ -1633,6 +1637,7 @@ class OrchardMigrationPrivatePlan {
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
     required this.proofReadinessDelayBlocks,
+    this.estimatedProofReadyHeight,
     required this.maxPreparedNotesPerRun,
     required this.scheduledTransfers,
   });
@@ -1652,6 +1657,7 @@ class OrchardMigrationPrivatePlan {
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
       proofReadinessDelayBlocks.hashCode ^
+      estimatedProofReadyHeight.hashCode ^
       maxPreparedNotesPerRun.hashCode ^
       scheduledTransfers.hashCode;
 
@@ -1673,6 +1679,7 @@ class OrchardMigrationPrivatePlan {
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
+          estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
           maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           scheduledTransfers == other.scheduledTransfers;
 }

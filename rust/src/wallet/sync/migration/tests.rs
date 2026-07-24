@@ -1101,6 +1101,10 @@ fn proof_retry_waits_until_the_next_boundary_is_trusted() {
 #[test]
 fn proof_readiness_ages_the_boundary_containing_the_prepared_note() {
     assert_eq!(
+        estimated_proof_ready_height(WalletNetwork::Main, 142).unwrap(),
+        290
+    );
+    assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Main, 142).unwrap(),
         146
     );

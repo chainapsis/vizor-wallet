@@ -131,7 +131,6 @@ pub(crate) fn proof_readiness_delay_blocks(
     network: WalletNetwork,
     estimated_mined_height: u32,
 ) -> Result<u32, String> {
-    let timing_policy = configured_timing_policy(network);
     let confirmation_lag = ConfirmationsPolicy::default()
         .trusted()
         .get()
@@ -139,9 +138,20 @@ pub(crate) fn proof_readiness_delay_blocks(
     let trusted_height = estimated_mined_height
         .checked_add(confirmation_lag)
         .ok_or("Migration proof readiness delay overflow")?;
-    proof_ready_height_for_note_mined_height(network, timing_policy, estimated_mined_height)?
+    estimated_proof_ready_height(network, estimated_mined_height)?
         .checked_sub(trusted_height)
         .ok_or_else(|| "Migration proof readiness delay underflow".to_string())
+}
+
+pub(crate) fn estimated_proof_ready_height(
+    network: WalletNetwork,
+    estimated_mined_height: u32,
+) -> Result<u32, String> {
+    proof_ready_height_for_note_mined_height(
+        network,
+        configured_timing_policy(network),
+        estimated_mined_height,
+    )
 }
 
 pub(crate) fn proof_ready_height_for_note_mined_height(
