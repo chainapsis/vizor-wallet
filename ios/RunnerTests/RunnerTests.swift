@@ -337,6 +337,13 @@ class RunnerTests: XCTestCase {
       ),
       .idle
     )
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [4],
+        inspectionFailed: false
+      ),
+      .terminal
+    )
   }
 
   func testMigrationPreparationCompletesOnlyTerminalBackgroundStates() {
@@ -354,7 +361,7 @@ class RunnerTests: XCTestCase {
     )
     XCTAssertEqual(
       migrationPreparationPassResult(states: [3]),
-      .cancelled
+      .needsAction
     )
   }
 
@@ -367,6 +374,155 @@ class RunnerTests: XCTestCase {
     )
     XCTAssertFalse(
       migrationPreparationBackgroundWakeSucceeded(.cancelled)
+    )
+  }
+
+  func testUnexpectedPreparationCancellationNeedsForegroundAction() {
+    XCTAssertEqual(
+      migrationPreparationCancellationResult(
+        taskExpired: false,
+        foregroundHandoffRequested: false,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      ),
+      .needsAction
+    )
+    XCTAssertEqual(
+      migrationPreparationCancellationResult(
+        taskExpired: false,
+        foregroundHandoffRequested: true,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      ),
+      .cancelled
+    )
+    XCTAssertEqual(
+      migrationPreparationCancellationResult(
+        taskExpired: true,
+        foregroundHandoffRequested: false,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      ),
+      .cancelled
+    )
+  }
+
+  func testExpiredPreparationRecoversInBackgroundWithoutNeedsAction() {
+    XCTAssertTrue(
+      migrationPreparationExpirationRequiresBackgroundRecovery(
+        taskExpired: true,
+        resumeTarget: .continuedProcessing
+      )
+    )
+    XCTAssertTrue(
+      migrationPreparationExpirationRequiresBackgroundRecovery(
+        taskExpired: true,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationExpirationRequiresBackgroundRecovery(
+        taskExpired: true,
+        resumeTarget: .terminal
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationExpirationRequiresBackgroundRecovery(
+        taskExpired: true,
+        resumeTarget: .idle
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationExpirationRequiresBackgroundRecovery(
+        taskExpired: false,
+        resumeTarget: .continuedProcessing
+      )
+    )
+    XCTAssertTrue(
+      migrationPreparationExpirationRequiresForegroundContinuation(
+        taskExpired: true,
+        resumeTarget: .idle
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationExpirationRequiresForegroundContinuation(
+        taskExpired: true,
+        resumeTarget: .continuedProcessing
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationExpirationRequiresForegroundContinuation(
+        taskExpired: true,
+        resumeTarget: .terminal
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationPassNeedsForegroundAction(.cancelled)
+    )
+  }
+
+  func testFailedPreparationHandoffRequiresForegroundAction() {
+    XCTAssertEqual(
+      migrationPreparationPassResultAfterHandoff(
+        .deferred(60),
+        handoffScheduled: false,
+        interruptionRequested: false
+      ),
+      .needsAction
+    )
+    XCTAssertEqual(
+      migrationPreparationPassResultAfterHandoff(
+        .deferred(60),
+        handoffScheduled: true,
+        interruptionRequested: false
+      ),
+      .deferred(60)
+    )
+    XCTAssertEqual(
+      migrationPreparationPassResultAfterHandoff(
+        .deferred(60),
+        handoffScheduled: false,
+        interruptionRequested: true
+      ),
+      .cancelled
+    )
+    XCTAssertEqual(
+      migrationPreparationPassResultAfterHandoff(
+        .completed,
+        handoffScheduled: false,
+        interruptionRequested: false
+      ),
+      .completed
+    )
+  }
+
+  func testGlobalPreparationFailureUsesSingleNotificationScope() {
+    XCTAssertEqual(
+      migrationPreparationNeedsActionNotificationScope(
+        manifestScope: nil
+      ),
+      "global"
+    )
+    XCTAssertEqual(
+      migrationPreparationNeedsActionNotificationScope(
+        manifestScope: "main:account-1:run-1"
+      ),
+      "main:account-1:run-1"
+    )
+  }
+
+  func testTerminalPreparationCancellationCompletesExpiredTask() {
+    XCTAssertTrue(
+      migrationPreparationPassCompleted(
+        .cancelled,
+        terminalAfterExpiration: true
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationPassCompleted(
+        .cancelled,
+        terminalAfterExpiration: false
+      )
     )
   }
 
