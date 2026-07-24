@@ -20,8 +20,8 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
-import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_status_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -215,8 +215,102 @@ void main() {
     expect(rustApi.extractCalls.single.$2, const [9, 9]);
     // needsSaplingParams=false -> no Sapling params threaded to extraction.
     expect(rustApi.extractCalls.single.$3, isNull);
-    expect(rustApi.discardCalls, isEmpty);
+    // The replayable proposal is already consumed, but discard also releases
+    // the owner-scoped wallet-input lock retained for the hardware round trip.
+    expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
   });
+
+  testWidgets(
+    'Keystone params rejection releases the retained input lock before broadcast',
+    (tester) async {
+      final args = _reviewArgs(needsSaplingParams: true);
+      late WidgetRef widgetRef;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appBootstrapProvider.overrideWithValue(_bootstrap(true)),
+            appSecurityProvider.overrideWith(_FakeAppSecurityNotifier.new),
+            syncProvider.overrideWith(_FakeSyncNotifier.new),
+          ],
+          child: MaterialApp(
+            home: Consumer(
+              builder: (_, ref, _) {
+                widgetRef = ref;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final outcome = await tester.runAsync(
+        () => runSendBroadcast(
+          ref: widgetRef,
+          args: args,
+          keystone: KeystoneBroadcastArgs(
+            reviewArgs: args,
+            pcztWithProofsBytes: const [3, 3, 3],
+            pcztWithSignaturesBytes: const [9, 9],
+          ),
+          confirmSaplingParamsDownload: () async => false,
+        ),
+      );
+
+      expect(rustApi.extractCalls, isEmpty);
+      expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
+      expect(outcome?.phase, SendBroadcastPhase.failed);
+      expect(outcome?.proposalConsumed, isTrue);
+    },
+  );
+
+  testWidgets('proposal cleanup retries a transient Rust unlock failure', (
+    tester,
+  ) async {
+    rustApi.discardFailuresRemaining = 1;
+
+    await tester.runAsync(
+      () => discardSendProposal(
+        proposalId: BigInt.one,
+        sendFlowId: 'test-send-flow',
+        logContext: 'SendStatusTest',
+      ),
+    );
+
+    expect(rustApi.discardCalls, [
+      (BigInt.one, 'test-send-flow'),
+      (BigInt.one, 'test-send-flow'),
+    ]);
+  });
+
+  for (final status in ['broadcast_unknown', 'broadcasted_storage_failed']) {
+    testWidgets('Keystone $status retains the input lock until expiry', (
+      tester,
+    ) async {
+      rustApi.extractResult = ExtractAndBroadcastPcztResult(
+        txid: _txid,
+        status: status,
+        message: 'broadcast outcome requires conservative locking',
+      );
+
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(
+        _harness(
+          _reviewArgs(),
+          keystone: KeystoneBroadcastArgs(
+            reviewArgs: _reviewArgs(),
+            pcztWithProofsBytes: const [3, 3, 3],
+            pcztWithSignaturesBytes: const [9, 9],
+          ),
+          isHardware: true,
+        ),
+      );
+      await tester.pump();
+      await _flushBroadcast(tester);
+
+      expect(rustApi.discardCalls, isEmpty);
+      expect(rustApi.retainCalls, [(BigInt.one, 'test-send-flow')]);
+    });
+  }
 }
 
 const _txid =
@@ -348,6 +442,7 @@ SendReviewArgs _reviewArgs({
   String address = _address,
   String addressType = 'unified',
   String? memo,
+  bool needsSaplingParams = false,
 }) {
   return SendReviewArgs(
     proposalId: BigInt.one,
@@ -357,7 +452,7 @@ SendReviewArgs _reviewArgs({
     addressType: addressType,
     amountZatoshi: BigInt.from(1512000000),
     feeZatoshi: BigInt.from(12000),
-    needsSaplingParams: false,
+    needsSaplingParams: needsSaplingParams,
     memo: memo,
   );
 }
@@ -413,19 +508,23 @@ class _FakeSyncNotifier extends SyncNotifier {
 
 class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
+  final retainCalls = <(BigInt, String)>[];
   final extractCalls = <(List<int>, List<int>, String?)>[];
   ExecuteProposalResult? executeResult;
   Object? executeError;
   ExtractAndBroadcastPcztResult? extractResult;
+  int discardFailuresRemaining = 0;
   String unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
   String transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
 
   void reset() {
     discardCalls.clear();
+    retainCalls.clear();
     extractCalls.clear();
     executeResult = null;
     executeError = null;
     extractResult = null;
+    discardFailuresRemaining = 0;
     unifiedAddress = 'u1ownaccountaddressnotmatchingrecipient';
     transparentAddress = 't1ownaccountaddressnotmatchingrecipient';
   }
@@ -442,6 +541,18 @@ class _RustApiFake implements RustLibApi {
     required String sendFlowId,
   }) async {
     discardCalls.add((proposalId, sendFlowId));
+    if (discardFailuresRemaining > 0) {
+      discardFailuresRemaining--;
+      throw Exception('transient wallet DB unlock failure');
+    }
+  }
+
+  @override
+  Future<void> crateApiSyncRetainProposalLockUntilExpiry({
+    required BigInt proposalId,
+    required String sendFlowId,
+  }) async {
+    retainCalls.add((proposalId, sendFlowId));
   }
 
   @override

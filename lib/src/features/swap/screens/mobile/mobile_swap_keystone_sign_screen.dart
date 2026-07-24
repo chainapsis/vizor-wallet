@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
@@ -72,8 +73,15 @@ class MobileSwapKeystoneSignScreen extends ConsumerStatefulWidget {
 
 class _MobileSwapKeystoneSignScreenState
     extends ConsumerState<MobileSwapKeystoneSignScreen> {
+  SwapHardwareSigningService? _signingService;
   SwapHardwarePcztDraft? _draft;
   SaplingParamsStatus? _saplingParams;
+
+  @override
+  void dispose() {
+    unawaited(_discardDraft());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -108,46 +116,52 @@ class _MobileSwapKeystoneSignScreenState
     }
 
     final service = ref.read(swapHardwareSigningServiceProvider);
+    _signingService = service;
     final draft = await service.createZecDepositPczt(
       accountUuid: accountUuid,
       intent: widget.args.intent,
     );
-
-    SaplingParamsStatus? saplingParams;
-    if (draft.needsSaplingParams) {
-      saplingParams = await loadSaplingParamsStatus();
-      if (!saplingParams.complete) {
-        if (!context.mounted) {
-          throw const MobileKeystonePcztSigningAborted();
-        }
-        final confirmed = await _confirmSaplingParamsDownload(context);
-        if (!confirmed) {
-          throw const MobileKeystonePcztSigningAborted();
-        }
-        await downloadMissingSaplingParams(
-          saplingParams,
-          log: (message) => log('MobileSwapKeystoneSign: $message'),
-        );
-        saplingParams = await loadSaplingParamsStatus();
-      }
-    }
-
-    final urParts = await service.encodeSigningUrParts(draft: draft);
     _draft = draft;
-    _saplingParams = saplingParams;
 
-    return MobileKeystonePcztSigningPayload(
-      urParts: urParts,
-      pcztWithProofs: service.addProofsForSigning(
-        draft: draft,
-        spendParamsPath: draft.needsSaplingParams
-            ? saplingParams!.spendPath
-            : null,
-        outputParamsPath: draft.needsSaplingParams
-            ? saplingParams!.outputPath
-            : null,
-      ),
-    );
+    try {
+      SaplingParamsStatus? saplingParams;
+      if (draft.needsSaplingParams) {
+        saplingParams = await loadSaplingParamsStatus();
+        if (!saplingParams.complete) {
+          if (!context.mounted) {
+            throw const MobileKeystonePcztSigningAborted();
+          }
+          final confirmed = await _confirmSaplingParamsDownload(context);
+          if (!confirmed) {
+            throw const MobileKeystonePcztSigningAborted();
+          }
+          await downloadMissingSaplingParams(
+            saplingParams,
+            log: (message) => log('MobileSwapKeystoneSign: $message'),
+          );
+          saplingParams = await loadSaplingParamsStatus();
+        }
+      }
+
+      final urParts = await service.encodeSigningUrParts(draft: draft);
+      _saplingParams = saplingParams;
+
+      return MobileKeystonePcztSigningPayload(
+        urParts: urParts,
+        pcztWithProofs: service.addProofsForSigning(
+          draft: draft,
+          spendParamsPath: draft.needsSaplingParams
+              ? saplingParams!.spendPath
+              : null,
+          outputParamsPath: draft.needsSaplingParams
+              ? saplingParams!.outputPath
+              : null,
+        ),
+      );
+    } catch (_) {
+      await _discardDraft();
+      rethrow;
+    }
   }
 
   Future<bool> _confirmSaplingParamsDownload(BuildContext context) async {
@@ -173,18 +187,25 @@ class _MobileSwapKeystoneSignScreenState
 
     late final rust_sync.ExtractAndBroadcastPcztResult result;
     try {
-      result = await ref
-          .read(swapHardwareSigningServiceProvider)
-          .broadcastSignedPczt(
-            pcztWithProofsBytes: pcztWithProofs,
-            pcztWithSignaturesBytes: signedPczt,
-            spendParamsPath: draft.needsSaplingParams
-                ? saplingParams!.spendPath
-                : null,
-            outputParamsPath: draft.needsSaplingParams
-                ? saplingParams!.outputPath
-                : null,
-          );
+      final service = _signingService;
+      if (service == null) {
+        throw StateError('Keystone signing service is unavailable.');
+      }
+      // The service owns proposal-lock cleanup from this point onward. Clear
+      // the UI's reference before awaiting network I/O so dispose cannot
+      // concurrently release a lock whose broadcast result is still unknown.
+      _draft = null;
+      result = await service.broadcastSignedPczt(
+        draft: draft,
+        pcztWithProofsBytes: pcztWithProofs,
+        pcztWithSignaturesBytes: signedPczt,
+        spendParamsPath: draft.needsSaplingParams
+            ? saplingParams!.spendPath
+            : null,
+        outputParamsPath: draft.needsSaplingParams
+            ? saplingParams!.outputPath
+            : null,
+      );
       log(
         'MobileSwapKeystoneSign: broadcast complete kind=zecDeposit '
         'tx=${_shortSwapValue(result.txid)} status=${result.status}',
@@ -266,6 +287,7 @@ class _MobileSwapKeystoneSignScreenState
   }
 
   void _handleCancel() {
+    unawaited(_discardDraft());
     if (widget.args.startedFromReview) {
       ref
           .read(swapStateProvider.notifier)
@@ -278,6 +300,13 @@ class _MobileSwapKeystoneSignScreenState
       return;
     }
     context.go(widget.args.returnTarget.path);
+  }
+
+  Future<void> _discardDraft() async {
+    final draft = _draft;
+    _draft = null;
+    if (draft == null) return;
+    await _signingService?.discardPcztDraft(draft: draft);
   }
 
   bool _hasBroadcastTxid(rust_sync.ExtractAndBroadcastPcztResult result) {

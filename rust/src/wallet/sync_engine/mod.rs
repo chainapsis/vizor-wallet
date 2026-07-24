@@ -1333,6 +1333,8 @@ async fn run_sync_impl(
         mark_sync_started(db_data_path)
     })
     .map_err(SyncError::db)?;
+    crate::wallet::sync::reconcile_wallet_locks_after_startup(db_data_path, network)
+        .map_err(SyncError::db)?;
 
     // 1. Connect gRPC (plain TLS via tonic + webpki roots).
     let mut client = open_lwd_channel(lightwalletd_url).await?;

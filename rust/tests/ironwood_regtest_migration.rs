@@ -213,6 +213,7 @@ fn migrate(db_path: &str, account_uuid: &str) -> sync_api::IronwoodMigrationResu
             db_path.to_string(),
             NETWORK.to_string(),
             account_uuid.to_string(),
+            false,
         )
         .expect("read migration plan")
         .map(|plan| plan.scheduled_transfers)

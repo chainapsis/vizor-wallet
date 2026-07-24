@@ -53,7 +53,7 @@ use shardtree::{
 use tonic::Code;
 use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
 use zcash_client_backend::data_api::wallet::input_selection::{
-    GreedyInputSelector, InputSelector, SpendPolicy,
+    GreedyInputSelector, InputSelector, LockFilter, LockedInputPolicy, SpendPolicy,
 };
 use zcash_client_backend::{
     data_api::{
@@ -64,14 +64,14 @@ use zcash_client_backend::{
         },
         Account as _, AccountMeta, Balance, CoinbaseFilter, InputSource, MaxSpendMode, NoteFilter,
         NoteRetention, ReceivedNotes, TargetValue, TransparentKeyOrigin, WalletCommitmentTrees,
-        WalletRead,
+        WalletRead, WalletWrite,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
         DustOutputPolicy, SplitPolicy, StandardFeeRule, TransactionBalance,
     },
     proposal::{Proposal, ProposalError, ShieldedInputs},
-    wallet::{Note, OvkPolicy, ReceivedNote, WalletTransparentOutput},
+    wallet::{LockOwner, Note, OutputRef, OvkPolicy, ReceivedNote, WalletTransparentOutput},
     zip321::{Payment, TransactionRequest},
 };
 use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
@@ -103,12 +103,89 @@ use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine;
 
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
+use super::migration_wallet_ops::{
+    migration_locked_input_policy, select_spendable_orchard_v2_notes,
+};
 use super::{
-    consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
-    StoredProposal, WalletDatabase, PROPOSAL_STORE,
+    consume_stored_proposal, finish_stored_proposal, open_readonly_conn, open_wallet_db,
+    open_wallet_db_for_read, stored_proposal_lock, StoredProposal, StoredProposalLock,
+    WalletDatabase, PROPOSAL_STORE,
 };
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
+const SEND_PROPOSAL_LOCK_BLOCKS: u32 = 40;
+
+fn send_proposal_lock_expiry(min_target_height: BlockHeight) -> BlockHeight {
+    min_target_height + SEND_PROPOSAL_LOCK_BLOCKS
+}
+
+fn send_proposal_is_expired(
+    min_target_height: BlockHeight,
+    current_target_height: BlockHeight,
+) -> bool {
+    current_target_height >= send_proposal_lock_expiry(min_target_height)
+}
+
+fn immediate_migration_lock_expiry(target_height: BlockHeight) -> Result<BlockHeight, String> {
+    super::migration::zip318_canonical_migration_expiry_height(u32::from(target_height))
+        .map(BlockHeight::from_u32)
+}
+
+struct ImmediateMigrationInputLock {
+    db_path: String,
+    network: WalletNetwork,
+    owner: LockOwner,
+    outputs: Vec<OutputRef>,
+    active: bool,
+}
+
+impl ImmediateMigrationInputLock {
+    fn new(
+        db_path: &str,
+        network: WalletNetwork,
+        owner: LockOwner,
+        outputs: Vec<OutputRef>,
+    ) -> Self {
+        Self {
+            db_path: db_path.to_string(),
+            network,
+            owner,
+            outputs,
+            active: true,
+        }
+    }
+
+    fn release(&mut self) -> Result<(), String> {
+        if !self.active {
+            return Ok(());
+        }
+        with_wallet_db_write_lock("send.immediate_migration.unlock", || {
+            let mut db = open_wallet_db(&self.db_path, self.network)?;
+            for output in &self.outputs {
+                db.unlock_output(output, self.owner)
+                    .map_err(|e| format!("Unlock Immediate migration input: {e}"))?;
+            }
+            Ok::<(), String>(())
+        })?;
+        self.active = false;
+        Ok(())
+    }
+
+    fn retain_until_expiry(&mut self) {
+        self.active = false;
+    }
+}
+
+impl Drop for ImmediateMigrationInputLock {
+    fn drop(&mut self) {
+        if let Err(error) = self.release() {
+            log::warn!(
+                "Immediate migration failed to release reserved inputs; \
+                 height-based expiry will recover them: {error}"
+            );
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct MigrationBroadcastPolicy<'a> {
@@ -490,75 +567,113 @@ pub fn propose_send(
         return Err("Send flow id is required".to_string());
     }
 
-    let db = open_wallet_db_for_read(db_path, network)?;
-    let account_id = parse_account_uuid(account_uuid)?;
-    let proposed_tx_version = proposed_tx_version_for_wallet_db(&db, network, "creating a send")?;
-    let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
-    let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
-    let spend_policy = ordinary_send_spend_policy(
-        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
-    );
-    let pass1_proposal = propose_send_with_reserved_notes(
-        &db,
-        network,
-        account_id,
-        request,
-        &BTreeSet::new(),
-        &migration_locks,
-        &spend_policy,
-        proposed_tx_version,
-        false,
-    )?;
-    let (proposal, stored_tx_version) =
-        propose_with_note_version_downgrade(pass1_proposal, proposed_tx_version, |tx_version| {
-            let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
-            propose_send_with_reserved_notes(
-                &db,
-                network,
-                account_id,
-                request,
-                &BTreeSet::new(),
-                &migration_locks,
-                &spend_policy,
-                tx_version,
-                false,
-            )
-        });
-
-    let needs_sapling = proposal
-        .steps()
-        .iter()
-        .any(|step| step.involves(PoolType::Shielded(SP::Sapling)));
-
-    let fee: u64 = proposal
-        .steps()
-        .iter()
-        .map(|step| u64::from(step.balance().fee_required()))
-        .sum();
-
-    // Store proposal for later execution.
-    let mut store = PROPOSAL_STORE
-        .lock()
-        .map_err(|e| format!("Lock error: {e}"))?;
-    let id = store.next_id;
-    store.next_id += 1;
-    store.proposals.insert(
-        id,
-        StoredProposal {
-            proposal,
-            proposed_tx_version: stored_tx_version,
-            // Regular sends stay padded; only migration children opt in.
-            unpadded_orchard_pool_bundles: false,
+    with_wallet_db_write_lock("send.propose_send", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        let account_id = parse_account_uuid(account_uuid)?;
+        let proposed_tx_version =
+            proposed_tx_version_for_wallet_db(&db, network, "creating a send")?;
+        let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+        let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
+        let spend_policy = ordinary_send_spend_policy(
+            super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+        );
+        let pass1_proposal = propose_send_with_reserved_notes(
+            &db,
             network,
             account_id,
-            send_flow_id: send_flow_id.to_string(),
-        },
-    );
+            request,
+            &BTreeSet::new(),
+            &migration_locks,
+            &spend_policy,
+            proposed_tx_version,
+            false,
+        )?;
+        let (proposal, stored_tx_version) = propose_with_note_version_downgrade(
+            pass1_proposal,
+            proposed_tx_version,
+            |tx_version| {
+                let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+                propose_send_with_reserved_notes(
+                    &db,
+                    network,
+                    account_id,
+                    request,
+                    &BTreeSet::new(),
+                    &migration_locks,
+                    &spend_policy,
+                    tx_version,
+                    false,
+                )
+            },
+        );
 
-    Ok(ProposalResult {
-        proposal_id: id,
-        needs_sapling_params: needs_sapling,
-        fee_zatoshi: fee,
+        let needs_sapling = proposal
+            .steps()
+            .iter()
+            .any(|step| step.involves(PoolType::Shielded(SP::Sapling)));
+
+        let fee: u64 = proposal
+            .steps()
+            .iter()
+            .map(|step| u64::from(step.balance().fee_required()))
+            .sum();
+
+        // Lock the selected inputs before exposing the proposal ID. This closes
+        // the review-screen race where a migration could otherwise reserve the
+        // same notes after proposal creation but before execution.
+        let lock_owner = LockOwner::random(&mut OsRng);
+        let lock_expiry_height =
+            send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()));
+        db.lock_outputs(
+            &proposal_input_refs(&proposal),
+            lock_owner,
+            lock_expiry_height,
+        )
+        .map_err(|e| format!("Lock send proposal inputs: {e:?}"))?;
+
+        let mut store = match PROPOSAL_STORE.lock() {
+            Ok(store) => store,
+            Err(e) => {
+                let unlock_result = wallet::unlock_proposal_inputs(&mut db, &proposal, lock_owner);
+                return Err(match unlock_result {
+                    Ok(()) => format!("Lock proposal store: {e}"),
+                    Err(unlock_error) => format!(
+                        "Lock proposal store: {e}; also failed to release proposal inputs: {unlock_error}"
+                    ),
+                });
+            }
+        };
+        let id = store.next_id;
+        store.next_id += 1;
+        store.locks.insert(
+            id,
+            StoredProposalLock {
+                proposal: proposal.clone(),
+                network,
+                db_path: db_path.to_string(),
+                owner: lock_owner,
+                send_flow_id: send_flow_id.to_string(),
+            },
+        );
+        store.proposals.insert(
+            id,
+            StoredProposal {
+                proposal_id: id,
+                proposal,
+                proposed_tx_version: stored_tx_version,
+                // Regular sends stay padded; only migration children opt in.
+                unpadded_orchard_pool_bundles: false,
+                network,
+                account_id,
+                send_flow_id: send_flow_id.to_string(),
+            },
+        );
+
+        Ok(ProposalResult {
+            proposal_id: id,
+            needs_sapling_params: needs_sapling,
+            fee_zatoshi: fee,
+        })
     })
 }
 
@@ -774,6 +889,7 @@ pub(crate) async fn shield_transparent_balance(
                 &wallet::SpendingKeys::from_unified_spending_key(usk),
                 OvkPolicy::Sender,
                 &proposal,
+                None,
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -838,7 +954,17 @@ where
         send_flow_id,
         "Proposal not found (expired or already executed)",
     )?;
-    let seed = load_seed(stored.network, stored.account_id)?;
+    let seed = match load_seed(stored.network, stored.account_id) {
+        Ok(seed) => seed,
+        Err(error) => {
+            return match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
     execute_stored_proposal(
         db_path,
         lightwalletd_url,
@@ -859,11 +985,55 @@ async fn execute_stored_proposal(
     output_params_path: Option<&str>,
 ) -> Result<ExecuteProposalResult, String> {
     let network = stored.network;
+    let proposal_id = stored.proposal_id;
+    let send_flow_id = stored.send_flow_id.clone();
+    let proposal_lock = match stored_proposal_lock(proposal_id, &send_flow_id) {
+        Ok(proposal_lock) => proposal_lock,
+        Err(error) => {
+            return match finish_stored_proposal(proposal_id, &send_flow_id, true) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
+    if proposal_lock.db_path != db_path {
+        let error = "Proposal belongs to a different wallet database".to_string();
+        return match finish_stored_proposal(proposal_id, &send_flow_id, true) {
+            Ok(()) => Err(error),
+            Err(cleanup_error) => Err(format!(
+                "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+            )),
+        };
+    }
 
     // Scope DB writes and signing material so they are dropped before network I/O (broadcast).
-    let txids =
+    let create_result =
         with_wallet_db_write_lock("send.execute_proposal.create_transactions", move || {
             let mut db = open_wallet_db(db_path, network)?;
+            let (target_height, _) = db
+                .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+                .map_err(|e| format!("Read wallet target height before send: {e}"))?
+                .ok_or("Wallet must sync before executing a send proposal")?;
+            let min_target_height = BlockHeight::from(stored.proposal.min_target_height());
+            let current_target_height = BlockHeight::from(target_height);
+            let lock_expiry_height = send_proposal_lock_expiry(min_target_height);
+            if send_proposal_is_expired(min_target_height, current_target_height) {
+                return Err(
+                    "Send proposal expired; review the payment and create a new proposal"
+                        .to_string(),
+                );
+            }
+            // Reassert ownership while holding the process-wide write lock.
+            // If another flow acquired these inputs after this proposal's lock
+            // expired, this fails before transaction construction.
+            db.lock_outputs(
+                &proposal_input_refs(&stored.proposal),
+                proposal_lock.owner,
+                lock_expiry_height,
+            )
+            .map_err(|e| format!("Revalidate send proposal input locks: {e:?}"))?;
             let account_id = stored.account_id;
             let account = db
                 .get_account(account_id)
@@ -896,6 +1066,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &proposal,
+                        None,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -910,13 +1081,33 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &proposal,
+                        None,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
             };
             // USK and derived spending keys dropped here, before broadcast.
             Ok::<_, String>(txids)
-        })?;
+        });
+    let txids = match create_result {
+        Ok(txids) => {
+            // Successful wallet storage clears spent-input locks itself.
+            if let Err(error) = finish_stored_proposal(proposal_id, &send_flow_id, false) {
+                log::warn!(
+                    "send: transaction stored but proposal lock bookkeeping failed: {error}"
+                );
+            }
+            txids
+        }
+        Err(error) => {
+            return match finish_stored_proposal(proposal_id, &send_flow_id, true) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
     Ok(
@@ -975,7 +1166,12 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                         chain_tip_height,
                     )? {
                         drop(seed);
-                        super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+                        super::migration::retire_run_for_rebuild(
+                            db_path,
+                            network,
+                            &run.run_id,
+                            &message,
+                        )?;
                         let totals =
                             super::migration::pending_totals_for_run(db_path, &run.run_id)?;
                         let result = migration_result_from_pending_totals(
@@ -1180,122 +1376,162 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
         return Err("An Ironwood migration is already in progress for this account".to_string());
     }
 
-    let (base_pczt, orchard_spend_action_indices, fee_zatoshi, migrated_zatoshi) =
-        with_wallet_db_write_lock("send.immediate_migration.build", || {
-            let mut db = open_wallet_db(db_path, network)?;
-            let account_id = parse_account_uuid(account_uuid)?;
-            let account = db
-                .get_account(account_id)
-                .map_err(|e| format!("{e}"))?
-                .ok_or("Account not found")?;
-            let ufvk = account
-                .ufvk()
-                .ok_or("Account cannot create an Immediate migration")?;
-            let account_derivation = account.source().key_derivation();
-            let orchard_fvk = ufvk
-                .orchard()
-                .cloned()
-                .ok_or("Orchard viewing key not available")?;
-            let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
-            let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
-            let (target_height, anchor_height) = db
-                .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
-                .map_err(|e| format!("Failed to read anchor height: {e}"))?
-                .ok_or("Wallet must sync before migrating")?;
-            let orchard_notes =
-                select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
-            let valued_notes = orchard_notes
+    let (
+        base_pczt,
+        orchard_spend_action_indices,
+        fee_zatoshi,
+        migrated_zatoshi,
+        input_lock_owner,
+        locked_outputs,
+    ) = with_wallet_db_write_lock("send.immediate_migration.build", || {
+        let mut db = open_wallet_db(db_path, network)?;
+        let account_id = parse_account_uuid(account_uuid)?;
+        let account = db
+            .get_account(account_id)
+            .map_err(|e| format!("{e}"))?
+            .ok_or("Account not found")?;
+        let ufvk = account
+            .ufvk()
+            .ok_or("Account cannot create an Immediate migration")?;
+        let account_derivation = account.source().key_derivation();
+        let orchard_fvk = ufvk
+            .orchard()
+            .cloned()
+            .ok_or("Orchard viewing key not available")?;
+        let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
+        let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
+        let (target_height, anchor_height) = db
+            .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+            .map_err(|e| format!("Failed to read anchor height: {e}"))?
+            .ok_or("Wallet must sync before migrating")?;
+        let orchard_notes =
+            select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?
                 .into_iter()
                 .map(|note| {
-                    let value = note
-                        .note_value()
-                        .map(u64::from)
-                        .map_err(|e| format!("{e}"))?;
-                    Ok((note, value))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            let plan = immediate_migration_plan_for_values(
-                network,
-                target_height.into(),
-                valued_notes.iter().map(|(_, value)| *value),
-            )?
-            .ok_or(
-                "No spendable Orchard notes are available for Immediate migration".to_string(),
-            )?;
-            if plan != approved_plan {
-                return Err(
-                    "Immediate migration plan changed. Review the updated amount and fee."
-                        .to_string(),
-                );
-            }
-            let orchard_notes = valued_notes
-                .into_iter()
-                .filter_map(|(note, value)| (value > 0).then_some(note))
-                .collect::<Vec<_>>();
-            if orchard_notes.is_empty() {
-                return Err(
-                    "No spendable Orchard notes are available for Immediate migration".to_string(),
-                );
-            }
-            let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
-                &mut db,
-                network,
-                BlockHeight::from(anchor_height),
-                &orchard_notes,
-            )?;
-            let fee_rule = ConservativeZip317FeeRule;
-            let make_builder = |amount: Zatoshis| {
-                let mut builder = migration_child_builder(
-                    network,
-                    BlockHeight::from(target_height),
-                    BlockHeight::from(target_height),
-                    orchard_anchor.clone(),
-                )?;
-                for (note, merkle_path) in &orchard_inputs {
-                    builder
-                        .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
-                            orchard_fvk.clone(),
-                            *note,
-                            merkle_path.clone(),
-                        )
-                        .map_err(|e| format!("Add Immediate Orchard spend failed: {e}"))?;
-                }
-                builder
-                    .add_ironwood_output::<<ConservativeZip317FeeRule as FeeRule>::Error>(
-                        internal_ovk.clone(),
-                        recipient,
-                        amount,
-                        MemoBytes::empty(),
+                    db.get_spendable_note(
+                        note.txid(),
+                        ShieldedProtocol::Orchard,
+                        note.output_index() as u32,
+                        target_height,
+                        LockFilter::Policy(&LockedInputPolicy::Exclude),
                     )
-                    .map_err(|e| format!("Add Immediate Ironwood output failed: {e}"))?;
-                Ok::<_, String>(builder)
-            };
-            let minimum = Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
-                .map_err(|_| "Bad Immediate migration minimum output")?;
-            let fee = make_builder(minimum)?
-                .get_fee(&fee_rule)
-                .map_err(|e| format!("Estimate Immediate migration fee failed: {e}"))?;
-            if u64::from(fee) != plan.fee_zatoshi {
-                return Err("Immediate migration fee changed while building".to_string());
-            }
-            let amount = Zatoshis::from_u64(plan.migrated_zatoshi)
-                .map_err(|_| "Bad Immediate migration output amount")?;
-            let built = pczt_from_build_result(
-                make_builder(amount)?
-                    .build_for_pczt(rand_core::OsRng, &fee_rule)
-                    .map_err(|e| format!("Build Immediate migration PCZT failed: {e}"))?,
+                    .map_err(|e| format!("Revalidate Immediate migration input: {e}"))
+                    .map(|spendable| spendable.map(|_| note))
+                })
+                .collect::<Result<Vec<_>, String>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+        let valued_notes = orchard_notes
+            .into_iter()
+            .map(|note| {
+                let value = note
+                    .note_value()
+                    .map(u64::from)
+                    .map_err(|e| format!("{e}"))?;
+                Ok((note, value))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let plan = immediate_migration_plan_for_values(
+            network,
+            target_height.into(),
+            valued_notes.iter().map(|(_, value)| *value),
+        )?
+        .ok_or("No spendable Orchard notes are available for Immediate migration".to_string())?;
+        if plan != approved_plan {
+            return Err(
+                "Immediate migration plan changed. Review the updated amount and fee.".to_string(),
+            );
+        }
+        let orchard_notes = valued_notes
+            .into_iter()
+            .filter_map(|(note, value)| (value > 0).then_some(note))
+            .collect::<Vec<_>>();
+        if orchard_notes.is_empty() {
+            return Err(
+                "No spendable Orchard notes are available for Immediate migration".to_string(),
+            );
+        }
+        let locked_outputs = orchard_notes
+            .iter()
+            .map(|note| {
+                OutputRef::new(
+                    *note.txid(),
+                    PoolType::Shielded(ShieldedProtocol::Orchard),
+                    note.output_index() as u32,
+                )
+            })
+            .collect::<Vec<_>>();
+        let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
+            &mut db,
+            network,
+            BlockHeight::from(anchor_height),
+            &orchard_notes,
+        )?;
+        let fee_rule = ConservativeZip317FeeRule;
+        let make_builder = |amount: Zatoshis| {
+            let mut builder = migration_child_builder(
                 network,
-                account_derivation,
-                orchard_inputs.len(),
-                0,
+                BlockHeight::from(target_height),
+                BlockHeight::from(target_height),
+                orchard_anchor.clone(),
             )?;
-            Ok::<_, String>((
-                built.bytes,
-                built.orchard_spend_action_indices,
-                plan.fee_zatoshi,
-                plan.migrated_zatoshi,
-            ))
-        })?;
+            for (note, merkle_path) in &orchard_inputs {
+                builder
+                    .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
+                        orchard_fvk.clone(),
+                        *note,
+                        merkle_path.clone(),
+                    )
+                    .map_err(|e| format!("Add Immediate Orchard spend failed: {e}"))?;
+            }
+            builder
+                .add_ironwood_output::<<ConservativeZip317FeeRule as FeeRule>::Error>(
+                    internal_ovk.clone(),
+                    recipient,
+                    amount,
+                    MemoBytes::empty(),
+                )
+                .map_err(|e| format!("Add Immediate Ironwood output failed: {e}"))?;
+            Ok::<_, String>(builder)
+        };
+        let minimum = Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
+            .map_err(|_| "Bad Immediate migration minimum output")?;
+        let fee = make_builder(minimum)?
+            .get_fee(&fee_rule)
+            .map_err(|e| format!("Estimate Immediate migration fee failed: {e}"))?;
+        if u64::from(fee) != plan.fee_zatoshi {
+            return Err("Immediate migration fee changed while building".to_string());
+        }
+        let amount = Zatoshis::from_u64(plan.migrated_zatoshi)
+            .map_err(|_| "Bad Immediate migration output amount")?;
+        let built = pczt_from_build_result(
+            make_builder(amount)?
+                .build_for_pczt(rand_core::OsRng, &fee_rule)
+                .map_err(|e| format!("Build Immediate migration PCZT failed: {e}"))?,
+            network,
+            account_derivation,
+            orchard_inputs.len(),
+            0,
+        )?;
+        let input_lock_owner = LockOwner::random(&mut OsRng);
+        db.lock_outputs(
+            &locked_outputs,
+            input_lock_owner,
+            immediate_migration_lock_expiry(BlockHeight::from(target_height))?,
+        )
+        .map_err(|e| format!("Lock Immediate migration inputs: {e:?}"))?;
+        Ok::<_, String>((
+            built.bytes,
+            built.orchard_spend_action_indices,
+            plan.fee_zatoshi,
+            plan.migrated_zatoshi,
+            input_lock_owner,
+            locked_outputs,
+        ))
+    })?;
+    let mut input_lock =
+        ImmediateMigrationInputLock::new(db_path, network, input_lock_owner, locked_outputs);
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
     let signed =
         sign_orchard_migration_pczt_with_usk(&base_pczt, &orchard_spend_action_indices, &usk)?;
@@ -1313,17 +1549,31 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     .await
     {
         Ok(response) => response,
-        Err(status) if status.code() == Code::DeadlineExceeded => {
+        // A gRPC status after SendTransaction starts is ambiguous: the server
+        // may have accepted and relayed the transaction before the response
+        // was lost. Preserve the transaction locally, or retain the generic
+        // input lock when local storage also fails. Only an explicit
+        // SendResponse rejection below is a definite failure.
+        Err(status) => {
             let storage_message = match decrypt_and_store_migration_tx(
                 db_path,
                 network,
                 &extracted.raw_tx,
             ) {
                 Ok(()) => {
+                    if let Err(error) = input_lock.release() {
+                        log::warn!(
+                            "Immediate migration stored after ambiguous broadcast but input \
+                             unlock failed: {error}"
+                        );
+                    }
                     "The transaction was stored locally and will retry automatically during sync."
                         .to_string()
                 }
-                Err(error) => format!("Local tracking also failed: {error}"),
+                Err(error) => {
+                    input_lock.retain_until_expiry();
+                    format!("Local tracking also failed: {error}")
+                }
             };
             return Ok(IronwoodMigrationResult {
                 txids: extracted.txid.to_string(),
@@ -1331,22 +1581,23 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
                 broadcasted_count: 0,
                 total_count: 1,
                 message: Some(format!(
-                    "The Immediate migration broadcast timed out and may already be on the network. {storage_message}"
+                    "The Immediate migration broadcast response was unavailable ({status}) and \
+                     may already be on the network. {storage_message}"
                 )),
                 fee_zatoshi,
                 migrated_zatoshi,
             });
-        }
-        Err(status) => {
-            return Err(format!(
-                "Immediate migration broadcast failed before acceptance: {status}"
-            ));
         }
     };
     if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
         return Err(error);
     }
     let storage_error = decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx).err();
+    if storage_error.is_some() {
+        input_lock.retain_until_expiry();
+    } else if let Err(error) = input_lock.release() {
+        log::warn!("Immediate migration stored but input unlock failed: {error}");
+    }
 
     Ok(IronwoodMigrationResult {
         txids: extracted.txid.to_string(),
@@ -1432,6 +1683,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
 
     super::migration::retire_run_for_rebuild(
         db_path,
+        network,
         expected_run_id,
         "The previous signed migration transactions were absent after their broadcast windows. Rebuilding with a new credential.",
     )
@@ -1480,7 +1732,7 @@ async fn prepare_orchard_migration_outbox(
     if let Some(message) =
         pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
     {
-        super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+        super::migration::retire_run_for_rebuild(db_path, network, &run.run_id, &message)?;
         let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
         return Ok(migration_result_from_pending_totals(
             totals,
@@ -2058,6 +2310,7 @@ fn build_shielding_proposal(
         account_id,
         ConfirmationsPolicy::MIN,
         CoinbaseFilter::AllTransparentOutputs,
+        None,
     )
     .map_err(|e| format!("Shield proposal failed: {e}"))?;
 
@@ -2149,15 +2402,32 @@ fn ordinary_send_spend_policy(migration_active: bool) -> SpendPolicy {
     SpendPolicy::shielded_pools(ordinary_send_spend_pools(migration_active))
 }
 
-fn proposal_selected_note_refs(
-    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
-) -> impl Iterator<Item = ReceivedNoteId> + '_ {
+fn proposal_input_refs(proposal: &Proposal<WalletFeeRule, ReceivedNoteId>) -> Vec<OutputRef> {
     proposal
         .steps()
         .iter()
-        .flat_map(|step| step.shielded_inputs().into_iter())
-        .flat_map(|inputs| inputs.notes().iter())
-        .map(|note| *note.internal_note_id())
+        .flat_map(|step| {
+            step.shielded_inputs()
+                .into_iter()
+                .flat_map(|inputs| {
+                    inputs.notes().iter().map(|note| {
+                        OutputRef::new(
+                            *note.txid(),
+                            PoolType::Shielded(note.note().pool()),
+                            u32::from(note.output_index()),
+                        )
+                    })
+                })
+                .chain(step.transparent_inputs().iter().map(|utxo| {
+                    let outpoint = utxo.outpoint();
+                    OutputRef::new(
+                        TxId::from_bytes(*outpoint.hash()),
+                        PoolType::TRANSPARENT,
+                        outpoint.n(),
+                    )
+                }))
+        })
+        .collect()
 }
 
 #[derive(Default)]
@@ -2299,10 +2569,11 @@ impl InputSource for ReservedInputSource<'_> {
         protocol: ShieldedProtocol,
         index: u32,
         target_height: wallet::TargetHeight,
+        lock_filter: LockFilter<'_>,
     ) -> Result<Option<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
         Ok(self
             .inner
-            .get_spendable_note(txid, protocol, index, target_height)?
+            .get_spendable_note(txid, protocol, index, target_height, lock_filter)?
             .filter(|note| !self.reserved.contains(note.internal_note_id()))
             .filter(|note| !self.note_is_locked(note)))
     }
@@ -2315,6 +2586,7 @@ impl InputSource for ReservedInputSource<'_> {
         target_height: wallet::TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
+        lock_filter: LockFilter<'_>,
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         let selected = self.inner.select_spendable_notes(
             account,
@@ -2323,6 +2595,7 @@ impl InputSource for ReservedInputSource<'_> {
             target_height,
             confirmations_policy,
             &self.merged_excludes(exclude),
+            lock_filter,
         )?;
         Ok(ReceivedNotes::new(
             selected.sapling().to_vec(),
@@ -2347,12 +2620,14 @@ impl InputSource for ReservedInputSource<'_> {
         sources: &[ShieldedProtocol],
         target_height: wallet::TargetHeight,
         exclude: &[Self::NoteRef],
+        lock_filter: LockFilter<'_>,
     ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
         let selected = self.inner.select_unspent_notes(
             account,
             sources,
             target_height,
             &self.merged_excludes(exclude),
+            lock_filter,
         )?;
         Ok(ReceivedNotes::new(
             selected.sapling().to_vec(),
@@ -2377,12 +2652,14 @@ impl InputSource for ReservedInputSource<'_> {
         selector: &NoteFilter,
         target_height: wallet::TargetHeight,
         exclude: &[Self::NoteRef],
+        lock_filter: LockFilter<'_>,
     ) -> Result<AccountMeta, Self::Error> {
         self.inner.get_account_metadata(
             account,
             selector,
             target_height,
             &self.merged_excludes(exclude),
+            lock_filter,
         )
     }
 
@@ -2401,12 +2678,14 @@ impl InputSource for ReservedInputSource<'_> {
         target_height: wallet::TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         output_filter: CoinbaseFilter,
+        lock_filter: LockFilter<'_>,
     ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
         self.inner.get_spendable_transparent_outputs(
             address,
             target_height,
             confirmations_policy,
             output_filter,
+            lock_filter,
         )
     }
 }
@@ -2459,6 +2738,8 @@ fn build_send_max_proposal(
         memo_bytes,
         MaxSpendMode::MaxSpendable,
         ConfirmationsPolicy::default(),
+        &LockedInputPolicy::Exclude,
+        None,
     )
     .map_err(|e| format!("Propose max failed: {e}"))
 }
@@ -2519,6 +2800,7 @@ fn build_transparent_recipient_send_max_proposal(
             target_height,
             confirmations_policy,
             &[],
+            LockFilter::Policy(&LockedInputPolicy::Exclude),
         )
         .map_err(|e| format!("Select max inputs failed: {e}"))?;
 
@@ -2768,7 +3050,7 @@ fn orchard_anchor_and_witnesses_for_denomination_inputs(
     // effecting data, so the old unmined authorization must not hide the
     // stage-owned input from recovery.
     let available_notes =
-        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
 
     let mut selected_notes = Vec::with_capacity(inputs.len());
     let mut nullifiers = Vec::with_capacity(inputs.len());
@@ -2853,7 +3135,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before finalizing migration")?;
     let available_notes =
-        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
     let Some(selected) = available_notes.iter().find(|selected| {
         format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
             && selected.output_index() as u32 == note_ref.output_index
@@ -2990,6 +3272,7 @@ fn rebuild_expired_software_migration_parts(
             db_path,
             network,
             account_uuid,
+            run_id,
             &recovery.selected_note,
             (index + 1) as u32,
             schedule_block_offset,
@@ -3529,7 +3812,7 @@ async fn broadcast_due_scheduled_migration_txs(
     if let Some(message) =
         pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)?
     {
-        super::migration::retire_run_for_rebuild(db_path, run_id, &message)?;
+        super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
         return Ok(migration_result_from_pending_totals(
             totals_before,
             super::migration::PHASE_FAILED_TERMINAL,
@@ -3654,7 +3937,12 @@ async fn broadcast_due_scheduled_migration_txs(
                     "Migration transaction {} was rejected by the network. Review and approve a fresh schedule for the remaining Orchard balance. Error: {e}",
                     pending.txid_hex
                 );
-                super::migration::retire_run_for_rebuild(db_path, run_id, &rebuild_message)?;
+                super::migration::retire_run_for_rebuild(
+                    db_path,
+                    network,
+                    run_id,
+                    &rebuild_message,
+                )?;
                 let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
                 return Ok(migration_result_from_pending_totals(
                     totals,
@@ -3813,7 +4101,7 @@ fn reconcile_orchard_migration_outbox_receipt(
                 .unwrap_or_else(|| {
                     format!("Swift outbox rejected migration transaction {txid_hex}")
                 });
-            super::migration::retire_run_for_rebuild(db_path, run_id, &message)
+            super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)
         }
         "expired" => {
             if !schedule_updates.is_empty() {

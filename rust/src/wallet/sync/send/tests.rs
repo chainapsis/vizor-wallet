@@ -13,6 +13,41 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn send_proposal_expires_at_its_lock_boundary() {
+    let min_target = BlockHeight::from_u32(1_000);
+    assert!(!send_proposal_is_expired(
+        min_target,
+        BlockHeight::from_u32(1_039)
+    ));
+    assert!(send_proposal_is_expired(
+        min_target,
+        BlockHeight::from_u32(1_040)
+    ));
+    assert!(send_proposal_is_expired(
+        min_target,
+        BlockHeight::from_u32(1_041)
+    ));
+}
+
+#[test]
+fn immediate_migration_lock_matches_zip318_transaction_expiry() {
+    for target_height in [0, 3_428_143, 3_455_999, 3_456_000] {
+        let target_height = BlockHeight::from_u32(target_height);
+        assert_eq!(
+            immediate_migration_lock_expiry(target_height).unwrap(),
+            BlockHeight::from_u32(
+                migration::zip318_canonical_migration_expiry_height(u32::from(target_height))
+                    .unwrap()
+            )
+        );
+        assert!(
+            immediate_migration_lock_expiry(target_height).unwrap()
+                > target_height + SEND_PROPOSAL_LOCK_BLOCKS
+        );
+    }
+}
+
+#[test]
 fn immediate_migration_plan_ignores_zero_value_orchard_notes() {
     let target_height = BlockHeight::from_u32(500);
     let with_padding = immediate_migration_plan_for_values(
@@ -1801,6 +1836,7 @@ fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
         &wallet::SpendingKeys::from_unified_spending_key(usk),
         OvkPolicy::Sender,
         &proposal,
+        None,
     )
     .expect("many-UTXO shielding should build without a fee/change mismatch");
     let change_values = proposal

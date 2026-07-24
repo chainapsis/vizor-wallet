@@ -2134,8 +2134,19 @@ pub fn create_pczt_from_proposal(
 /// Release a stored proposal without executing it. Called by the Dart send
 /// flow when the user cancels before `create_pczt_from_proposal` so the
 /// proposal ID cannot be replayed. Idempotent.
-pub fn discard_proposal(proposal_id: u64, send_flow_id: String) {
-    wallet_sync::discard_proposal(proposal_id, &send_flow_id);
+pub fn discard_proposal(proposal_id: u64, send_flow_id: String) -> Result<(), String> {
+    wallet_sync::discard_proposal(proposal_id, &send_flow_id)
+}
+
+/// Remove the replayable proposal capability but keep its owner-scoped wallet
+/// input lock until the original expiry height. Use this when broadcast
+/// acceptance is uncertain or the accepted transaction could not be persisted
+/// locally, so a conflicting send cannot be created immediately.
+pub fn retain_proposal_lock_until_expiry(
+    proposal_id: u64,
+    send_flow_id: String,
+) -> Result<(), String> {
+    wallet_sync::retain_proposal_lock_until_expiry(proposal_id, &send_flow_id)
 }
 
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output

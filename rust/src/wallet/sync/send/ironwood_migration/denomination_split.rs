@@ -266,7 +266,7 @@ fn create_padded_orchard_denomination_pczts(
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before preparing denominations")?;
     let mut orchard_notes =
-        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
     orchard_notes.sort_by_key(|note| (format!("{}", note.txid()), note.output_index()));
     if orchard_notes.is_empty() {
         return Ok(None);

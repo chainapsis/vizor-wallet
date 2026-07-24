@@ -1,5 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, seq::SliceRandom, CryptoRng, Rng, RngCore};
@@ -44,6 +45,8 @@ const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
 const PENDING_TXS_TABLE: &str = "vizor_migration_pending_txs";
 const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
+static STARTUP_WALLET_LOCK_RECONCILIATIONS: LazyLock<Mutex<HashSet<(String, String)>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 pub(crate) fn delete_account_migration_rows_with_tx(
     tx: &rusqlite::Transaction<'_>,
@@ -372,7 +375,11 @@ pub(crate) fn migration_status(
         reconcile_denomination_confirmations(&conn, &run)?;
         reconcile_run_confirmations(&conn, &run.run_id)?;
         let run = active_run(&conn, account_uuid, network)?.unwrap_or(run);
-        return status_for_run(&conn, run);
+        let run_id = run.run_id.clone();
+        let status = status_for_run(&conn, run)?;
+        drop(conn);
+        reconcile_wallet_locks_for_run(db_path, network, &run_id)?;
+        return Ok(status);
     }
 
     let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
@@ -605,7 +612,222 @@ pub(crate) fn active_migration_run(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     adopt_configured_timing_policy_for_active_run(&conn, account_uuid, network)?;
+    // This predicate is on ordinary send/fee-estimate hot paths. Generic
+    // wallet-lock reconciliation belongs at migration creation, status
+    // advancement, and terminal transitions; doing it here turned every
+    // predicate read into an O(number of migration notes) write pass.
     active_run(&conn, account_uuid, network)
+}
+
+fn migration_phase_releases_wallet_locks(phase: &str) -> bool {
+    matches!(
+        phase,
+        PHASE_COMPLETE | PHASE_FAILED_TERMINAL | PHASE_ABANDONED
+    )
+}
+
+fn wallet_lock_reconciliation_is_stable(applied_release: bool, current_release: bool) -> bool {
+    applied_release == current_release
+}
+
+fn wallet_lock_reconciliation_snapshot(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Option<(bool, Vec<(String, u32)>)>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    #[cfg(test)]
+    {
+        // Migration persistence tests intentionally exercise the extension
+        // tables without constructing a full librustzcash wallet schema.
+        if !table_exists(&conn, "schemer_migrations")? {
+            return Ok(None);
+        }
+    }
+    let phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration phase for wallet-lock reconciliation: {e}"))?;
+    phase
+        .map(|phase| {
+            Ok((
+                migration_phase_releases_wallet_locks(&phase),
+                wallet_lock_candidates_with_conn(&conn, run_id)?,
+            ))
+        })
+        .transpose()
+}
+
+fn wallet_lock_candidates_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<Vec<(String, u32)>, String> {
+    let mut candidates = BTreeSet::new();
+    let mut prepared = conn
+        .prepare_cached(&format!(
+            "SELECT txid_hex, output_index
+             FROM {PREPARED_NOTES_TABLE}
+             WHERE run_id = ?1"
+        ))
+        .map_err(|e| format!("Prepare migration wallet-lock note query: {e}"))?;
+    let prepared_rows = prepared
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })
+        .map_err(|e| format!("Query migration wallet-lock notes: {e}"))?;
+    for row in prepared_rows {
+        candidates.insert(row.map_err(|e| format!("Read migration wallet-lock note: {e}"))?);
+    }
+
+    let mut stage_inputs = conn
+        .prepare_cached(&format!(
+            "SELECT txid_hex, output_index
+             FROM {STAGE_INPUTS_TABLE}
+             WHERE run_id = ?1"
+        ))
+        .map_err(|e| format!("Prepare denomination wallet-lock input query: {e}"))?;
+    let input_rows = stage_inputs
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })
+        .map_err(|e| format!("Query denomination wallet-lock inputs: {e}"))?;
+    for row in input_rows {
+        candidates.insert(row.map_err(|e| format!("Read denomination wallet-lock input: {e}"))?);
+    }
+    Ok(candidates.into_iter().collect())
+}
+
+/// Reconciles Vizor's durable migration state with librustzcash's generic,
+/// owner-scoped output locks.
+///
+/// This is intentionally idempotent. It also discovers denomination outputs
+/// that did not exist when the run was created but have since been scanned
+/// into the wallet.
+pub(crate) fn reconcile_wallet_locks_for_run(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+) -> Result<(), String> {
+    let result = reconcile_wallet_locks_for_run_inner(db_path, network, run_id);
+    if result.is_err() {
+        // A terminal phase is durable even when its subsequent generic-wallet
+        // unlock fails. Invalidate the process-local startup marker so the
+        // next foreground sync retries every durable run instead of leaving a
+        // u32::MAX migration lock stranded until process restart.
+        let key = (db_path.to_string(), network_name(network).to_string());
+        match STARTUP_WALLET_LOCK_RECONCILIATIONS.lock() {
+            Ok(mut reconciled) => {
+                reconciled.remove(&key);
+            }
+            Err(error) => {
+                log::warn!(
+                    "migration: failed to invalidate startup wallet-lock reconciliation after \
+                     run {run_id} error: {error}"
+                );
+            }
+        }
+    }
+    result
+}
+
+fn reconcile_wallet_locks_for_run_inner(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+) -> Result<(), String> {
+    // Phase transitions and wallet locks live behind different public APIs, so
+    // they cannot share one SQLite transaction. Re-check the desired terminal
+    // disposition after every wallet mutation. If a concurrent status/advance
+    // call crossed this one, the loser immediately applies the newer state.
+    // The phase-changing paths also call this function, so a transition that
+    // begins after the final check supplies the matching final reconciliation.
+    for _ in 0..8 {
+        let Some((release_locks, candidates)) =
+            wallet_lock_reconciliation_snapshot(db_path, run_id)?
+        else {
+            return Ok(());
+        };
+        if release_locks {
+            super::migration_wallet_ops::unlock_orchard_migration_outputs(
+                db_path,
+                network,
+                run_id,
+                &candidates,
+            )?;
+        } else {
+            super::migration_wallet_ops::ensure_orchard_migration_locks(
+                db_path,
+                network,
+                run_id,
+                &candidates,
+            )?;
+        }
+
+        let Some((current_release_locks, _)) =
+            wallet_lock_reconciliation_snapshot(db_path, run_id)?
+        else {
+            // If the run was deleted concurrently, remove any owner-scoped
+            // locks that this pass may just have created.
+            super::migration_wallet_ops::unlock_orchard_migration_outputs(
+                db_path,
+                network,
+                run_id,
+                &candidates,
+            )?;
+            return Ok(());
+        };
+        if wallet_lock_reconciliation_is_stable(release_locks, current_release_locks) {
+            return Ok(());
+        }
+    }
+    Err("Migration phase changed repeatedly during wallet-lock reconciliation".to_string())
+}
+
+pub(crate) fn reconcile_wallet_locks_after_startup(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    let key = (db_path.to_string(), network_name(network).to_string());
+    if STARTUP_WALLET_LOCK_RECONCILIATIONS
+        .lock()
+        .map_err(|e| format!("Lock startup migration reconciliation state: {e}"))?
+        .contains(&key)
+    {
+        return Ok(());
+    }
+
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT run_id
+             FROM {RUNS_TABLE}
+             WHERE network = ?1
+             ORDER BY created_at_ms"
+        ))
+        .map_err(|e| format!("Prepare startup migration wallet-lock query: {e}"))?;
+    let run_ids = stmt
+        .query_map(params![network_name(network)], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|e| format!("Query startup migration wallet locks: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read startup migration wallet locks: {e}"))?;
+    drop(stmt);
+    drop(conn);
+
+    for run_id in run_ids {
+        reconcile_wallet_locks_for_run(db_path, network, &run_id)?;
+    }
+    STARTUP_WALLET_LOCK_RECONCILIATIONS
+        .lock()
+        .map_err(|e| format!("Lock startup migration reconciliation state: {e}"))?
+        .insert(key);
+    Ok(())
 }
 
 pub(crate) fn timing_policy_for_run(
@@ -635,6 +857,22 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     if denomination_stages.is_empty() && prepared_notes.is_empty() {
         return Err("Migration run has no prepared funding notes".to_string());
     }
+    // Preserve the complete initial candidate set outside the custom
+    // migration tables. If generic lock reconciliation succeeds and a later
+    // snapshot read fails, cleanup must still be able to unlock every output
+    // before deleting the durable run that defines its owner.
+    let initial_wallet_lock_candidates = prepared_notes
+        .iter()
+        .map(|note| (note.txid_hex.clone(), note.output_index))
+        .chain(denomination_stages.iter().flat_map(|stage| {
+            stage
+                .inputs
+                .iter()
+                .map(|input| (input.txid_hex.clone(), input.output_index))
+        }))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     if let Some(run) = active_run(&conn, account_uuid, network)? {
@@ -710,6 +948,27 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     )?;
     tx.commit()
         .map_err(|e| format!("Commit staged migration run: {e}"))?;
+    if let Err(error) = reconcile_wallet_locks_for_run(db_path, network, &run_id) {
+        return Err(cleanup_failed_created_run(
+            error,
+            || {
+                super::migration_wallet_ops::unlock_orchard_migration_outputs(
+                    db_path,
+                    network,
+                    &run_id,
+                    &initial_wallet_lock_candidates,
+                )
+            },
+            || {
+                conn.execute(
+                    &format!("DELETE FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                    params![run_id],
+                )
+                .map(|_| ())
+                .map_err(|e| format!("Delete unlocked migration run: {e}"))
+            },
+        ));
+    }
     Ok(run_id)
 }
 
@@ -851,7 +1110,32 @@ pub(crate) fn finalize_private_migration_draft(
     .map_err(|e| format!("Activate private migration draft: {e}"))?;
     tx.commit()
         .map_err(|e| format!("Commit private migration draft: {e}"))?;
-    Ok(())
+    drop(conn);
+    reconcile_wallet_locks_for_run(db_path, network, run_id)
+}
+
+fn cleanup_failed_created_run(
+    reconciliation_error: String,
+    unlock: impl FnOnce() -> Result<(), String>,
+    delete_run: impl FnOnce() -> Result<(), String>,
+) -> String {
+    if let Err(unlock_error) = unlock() {
+        // The run is the durable source of both the deterministic LockOwner
+        // and its candidate outputs. Preserve it whenever unlock cannot be
+        // confirmed so startup reconciliation can safely retry.
+        return format!(
+            "{reconciliation_error}; additionally failed to release migration wallet locks; \
+             the durable run was preserved for recovery: {unlock_error}"
+        );
+    }
+
+    match delete_run() {
+        Ok(()) => reconciliation_error,
+        Err(delete_error) => format!(
+            "{reconciliation_error}; wallet locks were released but the migration run could not \
+             be removed and was preserved for reconciliation: {delete_error}"
+        ),
+    }
 }
 
 pub(crate) fn mark_run_phase(
@@ -2714,6 +2998,7 @@ pub(crate) fn scheduled_inputs_spent_by_mined_transactions(
 
 pub(crate) fn retire_run_for_rebuild(
     db_path: &str,
+    network: WalletNetwork,
     run_id: &str,
     message: &str,
 ) -> Result<(), String> {
@@ -2742,7 +3027,9 @@ pub(crate) fn retire_run_for_rebuild(
     )
     .map_err(|e| format!("Release expired migration note locks: {e}"))?;
     tx.commit()
-        .map_err(|e| format!("Commit migration rebuild transition: {e}"))
+        .map_err(|e| format!("Commit migration rebuild transition: {e}"))?;
+    drop(conn);
+    reconcile_wallet_locks_for_run(db_path, network, run_id)
 }
 
 pub(crate) fn reschedule_overdue_pending_txs(
@@ -4120,6 +4407,12 @@ fn recover_latest_idempotent_broadcast_failure(
     .map_err(|e| format!("Restore migration note locks after duplicate broadcast: {e}"))?;
     tx.commit()
         .map_err(|e| format!("Commit idempotent migration broadcast recovery: {e}"))?;
+    // A terminal rebuild releases generic locks. If an "already accepted"
+    // response proves that terminal state was a false negative, reacquire the
+    // run's locks exactly once as part of the recovery transition.
+    if let Some(db_path) = conn.path().filter(|path| !path.is_empty()) {
+        reconcile_wallet_locks_for_run(db_path, network, &run_id)?;
+    }
     log::info!(
         "migration: restored run {run_id} after lightwalletd reported an already accepted transaction"
     );

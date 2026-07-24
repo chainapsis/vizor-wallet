@@ -811,6 +811,18 @@ Future<void> discardProposal({
   sendFlowId: sendFlowId,
 );
 
+/// Remove the replayable proposal capability but keep its owner-scoped wallet
+/// input lock until the original expiry height. Use this when broadcast
+/// acceptance is uncertain or the accepted transaction could not be persisted
+/// locally, so a conflicting send cannot be created immediately.
+Future<void> retainProposalLockUntilExpiry({
+  required BigInt proposalId,
+  required String sendFlowId,
+}) => RustLib.instance.api.crateApiSyncRetainProposalLockUntilExpiry(
+  proposalId: proposalId,
+  sendFlowId: sendFlowId,
+);
+
 /// Add Orchard (and Sapling if needed) proofs to a PCZT locally. The output
 /// is the "PCZT with proofs" half that is later combined with the signed PCZT
 /// returned by the hardware wallet.

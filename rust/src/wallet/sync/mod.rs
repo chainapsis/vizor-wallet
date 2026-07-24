@@ -25,6 +25,7 @@ use crate::wallet::{
 
 mod broadcast;
 mod migration;
+mod migration_wallet_ops;
 mod pczt;
 mod send;
 mod transactions;
@@ -40,12 +41,13 @@ mod transactions;
 // exactly).
 pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
-    MigrationPartState, MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
+    reconcile_wallet_locks_after_startup, MigrationPartState, MigrationScheduleEntry,
+    MigrationStatus, PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
-    redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
+    redact_pczt_for_signer, retain_proposal_lock_until_expiry, ExtractAndBroadcastPcztResult,
 };
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::{
@@ -455,6 +457,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 pub(super) struct StoredProposal {
+    pub proposal_id: u64,
     pub proposal: zcash_client_backend::proposal::Proposal<
         send::WalletFeeRule,
         zcash_client_sqlite::ReceivedNoteId,
@@ -469,16 +472,30 @@ pub(super) struct StoredProposal {
     pub send_flow_id: String,
 }
 
+#[derive(Clone)]
+pub(super) struct StoredProposalLock {
+    pub proposal: zcash_client_backend::proposal::Proposal<
+        send::WalletFeeRule,
+        zcash_client_sqlite::ReceivedNoteId,
+    >,
+    pub network: WalletNetwork,
+    pub db_path: String,
+    pub owner: zcash_client_backend::wallet::LockOwner,
+    pub send_flow_id: String,
+}
+
 pub(super) static PROPOSAL_STORE: std::sync::LazyLock<Mutex<ProposalStore>> =
     std::sync::LazyLock::new(|| {
         Mutex::new(ProposalStore {
             proposals: HashMap::new(),
+            locks: HashMap::new(),
             next_id: 1,
         })
     });
 
 pub(super) struct ProposalStore {
     pub proposals: HashMap<u64, StoredProposal>,
+    pub locks: HashMap<u64, StoredProposalLock>,
     pub next_id: u64,
 }
 
@@ -506,23 +523,134 @@ pub(super) fn consume_stored_proposal(
         .ok_or_else(|| not_found_message.to_string())
 }
 
-pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) {
-    match PROPOSAL_STORE.lock() {
-        Ok(mut store) => match store.proposals.get(&proposal_id) {
+pub(super) fn stored_proposal_lock(
+    proposal_id: u64,
+    send_flow_id: &str,
+) -> Result<StoredProposalLock, String> {
+    let store = PROPOSAL_STORE
+        .lock()
+        .map_err(|e| format!("Lock error: {e}"))?;
+    match store.locks.get(&proposal_id) {
+        Some(lock) if lock.send_flow_id == send_flow_id => Ok(lock.clone()),
+        Some(_) => {
+            log::warn!("proposal store: lock send flow mismatch for proposal_id={proposal_id}");
+            Err("Send flow mismatch".to_string())
+        }
+        None => Err("Proposal input lock not found".to_string()),
+    }
+}
+
+fn unlock_stored_proposal(
+    proposal_id: u64,
+    send_flow_id: &str,
+    lock: StoredProposalLock,
+) -> Result<(), String> {
+    with_wallet_db_write_lock("sync.unlock_stored_proposal", || {
+        let mut db = open_wallet_db(&lock.db_path, lock.network)?;
+        // The wallet write lock is always acquired before the proposal-store
+        // mutex (the same order used while creating proposals). Re-checking
+        // here prevents a retain call that won the race from being followed by
+        // a stale DB unlock.
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store before DB unlock: {e}"))?;
+        let current = match store.locks.get(&proposal_id) {
+            Some(current) if current.send_flow_id == send_flow_id => current.clone(),
+            Some(_) => return Err("Send flow mismatch before DB unlock".to_string()),
+            None => return Ok(()),
+        };
+        zcash_client_backend::data_api::wallet::unlock_proposal_inputs(
+            &mut db,
+            &current.proposal,
+            current.owner,
+        )
+        .map_err(|e| format!("Unlock abandoned send proposal inputs: {e}"))?;
+        store.locks.remove(&proposal_id);
+        Ok(())
+    })
+}
+
+pub(super) fn finish_stored_proposal(
+    proposal_id: u64,
+    send_flow_id: &str,
+    release_inputs: bool,
+) -> Result<(), String> {
+    let lock = {
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store for finish: {e}"))?;
+        let Some(lock) = store.locks.get(&proposal_id) else {
+            return Ok(());
+        };
+        if lock.send_flow_id != send_flow_id {
+            return Err("Send flow mismatch".to_string());
+        }
+        if !release_inputs {
+            store.locks.remove(&proposal_id);
+            return Ok(());
+        }
+        lock.clone()
+    };
+
+    // The DB helper re-checks ownership while holding both locks. On DB
+    // failure the owner record remains in place, allowing an idempotent retry.
+    unlock_stored_proposal(proposal_id, send_flow_id, lock)
+}
+
+pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) -> Result<(), String> {
+    let should_release = {
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store for discard: {e}"))?;
+        match store.proposals.get(&proposal_id) {
             Some(stored) if stored.send_flow_id == send_flow_id => {
                 store.proposals.remove(&proposal_id);
+                true
             }
-            Some(_) => {
-                log::warn!(
-                    "proposal store: discard ignored for send flow mismatch proposal_id={proposal_id}"
-                );
-            }
-            None => {}
-        },
-        Err(e) => {
-            log::warn!("proposal store: discard lock failed: {e}");
+            Some(_) => return Err("Send flow mismatch".to_string()),
+            None => match store.locks.get(&proposal_id) {
+                Some(lock) if lock.send_flow_id == send_flow_id => true,
+                Some(_) => return Err("Send flow mismatch".to_string()),
+                None => false,
+            },
         }
+    };
+    if should_release {
+        finish_stored_proposal(proposal_id, send_flow_id, true)?;
     }
+    Ok(())
+}
+
+/// Removes all in-memory capability to reuse or explicitly unlock a proposal,
+/// while leaving its wallet-level input lock to expire at its original height.
+///
+/// This is used when a broadcast may have reached the network but local
+/// transaction storage did not complete. Releasing the DB lock in that state
+/// could allow an immediate conflicting send.
+pub(super) fn retain_stored_proposal_lock_until_expiry(
+    proposal_id: u64,
+    send_flow_id: &str,
+) -> Result<(), String> {
+    let mut store = PROPOSAL_STORE
+        .lock()
+        .map_err(|e| format!("Lock proposal store to retain DB lock: {e}"))?;
+    if let Some(proposal) = store.proposals.get(&proposal_id) {
+        if proposal.send_flow_id != send_flow_id {
+            return Err("Send flow mismatch".to_string());
+        }
+        store.proposals.remove(&proposal_id);
+    }
+    if let Some(lock) = store.locks.get(&proposal_id) {
+        if lock.send_flow_id != send_flow_id {
+            return Err("Send flow mismatch".to_string());
+        }
+        // Remove the unlock capability in the same critical section as the
+        // replayable proposal. A concurrent discard can therefore observe
+        // either the complete pre-retain state or the complete retained state,
+        // never the gap between them.
+        store.locks.remove(&proposal_id);
+    }
+    Ok(())
 }
 
 // ======================== Helpers ========================
@@ -606,8 +734,8 @@ mod tests {
     fn discard_proposal_is_idempotent_for_missing_id() {
         // Should not panic, should not poison the mutex.
         let id = unique_proposal_id();
-        discard_proposal(id, "missing-flow");
-        discard_proposal(id, "missing-flow"); // second call must also be a no-op
+        discard_proposal(id, "missing-flow").unwrap();
+        discard_proposal(id, "missing-flow").unwrap(); // second call must also be a no-op
     }
 
     #[test]
@@ -650,6 +778,6 @@ mod tests {
             id,
             "missing-flow",
         );
-        discard_proposal(id, "missing-flow"); // cleanup must not panic
+        discard_proposal(id, "missing-flow").unwrap(); // cleanup must not panic
     }
 }

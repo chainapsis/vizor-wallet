@@ -509,6 +509,8 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
       pcztBytes: const [1, 2, 3],
       needsSaplingParams: false,
       feeZatoshi: BigInt.zero,
+      proposalId: BigInt.one,
+      sendFlowId: 'test-swap-hardware',
     );
   }
 
@@ -529,7 +531,11 @@ class _FakeSwapHardwareSigningService implements SwapHardwareSigningService {
   }
 
   @override
+  Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {}
+
+  @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+    required SwapHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,

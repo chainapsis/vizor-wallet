@@ -1,8 +1,84 @@
 use super::*;
 use rand::{rngs::StdRng, SeedableRng};
+use std::cell::Cell;
 
 const TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const TEST_SALT_BASE64: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
+
+#[test]
+fn wallet_lock_reconciliation_retries_when_terminal_disposition_changes() {
+    assert!(migration_phase_releases_wallet_locks(PHASE_COMPLETE));
+    assert!(migration_phase_releases_wallet_locks(PHASE_FAILED_TERMINAL));
+    assert!(migration_phase_releases_wallet_locks(PHASE_ABANDONED));
+    assert!(!migration_phase_releases_wallet_locks(
+        PHASE_READY_TO_MIGRATE
+    ));
+
+    assert!(!wallet_lock_reconciliation_is_stable(false, true));
+    assert!(!wallet_lock_reconciliation_is_stable(true, false));
+    assert!(wallet_lock_reconciliation_is_stable(false, false));
+    assert!(wallet_lock_reconciliation_is_stable(true, true));
+}
+
+#[test]
+fn wallet_lock_reconciliation_failure_invalidates_startup_marker() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("missing-parent")
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let network = WalletNetwork::Test;
+    let key = (db_path.clone(), network_name(network).to_string());
+    STARTUP_WALLET_LOCK_RECONCILIATIONS
+        .lock()
+        .unwrap()
+        .insert(key.clone());
+
+    assert!(reconcile_wallet_locks_for_run(&db_path, network, "run-1").is_err());
+    assert!(!STARTUP_WALLET_LOCK_RECONCILIATIONS
+        .lock()
+        .unwrap()
+        .contains(&key));
+}
+
+#[test]
+fn failed_run_creation_preserves_durable_run_when_unlock_fails() {
+    let delete_called = Cell::new(false);
+    let error = cleanup_failed_created_run(
+        "reconciliation failed".to_string(),
+        || Err("wallet database busy".to_string()),
+        || {
+            delete_called.set(true);
+            Ok(())
+        },
+    );
+
+    assert!(!delete_called.get());
+    assert!(error.contains("durable run was preserved for recovery"));
+    assert!(error.contains("wallet database busy"));
+}
+
+#[test]
+fn failed_run_creation_deletes_run_only_after_unlock_succeeds() {
+    let unlock_completed = Cell::new(false);
+    let delete_saw_unlock = Cell::new(false);
+    let error = cleanup_failed_created_run(
+        "reconciliation failed".to_string(),
+        || {
+            unlock_completed.set(true);
+            Ok(())
+        },
+        || {
+            delete_saw_unlock.set(unlock_completed.get());
+            Ok(())
+        },
+    );
+
+    assert!(delete_saw_unlock.get());
+    assert_eq!(error, "reconciliation failed");
+}
 
 fn create_outbox_test_run(
     db_path: &str,

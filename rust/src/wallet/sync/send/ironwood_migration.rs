@@ -633,7 +633,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     if let Some(message) =
         pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
     {
-        super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+        super::migration::retire_run_for_rebuild(db_path, network, &run.run_id, &message)?;
         return Err(message);
     }
     super::migration::mark_expired_pending_parts_for_resign(
@@ -711,6 +711,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                     db_path,
                     network,
                     account_uuid,
+                    &run.run_id,
                     note_ref,
                     migration_index,
                     schedule_block_offset,
