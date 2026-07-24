@@ -755,6 +755,7 @@ class _RustApiFake implements RustLibApi {
   @override
   Future<Uint8List> crateApiSyncCreatePcztFromProposal({
     required String dbPath,
+    required String lightwalletdUrl,
     required String network,
     required BigInt proposalId,
     required String sendFlowId,

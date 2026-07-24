@@ -77,9 +77,9 @@ pub(super) fn ensure_orchard_migration_locks(
     network: WalletNetwork,
     run_id: &str,
     candidates: &[(String, u32)],
-) -> Result<(), String> {
+) -> Result<bool, String> {
     if candidates.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
 
     with_wallet_db_write_lock("migration.ensure_orchard_migration_locks", || {
@@ -95,7 +95,7 @@ pub(super) fn ensure_orchard_migration_locks(
             // Startup can inspect durable migration state before the wallet has
             // restored a usable target height. Existing locks remain persisted;
             // the next post-sync reconciliation will discover any new outputs.
-            return Ok(());
+            return Ok(false);
         };
         let mut outputs = Vec::new();
         let mut seen = BTreeSet::new();
@@ -117,14 +117,14 @@ pub(super) fn ensure_orchard_migration_locks(
             }
         }
         if outputs.is_empty() {
-            return Ok(());
+            return Ok(true);
         }
         db.lock_outputs(
             &outputs,
             migration_lock_owner(run_id),
             BlockHeight::from_u32(u32::MAX),
         )
-        .map(|_| ())
+        .map(|_| true)
         .map_err(|e| format!("Lock migration inputs in wallet DB: {e:?}"))
     })
 }

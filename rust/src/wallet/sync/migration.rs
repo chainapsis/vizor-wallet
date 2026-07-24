@@ -1,6 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, seq::SliceRandom, CryptoRng, Rng, RngCore};
@@ -45,9 +44,6 @@ const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
 const PENDING_TXS_TABLE: &str = "vizor_migration_pending_txs";
 const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
-static STARTUP_WALLET_LOCK_RECONCILIATIONS: LazyLock<Mutex<HashSet<(String, String)>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
-
 pub(crate) fn delete_account_migration_rows_with_tx(
     tx: &rusqlite::Transaction<'_>,
     account_uuid: &str,
@@ -712,33 +708,24 @@ pub(crate) fn reconcile_wallet_locks_for_run(
     network: WalletNetwork,
     run_id: &str,
 ) -> Result<(), String> {
-    let result = reconcile_wallet_locks_for_run_inner(db_path, network, run_id);
-    if result.is_err() {
-        // A terminal phase is durable even when its subsequent generic-wallet
-        // unlock fails. Invalidate the process-local startup marker so the
-        // next foreground sync retries every durable run instead of leaving a
-        // u32::MAX migration lock stranded until process restart.
-        let key = (db_path.to_string(), network_name(network).to_string());
-        match STARTUP_WALLET_LOCK_RECONCILIATIONS.lock() {
-            Ok(mut reconciled) => {
-                reconciled.remove(&key);
-            }
-            Err(error) => {
-                log::warn!(
-                    "migration: failed to invalidate startup wallet-lock reconciliation after \
-                     run {run_id} error: {error}"
-                );
-            }
-        }
-    }
-    result
+    reconcile_wallet_locks_for_run_with_outcome(db_path, network, run_id).map(|_| ())
+}
+
+/// Returns `false` when the wallet has not restored a usable target height and
+/// lock creation must be retried after sync.
+fn reconcile_wallet_locks_for_run_with_outcome(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+) -> Result<bool, String> {
+    reconcile_wallet_locks_for_run_inner(db_path, network, run_id)
 }
 
 fn reconcile_wallet_locks_for_run_inner(
     db_path: &str,
     network: WalletNetwork,
     run_id: &str,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     // Phase transitions and wallet locks live behind different public APIs, so
     // they cannot share one SQLite transaction. Re-check the desired terminal
     // disposition after every wallet mutation. If a concurrent status/advance
@@ -749,23 +736,24 @@ fn reconcile_wallet_locks_for_run_inner(
         let Some((release_locks, candidates)) =
             wallet_lock_reconciliation_snapshot(db_path, run_id)?
         else {
-            return Ok(());
+            return Ok(true);
         };
-        if release_locks {
+        let completed = if release_locks {
             super::migration_wallet_ops::unlock_orchard_migration_outputs(
                 db_path,
                 network,
                 run_id,
                 &candidates,
             )?;
+            true
         } else {
             super::migration_wallet_ops::ensure_orchard_migration_locks(
                 db_path,
                 network,
                 run_id,
                 &candidates,
-            )?;
-        }
+            )?
+        };
 
         let Some((current_release_locks, _)) =
             wallet_lock_reconciliation_snapshot(db_path, run_id)?
@@ -778,28 +766,19 @@ fn reconcile_wallet_locks_for_run_inner(
                 run_id,
                 &candidates,
             )?;
-            return Ok(());
+            return Ok(true);
         };
         if wallet_lock_reconciliation_is_stable(release_locks, current_release_locks) {
-            return Ok(());
+            return Ok(completed);
         }
     }
     Err("Migration phase changed repeatedly during wallet-lock reconciliation".to_string())
 }
 
-pub(crate) fn reconcile_wallet_locks_after_startup(
+pub(crate) fn reconcile_wallet_locks_after_sync(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<(), String> {
-    let key = (db_path.to_string(), network_name(network).to_string());
-    if STARTUP_WALLET_LOCK_RECONCILIATIONS
-        .lock()
-        .map_err(|e| format!("Lock startup migration reconciliation state: {e}"))?
-        .contains(&key)
-    {
-        return Ok(());
-    }
-
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
@@ -809,24 +788,24 @@ pub(crate) fn reconcile_wallet_locks_after_startup(
              WHERE network = ?1
              ORDER BY created_at_ms"
         ))
-        .map_err(|e| format!("Prepare startup migration wallet-lock query: {e}"))?;
+        .map_err(|e| format!("Prepare post-sync migration wallet-lock query: {e}"))?;
     let run_ids = stmt
         .query_map(params![network_name(network)], |row| {
             row.get::<_, String>(0)
         })
-        .map_err(|e| format!("Query startup migration wallet locks: {e}"))?
+        .map_err(|e| format!("Query post-sync migration wallet locks: {e}"))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Read startup migration wallet locks: {e}"))?;
+        .map_err(|e| format!("Read post-sync migration wallet locks: {e}"))?;
     drop(stmt);
     drop(conn);
 
     for run_id in run_ids {
-        reconcile_wallet_locks_for_run(db_path, network, &run_id)?;
+        // Re-run this idempotent reconciliation after every completed scan.
+        // Some candidates refer to denomination outputs that were not mined
+        // or visible during an earlier sync, so process-lifetime caching would
+        // leave them unlocked when a later scan finally discovers them.
+        reconcile_wallet_locks_for_run_with_outcome(db_path, network, &run_id)?;
     }
-    STARTUP_WALLET_LOCK_RECONCILIATIONS
-        .lock()
-        .map_err(|e| format!("Lock startup migration reconciliation state: {e}"))?
-        .insert(key);
     Ok(())
 }
 

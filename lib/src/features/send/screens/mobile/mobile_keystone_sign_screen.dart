@@ -99,6 +99,7 @@ class _MobileKeystoneSignScreenState
 
     final pcztBytes = await rust_sync.createPcztFromProposal(
       dbPath: dbPath,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
       network: endpoint.networkName,
       proposalId: widget.args.proposalId,
       sendFlowId: widget.args.sendFlowId,

@@ -1333,8 +1333,6 @@ async fn run_sync_impl(
         mark_sync_started(db_data_path)
     })
     .map_err(SyncError::db)?;
-    crate::wallet::sync::reconcile_wallet_locks_after_startup(db_data_path, network)
-        .map_err(SyncError::db)?;
 
     // 1. Connect gRPC (plain TLS via tonic + webpki roots).
     let mut client = open_lwd_channel(lightwalletd_url).await?;
@@ -1365,6 +1363,10 @@ async fn run_sync_impl(
             }
         })
     })?;
+
+    // Retained send-lock expiry requires a usable target height.
+    crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
+        .map_err(SyncError::db)?;
 
     // Match the cancellation granularity we already use for
     // `run_enhancement`: let this stage run to completion once it has
@@ -2194,6 +2196,12 @@ async fn run_sync_impl(
 
     let (final_scanned_height, final_tip_height) =
         ensure_complete_scan_state(&db, current_tip_height)?;
+    // Reconcile only after the scan queue is fully drained so denomination
+    // outputs discovered in this run are visible through the generic wallet
+    // API. This is intentionally repeated after every completed sync because
+    // a later block may mine an output that was unresolved in an earlier run.
+    crate::wallet::sync::reconcile_wallet_locks_after_sync(db_data_path, network)
+        .map_err(SyncError::db)?;
     log::info!(
         "[{}] sync: completed (fully_scanned={}, chain_tip={})",
         elapsed(),

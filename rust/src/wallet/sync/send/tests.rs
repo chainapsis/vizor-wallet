@@ -30,6 +30,18 @@ fn send_proposal_expires_at_its_lock_boundary() {
 }
 
 #[test]
+fn live_tip_extends_expiry_without_reviving_expired_proposal() {
+    let min_target = BlockHeight::from_u32(100);
+    assert_eq!(
+        send_expiry_height_for_live_tip(min_target, 110).unwrap(),
+        BlockHeight::from_u32(151),
+    );
+    assert!(send_expiry_height_for_live_tip(min_target, 139)
+        .unwrap_err()
+        .contains("expired against the live chain tip"));
+}
+
+#[test]
 fn immediate_migration_lock_matches_zip318_transaction_expiry() {
     for target_height in [0, 3_428_143, 3_455_999, 3_456_000] {
         let target_height = BlockHeight::from_u32(target_height);
@@ -346,12 +358,12 @@ fn missing_orchard_anchor_is_a_retryable_witness_error() {
 fn active_migration_restricts_ordinary_sends_to_ironwood() {
     let policy = ordinary_send_spend_policy(true);
 
-    assert!(!policy.permits_shielded(ShieldedProtocol::Sapling));
-    assert!(!policy.permits_shielded(ShieldedProtocol::Orchard));
-    assert!(policy.permits_shielded(ShieldedProtocol::Ironwood));
+    assert!(!policy.permits_shielded(ShieldedPool::Sapling));
+    assert!(!policy.permits_shielded(ShieldedPool::Orchard));
+    assert!(policy.permits_shielded(ShieldedPool::Ironwood));
     assert_eq!(
         ordinary_send_spend_pools(true),
-        vec![ShieldedProtocol::Ironwood]
+        vec![ShieldedPool::Ironwood]
     );
 }
 
@@ -359,9 +371,9 @@ fn active_migration_restricts_ordinary_sends_to_ironwood() {
 fn ordinary_send_policy_keeps_all_shielded_pools_without_migration() {
     let policy = ordinary_send_spend_policy(false);
 
-    assert!(policy.permits_shielded(ShieldedProtocol::Sapling));
-    assert!(policy.permits_shielded(ShieldedProtocol::Orchard));
-    assert!(policy.permits_shielded(ShieldedProtocol::Ironwood));
+    assert!(policy.permits_shielded(ShieldedPool::Sapling));
+    assert!(policy.permits_shielded(ShieldedPool::Orchard));
+    assert!(policy.permits_shielded(ShieldedPool::Ironwood));
 }
 
 fn migration_test_stage(
@@ -838,7 +850,7 @@ fn fabricated_proposal_with_payment_pool(payment_pool: PoolType) -> Proposal<Wal
     // Recipient address matches the requested payment pool.
     let to = match payment_pool {
         PoolType::Transparent => Address::Transparent(taddr(9)).to_zcash_address(&network),
-        PoolType::Shielded(ShieldedProtocol::Orchard) => {
+        PoolType::Shielded(ShieldedPool::Orchard) => {
             let ua = zcash_keys::address::UnifiedAddress::from_receivers(
                 Some(orchard_recipient),
                 None,
@@ -847,12 +859,12 @@ fn fabricated_proposal_with_payment_pool(payment_pool: PoolType) -> Proposal<Wal
             .expect("UA with an Orchard receiver is valid");
             Address::from(ua).to_zcash_address(&network)
         }
-        PoolType::Shielded(ShieldedProtocol::Sapling) => {
+        PoolType::Shielded(ShieldedPool::Sapling) => {
             let esk = sapling_crypto::zip32::ExtendedSpendingKey::master(&[9u8; 32]);
             let (_, sapling_recipient) = esk.default_address();
             Address::from(sapling_recipient).to_zcash_address(&network)
         }
-        PoolType::Shielded(ShieldedProtocol::Ironwood) => {
+        PoolType::Shielded(ShieldedPool::Ironwood) => {
             unreachable!("this fixture never requests Ironwood payments")
         }
     };
@@ -889,7 +901,7 @@ fn fabricated_proposal_with_payment_pool(payment_pool: PoolType) -> Proposal<Wal
 fn proposal_has_orchard_payment_detects_recipient_pool() {
     // Orchard recipient => Orchard payment.
     assert!(proposal_has_orchard_payment(
-        &fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedProtocol::Orchard)),
+        &fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedPool::Orchard)),
     ));
     // Transparent recipient (Orchard change is not a payment pool) => none.
     assert!(!proposal_has_orchard_payment(
@@ -897,7 +909,7 @@ fn proposal_has_orchard_payment_detects_recipient_pool() {
     ));
     // Sapling recipient => not an Orchard payment.
     assert!(!proposal_has_orchard_payment(
-        &fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedProtocol::Sapling)),
+        &fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedPool::Sapling)),
     ));
     // Change-only send-max proposal (transparent recipient, Orchard spend)
     // has no Orchard payment pool either.
@@ -911,8 +923,7 @@ fn orchard_recipient_v2_send_keeps_v6_without_rerun() {
     // V2-only spend paying a shielded-Orchard recipient: must stay V6 (a V5
     // build would fail with CrossAddressDisabled), and the re-proposal
     // closure must never run.
-    let pass1 =
-        fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedProtocol::Orchard));
+    let pass1 = fabricated_proposal_with_payment_pool(PoolType::Shielded(ShieldedPool::Orchard));
 
     let (_, tx_version) = propose_with_note_version_downgrade(pass1, Some(TxVersion::V6), |_| {
         panic!("re-proposal must not run for a shielded-Orchard recipient")
@@ -1122,7 +1133,8 @@ fn keystone_transparent_shielding_pczt_targets_ironwood() {
     db.put_received_transparent_utxo(&utxo).unwrap();
     drop(db);
 
-    let result = create_shield_transparent_pczt(db_path, network, &account_uuid).unwrap();
+    let result =
+        create_shield_transparent_pczt_with_expiry(db_path, network, &account_uuid, None).unwrap();
     let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
 
     assert_eq!(
@@ -1790,6 +1802,27 @@ fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
     let mut db = open_wallet_db(db_path, network).unwrap();
     let tip = BlockHeight::from_u32(1_000);
     db.update_chain_tip(tip).unwrap();
+    // Shielding derives target/anchor heights from scan progress, so record
+    // empty-tree checkpoints at the synthetic tip before inserting UTXOs.
+    {
+        type CheckpointError = WalletError<
+            (),
+            commitment_tree::Error,
+            (),
+            <ConservativeZip317FeeRule as FeeRule>::Error,
+            (),
+            ReceivedNoteId,
+        >;
+        let result: Result<_, CheckpointError> =
+            db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+        assert!(result.unwrap(), "checkpointing the empty Sapling tree");
+        let result: Result<_, CheckpointError> =
+            db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+        assert!(result.unwrap(), "checkpointing the empty Orchard tree");
+        let result: Result<_, CheckpointError> =
+            db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+        result.unwrap();
+    }
 
     let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
         ReceiverRequirement::Require,

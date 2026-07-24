@@ -918,6 +918,7 @@ fn wire__crate__api__sync__create_pczt_from_proposal_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_proposal_id = <u64>::sse_decode(&mut deserializer);
             let api_send_flow_id = <String>::sse_decode(&mut deserializer);
@@ -926,6 +927,7 @@ fn wire__crate__api__sync__create_pczt_from_proposal_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::sync::create_pczt_from_proposal(
                         api_db_path,
+                        api_lightwalletd_url,
                         api_network,
                         api_proposal_id,
                         api_send_flow_id,
@@ -959,6 +961,7 @@ fn wire__crate__api__sync__create_shield_transparent_pczt_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
+            let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -966,6 +969,7 @@ fn wire__crate__api__sync__create_shield_transparent_pczt_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::sync::create_shield_transparent_pczt(
                         api_db_path,
+                        api_lightwalletd_url,
                         api_network,
                         api_account_uuid,
                     )?;
@@ -8916,6 +8920,10 @@ impl SseDecode for crate::api::sync::WalletBalance {
         let mut var_sapling = <u64>::sse_decode(deserializer);
         let mut var_orchard = <u64>::sse_decode(deserializer);
         let mut var_ironwood = <u64>::sse_decode(deserializer);
+        let mut var_transparentLocked = <u64>::sse_decode(deserializer);
+        let mut var_saplingLocked = <u64>::sse_decode(deserializer);
+        let mut var_orchardLocked = <u64>::sse_decode(deserializer);
+        let mut var_ironwoodLocked = <u64>::sse_decode(deserializer);
         let mut var_transparentPending = <u64>::sse_decode(deserializer);
         let mut var_saplingPending = <u64>::sse_decode(deserializer);
         let mut var_orchardPending = <u64>::sse_decode(deserializer);
@@ -8924,6 +8932,7 @@ impl SseDecode for crate::api::sync::WalletBalance {
         let mut var_valuePendingSpendability = <u64>::sse_decode(deserializer);
         let mut var_uneconomicValue = <u64>::sse_decode(deserializer);
         let mut var_spendable = <u64>::sse_decode(deserializer);
+        let mut var_locked = <u64>::sse_decode(deserializer);
         let mut var_total = <u64>::sse_decode(deserializer);
         return crate::api::sync::WalletBalance {
             availability: var_availability,
@@ -8931,6 +8940,10 @@ impl SseDecode for crate::api::sync::WalletBalance {
             sapling: var_sapling,
             orchard: var_orchard,
             ironwood: var_ironwood,
+            transparent_locked: var_transparentLocked,
+            sapling_locked: var_saplingLocked,
+            orchard_locked: var_orchardLocked,
+            ironwood_locked: var_ironwoodLocked,
             transparent_pending: var_transparentPending,
             sapling_pending: var_saplingPending,
             orchard_pending: var_orchardPending,
@@ -8939,6 +8952,7 @@ impl SseDecode for crate::api::sync::WalletBalance {
             value_pending_spendability: var_valuePendingSpendability,
             uneconomic_value: var_uneconomicValue,
             spendable: var_spendable,
+            locked: var_locked,
             total: var_total,
         };
     }
@@ -11453,6 +11467,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
             self.sapling.into_into_dart().into_dart(),
             self.orchard.into_into_dart().into_dart(),
             self.ironwood.into_into_dart().into_dart(),
+            self.transparent_locked.into_into_dart().into_dart(),
+            self.sapling_locked.into_into_dart().into_dart(),
+            self.orchard_locked.into_into_dart().into_dart(),
+            self.ironwood_locked.into_into_dart().into_dart(),
             self.transparent_pending.into_into_dart().into_dart(),
             self.sapling_pending.into_into_dart().into_dart(),
             self.orchard_pending.into_into_dart().into_dart(),
@@ -11463,6 +11481,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::WalletBalance {
             self.value_pending_spendability.into_into_dart().into_dart(),
             self.uneconomic_value.into_into_dart().into_dart(),
             self.spendable.into_into_dart().into_dart(),
+            self.locked.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -13420,6 +13439,10 @@ impl SseEncode for crate::api::sync::WalletBalance {
         <u64>::sse_encode(self.sapling, serializer);
         <u64>::sse_encode(self.orchard, serializer);
         <u64>::sse_encode(self.ironwood, serializer);
+        <u64>::sse_encode(self.transparent_locked, serializer);
+        <u64>::sse_encode(self.sapling_locked, serializer);
+        <u64>::sse_encode(self.orchard_locked, serializer);
+        <u64>::sse_encode(self.ironwood_locked, serializer);
         <u64>::sse_encode(self.transparent_pending, serializer);
         <u64>::sse_encode(self.sapling_pending, serializer);
         <u64>::sse_encode(self.orchard_pending, serializer);
@@ -13428,6 +13451,7 @@ impl SseEncode for crate::api::sync::WalletBalance {
         <u64>::sse_encode(self.value_pending_spendability, serializer);
         <u64>::sse_encode(self.uneconomic_value, serializer);
         <u64>::sse_encode(self.spendable, serializer);
+        <u64>::sse_encode(self.locked, serializer);
         <u64>::sse_encode(self.total, serializer);
     }
 }

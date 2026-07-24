@@ -91,7 +91,7 @@ use zcash_protocol::{
     consensus::{self, BlockHeight, NetworkConstants, Parameters},
     memo::{Memo, MemoBytes},
     value::Zatoshis,
-    PoolType, ShieldedProtocol,
+    PoolType, ShieldedPool,
 };
 
 use crate::wallet::db::{
@@ -124,6 +124,41 @@ fn send_proposal_is_expired(
     current_target_height: BlockHeight,
 ) -> bool {
     current_target_height >= send_proposal_lock_expiry(min_target_height)
+}
+
+pub(super) async fn live_send_expiry_height(
+    lightwalletd_url: &str,
+    min_target_height: BlockHeight,
+) -> Result<BlockHeight, String> {
+    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| format!("Connect to lightwalletd before transaction construction: {e}"))?;
+    let tip = sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| format!("Read live chain tip before transaction construction: {e}"))?;
+    let tip = u32::try_from(tip.height).map_err(|_| "Live chain tip exceeds u32")?;
+    send_expiry_height_for_live_tip(min_target_height, tip)
+}
+
+fn send_expiry_height_for_live_tip(
+    min_target_height: BlockHeight,
+    live_tip: u32,
+) -> Result<BlockHeight, String> {
+    let live_target = live_tip
+        .checked_add(1)
+        .ok_or("Live transaction target height overflow")?;
+    let original_expiry = u32::from(send_proposal_lock_expiry(min_target_height));
+    if live_target >= original_expiry {
+        return Err(
+            "Send proposal expired against the live chain tip; review the payment and create a new proposal"
+                .to_string(),
+        );
+    }
+    live_target
+        .max(u32::from(min_target_height))
+        .checked_add(SEND_PROPOSAL_LOCK_BLOCKS)
+        .map(BlockHeight::from_u32)
+        .ok_or_else(|| "Live transaction expiry height overflow".to_string())
 }
 
 fn immediate_migration_lock_expiry(target_height: BlockHeight) -> Result<BlockHeight, String> {
@@ -561,7 +596,7 @@ pub fn propose_send(
     amount_zatoshi: u64,
     memo_str: Option<&str>,
 ) -> Result<ProposalResult, String> {
-    use zcash_protocol::{PoolType, ShieldedProtocol as SP};
+    use zcash_protocol::{PoolType, ShieldedPool as SP};
 
     if send_flow_id.is_empty() {
         return Err("Send flow id is required".to_string());
@@ -624,21 +659,39 @@ pub fn propose_send(
         let lock_owner = LockOwner::random(&mut OsRng);
         let lock_expiry_height =
             send_proposal_lock_expiry(BlockHeight::from(proposal.min_target_height()));
-        db.lock_outputs(
-            &proposal_input_refs(&proposal),
-            lock_owner,
-            lock_expiry_height,
-        )
-        .map_err(|e| format!("Lock send proposal inputs: {e:?}"))?;
+        let input_refs = proposal_input_refs(&proposal);
+        // Persist the owner and generic output references before taking the DB
+        // locks. If the process dies at any later point, the next process can
+        // release exactly these ephemeral send locks without disturbing
+        // durable migration owners.
+        super::proposal_locks::persist(db_path, lock_owner, &input_refs, lock_expiry_height)?;
+        if let Err(error) = db.lock_outputs(&input_refs, lock_owner, lock_expiry_height) {
+            let cleanup = super::proposal_locks::remove(db_path, lock_owner);
+            return Err(match cleanup {
+                Ok(()) => format!("Lock send proposal inputs: {error:?}"),
+                Err(cleanup_error) => format!(
+                    "Lock send proposal inputs: {error:?}; \
+                     also failed to remove recovery rows: {cleanup_error}"
+                ),
+            });
+        }
 
         let mut store = match PROPOSAL_STORE.lock() {
             Ok(store) => store,
             Err(e) => {
                 let unlock_result = wallet::unlock_proposal_inputs(&mut db, &proposal, lock_owner);
-                return Err(match unlock_result {
-                    Ok(()) => format!("Lock proposal store: {e}"),
-                    Err(unlock_error) => format!(
+                let recovery_cleanup = super::proposal_locks::remove(db_path, lock_owner);
+                return Err(match (unlock_result, recovery_cleanup) {
+                    (Ok(()), Ok(())) => format!("Lock proposal store: {e}"),
+                    (Err(unlock_error), Ok(())) => format!(
                         "Lock proposal store: {e}; also failed to release proposal inputs: {unlock_error}"
+                    ),
+                    (Ok(()), Err(cleanup_error)) => format!(
+                        "Lock proposal store: {e}; also failed to remove recovery rows: {cleanup_error}"
+                    ),
+                    (Err(unlock_error), Err(cleanup_error)) => format!(
+                        "Lock proposal store: {e}; also failed to release proposal inputs: \
+                         {unlock_error}; also failed to remove recovery rows: {cleanup_error}"
                     ),
                 });
             }
@@ -790,15 +843,41 @@ pub(crate) fn get_shield_transparent_status(
 }
 
 /// Create an Ironwood transparent-shielding PCZT for hardware accounts.
-pub(crate) fn create_shield_transparent_pczt(
+pub(crate) async fn create_shield_transparent_pczt(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<ShieldTransparentPcztResult, String> {
+    let live_expiry_height = {
+        let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+            .await
+            .map_err(|e| format!("Connect to lightwalletd before shielding PCZT: {e}"))?;
+        let tip = sync_engine::get_latest_block(&mut client)
+            .await
+            .map_err(|e| format!("Read live chain tip before shielding PCZT: {e}"))?;
+        let tip = u32::try_from(tip.height).map_err(|_| "Shielding PCZT chain tip exceeds u32")?;
+        tip.checked_add(1 + SEND_PROPOSAL_LOCK_BLOCKS)
+            .map(BlockHeight::from_u32)
+            .ok_or("Shielding PCZT expiry height overflow")?
+    };
+    create_shield_transparent_pczt_with_expiry(
+        db_path,
+        network,
+        account_uuid,
+        Some(live_expiry_height),
+    )
+}
+
+fn create_shield_transparent_pczt_with_expiry(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    expiry_height: Option<BlockHeight>,
 ) -> Result<ShieldTransparentPcztResult, String> {
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
     let shielding_threshold = shielding_threshold()?;
-
     with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
@@ -814,17 +893,21 @@ pub(crate) fn create_shield_transparent_pczt(
         // probe: the shielding flow works from the chain tip alone.
         let proposed_tx_version =
             proposed_tx_version_for_send(network, proposal.min_target_height());
-        // The transaction version rides on the proposal now; `None` builds at
-        // the version implied by the target height.
+        // The transaction version rides on the proposal. Expiry is raised to
+        // at least the live-tip policy computed before entering the DB lock.
         let proposal = proposal.with_proposed_version(proposed_tx_version);
+        let expiry_height = expiry_height.map(|height| {
+            height.max(send_proposal_lock_expiry(BlockHeight::from(
+                proposal.min_target_height(),
+            )))
+        });
         let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
             account_id,
             OvkPolicy::Sender,
             &proposal,
-            // Keep the builder-derived expiry height.
-            None,
+            expiry_height,
             orchard::builder::BundleType::DEFAULT,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
@@ -854,6 +937,18 @@ pub(crate) async fn shield_transparent_balance(
     seed: SecretVec<u8>,
 ) -> Result<ShieldTransparentResult, String> {
     let shielding_threshold = shielding_threshold()?;
+    let live_expiry_height = {
+        let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+            .await
+            .map_err(|e| format!("Connect to lightwalletd before shielding: {e}"))?;
+        let tip = sync_engine::get_latest_block(&mut client)
+            .await
+            .map_err(|e| format!("Read live chain tip before shielding: {e}"))?;
+        let tip = u32::try_from(tip.height).map_err(|_| "Shielding chain tip exceeds u32")?;
+        tip.checked_add(1 + SEND_PROPOSAL_LOCK_BLOCKS)
+            .map(BlockHeight::from_u32)
+            .ok_or("Shielding expiry height overflow")?
+    };
 
     let (txids, fee_zatoshi, shielded_zatoshi) = with_wallet_db_write_lock(
         "send.shield_transparent_balance.create_transactions",
@@ -881,6 +976,9 @@ pub(crate) async fn shield_transparent_balance(
 
             let spend_prover = NoOpSpendProver;
             let output_prover = NoOpOutputProver;
+            let expiry_height = live_expiry_height.max(send_proposal_lock_expiry(
+                BlockHeight::from(proposal.min_target_height()),
+            ));
             let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
                 &mut db,
                 &network,
@@ -889,7 +987,7 @@ pub(crate) async fn shield_transparent_balance(
                 &wallet::SpendingKeys::from_unified_spending_key(usk),
                 OvkPolicy::Sender,
                 &proposal,
-                None,
+                Some(expiry_height),
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -1008,17 +1106,41 @@ async fn execute_stored_proposal(
         };
     }
 
+    let min_target_height = BlockHeight::from(stored.proposal.min_target_height());
+    let live_expiry_height =
+        match live_send_expiry_height(lightwalletd_url, min_target_height).await {
+            Ok(height) => height,
+            Err(error) => {
+                return match finish_stored_proposal(proposal_id, &send_flow_id, true) {
+                    Ok(()) => Err(error),
+                    Err(cleanup_error) => Err(format!(
+                        "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                    )),
+                };
+            }
+        };
+
     // Scope DB writes and signing material so they are dropped before network I/O (broadcast).
+    let send_flow_id_for_create = send_flow_id.clone();
     let create_result =
         with_wallet_db_write_lock("send.execute_proposal.create_transactions", move || {
+            // The live-tip request above yields to Dart. A concurrent cancel
+            // may have released this proposal while it was in flight, so
+            // re-check the process-local capability after acquiring the
+            // wallet write lock and before recreating any DB lock.
+            let current_lock = stored_proposal_lock(proposal_id, &send_flow_id_for_create)?;
+            if current_lock.owner != proposal_lock.owner
+                || current_lock.db_path != proposal_lock.db_path
+                || current_lock.network != proposal_lock.network
+            {
+                return Err("Send proposal input lock changed while refreshing chain tip".into());
+            }
             let mut db = open_wallet_db(db_path, network)?;
             let (target_height, _) = db
                 .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
                 .map_err(|e| format!("Read wallet target height before send: {e}"))?
                 .ok_or("Wallet must sync before executing a send proposal")?;
-            let min_target_height = BlockHeight::from(stored.proposal.min_target_height());
             let current_target_height = BlockHeight::from(target_height);
-            let lock_expiry_height = send_proposal_lock_expiry(min_target_height);
             if send_proposal_is_expired(min_target_height, current_target_height) {
                 return Err(
                     "Send proposal expired; review the payment and create a new proposal"
@@ -1030,10 +1152,11 @@ async fn execute_stored_proposal(
             // expired, this fails before transaction construction.
             db.lock_outputs(
                 &proposal_input_refs(&stored.proposal),
-                proposal_lock.owner,
-                lock_expiry_height,
+                current_lock.owner,
+                live_expiry_height,
             )
             .map_err(|e| format!("Revalidate send proposal input locks: {e:?}"))?;
+            super::proposal_locks::update_expiry(db_path, current_lock.owner, live_expiry_height)?;
             let account_id = stored.account_id;
             let account = db
                 .get_account(account_id)
@@ -1047,8 +1170,8 @@ async fn execute_stored_proposal(
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
             drop(seed);
-            // The transaction version rides on the proposal now; `None` builds
-            // at the version implied by the target height.
+            // The transaction version rides on the proposal; expiry is pinned
+            // to the live chain tip obtained before entering the DB lock.
             let proposal = stored
                 .proposal
                 .clone()
@@ -1066,7 +1189,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &proposal,
-                        None,
+                        Some(live_expiry_height),
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -1081,7 +1204,7 @@ async fn execute_stored_proposal(
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
                         &proposal,
-                        None,
+                        Some(live_expiry_height),
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -1410,7 +1533,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
                 .map(|note| {
                     db.get_spendable_note(
                         note.txid(),
-                        ShieldedProtocol::Orchard,
+                        ShieldedPool::Orchard,
                         note.output_index() as u32,
                         target_height,
                         LockFilter::Policy(&LockedInputPolicy::Exclude),
@@ -1457,7 +1580,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
             .map(|note| {
                 OutputRef::new(
                     *note.txid(),
-                    PoolType::Shielded(ShieldedProtocol::Orchard),
+                    PoolType::Shielded(ShieldedPool::Orchard),
                     note.output_index() as u32,
                 )
             })
@@ -2386,14 +2509,14 @@ fn propose_send_with_reserved_notes(
         .map_err(|e| format!("Propose failed: {e}"))
 }
 
-fn ordinary_send_spend_pools(migration_active: bool) -> Vec<ShieldedProtocol> {
+fn ordinary_send_spend_pools(migration_active: bool) -> Vec<ShieldedPool> {
     if migration_active {
-        vec![ShieldedProtocol::Ironwood]
+        vec![ShieldedPool::Ironwood]
     } else {
         vec![
-            ShieldedProtocol::Sapling,
-            ShieldedProtocol::Orchard,
-            ShieldedProtocol::Ironwood,
+            ShieldedPool::Sapling,
+            ShieldedPool::Orchard,
+            ShieldedPool::Ironwood,
         ]
     }
 }
@@ -2402,7 +2525,9 @@ fn ordinary_send_spend_policy(migration_active: bool) -> SpendPolicy {
     SpendPolicy::shielded_pools(ordinary_send_spend_pools(migration_active))
 }
 
-fn proposal_input_refs(proposal: &Proposal<WalletFeeRule, ReceivedNoteId>) -> Vec<OutputRef> {
+pub(super) fn proposal_input_refs(
+    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+) -> Vec<OutputRef> {
     proposal
         .steps()
         .iter()
@@ -2468,7 +2593,7 @@ fn proposal_has_orchard_payment<NoteRef>(proposal: &Proposal<WalletFeeRule, Note
     proposal.steps().iter().any(|step| {
         step.payment_pools()
             .values()
-            .any(|pool| *pool == PoolType::Shielded(ShieldedProtocol::Orchard))
+            .any(|pool| *pool == PoolType::Shielded(ShieldedPool::Orchard))
     })
 }
 
@@ -2566,7 +2691,7 @@ impl InputSource for ReservedInputSource<'_> {
     fn get_spendable_note(
         &self,
         txid: &TxId,
-        protocol: ShieldedProtocol,
+        protocol: ShieldedPool,
         index: u32,
         target_height: wallet::TargetHeight,
         lock_filter: LockFilter<'_>,
@@ -2582,7 +2707,7 @@ impl InputSource for ReservedInputSource<'_> {
         &self,
         account: Self::AccountId,
         target_value: TargetValue,
-        sources: &[ShieldedProtocol],
+        sources: &[ShieldedPool],
         target_height: wallet::TargetHeight,
         confirmations_policy: ConfirmationsPolicy,
         exclude: &[Self::NoteRef],
@@ -2617,7 +2742,7 @@ impl InputSource for ReservedInputSource<'_> {
     fn select_unspent_notes(
         &self,
         account: Self::AccountId,
-        sources: &[ShieldedProtocol],
+        sources: &[ShieldedPool],
         target_height: wallet::TargetHeight,
         exclude: &[Self::NoteRef],
         lock_filter: LockFilter<'_>,
@@ -2696,7 +2821,7 @@ fn build_send_max_proposal(
     account_id: AccountUuid,
     to_address: &str,
     memo_str: Option<&str>,
-    spend_pools: &[ShieldedProtocol],
+    spend_pools: &[ShieldedPool],
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
@@ -2784,7 +2909,7 @@ fn build_transparent_recipient_send_max_proposal(
     to: zcash_address::ZcashAddress,
     memo_bytes: Option<MemoBytes>,
     fee_rule: WalletFeeRule,
-    spend_pools: &[ShieldedProtocol],
+    spend_pools: &[ShieldedPool],
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let confirmations_policy = ConfirmationsPolicy::default();
     let (target_height, anchor_height) = db
@@ -2916,7 +3041,7 @@ fn summarize_send_max_proposal<NoteRef>(
     let needs_sapling_params = proposal
         .steps()
         .iter()
-        .any(|step| step.involves(PoolType::Shielded(ShieldedProtocol::Sapling)));
+        .any(|step| step.involves(PoolType::Shielded(ShieldedPool::Sapling)));
 
     Ok(SendMaxEstimateResult {
         amount_zatoshi,
@@ -4604,7 +4729,7 @@ fn zip317_helper<DbT: InputSource>(
     let change_strategy = MultiOutputChangeStrategy::new(
         ConservativeZip317FeeRule,
         change_memo,
-        ShieldedProtocol::Orchard,
+        ShieldedPool::Orchard,
         DustOutputPolicy::default(),
         SplitPolicy::with_min_output_value(
             NonZeroUsize::new(4).unwrap(),

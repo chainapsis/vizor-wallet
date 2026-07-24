@@ -21,7 +21,7 @@ fn wallet_lock_reconciliation_retries_when_terminal_disposition_changes() {
 }
 
 #[test]
-fn wallet_lock_reconciliation_failure_invalidates_startup_marker() {
+fn wallet_lock_reconciliation_propagates_storage_failure() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
         .path()
@@ -30,17 +30,8 @@ fn wallet_lock_reconciliation_failure_invalidates_startup_marker() {
         .to_string_lossy()
         .into_owned();
     let network = WalletNetwork::Test;
-    let key = (db_path.clone(), network_name(network).to_string());
-    STARTUP_WALLET_LOCK_RECONCILIATIONS
-        .lock()
-        .unwrap()
-        .insert(key.clone());
 
     assert!(reconcile_wallet_locks_for_run(&db_path, network, "run-1").is_err());
-    assert!(!STARTUP_WALLET_LOCK_RECONCILIATIONS
-        .lock()
-        .unwrap()
-        .contains(&key));
 }
 
 #[test]

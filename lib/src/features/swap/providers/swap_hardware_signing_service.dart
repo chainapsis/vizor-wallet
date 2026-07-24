@@ -106,6 +106,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
               proposalId = proposal.proposalId;
               final pcztBytes = await rust_sync.createPcztFromProposal(
                 dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
                 network: endpoint.networkName,
                 proposalId: proposal.proposalId,
                 sendFlowId: sendFlowId,

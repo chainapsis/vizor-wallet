@@ -27,6 +27,7 @@ mod broadcast;
 mod migration;
 mod migration_wallet_ops;
 mod pczt;
+mod proposal_locks;
 mod send;
 mod transactions;
 
@@ -41,14 +42,15 @@ mod transactions;
 // exactly).
 pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
-    reconcile_wallet_locks_after_startup, MigrationPartState, MigrationScheduleEntry,
-    MigrationStatus, PreparationTimingPolicy,
+    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationScheduleEntry, MigrationStatus,
+    PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
     redact_pczt_for_signer, retain_proposal_lock_until_expiry, ExtractAndBroadcastPcztResult,
 };
+pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::{
     advance_orchard_migration_preparation_for_run, complete_orchard_migration_batch_pczt,
@@ -565,6 +567,7 @@ fn unlock_stored_proposal(
             current.owner,
         )
         .map_err(|e| format!("Unlock abandoned send proposal inputs: {e}"))?;
+        proposal_locks::remove(&current.db_path, current.owner)?;
         store.locks.remove(&proposal_id);
         Ok(())
     })
@@ -579,7 +582,7 @@ pub(super) fn finish_stored_proposal(
         let mut store = PROPOSAL_STORE
             .lock()
             .map_err(|e| format!("Lock proposal store for finish: {e}"))?;
-        let Some(lock) = store.locks.get(&proposal_id) else {
+        let Some(lock) = store.locks.get(&proposal_id).cloned() else {
             return Ok(());
         };
         if lock.send_flow_id != send_flow_id {
@@ -587,7 +590,8 @@ pub(super) fn finish_stored_proposal(
         }
         if !release_inputs {
             store.locks.remove(&proposal_id);
-            return Ok(());
+            drop(store);
+            return proposal_locks::remove(&lock.db_path, lock.owner);
         }
         lock.clone()
     };
@@ -631,26 +635,44 @@ pub(super) fn retain_stored_proposal_lock_until_expiry(
     proposal_id: u64,
     send_flow_id: &str,
 ) -> Result<(), String> {
-    let mut store = PROPOSAL_STORE
-        .lock()
-        .map_err(|e| format!("Lock proposal store to retain DB lock: {e}"))?;
-    if let Some(proposal) = store.proposals.get(&proposal_id) {
-        if proposal.send_flow_id != send_flow_id {
-            return Err("Send flow mismatch".to_string());
+    let lock = {
+        let store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store to inspect retained DB lock: {e}"))?;
+        match store.locks.get(&proposal_id) {
+            Some(lock) if lock.send_flow_id == send_flow_id => Some(lock.clone()),
+            Some(_) => return Err("Send flow mismatch".to_string()),
+            None => None,
         }
-        store.proposals.remove(&proposal_id);
-    }
-    if let Some(lock) = store.locks.get(&proposal_id) {
-        if lock.send_flow_id != send_flow_id {
-            return Err("Send flow mismatch".to_string());
+    };
+    let Some(lock) = lock else {
+        return Ok(());
+    };
+
+    with_wallet_db_write_lock("sync.retain_stored_proposal_lock", || {
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store to retain DB lock: {e}"))?;
+        let Some(current) = store.locks.get(&proposal_id) else {
+            return Ok(());
+        };
+        if current.send_flow_id != send_flow_id || current.owner != lock.owner {
+            return Err("Send flow changed before retaining DB lock".to_string());
+        }
+        proposal_locks::mark_retain_until_expiry(&lock.db_path, lock.owner)?;
+        if let Some(proposal) = store.proposals.get(&proposal_id) {
+            if proposal.send_flow_id != send_flow_id {
+                return Err("Send flow mismatch".to_string());
+            }
+            store.proposals.remove(&proposal_id);
         }
         // Remove the unlock capability in the same critical section as the
         // replayable proposal. A concurrent discard can therefore observe
         // either the complete pre-retain state or the complete retained state,
         // never the gap between them.
         store.locks.remove(&proposal_id);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 // ======================== Helpers ========================
@@ -738,8 +760,8 @@ mod tests {
         discard_proposal(id, "missing-flow").unwrap(); // second call must also be a no-op
     }
 
-    #[test]
-    fn create_pczt_from_proposal_errors_for_missing_id() {
+    #[tokio::test]
+    async fn create_pczt_from_proposal_errors_for_missing_id() {
         // A replay attempt (or a bogus ID from stale UI state) must surface
         // a clean "not found" error rather than panicking or creating a
         // bogus PCZT. We pass an invalid db_path because the "not found"
@@ -749,10 +771,12 @@ mod tests {
         let id = unique_proposal_id();
         let result = create_pczt_from_proposal(
             "/nonexistent/path/that/should/not/exist.db",
+            "https://unused.invalid",
             WalletNetwork::Main,
             id,
             "missing-flow",
-        );
+        )
+        .await;
 
         match result {
             Err(msg) => {
@@ -765,8 +789,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn discard_proposal_after_create_pczt_failure_is_still_noop() {
+    #[tokio::test]
+    async fn discard_proposal_after_create_pczt_failure_is_still_noop() {
         // Simulates the Dart `finally` cleanup path: after create_pczt
         // fails with "not found" (so the proposal was never there), the
         // finally block still calls discard_proposal. That call must be
@@ -774,10 +798,12 @@ mod tests {
         let id = unique_proposal_id();
         let _ = create_pczt_from_proposal(
             "/nonexistent/path/that/should/not/exist.db",
+            "https://unused.invalid",
             WalletNetwork::Main,
             id,
             "missing-flow",
-        );
+        )
+        .await;
         discard_proposal(id, "missing-flow").unwrap(); // cleanup must not panic
     }
 }

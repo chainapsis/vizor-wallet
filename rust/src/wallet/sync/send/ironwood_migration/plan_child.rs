@@ -556,7 +556,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         let selected = db
             .get_spendable_note(
                 &txid,
-                ShieldedProtocol::Orchard,
+                ShieldedPool::Orchard,
                 note_ref.output_index,
                 target_height,
                 LockFilter::Policy(&lock_policy),

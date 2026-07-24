@@ -257,6 +257,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<Uint8List> crateApiSyncCreatePcztFromProposal({
     required String dbPath,
+    required String lightwalletdUrl,
     required String network,
     required BigInt proposalId,
     required String sendFlowId,
@@ -264,6 +265,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<ShieldTransparentPcztResult> crateApiSyncCreateShieldTransparentPczt({
     required String dbPath,
+    required String lightwalletdUrl,
     required String network,
     required String accountUuid,
   });
@@ -2152,6 +2154,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<Uint8List> crateApiSyncCreatePcztFromProposal({
     required String dbPath,
+    required String lightwalletdUrl,
     required String network,
     required BigInt proposalId,
     required String sendFlowId,
@@ -2161,6 +2164,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_String(network, serializer);
           sse_encode_u_64(proposalId, serializer);
           sse_encode_String(sendFlowId, serializer);
@@ -2176,7 +2180,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncCreatePcztFromProposalConstMeta,
-        argValues: [dbPath, network, proposalId, sendFlowId],
+        argValues: [dbPath, lightwalletdUrl, network, proposalId, sendFlowId],
         apiImpl: this,
       ),
     );
@@ -2185,12 +2189,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncCreatePcztFromProposalConstMeta =>
       const TaskConstMeta(
         debugName: "create_pczt_from_proposal",
-        argNames: ["dbPath", "network", "proposalId", "sendFlowId"],
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "proposalId",
+          "sendFlowId",
+        ],
       );
 
   @override
   Future<ShieldTransparentPcztResult> crateApiSyncCreateShieldTransparentPczt({
     required String dbPath,
+    required String lightwalletdUrl,
     required String network,
     required String accountUuid,
   }) {
@@ -2199,6 +2210,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           pdeCallFfi(
@@ -2213,7 +2225,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncCreateShieldTransparentPcztConstMeta,
-        argValues: [dbPath, network, accountUuid],
+        argValues: [dbPath, lightwalletdUrl, network, accountUuid],
         apiImpl: this,
       ),
     );
@@ -2222,7 +2234,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncCreateShieldTransparentPcztConstMeta =>
       const TaskConstMeta(
         debugName: "create_shield_transparent_pczt",
-        argNames: ["dbPath", "network", "accountUuid"],
+        argNames: ["dbPath", "lightwalletdUrl", "network", "accountUuid"],
       );
 
   @override
@@ -9576,23 +9588,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 14)
-      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return WalletBalance(
       availability: dco_decode_wallet_balance_availability(arr[0]),
       transparent: dco_decode_u_64(arr[1]),
       sapling: dco_decode_u_64(arr[2]),
       orchard: dco_decode_u_64(arr[3]),
       ironwood: dco_decode_u_64(arr[4]),
-      transparentPending: dco_decode_u_64(arr[5]),
-      saplingPending: dco_decode_u_64(arr[6]),
-      orchardPending: dco_decode_u_64(arr[7]),
-      ironwoodPending: dco_decode_u_64(arr[8]),
-      changePendingConfirmation: dco_decode_u_64(arr[9]),
-      valuePendingSpendability: dco_decode_u_64(arr[10]),
-      uneconomicValue: dco_decode_u_64(arr[11]),
-      spendable: dco_decode_u_64(arr[12]),
-      total: dco_decode_u_64(arr[13]),
+      transparentLocked: dco_decode_u_64(arr[5]),
+      saplingLocked: dco_decode_u_64(arr[6]),
+      orchardLocked: dco_decode_u_64(arr[7]),
+      ironwoodLocked: dco_decode_u_64(arr[8]),
+      transparentPending: dco_decode_u_64(arr[9]),
+      saplingPending: dco_decode_u_64(arr[10]),
+      orchardPending: dco_decode_u_64(arr[11]),
+      ironwoodPending: dco_decode_u_64(arr[12]),
+      changePendingConfirmation: dco_decode_u_64(arr[13]),
+      valuePendingSpendability: dco_decode_u_64(arr[14]),
+      uneconomicValue: dco_decode_u_64(arr[15]),
+      spendable: dco_decode_u_64(arr[16]),
+      locked: dco_decode_u_64(arr[17]),
+      total: dco_decode_u_64(arr[18]),
     );
   }
 
@@ -12367,6 +12384,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_sapling = sse_decode_u_64(deserializer);
     var var_orchard = sse_decode_u_64(deserializer);
     var var_ironwood = sse_decode_u_64(deserializer);
+    var var_transparentLocked = sse_decode_u_64(deserializer);
+    var var_saplingLocked = sse_decode_u_64(deserializer);
+    var var_orchardLocked = sse_decode_u_64(deserializer);
+    var var_ironwoodLocked = sse_decode_u_64(deserializer);
     var var_transparentPending = sse_decode_u_64(deserializer);
     var var_saplingPending = sse_decode_u_64(deserializer);
     var var_orchardPending = sse_decode_u_64(deserializer);
@@ -12375,6 +12396,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_valuePendingSpendability = sse_decode_u_64(deserializer);
     var var_uneconomicValue = sse_decode_u_64(deserializer);
     var var_spendable = sse_decode_u_64(deserializer);
+    var var_locked = sse_decode_u_64(deserializer);
     var var_total = sse_decode_u_64(deserializer);
     return WalletBalance(
       availability: var_availability,
@@ -12382,6 +12404,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sapling: var_sapling,
       orchard: var_orchard,
       ironwood: var_ironwood,
+      transparentLocked: var_transparentLocked,
+      saplingLocked: var_saplingLocked,
+      orchardLocked: var_orchardLocked,
+      ironwoodLocked: var_ironwoodLocked,
       transparentPending: var_transparentPending,
       saplingPending: var_saplingPending,
       orchardPending: var_orchardPending,
@@ -12390,6 +12416,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       valuePendingSpendability: var_valuePendingSpendability,
       uneconomicValue: var_uneconomicValue,
       spendable: var_spendable,
+      locked: var_locked,
       total: var_total,
     );
   }
@@ -14650,6 +14677,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.sapling, serializer);
     sse_encode_u_64(self.orchard, serializer);
     sse_encode_u_64(self.ironwood, serializer);
+    sse_encode_u_64(self.transparentLocked, serializer);
+    sse_encode_u_64(self.saplingLocked, serializer);
+    sse_encode_u_64(self.orchardLocked, serializer);
+    sse_encode_u_64(self.ironwoodLocked, serializer);
     sse_encode_u_64(self.transparentPending, serializer);
     sse_encode_u_64(self.saplingPending, serializer);
     sse_encode_u_64(self.orchardPending, serializer);
@@ -14658,6 +14689,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.valuePendingSpendability, serializer);
     sse_encode_u_64(self.uneconomicValue, serializer);
     sse_encode_u_64(self.spendable, serializer);
+    sse_encode_u_64(self.locked, serializer);
     sse_encode_u_64(self.total, serializer);
   }
 

@@ -158,6 +158,10 @@ void main() {
       sapling: BigInt.from(2),
       orchard: BigInt.from(3),
       ironwood: BigInt.zero,
+      transparentLocked: BigInt.zero,
+      saplingLocked: BigInt.zero,
+      orchardLocked: BigInt.from(10),
+      ironwoodLocked: BigInt.zero,
       transparentPending: BigInt.from(4),
       saplingPending: BigInt.from(5),
       orchardPending: BigInt.from(6),
@@ -166,7 +170,8 @@ void main() {
       valuePendingSpendability: BigInt.from(8),
       uneconomicValue: BigInt.from(9),
       spendable: BigInt.from(5),
-      total: BigInt.from(21),
+      locked: BigInt.from(10),
+      total: BigInt.from(31),
     );
 
     final merged = current.withFetchedAccountData(
@@ -198,6 +203,10 @@ void main() {
       sapling: BigInt.zero,
       orchard: BigInt.zero,
       ironwood: BigInt.from(100),
+      transparentLocked: BigInt.zero,
+      saplingLocked: BigInt.zero,
+      orchardLocked: BigInt.zero,
+      ironwoodLocked: BigInt.zero,
       transparentPending: BigInt.zero,
       saplingPending: BigInt.zero,
       orchardPending: BigInt.zero,
@@ -206,6 +215,7 @@ void main() {
       valuePendingSpendability: BigInt.zero,
       uneconomicValue: BigInt.zero,
       spendable: BigInt.from(100),
+      locked: BigInt.zero,
       total: BigInt.from(100),
     );
 

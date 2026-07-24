@@ -74,6 +74,7 @@
 use std::convert::Infallible;
 use std::sync::OnceLock;
 
+use zcash_client_backend::data_api::WalletWrite;
 use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_proofs::prover::LocalTxProver;
 
@@ -82,7 +83,7 @@ use crate::wallet::network::WalletNetwork;
 
 use super::{
     consume_stored_proposal, discard_stored_proposal, finish_stored_proposal, open_wallet_db,
-    retain_stored_proposal_lock_until_expiry,
+    retain_stored_proposal_lock_until_expiry, stored_proposal_lock,
 };
 
 pub struct ExtractAndBroadcastPcztResult {
@@ -230,8 +231,9 @@ fn ironwood_orchard_circuit_version() -> orchard::circuit::OrchardCircuitVersion
 /// explicitly to release the stored proposal. After this function succeeds,
 /// the caller must also discard when the hardware flow ends so the retained
 /// owner-scoped wallet lock is released.
-pub fn create_pczt_from_proposal(
+pub async fn create_pczt_from_proposal(
     db_path: &str,
+    lightwalletd_url: &str,
     network: WalletNetwork,
     proposal_id: u64,
     send_flow_id: &str,
@@ -247,8 +249,65 @@ pub fn create_pczt_from_proposal(
         "Proposal not found (expired or already consumed)",
     )?;
 
+    let proposal_lock = match stored_proposal_lock(stored.proposal_id, &stored.send_flow_id) {
+        Ok(lock) => lock,
+        Err(error) => {
+            return match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
+    if proposal_lock.db_path != db_path || proposal_lock.network != network {
+        let error = "Proposal belongs to a different wallet database or network".to_string();
+        return match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+            Ok(()) => Err(error),
+            Err(cleanup_error) => Err(format!(
+                "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+            )),
+        };
+    }
+    let live_expiry_height = match super::send::live_send_expiry_height(
+        lightwalletd_url,
+        zcash_protocol::consensus::BlockHeight::from(stored.proposal.min_target_height()),
+    )
+    .await
+    {
+        Ok(height) => height,
+        Err(error) => {
+            return match finish_stored_proposal(stored.proposal_id, &stored.send_flow_id, true) {
+                Ok(()) => Err(error),
+                Err(cleanup_error) => Err(format!(
+                    "{error}; additionally failed to release proposal inputs: {cleanup_error}"
+                )),
+            };
+        }
+    };
+
     let result = with_wallet_db_write_lock("pczt.create_pczt_from_proposal", || {
+        // The live-tip request above yields to Dart. A concurrent cancel may
+        // have released this proposal while it was in flight, so re-check the
+        // process-local capability after acquiring the wallet write lock and
+        // before recreating any DB lock.
+        let current_lock = stored_proposal_lock(stored.proposal_id, &stored.send_flow_id)?;
+        if current_lock.owner != proposal_lock.owner
+            || current_lock.db_path != proposal_lock.db_path
+            || current_lock.network != proposal_lock.network
+        {
+            return Err(
+                "Hardware proposal input lock changed while refreshing chain tip".to_string(),
+            );
+        }
         let mut db = open_wallet_db(db_path, network)?;
+        db.lock_outputs(
+            &super::send::proposal_input_refs(&stored.proposal),
+            current_lock.owner,
+            live_expiry_height,
+        )
+        .map_err(|e| format!("Revalidate hardware proposal input locks: {e:?}"))?;
+        super::proposal_locks::update_expiry(db_path, current_lock.owner, live_expiry_height)?;
         // Build with the bundle type the proposal was fee-counted against
         // (see `StoredProposal::unpadded_orchard_pool_bundles`), so the
         // builder's balance check matches the proposal's fee.
@@ -257,27 +316,33 @@ pub fn create_pczt_from_proposal(
         } else {
             ::orchard::builder::BundleType::DEFAULT
         };
-        // The transaction version rides on the proposal now; `None` builds at
-        // the version implied by the target height.
+        // The transaction version rides on the proposal; expiry is pinned to
+        // the live chain tip obtained immediately before this DB operation.
         let proposal_for_pczt = stored
             .proposal
             .clone()
             .with_proposed_version(stored.proposed_tx_version);
-        zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+        let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
             stored.account_id,
             OvkPolicy::Sender,
             &proposal_for_pczt,
-            // Keep the builder-derived expiry height.
-            None,
+            Some(live_expiry_height),
             bundle_type,
         )
-        .map_err(|e| format!("Create PCZT failed: {e}"))
-    })
-    .and_then(|pczt| {
-        pczt.serialize()
-            .map_err(|e| format!("Serialize PCZT: {e:?}"))
+        .map_err(|e| format!("Create PCZT failed: {e}"))?;
+        let pczt_bytes = pczt
+            .serialize()
+            .map_err(|e| format!("Serialize PCZT: {e:?}"))?;
+
+        // From this point the PCZT may leave the process and later be
+        // broadcast. Persist the conservative restart policy before releasing
+        // the wallet write lock, closing both the cancel/re-lock race and the
+        // crash window before a follow-up retain FFI call. The in-memory
+        // capability remains, so ordinary cancellation can still unlock it.
+        super::proposal_locks::mark_retain_until_expiry(db_path, current_lock.owner)?;
+        Ok(pczt_bytes)
     });
 
     match result {
