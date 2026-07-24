@@ -3290,6 +3290,72 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
 }
 
 #[test]
+fn private_migration_draft_with_direct_notes_skips_denomination_waiting() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let target_values = vec![100_000_000];
+    let approved_schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: target_values[0],
+        block_offset: 1,
+    }];
+    let run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &target_values,
+        &approved_schedule,
+        PreparationTimingPolicy::Immediate,
+    )
+    .unwrap();
+    let plan = DenominationPlan {
+        migration_outputs: target_values,
+        orchard_change: None,
+        split_fee_zatoshi: 0,
+        migration_fee_zatoshi: 10_000,
+        total_input_zatoshi: 100_010_000,
+        total_migratable_zatoshi: 100_000_000,
+    };
+    let prepared_notes = vec![PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 100_000_000,
+        note_version: 2,
+        nullifier_hex: None,
+    }];
+
+    finalize_private_migration_draft(
+        &db_path,
+        &run_id,
+        "account-1",
+        WalletNetwork::Test,
+        &plan,
+        &prepared_notes,
+        Vec::new(),
+        Vec::new(),
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_READY_TO_MIGRATE);
+    assert!(
+        denomination_stages_for_run(&conn, &run_id, TEST_PASSWORD, TEST_SALT_BASE64)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn create_staged_run_persists_pending_split_atomically() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");

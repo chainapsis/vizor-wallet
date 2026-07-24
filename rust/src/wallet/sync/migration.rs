@@ -790,8 +790,8 @@ pub(crate) fn finalize_private_migration_draft(
     password: &[u8],
     salt_base64: &str,
 ) -> Result<(), String> {
-    if denomination_stages.is_empty() {
-        return Err("Staged migration has no denomination transactions".to_string());
+    if denomination_stages.is_empty() && prepared_notes.is_empty() {
+        return Err("Migration run has no prepared funding notes".to_string());
     }
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
@@ -803,19 +803,26 @@ pub(crate) fn finalize_private_migration_draft(
     if run.target_values_zatoshi != plan.migration_outputs {
         return Err("Prepared transactions do not match the saved migration plan".to_string());
     }
+    let initial_phase = if denomination_stages.is_empty() {
+        PHASE_READY_TO_MIGRATE
+    } else {
+        PHASE_WAITING_DENOM_CONFIRMATIONS
+    };
     let preparation_timing_policy = preparation_timing_policy_for_run_with_conn(&conn, run_id)?;
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin private migration draft finalization: {e}"))?;
     insert_prepared_notes_with_tx(&tx, run_id, prepared_notes, true)?;
     insert_denomination_stages_with_tx(&tx, run_id, denomination_stages, password, salt_base64)?;
-    initialize_preparation_schedule_with_tx(
-        &tx,
-        run_id,
-        network,
-        preparation_timing_policy,
-        &mut OsRng,
-    )?;
+    if initial_phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        initialize_preparation_schedule_with_tx(
+            &tx,
+            run_id,
+            network,
+            preparation_timing_policy,
+            &mut OsRng,
+        )?;
+    }
     insert_signed_child_pczts_with_tx(
         &tx,
         run_id,
@@ -831,7 +838,7 @@ pub(crate) fn finalize_private_migration_draft(
              WHERE run_id = ?3 AND phase IN (?4, ?5)"
         ),
         params![
-            PHASE_WAITING_DENOM_CONFIRMATIONS,
+            initial_phase,
             now_ms()?,
             run_id,
             PHASE_AWAITING_PREPARATION,
