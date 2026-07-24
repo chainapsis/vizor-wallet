@@ -30,6 +30,7 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
       MobileIronwoodMigrationPreviewSurface.preparationPausedKeystone =>
         _MigrationPreparationPreview(
           state: _MigrationPreparationState.paused,
+          isKeystone: true,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationSyncing =>
@@ -492,11 +493,13 @@ enum _MigrationPreparationState { active, paused, syncing }
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
+    this.isKeystone = false,
     this.onBack,
     this.onContinue,
   });
 
   final _MigrationPreparationState state;
+  final bool isKeystone;
   final VoidCallback? onBack;
   final VoidCallback? onContinue;
 
@@ -511,10 +514,17 @@ class _MigrationPreparationPreview extends StatelessWidget {
           ? SizedBox(
               width: double.infinity,
               child: AppButton(
+                key: const ValueKey(
+                  'mobile_ironwood_preparation_continue_button',
+                ),
                 expand: true,
                 constrainContent: true,
                 height: 50,
                 onPressed: onContinue,
+                leading: AppIcon(
+                  isKeystone ? AppIcons.qr : AppIcons.play,
+                  size: 20,
+                ),
                 child: const Text('Continue preparation'),
               ),
             )

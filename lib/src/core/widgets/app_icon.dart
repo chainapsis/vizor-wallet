@@ -78,6 +78,7 @@ abstract final class AppIcons {
   static const paid = 'paid';
   static const paste = 'paste';
   static const plane = 'plane';
+  static const play = 'play';
   static const plus = 'plus';
   static const qr = 'qr';
   static const qrCodeFill = 'qr_code_fill';

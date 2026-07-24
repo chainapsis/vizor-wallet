@@ -341,6 +341,7 @@ class _MobileMigrationRedesignedStatusState
         state: needsManualResume
             ? _MigrationPreparationState.paused
             : _MigrationPreparationState.active,
+        isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
         onContinue: !needsManualResume || accountUuid == null
             ? null

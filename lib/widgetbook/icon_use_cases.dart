@@ -52,6 +52,7 @@ const _iconNames = <String>[
   AppIcons.moneyBag,
   AppIcons.night,
   AppIcons.plane,
+  AppIcons.play,
   AppIcons.qr,
   AppIcons.renew,
   AppIcons.scroll,
