@@ -37,11 +37,20 @@ func migrationPreparationCancellationResult(
   return .needsAction
 }
 
-func migrationPreparationExpirationNeedsForegroundAction(
+func migrationPreparationExpirationRequiresBackgroundRecovery(
   taskExpired: Bool,
-  willRecoverInProcessing: Bool
+  resumeTarget: BackgroundMigrationPreparationResumeTarget
 ) -> Bool {
-  taskExpired && !willRecoverInProcessing
+  guard taskExpired else { return false }
+  return resumeTarget == .continuedProcessing
+    || resumeTarget == .backgroundProcessing
+}
+
+func migrationPreparationExpirationRequiresForegroundContinuation(
+  taskExpired: Bool,
+  resumeTarget: BackgroundMigrationPreparationResumeTarget
+) -> Bool {
+  taskExpired && resumeTarget == .idle
 }
 
 func migrationPreparationPassCompleted(
@@ -49,6 +58,22 @@ func migrationPreparationPassCompleted(
   terminalAfterExpiration: Bool
 ) -> Bool {
   result == .completed || terminalAfterExpiration
+}
+
+func migrationPreparationPassResultAfterHandoff(
+  _ result: BackgroundMigrationPreparationPassResult,
+  handoffScheduled: Bool,
+  interruptionRequested: Bool
+) -> BackgroundMigrationPreparationPassResult {
+  guard case .deferred = result, !handoffScheduled else { return result }
+  if interruptionRequested { return .cancelled }
+  return .needsAction
+}
+
+func migrationPreparationNeedsActionNotificationScope(
+  manifestScope: String?
+) -> String {
+  manifestScope ?? "global"
 }
 
 func shouldPostMigrationPreparationNeedsActionNotification(
@@ -866,14 +891,21 @@ final class BackgroundMigrationPreparationManager {
         BackgroundMigrationManager.shared.schedulePreparationHandoff(
           after: retryDelay
         ) { deferredToProcessing in
-          if !deferredToProcessing {
+          let interruptionRequested =
+            self.preparationHandoffInterruptionRequested
+          if !deferredToProcessing && !interruptionRequested {
             self.postNeedsActionNotification(
               reason: "processing-handoff-failed"
             )
           }
+          let completionResult = migrationPreparationPassResultAfterHandoff(
+            passResult,
+            handoffScheduled: deferredToProcessing,
+            interruptionRequested: interruptionRequested
+          )
           self.finishAuthorizedTask(
             task,
-            passResult: passResult,
+            passResult: completionResult,
             deferredToProcessing: deferredToProcessing
           )
         }
@@ -908,11 +940,12 @@ final class BackgroundMigrationPreparationManager {
         )
       }
     let resumeTarget = preparationResumeTarget()
-    let shouldRecoverInProcessing =
-      didExpire && !handedOff && !quiescedForMutation
-      && !disabledForNotifications
-      && (resumeTarget == .continuedProcessing
-        || resumeTarget == .backgroundProcessing)
+    // BGContinuedProcessingTask uses the same expiration handler for a
+    // system expiration and a person stopping the task in system UI, without
+    // exposing the cause. Never turn expiration into a needs-action alert.
+    // Preserve terminal completion and hand resumable work to the existing
+    // discretionary BGProcessingTask lane so resource expiration does not
+    // strand preparation until the next foreground visit.
     let terminalAfterExpiration =
       passResult == .cancelled && didExpire
       && resumeTarget == .terminal
@@ -920,21 +953,26 @@ final class BackgroundMigrationPreparationManager {
       passResult,
       terminalAfterExpiration: terminalAfterExpiration
     )
-    let expirationNeedsForegroundAction =
+    let expirationRequiresBackgroundRecovery =
       passResult == .cancelled && !handedOff && !quiescedForMutation
       && !disabledForNotifications
-      && resumeTarget != .terminal
-      && migrationPreparationExpirationNeedsForegroundAction(
+      && migrationPreparationExpirationRequiresBackgroundRecovery(
         taskExpired: didExpire,
-        willRecoverInProcessing: shouldRecoverInProcessing
+        resumeTarget: resumeTarget
+      )
+    let expirationRequiresForegroundContinuation =
+      passResult == .cancelled && !handedOff && !quiescedForMutation
+      && !disabledForNotifications
+      && migrationPreparationExpirationRequiresForegroundContinuation(
+        taskExpired: didExpire,
+        resumeTarget: resumeTarget
       )
     let needsForegroundAction =
       migrationPreparationPassNeedsForegroundAction(passResult)
-      || expirationNeedsForegroundAction
-    if expirationNeedsForegroundAction {
-      postNeedsActionNotification(reason: "preparation-expired")
-    }
-    if passCompleted || needsForegroundAction || deferredToProcessing {
+    if passCompleted || needsForegroundAction || deferredToProcessing
+      || expirationRequiresBackgroundRecovery
+      || expirationRequiresForegroundContinuation
+    {
       updateProgress(1000)
     }
     if handedOff {
@@ -943,21 +981,27 @@ final class BackgroundMigrationPreparationManager {
       markForegroundContinuationsReady()
     } else if needsForegroundAction {
       markForegroundContinuationsReady()
+    } else if expirationRequiresForegroundContinuation {
+      markForegroundContinuationsReady()
     }
     stateLock.withPreparationLock {
       taskRunning = false
       taskProgress = nil
       foregroundHandoffRequested = false
     }
-    if shouldRecoverInProcessing {
+    if expirationRequiresBackgroundRecovery {
       BackgroundMigrationManager.shared.schedulePreparationHandoff(after: 60) {
         recoveredInProcessing in
+        if !recoveredInProcessing {
+          self.markForegroundContinuationsReady()
+        }
         self.completeAuthorizedTask(
           task,
           passCompleted: passCompleted,
           needsForegroundAction: needsForegroundAction,
           deferredToProcessing: deferredToProcessing,
           recoveredInProcessing: recoveredInProcessing,
+          expirationFallbackToForeground: !recoveredInProcessing,
           handedOff: handedOff,
           quiescedForMutation: quiescedForMutation,
           disabledForNotifications: disabledForNotifications
@@ -971,6 +1015,8 @@ final class BackgroundMigrationPreparationManager {
       needsForegroundAction: needsForegroundAction,
       deferredToProcessing: deferredToProcessing,
       recoveredInProcessing: false,
+      expirationFallbackToForeground:
+        expirationRequiresForegroundContinuation,
       handedOff: handedOff,
       quiescedForMutation: quiescedForMutation,
       disabledForNotifications: disabledForNotifications
@@ -983,6 +1029,7 @@ final class BackgroundMigrationPreparationManager {
     needsForegroundAction: Bool,
     deferredToProcessing: Bool,
     recoveredInProcessing: Bool,
+    expirationFallbackToForeground: Bool,
     handedOff: Bool,
     quiescedForMutation: Bool,
     disabledForNotifications: Bool
@@ -996,7 +1043,8 @@ final class BackgroundMigrationPreparationManager {
     }
     let success =
       passCompleted || needsForegroundAction
-      || deferredToProcessing || recoveredInProcessing
+      || deferredToProcessing
+      || recoveredInProcessing || expirationFallbackToForeground
       || handedOff || quiescedForMutation || disabledForNotifications
     if success {
       BGTaskScheduler.shared.cancel(
@@ -1015,11 +1063,14 @@ final class BackgroundMigrationPreparationManager {
     } else if needsForegroundAction {
       recordSchedulingState("needs_action")
       cancelWatchdog()
-    } else if deferredToProcessing {
-      recordSchedulingState("handed_off_to_processing")
-      cancelWatchdog()
     } else if recoveredInProcessing {
       recordSchedulingState("expired_handed_off_to_processing")
+      cancelWatchdog()
+    } else if expirationFallbackToForeground {
+      recordSchedulingState("expired_waiting_for_foreground")
+      cancelWatchdog()
+    } else if deferredToProcessing {
+      recordSchedulingState("handed_off_to_processing")
       cancelWatchdog()
     } else {
       recordSchedulingState(success ? "completed" : "failed")
@@ -1420,14 +1471,6 @@ final class BackgroundMigrationPreparationManager {
     }
   }
 
-  private var isExpired: Bool {
-    stateLock.withPreparationLock { expired }
-  }
-
-  private var isForegroundHandoffRequested: Bool {
-    stateLock.withPreparationLock { foregroundHandoffRequested }
-  }
-
   private var preparationCancellationResult: BackgroundMigrationPreparationPassResult {
     stateLock.withPreparationLock {
       migrationPreparationCancellationResult(
@@ -1436,6 +1479,13 @@ final class BackgroundMigrationPreparationManager {
         mutationQuiesced: mutationQuiesced,
         notificationsDisabled: notificationAuthorization.isDisabled
       )
+    }
+  }
+
+  private var preparationHandoffInterruptionRequested: Bool {
+    stateLock.withPreparationLock {
+      expired || foregroundHandoffRequested || mutationQuiesced
+        || notificationAuthorization.isDisabled
     }
   }
 
@@ -1530,10 +1580,14 @@ final class BackgroundMigrationPreparationManager {
     }
     if let manifest {
       guard let scope = Self.preparationScope(for: manifest) else { return }
+      let notificationScope =
+        migrationPreparationNeedsActionNotificationScope(
+          manifestScope: scope
+        )
       postNeedsActionNotification(
-        scope: scope,
+        scope: notificationScope,
         fingerprint: needsActionFingerprint(
-          scope: scope,
+          scope: notificationScope,
           reason: reason,
           progress: progress
         )
@@ -1541,28 +1595,16 @@ final class BackgroundMigrationPreparationManager {
       return
     }
 
-    let manifests =
-      IronwoodMigrationBackgroundCredentialStore.loadAll()?.filter {
-        $0.expectedRunId != nil
-      } ?? []
-    if manifests.isEmpty {
-      postNeedsActionNotification(
-        scope: "global",
-        fingerprint: "global:\(reason)"
+    let notificationScope =
+      migrationPreparationNeedsActionNotificationScope(manifestScope: nil)
+    postNeedsActionNotification(
+      scope: notificationScope,
+      fingerprint: needsActionFingerprint(
+        scope: notificationScope,
+        reason: reason,
+        progress: nil
       )
-      return
-    }
-    for manifest in manifests {
-      guard let scope = Self.preparationScope(for: manifest) else { continue }
-      postNeedsActionNotification(
-        scope: scope,
-        fingerprint: needsActionFingerprint(
-          scope: scope,
-          reason: reason,
-          progress: nil
-        )
-      )
-    }
+    )
   }
 
   private func postNeedsActionNotification(
@@ -1613,13 +1655,22 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func clearNeedsActionNotification(scope: String) {
-    let identifier = Self.needsActionNotificationIdentifier(scope: scope)
+    let scopes = Set([scope, "global"])
+    stateLock.withPreparationLock {
+      for scope in scopes {
+        needsActionNotificationFingerprints.removeValue(forKey: scope)
+      }
+      persistNeedsActionNotificationFingerprintsLocked()
+    }
+    let identifiers = scopes.map {
+      Self.needsActionNotificationIdentifier(scope: $0)
+    }
     let center = UNUserNotificationCenter.current()
     center.removePendingNotificationRequests(
-      withIdentifiers: [identifier, Self.needsActionIdentifier]
+      withIdentifiers: identifiers + [Self.needsActionIdentifier]
     )
     center.removeDeliveredNotifications(
-      withIdentifiers: [identifier, Self.needsActionIdentifier]
+      withIdentifiers: identifiers + [Self.needsActionIdentifier]
     )
   }
 
