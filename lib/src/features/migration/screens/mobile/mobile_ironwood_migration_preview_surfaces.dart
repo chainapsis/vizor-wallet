@@ -291,15 +291,30 @@ class _MobileMigrationNotificationPermissionScreenState
 
   Future<void> _continueAfterNotificationGate() async {
     final plan = widget.privatePlan;
-    if (plan == null || plan.denominationSplitStageCount != 0) {
-      if (mounted) {
-        context.go('/migration/private/start', extra: plan);
-      }
-      return;
-    }
-
     if (!_busy && mounted) setState(() => _busy = true);
     try {
+      if (plan == null) {
+        throw StateError('Migration plan is unavailable.');
+      }
+      final accountState = await ref.read(accountProvider.future);
+      if (!mounted) return;
+      final accountUuid = accountState.activeAccountUuid;
+      if (accountUuid == null) {
+        throw StateError('No active account is selected.');
+      }
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .savePrivateMigrationDraft(
+            accountUuid: accountUuid,
+            approvedSchedule: plan.scheduledTransfers,
+          );
+      if (!mounted) return;
+      await _refreshPrivateMigrationDraftPresentation(ref);
+      if (!mounted) return;
+      if (plan.denominationSplitStageCount != 0) {
+        context.go('/migration/private/start', extra: plan);
+        return;
+      }
       await _continuePrivateMigrationAfterNotificationGate(ref, plan);
       if (!mounted) return;
       context.go('/migration/private/status', extra: plan);
