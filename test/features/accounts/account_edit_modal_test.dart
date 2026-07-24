@@ -21,7 +21,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'J');
     await tester.pump();
 
-    expect(find.text('Use up to 20 characters.'), findsNothing);
+    expect(find.text('Name can be up to 20 characters.'), findsNothing);
 
     await tester.tap(find.text('Update'));
     await tester.pump();
@@ -46,7 +46,7 @@ void main() {
     await tester.enterText(find.byType(TextField), name);
     await tester.pump();
 
-    expect(find.text('Use up to 20 characters.'), findsNothing);
+    expect(find.text('Name can be up to 20 characters.'), findsNothing);
 
     await tester.tap(find.text('Update'));
     await tester.pump();
@@ -59,7 +59,7 @@ void main() {
   ) async {
     await tester.pumpWidget(const _AccountEditModalHarness());
 
-    expect(find.text('Use up to 20 characters.'), findsNothing);
+    expect(find.text('Name can be up to 20 characters.'), findsNothing);
   });
 
   testWidgets('only shows the length warning when the name exceeds 20 chars', (
@@ -70,12 +70,12 @@ void main() {
     await tester.enterText(find.byType(TextField), '12345678901234567890');
     await tester.pump();
 
-    expect(find.text('Use up to 20 characters.'), findsNothing);
+    expect(find.text('Name can be up to 20 characters.'), findsNothing);
 
     await tester.enterText(find.byType(TextField), '123456789012345678901');
     await tester.pump();
 
-    expect(find.text('Use up to 20 characters.'), findsOneWidget);
+    expect(find.text('Name can be up to 20 characters.'), findsOneWidget);
   });
 
   testWidgets('does not submit empty or overlong names', (tester) async {
@@ -239,9 +239,10 @@ void main() {
 }
 
 Future<void> _loadAppFonts() async {
-  final geist = FontLoader('Geist')
-    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
-    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+  final geist =
+      FontLoader('Geist')
+        ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+        ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
 
   await geist.load();
 }
