@@ -23,6 +23,34 @@ func migrationPreparationBackgroundWakeSucceeded(
   result != .cancelled
 }
 
+func migrationPreparationCancellationResult(
+  taskExpired: Bool,
+  foregroundHandoffRequested: Bool,
+  mutationQuiesced: Bool,
+  notificationsDisabled: Bool
+) -> BackgroundMigrationPreparationPassResult {
+  if taskExpired || foregroundHandoffRequested || mutationQuiesced
+    || notificationsDisabled
+  {
+    return .cancelled
+  }
+  return .needsAction
+}
+
+func migrationPreparationExpirationNeedsForegroundAction(
+  taskExpired: Bool,
+  willRecoverInProcessing: Bool
+) -> Bool {
+  taskExpired && !willRecoverInProcessing
+}
+
+func migrationPreparationPassCompleted(
+  _ result: BackgroundMigrationPreparationPassResult,
+  terminalAfterExpiration: Bool
+) -> Bool {
+  result == .completed || terminalAfterExpiration
+}
+
 func shouldPostMigrationPreparationNeedsActionNotification(
   previousFingerprint: String?,
   fingerprint: String
@@ -48,6 +76,7 @@ enum BackgroundMigrationPreparationRuntimeState: String, Equatable {
 
 enum BackgroundMigrationPreparationResumeTarget: Equatable {
   case idle
+  case terminal
   case continuedProcessing
   case backgroundProcessing
 }
@@ -61,6 +90,9 @@ func migrationPreparationResumeTarget(
   }
   if inspectionFailed || states.contains(5) {
     return .backgroundProcessing
+  }
+  if states.isEmpty || states.allSatisfy({ $0 == 4 }) {
+    return .terminal
   }
   return .idle
 }
@@ -98,7 +130,12 @@ func migrationPreparationPassResult(
   states: [UInt8]
 ) -> BackgroundMigrationPreparationPassResult {
   if states.contains(2) { return .needsAction }
-  if states.contains(3) { return .cancelled }
+  // A persisted cancellation is not, by itself, an expected cancellation of
+  // the iOS task. The user must reopen the app to recover the preparation.
+  // Task-originated cancellations (foreground handoff, mutation quiescence,
+  // and notification revocation) are classified at the point where the
+  // manager's runtime state is available.
+  if states.contains(3) { return .needsAction }
   if states.contains(0) {
     return .waitingForConfirmations
   }
@@ -604,7 +641,7 @@ final class BackgroundMigrationPreparationManager {
       mutationQuiesced = false
     }
     switch preparationResumeTarget() {
-    case .idle:
+    case .idle, .terminal:
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
@@ -856,12 +893,6 @@ final class BackgroundMigrationPreparationManager {
     deferredToProcessing: Bool
   ) {
     stopAuthorizationMonitoring()
-    let passCompleted = passResult == .completed
-    let needsForegroundAction =
-      migrationPreparationPassNeedsForegroundAction(passResult)
-    if passCompleted || needsForegroundAction || deferredToProcessing {
-      updateProgress(1000)
-    }
     let (
       handedOff,
       didExpire,
@@ -876,6 +907,36 @@ final class BackgroundMigrationPreparationManager {
           notificationAuthorization.isDisabled
         )
       }
+    let resumeTarget = preparationResumeTarget()
+    let shouldRecoverInProcessing =
+      didExpire && !handedOff && !quiescedForMutation
+      && !disabledForNotifications
+      && (resumeTarget == .continuedProcessing
+        || resumeTarget == .backgroundProcessing)
+    let terminalAfterExpiration =
+      passResult == .cancelled && didExpire
+      && resumeTarget == .terminal
+    let passCompleted = migrationPreparationPassCompleted(
+      passResult,
+      terminalAfterExpiration: terminalAfterExpiration
+    )
+    let expirationNeedsForegroundAction =
+      passResult == .cancelled && !handedOff && !quiescedForMutation
+      && !disabledForNotifications
+      && resumeTarget != .terminal
+      && migrationPreparationExpirationNeedsForegroundAction(
+        taskExpired: didExpire,
+        willRecoverInProcessing: shouldRecoverInProcessing
+      )
+    let needsForegroundAction =
+      migrationPreparationPassNeedsForegroundAction(passResult)
+      || expirationNeedsForegroundAction
+    if expirationNeedsForegroundAction {
+      postNeedsActionNotification(reason: "preparation-expired")
+    }
+    if passCompleted || needsForegroundAction || deferredToProcessing {
+      updateProgress(1000)
+    }
     if handedOff {
       // Publish the continuation before clearing the running flag so a
       // foreground state read cannot observe an idle gap between the two.
@@ -888,10 +949,6 @@ final class BackgroundMigrationPreparationManager {
       taskProgress = nil
       foregroundHandoffRequested = false
     }
-    let shouldRecoverInProcessing =
-      didExpire && !handedOff && !quiescedForMutation
-      && !disabledForNotifications
-      && hasResumablePreparation()
     if shouldRecoverInProcessing {
       BackgroundMigrationManager.shared.schedulePreparationHandoff(after: 60) {
         recoveredInProcessing in
@@ -974,7 +1031,8 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func hasResumablePreparation() -> Bool {
-    preparationResumeTarget() != .idle
+    let target = preparationResumeTarget()
+    return target == .continuedProcessing || target == .backgroundProcessing
   }
 
   private func preparationResumeTarget()
@@ -1152,14 +1210,15 @@ final class BackgroundMigrationPreparationManager {
         )
         return .needsAction
       case 3:
-        if !isExpired && !isForegroundHandoffRequested {
+        let result = preparationCancellationResult
+        if result == .needsAction {
           postNeedsActionNotification(
             reason: "preparation-cancelled",
             manifest: manifest,
             progress: preparation
           )
         }
-        return .cancelled
+        return result
       case 0, 5:
         break
       default:
@@ -1369,6 +1428,17 @@ final class BackgroundMigrationPreparationManager {
     stateLock.withPreparationLock { foregroundHandoffRequested }
   }
 
+  private var preparationCancellationResult: BackgroundMigrationPreparationPassResult {
+    stateLock.withPreparationLock {
+      migrationPreparationCancellationResult(
+        taskExpired: expired,
+        foregroundHandoffRequested: foregroundHandoffRequested,
+        mutationQuiesced: mutationQuiesced,
+        notificationsDisabled: notificationAuthorization.isDisabled
+      )
+    }
+  }
+
   private var isStopRequested: Bool {
     stateLock.withPreparationLock {
       expired || foregroundHandoffRequested
@@ -1513,7 +1583,7 @@ final class BackgroundMigrationPreparationManager {
     guard shouldPost else { return }
 
     let content = UNMutableNotificationContent()
-    content.title = "Continue preparing your migration"
+    content.title = "User action needed"
     content.body = "Open and unlock Vizor to continue."
     content.sound = .default
     addNotificationIfEnabled(

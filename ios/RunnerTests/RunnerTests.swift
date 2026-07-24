@@ -337,6 +337,13 @@ class RunnerTests: XCTestCase {
       ),
       .idle
     )
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [4],
+        inspectionFailed: false
+      ),
+      .terminal
+    )
   }
 
   func testMigrationPreparationCompletesOnlyTerminalBackgroundStates() {
@@ -354,7 +361,7 @@ class RunnerTests: XCTestCase {
     )
     XCTAssertEqual(
       migrationPreparationPassResult(states: [3]),
-      .cancelled
+      .needsAction
     )
   }
 
@@ -367,6 +374,66 @@ class RunnerTests: XCTestCase {
     )
     XCTAssertFalse(
       migrationPreparationBackgroundWakeSucceeded(.cancelled)
+    )
+  }
+
+  func testUnexpectedPreparationCancellationNeedsForegroundAction() {
+    XCTAssertEqual(
+      migrationPreparationCancellationResult(
+        taskExpired: false,
+        foregroundHandoffRequested: false,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      ),
+      .needsAction
+    )
+    XCTAssertEqual(
+      migrationPreparationCancellationResult(
+        taskExpired: false,
+        foregroundHandoffRequested: true,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      ),
+      .cancelled
+    )
+    XCTAssertEqual(
+      migrationPreparationCancellationResult(
+        taskExpired: true,
+        foregroundHandoffRequested: false,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      ),
+      .cancelled
+    )
+  }
+
+  func testExpiredPreparationUsesForegroundActionOnlyWithoutRecovery() {
+    XCTAssertTrue(
+      migrationPreparationExpirationNeedsForegroundAction(
+        taskExpired: true,
+        willRecoverInProcessing: false
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationExpirationNeedsForegroundAction(
+        taskExpired: true,
+        willRecoverInProcessing: true
+      )
+    )
+  }
+
+  func testTerminalPreparationCancellationCompletesExpiredTask() {
+    XCTAssertTrue(
+      migrationPreparationPassCompleted(
+        .cancelled,
+        terminalAfterExpiration: true
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationPassCompleted(
+        .cancelled,
+        terminalAfterExpiration: false
+      )
     )
   }
 
