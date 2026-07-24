@@ -554,41 +554,44 @@ void main() {
   );
 
   test(
-    'notification APIs are invoked only by explicit service calls',
+    'iOS and Android notification APIs are invoked by explicit service calls',
     () async {
       var requestCount = 0;
       var statusCount = 0;
       var openSettingsCount = 0;
-      final service = _notificationAuthorizationService(
-        isIOS: true,
-        statuses: const [],
-        requestNotificationAuthorization: () async {
-          requestCount++;
-          return true;
-        },
-        getNotificationAuthorizationStatus: () async {
-          statusCount++;
-          return IronwoodMigrationNotificationAuthorizationStatus.authorized;
-        },
-        openNotificationSettings: () async {
-          openSettingsCount++;
-          return true;
-        },
-      );
+      for (final isAndroid in [false, true]) {
+        final service = _notificationAuthorizationService(
+          isIOS: !isAndroid,
+          isAndroid: isAndroid,
+          statuses: const [],
+          requestNotificationAuthorization: () async {
+            requestCount++;
+            return true;
+          },
+          getNotificationAuthorizationStatus: () async {
+            statusCount++;
+            return IronwoodMigrationNotificationAuthorizationStatus.authorized;
+          },
+          openNotificationSettings: () async {
+            openSettingsCount++;
+            return true;
+          },
+        );
 
-      expect(
-        await service.notificationAuthorizationStatus(),
-        IronwoodMigrationNotificationAuthorizationStatus.authorized,
-      );
-      expect(
-        await service.requestNotificationPermission(),
-        IronwoodMigrationNotificationAuthorizationStatus.authorized,
-      );
-      expect(await service.openNotificationSystemSettings(), isTrue);
+        expect(
+          await service.notificationAuthorizationStatus(),
+          IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        );
+        expect(
+          await service.requestNotificationPermission(),
+          IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        );
+        expect(await service.openNotificationSystemSettings(), isTrue);
+      }
 
-      expect(requestCount, 1);
-      expect(statusCount, 2);
-      expect(openSettingsCount, 1);
+      expect(requestCount, 2);
+      expect(statusCount, 4);
+      expect(openSettingsCount, 2);
     },
   );
 
@@ -2422,121 +2425,132 @@ void main() {
   );
 
   test(
-    'iOS stages and arms typed outbox payload after foreground preparation',
+    'iOS and Android stage and arm typed outbox payload after foreground preparation',
     () async {
-      const channel = MethodChannel('com.zcash.wallet/background_migration');
-      final events = <String>[];
-      Map<Object?, Object?>? stagedPayload;
-      Map<Object?, Object?>? armedPayload;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
-            events.add(call.method);
-            switch (call.method) {
-              case 'listOutboxReceipts':
-                return <Object?>[];
-              case 'stageOutboxBatch':
-                stagedPayload = call.arguments as Map<Object?, Object?>;
-                return <String, String>{'txid-1': 'digest-1'};
-              case 'armOutboxBatch':
-                armedPayload = call.arguments as Map<Object?, Object?>;
-                return true;
-              case 'runOutboxOnceNow':
-                return <String, Object?>{'outcome': 'waiting'};
-            }
-            throw StateError('Unexpected method ${call.method}');
-          });
-      addTearDown(
-        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, null),
-      );
-      final statuses = <rust_sync.MigrationStatus>[
-        _migrationStatus(),
-        _migrationStatus(activeRunId: 'run-1'),
-        _migrationStatus(activeRunId: 'run-1'),
-      ];
-      final service = IronwoodMigrationService(
-        getWalletDbPath: () async => '/tmp/wallet.db',
-        getStatus: ({required dbPath, required network, required accountUuid}) {
-          return Future.value(statuses.removeAt(0));
-        },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) async =>
-                null,
-        secureStore: AppSecureStore.testing(
-          storage: const FlutterSecureStorage(),
-        ),
-        backgroundCredentialStore: _backgroundCredentialStore(),
-        getEndpoint: _testEndpoint,
-        getSessionPassword: () => throw StateError('session password used'),
-        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2, 3]),
-        isMobile: () => true,
-        isIOS: () => true,
-        isMacOS: () => false,
-        startSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required mnemonicBytes,
-              required password,
-              required saltBase64,
-              required approvedSchedule,
-            }) async {
-              events.add('credentialOperation');
-              return _migrationResult();
-            },
-        prepareMigrationOutbox:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required password,
-              required saltBase64,
-            }) async {
-              events.add('prepareOutbox');
-              return _migrationResult();
-            },
-        exportMigrationOutbox:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required password,
-              required saltBase64,
-            }) async {
-              events.add('exportOutbox');
-              return _outboxBatch();
-            },
-      );
+      for (final isAndroid in [false, true]) {
+        FlutterSecureStorage.setMockInitialValues({});
+        const channel = MethodChannel('com.zcash.wallet/background_migration');
+        final events = <String>[];
+        Map<Object?, Object?>? stagedPayload;
+        Map<Object?, Object?>? armedPayload;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              events.add(call.method);
+              switch (call.method) {
+                case 'listOutboxReceipts':
+                  return <Object?>[];
+                case 'stageOutboxBatch':
+                  stagedPayload = call.arguments as Map<Object?, Object?>;
+                  return <String, String>{'txid-1': 'digest-1'};
+                case 'armOutboxBatch':
+                  armedPayload = call.arguments as Map<Object?, Object?>;
+                  return true;
+                case 'runOutboxOnceNow':
+                  return <String, Object?>{'outcome': 'waiting'};
+              }
+              throw StateError('Unexpected method ${call.method}');
+            });
+        addTearDown(
+          () => TestDefaultBinaryMessengerBinding
+              .instance
+              .defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null),
+        );
+        final statuses = <rust_sync.MigrationStatus>[
+          _migrationStatus(),
+          _migrationStatus(activeRunId: 'run-1'),
+          _migrationStatus(activeRunId: 'run-1'),
+        ];
+        final service = IronwoodMigrationService(
+          getWalletDbPath: () async => '/tmp/wallet.db',
+          getStatus:
+              ({required dbPath, required network, required accountUuid}) {
+                return Future.value(statuses.removeAt(0));
+              },
+          getPrivatePlan:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => null,
+          secureStore: AppSecureStore.testing(
+            storage: const FlutterSecureStorage(),
+          ),
+          backgroundCredentialStore: _backgroundCredentialStore(),
+          getEndpoint: _testEndpoint,
+          getSessionPassword: () => throw StateError('session password used'),
+          getMnemonicBytesForAccount: (_) async =>
+              Uint8List.fromList([1, 2, 3]),
+          isMobile: () => true,
+          isIOS: () => !isAndroid,
+          isAndroid: () => isAndroid,
+          isMacOS: () => false,
+          startSoftwareMigration:
+              ({
+                required dbPath,
+                required lightwalletdUrl,
+                required network,
+                required accountUuid,
+                required mnemonicBytes,
+                required password,
+                required saltBase64,
+                required approvedSchedule,
+              }) async {
+                events.add('credentialOperation');
+                return _migrationResult();
+              },
+          prepareMigrationOutbox:
+              ({
+                required dbPath,
+                required lightwalletdUrl,
+                required network,
+                required accountUuid,
+                required password,
+                required saltBase64,
+              }) async {
+                events.add('prepareOutbox');
+                return _migrationResult();
+              },
+          exportMigrationOutbox:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+                required password,
+                required saltBase64,
+              }) async {
+                events.add('exportOutbox');
+                return _outboxBatch();
+              },
+        );
 
-      await service.startSoftwarePrivateMigration(
-        accountUuid: 'account-1',
-        approvedSchedule: const [],
-      );
+        await service.startSoftwarePrivateMigration(
+          accountUuid: 'account-1',
+          approvedSchedule: const [],
+        );
 
-      expect(events, [
-        'listOutboxReceipts',
-        'credentialOperation',
-        'listOutboxReceipts',
-        'prepareOutbox',
-        'exportOutbox',
-        'stageOutboxBatch',
-        'armOutboxBatch',
-        'runOutboxOnceNow',
-        'listOutboxReceipts',
-      ]);
-      expect(stagedPayload?['batchId'], 'test:account-1:run-1');
-      expect(stagedPayload?['nextProofHeight'], 576);
-      final items = stagedPayload?['items'] as List<Object?>;
-      final item = items.single as Map<Object?, Object?>;
-      expect(item['rawTransaction'], isA<Uint8List>());
-      expect(item['rawTransaction'], Uint8List.fromList([1, 2, 3, 4]));
-      expect(armedPayload, {
-        'batchId': 'test:account-1:run-1',
-        'expectedDigests': {'txid-1': 'digest-1'},
-      });
+        expect(events, [
+          'listOutboxReceipts',
+          'credentialOperation',
+          'listOutboxReceipts',
+          'prepareOutbox',
+          'exportOutbox',
+          'stageOutboxBatch',
+          'armOutboxBatch',
+          'runOutboxOnceNow',
+          'listOutboxReceipts',
+        ]);
+        expect(stagedPayload?['batchId'], 'test:account-1:run-1');
+        expect(stagedPayload?['nextProofHeight'], 576);
+        final items = stagedPayload?['items'] as List<Object?>;
+        final item = items.single as Map<Object?, Object?>;
+        expect(item['rawTransaction'], isA<Uint8List>());
+        expect(item['rawTransaction'], Uint8List.fromList([1, 2, 3, 4]));
+        expect(armedPayload, {
+          'batchId': 'test:account-1:run-1',
+          'expectedDigests': {'txid-1': 'digest-1'},
+        });
+      }
     },
   );
 
@@ -2842,6 +2856,7 @@ RpcEndpointConfig _testEndpoint() => const RpcEndpointConfig(
 
 IronwoodMigrationService _notificationAuthorizationService({
   required bool isIOS,
+  bool isAndroid = false,
   required List<rust_sync.MigrationStatus> statuses,
   Future<bool> Function()? requestNotificationAuthorization,
   Future<IronwoodMigrationNotificationAuthorizationStatus> Function()?
@@ -2866,6 +2881,7 @@ IronwoodMigrationService _notificationAuthorizationService({
     isMacOS: () => false,
     isMobile: () => true,
     isIOS: () => isIOS,
+    isAndroid: () => isAndroid,
     requestNotificationAuthorization: requestNotificationAuthorization,
     getNotificationAuthorizationStatus:
         getNotificationAuthorizationStatus ??

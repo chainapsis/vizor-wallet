@@ -17,6 +17,8 @@ use crate::wallet::network::WalletNetwork;
 
 const RESULT_CLASS: &str = "com/keplr/vizor/IronwoodMigrationNativeCallResult";
 const RESULT_SIGNATURE: &str = "(ILjava/lang/String;[J)V";
+const OUTBOX_RESULT_CLASS: &str = "com/keplr/vizor/IronwoodMigrationOutboxNativeCallResult";
+const OUTBOX_RESULT_SIGNATURE: &str = "(ILjava/lang/String;JI)V";
 const SYNC_CALLBACK_METHOD: &str = "onProgress";
 const SYNC_CALLBACK_SIGNATURE: &str = "(JJDDJZZZ)V";
 
@@ -181,6 +183,52 @@ fn run_outcome(
         Err(panic) => NativeOutcome::panic(context, panic),
     };
     encode_outcome(env, outcome)
+}
+
+fn encode_outbox_outcome(
+    env: &mut JNIEnv<'_>,
+    code: i32,
+    message: Option<String>,
+    height: i64,
+    response_code: i32,
+) -> jobject {
+    let message = match message {
+        Some(message) => match env.new_string(message) {
+            Ok(message) => JObject::from(message),
+            Err(error) => return throw_encoding_error(env, error),
+        },
+        None => JObject::null(),
+    };
+    match env.new_object(
+        OUTBOX_RESULT_CLASS,
+        OUTBOX_RESULT_SIGNATURE,
+        &[
+            JValue::Int(code),
+            JValue::Object(&message),
+            JValue::Long(height),
+            JValue::Int(response_code),
+        ],
+    ) {
+        Ok(result) => result.into_raw(),
+        Err(error) => throw_encoding_error(env, error),
+    }
+}
+
+fn run_outbox_call(
+    env: &mut JNIEnv<'_>,
+    context: &str,
+    action: impl FnOnce(&mut JNIEnv<'_>) -> Result<(Option<String>, i64, i32), NativeOutcome>,
+) -> jobject {
+    match catch_unwind(AssertUnwindSafe(|| action(env))) {
+        Ok(Ok((message, height, response_code))) => {
+            encode_outbox_outcome(env, RESULT_SUCCESS, message, height, response_code)
+        }
+        Ok(Err(outcome)) => encode_outbox_outcome(env, outcome.code, outcome.message, -1, 0),
+        Err(panic) => {
+            let outcome = NativeOutcome::panic(context, panic);
+            encode_outbox_outcome(env, outcome.code, outcome.message, -1, 0)
+        }
+    }
 }
 
 fn report_sync_progress(
@@ -436,6 +484,72 @@ pub extern "system" fn Java_com_keplr_vizor_IronwoodMigrationJniBindings_nativeR
         match sync_result {
             Ok(()) => NativeOutcome::success(),
             Err(error) => error.into(),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_keplr_vizor_IronwoodMigrationJniBindings_nativeLatestBlockHeight(
+    mut env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    lightwalletd_url: JString<'_>,
+) -> jobject {
+    run_outbox_call(&mut env, "get outbox block height", |env| {
+        let lightwalletd_url = parse_string(env, lightwalletd_url, "lightwalletdUrl")?;
+        let runtime = tokio::runtime::Runtime::new().map_err(|error| {
+            NativeOutcome::from(MigrationPreparationError::Execution(format!(
+                "Create outbox runtime: {error}"
+            )))
+        })?;
+        let height = runtime.block_on(async {
+            let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                .await
+                .map_err(|error| error.to_string())?;
+            crate::wallet::sync_engine::get_latest_block(&mut client)
+                .await
+                .map(|block| block.height)
+                .map_err(|error| error.to_string())
+        });
+        match height {
+            Ok(height) => i64::try_from(height)
+                .map(|height| (None, height, 0))
+                .map_err(|_| NativeOutcome::invalid_argument("Block height exceeds JNI range")),
+            Err(error) => Err(MigrationPreparationError::Execution(error).into()),
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_keplr_vizor_IronwoodMigrationJniBindings_nativeSendTransaction(
+    mut env: JNIEnv<'_>,
+    _this: JObject<'_>,
+    lightwalletd_url: JString<'_>,
+    raw_transaction: JByteArray<'_>,
+) -> jobject {
+    run_outbox_call(&mut env, "send outbox transaction", |env| {
+        let lightwalletd_url = parse_string(env, lightwalletd_url, "lightwalletdUrl")?;
+        let raw_transaction = env.convert_byte_array(&raw_transaction).map_err(|error| {
+            NativeOutcome::invalid_argument(format!("Read rawTransaction: {error}"))
+        })?;
+        if raw_transaction.is_empty() {
+            return Err(NativeOutcome::invalid_argument("rawTransaction is empty"));
+        }
+        let runtime = tokio::runtime::Runtime::new().map_err(|error| {
+            NativeOutcome::from(MigrationPreparationError::Execution(format!(
+                "Create outbox runtime: {error}"
+            )))
+        })?;
+        let response = runtime.block_on(async {
+            let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                .await
+                .map_err(|error| error.to_string())?;
+            crate::wallet::sync_engine::send_transaction_with_status(&mut client, &raw_transaction)
+                .await
+                .map_err(|error| error.to_string())
+        });
+        match response {
+            Ok(response) => Ok((Some(response.error_message), -1, response.error_code)),
+            Err(error) => Err(MigrationPreparationError::Execution(error).into()),
         }
     })
 }

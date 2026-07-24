@@ -251,6 +251,20 @@ internal class IronwoodMigrationSecureStore(
         batchId: String,
     ): ByteArray? = get(outboxKey(network, accountUuid, batchId))
 
+    fun updateOutboxSnapshot(
+        transform: (ByteArray?) -> ByteArray?,
+    ): ByteArray? = lock.withLock {
+        val updated = transform(get(OUTBOX_SNAPSHOT_KEY))
+        if (updated == null) {
+            remove(OUTBOX_SNAPSHOT_KEY)
+        } else {
+            put(OUTBOX_SNAPSHOT_KEY, updated)
+        }
+        updated
+    }
+
+    fun readOutboxSnapshot(): ByteArray? = get(OUTBOX_SNAPSHOT_KEY)
+
     fun revokeAccount(network: String, accountUuid: String) = lock.withLock {
         val recordKey = manifestKey(network, accountUuid)
         val manifestKeys = readManifestKeysLocked()
@@ -543,6 +557,7 @@ internal class IronwoodMigrationSecureStore(
         const val MAX_PAYLOAD_BYTES = 48 * 1024 * 1024
         const val MANIFEST_PREFIX = "$RECORD_VERSION:manifest:"
         const val MANIFEST_INDEX_KEY = "$RECORD_VERSION:index:manifests"
+        const val OUTBOX_SNAPSHOT_KEY = "$RECORD_VERSION:outbox-snapshot"
         val STORE_LOCK = ReentrantLock()
     }
 }

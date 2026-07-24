@@ -71,6 +71,14 @@ internal class IronwoodMigrationNativeCallResult(
 )
 
 @Keep
+internal class IronwoodMigrationOutboxNativeCallResult(
+    @JvmField val code: Int,
+    @JvmField val message: String?,
+    @JvmField val height: Long,
+    @JvmField val responseCode: Int,
+)
+
+@Keep
 internal fun interface IronwoodMigrationNativeSyncCallback {
     @Suppress("LongParameterList")
     fun onProgress(
@@ -115,6 +123,17 @@ internal interface IronwoodMigrationNativeBindings {
         network: String,
         callback: IronwoodMigrationNativeSyncCallback,
     ): IronwoodMigrationNativeCallResult
+
+    fun nativeLatestBlockHeight(
+        lightwalletdUrl: String,
+    ): IronwoodMigrationOutboxNativeCallResult =
+        throw UnsupportedOperationException("Outbox transport is not implemented.")
+
+    fun nativeSendTransaction(
+        lightwalletdUrl: String,
+        rawTransaction: ByteArray,
+    ): IronwoodMigrationOutboxNativeCallResult =
+        throw UnsupportedOperationException("Outbox transport is not implemented.")
 }
 
 @Keep
@@ -152,6 +171,15 @@ internal object IronwoodMigrationJniBindings : IronwoodMigrationNativeBindings {
         network: String,
         callback: IronwoodMigrationNativeSyncCallback,
     ): IronwoodMigrationNativeCallResult
+
+    external override fun nativeLatestBlockHeight(
+        lightwalletdUrl: String,
+    ): IronwoodMigrationOutboxNativeCallResult
+
+    external override fun nativeSendTransaction(
+        lightwalletdUrl: String,
+        rawTransaction: ByteArray,
+    ): IronwoodMigrationOutboxNativeCallResult
 }
 
 internal interface IronwoodMigrationPreparationNative {
@@ -183,6 +211,59 @@ internal interface IronwoodMigrationPreparationNative {
         network: String,
         onProgress: (IronwoodMigrationNativeSyncProgress) -> Unit,
     )
+}
+
+internal data class IronwoodMigrationSendResponse(
+    val errorCode: Int,
+    val errorMessage: String,
+)
+
+internal interface IronwoodMigrationOutboxTransport {
+    fun latestBlockHeight(lightwalletdUrl: String): Long
+    fun sendTransaction(
+        lightwalletdUrl: String,
+        rawTransaction: ByteArray,
+    ): IronwoodMigrationSendResponse
+}
+
+internal class IronwoodMigrationOutboxNativeBridge(
+    private val bindings: IronwoodMigrationNativeBindings = IronwoodMigrationJniBindings,
+) : IronwoodMigrationOutboxTransport {
+    override fun latestBlockHeight(lightwalletdUrl: String): Long {
+        val result = bindings.nativeLatestBlockHeight(lightwalletdUrl)
+        checkOutboxResult(result, "latest block height")
+        if (result.height < 0) {
+            throw IronwoodMigrationNativeException(
+                IronwoodMigrationNativeError.INVALID_RESPONSE,
+                "Invalid latest block height.",
+            )
+        }
+        return result.height
+    }
+
+    override fun sendTransaction(
+        lightwalletdUrl: String,
+        rawTransaction: ByteArray,
+    ): IronwoodMigrationSendResponse {
+        val result = bindings.nativeSendTransaction(lightwalletdUrl, rawTransaction)
+        checkOutboxResult(result, "send transaction")
+        return IronwoodMigrationSendResponse(
+            errorCode = result.responseCode,
+            errorMessage = result.message.orEmpty(),
+        )
+    }
+
+    private fun checkOutboxResult(
+        result: IronwoodMigrationOutboxNativeCallResult,
+        action: String,
+    ) {
+        if (result.code != 0) {
+            throw IronwoodMigrationNativeException(
+                IronwoodMigrationNativeError.fromNative(result.code),
+                result.message ?: "Failed to $action.",
+            )
+        }
+    }
 }
 
 internal class IronwoodMigrationNativeBridge(

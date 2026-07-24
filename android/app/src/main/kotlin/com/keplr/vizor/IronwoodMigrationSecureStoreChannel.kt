@@ -14,11 +14,13 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 internal class IronwoodMigrationSecureStoreChannel(
-    context: Context,
+    private val context: Context,
     private val store: IronwoodMigrationSecureStore = IronwoodMigrationSecureStore(context),
     private val executor: ExecutorService = Executors.newSingleThreadExecutor(),
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
 ) {
+    private val outboxRepository = IronwoodMigrationOutboxRepository(store)
+
     fun handle(call: MethodCall, result: MethodChannel.Result): Boolean {
         val action: () -> Any? = when (call.method) {
             "stageCredentialManifest" -> {
@@ -54,34 +56,157 @@ internal class IronwoodMigrationSecureStoreChannel(
             "stageOutboxBatch" -> {
                 {
                     val incoming = validateOutboxBatch(arguments(call))
-                    val existing = store.readOutboxBatch(
-                        incoming.network,
-                        incoming.accountUuid,
-                        incoming.batchId,
-                    )?.let(::decodeIronwoodOutboxMap)
-                    val merged = mergeOutboxBatch(existing, incoming.payload)
-                    store.writeOutboxBatch(
-                        incoming.network,
-                        incoming.accountUuid,
-                        incoming.batchId,
-                        encodeIronwoodOutboxMap(merged),
-                    )
+                    outboxRepository.update { snapshot -> stage(snapshot, incoming) }
                     incoming.digests
+                }
+            }
+            "armOutboxBatch" -> {
+                {
+                    val arguments = arguments(call)
+                    val batchId = string(arguments, "batchId")
+                    val expectedDigests = stringStringMap(
+                        arguments["expectedDigests"],
+                        "expectedDigests",
+                    )
+                    outboxRepository.update { snapshot ->
+                        val batch = snapshot.batches.firstOrNull { it.batchId == batchId }
+                            ?: throw IllegalArgumentException("Outbox batch not found.")
+                        if (
+                            expectedDigests.isEmpty() &&
+                            batch.nextProofHeight == null
+                        ) {
+                            throw IllegalArgumentException("Invalid outbox arm request.")
+                        }
+                        if (expectedDigests.any { (itemId, digest) ->
+                                batch.items.none {
+                                    it.itemId == itemId &&
+                                        it.payloadDigestHex == digest
+                                }
+                            }) {
+                            throw IllegalArgumentException("Invalid outbox arm request.")
+                        }
+                        batch.armedAtMs = batch.armedAtMs ?: System.currentTimeMillis()
+                        batch.items.filter {
+                            it.itemId in expectedDigests &&
+                                it.status == IronwoodOutboxItemStatus.STAGED
+                        }.forEach { it.status = IronwoodOutboxItemStatus.ARMED }
+                    }
+                    scheduleOutbox()
+                    true
+                }
+            }
+            "recoverOutboxBatch" -> {
+                {
+                    val arguments = arguments(call)
+                    val batchId = string(arguments, "batchId")
+                    val expectedTxids = stringList(
+                        arguments["expectedTxids"],
+                        "expectedTxids",
+                    ).map(String::lowercase).toSet()
+                    val recovered = IronwoodMigrationOutboxExecutionCoordinator.runExclusive {
+                        outboxRepository.update { snapshot ->
+                            val batch = snapshot.batches.firstOrNull { it.batchId == batchId }
+                                ?: return@update false
+                            if (
+                                batch.network != network(arguments) ||
+                                batch.accountUuid != string(arguments, "accountUuid") ||
+                                batch.runId != string(arguments, "runId") ||
+                                expectedTxids.isEmpty() ||
+                                batch.items.isEmpty() ||
+                                batch.items.any { it.txidHex !in expectedTxids }
+                            ) {
+                                throw IllegalArgumentException("Conflicting outbox batch.")
+                            }
+                            batch.lightwalletdUrl = string(arguments, "lightwalletdUrl")
+                            val now = System.currentTimeMillis()
+                            batch.items.forEach { item ->
+                                when (item.status) {
+                                    IronwoodOutboxItemStatus.SUBMITTING -> {
+                                        item.status = IronwoodOutboxItemStatus.ARMED
+                                        item.attemptCount += 1
+                                        item.nextAttemptAtMs = now +
+                                            IronwoodOutboxState.retryDelayMs(item.attemptCount)
+                                        item.lastError =
+                                            "The previous submission outcome is unknown."
+                                        item.attemptId = null
+                                        item.attemptStartedAtMs = null
+                                    }
+                                    IronwoodOutboxItemStatus.STAGED ->
+                                        item.status = IronwoodOutboxItemStatus.ARMED
+                                    else -> Unit
+                                }
+                            }
+                            if (batch.items.any {
+                                    it.status == IronwoodOutboxItemStatus.ARMED
+                                }) {
+                                batch.armedAtMs = batch.armedAtMs ?: now
+                            }
+                            true
+                        }
+                    }
+                    if (recovered) scheduleOutbox()
+                    recovered
+                }
+            }
+            "listOutboxReceipts" -> {
+                {
+                    outboxRepository.read().receipts.map(::receiptMap)
+                }
+            }
+            "ackOutboxReceipts" -> {
+                {
+                    val receiptIds = stringList(
+                        arguments(call)["receiptIds"],
+                        "receiptIds",
+                    ).toSet()
+                    outboxRepository.update { snapshot ->
+                        IronwoodOutboxState.acknowledgeReceipts(snapshot, receiptIds)
+                    }
+                    null
+                }
+            }
+            "runOutboxOnceNow" -> {
+                {
+                    IronwoodMigrationOutboxRunner(
+                        repository = outboxRepository,
+                        transport = IronwoodMigrationOutboxNativeBridge(),
+                    ).runOnceWaitingForActiveRun().toChannelMap()
                 }
             }
             "revokeAccount" -> {
                 {
                     val arguments = arguments(call)
-                    store.revokeAccount(
-                        network(arguments),
-                        string(arguments, "accountUuid"),
-                    )
+                    val network = network(arguments)
+                    val accountUuid = string(arguments, "accountUuid")
+                    IronwoodMigrationOutboxScheduler.cancel(context)
+                    var hasRemainingWork = false
+                    IronwoodMigrationOutboxExecutionCoordinator.cancelAndDrain {
+                        hasRemainingWork = outboxRepository.update { snapshot ->
+                            val batchIds = snapshot.batches.filter {
+                                it.network == network && it.accountUuid == accountUuid
+                            }.map { it.batchId }.toSet()
+                            snapshot.batches.removeAll { it.batchId in batchIds }
+                            snapshot.receipts.removeAll { it.batchId in batchIds }
+                            if (snapshot.lastAttemptedScopeKey == "$network:$accountUuid") {
+                                snapshot.lastAttemptedScopeKey = null
+                            }
+                            IronwoodOutboxState.hasRunnableWork(snapshot)
+                        }
+                        store.revokeAccount(network, accountUuid)
+                    }
+                    if (hasRemainingWork) {
+                        IronwoodMigrationOutboxScheduler.enqueueContinuation(context, 0)
+                    }
                     true
                 }
             }
             "revokeAll" -> {
                 {
-                    store.revokeAll()
+                    IronwoodMigrationOutboxScheduler.cancel(context)
+                    IronwoodMigrationOutboxExecutionCoordinator.cancelAndDrain {
+                        store.revokeAll()
+                    }
+                    IronwoodMigrationOutboxNotifier(context).cancelAll()
                     true
                 }
             }
@@ -105,8 +230,26 @@ internal class IronwoodMigrationSecureStoreChannel(
         return true
     }
 
+    private fun scheduleOutbox() {
+        IronwoodMigrationOutboxScheduler.enqueue(context)
+    }
+
     fun close() {
         executor.shutdown()
+    }
+
+    fun resumePendingNotifications() {
+        executor.execute {
+            runCatching {
+                if (
+                    outboxRepository.read().let(
+                        IronwoodOutboxState::hasPendingNotifications,
+                    )
+                ) {
+                    scheduleOutbox()
+                }
+            }
+        }
     }
 
     private fun validateManifest(
@@ -239,72 +382,130 @@ internal class IronwoodMigrationSecureStoreChannel(
         )
     }
 
-    private fun mergeOutboxBatch(
-        existing: Map<String, Any?>?,
-        incoming: Map<String, Any?>,
-    ): Map<String, Any?> {
-        if (existing == null) return incoming
-        for (key in listOf(
-            "batchId",
-            "network",
-            "accountUuid",
-            "runId",
-            "timingMeanBlocks",
-            "timingMaxBlocks",
-        )) {
-            if (existing[key] != incoming[key]) {
-                throw IllegalArgumentException("Conflicting outbox batch.")
-            }
+    private fun stage(
+        snapshot: IronwoodOutboxSnapshot,
+        incoming: ValidatedOutboxBatch,
+    ) {
+        val payload = incoming.payload
+        val incomingItems = listOfMaps(payload["items"], "items").map { item ->
+            val rawTransaction = item["rawTransaction"] as ByteArray
+            IronwoodOutboxItem(
+                itemId = string(item, "itemId"),
+                partIndex = nonNegativeLong(item, "partIndex"),
+                txidHex = string(item, "txidHex").lowercase(),
+                rawTransaction = rawTransaction.copyOf(),
+                payloadDigestHex = sha256Hex(rawTransaction),
+                anchorBoundaryHeight = nonNegativeLong(item, "anchorBoundaryHeight"),
+                scheduledHeight = nonNegativeLong(item, "scheduledHeight"),
+                scheduleStartHeight = nonNegativeLong(item, "scheduleStartHeight"),
+                expiryHeight = nonNegativeLong(item, "expiryHeight"),
+            )
         }
-
-        val existingItems = listOfMaps(existing["items"], "items").toMutableList()
-        val incomingItems = listOfMaps(incoming["items"], "items")
-        for (incomingItem in incomingItems) {
-            val incomingId = string(incomingItem, "itemId")
-            val incomingTxid = string(incomingItem, "txidHex").lowercase()
-            val incomingPart = nonNegativeLong(incomingItem, "partIndex")
-            val matchingId = existingItems.firstOrNull {
-                string(it, "itemId") == incomingId
-            }
-            if (matchingId != null) {
-                if (!sameOutboxIdentity(matchingId, incomingItem)) {
+        val existing = snapshot.batches.firstOrNull { it.batchId == incoming.batchId }
+        if (existing == null) {
+            snapshot.batches += IronwoodOutboxBatch(
+                batchId = incoming.batchId,
+                network = incoming.network,
+                accountUuid = incoming.accountUuid,
+                runId = string(payload, "runId"),
+                lightwalletdUrl = string(payload, "lightwalletdUrl"),
+                timingMeanBlocks = positiveLong(payload, "timingMeanBlocks"),
+                timingMaxBlocks = positiveLong(payload, "timingMaxBlocks"),
+                createdAtMs = nonNegativeLong(payload, "createdAtMs"),
+                nextProofHeight = optionalNonNegativeLong(payload, "nextProofHeight"),
+                items = incomingItems.toMutableList(),
+            )
+            return
+        }
+        if (
+            existing.network != incoming.network ||
+            existing.accountUuid != incoming.accountUuid ||
+            existing.runId != string(payload, "runId") ||
+            existing.timingMeanBlocks != positiveLong(payload, "timingMeanBlocks") ||
+            existing.timingMaxBlocks != positiveLong(payload, "timingMaxBlocks")
+        ) {
+            throw IllegalArgumentException("Conflicting outbox batch.")
+        }
+        val endpoint = string(payload, "lightwalletdUrl")
+        if (
+            existing.lightwalletdUrl != endpoint &&
+            existing.items.any { it.status == IronwoodOutboxItemStatus.SUBMITTING }
+        ) {
+            throw IllegalArgumentException("Conflicting outbox batch.")
+        }
+        existing.lightwalletdUrl = endpoint
+        var addedItem = false
+        incomingItems.forEach { item ->
+            val sameId = existing.items.firstOrNull { it.itemId == item.itemId }
+            if (sameId != null) {
+                if (
+                    sameId.partIndex != item.partIndex ||
+                    sameId.txidHex != item.txidHex ||
+                    sameId.payloadDigestHex != item.payloadDigestHex ||
+                    sameId.anchorBoundaryHeight != item.anchorBoundaryHeight ||
+                    sameId.expiryHeight != item.expiryHeight
+                ) {
                     throw IllegalArgumentException("Conflicting outbox item.")
                 }
-                continue
+            } else {
+                if (existing.items.any {
+                        it.txidHex == item.txidHex || it.partIndex == item.partIndex
+                    }) {
+                    throw IllegalArgumentException("Conflicting outbox item identity.")
+                }
+                existing.items += item
+                addedItem = true
             }
-            if (existingItems.any {
-                    string(it, "txidHex").lowercase() == incomingTxid ||
-                        nonNegativeLong(it, "partIndex") == incomingPart
-                }) {
-                throw IllegalArgumentException("Conflicting outbox item identity.")
-            }
-            existingItems += incomingItem
         }
-
-        return LinkedHashMap(existing).apply {
-            this["lightwalletdUrl"] = incoming["lightwalletdUrl"]
-            this["nextProofHeight"] = incoming["nextProofHeight"]
-            this["items"] = existingItems
+        val nextProofHeight = optionalNonNegativeLong(payload, "nextProofHeight")
+        val proofHeightChanged = existing.nextProofHeight != nextProofHeight
+        if (proofHeightChanged) {
+            existing.nextProofHeight = nextProofHeight
+            existing.proofReadyObservedHeight = null
+            existing.proofReadyNotificationAcknowledged = false
+        }
+        if (addedItem || proofHeightChanged) {
+            existing.broadcastCompletePending = false
         }
     }
 
-    private fun sameOutboxIdentity(
-        left: Map<String, Any?>,
-        right: Map<String, Any?>,
-    ): Boolean {
-        for (key in listOf(
-            "itemId",
-            "partIndex",
-            "txidHex",
-            "anchorBoundaryHeight",
-            "expiryHeight",
-        )) {
-            if (left[key] != right[key]) return false
-        }
-        val leftRaw = left["rawTransaction"] as? ByteArray ?: return false
-        val rightRaw = right["rawTransaction"] as? ByteArray ?: return false
-        return MessageDigest.isEqual(leftRaw, rightRaw)
-    }
+    private fun receiptMap(receipt: IronwoodOutboxReceipt): Map<String, Any?> = mapOf(
+        "receiptId" to receipt.receiptId,
+        "batchId" to receipt.batchId,
+        "itemId" to receipt.itemId,
+        "network" to receipt.network,
+        "accountUuid" to receipt.accountUuid,
+        "runId" to receipt.runId,
+        "txidHex" to receipt.txidHex,
+        "outcome" to receipt.outcome,
+        "remoteHeight" to receipt.remoteHeight,
+        "responseCode" to receipt.responseCode,
+        "responseMessage" to receipt.responseMessage,
+        "recordedAtMs" to receipt.recordedAtMs,
+        "scheduleUpdates" to receipt.scheduleUpdates.map {
+            mapOf(
+                "itemId" to it.itemId,
+                "scheduledHeight" to it.scheduledHeight,
+                "scheduleStartHeight" to it.scheduleStartHeight,
+            )
+        },
+        "rawTransaction" to receipt.rawTransaction,
+    )
+
+    private fun IronwoodMigrationOutboxRunResult.toChannelMap(): Map<String, Any?> =
+        mapOf(
+            "outcome" to when (outcome) {
+                IronwoodMigrationOutboxOutcome.NO_WORK -> "noWork"
+                IronwoodMigrationOutboxOutcome.WAITING -> "waiting"
+                IronwoodMigrationOutboxOutcome.ACCEPTED -> "accepted"
+                IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION -> "needsUserAction"
+                IronwoodMigrationOutboxOutcome.RETRY -> "temporarilyUnavailable"
+                IronwoodMigrationOutboxOutcome.CANCELLED -> "cancelled"
+            },
+            "nextHeight" to nextHeight,
+            "observedHeight" to observedHeight,
+            "delaySeconds" to delayMs?.div(1_000.0),
+        )
 
     private fun arguments(call: MethodCall): Map<String, Any?> =
         stringMap(call.arguments, "arguments")
@@ -322,6 +523,24 @@ internal class IronwoodMigrationSecureStoreChannel(
     private fun listOfMaps(value: Any?, name: String): List<Map<String, Any?>> {
         val raw = value as? List<*> ?: throw IllegalArgumentException("Invalid $name.")
         return raw.map { stringMap(it, name) }
+    }
+
+    private fun stringStringMap(value: Any?, name: String): Map<String, String> {
+        val raw = value as? Map<*, *> ?: throw IllegalArgumentException("Invalid $name.")
+        if (raw.any { it.key !is String || it.value !is String }) {
+            throw IllegalArgumentException("Invalid $name.")
+        }
+        @Suppress("UNCHECKED_CAST")
+        return raw as Map<String, String>
+    }
+
+    private fun stringList(value: Any?, name: String): List<String> {
+        val raw = value as? List<*> ?: throw IllegalArgumentException("Invalid $name.")
+        if (raw.any { it !is String || it.isBlank() }) {
+            throw IllegalArgumentException("Invalid $name.")
+        }
+        @Suppress("UNCHECKED_CAST")
+        return raw as List<String>
     }
 
     private fun network(arguments: Map<String, Any?>): String =

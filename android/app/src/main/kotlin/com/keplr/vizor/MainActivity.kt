@@ -1,11 +1,17 @@
 package com.keplr.vizor
 
+import android.Manifest
+import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -15,6 +21,7 @@ class MainActivity : FlutterFragmentActivity() {
     private lateinit var deviceOwnerAuthHandler: DeviceOwnerAuthHandler
     private lateinit var ironwoodMigrationSecureStoreChannel:
         IronwoodMigrationSecureStoreChannel
+    private var pendingNotificationPermissionResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -93,8 +100,18 @@ class MainActivity : FlutterFragmentActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             BACKGROUND_MIGRATION_CHANNEL
         ).setMethodCallHandler { call, result ->
-            if (!ironwoodMigrationSecureStoreChannel.handle(call, result)) {
-                result.notImplemented()
+            when (call.method) {
+                "requestNotificationAuthorization" ->
+                    requestNotificationAuthorization(result)
+                "getNotificationAuthorizationStatus" ->
+                    result.success(notificationAuthorizationStatus())
+                "openNotificationSettings" ->
+                    result.success(openNotificationSettings())
+                else -> {
+                    if (!ironwoodMigrationSecureStoreChannel.handle(call, result)) {
+                        result.notImplemented()
+                    }
+                }
             }
         }
     }
@@ -139,10 +156,122 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        pendingNotificationPermissionResult?.error(
+            "activity_destroyed",
+            "Notification permission request was interrupted.",
+            null,
+        )
+        pendingNotificationPermissionResult = null
         if (::ironwoodMigrationSecureStoreChannel.isInitialized) {
             ironwoodMigrationSecureStoreChannel.close()
         }
         super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (
+            ::ironwoodMigrationSecureStoreChannel.isInitialized &&
+            notificationAuthorizationStatus() == NOTIFICATION_AUTHORIZED
+        ) {
+            ironwoodMigrationSecureStoreChannel.resumePendingNotifications()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
+            val result = pendingNotificationPermissionResult
+            pendingNotificationPermissionResult = null
+            val status = notificationAuthorizationStatus()
+            if (
+                status == NOTIFICATION_AUTHORIZED &&
+                ::ironwoodMigrationSecureStoreChannel.isInitialized
+            ) {
+                ironwoodMigrationSecureStoreChannel.resumePendingNotifications()
+            }
+            result?.success(status)
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    private fun requestNotificationAuthorization(result: MethodChannel.Result) {
+        if (
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(notificationAuthorizationStatus())
+            return
+        }
+        if (pendingNotificationPermissionResult != null) {
+            result.error(
+                "request_in_progress",
+                "A notification permission request is already active.",
+                null,
+            )
+            return
+        }
+        pendingNotificationPermissionResult = result
+        getSharedPreferences(NOTIFICATION_PERMISSION_PREFERENCES, MODE_PRIVATE)
+            .edit()
+            .putBoolean(NOTIFICATION_PERMISSION_REQUESTED_KEY, true)
+            .apply()
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            NOTIFICATION_PERMISSION_REQUEST_CODE,
+        )
+    }
+
+    private fun notificationAuthorizationStatus(): String {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !getSharedPreferences(
+                    NOTIFICATION_PERMISSION_PREFERENCES,
+                    MODE_PRIVATE,
+                ).getBoolean(NOTIFICATION_PERMISSION_REQUESTED_KEY, false)
+            ) {
+                return NOTIFICATION_NOT_DETERMINED
+            }
+            return NOTIFICATION_DENIED
+        }
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return NOTIFICATION_DENIED
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = getSystemService(NotificationManager::class.java)
+                .getNotificationChannel(MIGRATION_UPDATES_NOTIFICATION_CHANNEL_ID)
+            if (channel?.importance == NotificationManager.IMPORTANCE_NONE) {
+                return NOTIFICATION_DENIED
+            }
+        }
+        return NOTIFICATION_AUTHORIZED
+    }
+
+    private fun openNotificationSettings(): Boolean {
+        return try {
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            }
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            openAppSettings()
+        }
     }
 
     private fun openAppSettings(): Boolean {
@@ -184,5 +313,14 @@ class MainActivity : FlutterFragmentActivity() {
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
+        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 0x319
+        private const val NOTIFICATION_PERMISSION_PREFERENCES =
+            "ironwood_migration_notifications"
+        private const val NOTIFICATION_PERMISSION_REQUESTED_KEY = "permission_requested"
+        private const val MIGRATION_UPDATES_NOTIFICATION_CHANNEL_ID =
+            "ironwood_migration_updates"
+        private const val NOTIFICATION_NOT_DETERMINED = "notDetermined"
+        private const val NOTIFICATION_DENIED = "denied"
+        private const val NOTIFICATION_AUTHORIZED = "authorized"
     }
 }
