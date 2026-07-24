@@ -199,125 +199,123 @@ class _MobileIronwoodMigrationBannerState
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Positioned.fill(
-                child: ShaderMask(
-                  key: const ValueKey(
-                    'mobile_home_ironwood_migration_banner_image_mask',
-                  ),
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (bounds) => const LinearGradient(
-                    colors: [Color(0x0DFFFFFF), Color(0x8CFFFFFF)],
-                  ).createShader(bounds),
-                  child: Image.asset(
-                    'assets/illustrations/'
-                    'ironwood_migration_home_card_background.png',
+              if (!widget.actionNeeded)
+                Positioned.fill(
+                  child: ShaderMask(
                     key: const ValueKey(
-                      'mobile_home_ironwood_migration_banner_background',
+                      'mobile_home_ironwood_migration_banner_image_mask',
                     ),
-                    fit: BoxFit.fill,
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (bounds) => const LinearGradient(
+                      colors: [Color(0x0DFFFFFF), Color(0x8CFFFFFF)],
+                    ).createShader(bounds),
+                    child: Image.asset(
+                      'assets/illustrations/'
+                      'ironwood_migration_home_card_background.png',
+                      key: const ValueKey(
+                        'mobile_home_ironwood_migration_banner_background',
+                      ),
+                      fit: BoxFit.fill,
+                    ),
                   ),
                 ),
-              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    if (widget.actionNeeded)
-                      AppIcon(
-                        AppIcons.migrationSign,
-                        key: const ValueKey(
-                          'mobile_home_ironwood_migration_attention',
-                        ),
-                        size: 20,
-                        color: colors.icon.inverse,
-                      )
-                    else if (widget.inProgress)
-                      AppIcon(
-                        AppIcons.loader,
-                        key: const ValueKey(
-                          'mobile_home_ironwood_migration_loader',
-                        ),
-                        size: 20,
-                        color: contentColor,
-                      )
-                    else
-                      AnimatedBuilder(
-                        animation: _controller,
-                        builder: (context, _) {
-                          final timeline = _controller.value;
-                          final rippleProgress = timeline <= 0.1
-                              ? 0.0
-                              : timeline >= 0.7
-                              ? 1.0
-                              : Curves.easeInOut.transform(
-                                  (timeline - 0.1) / 0.6,
-                                );
-                          final rippleSize = lerpDouble(8, 56, rippleProgress)!;
-                          return SizedBox(
-                            key: const ValueKey(
-                              'mobile_home_ironwood_migration_blink',
-                            ),
-                            width: 16,
-                            height: 16,
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Positioned(
-                                  left: (16 - rippleSize) / 2,
-                                  top: (16 - rippleSize) / 2,
-                                  child: Opacity(
-                                    key: const ValueKey(
-                                      'mobile_home_ironwood_migration_blink_ripple',
-                                    ),
-                                    opacity: 1 - rippleProgress,
-                                    child: SizedBox(
-                                      width: rippleSize,
-                                      height: rippleSize,
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: GreenPrimitives.p200Dark,
-                                            width: 2,
+                    if (!widget.actionNeeded) ...[
+                      if (widget.inProgress)
+                        AppIcon(
+                          AppIcons.loader,
+                          key: const ValueKey(
+                            'mobile_home_ironwood_migration_loader',
+                          ),
+                          size: 20,
+                          color: contentColor,
+                        )
+                      else
+                        AnimatedBuilder(
+                          animation: _controller,
+                          builder: (context, _) {
+                            final timeline = _controller.value;
+                            final rippleProgress = timeline <= 0.1
+                                ? 0.0
+                                : timeline >= 0.7
+                                ? 1.0
+                                : Curves.easeInOut.transform(
+                                    (timeline - 0.1) / 0.6,
+                                  );
+                            final rippleSize = lerpDouble(
+                              8,
+                              56,
+                              rippleProgress,
+                            )!;
+                            return SizedBox(
+                              key: const ValueKey(
+                                'mobile_home_ironwood_migration_blink',
+                              ),
+                              width: 16,
+                              height: 16,
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Positioned(
+                                    left: (16 - rippleSize) / 2,
+                                    top: (16 - rippleSize) / 2,
+                                    child: Opacity(
+                                      key: const ValueKey(
+                                        'mobile_home_ironwood_migration_blink_ripple',
+                                      ),
+                                      opacity: 1 - rippleProgress,
+                                      child: SizedBox(
+                                        width: rippleSize,
+                                        height: rippleSize,
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: GreenPrimitives.p200Dark,
+                                              width: 2,
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                const Positioned(
-                                  left: 3,
-                                  top: 3,
-                                  width: 10,
-                                  height: 10,
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      gradient: RadialGradient(
-                                        colors: [
-                                          GreenPrimitives.p200Light,
-                                          GreenPrimitives.p300Dark,
+                                  const Positioned(
+                                    left: 3,
+                                    top: 3,
+                                    width: 10,
+                                    height: 10,
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        gradient: RadialGradient(
+                                          colors: [
+                                            GreenPrimitives.p200Light,
+                                            GreenPrimitives.p300Dark,
+                                          ],
+                                        ),
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: GreenPrimitives.p300Dark,
+                                            blurRadius: 4,
+                                          ),
                                         ],
                                       ),
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: GreenPrimitives.p300Dark,
-                                          blurRadius: 4,
-                                        ),
-                                      ],
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      SizedBox(
+                        width: widget.inProgress
+                            ? AppSpacing.xxs
+                            : AppSpacing.sm,
                       ),
-                    SizedBox(
-                      width: widget.inProgress || widget.actionNeeded
-                          ? AppSpacing.xxs
-                          : AppSpacing.sm,
-                    ),
+                    ],
                     Expanded(
                       child: Text(
                         label,

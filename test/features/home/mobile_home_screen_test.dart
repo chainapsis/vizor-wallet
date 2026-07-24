@@ -917,7 +917,13 @@ void main() {
     expect(find.textContaining('ready for signing'), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile_home_ironwood_migration_attention')),
-      findsOneWidget,
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_home_ironwood_migration_banner_background'),
+      ),
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey('mobile_home_ironwood_migration_loader')),
