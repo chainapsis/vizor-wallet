@@ -111,7 +111,7 @@ fn anchor_bucket_modulus(network: WalletNetwork, timing_policy: MigrationTimingP
     match network {
         WalletNetwork::Regtest => REGTEST_ANCHOR_BUCKET_MODULUS,
         WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => {
-            REGTEST_ANCHOR_BUCKET_MODULUS
+            FAST_TESTNET_ANCHOR_BUCKET_MODULUS
         }
         WalletNetwork::Main | WalletNetwork::Test => ZIP318_ANCHOR_BUCKET_MODULUS,
     }
@@ -122,7 +122,7 @@ fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingP
         // Empty regtest blocks do not add commitment-tree checkpoints. Allow
         // the checkpoint containing the denomination note so E2E can advance.
         WalletNetwork::Regtest => 0,
-        WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => 0,
+        WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => 1,
         WalletNetwork::Main | WalletNetwork::Test => 1,
     }
 }

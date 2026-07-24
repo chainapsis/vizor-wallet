@@ -1748,7 +1748,7 @@ fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
 }
 
 #[test]
-fn fast_testnet_uses_regtest_preparation_delays() {
+fn fast_testnet_uses_accelerated_preparation_delays() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     insert_preparation_policy_test_run(
@@ -1777,7 +1777,7 @@ fn fast_testnet_uses_regtest_preparation_delays() {
             &mut rng,
         )
         .unwrap();
-        assert!((200..=200 + REGTEST_PREPARATION_MAX_DELAY_BLOCKS).contains(&scheduled_height));
+        assert!((200..=200 + FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS).contains(&scheduled_height));
     }
 }
 
@@ -1937,20 +1937,32 @@ fn regtest_schedule_is_short_but_still_requires_blocks() {
 }
 
 #[test]
-fn fast_testnet_uses_regtest_schedule_and_anchor_timing() {
+fn fast_testnet_uses_accelerated_schedule_and_anchor_timing() {
     assert_eq!(
         schedule_parameters_with_policy(WalletNetwork::Test, MigrationTimingPolicy::FastTestnet,),
-        (1, REGTEST_TRANSFER_MAX_DELAY_BLOCKS)
+        (
+            FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS,
+            FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS,
+        )
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries_with_policy(
             WalletNetwork::Test,
             MigrationTimingPolicy::FastTestnet,
-            503,
+            540,
             501,
             500,
         )[0],
-        503
+        528
+    );
+    assert_eq!(
+        proof_ready_height_for_note_mined_height(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::FastTestnet,
+            501,
+        )
+        .unwrap(),
+        518
     );
     assert_eq!(
         schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::FastTestnet,),
@@ -2068,8 +2080,8 @@ fn fast_testnet_adoption_retimes_pending_preparation_stages() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert_eq!(heights.len(), 2);
-    assert!((100..=100 + REGTEST_PREPARATION_MAX_DELAY_BLOCKS).contains(&heights[0]));
-    assert!(heights[1] - heights[0] <= REGTEST_PREPARATION_MAX_DELAY_BLOCKS);
+    assert!((100..=100 + FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS).contains(&heights[0]));
+    assert!(heights[1] - heights[0] <= FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS);
 }
 
 #[test]

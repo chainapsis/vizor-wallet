@@ -2,6 +2,8 @@ pub(crate) const ZIP318_PREPARATION_MEAN_DELAY_BLOCKS: u32 = 24;
 pub(crate) const ZIP318_PREPARATION_MAX_DELAY_BLOCKS: u32 = 96;
 const REGTEST_PREPARATION_MEAN_DELAY_BLOCKS: u32 = 1;
 const REGTEST_PREPARATION_MAX_DELAY_BLOCKS: u32 = 4;
+const FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS: u32 = 4;
+const FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS: u32 = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreparationTimingPolicy {
@@ -46,8 +48,8 @@ fn preparation_schedule_parameters(
             REGTEST_PREPARATION_MAX_DELAY_BLOCKS,
         ),
         WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => (
-            REGTEST_PREPARATION_MEAN_DELAY_BLOCKS,
-            REGTEST_PREPARATION_MAX_DELAY_BLOCKS,
+            FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS,
+            FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS,
         ),
         WalletNetwork::Main | WalletNetwork::Test => (
             ZIP318_PREPARATION_MEAN_DELAY_BLOCKS,

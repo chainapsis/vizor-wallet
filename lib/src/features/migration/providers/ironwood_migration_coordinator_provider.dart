@@ -18,9 +18,10 @@ import 'ironwood_migration_announcement_provider.dart';
 const _migrationStatusPollInterval = Duration(seconds: 5);
 const _migrationAdvanceInterval = Duration(
   seconds:
-      String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest' ||
-          kZcashFastTestnetMigration
+      String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
       ? 1
+      : kZcashFastTestnetMigration
+      ? 5
       : 30,
 );
 
