@@ -229,21 +229,28 @@ class _MigrationLiveStatusContent extends StatelessWidget {
         children: [
           if (!isSigning)
             Positioned(
-              left: 12,
-              top: 478,
-              width: 396,
+              left: 0,
+              top: 0,
+              width: 420,
               bottom: 0,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   borderRadius: const BorderRadius.vertical(
                     bottom: Radius.circular(32),
                   ),
-                  gradient: RadialGradient(
-                    center: const Alignment(0, 1.2),
-                    radius: 1.2,
+                  // Figma's wide radial gradient is effectively vertical at
+                  // this 420 px width. Keep its exact stop colors/opacity so
+                  // the bottom panel, including its two rounded corners,
+                  // reads as one surface instead of a separate glow.
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.69843, 0.84922, 0.92461, 1],
                     colors: [
-                      const Color(0xFF00A460).withValues(alpha: 0.52),
-                      Colors.transparent,
+                      Color(0x05141818),
+                      Color(0x350A5E3C),
+                      Color(0x4E05814E),
+                      Color(0x6600A460),
                     ],
                   ),
                 ),
@@ -253,7 +260,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
             children: [
               Positioned(
                 left: 12,
-                top: 78.5,
+                top: 16,
                 width: 396,
                 child: Text(
                   'Migration in progress...',
@@ -265,7 +272,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
               ),
               Positioned(
                 left: 82,
-                top: 119,
+                top: 68,
                 width: 256,
                 height: 256,
                 child: Stack(
@@ -310,7 +317,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
               ),
               Positioned(
                 left: 28,
-                top: 405,
+                top: 396,
                 width: 364,
                 child: Column(
                   children: [
@@ -322,7 +329,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     _MigrationLiveMetric(
-                      icon: AppIcons.migrationSign,
+                      icon: AppIcons.wrench,
                       label: 'Status',
                       value: isComplete
                           ? 'Migration complete'
@@ -334,7 +341,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
               if (isSigning)
                 Positioned(
                   left: 12,
-                  top: 491,
+                  top: 511,
                   width: 396,
                   child: Column(
                     children: [
@@ -350,7 +357,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                         ),
                         onPressed: isAdvancing ? null : onAction,
                         height: 44,
-                        minWidth: 200,
+                        minWidth: 230,
                         expand: false,
                         child: Text(
                           isAdvancing
@@ -383,14 +390,14 @@ class _MigrationLiveStatusContent extends StatelessWidget {
               else
                 Positioned(
                   left: 12,
-                  top: 488,
+                  top: 502,
                   width: 396,
                   height: 150,
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       AppIcon(
-                        AppIcons.time,
+                        AppIcons.bell,
                         size: 20,
                         color: const Color(0xFF00D084),
                       ),
@@ -448,7 +455,10 @@ class _MigrationLiveMetric extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTypography.labelLarge.copyWith(color: color),
+            style: AppTypography.labelLarge.copyWith(
+              color: color,
+              fontWeight: FontWeight.w400,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -458,7 +468,10 @@ class _MigrationLiveMetric extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.right,
-            style: AppTypography.labelLarge.copyWith(color: color),
+            style: AppTypography.labelLarge.copyWith(
+              color: color,
+              fontWeight: FontWeight.w400,
+            ),
           ),
         ),
       ],
@@ -488,7 +501,7 @@ class _MigrationSigningBatchCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: Row(
         children: [
-          const AppIcon(AppIcons.checkCircle, size: 20),
+          const AppIcon(AppIcons.checkCircle, size: 16),
           const SizedBox(width: 8),
           Text('Batch #$batchNumber', style: AppTypography.labelLarge),
           const Spacer(),
@@ -498,7 +511,7 @@ class _MigrationSigningBatchCard extends StatelessWidget {
               style: AppTypography.labelLarge,
               children: [
                 TextSpan(
-                  text: percentage,
+                  text: '($percentage)',
                   style: AppTypography.labelLarge.copyWith(
                     color: context.colors.text.secondary,
                   ),
@@ -550,8 +563,8 @@ class _MigrationLiveRingPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
     final rect = Rect.fromCenter(
       center: size.center(Offset.zero),
-      width: 208,
-      height: 208,
+      width: 244,
+      height: 244,
     );
     final drawableSweep = math.pi * 2 - (values.length * gap);
     var angle = -math.pi / 2;

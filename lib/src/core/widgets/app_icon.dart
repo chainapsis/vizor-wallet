@@ -26,6 +26,7 @@ abstract final class AppIcons {
   static const arrowTopRight = 'arrow_top_right';
   static const arrowUpward = 'arrow_upward';
   static const backspace = 'backspace';
+  static const bell = 'bell';
   static const block = 'block';
   static const book = 'book';
   static const calendar = 'calendar';
@@ -102,6 +103,7 @@ abstract final class AppIcons {
   static const vizor = 'vizor';
   static const wallet = 'wallet';
   static const warning = 'warning';
+  static const wrench = 'wrench';
   static const zcash = 'zcash';
   static const zcashCurrency = 'zcash_currency';
 }
