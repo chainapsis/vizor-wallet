@@ -69,7 +69,7 @@ class IronwoodMigrationCoordinatorState {
 
 class IronwoodMigrationCoordinator
     extends Notifier<IronwoodMigrationCoordinatorState> {
-  bool _refreshing = false;
+  Future<void>? _refreshOperation;
   bool _refreshPending = false;
   bool _forceAdvancePending = false;
   bool _foreground = true;
@@ -306,70 +306,83 @@ class IronwoodMigrationCoordinator
     if (!canRunAppProcessWork(isInForeground: _foreground)) return;
     if (ref.read(appSecurityProvider).requiresUnlock) return;
 
-    if (_refreshing) {
-      _refreshPending = true;
-      _forceAdvancePending = _forceAdvancePending || forceAdvance;
-      return;
+    _refreshPending = true;
+    _forceAdvancePending = _forceAdvancePending || forceAdvance;
+
+    final existing = _refreshOperation;
+    if (existing != null) return existing;
+
+    late final Future<void> tracked;
+    tracked = _drainRefreshes().whenComplete(() {
+      if (identical(_refreshOperation, tracked)) {
+        _refreshOperation = null;
+      }
+    });
+    _refreshOperation = tracked;
+    return tracked;
+  }
+
+  Future<void> _drainRefreshes() async {
+    while (ref.mounted && _refreshPending) {
+      final forceAdvance = _forceAdvancePending;
+      _refreshPending = false;
+      _forceAdvancePending = false;
+      await _refreshOnce(forceAdvance: forceAdvance);
     }
+  }
+
+  Future<void> _refreshOnce({required bool forceAdvance}) async {
+    if (!ref.mounted) return;
+    if (!canRunAppProcessWork(isInForeground: _foreground)) return;
+    if (ref.read(appSecurityProvider).requiresUnlock) return;
 
     final accountState = ref.read(accountProvider).value;
     if (accountState == null || accountState.accounts.isEmpty) return;
 
-    _refreshing = true;
-    try {
-      final service = ref.read(ironwoodMigrationServiceProvider);
-      final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-      final nextStatuses = Map<String, rust_sync.MigrationStatus>.from(
-        state.statuses,
-      );
-      final nextErrors = Map<String, String>.from(state.errors);
+    final service = ref.read(ironwoodMigrationServiceProvider);
+    final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final nextStatuses = Map<String, rust_sync.MigrationStatus>.from(
+      state.statuses,
+    );
+    final nextErrors = Map<String, String>.from(state.errors);
 
-      for (final account in accountState.accounts) {
-        try {
-          var status = await service.status(
+    for (final account in accountState.accounts) {
+      try {
+        var status = await service.status(
+          network: endpoint.networkName,
+          accountUuid: account.uuid,
+        );
+        if (!ref.mounted) return;
+        nextStatuses[account.uuid] = status;
+        nextErrors.remove(account.uuid);
+
+        if (_shouldAdvance(
+          status,
+          isHardware: account.isHardware,
+          usesNativeOutbox: service.supportsBackgroundMigrationRetry,
+          force: forceAdvance,
+          accountUuid: account.uuid,
+        )) {
+          await _advance(account.uuid, status: status);
+          if (!ref.mounted) return;
+          status = await service.status(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
           if (!ref.mounted) return;
           nextStatuses[account.uuid] = status;
-          nextErrors.remove(account.uuid);
-
-          if (_shouldAdvance(
-            status,
-            isHardware: account.isHardware,
-            usesNativeOutbox: service.supportsBackgroundMigrationRetry,
-            force: forceAdvance,
-            accountUuid: account.uuid,
-          )) {
-            await _advance(account.uuid, status: status);
-            if (!ref.mounted) return;
-            status = await service.status(
-              network: endpoint.networkName,
-              accountUuid: account.uuid,
-            );
-            if (!ref.mounted) return;
-            nextStatuses[account.uuid] = status;
-          }
-        } catch (error) {
-          nextErrors[account.uuid] = error.toString();
-          log(
-            'Ironwood migration coordinator failed for ${account.uuid}: $error',
-          );
         }
-      }
-
-      if (!ref.mounted) return;
-      state = state.copyWith(statuses: nextStatuses, errors: nextErrors);
-      _invalidateMigrationProviders(accountState.activeAccountUuid);
-    } finally {
-      _refreshing = false;
-      if (ref.mounted && _refreshPending) {
-        final pendingForceAdvance = _forceAdvancePending;
-        _refreshPending = false;
-        _forceAdvancePending = false;
-        unawaited(refreshNow(forceAdvance: pendingForceAdvance));
+      } catch (error) {
+        nextErrors[account.uuid] = error.toString();
+        log(
+          'Ironwood migration coordinator failed for ${account.uuid}: $error',
+        );
       }
     }
+
+    if (!ref.mounted) return;
+    state = state.copyWith(statuses: nextStatuses, errors: nextErrors);
+    _invalidateMigrationProviders(accountState.activeAccountUuid);
   }
 
   bool _shouldAdvance(

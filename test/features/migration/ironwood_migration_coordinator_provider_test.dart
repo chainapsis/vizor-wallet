@@ -526,15 +526,19 @@ void main() {
           .read(ironwoodMigrationCoordinatorProvider.notifier)
           .refreshNow();
       await firstStatusStarted.future;
-      await container
+      var queuedRefreshCompleted = false;
+      final queuedRefresh = container
           .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .refreshNow(forceAdvance: true);
+          .refreshNow(forceAdvance: true)
+          .whenComplete(() => queuedRefreshCompleted = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(queuedRefreshCompleted, isFalse);
+
       releaseFirstStatus.complete();
       await firstRefresh;
+      await queuedRefresh;
 
-      for (var attempt = 0; attempt < 20 && statusCallCount < 4; attempt++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
+      expect(queuedRefreshCompleted, isTrue);
       expect(statusCallCount, 4);
     },
   );
