@@ -3828,7 +3828,7 @@ void main() {
   });
 
   testWidgets(
-    'maps denomination confirmation progress into the preparation ring',
+    'renders the neutral preparation idle ring when animations are disabled',
     (tester) async {
       _useMobileViewport(tester);
       await tester.pumpWidget(
@@ -3843,13 +3843,58 @@ void main() {
       await tester.pumpAndSettle();
 
       final ring = tester.widget<CustomPaint>(
-        find.byKey(const ValueKey('mobile_ironwood_preparation_progress_ring')),
+        find.byKey(const ValueKey('mobile_ironwood_preparation_idle_ring')),
       );
       final painter = ring.painter as dynamic;
-      expect(painter.progress as double, closeTo(5 / 9, 0.0001));
+      final weights = painter.weights as List<double>;
+      expect(weights, hasLength(9));
+      expect(weights.reduce((a, b) => a + b), closeTo(1, 0.0001));
+      expect(painter.rotation as double, 0);
       expect(painter.visibleSegmentGap as double, 4);
     },
   );
+
+  testWidgets('animates the preparation idle ring', (tester) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.migrating,
+        previewSurface: MobileIronwoodMigrationPreviewSurface.preparationActive,
+        disableAnimations: false,
+      ),
+    );
+    await tester.pump();
+
+    final ringFinder = find.byKey(
+      const ValueKey('mobile_ironwood_preparation_idle_ring'),
+    );
+    final initialPainter =
+        tester.widget<CustomPaint>(ringFinder).painter as dynamic;
+    final initialWeights = List<double>.of(
+      initialPainter.weights as List<double>,
+    );
+    final initialRotation = initialPainter.rotation as double;
+
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    var didAnimate = false;
+    for (var frame = 0; frame < 12; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      final animatedPainter =
+          tester.widget<CustomPaint>(ringFinder).painter as dynamic;
+      final animatedWeights = animatedPainter.weights as List<double>;
+      final animatedRotation = animatedPainter.rotation as double;
+      didAnimate =
+          didAnimate ||
+          animatedWeights.asMap().entries.any(
+            (entry) => entry.value != initialWeights[entry.key],
+          ) ||
+          animatedRotation != initialRotation;
+    }
+
+    expect(didAnimate, isTrue);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'keeps the preparation complete modal visible during wallet sync',

@@ -21,25 +21,21 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
       MobileIronwoodMigrationPreviewSurface.preparationActive =>
         const _MigrationPreparationPreview(
           state: _MigrationPreparationState.active,
-          progress: 5 / 9,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationPaused =>
         _MigrationPreparationPreview(
           state: _MigrationPreparationState.paused,
-          progress: 5 / 9,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationPausedKeystone =>
         _MigrationPreparationPreview(
           state: _MigrationPreparationState.paused,
-          progress: 5 / 9,
           isKeystone: true,
           onContinue: _noopMigrationPreviewAction,
         ),
       MobileIronwoodMigrationPreviewSurface.preparationSyncing =>
         const _MigrationPreparationPreview(
           state: _MigrationPreparationState.syncing,
-          progress: 5 / 9,
         ),
       MobileIronwoodMigrationPreviewSurface.syncing =>
         const _MigrationProgressPreview(state: _MigrationProgressState.syncing),
@@ -512,14 +508,12 @@ enum _MigrationPreparationState { active, paused, syncing }
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
-    this.progress = 0,
     this.isKeystone = false,
     this.onBack,
     this.onContinue,
   });
 
   final _MigrationPreparationState state;
-  final double progress;
   final bool isKeystone;
   final VoidCallback? onBack;
   final VoidCallback? onContinue;
@@ -552,7 +546,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
           : null,
       child: Column(
         children: [
-          _MigrationPreparationDial(state: state, progress: progress),
+          _MigrationPreparationDial(state: state),
           const SizedBox(height: AppSpacing.base),
           Opacity(
             opacity: paused ? 0.4 : 1,
@@ -565,13 +559,9 @@ class _MigrationPreparationPreview extends StatelessWidget {
 }
 
 class _MigrationPreparationDial extends StatelessWidget {
-  const _MigrationPreparationDial({
-    required this.state,
-    required this.progress,
-  });
+  const _MigrationPreparationDial({required this.state});
 
   final _MigrationPreparationState state;
-  final double progress;
 
   @override
   Widget build(BuildContext context) {
@@ -582,15 +572,9 @@ class _MigrationPreparationDial extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          CustomPaint(
-            key: const ValueKey('mobile_ironwood_preparation_progress_ring'),
-            size: const Size.square(256),
-            painter: _MigrationRingPainter(
-              trackColor: context.colors.border.subtle,
-              activeColor: const Color(0xFF00A460),
-              segments: 8,
-              progress: progress,
-            ),
+          _AnimatedMigrationPreparationRing(
+            animate: state == _MigrationPreparationState.active,
+            color: context.colors.border.subtle,
           ),
           SizedBox(
             width: 200,
@@ -629,6 +613,292 @@ class _MigrationPreparationDial extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _AnimatedMigrationPreparationRing extends StatefulWidget {
+  const _AnimatedMigrationPreparationRing({
+    required this.animate,
+    required this.color,
+  });
+
+  final bool animate;
+  final Color color;
+
+  @override
+  State<_AnimatedMigrationPreparationRing> createState() =>
+      _AnimatedMigrationPreparationRingState();
+}
+
+class _AnimatedMigrationPreparationRingState
+    extends State<_AnimatedMigrationPreparationRing>
+    with TickerProviderStateMixin {
+  static const _minimumWeight = 0.035;
+  static const _maximumWeight = 0.22;
+  // The nine unequal sweeps from the Figma preparation ring, normalized to 1.
+  static const _initialWeights = <double>[
+    45 / 342,
+    45 / 342,
+    18 / 342,
+    23 / 342,
+    72 / 342,
+    42 / 342,
+    45 / 342,
+    16 / 342,
+    36 / 342,
+  ];
+  static const _stepDuration = Duration(milliseconds: 390);
+  static const _stepBreather = Duration(milliseconds: 105);
+  static const _spinDuration = Duration(milliseconds: 1800);
+  static const _restBetweenBlocks = Duration(milliseconds: 900);
+
+  late final AnimationController _stepController = AnimationController(
+    vsync: this,
+    duration: _stepDuration,
+  );
+  late final AnimationController _spinController = AnimationController(
+    vsync: this,
+    duration: _spinDuration,
+  );
+  // Keep captures and motion tests reproducible while the sequence stays varied.
+  final math.Random _random = math.Random(697244909);
+
+  late List<double> _weights = List.of(_initialWeights);
+  late List<double> _fromWeights = List.of(_initialWeights);
+  late List<double> _toWeights = List.of(_initialWeights);
+  double _baseRotation = 0;
+  bool _reducedMotion = false;
+  bool _loopRunning = false;
+  bool _initialDelayPending = true;
+  int _generation = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reducedMotion = MediaQuery.disableAnimationsOf(context);
+    _syncMotion();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnimatedMigrationPreparationRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animate != widget.animate) {
+      _syncMotion();
+    }
+  }
+
+  void _syncMotion() {
+    if (widget.animate && !_reducedMotion) {
+      _startLoop();
+      return;
+    }
+    _stopLoop(resetToInitial: _reducedMotion);
+  }
+
+  void _startLoop() {
+    if (_loopRunning) return;
+    _loopRunning = true;
+    final generation = ++_generation;
+    unawaited(_runLoop(generation));
+  }
+
+  void _stopLoop({required bool resetToInitial}) {
+    if (!_loopRunning &&
+        !_stepController.isAnimating &&
+        !_spinController.isAnimating &&
+        !resetToInitial) {
+      return;
+    }
+    _generation++;
+    _loopRunning = false;
+    if (resetToInitial) {
+      _weights = List.of(_initialWeights);
+      _fromWeights = List.of(_initialWeights);
+      _toWeights = List.of(_initialWeights);
+      _baseRotation = 0;
+    } else {
+      final easedStep = Curves.easeOutBack.transform(_stepController.value);
+      _weights = List.generate(
+        _fromWeights.length,
+        (index) =>
+            _fromWeights[index] +
+            (_toWeights[index] - _fromWeights[index]) * easedStep,
+      );
+      _fromWeights = List.of(_weights);
+      _toWeights = List.of(_weights);
+      _baseRotation =
+          (_baseRotation +
+              Curves.easeInOutCubic.transform(_spinController.value)) %
+          1;
+    }
+    _stepController.stop();
+    _spinController.stop();
+    _stepController.value = 0;
+    _spinController.value = 0;
+  }
+
+  bool _shouldContinue(int generation) {
+    return mounted &&
+        generation == _generation &&
+        widget.animate &&
+        !_reducedMotion;
+  }
+
+  Future<void> _runLoop(int generation) async {
+    try {
+      if (_initialDelayPending) {
+        _initialDelayPending = false;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        if (!_shouldContinue(generation)) return;
+      }
+      while (_shouldContinue(generation)) {
+        for (var cycle = 0; cycle < 3; cycle++) {
+          await _adjustSegments(generation);
+          if (!_shouldContinue(generation)) return;
+          await _spinController.forward(from: 0).orCancel;
+          if (!_shouldContinue(generation)) return;
+          setState(() {
+            _baseRotation = (_baseRotation + 1) % 1;
+            _spinController.value = 0;
+          });
+        }
+        await Future<void>.delayed(_restBetweenBlocks);
+      }
+    } on TickerCanceled {
+      // The screen paused, reduced motion was enabled, or the widget disposed.
+    } finally {
+      if (generation == _generation) {
+        _loopRunning = false;
+      }
+    }
+  }
+
+  Future<void> _adjustSegments(int generation) async {
+    final stepCount = 3 + _random.nextInt(3);
+    for (var step = 0; step < stepCount; step++) {
+      if (!_shouldContinue(generation)) return;
+      final first = _random.nextInt(_weights.length);
+      var second = _random.nextInt(_weights.length - 1);
+      if (second >= first) second++;
+
+      final canGive = _weights[first] - _minimumWeight;
+      final canTake = _maximumWeight - _weights[first];
+      final giveRoom = math.min(canGive, _maximumWeight - _weights[second]);
+      final takeRoom = math.min(canTake, _weights[second] - _minimumWeight);
+      final give = giveRoom >= takeRoom;
+      final room = give ? giveRoom : takeRoom;
+      if (room <= 0.005) continue;
+      final amount = room * (0.4 + _random.nextDouble() * 0.6);
+
+      setState(() {
+        _fromWeights = List.of(_weights);
+        _toWeights = List.of(_weights);
+        _toWeights[first] += give ? -amount : amount;
+        _toWeights[second] += give ? amount : -amount;
+      });
+      await _stepController.forward(from: 0).orCancel;
+      if (!_shouldContinue(generation)) return;
+      setState(() {
+        _weights = List.of(_toWeights);
+        _fromWeights = List.of(_weights);
+        _toWeights = List.of(_weights);
+        _stepController.value = 0;
+      });
+      await Future<void>.delayed(_stepBreather);
+    }
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    _stepController.dispose();
+    _spinController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_stepController, _spinController]),
+      builder: (context, _) {
+        final easedStep = Curves.easeOutBack.transform(_stepController.value);
+        final weights = List.generate(
+          _fromWeights.length,
+          (index) =>
+              _fromWeights[index] +
+              (_toWeights[index] - _fromWeights[index]) * easedStep,
+        );
+        final rotation =
+            _baseRotation +
+            Curves.easeInOutCubic.transform(_spinController.value);
+        return CustomPaint(
+          key: const ValueKey('mobile_ironwood_preparation_idle_ring'),
+          size: const Size.square(256),
+          painter: _MigrationPreparationIdleRingPainter(
+            weights: weights,
+            rotation: rotation,
+            color: widget.color,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MigrationPreparationIdleRingPainter extends CustomPainter {
+  const _MigrationPreparationIdleRingPainter({
+    required this.weights,
+    required this.rotation,
+    required this.color,
+  });
+
+  final List<double> weights;
+  final double rotation;
+  final Color color;
+  final double visibleSegmentGap = 4;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = math.min(size.width, size.height) / 2 - 7;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    const strokeWidth = 12.0;
+    final gap = (strokeWidth + visibleSegmentGap) / radius;
+    final sweepBudget = math.pi * 2 - weights.length * gap;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = strokeWidth
+      ..color = color;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(rotation * math.pi * 2);
+    canvas.translate(-center.dx, -center.dy);
+
+    var cursor = -math.pi / 2;
+    for (final weight in weights) {
+      final sweep = math.max(0.01, weight * sweepBudget);
+      canvas.drawArc(rect, cursor + gap / 2, sweep, false, paint);
+      cursor += sweep + gap;
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_MigrationPreparationIdleRingPainter oldDelegate) {
+    return color != oldDelegate.color ||
+        rotation != oldDelegate.rotation ||
+        visibleSegmentGap != oldDelegate.visibleSegmentGap ||
+        !_sameWeights(weights, oldDelegate.weights);
+  }
+
+  static bool _sameWeights(List<double> first, List<double> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index] != second[index]) return false;
+    }
+    return true;
   }
 }
 
@@ -2085,7 +2355,6 @@ class _MigrationRingPainter extends CustomPainter {
     this.highlightedSegments = const {},
     this.highlightColor,
     this.highlightOpacity = 1,
-    this.progress,
   });
 
   final Color trackColor;
@@ -2095,7 +2364,6 @@ class _MigrationRingPainter extends CustomPainter {
   final Set<int> highlightedSegments;
   final Color? highlightColor;
   final double highlightOpacity;
-  final double? progress;
   final double visibleSegmentGap = 4;
 
   @override
@@ -2116,31 +2384,12 @@ class _MigrationRingPainter extends CustomPainter {
             segmentPitch * 0.35,
           );
     final segmentSweep = math.max(0.0, segmentPitch - gap);
-    final clampedProgress = progress?.clamp(0.0, 1.0).toDouble();
     for (var index = 0; index < segments; index++) {
       final start = -math.pi / 2 + index * segmentPitch + gap / 2;
       final paint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeCap = useRoundCaps ? StrokeCap.round : StrokeCap.butt
         ..strokeWidth = strokeWidth;
-      if (clampedProgress != null) {
-        paint.color = trackColor;
-        canvas.drawArc(rect, start, segmentSweep, false, paint);
-        final segmentProgress = (clampedProgress * segments - index)
-            .clamp(0.0, 1.0)
-            .toDouble();
-        if (segmentProgress > 0) {
-          paint.color = activeColor;
-          canvas.drawArc(
-            rect,
-            start,
-            segmentSweep * segmentProgress,
-            false,
-            paint,
-          );
-        }
-        continue;
-      }
       paint.color = completedSegments.contains(index)
           ? activeColor
           : highlightedSegments.contains(index)
@@ -2159,7 +2408,6 @@ class _MigrationRingPainter extends CustomPainter {
         highlightedSegments != oldDelegate.highlightedSegments ||
         highlightColor != oldDelegate.highlightColor ||
         highlightOpacity != oldDelegate.highlightOpacity ||
-        progress != oldDelegate.progress ||
         visibleSegmentGap != oldDelegate.visibleSegmentGap;
   }
 }

@@ -377,7 +377,6 @@ class _MobileMigrationRedesignedStatusState
           kIronwoodMigrationWaitingDenomConfirmationsPhase) {
         return _MigrationPreparationPreview(
           state: _MigrationPreparationState.syncing,
-          progress: _preparationProgress(widget.status),
           onBack: () => context.go('/home'),
         );
       }
@@ -397,7 +396,6 @@ class _MobileMigrationRedesignedStatusState
             kIronwoodMigrationWaitingDenomConfirmationsPhase) {
       return _MigrationPreparationPreview(
         state: _MigrationPreparationState.paused,
-        progress: _preparationProgress(widget.status),
         isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
         onContinue: accountUuid == null || _actionRunning
@@ -492,7 +490,6 @@ class _MobileMigrationRedesignedStatusState
         state: needsManualResume
             ? _MigrationPreparationState.paused
             : _MigrationPreparationState.active,
-        progress: _preparationProgress(widget.status),
         isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
         onContinue: !needsManualResume || accountUuid == null
@@ -1014,23 +1011,6 @@ class _MobileMigrationRedesignedStatusState
         ? 0
         : ((needsInput * BigInt.from(100)) ~/ total).toInt();
     return '$amount ZEC ($percentage%)';
-  }
-
-  double _preparationProgress(rust_sync.MigrationStatus status) {
-    final totalStages = status.denominationSplitTotalCount;
-    if (totalStages <= 0) return 0;
-    final completedStages = status.denominationSplitCompletedCount.clamp(
-      0,
-      totalStages,
-    );
-    final confirmationTarget = status.denominationConfirmationTarget;
-    final currentStageProgress = confirmationTarget <= 0
-        ? 0.0
-        : status.denominationConfirmationCount.clamp(0, confirmationTarget) /
-              confirmationTarget;
-    return ((completedStages + currentStageProgress) / totalStages)
-        .clamp(0.0, 1.0)
-        .toDouble();
   }
 
   int _totalParts(rust_sync.MigrationStatus status) {
