@@ -99,6 +99,14 @@ Widget _app(
 );
 
 void main() {
+  test('does not register the removed private review route', () {
+    final paths = buildMobileRoutes(
+      entryRoutes: const [],
+    ).whereType<GoRoute>().map((route) => route.path);
+
+    expect(paths, isNot(contains('/migration/private/review')));
+  });
+
   testWidgets('tab shell renders all four tabs and switches branches', (
     tester,
   ) async {
