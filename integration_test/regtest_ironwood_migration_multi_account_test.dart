@@ -104,6 +104,7 @@ void main() {
         dbPath: await getWalletDbPath(),
         network: 'regtest',
         accountUuid: firstAccount.uuid,
+        spacePreparationBroadcasts: true,
       );
       expect(migrationPlan, isNotNull);
       await openPrivateMigrationReview(tester);

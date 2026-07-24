@@ -406,7 +406,7 @@ class _MobileMigrationPrivateReviewState
       final keystonePlanSupported =
           !widget.isHardware ||
           plan == null ||
-          _keystoneTwoRoundPlanSupported(plan);
+          _keystoneMultiRoundPlanSupported(plan);
       final canStart = plan != null && !_isStarting && keystonePlanSupported;
       final displayedError = _startError ?? _planRefreshMessage;
       final displayedMessageIsError = _startError != null || _planRefreshFailed;
@@ -437,8 +437,7 @@ class _MobileMigrationPrivateReviewState
               ],
               if (!keystonePlanSupported) ...[
                 Text(
-                  'This migration needs more transactions than one Keystone '
-                  'signing request supports.',
+                  'Keystone signing is unavailable for this migration plan.',
                   textAlign: TextAlign.center,
                   style: AppTypography.bodySmall.copyWith(
                     color: context.colors.text.destructive,
@@ -529,8 +528,8 @@ String _mobilePrivatePlanFingerprint(
     plan.estimatedTotalFeeZatoshi,
     plan.plannedBatchCount,
     plan.denominationSplitStageCount,
+    plan.denominationSplitLayerCount,
     plan.signingBatchLimit,
-    plan.maxPreparedNotesPerRun,
     targetValues.join(','),
     transferValues.join(','),
   ].join('|');
@@ -560,23 +559,20 @@ rust_sync.OrchardMigrationPrivatePlan _mobilePrivatePlanWithRefreshedTiming(
     estimatedTotalFeeZatoshi: displayed.estimatedTotalFeeZatoshi,
     plannedBatchCount: displayed.plannedBatchCount,
     denominationSplitStageCount: displayed.denominationSplitStageCount,
+    denominationSplitLayerCount: displayed.denominationSplitLayerCount,
     signingBatchLimit: displayed.signingBatchLimit,
     scheduleMeanDelayBlocks: displayed.scheduleMeanDelayBlocks,
     scheduleMaxDelayBlocks: displayed.scheduleMaxDelayBlocks,
     proofReadinessDelayBlocks: refreshed.proofReadinessDelayBlocks,
     estimatedProofReadyHeight: refreshed.estimatedProofReadyHeight,
-    maxPreparedNotesPerRun: displayed.maxPreparedNotesPerRun,
     scheduledTransfers: displayed.scheduledTransfers,
   );
 }
 
-bool _keystoneTwoRoundPlanSupported(
+bool _keystoneMultiRoundPlanSupported(
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) {
-  final limit = plan.signingBatchLimit;
-  if (limit <= 0) return false;
-  return plan.denominationSplitStageCount <= limit &&
-      plan.plannedBatchCount <= limit;
+  return plan.signingBatchLimit > 0;
 }
 
 String _mobilePrivateMigrationStartErrorMessage(Object error) {

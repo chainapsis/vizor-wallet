@@ -26,7 +26,7 @@ enum MobileIronwoodKeystoneSigningRound { denominationSplit, migrationBatch }
 /// The visual state of a single Keystone signing request.
 enum MobileIronwoodKeystoneSigningViewState { loading, ready, scanner }
 
-/// A reusable mobile shell for one Keystone signing request.
+/// A reusable mobile shell for one Keystone signing round.
 ///
 /// This widget deliberately owns no QR encoding, camera, or migration state.
 /// The parent provides the current visual state and supplies the QR/camera
@@ -35,6 +35,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
   const MobileIronwoodKeystoneSigningView({
     required this.state,
     required this.round,
+    this.signingRoundLabel,
     this.qrCode,
     this.camera,
     this.onNext,
@@ -49,6 +50,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
 
   final MobileIronwoodKeystoneSigningViewState state;
   final MobileIronwoodKeystoneSigningRound round;
+  final String? signingRoundLabel;
 
   /// The already-rendered request QR. It is shown only in [ready].
   final Widget? qrCode;
@@ -74,6 +76,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
             loading: true,
             qrCode: null,
             round: round,
+            signingRoundLabel: signingRoundLabel,
             onNext: onNext,
             onCancel: onCancel,
             onShowScanHelp: onShowScanHelp,
@@ -84,6 +87,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
             loading: false,
             qrCode: qrCode,
             round: round,
+            signingRoundLabel: signingRoundLabel,
             onNext: onNext,
             onCancel: onCancel,
             onShowScanHelp: onShowScanHelp,
@@ -108,6 +112,7 @@ class _StepOneContent extends StatelessWidget {
     required this.loading,
     required this.qrCode,
     required this.round,
+    required this.signingRoundLabel,
     required this.onNext,
     required this.onCancel,
     required this.onShowScanHelp,
@@ -116,6 +121,7 @@ class _StepOneContent extends StatelessWidget {
   final bool loading;
   final Widget? qrCode;
   final MobileIronwoodKeystoneSigningRound round;
+  final String? signingRoundLabel;
   final VoidCallback? onNext;
   final VoidCallback? onCancel;
   final VoidCallback? onShowScanHelp;
@@ -175,6 +181,18 @@ class _StepOneContent extends StatelessWidget {
                         color: colors.text.accent,
                       ),
                     ),
+                    if (signingRoundLabel != null) ...[
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        signingRoundLabel!,
+                        key: const ValueKey(
+                          'mobile_ironwood_keystone_signing_round',
+                        ),
+                        style: AppTypography.bodySmall.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ],
                     SizedBox(height: compact ? AppSpacing.s : AppSpacing.lg),
                     if (loading)
                       _LoadingQr(size: qrSize)

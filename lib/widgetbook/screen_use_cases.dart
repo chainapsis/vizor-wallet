@@ -2785,7 +2785,6 @@ rust_sync.MigrationStatus _previewMigrationStatus(
     signingBatchLimit: 0,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 0,
     scheduledBroadcasts: const [],
     parts: parts,
   );
@@ -2820,11 +2819,11 @@ rust_sync.OrchardMigrationPrivatePlan _previewPrivateMigrationPlan() {
     estimatedTotalFeeZatoshi: BigInt.from(1_200_000),
     plannedBatchCount: 6,
     denominationSplitStageCount: 2,
-    signingBatchLimit: 50,
+    denominationSplitLayerCount: 2,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     proofReadinessDelayBlocks: 146,
-    maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
         partIndex: 1,
@@ -2887,11 +2886,11 @@ rust_sync.OrchardMigrationPrivatePlan _previewMobilePrivateMigrationPlan() {
     estimatedTotalFeeZatoshi: BigInt.from(300_000),
     plannedBatchCount: 6,
     denominationSplitStageCount: 1,
-    signingBatchLimit: 50,
+    denominationSplitLayerCount: 1,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
     proofReadinessDelayBlocks: 146,
-    maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       rust_sync.MigrationScheduledTransfer(
         partIndex: 0,
@@ -2949,11 +2948,11 @@ _previewMobilePrivateMigrationManyPartsPlan() {
     estimatedTotalFeeZatoshi: BigInt.from(300_000),
     plannedBatchCount: values.length,
     denominationSplitStageCount: 1,
-    signingBatchLimit: 50,
+    denominationSplitLayerCount: 1,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
     proofReadinessDelayBlocks: 146,
-    maxPreparedNotesPerRun: 64,
     scheduledTransfers: [
       for (var index = 0; index < values.length; index++)
         rust_sync.MigrationScheduledTransfer(
@@ -2989,10 +2988,9 @@ rust_sync.MigrationStatus _previewMobilePreparingStatus() {
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: const [],
   );
@@ -3032,10 +3030,9 @@ rust_sync.MigrationStatus _previewMobileMigrationStatus() {
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: [
       for (var i = 0; i < values.length; i++)
         rust_sync.MigrationScheduledBroadcast(
@@ -3076,10 +3073,9 @@ rust_sync.MigrationStatus _previewMobileHomeMigrationStatus() {
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 960,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: [
       for (var i = 0; i < values.length; i++)
         rust_sync.MigrationScheduledBroadcast(
@@ -3118,10 +3114,9 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: const [],
   );
@@ -3151,10 +3146,9 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: [
       rust_sync.MigrationScheduledBroadcast(
         txidHex: 'preview-txid',
@@ -3223,10 +3217,9 @@ rust_sync.MigrationStatus _previewPrivateMigrationNeedsInputStatus() {
     signedChildPcztCount: 2,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 50,
+    signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: [
       _previewMigrationPart(

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -26,16 +27,29 @@ import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migra
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/keystone.dart' as rust_keystone;
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 import 'package:zcash_wallet/src/rust/wallet/keystone.dart'
     as rust_keystone_wallet;
+import 'package:zcash_wallet/src/services/qr_scanner.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
+final _rustApiFake = _RustApiFake();
+
 class _RustApiFake implements RustLibApi {
+  final encodedRequestIds = <String>[];
+  final decodedRequestIds = <String>[];
+
+  void reset() {
+    encodedRequestIds.clear();
+    decodedRequestIds.clear();
+  }
+
   @override
   void crateApiKeystoneResetUrSession() {}
 
@@ -44,7 +58,37 @@ class _RustApiFake implements RustLibApi {
     required String requestId,
     required List<rust_keystone_wallet.ZcashBatchMessageInput> messages,
     required BigInt maxFragmentLen,
-  }) async => ['UR:ZCASH-SIGN-BATCH/$requestId'];
+  }) async {
+    encodedRequestIds.add(requestId);
+    return ['UR:ZCASH-SIGN-BATCH/$requestId'];
+  }
+
+  @override
+  Future<rust_keystone.KeystoneSigResult>
+  crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
+  }) async {
+    decodedRequestIds.add(expectedRequestId);
+    return rust_keystone.KeystoneSigResult(
+      firmwareVersion: Uint8List.fromList([1, 0, 0]),
+      requestId: Uint8List.fromList(utf8.encode(expectedRequestId)),
+      results: [
+        for (final messageId in messageIds)
+          rust_keystone.KeystoneMsgSig(
+            messageId: Uint8List.fromList(utf8.encode(messageId)),
+            sigs: [
+              rust_keystone.KeystoneActionSig(
+                pool: 0,
+                actionIndex: 0,
+                sig: Uint8List(64),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -252,6 +296,7 @@ final _data = IronwoodMigrationFlowData(
 rust_sync.OrchardMigrationPrivatePlan _planWith({
   int plannedBatchCount = 12,
   int denominationSplitStageCount = 1,
+  int? denominationSplitLayerCount,
   int signingBatchLimit = 12,
   int blockOffsetAdjustment = 0,
   int proofReadinessDelayBlocks = 146,
@@ -266,12 +311,13 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   estimatedTotalFeeZatoshi: BigInt.from(14_420_000),
   plannedBatchCount: plannedBatchCount,
   denominationSplitStageCount: denominationSplitStageCount,
+  denominationSplitLayerCount:
+      denominationSplitLayerCount ?? denominationSplitStageCount,
   signingBatchLimit: signingBatchLimit,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
   proofReadinessDelayBlocks: proofReadinessDelayBlocks,
   estimatedProofReadyHeight: estimatedProofReadyHeight,
-  maxPreparedNotesPerRun: 12,
   scheduledTransfers: [
     for (var i = 0; i < plannedBatchCount; i++)
       rust_sync.MigrationScheduledTransfer(
@@ -326,7 +372,6 @@ rust_sync.MigrationStatus _status({
     signingBatchLimit: 12,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 12,
     nextActionHeight: nextActionHeight,
     estimatedCompletionHeight: estimatedCompletionHeight,
     nextActionPartIndex: nextActionPartIndex,
@@ -389,7 +434,6 @@ rust_sync.MigrationStatus _visualMigrationStatus() {
     signingBatchLimit: 12,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 12,
     scheduledBroadcasts: [
       for (var i = 0; i < values.length; i++)
         rust_sync.MigrationScheduledBroadcast(
@@ -539,6 +583,7 @@ Widget _productionApp({
   FakeSyncNotifier? syncNotifier,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   IronwoodMigrationCompletionStore? completionStore,
+  bool realKeystoneDenominationRoute = false,
   bool disableAnimations = true,
 }) {
   final cta = status == null
@@ -591,7 +636,9 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
-        builder: (_, _) => const Text('keystone denomination sign route'),
+        builder: (_, _) => realKeystoneDenominationRoute
+            ? const MobileIronwoodMigrationKeystoneDenominationSignScreen()
+            : const Text('keystone denomination sign route'),
       ),
       GoRoute(
         path: '/migration/private/keystone/batch/sign',
@@ -765,12 +812,13 @@ void _useMobileViewport(
 
 void main() {
   setUpAll(() {
-    RustLib.initMock(api: _RustApiFake());
+    RustLib.initMock(api: _rustApiFake);
   });
 
   tearDownAll(RustLib.dispose);
 
   setUp(() {
+    _rustApiFake.reset();
     FlutterSecureStorage.setMockInitialValues({});
   });
 
@@ -1163,7 +1211,7 @@ void main() {
     await tester.pumpWidget(
       _app(
         step: MobileIronwoodMigrationStep.privateReview,
-        previewPlan: _planWith(plannedBatchCount: 50, signingBatchLimit: 50),
+        previewPlan: _planWith(plannedBatchCount: 35, signingBatchLimit: 35),
       ),
     );
     await tester.pumpAndSettle();
@@ -2548,8 +2596,7 @@ void main() {
       _productionApp(
         initialLocation: '/migration/private/review',
         migrationService: _migrationService(
-          onGetPrivatePlan: () async =>
-              _planWith(blockOffsetAdjustment: 75),
+          onGetPrivatePlan: () async => _planWith(blockOffsetAdjustment: 75),
           onStart: (accountUuid, approvedSchedule) async {
             startedAccountUuid = accountUuid;
             startedSchedule = approvedSchedule;
@@ -2626,7 +2673,7 @@ void main() {
           redactedPczt: Uint8List.fromList([2]),
         ),
       ],
-      signingBatchLimit: 50,
+      signingBatchLimit: 35,
     );
 
     await tester.pumpWidget(
@@ -2667,7 +2714,186 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('blocks an oversized Keystone signing plan before QR', (
+  testWidgets('completes a direct-note split without opening a QR round', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(320, 568));
+    var completionCount = 0;
+    List<rust_sync.KeystoneSignedMigrationMessage>? completedMessages;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _status(phase: kIronwoodMigrationReadyPhase),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _plan,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => defaultRpcEndpointConfig('main'),
+      getSessionPassword: () => 'test-password',
+      isMobile: () => false,
+      prepareKeystoneDenominationMigration:
+          ({required dbPath, required network, required accountUuid}) async =>
+              const rust_sync.KeystoneMigrationSigningRequest(
+                requestId: 'direct-note-request',
+                messages: [],
+                signingBatchLimit: 35,
+              ),
+      completeKeystoneDenominationMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required requestId,
+            required signedMessages,
+            required password,
+            required saltBase64,
+            required approvedSchedule,
+          }) async {
+            completionCount += 1;
+            completedMessages = signedMessages;
+            return _migrationResult();
+          },
+    );
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/keystone/denominations/sign',
+        migrationService: service,
+        hardware: true,
+        realKeystoneDenominationRoute: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(completionCount, 1);
+    expect(completedMessages, isEmpty);
+    expect(
+      find.byType(MobileIronwoodMigrationKeystoneDenominationSignScreen),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('signs 36 transactions in two Keystone rounds', (tester) async {
+    _useMobileViewport(tester);
+    final requestMessages = List.generate(
+      36,
+      (index) => rust_sync.KeystoneMigrationMessage(
+        id: 'split-$index',
+        redactedPczt: Uint8List.fromList([index]),
+      ),
+    );
+    var completionCount = 0;
+    String? completedRequestId;
+    List<rust_sync.KeystoneSignedMigrationMessage>? completedMessages;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _status(phase: kIronwoodMigrationReadyPhase),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _plan,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => defaultRpcEndpointConfig('main'),
+      getSessionPassword: () => 'test-password',
+      isMobile: () => false,
+      prepareKeystoneDenominationMigration:
+          ({required dbPath, required network, required accountUuid}) async =>
+              rust_sync.KeystoneMigrationSigningRequest(
+                requestId: 'multi-round-request',
+                messages: requestMessages,
+                signingBatchLimit: 35,
+              ),
+      completeKeystoneDenominationMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required requestId,
+            required signedMessages,
+            required password,
+            required saltBase64,
+            required approvedSchedule,
+          }) async {
+            completionCount += 1;
+            completedRequestId = requestId;
+            completedMessages = signedMessages;
+            return _migrationResult();
+          },
+      getKeystoneProofStatus: ({required requestId}) async =>
+          const rust_sync.KeystoneMigrationProofStatus(
+            readyCount: 1,
+            totalCount: 1,
+            isReady: true,
+            isFailed: false,
+          ),
+    );
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/keystone/denominations/sign',
+        migrationService: service,
+        hardware: true,
+        realKeystoneDenominationRoute: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Keystone round 1 of 2'), findsOneWidget);
+    expect(_rustApiFake.encodedRequestIds, [
+      'multi-round-request-round-1-of-2',
+      'multi-round-request-round-2-of-2',
+    ]);
+    final nextButton = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_next'),
+    );
+    await tester.ensureVisible(nextButton);
+    await tester.tap(nextButton);
+    await tester.pump();
+    tester
+        .widget<KeystoneQrScannerCard>(find.byType(KeystoneQrScannerCard))
+        .onComplete(
+          const ScanResult(urType: 'zcash-batch-sig-result', data: [1]),
+        );
+    await tester.pumpAndSettle();
+
+    expect(completionCount, 0);
+    expect(find.text('Keystone round 2 of 2'), findsOneWidget);
+    await tester.ensureVisible(nextButton);
+    await tester.tap(nextButton);
+    await tester.pump();
+    tester
+        .widget<KeystoneQrScannerCard>(find.byType(KeystoneQrScannerCard))
+        .onComplete(
+          const ScanResult(urType: 'zcash-batch-sig-result', data: [2]),
+        );
+    await tester.pumpAndSettle();
+
+    expect(completionCount, 1);
+    expect(completedRequestId, 'multi-round-request');
+    expect(_rustApiFake.decodedRequestIds, [
+      'multi-round-request-round-1-of-2',
+      'multi-round-request-round-2-of-2',
+    ]);
+    expect(completedMessages, hasLength(36));
+    expect(
+      completedMessages!.map((message) => message.id),
+      requestMessages.map((message) => message.id),
+    );
+  });
+
+  testWidgets('allows a Keystone plan that needs multiple signing rounds', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -2684,13 +2910,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      find.text(
-        'This migration needs more transactions than one Keystone signing '
-        'request supports.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.textContaining('signing request supports'), findsNothing);
     final button = tester.widget<AppButton>(
       find.descendant(
         of: find.byKey(
@@ -2699,10 +2919,10 @@ void main() {
         matching: find.byType(AppButton),
       ),
     );
-    expect(button.onPressed, isNull);
+    expect(button.onPressed, isNotNull);
   });
 
-  testWidgets('accepts exactly 50 transactions in each Keystone round', (
+  testWidgets('accepts exactly 35 transactions in each Keystone round', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -2712,9 +2932,9 @@ void main() {
         migrationService: _migrationService(),
         hardware: true,
         privatePlan: _planWith(
-          denominationSplitStageCount: 50,
-          plannedBatchCount: 50,
-          signingBatchLimit: 50,
+          denominationSplitStageCount: 35,
+          plannedBatchCount: 35,
+          signingBatchLimit: 35,
         ),
       ),
     );
@@ -2731,20 +2951,20 @@ void main() {
     expect(button.onPressed, isNotNull);
   });
 
-  testWidgets('blocks 51 transactions in either Keystone round', (
+  testWidgets('accepts 36 transactions using multiple Keystone rounds', (
     tester,
   ) async {
     _useMobileViewport(tester);
     for (final plan in [
       _planWith(
-        denominationSplitStageCount: 51,
-        plannedBatchCount: 50,
-        signingBatchLimit: 50,
+        denominationSplitStageCount: 36,
+        plannedBatchCount: 35,
+        signingBatchLimit: 35,
       ),
       _planWith(
-        denominationSplitStageCount: 50,
-        plannedBatchCount: 51,
-        signingBatchLimit: 50,
+        denominationSplitStageCount: 35,
+        plannedBatchCount: 36,
+        signingBatchLimit: 35,
       ),
     ]) {
       await tester.pumpWidget(
@@ -2765,7 +2985,7 @@ void main() {
           matching: find.byType(AppButton),
         ),
       );
-      expect(button.onPressed, isNull);
+      expect(button.onPressed, isNotNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     }
@@ -2802,7 +3022,7 @@ void main() {
                     redactedPczt: Uint8List.fromList([prepareCount]),
                   ),
                 ],
-                signingBatchLimit: 50,
+                signingBatchLimit: 35,
               );
             },
         getKeystoneProofStatus: ({required requestId}) async =>

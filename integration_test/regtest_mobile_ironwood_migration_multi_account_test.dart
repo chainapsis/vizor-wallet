@@ -72,6 +72,7 @@ void main() {
         dbPath: await getWalletDbPath(),
         network: mobileE2eNetwork,
         accountUuid: firstAccountUuid,
+        spacePreparationBroadcasts: false,
       );
       expect(plan, isNotNull);
 
