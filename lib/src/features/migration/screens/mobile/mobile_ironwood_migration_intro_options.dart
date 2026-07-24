@@ -212,7 +212,7 @@ class _MobileMigrationOptionsState
             title: 'Private',
             body:
                 'Splits transactions into multiple parts to minimize '
-                'traceability, but takes longer.',
+                'traceability but will take several hours to days.',
             selected: privateSelected,
             icon: _MigrationChoiceIcon.private,
             recommended: true,
@@ -224,7 +224,7 @@ class _MobileMigrationOptionsState
             title: 'Immediate',
             body: widget.immediateEnabled
                 ? 'Migrates your entire balance in one batch. '
-                      'Fast, but less private.'
+                      'Fast (~10 mins) but less private.'
                 : 'Not available with Keystone.',
             selected: immediateSelected,
             icon: _MigrationChoiceIcon.immediate,

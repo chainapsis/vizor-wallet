@@ -51,7 +51,7 @@ class _MobileMigrationPreparing extends StatelessWidget {
               child: Column(
                 children: [
                   Text(
-                    'Migration in Progress',
+                    'Ironwood Migration',
                     key: const ValueKey(
                       'mobile_ironwood_migration_preparing_title',
                     ),
@@ -226,7 +226,7 @@ class _MobileMigrationMigratingState
       children: [
         SizedBox(height: compact ? 20 : 46),
         Text(
-          'Migration in Progress',
+          'Ironwood Migration',
           textAlign: TextAlign.center,
           style: AppTypography.headlineLarge.copyWith(
             color: colors.text.accent,

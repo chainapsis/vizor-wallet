@@ -238,7 +238,7 @@ void main() {
 
     expect(startedAccountUuid, 'account-1');
     expect(startedSchedule, _privatePlan().scheduledTransfers);
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
   });
 
   testWidgets(
@@ -313,7 +313,7 @@ void main() {
     await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(
       find.text("Couldn't broadcast the migration transaction. Try again."),
       findsNothing,
@@ -475,7 +475,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(find.text('Note split'), findsOneWidget);
     expect(find.text('Split notes into 1 migration part'), findsOneWidget);
     expect(find.text('Wait 1 block for confirmation'), findsOneWidget);
@@ -754,7 +754,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(find.text('intro-route'), findsNothing);
   });
 
@@ -769,7 +769,7 @@ void main() {
     final cases = [
       _StatusUiCase(
         status: _status(),
-        title: 'Migration in Progress',
+        title: 'Ironwood Migration',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -778,7 +778,7 @@ void main() {
           phase: kIronwoodMigrationReadyToMigratePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
+        title: 'Ironwood Migration',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -787,7 +787,7 @@ void main() {
           phase: kIronwoodMigrationBroadcastScheduledPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
+        title: 'Ironwood Migration',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -796,7 +796,7 @@ void main() {
           phase: kIronwoodMigrationBroadcastingPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
+        title: 'Ironwood Migration',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -805,7 +805,7 @@ void main() {
           phase: kIronwoodMigrationWaitingConfirmationsPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
+        title: 'Ironwood Migration',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -823,7 +823,7 @@ void main() {
           phase: kIronwoodMigrationCompletePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in Progress',
+        title: 'Ironwood Migration',
         buttonLabel: 'Go home',
         buttonEnabled: true,
       ),
@@ -912,7 +912,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(find.text('Migration Complete'), findsNothing);
     expect(find.text('Back home'), findsNothing);
     expect(find.text('Migrating...'), findsNothing);

@@ -496,6 +496,7 @@ class _MobileMigrationRedesignedStatusState
       totalParts: _totalParts(widget.status),
       completedBatches: batchProgress.completedBatches,
       totalBatches: batchProgress.totalBatches,
+      currentBatchNumber: batchProgress.currentBatchNumber,
       currentBatchStartIndex: batchProgress.currentBatchStartIndex,
       currentBatchPartCount: batchProgress.currentBatchPartCount,
       completedRingSegments: _completedRingSegments(widget.status),
@@ -618,7 +619,7 @@ class _MobileMigrationRedesignedStatusState
           'continue because notifications are disabled.';
     }
     if (state == _MigrationProgressState.confirming) {
-      return 'Confirmations are still arriving. You can leave Vizor and '
+      return 'Confirmations are still arriving.\nYou can leave Vizor and '
           'check again later.';
     }
     return '$timing.\nWe will notify you when it’s ready.';

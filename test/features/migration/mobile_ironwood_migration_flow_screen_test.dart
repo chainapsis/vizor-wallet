@@ -903,8 +903,8 @@ void main() {
     );
     expect(
       find.text(
-        'Splits transactions into multiple parts to minimize traceability, '
-        'but takes longer.',
+        'Splits transactions into multiple parts to minimize traceability '
+        'but will take several hours to days.',
       ),
       findsOneWidget,
     );
@@ -915,7 +915,8 @@ void main() {
     );
     expect(
       find.text(
-        'Migrates your entire balance in one batch. Fast, but less private.',
+        'Migrates your entire balance in one batch. '
+        'Fast (~10 mins) but less private.',
       ),
       findsOneWidget,
     );
@@ -938,7 +939,7 @@ void main() {
           .widget<Text>(
             find.text(
               'Migrates your entire balance in one batch. '
-              'Fast, but less private.',
+              'Fast (~10 mins) but less private.',
             ),
           )
           .style
@@ -2303,7 +2304,7 @@ void main() {
     await tester.pumpWidget(_app(step: MobileIronwoodMigrationStep.preparing));
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(
       find.text(
         'Preparing your balance for migration. This step usually takes '
@@ -2376,7 +2377,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(find.text('Migration 12 notes'), findsOneWidget);
     expect(find.text('142.20 ZEC'), findsOneWidget);
     expect(find.text('Part 1'), findsOneWidget);
@@ -3535,6 +3536,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Preparation is done'), findsOneWidget);
+      expect(
+        find.text(
+          'Preparation is complete, but we are waiting for the next '
+          'available signing window.\nWe\'ll let you know when it\'s time '
+          'to take action.',
+        ),
+        findsOneWidget,
+      );
 
       syncNotifier.emit(
         SyncState(
@@ -3728,7 +3737,10 @@ void main() {
     expect(find.text('Available in Ironwood'), findsOneWidget);
     expect(find.text('Waiting for confirmations'), findsWidgets);
     expect(
-      find.textContaining('Confirmations are still arriving'),
+      find.text(
+        'Confirmations are still arriving.\nYou can leave Vizor and check '
+        'again later.',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('Signing window expected'), findsNothing);
@@ -3900,7 +3912,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('All is well. Broadcasting notes…'), findsWidgets);
+    expect(find.text('All clear. Processing batch #1'), findsWidgets);
     expect(find.textContaining('Signing window expected'), findsOneWidget);
     expect(
       find.textContaining('We will notify you when it’s ready.'),

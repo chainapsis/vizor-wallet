@@ -704,6 +704,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.totalParts = 24,
     this.completedBatches,
     this.totalBatches,
+    this.currentBatchNumber = 1,
     this.currentBatchStartIndex,
     this.currentBatchPartCount,
     this.completedRingSegments,
@@ -728,6 +729,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final int totalParts;
   final int? completedBatches;
   final int? totalBatches;
+  final int currentBatchNumber;
   final int? currentBatchStartIndex;
   final int? currentBatchPartCount;
   final Set<int>? completedRingSegments;
@@ -832,6 +834,7 @@ class _MigrationProgressPreview extends StatelessWidget {
                 _MigrationProgressSummary(
                   completedParts: resolvedCompletedParts,
                   state: state,
+                  currentBatchNumber: currentBatchNumber,
                   availableAmountText: availableAmountText,
                   statusValueOverride: statusValueOverride,
                 ),
@@ -847,6 +850,7 @@ class _MigrationProgressPreview extends StatelessWidget {
                 else
                   _MigrationProgressStatus(
                     state: state,
+                    currentBatchNumber: currentBatchNumber,
                     bodyOverride: nextActionText,
                   ),
               ],
@@ -1227,12 +1231,14 @@ class _MigrationProgressSummary extends StatelessWidget {
   const _MigrationProgressSummary({
     required this.completedParts,
     required this.state,
+    required this.currentBatchNumber,
     this.availableAmountText,
     this.statusValueOverride,
   });
 
   final int completedParts;
   final _MigrationProgressState state;
+  final int currentBatchNumber;
   final String? availableAmountText;
   final String? statusValueOverride;
 
@@ -1254,7 +1260,7 @@ class _MigrationProgressSummary extends StatelessWidget {
             switch (state) {
               _MigrationProgressState.syncing => 'Syncing',
               _MigrationProgressState.broadcasting =>
-                'All is well. Broadcasting notes…',
+                'All clear. Processing batch #$currentBatchNumber',
               _MigrationProgressState.confirming => 'Waiting for confirmations',
               _MigrationProgressState.needsInput =>
                 'Waiting for your confirmation',
@@ -1287,9 +1293,14 @@ class _MigrationSummaryRows extends StatelessWidget {
 }
 
 class _MigrationProgressStatus extends StatelessWidget {
-  const _MigrationProgressStatus({required this.state, this.bodyOverride});
+  const _MigrationProgressStatus({
+    required this.state,
+    required this.currentBatchNumber,
+    this.bodyOverride,
+  });
 
   final _MigrationProgressState state;
+  final int currentBatchNumber;
   final String? bodyOverride;
 
   @override
@@ -1314,13 +1325,13 @@ class _MigrationProgressStatus extends StatelessWidget {
       ),
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
-        'All is well. Broadcasting notes…',
+        'All clear. Processing batch #$currentBatchNumber',
         '~2 hrs 15 mins.\nWe will notify you when it’s ready.',
       ),
       _MigrationProgressState.confirming => (
         AppIcons.migrationTimer,
         'Waiting for confirmations',
-        'Confirmations are still arriving. You can leave Vizor and check '
+        'Confirmations are still arriving.\nYou can leave Vizor and check '
             'again later.',
       ),
       _MigrationProgressState.needsInput => (
@@ -1505,9 +1516,11 @@ class _PreparationCompleteModalBody extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'What’s Next?',
+            'Preparation is complete, but we are waiting for the next '
+            'available signing window.\nWe\'ll let you know when it\'s time '
+            'to take action.',
             textAlign: TextAlign.center,
-            style: AppTypography.headlineSmall.copyWith(
+            style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,
             ),
           ),

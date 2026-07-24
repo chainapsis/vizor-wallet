@@ -187,7 +187,7 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
             child: Column(
               children: [
                 Text(
-                  'Migration in Progress',
+                  'Ironwood Migration',
                   style: AppTypography.headlineSmall.copyWith(
                     color: context.colors.text.accent,
                   ),
@@ -307,7 +307,7 @@ class _MigrationPreparingStatusContent extends StatelessWidget {
             child: Column(
               children: [
                 Text(
-                  'Migration in Progress',
+                  'Ironwood Migration',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
