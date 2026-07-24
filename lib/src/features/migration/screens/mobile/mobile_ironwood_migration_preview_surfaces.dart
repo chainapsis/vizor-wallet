@@ -718,6 +718,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.actionBatchLabel,
     this.actionBatchValue,
     this.onAction,
+    this.actionRunning = false,
     this.onBack,
     this.onPreparationCompleteDone,
   });
@@ -742,6 +743,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final String? actionBatchLabel;
   final String? actionBatchValue;
   final VoidCallback? onAction;
+  final bool actionRunning;
   final VoidCallback? onBack;
   final VoidCallback? onPreparationCompleteDone;
 
@@ -843,6 +845,7 @@ class _MigrationProgressPreview extends StatelessWidget {
                     batchLabel: actionBatchLabel,
                     batchValue: actionBatchValue,
                     onAction: onAction,
+                    actionRunning: actionRunning,
                   )
                 else
                   _MigrationProgressStatus(
@@ -1420,6 +1423,7 @@ class _MigrationNeedsInputCard extends StatelessWidget {
     this.batchLabel,
     this.batchValue,
     this.onAction,
+    this.actionRunning = false,
   });
 
   final String? message;
@@ -1427,6 +1431,7 @@ class _MigrationNeedsInputCard extends StatelessWidget {
   final String? batchLabel;
   final String? batchValue;
   final VoidCallback? onAction;
+  final bool actionRunning;
 
   @override
   Widget build(BuildContext context) {
@@ -1469,7 +1474,13 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           expand: true,
           constrainContent: true,
           height: 50,
-          onPressed: onAction ?? () {},
+          onPressed: actionRunning ? null : onAction ?? () {},
+          leading: actionRunning
+              ? const AppIcon(
+                  AppIcons.loader,
+                  semanticLabel: 'Migration action in progress',
+                )
+              : null,
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(actionLabel ?? 'Sign batch #1'),
