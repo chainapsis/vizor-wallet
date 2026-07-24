@@ -127,6 +127,15 @@ class _MobileMigrationRedesignedStatusState
         ironwoodMigrationRouteCtaProvider.future,
       );
       if (!mounted) return;
+      try {
+        await _refreshNotificationAuthorization();
+      } catch (_) {
+        if (mounted) {
+          setState(() => _notificationsAuthorized = false);
+        }
+      }
+      await _reconcilePreparationRuntimeState();
+      if (!mounted) return;
       if (!_walletSyncActive &&
           refreshEpoch == _statusFreshnessEpoch &&
           accountUuid != null &&
@@ -137,14 +146,6 @@ class _MobileMigrationRedesignedStatusState
           _refreshedStatusEpoch = refreshEpoch;
         });
       }
-      try {
-        await _refreshNotificationAuthorization();
-      } catch (_) {
-        if (mounted) {
-          setState(() => _notificationsAuthorized = false);
-        }
-      }
-      await _reconcilePreparationRuntimeState();
       if (!(ref.read(syncProvider).value?.isSyncing ?? false)) {
         await _showPreparationCompleteIfNeeded();
       }

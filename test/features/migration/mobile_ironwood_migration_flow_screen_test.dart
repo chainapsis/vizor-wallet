@@ -3799,6 +3799,42 @@ void main() {
   );
 
   testWidgets(
+    'waits for preparation runtime inspection before choosing resume state',
+    (tester) async {
+      _useMobileViewport(tester);
+      final runtimeState =
+          Completer<IronwoodMigrationPreparationRuntimeState>();
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            getPreparationRuntimeState:
+                ({required network, required accountUuid, required runId}) =>
+                    runtimeState.future,
+          ),
+          status: _status(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('Syncing your wallet…'), findsOneWidget);
+      expect(find.text('Continue preparation'), findsNothing);
+
+      runtimeState.complete(IronwoodMigrationPreparationRuntimeState.running);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
+      expect(find.text('Continue preparation'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'automatically continues preparation after native background handoff',
     (tester) async {
       _useMobileViewport(tester);
