@@ -151,7 +151,6 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
   proofReadinessDelayBlocks: 146,
-  maxPreparedNotesPerRun: 12,
   scheduledTransfers: [
     for (var i = 0; i < plannedBatchCount; i++)
       rust_sync.MigrationScheduledTransfer(
@@ -204,7 +203,6 @@ rust_sync.MigrationStatus _status({
     signingBatchLimit: 12,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 12,
     nextActionHeight: nextActionHeight,
     estimatedCompletionHeight: estimatedCompletionHeight,
     nextActionPartIndex: nextActionPartIndex,
@@ -259,7 +257,6 @@ rust_sync.MigrationStatus _visualMigrationStatus() {
     signingBatchLimit: 12,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 12,
     scheduledBroadcasts: [
       for (var i = 0; i < values.length; i++)
         rust_sync.MigrationScheduledBroadcast(

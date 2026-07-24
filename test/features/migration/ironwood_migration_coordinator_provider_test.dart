@@ -898,7 +898,6 @@ rust_sync.MigrationStatus _status(
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     nextActionHeight: nextActionHeight,
     scheduledBroadcasts: scheduledHeight == null
         ? const []

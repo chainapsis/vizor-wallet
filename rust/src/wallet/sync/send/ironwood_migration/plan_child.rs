@@ -63,7 +63,6 @@ pub(crate) fn get_orchard_migration_private_plan(
         u64::from(split_fee),
         u64::from(migration_fee_estimate),
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-        super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN,
     )?;
     let Some(padded_plan) = padded_plan else {
         return Ok(None);
@@ -120,7 +119,6 @@ pub(crate) fn get_orchard_migration_private_plan(
         schedule_mean_delay_blocks: super::migration::schedule_parameters(network).0,
         schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
         proof_readiness_delay_blocks,
-        max_prepared_notes_per_run: super::migration::MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u32,
         scheduled_transfers,
     }))
 }

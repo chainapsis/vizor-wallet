@@ -1189,24 +1189,21 @@ fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
 }
 
 #[test]
-fn planner_chunks_more_than_max_prepared_outputs_into_follow_up_run() {
+fn planner_drains_balance_beyond_the_old_run_cap() {
     let input = 1_999_999_950_000_000;
     let migration_fee = 10_000;
     let plan = plan_denominations(input, 0, migration_fee, 1).unwrap();
 
-    assert_eq!(
-        plan.migration_outputs.len(),
-        MIGRATION_MAX_PREPARED_NOTES_PER_RUN
-    );
+    assert!(plan.migration_outputs.len() > 64);
     assert!(plan
         .migration_outputs
         .iter()
         .all(|value| is_zip318_canonical_denomination(*value)));
-    let orchard_change = plan.orchard_change.unwrap();
-    assert!(orchard_balance_can_create_migration_output(orchard_change).unwrap());
+    let orchard_change = plan.orchard_change.unwrap_or(0);
+    assert!(!orchard_balance_can_create_migration_output(orchard_change).unwrap());
     assert_eq!(
         plan.total_migratable_zatoshi
-            + migration_fee * MIGRATION_MAX_PREPARED_NOTES_PER_RUN as u64
+            + migration_fee * plan.migration_outputs.len() as u64
             + orchard_change,
         input
     );

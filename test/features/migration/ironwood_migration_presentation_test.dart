@@ -21,7 +21,6 @@ void main() {
       scheduleMeanDelayBlocks: 144,
       scheduleMaxDelayBlocks: 576,
       proofReadinessDelayBlocks: 146,
-      maxPreparedNotesPerRun: 64,
       scheduledTransfers: [
         rust_sync.MigrationScheduledTransfer(
           partIndex: 0,
@@ -61,7 +60,6 @@ void main() {
       scheduleMeanDelayBlocks: 144,
       scheduleMaxDelayBlocks: 576,
       proofReadinessDelayBlocks: 146,
-      maxPreparedNotesPerRun: 64,
       scheduledTransfers: [
         rust_sync.MigrationScheduledTransfer(
           partIndex: 0,
@@ -358,7 +356,6 @@ rust_sync.MigrationStatus _status({
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     nextActionHeight: nextActionHeight,
     estimatedCompletionHeight: estimatedCompletionHeight,
     scheduledBroadcasts: broadcasts,

@@ -465,7 +465,6 @@ String _mobilePrivatePlanFingerprint(
     plan.denominationSplitStageCount,
     plan.denominationSplitLayerCount,
     plan.signingBatchLimit,
-    plan.maxPreparedNotesPerRun,
     targetValues.join(','),
     transferValues.join(','),
   ].join('|');

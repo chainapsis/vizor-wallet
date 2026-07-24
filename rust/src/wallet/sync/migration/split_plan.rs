@@ -84,13 +84,14 @@ pub(crate) struct PaddedDenominationPlan {
 /// This mirrors the upstream backend's coupling between denomination selection
 /// and preparation layout. The preparation planner is consulted after every
 /// candidate note, so exact-note reuse, consolidation, fanout, and their real
-/// padded transaction fees all affect which denominations fit.
+/// padded transaction fees all affect which denominations fit. Planning stops
+/// only when the remaining balance cannot fund another canonical migration
+/// note and its preparation cost.
 pub(crate) fn plan_padded_denominations(
     input_values: &[u64],
     fee_per_stage_zatoshi: u64,
     migration_fee_zatoshi: u64,
     minimum_output_zatoshi: u64,
-    max_notes: usize,
 ) -> Result<Option<PaddedDenominationPlan>, String> {
     let positive_input_indices = input_values
         .iter()
@@ -139,7 +140,7 @@ pub(crate) fn plan_padded_denominations(
     let mut funding_values = Vec::new();
     let mut preparation = PreparationPlan::from_parts(Vec::new(), Vec::new());
 
-    while crossing_values.len() < max_notes {
+    loop {
         let funding_total = checked_sum(&funding_values, "Migration funding total overflow")?;
         let prep_fees = fee_per_stage_zatoshi
             .checked_mul(
@@ -415,7 +416,7 @@ mod tests {
 
     #[test]
     fn reuses_an_exact_funding_note_without_a_preparation_transaction() {
-        let plan = plan_padded_denominations(&[funding(100 * ZEC)], PREP_FEE, MIGRATION_FEE, 1, 50)
+        let plan = plan_padded_denominations(&[funding(100 * ZEC)], PREP_FEE, MIGRATION_FEE, 1)
             .unwrap()
             .unwrap();
 
@@ -434,13 +435,25 @@ mod tests {
     }
 
     #[test]
+    fn reuses_all_exact_funding_notes_beyond_the_old_run_cap() {
+        let inputs = vec![funding(10_000 * ZEC); 65];
+        let plan = plan_padded_denominations(&inputs, PREP_FEE, MIGRATION_FEE, 1)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(plan.denominations.migration_outputs.len(), inputs.len());
+        assert_eq!(plan.direct_migration_inputs.len(), inputs.len());
+        assert!(plan.stages.is_empty());
+        assert_eq!(plan.denominations.orchard_change, None);
+    }
+
+    #[test]
     fn combines_direct_funding_with_a_minted_funding_note() {
         let plan = plan_padded_denominations(
             &[funding(100 * ZEC), funding(20 * ZEC) + PREP_FEE],
             PREP_FEE,
             MIGRATION_FEE,
             1,
-            50,
         )
         .unwrap()
         .unwrap();
@@ -463,7 +476,7 @@ mod tests {
         let preparation_transaction_count = 5u64;
         let input =
             note_count as u64 * funding(10_000 * ZEC) + preparation_transaction_count * PREP_FEE;
-        let plan = plan_padded_denominations(&[input], PREP_FEE, MIGRATION_FEE, 1, note_count)
+        let plan = plan_padded_denominations(&[input], PREP_FEE, MIGRATION_FEE, 1)
             .unwrap()
             .unwrap();
 
@@ -495,7 +508,7 @@ mod tests {
     #[test]
     fn every_preparation_transaction_respects_actions_and_value() {
         let inputs = vec![7 * ZEC; 40];
-        let plan = plan_padded_denominations(&inputs, PREP_FEE, MIGRATION_FEE, 1, 50)
+        let plan = plan_padded_denominations(&inputs, PREP_FEE, MIGRATION_FEE, 1)
             .unwrap()
             .unwrap();
 

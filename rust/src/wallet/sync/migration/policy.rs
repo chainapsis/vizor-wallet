@@ -9,7 +9,6 @@ pub(crate) const ZIP318_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 144;
 pub(crate) const ZIP318_TRANSFER_MAX_DELAY_BLOCKS: u32 = 576;
 pub(crate) const REGTEST_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 1;
 pub(crate) const REGTEST_TRANSFER_MAX_DELAY_BLOCKS: u32 = 4;
-pub(crate) const MIGRATION_MAX_PREPARED_NOTES_PER_RUN: usize = 64;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 // Mirrors the per-child ZIP-317 migration fee estimate used by send planning:
 // 3 logical actions (a 2-action padded Orchard bundle and a 1-action
