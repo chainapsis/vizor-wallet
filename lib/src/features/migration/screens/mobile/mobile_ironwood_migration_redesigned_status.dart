@@ -535,7 +535,7 @@ class _MobileMigrationRedesignedStatusState
       completedBatches: batchProgress.completedBatches,
       totalBatches: batchProgress.totalBatches,
       completedRingSegments: _completedRingSegments(widget.status),
-      currentSigningPartIndices: _currentSigningPartIndices(widget.status),
+      currentSigningPartIndices: _currentSigningRingSegments(widget.status),
       migratedAmountText: _migratedAmountText(widget.status),
       totalAmountText: _totalAmountText(widget.status),
       availableAmountText: _availableAmountText(accountUuid),
@@ -830,12 +830,19 @@ class _MobileMigrationRedesignedStatusState
           index,
       };
     }
-    final ordered = [...status.parts]
-      ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
+    final stateByPartIndex = {
+      for (final part in status.parts) part.partIndex: part.state,
+    };
+    final partOrder = _migrationRingPartOrder(status);
     return {
-      for (var index = 0; index < ordered.length; index++)
-        if (ordered[index].state == rust_sync.MigrationPartState.completed)
-          index,
+      for (
+        var displayIndex = 0;
+        displayIndex < partOrder.length;
+        displayIndex++
+      )
+        if (stateByPartIndex[partOrder[displayIndex]] ==
+            rust_sync.MigrationPartState.completed)
+          displayIndex,
     };
   }
 
@@ -1020,34 +1027,51 @@ class _MobileMigrationRedesignedStatusState
     );
   }
 
-  Set<int> _currentSigningPartIndices(rust_sync.MigrationStatus status) {
-    return status.currentSigningPartIndices?.toSet() ?? const {};
+  List<int> _migrationRingPartOrder(rust_sync.MigrationStatus status) {
+    final totalParts = _totalParts(status);
+    final orderedParts = _orderedMobileMigrationParts(status.parts);
+    final partIndices = orderedParts.map((part) => part.partIndex).toSet();
+    final hasCompletePartOrder =
+        orderedParts.length == totalParts &&
+        partIndices.length == totalParts &&
+        partIndices.every((partIndex) => partIndex < totalParts);
+    return hasCompletePartOrder
+        ? [for (final part in orderedParts) part.partIndex]
+        : List<int>.generate(totalParts, (index) => index);
+  }
+
+  Set<int> _currentSigningRingSegments(rust_sync.MigrationStatus status) {
+    final signingPartIndices =
+        status.currentSigningPartIndices?.toSet() ?? const <int>{};
+    final partOrder = _migrationRingPartOrder(status);
+    return {
+      for (
+        var displayIndex = 0;
+        displayIndex < partOrder.length;
+        displayIndex++
+      )
+        if (signingPartIndices.contains(partOrder[displayIndex])) displayIndex,
+    };
   }
 
   List<BigInt>? _migrationRingSegmentValues(rust_sync.MigrationStatus status) {
     final totalParts = _totalParts(status);
     final targetValues = status.targetValuesZatoshi;
-    final values = targetValues.length == totalParts
-        ? List<BigInt>.of(targetValues)
-        : null;
-    if (status.parts.isEmpty) return values;
-
-    final orderedParts = [...status.parts]
-      ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
-    final hasCompletePartValues =
-        orderedParts.length == totalParts &&
-        orderedParts.indexed.every((entry) => entry.$2.partIndex == entry.$1);
-    if (hasCompletePartValues) {
-      return [for (final part in orderedParts) part.valueZatoshi];
-    }
-    if (values == null) return null;
-
-    for (final part in status.parts) {
-      if (part.partIndex >= 0 && part.partIndex < totalParts) {
-        values[part.partIndex] = part.valueZatoshi;
+    final valueByPartIndex = {
+      for (final part in status.parts) part.partIndex: part.valueZatoshi,
+    };
+    final values = <BigInt>[];
+    for (final partIndex in _migrationRingPartOrder(status)) {
+      final partValue = valueByPartIndex[partIndex];
+      if (partValue != null) {
+        values.add(partValue);
+      } else if (partIndex < targetValues.length) {
+        values.add(targetValues[partIndex]);
+      } else {
+        return null;
       }
     }
-    return values;
+    return values.length == totalParts ? values : null;
   }
 
   String _migratedAmountText(rust_sync.MigrationStatus status) {
