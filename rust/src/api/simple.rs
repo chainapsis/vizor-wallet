@@ -15,3 +15,15 @@ pub fn init_app() {
     // "no process-level CryptoProvider installed".
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
+
+/// Keep wallet consensus parameters aligned with the local Ironwood regtest
+/// node. Production builds leave the default activation-at-height-1 behavior.
+pub fn configure_regtest_ironwood_activation_height(height: u32) -> Result<(), String> {
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(height)
+}
+
+/// Enables Regtest-speed migration timing on Testnet only. Mainnet and
+/// Regtest consensus behavior are unaffected.
+pub fn configure_fast_testnet_migration(enabled: bool) {
+    crate::wallet::sync::configure_fast_testnet_migration(enabled);
+}

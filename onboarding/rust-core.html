@@ -16,9 +16,9 @@
 <pre><code>rust/src/
   lib.rs                  # pub mod api, ffi, wallet, frb_generated
   frb_generated.rs        # FRB 자동 생성 글루 코드 (수정 금지)
-  ffi.rs                  # C FFI: zcash_run_full_sync(), zcash_cancel_sync()
+  ffi.rs                  # C FFI: Ironwood preparation operation/sync/advance
                           # api/ 밖에 위치 — FRB codegen이 픽업하지 않도록
-                          # Validates C strings, logs all errors, checks mode before starting.
+                          # Foreground sync와 별도 cancel/mode ownership 사용.
                           # Uses current_thread tokio runtime (inherits iOS .utility QoS)
   api/
     mod.rs                # API 모듈 선언 (simple, sync, wallet, keystone)
@@ -70,7 +70,7 @@
 
 <p><code>api/</code> 레이어가 FFI 경계이며, 파라미터를 파싱하고 <code>wallet/</code>에 위임하는 얇은 래퍼만 포함한다. <code>wallet/</code> 레이어에 실제 Zcash 로직이 들어있다.</p>
 
-<p><strong>두 가지 FFI 경로:</strong> Dart는 FRB를 통해 <code>api/sync.rs</code>의 <code>start_full_sync()</code>를 호출한다. iOS background에서는 Swift가 C FFI를 통해 <code>ffi.rs</code>의 <code>zcash_run_full_sync()</code>를 호출한다. 둘 다 내부적으로 <code>sync_engine::run_sync_inner()</code>를 실행한다.</p>
+<p><strong>두 가지 경계:</strong> 일반 wallet sync는 Dart가 FRB를 통해 <code>api/sync.rs</code>의 <code>start_full_sync()</code>를 호출한다. iOS native C FFI는 Ironwood migration preparation에만 사용하며, preparation 중 필요한 sync pass에서만 <code>sync_engine::run_sync_inner()</code>를 실행한다. 두 경로는 실제 sync 동안의 <code>SYNC_RUNNING</code>만 공유하고 cancel token과 desired mode는 분리한다.</p>
 
 <p><code>ffi.rs</code>가 <code>api/</code> 밖에 있는 이유: FRB codegen이 <code>api/</code> 하위의 모든 <code>pub fn</code>을 Dart 바인딩으로 변환하는데, C FFI 함수(<code>extern "C"</code>, <code>*const c_char</code> 등)는 FRB가 처리할 수 없다.</p>
 

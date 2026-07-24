@@ -5,6 +5,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -15,6 +17,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/screens/mobile/mobile_send_screen.dart';
 import 'package:zcash_wallet/src/features/send/widgets/send_recipient_resolver.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -168,6 +171,42 @@ class _FakeSyncNotifier extends SyncNotifier {
   );
 }
 
+class _MigrationSyncNotifier extends SyncNotifier {
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: 'account-1',
+    hasAccountScopedData: true,
+    spendableBalance: BigInt.from(500000000),
+    displaySpendableBalance: BigInt.from(500000000),
+    ironwoodBalance: BigInt.from(100000000),
+    totalBalance: BigInt.from(500000000),
+  );
+}
+
+final _activeMigrationStatus = MigrationStatus(
+  phase: 'broadcast_scheduled',
+  activeRunId: 'run-1',
+  targetValuesZatoshi: frb.Uint64List.fromList([100000000]),
+  preparedNoteCount: 1,
+  denominationConfirmationCount: 3,
+  denominationConfirmationTarget: 3,
+  denominationSplitCompletedCount: 1,
+  denominationSplitTotalCount: 1,
+  pendingTxCount: 1,
+  broadcastedTxCount: 0,
+  confirmedTxCount: 0,
+  totalCount: 1,
+  signedChildPcztCount: 1,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 50,
+  scheduleMeanDelayBlocks: 144,
+  scheduleMaxDelayBlocks: 576,
+  maxPreparedNotesPerRun: 64,
+  scheduledBroadcasts: const [],
+  parts: const [],
+);
+
 class _ControllableSnapshotSyncNotifier extends SyncNotifier {
   final _authoritative = Completer<void>();
 
@@ -229,6 +268,9 @@ Widget _app({
   MobileSendScanner? openScanner,
   String? initialRecipient,
   MobileSendAddressValidator? validateAddress,
+  SyncNotifier Function()? syncNotifier,
+  IronwoodHomeMigrationCtaState migrationCta =
+      const IronwoodHomeMigrationCtaState.hidden(),
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -250,7 +292,8 @@ Widget _app({
       appBootstrapProvider.overrideWithValue(
         _bootstrap(accountState: accountState),
       ),
-      syncProvider.overrideWith(_FakeSyncNotifier.new),
+      syncProvider.overrideWith(syncNotifier ?? _FakeSyncNotifier.new),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(migrationCta),
       zecMarketDataSourceProvider.overrideWithValue(
         const _FakeMarketDataSource(),
       ),
@@ -1504,6 +1547,27 @@ void main() {
     await _enterAmount(tester, '1.5');
     expect(find.text('Not enough ZEC'), findsNothing);
     expect(find.text('Finish & review'), findsOneWidget);
+  });
+
+  testWidgets('active migration limits Send to the Ironwood balance', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        syncNotifier: _MigrationSyncNotifier.new,
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _activeMigrationStatus,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _toAmountStep(tester, _shieldedAddress);
+
+    expect(find.text('1 ZEC'), findsOneWidget);
+    await _enterAmount(tester, '1.5');
+    expect(find.text('Not enough ZEC'), findsOneWidget);
   });
 
   testWidgets('the amount step Max action fills the estimated send amount', (

@@ -8,14 +8,16 @@ void main() {
       transparentBalance: BigInt.from(100),
       saplingBalance: BigInt.from(20),
       orchardBalance: BigInt.from(30),
+      ironwoodBalance: BigInt.from(40),
       transparentPendingBalance: BigInt.from(3),
       saplingPendingBalance: BigInt.from(4),
       orchardPendingBalance: BigInt.from(5),
+      ironwoodPendingBalance: BigInt.from(6),
       spendableBalance: BigInt.from(50),
-      totalBalance: BigInt.from(162),
+      totalBalance: BigInt.from(208),
     );
 
-    expect(state.pendingBalance, BigInt.from(12));
+    expect(state.pendingBalance, BigInt.from(18));
   });
 
   test('display spendable defaults to the authoritative balance', () {
@@ -155,9 +157,11 @@ void main() {
       transparent: BigInt.from(1),
       sapling: BigInt.from(2),
       orchard: BigInt.from(3),
+      ironwood: BigInt.zero,
       transparentPending: BigInt.from(4),
       saplingPending: BigInt.from(5),
       orchardPending: BigInt.from(6),
+      ironwoodPending: BigInt.zero,
       changePendingConfirmation: BigInt.from(7),
       valuePendingSpendability: BigInt.from(8),
       uneconomicValue: BigInt.from(9),
@@ -185,6 +189,39 @@ void main() {
     );
     expect(merged.recentTransactions, [tx]);
     expect(merged.canShieldTransparentBalance, isTrue);
+  });
+
+  test('fetched Ironwood-only balance feeds the spendable display', () {
+    final balance = rust_sync.WalletBalance(
+      availability: rust_sync.WalletBalanceAvailability.available,
+      transparent: BigInt.zero,
+      sapling: BigInt.zero,
+      orchard: BigInt.zero,
+      ironwood: BigInt.from(100),
+      transparentPending: BigInt.zero,
+      saplingPending: BigInt.zero,
+      orchardPending: BigInt.zero,
+      ironwoodPending: BigInt.zero,
+      changePendingConfirmation: BigInt.zero,
+      valuePendingSpendability: BigInt.zero,
+      uneconomicValue: BigInt.zero,
+      spendable: BigInt.from(100),
+      total: BigInt.from(100),
+    );
+
+    final merged = SyncState().withFetchedAccountData(
+      balance: balance,
+      syncComplete: true,
+    );
+
+    expect(merged.orchardBalance, BigInt.zero);
+    expect(merged.ironwoodBalance, BigInt.from(100));
+    expect(merged.spendableBalance, BigInt.from(100));
+    expect(merged.displaySpendableBalance, BigInt.from(100));
+    expect(
+      merged.displaySpendableFreshness,
+      SpendableBalanceFreshness.authoritative,
+    );
   });
 
   test('incremental sync keeps the last completed spendable display', () {

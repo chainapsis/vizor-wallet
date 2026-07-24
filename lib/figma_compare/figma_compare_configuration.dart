@@ -15,10 +15,11 @@ class FigmaCompareConfiguration {
   factory FigmaCompareConfiguration.fromEnvironment({
     Size defaultLogicalSize = const Size(1080, 720),
     double defaultPixelRatio = 1,
+    String defaultScenarioId = 'pay-recipient',
   }) {
     const scenarioId = String.fromEnvironment(
       'FIGMA_COMPARE_SCENARIO',
-      defaultValue: 'pay-recipient',
+      defaultValue: '',
     );
     const themeName = String.fromEnvironment(
       'FIGMA_COMPARE_THEME',
@@ -49,7 +50,7 @@ class FigmaCompareConfiguration {
         : _positiveDouble(pixelRatioText, 'FIGMA_COMPARE_PIXEL_RATIO');
 
     return FigmaCompareConfiguration(
-      scenarioId: scenarioId,
+      scenarioId: scenarioId.isEmpty ? defaultScenarioId : scenarioId,
       themeMode: themeMode,
       outputPath: outputPath,
       logicalSize: Size(width, height),

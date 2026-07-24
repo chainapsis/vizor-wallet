@@ -68,11 +68,17 @@ abstract final class AppIcons {
   static const logOut = 'log_out';
   static const monitor = 'monitor';
   static const moneyBag = 'money_bag';
+  static const migrationFast = 'migration_fast';
+  static const migrationSign = 'migration_sign';
+  static const migrationSplit = 'migration_split';
+  static const migrationTimer = 'migration_timer';
   static const night = 'night';
+  static const notificationBell = 'notification_bell';
   static const options = 'options';
   static const paid = 'paid';
   static const paste = 'paste';
   static const plane = 'plane';
+  static const play = 'play';
   static const plus = 'plus';
   static const qr = 'qr';
   static const qrCodeFill = 'qr_code_fill';
@@ -98,6 +104,8 @@ abstract final class AppIcons {
   static const vizor = 'vizor';
   static const wallet = 'wallet';
   static const warning = 'warning';
+  static const warningCircle = 'warning_circle';
+  static const wrench = 'wrench';
   static const zcash = 'zcash';
   static const zcashCurrency = 'zcash_currency';
 }

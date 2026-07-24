@@ -108,6 +108,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
+  MigrationOutboxBatch dco_decode_box_autoadd_migration_outbox_batch(
+    dynamic raw,
+  );
+
+  @protected
+  OrchardMigrationImmediatePlan
+  dco_decode_box_autoadd_orchard_migration_immediate_plan(dynamic raw);
+
+  @protected
+  OrchardMigrationPrivatePlan
+  dco_decode_box_autoadd_orchard_migration_private_plan(dynamic raw);
+
+  @protected
   ResolvedVotingConfig dco_decode_box_autoadd_resolved_voting_config(
     dynamic raw,
   );
@@ -143,6 +156,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BundleLayout dco_decode_bundle_layout(dynamic raw);
+
+  @protected
+  ChainUpgradeActivationStatus dco_decode_chain_upgrade_activation_status(
+    dynamic raw,
+  );
+
+  @protected
+  ChainUpgradeStatus dco_decode_chain_upgrade_status(dynamic raw);
 
   @protected
   CompletedVoteChoiceView dco_decode_completed_vote_choice_view(dynamic raw);
@@ -201,10 +222,40 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
+  IronwoodMigrationResult dco_decode_ironwood_migration_result(dynamic raw);
+
+  @protected
   KeystoneAccountInfo dco_decode_keystone_account_info(dynamic raw);
 
   @protected
+  KeystoneActionSig dco_decode_keystone_action_sig(dynamic raw);
+
+  @protected
+  KeystoneMigrationMessage dco_decode_keystone_migration_message(dynamic raw);
+
+  @protected
+  KeystoneMigrationProofStatus dco_decode_keystone_migration_proof_status(
+    dynamic raw,
+  );
+
+  @protected
+  KeystoneMigrationSigningRequest dco_decode_keystone_migration_signing_request(
+    dynamic raw,
+  );
+
+  @protected
+  KeystoneMsgSig dco_decode_keystone_msg_sig(dynamic raw);
+
+  @protected
+  KeystoneSigResult dco_decode_keystone_sig_result(dynamic raw);
+
+  @protected
   KeystoneSignatureRecord dco_decode_keystone_signature_record(dynamic raw);
+
+  @protected
+  KeystoneSignedMigrationMessage dco_decode_keystone_signed_migration_message(
+    dynamic raw,
+  );
 
   @protected
   KeystoneSigningRequest dco_decode_keystone_signing_request(dynamic raw);
@@ -250,12 +301,46 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<KeystoneAccountInfo> dco_decode_list_keystone_account_info(dynamic raw);
 
   @protected
+  List<KeystoneActionSig> dco_decode_list_keystone_action_sig(dynamic raw);
+
+  @protected
+  List<KeystoneMigrationMessage> dco_decode_list_keystone_migration_message(
+    dynamic raw,
+  );
+
+  @protected
+  List<KeystoneMsgSig> dco_decode_list_keystone_msg_sig(dynamic raw);
+
+  @protected
   List<KeystoneSignatureRecord> dco_decode_list_keystone_signature_record(
     dynamic raw,
   );
 
   @protected
+  List<KeystoneSignedMigrationMessage>
+  dco_decode_list_keystone_signed_migration_message(dynamic raw);
+
+  @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<MigrationOutboxItem> dco_decode_list_migration_outbox_item(dynamic raw);
+
+  @protected
+  List<MigrationOutboxScheduleUpdate>
+  dco_decode_list_migration_outbox_schedule_update(dynamic raw);
+
+  @protected
+  List<MigrationPartStatus> dco_decode_list_migration_part_status(dynamic raw);
+
+  @protected
+  List<MigrationScheduledBroadcast>
+  dco_decode_list_migration_scheduled_broadcast(dynamic raw);
+
+  @protected
+  List<MigrationScheduledTransfer> dco_decode_list_migration_scheduled_transfer(
+    dynamic raw,
+  );
 
   @protected
   List<NextStepView> dco_decode_list_next_step_view(dynamic raw);
@@ -265,6 +350,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
+
+  @protected
+  Uint64List dco_decode_list_prim_u_64_strict(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -337,6 +425,46 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<WireEncryptedShare> dco_decode_list_wire_encrypted_share(dynamic raw);
 
   @protected
+  List<ZcashBatchMessageInput> dco_decode_list_zcash_batch_message_input(
+    dynamic raw,
+  );
+
+  @protected
+  List<ZcashBatchSignedMessage> dco_decode_list_zcash_batch_signed_message(
+    dynamic raw,
+  );
+
+  @protected
+  MigrationOutboxBatch dco_decode_migration_outbox_batch(dynamic raw);
+
+  @protected
+  MigrationOutboxItem dco_decode_migration_outbox_item(dynamic raw);
+
+  @protected
+  MigrationOutboxScheduleUpdate dco_decode_migration_outbox_schedule_update(
+    dynamic raw,
+  );
+
+  @protected
+  MigrationPartState dco_decode_migration_part_state(dynamic raw);
+
+  @protected
+  MigrationPartStatus dco_decode_migration_part_status(dynamic raw);
+
+  @protected
+  MigrationScheduledBroadcast dco_decode_migration_scheduled_broadcast(
+    dynamic raw,
+  );
+
+  @protected
+  MigrationScheduledTransfer dco_decode_migration_scheduled_transfer(
+    dynamic raw,
+  );
+
+  @protected
+  MigrationStatus dco_decode_migration_status(dynamic raw);
+
+  @protected
   NextStepView dco_decode_next_step_view(dynamic raw);
 
   @protected
@@ -348,6 +476,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  MigrationOutboxBatch? dco_decode_opt_box_autoadd_migration_outbox_batch(
+    dynamic raw,
+  );
+
+  @protected
+  OrchardMigrationImmediatePlan?
+  dco_decode_opt_box_autoadd_orchard_migration_immediate_plan(dynamic raw);
+
+  @protected
+  OrchardMigrationPrivatePlan?
+  dco_decode_opt_box_autoadd_orchard_migration_private_plan(dynamic raw);
 
   @protected
   ResolvedVotingConfig? dco_decode_opt_box_autoadd_resolved_voting_config(
@@ -370,6 +511,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  OrchardMigrationImmediatePlan dco_decode_orchard_migration_immediate_plan(
+    dynamic raw,
+  );
+
+  @protected
+  OrchardMigrationPrivatePlan dco_decode_orchard_migration_private_plan(
+    dynamic raw,
+  );
 
   @protected
   ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
@@ -540,6 +691,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   WireEncryptedShare dco_decode_wire_encrypted_share(dynamic raw);
 
   @protected
+  ZcashBatchMessageInput dco_decode_zcash_batch_message_input(dynamic raw);
+
+  @protected
+  ZcashBatchSignResult dco_decode_zcash_batch_sign_result(dynamic raw);
+
+  @protected
+  ZcashBatchSignedMessage dco_decode_zcash_batch_signed_message(dynamic raw);
+
+  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
@@ -638,6 +798,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
+  MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OrchardMigrationImmediatePlan
+  sse_decode_box_autoadd_orchard_migration_immediate_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OrchardMigrationPrivatePlan
+  sse_decode_box_autoadd_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ResolvedVotingConfig sse_decode_box_autoadd_resolved_voting_config(
     SseDeserializer deserializer,
   );
@@ -679,6 +856,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BundleLayout sse_decode_bundle_layout(SseDeserializer deserializer);
+
+  @protected
+  ChainUpgradeActivationStatus sse_decode_chain_upgrade_activation_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ChainUpgradeStatus sse_decode_chain_upgrade_status(
+    SseDeserializer deserializer,
+  );
 
   @protected
   CompletedVoteChoiceView sse_decode_completed_vote_choice_view(
@@ -755,12 +942,50 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
+  IronwoodMigrationResult sse_decode_ironwood_migration_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   KeystoneAccountInfo sse_decode_keystone_account_info(
     SseDeserializer deserializer,
   );
 
   @protected
+  KeystoneActionSig sse_decode_keystone_action_sig(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  KeystoneMigrationMessage sse_decode_keystone_migration_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  KeystoneMigrationProofStatus sse_decode_keystone_migration_proof_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  KeystoneMigrationSigningRequest sse_decode_keystone_migration_signing_request(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  KeystoneMsgSig sse_decode_keystone_msg_sig(SseDeserializer deserializer);
+
+  @protected
+  KeystoneSigResult sse_decode_keystone_sig_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   KeystoneSignatureRecord sse_decode_keystone_signature_record(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  KeystoneSignedMigrationMessage sse_decode_keystone_signed_migration_message(
     SseDeserializer deserializer,
   );
 
@@ -818,12 +1043,58 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<KeystoneActionSig> sse_decode_list_keystone_action_sig(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<KeystoneMigrationMessage> sse_decode_list_keystone_migration_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<KeystoneMsgSig> sse_decode_list_keystone_msg_sig(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<KeystoneSignatureRecord> sse_decode_list_keystone_signature_record(
     SseDeserializer deserializer,
   );
 
   @protected
+  List<KeystoneSignedMigrationMessage>
+  sse_decode_list_keystone_signed_migration_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<Uint8List> sse_decode_list_list_prim_u_8_strict(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<MigrationOutboxItem> sse_decode_list_migration_outbox_item(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<MigrationOutboxScheduleUpdate>
+  sse_decode_list_migration_outbox_schedule_update(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<MigrationPartStatus> sse_decode_list_migration_part_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<MigrationScheduledBroadcast>
+  sse_decode_list_migration_scheduled_broadcast(SseDeserializer deserializer);
+
+  @protected
+  List<MigrationScheduledTransfer> sse_decode_list_migration_scheduled_transfer(
     SseDeserializer deserializer,
   );
 
@@ -837,6 +1108,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
+
+  @protected
+  Uint64List sse_decode_list_prim_u_64_strict(SseDeserializer deserializer);
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -927,6 +1201,54 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<ZcashBatchMessageInput> sse_decode_list_zcash_batch_message_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<ZcashBatchSignedMessage> sse_decode_list_zcash_batch_signed_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationOutboxBatch sse_decode_migration_outbox_batch(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationOutboxItem sse_decode_migration_outbox_item(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationOutboxScheduleUpdate sse_decode_migration_outbox_schedule_update(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationPartState sse_decode_migration_part_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationPartStatus sse_decode_migration_part_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationScheduledBroadcast sse_decode_migration_scheduled_broadcast(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationScheduledTransfer sse_decode_migration_scheduled_transfer(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationStatus sse_decode_migration_status(SseDeserializer deserializer);
+
+  @protected
   NextStepView sse_decode_next_step_view(SseDeserializer deserializer);
 
   @protected
@@ -940,6 +1262,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  MigrationOutboxBatch? sse_decode_opt_box_autoadd_migration_outbox_batch(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OrchardMigrationImmediatePlan?
+  sse_decode_opt_box_autoadd_orchard_migration_immediate_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OrchardMigrationPrivatePlan?
+  sse_decode_opt_box_autoadd_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ResolvedVotingConfig? sse_decode_opt_box_autoadd_resolved_voting_config(
@@ -966,6 +1305,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  OrchardMigrationImmediatePlan sse_decode_orchard_migration_immediate_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OrchardMigrationPrivatePlan sse_decode_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ParsedSignedVotingPczt sse_decode_parsed_signed_voting_pczt(
@@ -1174,6 +1523,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ZcashBatchMessageInput sse_decode_zcash_batch_message_input(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ZcashBatchSignResult sse_decode_zcash_batch_sign_result(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ZcashBatchSignedMessage sse_decode_zcash_batch_signed_message(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -1291,6 +1655,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_migration_outbox_batch(
+    MigrationOutboxBatch self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_orchard_migration_private_plan(
+    OrchardMigrationPrivatePlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_resolved_voting_config(
     ResolvedVotingConfig self,
     SseSerializer serializer,
@@ -1340,6 +1722,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bundle_layout(BundleLayout self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_chain_upgrade_activation_status(
+    ChainUpgradeActivationStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_chain_upgrade_status(
+    ChainUpgradeStatus self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_completed_vote_choice_view(
@@ -1432,14 +1826,62 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
+  void sse_encode_ironwood_migration_result(
+    IronwoodMigrationResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_keystone_account_info(
     KeystoneAccountInfo self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_keystone_action_sig(
+    KeystoneActionSig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_migration_message(
+    KeystoneMigrationMessage self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_migration_proof_status(
+    KeystoneMigrationProofStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_migration_signing_request(
+    KeystoneMigrationSigningRequest self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_msg_sig(
+    KeystoneMsgSig self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_sig_result(
+    KeystoneSigResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_keystone_signature_record(
     KeystoneSignatureRecord self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_keystone_signed_migration_message(
+    KeystoneSignedMigrationMessage self,
     SseSerializer serializer,
   );
 
@@ -1513,14 +1955,68 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_keystone_action_sig(
+    List<KeystoneActionSig> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_keystone_migration_message(
+    List<KeystoneMigrationMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_keystone_msg_sig(
+    List<KeystoneMsgSig> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_keystone_signature_record(
     List<KeystoneSignatureRecord> self,
     SseSerializer serializer,
   );
 
   @protected
+  void sse_encode_list_keystone_signed_migration_message(
+    List<KeystoneSignedMigrationMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_list_prim_u_8_strict(
     List<Uint8List> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_migration_outbox_item(
+    List<MigrationOutboxItem> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_migration_outbox_schedule_update(
+    List<MigrationOutboxScheduleUpdate> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_migration_part_status(
+    List<MigrationPartStatus> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_migration_scheduled_broadcast(
+    List<MigrationScheduledBroadcast> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_migration_scheduled_transfer(
+    List<MigrationScheduledTransfer> self,
     SseSerializer serializer,
   );
 
@@ -1539,6 +2035,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_prim_u_32_strict(
     Uint32List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_u_64_strict(
+    Uint64List self,
     SseSerializer serializer,
   );
 
@@ -1654,6 +2156,66 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_zcash_batch_message_input(
+    List<ZcashBatchMessageInput> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_zcash_batch_signed_message(
+    List<ZcashBatchSignedMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_outbox_batch(
+    MigrationOutboxBatch self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_outbox_item(
+    MigrationOutboxItem self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_outbox_schedule_update(
+    MigrationOutboxScheduleUpdate self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_part_state(
+    MigrationPartState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_part_status(
+    MigrationPartStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_scheduled_broadcast(
+    MigrationScheduledBroadcast self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_scheduled_transfer(
+    MigrationScheduledTransfer self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_status(
+    MigrationStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_next_step_view(NextStepView self, SseSerializer serializer);
 
   @protected
@@ -1667,6 +2229,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_migration_outbox_batch(
+    MigrationOutboxBatch? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_orchard_migration_private_plan(
+    OrchardMigrationPrivatePlan? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_resolved_voting_config(
@@ -1695,6 +2275,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_list_prim_u_8_strict(
     Uint8List? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_orchard_migration_private_plan(
+    OrchardMigrationPrivatePlan self,
     SseSerializer serializer,
   );
 
@@ -1953,6 +2545,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_wire_encrypted_share(
     WireEncryptedShare self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zcash_batch_message_input(
+    ZcashBatchMessageInput self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zcash_batch_sign_result(
+    ZcashBatchSignResult self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_zcash_batch_signed_message(
+    ZcashBatchSignedMessage self,
     SseSerializer serializer,
   );
 }

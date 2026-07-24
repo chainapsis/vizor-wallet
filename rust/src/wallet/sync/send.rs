@@ -34,33 +34,51 @@
 //! components) and the provers log+fail loudly rather than produce a
 //! silently-invalid proof.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::convert::Infallible;
 use std::num::NonZeroUsize;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, OnceLock,
+};
+use std::thread;
+use std::time::Instant;
 
+use rand::{rngs::OsRng, Rng};
 use secrecy::{ExposeSecret, SecretVec};
-use transparent::{address::TransparentAddress, keys::TransparentKeyScope};
-use zcash_client_backend::data_api::wallet::input_selection::GreedyInputSelector;
+use shardtree::{
+    error::{QueryError, ShardTreeError},
+    store::ShardStore,
+};
+use tonic::Code;
+use transparent::{address::TransparentAddress, bundle::OutPoint, keys::TransparentKeyScope};
+use zcash_client_backend::data_api::wallet::input_selection::{
+    GreedyInputSelector, InputSelector, SpendPolicy,
+};
 use zcash_client_backend::{
     data_api::{
+        error::Error as WalletError,
         wallet::{
             self, create_proposed_transactions, propose_send_max_transfer, propose_shielding,
-            propose_transfer, ConfirmationsPolicy, TargetHeight,
+            ConfirmationsPolicy, TargetHeight,
         },
-        Account as _, Balance, InputSource, MaxSpendMode, NoteRetention, ReceivedNotes,
-        TargetValue, TransparentKeyOrigin, TransparentOutputFilter, WalletRead,
+        Account as _, AccountMeta, Balance, CoinbaseFilter, InputSource, MaxSpendMode, NoteFilter,
+        NoteRetention, ReceivedNotes, TargetValue, TransparentKeyOrigin, WalletCommitmentTrees,
+        WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
         DustOutputPolicy, SplitPolicy, StandardFeeRule, TransactionBalance,
     },
-    proposal::{Proposal, ShieldedInputs},
-    wallet::{OvkPolicy, ReceivedNote},
+    proposal::{Proposal, ProposalError, ShieldedInputs},
+    wallet::{Note, OvkPolicy, ReceivedNote, WalletTransparentOutput},
     zip321::{Payment, TransactionRequest},
 };
-use zcash_client_sqlite::AccountUuid;
+use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
 use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
+use zcash_primitives::transaction::TxVersion;
 use zcash_primitives::transaction::{
+    builder::{BuildConfig, Builder},
     fees::{
         transparent::InputSize as TransparentInputSize,
         zip317::{P2PKH_STANDARD_INPUT_SIZE, P2PKH_STANDARD_OUTPUT_SIZE},
@@ -70,20 +88,84 @@ use zcash_primitives::transaction::{
 };
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
-    consensus::{self, BlockHeight, Parameters},
+    consensus::{self, BlockHeight, NetworkConstants, Parameters},
     memo::{Memo, MemoBytes},
     value::Zatoshis,
     PoolType, ShieldedProtocol,
 };
 
-use crate::wallet::db::with_wallet_db_write_lock;
+use crate::wallet::db::{
+    open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::keys::parse_account_uuid;
+use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync_engine;
 
+use super::migration::{MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI, ZIP318_MAX_PARTS_PER_ANCHOR_COHORT};
 use super::{
     consume_stored_proposal, open_readonly_conn, open_wallet_db, open_wallet_db_for_read,
     StoredProposal, WalletDatabase, PROPOSAL_STORE,
 };
+
+const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
+
+#[derive(Clone, Copy)]
+struct MigrationBroadcastPolicy<'a> {
+    max_per_step: Option<usize>,
+    max_proofs_per_step: Option<usize>,
+    defer_broadcast_after_proving: bool,
+    cancel: Option<&'a AtomicBool>,
+}
+
+impl MigrationBroadcastPolicy<'_> {
+    const FOREGROUND: Self = Self {
+        max_per_step: None,
+        max_proofs_per_step: None,
+        defer_broadcast_after_proving: false,
+        cancel: None,
+    };
+
+    const ONE_FOREGROUND: Self = Self {
+        max_per_step: Some(1),
+        max_proofs_per_step: None,
+        defer_broadcast_after_proving: false,
+        cancel: None,
+    };
+
+    fn background_preparation(cancel: &AtomicBool) -> MigrationBroadcastPolicy<'_> {
+        MigrationBroadcastPolicy {
+            max_per_step: None,
+            max_proofs_per_step: None,
+            defer_broadcast_after_proving: false,
+            cancel: Some(cancel),
+        }
+    }
+
+    fn is_cancelled(self) -> bool {
+        self.cancel
+            .is_some_and(|cancel| cancel.load(Ordering::SeqCst))
+    }
+
+    fn limit(self, total: usize) -> usize {
+        self.max_per_step.unwrap_or(total).min(total)
+    }
+
+    fn proof_limit(self, total: usize) -> usize {
+        self.max_proofs_per_step.unwrap_or(total).min(total)
+    }
+
+    fn child_proof_batch(self) -> Self {
+        Self {
+            max_proofs_per_step: Some(ZIP318_MAX_PARTS_PER_ANCHOR_COHORT as usize),
+            ..self
+        }
+    }
+
+    fn should_defer_broadcast(self, proofs_created: usize) -> bool {
+        self.defer_broadcast_after_proving && proofs_created > 0
+    }
+}
 
 /// Result of a successful [`propose_send`]. `proposal_id` is the
 /// handle the caller feeds back to [`execute_proposal`] or
@@ -103,6 +185,88 @@ pub struct ExecuteProposalResult {
     pub broadcasted_count: u32,
     pub total_count: u32,
     pub message: Option<String>,
+}
+
+pub struct IronwoodMigrationResult {
+    pub txids: String,
+    pub status: String,
+    pub broadcasted_count: u32,
+    pub total_count: u32,
+    pub message: Option<String>,
+    pub fee_zatoshi: u64,
+    pub migrated_zatoshi: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrchardMigrationImmediatePlan {
+    pub total_input_zatoshi: u64,
+    pub fee_zatoshi: u64,
+    pub migrated_zatoshi: u64,
+    pub input_note_count: u32,
+}
+
+impl IronwoodMigrationResult {
+    pub(crate) async fn prepare_outbox(
+        db_path: &str,
+        lightwalletd_url: &str,
+        network: WalletNetwork,
+        account_uuid: &str,
+        pending_password: &[u8],
+        pending_salt_base64: &str,
+    ) -> Result<Self, String> {
+        prepare_orchard_migration_outbox(
+            db_path,
+            lightwalletd_url,
+            network,
+            account_uuid,
+            pending_password,
+            pending_salt_base64,
+        )
+        .await
+    }
+
+    pub(crate) fn export_outbox(
+        db_path: &str,
+        network: WalletNetwork,
+        account_uuid: &str,
+        pending_password: &[u8],
+        pending_salt_base64: &str,
+    ) -> Result<Option<super::migration::MigrationOutboxBatch>, String> {
+        super::migration::export_scheduled_migration_outbox(
+            db_path,
+            account_uuid,
+            network,
+            pending_password,
+            pending_salt_base64,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn reconcile_outbox_receipt(
+        db_path: &str,
+        network: WalletNetwork,
+        account_uuid: &str,
+        run_id: &str,
+        txid_hex: &str,
+        outcome: &str,
+        remote_height: u32,
+        response_message: Option<&str>,
+        schedule_updates: Vec<(String, u32, u32)>,
+        accepted_raw_transaction: Option<Vec<u8>>,
+    ) -> Result<(), String> {
+        reconcile_orchard_migration_outbox_receipt(
+            db_path,
+            network,
+            account_uuid,
+            run_id,
+            txid_hex,
+            outcome,
+            remote_height,
+            response_message,
+            schedule_updates,
+            accepted_raw_transaction,
+        )
+    }
 }
 
 pub(crate) struct SendMaxEstimateResult {
@@ -135,7 +299,69 @@ pub(crate) struct ShieldTransparentPcztResult {
     pub needs_sapling_params: bool,
 }
 
+pub(crate) struct OrchardMigrationPrivatePlan {
+    pub target_values_zatoshi: Vec<u64>,
+    pub total_input_zatoshi: u64,
+    pub total_migratable_zatoshi: u64,
+    pub orchard_change_zatoshi: Option<u64>,
+    pub denomination_split_fee_zatoshi: u64,
+    pub migration_fee_zatoshi: u64,
+    pub estimated_total_fee_zatoshi: u64,
+    pub planned_batch_count: u32,
+    pub denomination_split_stage_count: u32,
+    pub signing_batch_limit: u32,
+    pub schedule_mean_delay_blocks: u32,
+    pub schedule_max_delay_blocks: u32,
+    /// Estimated blocks from trusted preparation confirmation until the
+    /// boundary containing the final prepared note becomes usable.
+    pub proof_readiness_delay_blocks: u32,
+    /// Estimated absolute height at which the projected final prepared note
+    /// can first use a valid migration anchor.
+    pub estimated_proof_ready_height: Option<u32>,
+    pub max_prepared_notes_per_run: u32,
+    pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
+}
+
+pub(crate) struct KeystoneMigrationMessage {
+    pub id: String,
+    pub redacted_pczt: Vec<u8>,
+}
+
+pub(crate) struct KeystoneMigrationSigningRequest {
+    pub request_id: String,
+    pub messages: Vec<KeystoneMigrationMessage>,
+    pub signing_batch_limit: u32,
+}
+
+/// One signed message in the compact "signatures-only" response: the produced
+/// spend-authorization signatures for the request message `id`, correlated to
+/// the wallet's held proofs-PCZT for that id. Replaces the old full-signed-PCZT
+/// payload; the wallet re-applies these via [`super::pczt::apply_sigs_and_extract`].
+pub(crate) struct KeystoneSignedMigrationMessage {
+    pub id: String,
+    pub sigs: Vec<pczt::roles::signer::SpendAuthSignature>,
+}
+
+pub(crate) struct KeystoneMigrationProofStatus {
+    pub ready_count: u32,
+    pub total_count: u32,
+    pub is_ready: bool,
+    pub is_failed: bool,
+    pub message: Option<String>,
+}
+
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
+const MIGRATION_NO_EXPIRY_HEIGHT: u32 = 0;
+const MIGRATION_ORCHARD_ACTION_COUNT: usize = 2;
+const MIGRATION_IRONWOOD_ACTION_COUNT: usize = 1;
+static ACTIVE_IRONWOOD_MIGRATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static KEYSTONE_DENOMINATION_REQUESTS: OnceLock<Mutex<HashMap<String, StoredDenominationPczt>>> =
+    OnceLock::new();
+static KEYSTONE_MIGRATION_REQUESTS: OnceLock<Mutex<HashMap<String, StoredMigrationPcztBatch>>> =
+    OnceLock::new();
+static KEYSTONE_SINGLE_QR_MIGRATION_REQUESTS: OnceLock<
+    Mutex<HashMap<String, StoredSingleQrMigrationPczt>>,
+> = OnceLock::new();
 
 struct RetainAllNotes;
 
@@ -145,6 +371,10 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
     }
 
     fn should_retain_orchard(&self, _: &ReceivedNote<NoteRef, orchard::note::Note>) -> bool {
+        true
+    }
+
+    fn should_retain_ironwood(&self, _: &ReceivedNote<NoteRef, orchard::note::Note>) -> bool {
         true
     }
 }
@@ -170,6 +400,7 @@ impl FeeRule for ConservativeZip317FeeRule {
         sapling_input_count: usize,
         sapling_output_count: usize,
         orchard_action_count: usize,
+        ironwood_action_count: usize,
     ) -> Result<Zatoshis, Self::Error> {
         let transparent_input_sizes = transparent_input_sizes.into_iter().map(|size| match size {
             TransparentInputSize::Known(size) => {
@@ -186,6 +417,7 @@ impl FeeRule for ConservativeZip317FeeRule {
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
+            ironwood_action_count,
         )
     }
 }
@@ -198,6 +430,56 @@ impl Zip317FeeRule for ConservativeZip317FeeRule {
     fn grace_actions(&self) -> usize {
         StandardFeeRule::Zip317.grace_actions()
     }
+}
+
+fn canonical_migration_fee_zatoshi(
+    network: WalletNetwork,
+    target_height: u32,
+) -> Result<u64, String> {
+    ConservativeZip317FeeRule
+        .fee_required(
+            &network,
+            BlockHeight::from_u32(target_height),
+            std::iter::empty::<TransparentInputSize>(),
+            std::iter::empty::<usize>(),
+            0,
+            0,
+            MIGRATION_ORCHARD_ACTION_COUNT,
+            MIGRATION_IRONWOOD_ACTION_COUNT,
+        )
+        .map(u64::from)
+        .map_err(|e| format!("Calculate canonical migration fee: {e}"))
+}
+
+fn pending_migration_policy_rebuild_message(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<Option<String>, String> {
+    let canonical_fee = canonical_migration_fee_zatoshi(
+        network,
+        chain_tip_height
+            .checked_add(1)
+            .ok_or("Migration target height overflow")?,
+    )?;
+    let stale_fee_count =
+        super::migration::noncanonical_unconfirmed_fee_count(db_path, run_id, canonical_fee)?;
+    if stale_fee_count > 0 {
+        return Ok(Some(format!(
+            "{stale_fee_count} migration transaction(s) use an outdated canonical fee. Review and approve a fresh schedule for the remaining Orchard balance."
+        )));
+    }
+
+    let externally_spent =
+        super::migration::scheduled_inputs_spent_by_mined_transactions(db_path, run_id)?;
+    if !externally_spent.is_empty() {
+        return Ok(Some(format!(
+            "{} scheduled migration input(s) were spent outside this run. Review and approve a revised schedule for the remaining Orchard balance.",
+            externally_spent.len()
+        )));
+    }
+    Ok(None)
 }
 
 pub fn propose_send(
@@ -215,39 +497,40 @@ pub fn propose_send(
         return Err("Send flow id is required".to_string());
     }
 
-    let mut db = open_wallet_db_for_read(db_path, network)?;
+    let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-
-    let to: zcash_address::ZcashAddress = to_address
-        .parse()
-        .map_err(|e| format!("Bad address: {e}"))?;
-    let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
-    let memo_bytes = match memo_str {
-        Some(m) => {
-            let bytes = MemoBytes::from(
-                Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?,
-            );
-            Some(bytes)
-        }
-        None => None,
-    };
-
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
-    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
-        .map_err(|e| format!("Cannot create payment: {e:?}"))?;
-    let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
-
-    let proposal = propose_transfer::<_, _, _, _, Infallible>(
-        &mut db,
-        &network,
+    let proposed_tx_version = proposed_tx_version_for_wallet_db(&db, network, "creating a send")?;
+    let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+    let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
+    let spend_policy = ordinary_send_spend_policy(
+        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+    );
+    let pass1_proposal = propose_send_with_reserved_notes(
+        &db,
+        network,
         account_id,
-        &input_selector,
-        &change_strategy,
         request,
-        ConfirmationsPolicy::default(),
-        None,
-    )
-    .map_err(|e| format!("Propose failed: {e}"))?;
+        &BTreeSet::new(),
+        &migration_locks,
+        &spend_policy,
+        proposed_tx_version,
+        false,
+    )?;
+    let (proposal, stored_tx_version) =
+        propose_with_note_version_downgrade(pass1_proposal, proposed_tx_version, |tx_version| {
+            let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+            propose_send_with_reserved_notes(
+                &db,
+                network,
+                account_id,
+                request,
+                &BTreeSet::new(),
+                &migration_locks,
+                &spend_policy,
+                tx_version,
+                false,
+            )
+        });
 
     let needs_sapling = proposal
         .steps()
@@ -270,6 +553,9 @@ pub fn propose_send(
         id,
         StoredProposal {
             proposal,
+            proposed_tx_version: stored_tx_version,
+            // Regular sends stay padded; only migration children opt in.
+            unpadded_orchard_pool_bundles: false,
             network,
             account_id,
             send_flow_id: send_flow_id.to_string(),
@@ -294,47 +580,45 @@ pub fn estimate_fee(
     amount_zatoshi: u64,
     memo_str: Option<&str>,
 ) -> Result<u64, String> {
-    let mut db = open_wallet_db_for_read(db_path, network)?;
+    let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-
-    let to: zcash_address::ZcashAddress = to_address
-        .parse()
-        .map_err(|e| format!("Bad address: {e}"))?;
-    let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
-    let memo_bytes = match memo_str {
-        Some(m) => {
-            let bytes = MemoBytes::from(
-                Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?,
-            );
-            Some(bytes)
-        }
-        None => None,
-    };
-
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
-    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
-        .map_err(|e| format!("Cannot create payment: {e:?}"))?;
-    let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
-
-    let proposal = propose_transfer::<_, _, _, _, Infallible>(
-        &mut db,
-        &network,
+    let proposed_tx_version =
+        proposed_tx_version_for_wallet_db(&db, network, "estimating a send fee")?;
+    let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+    let migration_locks = super::migration::locked_migration_note_refs(db_path, account_uuid)?;
+    let spend_policy = ordinary_send_spend_policy(
+        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+    );
+    let pass1_proposal = propose_send_with_reserved_notes(
+        &db,
+        network,
         account_id,
-        &input_selector,
-        &change_strategy,
         request,
-        ConfirmationsPolicy::default(),
-        None,
-    )
-    .map_err(|e| format!("Propose failed: {e}"))?;
+        &BTreeSet::new(),
+        &migration_locks,
+        &spend_policy,
+        proposed_tx_version,
+        false,
+    )?;
+    // Same two-pass rule as `propose_send`, so the displayed estimate equals
+    // the stored proposal's fee.
+    let (proposal, _) =
+        propose_with_note_version_downgrade(pass1_proposal, proposed_tx_version, |tx_version| {
+            let request = build_send_request(to_address, amount_zatoshi, memo_str)?;
+            propose_send_with_reserved_notes(
+                &db,
+                network,
+                account_id,
+                request,
+                &BTreeSet::new(),
+                &migration_locks,
+                &spend_policy,
+                tx_version,
+                false,
+            )
+        });
 
-    let fee: u64 = proposal
-        .steps()
-        .iter()
-        .map(|step| u64::from(step.balance().fee_required()))
-        .sum();
-
-    Ok(fee)
+    Ok(proposal_fee_zatoshi(&proposal))
 }
 
 /// Estimate the maximum recipient amount for the current destination and memo.
@@ -352,7 +636,20 @@ pub(crate) fn estimate_send_max(
 ) -> Result<SendMaxEstimateResult, String> {
     let mut db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
-    let proposal = build_send_max_proposal(&mut db, network, account_id, to_address, memo_str)?;
+    // librustzcash's max-spend proposal path no longer takes a proposed tx
+    // version: the version (and its fee shape) is decided when the PCZT is
+    // created, so the quote stays aligned with what `propose_send` can build.
+    let spend_pools = ordinary_send_spend_pools(
+        super::migration::active_migration_run(db_path, account_uuid, network)?.is_some(),
+    );
+    let proposal = build_send_max_proposal(
+        &mut db,
+        network,
+        account_id,
+        to_address,
+        memo_str,
+        &spend_pools,
+    )?;
     summarize_send_max_proposal(&proposal)
 }
 
@@ -384,9 +681,7 @@ pub(crate) fn get_shield_transparent_status(
     }
 }
 
-/// Create a PCZT for shielding transparent funds on a hardware account.
-/// This mirrors `shield_transparent_balance` up to proposal creation, but
-/// stops before signing/broadcast and returns the base PCZT for Keystone.
+/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
 pub(crate) fn create_shield_transparent_pczt(
     db_path: &str,
     network: WalletNetwork,
@@ -395,6 +690,7 @@ pub(crate) fn create_shield_transparent_pczt(
     use zcash_client_backend::data_api::wallet::create_pczt_from_proposal as zcb_create_pczt;
 
     let shielding_threshold = shielding_threshold()?;
+
     with_wallet_db_write_lock("send.create_shield_transparent_pczt", || {
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
@@ -402,25 +698,38 @@ pub(crate) fn create_shield_transparent_pczt(
             build_shielding_proposal(&mut db, network, account_id, shielding_threshold)?;
         let fee_zatoshi = proposal_fee_zatoshi(&proposal);
         let shielded_zatoshi = proposal_shielded_zatoshi(&proposal);
-        let needs_sapling_params = proposal
-            .steps()
-            .iter()
-            .any(|step| step.involves(PoolType::Shielded(ShieldedProtocol::Sapling)));
 
+        // The version-less creator pins V5; shielding must request V6
+        // explicitly once NU6.3 is active so the shielded output lands in the
+        // Ironwood pool (the fork derived this from the target height). Use
+        // the proposal's own target height rather than the synced-wallet
+        // probe: the shielding flow works from the chain tip alone.
+        let proposed_tx_version =
+            proposed_tx_version_for_send(network, proposal.min_target_height());
+        // The transaction version rides on the proposal now; `None` builds at
+        // the version implied by the target height.
+        let proposal = proposal.with_proposed_version(proposed_tx_version);
         let pczt = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
             &mut db,
             &network,
             account_id,
             OvkPolicy::Sender,
             &proposal,
+            // Keep the builder-derived expiry height.
+            None,
+            orchard::builder::BundleType::DEFAULT,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
+        let pczt_bytes = pczt
+            .serialize()
+            .map_err(|e| format!("Serialize shielding PCZT: {e:?}"))?;
+        ensure_transparent_shielding_pczt_targets_ironwood(&pczt_bytes)?;
 
         Ok(ShieldTransparentPcztResult {
-            pczt_bytes: pczt.serialize(),
+            pczt_bytes,
             fee_zatoshi,
             shielded_zatoshi,
-            needs_sapling_params,
+            needs_sapling_params: false,
         })
     })
 }
@@ -472,7 +781,6 @@ pub(crate) async fn shield_transparent_balance(
                 &wallet::SpendingKeys::from_unified_spending_key(usk),
                 OvkPolicy::Sender,
                 &proposal,
-                None,
             )
             .map_err(|e| format!("Create shielding TX failed: {e}"))?;
 
@@ -576,6 +884,12 @@ async fn execute_stored_proposal(
             let usk = UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32_index)
                 .map_err(|e| format!("USK derivation failed: {e:?}"))?;
             drop(seed);
+            // The transaction version rides on the proposal now; `None` builds
+            // at the version implied by the target height.
+            let proposal = stored
+                .proposal
+                .clone()
+                .with_proposed_version(stored.proposed_tx_version);
 
             let txids = match (spend_params_path, output_params_path) {
                 (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
@@ -588,8 +902,7 @@ async fn execute_stored_proposal(
                         &prover,
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
-                        &stored.proposal,
-                        None,
+                        &proposal,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -603,8 +916,7 @@ async fn execute_stored_proposal(
                         &output_prover,
                         &wallet::SpendingKeys::from_unified_spending_key(usk),
                         OvkPolicy::Sender,
-                        &stored.proposal,
-                        None,
+                        &proposal,
                     )
                     .map_err(|e| format!("Create TX failed: {e}"))?
                 }
@@ -619,6 +931,1037 @@ async fn execute_stored_proposal(
             .await
             .into_execute_result(),
     )
+}
+
+pub(crate) async fn migrate_orchard_to_ironwood(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    seed: SecretVec<u8>,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+) -> Result<IronwoodMigrationResult, String> {
+    let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+
+    if let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? {
+        match advance_staged_denomination_run(
+            db_path,
+            lightwalletd_url,
+            network,
+            account_uuid,
+            &run,
+            pending_password.as_slice(),
+            pending_salt_base64,
+            MigrationBroadcastPolicy::FOREGROUND,
+        )
+        .await?
+        {
+            StagedDenominationAdvance::Waiting(result) => {
+                drop(seed);
+                drop(migration_guard);
+                return Ok(result);
+            }
+            StagedDenominationAdvance::Ready => {
+                let chain_tip_height =
+                    u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+                        .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+                if let Some(message) = pending_migration_policy_rebuild_message(
+                    db_path,
+                    network,
+                    &run.run_id,
+                    chain_tip_height,
+                )? {
+                    drop(seed);
+                    super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+                    let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+                    let result = migration_result_from_pending_totals(
+                        totals,
+                        super::migration::PHASE_FAILED_TERMINAL,
+                        Some(message),
+                        run.target_values_zatoshi.len() as u32,
+                        run.target_values_zatoshi.iter().sum(),
+                    );
+                    drop(migration_guard);
+                    return Ok(result);
+                }
+                super::migration::mark_expired_pending_parts_for_resign(
+                    db_path,
+                    &run.run_id,
+                    chain_tip_height,
+                )?;
+                let recoveries =
+                    super::migration::pending_parts_needing_resign(db_path, &run.run_id)?;
+                if recoveries.is_empty() {
+                    drop(seed);
+                } else {
+                    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
+                    rebuild_expired_software_migration_parts(
+                        db_path,
+                        network,
+                        account_uuid,
+                        &run.run_id,
+                        recoveries,
+                        &usk,
+                        pending_password.as_slice(),
+                        pending_salt_base64,
+                    )?;
+                }
+                if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0 {
+                    let finalized = finalize_presigned_migration_children(
+                        db_path,
+                        network,
+                        account_uuid,
+                        &run.run_id,
+                        pending_password.as_slice(),
+                        pending_salt_base64,
+                        MigrationBroadcastPolicy::FOREGROUND.child_proof_batch(),
+                    )?;
+                    if finalized == 0 {
+                        let result = prepared_notes_not_spendable_result(
+                            run.target_values_zatoshi.len() as u32,
+                            run.target_values_zatoshi.iter().sum(),
+                        );
+                        drop(migration_guard);
+                        return Ok(result);
+                    }
+                }
+                let result = broadcast_due_scheduled_migration_txs(
+                    db_path,
+                    lightwalletd_url,
+                    network,
+                    &run.run_id,
+                    pending_password.as_slice(),
+                    pending_salt_base64,
+                    run.target_values_zatoshi.len() as u32,
+                    run.target_values_zatoshi.iter().sum(),
+                    MigrationBroadcastPolicy::FOREGROUND,
+                )
+                .await;
+                drop(migration_guard);
+                return result;
+            }
+        }
+    }
+
+    let signing_schedule = approved_schedule.clone();
+    let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
+        prepare_software_migration_run(db_path, network, account_uuid, seed, &signing_schedule)
+    })?;
+
+    let Some(prepared) = prepared else {
+        return Err(
+            "Create migration denominations failed: insufficient spendable Orchard funds"
+                .to_string(),
+        );
+    };
+
+    let PreparedSoftwareMigrationRun {
+        plan,
+        prepared_refs,
+        denomination_stages,
+        signed_children,
+        fee_zatoshi,
+        total_migratable_zatoshi,
+    } = prepared;
+    let prepared_count = u32::try_from(prepared_refs.len())
+        .map_err(|_| "Migration output count exceeds u32".to_string())?;
+    let run_id = super::migration::create_run_with_staged_denominations_and_signed_children(
+        db_path,
+        account_uuid,
+        network,
+        &plan,
+        &prepared_refs,
+        signed_children,
+        denomination_stages,
+        Some(&approved_schedule),
+        preparation_timing_policy,
+        pending_password.as_slice(),
+        pending_salt_base64,
+    )?;
+
+    let Some(broadcast) = broadcast_pending_denomination_stages(
+        db_path,
+        lightwalletd_url,
+        network,
+        &run_id,
+        pending_password.as_slice(),
+        pending_salt_base64,
+        MigrationBroadcastPolicy::FOREGROUND,
+    )
+    .await?
+    else {
+        return Err(
+            "Migration denomination split has no broadcastable root transaction".to_string(),
+        );
+    };
+    drop(migration_guard);
+
+    Ok(migration_result_from_split_broadcast(
+        broadcast,
+        prepared_count,
+        fee_zatoshi,
+        total_migratable_zatoshi,
+    ))
+}
+
+/// Performs the user-selected Immediate migration as one foreground
+/// Orchard-to-Ironwood transaction. Unlike the privacy migration this does
+/// not create denomination stages, a migration run, or scheduled children.
+pub(crate) async fn migrate_orchard_to_ironwood_immediately(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    seed: SecretVec<u8>,
+    approved_plan: OrchardMigrationImmediatePlan,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    if super::migration::active_migration_run(db_path, account_uuid, network)?.is_some() {
+        return Err("An Ironwood migration is already in progress for this account".to_string());
+    }
+
+    let (base_pczt, orchard_spend_action_indices, fee_zatoshi, migrated_zatoshi) =
+        with_wallet_db_write_lock("send.immediate_migration.build", || {
+            let mut db = open_wallet_db(db_path, network)?;
+            let account_id = parse_account_uuid(account_uuid)?;
+            let account = db
+                .get_account(account_id)
+                .map_err(|e| format!("{e}"))?
+                .ok_or("Account not found")?;
+            let ufvk = account
+                .ufvk()
+                .ok_or("Account cannot create an Immediate migration")?;
+            let account_derivation = account.source().key_derivation();
+            let orchard_fvk = ufvk
+                .orchard()
+                .cloned()
+                .ok_or("Orchard viewing key not available")?;
+            let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
+            let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
+            let (target_height, anchor_height) = db
+                .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+                .map_err(|e| format!("Failed to read anchor height: {e}"))?
+                .ok_or("Wallet must sync before migrating")?;
+            let orchard_notes =
+                select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+            let valued_notes = orchard_notes
+                .into_iter()
+                .map(|note| {
+                    let value = note
+                        .note_value()
+                        .map(u64::from)
+                        .map_err(|e| format!("{e}"))?;
+                    Ok((note, value))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let plan = immediate_migration_plan_for_values(
+                network,
+                target_height.into(),
+                valued_notes.iter().map(|(_, value)| *value),
+            )?
+            .ok_or(
+                "No spendable Orchard notes are available for Immediate migration".to_string(),
+            )?;
+            if plan != approved_plan {
+                return Err(
+                    "Immediate migration plan changed. Review the updated amount and fee."
+                        .to_string(),
+                );
+            }
+            let orchard_notes = valued_notes
+                .into_iter()
+                .filter_map(|(note, value)| (value > 0).then_some(note))
+                .collect::<Vec<_>>();
+            if orchard_notes.is_empty() {
+                return Err(
+                    "No spendable Orchard notes are available for Immediate migration".to_string(),
+                );
+            }
+            let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
+                &mut db,
+                network,
+                BlockHeight::from(anchor_height),
+                &orchard_notes,
+            )?;
+            let fee_rule = ConservativeZip317FeeRule;
+            let make_builder = |amount: Zatoshis| {
+                let mut builder = migration_child_builder(
+                    network,
+                    BlockHeight::from(target_height),
+                    BlockHeight::from(target_height),
+                    orchard_anchor.clone(),
+                )?;
+                for (note, merkle_path) in &orchard_inputs {
+                    builder
+                        .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
+                            orchard_fvk.clone(),
+                            *note,
+                            merkle_path.clone(),
+                        )
+                        .map_err(|e| format!("Add Immediate Orchard spend failed: {e}"))?;
+                }
+                builder
+                    .add_ironwood_output::<<ConservativeZip317FeeRule as FeeRule>::Error>(
+                        internal_ovk.clone(),
+                        recipient,
+                        amount,
+                        MemoBytes::empty(),
+                    )
+                    .map_err(|e| format!("Add Immediate Ironwood output failed: {e}"))?;
+                Ok::<_, String>(builder)
+            };
+            let minimum = Zatoshis::from_u64(MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI)
+                .map_err(|_| "Bad Immediate migration minimum output")?;
+            let fee = make_builder(minimum)?
+                .get_fee(&fee_rule)
+                .map_err(|e| format!("Estimate Immediate migration fee failed: {e}"))?;
+            if u64::from(fee) != plan.fee_zatoshi {
+                return Err("Immediate migration fee changed while building".to_string());
+            }
+            let amount = Zatoshis::from_u64(plan.migrated_zatoshi)
+                .map_err(|_| "Bad Immediate migration output amount")?;
+            let built = pczt_from_build_result(
+                make_builder(amount)?
+                    .build_for_pczt(rand_core::OsRng, &fee_rule)
+                    .map_err(|e| format!("Build Immediate migration PCZT failed: {e}"))?,
+                network,
+                account_derivation,
+                orchard_inputs.len(),
+                0,
+            )?;
+            Ok::<_, String>((
+                built.bytes,
+                built.orchard_spend_action_indices,
+                plan.fee_zatoshi,
+                plan.migrated_zatoshi,
+            ))
+        })?;
+    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
+    let signed =
+        sign_orchard_migration_pczt_with_usk(&base_pczt, &orchard_spend_action_indices, &usk)?;
+    let sigs = super::pczt::extract_required_compact_sigs_from_signed_pczt(&base_pczt, &signed)?;
+    super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
+    let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
+    let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
+    let response = match crate::wallet::sync_engine::send_transaction_with_status(
+        &mut client,
+        &extracted.raw_tx,
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(status) if status.code() == Code::DeadlineExceeded => {
+            let storage_message = match decrypt_and_store_migration_tx(
+                db_path,
+                network,
+                &extracted.raw_tx,
+            ) {
+                Ok(()) => {
+                    "The transaction was stored locally and will retry automatically during sync."
+                        .to_string()
+                }
+                Err(error) => format!("Local tracking also failed: {error}"),
+            };
+            return Ok(IronwoodMigrationResult {
+                txids: extracted.txid.to_string(),
+                status: CreatedBroadcastResult::PENDING_BROADCAST.to_string(),
+                broadcasted_count: 0,
+                total_count: 1,
+                message: Some(format!(
+                    "The Immediate migration broadcast timed out and may already be on the network. {storage_message}"
+                )),
+                fee_zatoshi,
+                migrated_zatoshi,
+            });
+        }
+        Err(status) => {
+            return Err(format!(
+                "Immediate migration broadcast failed before acceptance: {status}"
+            ));
+        }
+    };
+    if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
+        return Err(error);
+    }
+    let storage_error = decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx).err();
+
+    Ok(IronwoodMigrationResult {
+        txids: extracted.txid.to_string(),
+        status: super::migration::PHASE_BROADCASTING.to_string(),
+        broadcasted_count: 1,
+        total_count: 1,
+        message: storage_error.map(|error| {
+            format!(
+                "The Immediate migration was accepted, but local tracking failed: {error}. Sync will recover the transaction."
+            )
+        }),
+        fee_zatoshi,
+        migrated_zatoshi,
+    })
+}
+
+fn validate_unbroadcast_migration_recovery_candidates(
+    candidates: &[super::migration::UnbroadcastMigrationRecoveryCandidate],
+    chain_tip_height: u32,
+) -> Result<(), String> {
+    for candidate in candidates {
+        if candidate.status != "scheduled" {
+            return Err(format!(
+                "Migration transaction {} was already marked as broadcasted",
+                candidate.txid_hex
+            ));
+        }
+        let safe_recovery_height = candidate
+            .scheduled_height
+            .checked_add(UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS)
+            .ok_or("Migration recovery safety height overflow")?;
+        if chain_tip_height < safe_recovery_height {
+            return Err(format!(
+                "Migration recovery must wait until block {safe_recovery_height}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) async fn retire_unbroadcast_orchard_migration(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<(), String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let candidates = super::migration::unbroadcast_migration_recovery_candidates(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+    )?;
+    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| format!("Open migration recovery endpoint: {e}"))?;
+    let chain_tip = sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
+    let chain_tip_height =
+        u32::try_from(chain_tip.height).map_err(|_| "Migration recovery chain tip exceeds u32")?;
+    validate_unbroadcast_migration_recovery_candidates(&candidates, chain_tip_height)?;
+
+    for candidate in &candidates {
+        let txid = parse_txid_hex(&candidate.txid_hex)?;
+        match sync_engine::get_transaction(&mut client, txid.as_ref().to_vec()).await {
+            Ok(_) => {
+                return Err(format!(
+                    "Migration transaction {} is present in the mempool or chain",
+                    candidate.txid_hex
+                ));
+            }
+            Err(status) if status.code() == Code::NotFound => {}
+            Err(status) => {
+                return Err(format!(
+                    "Could not verify migration transaction {}: {status}",
+                    candidate.txid_hex
+                ));
+            }
+        }
+    }
+
+    super::migration::retire_run_for_rebuild(
+        db_path,
+        expected_run_id,
+        "The previous signed migration transactions were absent after their broadcast windows. Rebuilding with a new credential.",
+    )
+}
+
+async fn prepare_orchard_migration_outbox(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
+        return Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: super::migration::PHASE_COMPLETE.to_string(),
+            broadcasted_count: 0,
+            total_count: 0,
+            message: None,
+            fee_zatoshi: 0,
+            migrated_zatoshi: 0,
+        });
+    };
+
+    match advance_staged_denomination_run(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        &run,
+        pending_password,
+        pending_salt_base64,
+        MigrationBroadcastPolicy::FOREGROUND,
+    )
+    .await?
+    {
+        StagedDenominationAdvance::Waiting(result) => return Ok(result),
+        StagedDenominationAdvance::Ready => {}
+    }
+
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if let Some(message) =
+        pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
+    {
+        super::migration::retire_run_for_rebuild(db_path, &run.run_id, &message)?;
+        let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+        return Ok(migration_result_from_pending_totals(
+            totals,
+            super::migration::PHASE_FAILED_TERMINAL,
+            Some(message),
+            run.target_values_zatoshi.len() as u32,
+            run.target_values_zatoshi.iter().sum(),
+        ));
+    }
+    let expired_count = super::migration::mark_expired_pending_parts_for_resign(
+        db_path,
+        &run.run_id,
+        chain_tip_height,
+    )?;
+    if expired_count > 0 {
+        let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+        return Ok(migration_result_from_pending_totals(
+            totals,
+            super::migration::PHASE_READY_TO_MIGRATE,
+            Some(format!(
+                "{expired_count} migration transaction(s) need fresh signatures before outbox export."
+            )),
+            run.target_values_zatoshi.len() as u32,
+            run.target_values_zatoshi.iter().sum(),
+        ));
+    }
+
+    if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0
+        && run_may_finalize_presigned_migration_children(&run)
+    {
+        finalize_presigned_migration_children(
+            db_path,
+            network,
+            account_uuid,
+            &run.run_id,
+            pending_password,
+            pending_salt_base64,
+            MigrationBroadcastPolicy::FOREGROUND.child_proof_batch(),
+        )?;
+    }
+
+    let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+    let status = super::migration::run_phase(db_path, &run.run_id)?;
+    let message = if super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0 {
+        "Migration proofs will continue when the next anchor is ready."
+    } else if totals.total_count > 0 {
+        "Migration transactions are prepared for the Swift outbox."
+    } else {
+        "No migration transactions are ready for outbox export yet."
+    };
+    Ok(migration_result_from_pending_totals(
+        totals,
+        &status,
+        Some(message.to_string()),
+        run.target_values_zatoshi.len() as u32,
+        run.target_values_zatoshi.iter().sum(),
+    ))
+}
+
+/// Advances only the denomination preparation graph for an existing migration.
+///
+/// This deliberately stops at `ready_to_migrate`: child proof creation stays
+/// in the foreground, while prepared migration transaction broadcast belongs
+/// to the separate mobile outbox lane.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn advance_orchard_migration_preparation_for_run(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+    cancel: &AtomicBool,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
+        return Err("Ironwood migration preparation has no active run".to_string());
+    };
+    if run.run_id != expected_run_id {
+        return Err("Ironwood migration preparation run changed".to_string());
+    }
+
+    if run.phase != super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS {
+        return Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: run.phase.clone(),
+            broadcasted_count: 0,
+            total_count: run.target_values_zatoshi.len() as u32,
+            message: None,
+            fee_zatoshi: 0,
+            migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+        });
+    }
+
+    match advance_staged_denomination_run(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        &run,
+        pending_password.as_slice(),
+        pending_salt_base64,
+        MigrationBroadcastPolicy::background_preparation(cancel),
+    )
+    .await?
+    {
+        StagedDenominationAdvance::Waiting(result) => Ok(result),
+        StagedDenominationAdvance::Ready => {
+            let timing_policy =
+                super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
+            let proof_ready_height = super::migration::prepared_notes_proof_ready_height(
+                db_path,
+                &run.run_id,
+                network,
+                timing_policy,
+            )?
+            .ok_or("Prepared denomination notes are missing their mined height")?;
+            super::migration::set_proof_retry_height(db_path, &run.run_id, proof_ready_height)?;
+            Ok(IronwoodMigrationResult {
+                txids: String::new(),
+                status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
+                broadcasted_count: 0,
+                total_count: run.target_values_zatoshi.len() as u32,
+                message: None,
+                fee_zatoshi: 0,
+                migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+            })
+        }
+    }
+}
+
+pub async fn broadcast_due_orchard_migration_transactions(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+) -> Result<IronwoodMigrationResult, String> {
+    broadcast_due_orchard_migration_transactions_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        pending_password,
+        pending_salt_base64,
+        MigrationBroadcastPolicy::FOREGROUND,
+    )
+    .await
+}
+
+pub async fn broadcast_one_due_orchard_migration_transaction(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+) -> Result<IronwoodMigrationResult, String> {
+    broadcast_due_orchard_migration_transactions_inner(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        pending_password,
+        pending_salt_base64,
+        MigrationBroadcastPolicy::ONE_FOREGROUND,
+    )
+    .await
+}
+
+async fn broadcast_due_orchard_migration_transactions_inner(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
+        return Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: super::migration::PHASE_COMPLETE.to_string(),
+            broadcasted_count: 0,
+            total_count: 0,
+            message: None,
+            fee_zatoshi: 0,
+            migrated_zatoshi: 0,
+        });
+    };
+    if policy.is_cancelled() {
+        return Ok(cancelled_migration_result(&run));
+    }
+
+    // Reconcile chain changes before deciding whether an already-scheduled
+    // child is still valid. Independent due children should not miss their
+    // broadcast height while another denomination branch is still advancing.
+    super::migration::reconcile_denomination_stage_chain_state(db_path, &run.run_id)?;
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if super::migration::due_scheduled_pending_count(db_path, &run.run_id, chain_tip_height)? > 0 {
+        return broadcast_due_scheduled_migration_txs(
+            db_path,
+            lightwalletd_url,
+            network,
+            &run.run_id,
+            pending_password.as_slice(),
+            pending_salt_base64,
+            run.target_values_zatoshi.len() as u32,
+            run.target_values_zatoshi.iter().sum(),
+            policy,
+        )
+        .await;
+    }
+
+    match advance_staged_denomination_run(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        &run,
+        pending_password.as_slice(),
+        pending_salt_base64,
+        policy,
+    )
+    .await?
+    {
+        StagedDenominationAdvance::Waiting(result) => return Ok(result),
+        StagedDenominationAdvance::Ready => {}
+    }
+
+    let signed_child_count = super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
+    if signed_child_count > 0 {
+        if !run_may_finalize_presigned_migration_children(&run) {
+            return Ok(prepared_notes_not_spendable_result(
+                run.target_values_zatoshi.len() as u32,
+                run.target_values_zatoshi.iter().sum(),
+            ));
+        }
+        let finalized = finalize_presigned_migration_children(
+            db_path,
+            network,
+            account_uuid,
+            &run.run_id,
+            pending_password.as_slice(),
+            pending_salt_base64,
+            policy.child_proof_batch(),
+        )?;
+        if finalized == 0 || policy.should_defer_broadcast(finalized) {
+            return Ok(prepared_notes_not_spendable_result(
+                run.target_values_zatoshi.len() as u32,
+                run.target_values_zatoshi.iter().sum(),
+            ));
+        }
+    }
+
+    broadcast_due_scheduled_migration_txs(
+        db_path,
+        lightwalletd_url,
+        network,
+        &run.run_id,
+        pending_password.as_slice(),
+        pending_salt_base64,
+        run.target_values_zatoshi.len() as u32,
+        run.target_values_zatoshi.iter().sum(),
+        policy,
+    )
+    .await
+}
+
+include!("send/ironwood_migration.rs");
+
+fn parse_txid_hex(txid_hex: &str) -> Result<TxId, String> {
+    let bytes = hex::decode(txid_hex).map_err(|e| format!("Bad migration txid hex: {e}"))?;
+    let mut bytes: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| "Migration txid must be 32 bytes".to_string())?;
+    bytes.reverse();
+    Ok(TxId::from_bytes(bytes))
+}
+
+fn nu6_3_activation_height_u32(network: WalletNetwork) -> Result<u32, String> {
+    network
+        .activation_height(consensus::NetworkUpgrade::Nu6_3)
+        .map(u32::from)
+        .ok_or("NU6.3 activation height unavailable".to_string())
+}
+
+fn orchard_witnesses(
+    db: &mut WalletDatabase,
+    anchor_height: BlockHeight,
+    orchard_notes: &[ReceivedNote<ReceivedNoteId, orchard::Note>],
+) -> Result<
+    (
+        orchard::Anchor,
+        Vec<(orchard::Note, orchard::tree::MerklePath)>,
+    ),
+    String,
+> {
+    type WitnessError = WalletError<
+        (),
+        commitment_tree::Error,
+        (),
+        <ConservativeZip317FeeRule as FeeRule>::Error,
+        (),
+        ReceivedNoteId,
+    >;
+
+    let result: Result<_, WitnessError> = db.with_orchard_tree_mut(|orchard_tree| {
+        let anchor = orchard_tree
+            .root_at_checkpoint_id(&anchor_height)?
+            .ok_or(ProposalError::AnchorNotFound(anchor_height))?
+            .into();
+
+        let inputs = orchard_notes
+            .iter()
+            .map(|selected| {
+                orchard_tree
+                    .witness_at_checkpoint_id_caching(
+                        selected.note_commitment_tree_position(),
+                        &anchor_height,
+                    )
+                    .and_then(|witness| {
+                        witness.ok_or(ShardTreeError::Query(QueryError::CheckpointPruned))
+                    })
+                    .map(|merkle_path| (*selected.note(), merkle_path.into()))
+                    .map_err(WalletError::from)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok((anchor, inputs))
+    });
+    result.map_err(|e| format!("Read Orchard witnesses: {e:?}"))
+}
+
+fn migration_orchard_witnesses(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    anchor_boundary_height: BlockHeight,
+    orchard_notes: &[ReceivedNote<ReceivedNoteId, orchard::Note>],
+) -> Result<
+    (
+        orchard::Anchor,
+        Vec<(orchard::Note, orchard::tree::MerklePath)>,
+    ),
+    String,
+> {
+    if network != WalletNetwork::Regtest {
+        return orchard_witnesses(db, anchor_boundary_height, orchard_notes);
+    }
+
+    let newest_note_height = orchard_notes
+        .iter()
+        .filter_map(|note| note.mined_height())
+        .map(u32::from)
+        .max()
+        .ok_or("Prepared migration note mined height unavailable")?;
+    let boundary = u32::from(anchor_boundary_height);
+    let oldest_candidate = boundary
+        .saturating_sub(super::migration::ZIP318_ANCHOR_AGE_CAP)
+        .max(newest_note_height);
+    let mut last_error = None;
+
+    for checkpoint in (oldest_candidate..=boundary).rev() {
+        match orchard_witnesses(db, BlockHeight::from(checkpoint), orchard_notes) {
+            Ok(result) => return Ok(result),
+            Err(error) if is_orchard_witness_not_ready_error(&error) => {
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        "Read Orchard witnesses: no regtest checkpoint at or before anchor boundary".to_string()
+    }))
+}
+
+fn orchard_checkpoint_heights(db: &mut WalletDatabase) -> Result<Vec<u32>, String> {
+    let result: Result<Vec<u32>, ShardTreeError<commitment_tree::Error>> = db
+        .with_orchard_tree_mut(|tree| {
+            let checkpoint_count = tree
+                .store()
+                .checkpoint_count()
+                .map_err(ShardTreeError::Storage)?;
+            let mut heights = Vec::with_capacity(checkpoint_count);
+            tree.store()
+                .for_each_checkpoint(checkpoint_count, |height, _| {
+                    heights.push(u32::from(*height));
+                    Ok(())
+                })
+                .map_err(ShardTreeError::Storage)?;
+            Ok(heights)
+        });
+    result.map_err(|e| format!("Read Orchard checkpoint heights: {e:?}"))
+}
+
+fn representative_orchard_checkpoint(
+    checkpoint_heights: &[u32],
+    logical_boundary_height: u32,
+    note_mined_height: u32,
+) -> Option<u32> {
+    checkpoint_heights
+        .iter()
+        .copied()
+        .filter(|height| *height >= note_mined_height && *height <= logical_boundary_height)
+        .max()
+}
+
+fn available_orchard_anchor_candidates(
+    logical_boundaries: &[u32],
+    checkpoint_heights: &[u32],
+    note_mined_height: u32,
+) -> Vec<(u32, u32)> {
+    let mut seen_checkpoints = BTreeSet::new();
+    logical_boundaries
+        .iter()
+        .filter_map(|boundary| {
+            let checkpoint = representative_orchard_checkpoint(
+                checkpoint_heights,
+                *boundary,
+                note_mined_height,
+            )?;
+            // Several empty ZIP 318 buckets can share one Orchard root. Treat
+            // that root as one cohort instead of multiplying its draw weight
+            // and per-cohort allowance under different logical heights.
+            seen_checkpoints
+                .insert(checkpoint)
+                .then_some((*boundary, checkpoint))
+        })
+        .collect()
+}
+
+fn retain_orchard_checkpoint(
+    db: &mut WalletDatabase,
+    checkpoint_height: u32,
+) -> Result<(), String> {
+    let result: Result<(), ShardTreeError<commitment_tree::Error>> =
+        db.with_orchard_tree_mut(|tree| tree.ensure_retained(BlockHeight::from(checkpoint_height)));
+    result.map_err(|e| format!("Retain Orchard migration checkpoint: {e:?}"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn make_orchard_split_builder_with_type(
+    network: WalletNetwork,
+    target_height: u32,
+    orchard_anchor: orchard::Anchor,
+    orchard_inputs: &[(orchard::Note, orchard::tree::MerklePath)],
+    orchard_fvk: &orchard::keys::FullViewingKey,
+    internal_ovk: Option<orchard::keys::OutgoingViewingKey>,
+    recipient: orchard::Address,
+    outputs: &[u64],
+    memo: &MemoBytes,
+    bundle_type: orchard::builder::BundleType,
+) -> Result<Builder<WalletNetwork, ()>, String> {
+    let mut builder = Builder::new(
+        network,
+        BlockHeight::from(target_height),
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: Some(orchard_anchor),
+            ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+            // A denomination stage is an ordinary private Orchard-to-Orchard split;
+            // keep it padded like regular sends.
+            orchard_bundle_type: bundle_type,
+            ironwood_bundle_type: orchard::builder::BundleType::DEFAULT,
+        },
+    )
+    .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+
+    if network.is_nu_active(
+        zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
+        BlockHeight::from(target_height),
+    ) {
+        builder
+            .propose_version::<<ConservativeZip317FeeRule as FeeRule>::Error>(TxVersion::V6)
+            .map_err(|e| format!("Use V6 for Orchard denomination split PCZT: {e:?}"))?;
+    }
+
+    for (note, merkle_path) in orchard_inputs {
+        builder
+            .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
+                orchard_fvk.clone(),
+                *note,
+                merkle_path.clone(),
+            )
+            .map_err(|e| format!("Add Orchard denomination spend failed: {e}"))?;
+    }
+
+    for value in outputs {
+        builder
+            .add_orchard_change_output::<<ConservativeZip317FeeRule as FeeRule>::Error>(
+                orchard_fvk.clone(),
+                internal_ovk.clone(),
+                recipient,
+                Zatoshis::from_u64(*value).map_err(|_| "Bad denomination output value")?,
+                memo.clone(),
+            )
+            .map_err(|e| format!("Add Orchard denomination output failed: {e}"))?;
+    }
+
+    Ok(builder)
+}
+
+struct ActiveIronwoodMigration {
+    key: String,
+}
+
+impl ActiveIronwoodMigration {
+    fn acquire(db_path: &str, account_uuid: &str) -> Result<Self, String> {
+        let key = format!("{db_path}:{account_uuid}");
+        let mut active = active_ironwood_migrations()
+            .lock()
+            .map_err(|_| "Ironwood migration lock poisoned".to_string())?;
+
+        if !active.insert(key.clone()) {
+            log::warn!("migration finalizer: active migration guard already held");
+            return Err("An Ironwood migration is already running for this account".to_string());
+        }
+
+        Ok(Self { key })
+    }
+}
+
+impl Drop for ActiveIronwoodMigration {
+    fn drop(&mut self) {
+        if let Ok(mut active) = active_ironwood_migrations().lock() {
+            active.remove(&self.key);
+        }
+    }
+}
+
+fn active_ironwood_migrations() -> &'static Mutex<HashSet<String>> {
+    ACTIVE_IRONWOOD_MIGRATIONS.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 fn shielding_threshold() -> Result<Zatoshis, String> {
@@ -645,7 +1988,9 @@ fn build_shielding_proposal(
         .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
+    // Regular shielding transactions stay padded (`DEFAULT`); only migration
+    // children opt in to unpadded Orchard-pool bundles.
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, None, false);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -655,11 +2000,358 @@ fn build_shielding_proposal(
         &from_addrs,
         account_id,
         ConfirmationsPolicy::MIN,
-        TransparentOutputFilter::All,
+        CoinbaseFilter::AllTransparentOutputs,
     )
     .map_err(|e| format!("Shield proposal failed: {e}"))?;
 
     Ok((proposal, selected_value))
+}
+
+fn build_send_request(
+    to_address: &str,
+    amount_zatoshi: u64,
+    memo_str: Option<&str>,
+) -> Result<TransactionRequest, String> {
+    let to: zcash_address::ZcashAddress = to_address
+        .parse()
+        .map_err(|e| format!("Bad address: {e}"))?;
+    let value = Zatoshis::from_u64(amount_zatoshi).map_err(|_| "Bad amount")?;
+    let memo_bytes = match memo_str {
+        Some(m) => {
+            let bytes = MemoBytes::from(
+                Memo::from_bytes(m.as_bytes()).map_err(|e| format!("Bad memo: {e}"))?,
+            );
+            Some(bytes)
+        }
+        None => None,
+    };
+
+    let payment = Payment::new(to, Some(value), memo_bytes, None, None, vec![])
+        .map_err(|e| format!("Cannot create payment: {e:?}"))?;
+    TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))
+}
+
+fn propose_send_with_reserved_notes(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    account_id: AccountUuid,
+    request: TransactionRequest,
+    reserved: &BTreeSet<ReceivedNoteId>,
+    migration_locks: &BTreeSet<(String, u32)>,
+    spend_policy: &SpendPolicy,
+    proposed_tx_version: Option<TxVersion>,
+    unpadded_orchard_pool_bundles: bool,
+) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
+    let confirmations_policy = ConfirmationsPolicy::default();
+    let (target_height, anchor_height) = db
+        .get_target_and_anchor_heights(confirmations_policy.trusted())
+        .map_err(|e| format!("Read chain state for proposal: {e}"))?
+        .ok_or("Wallet must sync before creating a reserved batch")?;
+    let reserved_db = ReservedInputSource {
+        inner: db,
+        reserved,
+        migration_locks,
+    };
+    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(
+        None,
+        proposed_tx_version,
+        unpadded_orchard_pool_bundles,
+    );
+
+    input_selector
+        .propose_transaction(
+            &network,
+            &reserved_db,
+            target_height,
+            anchor_height,
+            confirmations_policy,
+            account_id,
+            request,
+            &change_strategy,
+            // Reserved-note sends never fall back to transparent UTXOs
+            // (the default policy permits shielded pools only).
+            spend_policy,
+            proposed_tx_version,
+        )
+        .map_err(|e| format!("Propose failed: {e}"))
+}
+
+fn ordinary_send_spend_pools(migration_active: bool) -> Vec<ShieldedProtocol> {
+    if migration_active {
+        vec![ShieldedProtocol::Ironwood]
+    } else {
+        vec![
+            ShieldedProtocol::Sapling,
+            ShieldedProtocol::Orchard,
+            ShieldedProtocol::Ironwood,
+        ]
+    }
+}
+
+fn ordinary_send_spend_policy(migration_active: bool) -> SpendPolicy {
+    SpendPolicy::shielded_pools(ordinary_send_spend_pools(migration_active))
+}
+
+fn proposal_selected_note_refs(
+    proposal: &Proposal<WalletFeeRule, ReceivedNoteId>,
+) -> impl Iterator<Item = ReceivedNoteId> + '_ {
+    proposal
+        .steps()
+        .iter()
+        .flat_map(|step| step.shielded_inputs().into_iter())
+        .flat_map(|inputs| inputs.notes().iter())
+        .map(|note| *note.internal_note_id())
+}
+
+#[derive(Default)]
+struct SelectedOrchardNoteVersions {
+    has_v2: bool,
+    has_v3: bool,
+}
+
+fn proposal_selected_orchard_note_versions<NoteRef>(
+    proposal: &Proposal<WalletFeeRule, NoteRef>,
+) -> SelectedOrchardNoteVersions {
+    let mut versions = SelectedOrchardNoteVersions::default();
+    for note in proposal.steps().iter().flat_map(|step| {
+        step.shielded_inputs()
+            .into_iter()
+            .flat_map(|inputs| inputs.notes().iter())
+    }) {
+        if let Note::Orchard { note, .. } = note.note() {
+            match note.version() {
+                orchard::note::NoteVersion::V2 => versions.has_v2 = true,
+                orchard::note::NoteVersion::V3 => versions.has_v3 = true,
+            }
+        }
+    }
+    versions
+}
+
+/// Whether any proposal step pays a shielded-**Orchard** recipient.
+///
+/// Only *payment* outputs are considered: `payment_pools()` maps the request's
+/// payment indices to their pool, and change is not represented there. This is
+/// what makes the legacy-V5 downgrade safe — a legacy `orchard_v3` bundle at
+/// NU6.3 has cross-address transfers disabled, so it can carry a self-address
+/// Orchard *change* output but not an Orchard *payment* to another party;
+/// building such a payment as V5 fails with `CrossAddressDisabled`. If this
+/// returns true the send must stay V6.
+fn proposal_has_orchard_payment<NoteRef>(proposal: &Proposal<WalletFeeRule, NoteRef>) -> bool {
+    proposal.steps().iter().any(|step| {
+        step.payment_pools()
+            .values()
+            .any(|pool| *pool == PoolType::Shielded(ShieldedProtocol::Orchard))
+    })
+}
+
+/// Pass-2 decision for the ordinary send/estimate paths: a pass-1 V6 proposal
+/// is downgraded to a legacy V5 transaction iff every selected Orchard note is
+/// legacy (V2) — so the change note stays V2 — and no step pays a
+/// shielded-Orchard recipient. V3-only and mixed V2+V3 selections keep V6 with
+/// an Ironwood (V3) change note — splitting mixed change per spent-note version
+/// is a deliberate future item — and pre-activation proposals (`initial` of
+/// `None`) are never rewritten.
+///
+/// `has_orchard_payment` gates out sends whose recipient is a shielded-Orchard
+/// address: the V5 proposal would build fine but fail at execution with
+/// `CrossAddressDisabled`, and that failure is past the point
+/// [`propose_with_note_version_downgrade`]'s re-proposal fallback can catch it,
+/// so such sends must stay V6. Orchard *change* is unaffected (it is not a
+/// payment pool), so an Orchard→transparent V2 send still downgrades.
+fn should_downgrade_send_to_legacy_v5(
+    initial: Option<TxVersion>,
+    versions: &SelectedOrchardNoteVersions,
+    has_orchard_payment: bool,
+) -> bool {
+    matches!(initial, Some(TxVersion::V6))
+        && versions.has_v2
+        && !versions.has_v3
+        && !has_orchard_payment
+}
+
+/// Shared pass-2 of [`propose_send`] and [`estimate_fee`]: when
+/// [`should_downgrade_send_to_legacy_v5`]
+/// holds for the pass-1 proposal, re-propose as legacy V5 via `repropose` and
+/// return that proposal with `Some(TxVersion::V5)`. Any re-proposal error keeps
+/// the pass-1 (V6) proposal and version instead of failing the send;
+/// `repropose` is a closure so tests can exercise that fallback directly.
+///
+/// (`estimate_send_max` deliberately does NOT funnel through here — see the
+/// note there for why the quoted max stays at the V6 ceiling.)
+///
+/// Callers must build with the *returned* version (applied to the proposal
+/// via `with_proposed_version` at PCZT/transaction construction) so the
+/// built transaction matches the downgrade decision made here.
+fn propose_with_note_version_downgrade<NoteRef, F>(
+    pass1_proposal: Proposal<WalletFeeRule, NoteRef>,
+    pass1_tx_version: Option<TxVersion>,
+    repropose: F,
+) -> (Proposal<WalletFeeRule, NoteRef>, Option<TxVersion>)
+where
+    F: FnOnce(Option<TxVersion>) -> Result<Proposal<WalletFeeRule, NoteRef>, String>,
+{
+    if !should_downgrade_send_to_legacy_v5(
+        pass1_tx_version,
+        &proposal_selected_orchard_note_versions(&pass1_proposal),
+        proposal_has_orchard_payment(&pass1_proposal),
+    ) {
+        return (pass1_proposal, pass1_tx_version);
+    }
+    match repropose(Some(TxVersion::V5)) {
+        Ok(proposal) => (proposal, Some(TxVersion::V5)),
+        Err(e) => {
+            log::warn!("Legacy-V5 re-proposal failed; keeping the pass-1 V6 proposal: {e}");
+            (pass1_proposal, pass1_tx_version)
+        }
+    }
+}
+
+struct ReservedInputSource<'a> {
+    inner: &'a WalletDatabase,
+    reserved: &'a BTreeSet<ReceivedNoteId>,
+    migration_locks: &'a BTreeSet<(String, u32)>,
+}
+
+impl ReservedInputSource<'_> {
+    fn merged_excludes(&self, exclude: &[ReceivedNoteId]) -> Vec<ReceivedNoteId> {
+        let mut merged = exclude.to_vec();
+        merged.extend(self.reserved.iter().copied());
+        merged.sort_unstable();
+        merged.dedup();
+        merged
+    }
+
+    fn note_is_locked<N>(&self, note: &ReceivedNote<ReceivedNoteId, N>) -> bool {
+        let key = (
+            format!("{}", note.txid()).to_lowercase(),
+            note.output_index() as u32,
+        );
+        self.migration_locks.contains(&key)
+    }
+}
+
+impl InputSource for ReservedInputSource<'_> {
+    type Error = <WalletDatabase as InputSource>::Error;
+    type AccountId = <WalletDatabase as InputSource>::AccountId;
+    type NoteRef = <WalletDatabase as InputSource>::NoteRef;
+
+    fn get_spendable_note(
+        &self,
+        txid: &TxId,
+        protocol: ShieldedProtocol,
+        index: u32,
+        target_height: wallet::TargetHeight,
+    ) -> Result<Option<ReceivedNote<Self::NoteRef, Note>>, Self::Error> {
+        Ok(self
+            .inner
+            .get_spendable_note(txid, protocol, index, target_height)?
+            .filter(|note| !self.reserved.contains(note.internal_note_id()))
+            .filter(|note| !self.note_is_locked(note)))
+    }
+
+    fn select_spendable_notes(
+        &self,
+        account: Self::AccountId,
+        target_value: TargetValue,
+        sources: &[ShieldedProtocol],
+        target_height: wallet::TargetHeight,
+        confirmations_policy: ConfirmationsPolicy,
+        exclude: &[Self::NoteRef],
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
+        let selected = self.inner.select_spendable_notes(
+            account,
+            target_value,
+            sources,
+            target_height,
+            confirmations_policy,
+            &self.merged_excludes(exclude),
+        )?;
+        Ok(ReceivedNotes::new(
+            selected.sapling().to_vec(),
+            selected
+                .orchard()
+                .iter()
+                .filter(|note| !self.note_is_locked(note))
+                .cloned()
+                .collect(),
+            selected
+                .ironwood()
+                .iter()
+                .filter(|note| !self.note_is_locked(note))
+                .cloned()
+                .collect(),
+        ))
+    }
+
+    fn select_unspent_notes(
+        &self,
+        account: Self::AccountId,
+        sources: &[ShieldedProtocol],
+        target_height: wallet::TargetHeight,
+        exclude: &[Self::NoteRef],
+    ) -> Result<ReceivedNotes<Self::NoteRef>, Self::Error> {
+        let selected = self.inner.select_unspent_notes(
+            account,
+            sources,
+            target_height,
+            &self.merged_excludes(exclude),
+        )?;
+        Ok(ReceivedNotes::new(
+            selected.sapling().to_vec(),
+            selected
+                .orchard()
+                .iter()
+                .filter(|note| !self.note_is_locked(note))
+                .cloned()
+                .collect(),
+            selected
+                .ironwood()
+                .iter()
+                .filter(|note| !self.note_is_locked(note))
+                .cloned()
+                .collect(),
+        ))
+    }
+
+    fn get_account_metadata(
+        &self,
+        account: Self::AccountId,
+        selector: &NoteFilter,
+        target_height: wallet::TargetHeight,
+        exclude: &[Self::NoteRef],
+    ) -> Result<AccountMeta, Self::Error> {
+        self.inner.get_account_metadata(
+            account,
+            selector,
+            target_height,
+            &self.merged_excludes(exclude),
+        )
+    }
+
+    fn get_unspent_transparent_output(
+        &self,
+        outpoint: &OutPoint,
+        target_height: wallet::TargetHeight,
+    ) -> Result<Option<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
+        self.inner
+            .get_unspent_transparent_output(outpoint, target_height)
+    }
+
+    fn get_spendable_transparent_outputs(
+        &self,
+        address: &TransparentAddress,
+        target_height: wallet::TargetHeight,
+        confirmations_policy: ConfirmationsPolicy,
+        output_filter: CoinbaseFilter,
+    ) -> Result<Vec<WalletTransparentOutput<Self::AccountId>>, Self::Error> {
+        self.inner.get_spendable_transparent_outputs(
+            address,
+            target_height,
+            confirmations_policy,
+            output_filter,
+        )
+    }
 }
 
 fn build_send_max_proposal(
@@ -668,6 +2360,7 @@ fn build_send_max_proposal(
     account_id: AccountUuid,
     to_address: &str,
     memo_str: Option<&str>,
+    spend_pools: &[ShieldedProtocol],
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let to: zcash_address::ZcashAddress = to_address
         .parse()
@@ -689,7 +2382,13 @@ fn build_send_max_proposal(
 
     if matches!(recipient_address, Address::Transparent(_)) {
         return build_transparent_recipient_send_max_proposal(
-            db, network, account_id, to, memo_bytes, fee_rule,
+            db,
+            network,
+            account_id,
+            to,
+            memo_bytes,
+            fee_rule,
+            spend_pools,
         );
     }
 
@@ -697,7 +2396,7 @@ fn build_send_max_proposal(
         db,
         &network,
         account_id,
-        &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+        spend_pools,
         &fee_rule,
         to,
         memo_bytes,
@@ -707,6 +2406,39 @@ fn build_send_max_proposal(
     .map_err(|e| format!("Propose max failed: {e}"))
 }
 
+/// Pass-1 "ceiling" tx version for the wallet's current target height (see
+/// [`proposed_tx_version_for_send`]); the ordinary send paths may still
+/// downgrade it per [`should_downgrade_send_to_legacy_v5`].
+fn proposed_tx_version_for_wallet_db(
+    db: &WalletDatabase,
+    network: WalletNetwork,
+    context: &str,
+) -> Result<Option<TxVersion>, String> {
+    let confirmations_policy = ConfirmationsPolicy::default();
+    let (target_height, _) = db
+        .get_target_and_anchor_heights(confirmations_policy.trusted())
+        .map_err(|e| format!("Read chain state for {context}: {e}"))?
+        .ok_or_else(|| format!("Wallet must sync before {context}"))?;
+    Ok(proposed_tx_version_for_send(network, target_height))
+}
+
+/// Pass-1 "ceiling" tx version: `Some(V6)` once NU6.3 is active at the target
+/// height, before [`should_downgrade_send_to_legacy_v5`] is applied to the
+/// selected notes.
+fn proposed_tx_version_for_send(
+    network: WalletNetwork,
+    target_height: wallet::TargetHeight,
+) -> Option<TxVersion> {
+    if network.is_nu_active(
+        consensus::NetworkUpgrade::Nu6_3,
+        BlockHeight::from(target_height),
+    ) {
+        return Some(TxVersion::V6);
+    }
+
+    None
+}
+
 fn build_transparent_recipient_send_max_proposal(
     db: &mut WalletDatabase,
     network: WalletNetwork,
@@ -714,6 +2446,7 @@ fn build_transparent_recipient_send_max_proposal(
     to: zcash_address::ZcashAddress,
     memo_bytes: Option<MemoBytes>,
     fee_rule: WalletFeeRule,
+    spend_pools: &[ShieldedProtocol],
 ) -> Result<Proposal<WalletFeeRule, <WalletDatabase as InputSource>::NoteRef>, String> {
     let confirmations_policy = ConfirmationsPolicy::default();
     let (target_height, anchor_height) = db
@@ -725,7 +2458,7 @@ fn build_transparent_recipient_send_max_proposal(
         .select_spendable_notes(
             account_id,
             TargetValue::AllFunds(MaxSpendMode::MaxSpendable),
-            &[ShieldedProtocol::Sapling, ShieldedProtocol::Orchard],
+            spend_pools,
             target_height,
             confirmations_policy,
             &[],
@@ -757,13 +2490,27 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
         .map_err(|e| format!("Max input calculation failed: {e}"))?;
     let sapling_input_count = spendable_notes.sapling().len();
     let orchard_input_count = spendable_notes.orchard().len();
+    let ironwood_input_count = spendable_notes.ironwood().len();
 
     let sapling_output_count = sapling_crypto::builder::BundleType::DEFAULT
         .num_outputs(sapling_input_count, 0)
         .map_err(|e| format!("Max Sapling bundle size failed: {e:?}"))?;
+    // Count the two Orchard-family pools independently because V6 carries
+    // legacy Orchard and Ironwood in separate bundles.
     let orchard_action_count = ::orchard::builder::BundleType::DEFAULT
-        .num_actions(orchard_input_count, 0)
+        .num_actions(
+            ::orchard::bundle::BundleVersion::orchard_v2().default_flags(),
+            orchard_input_count,
+            0,
+        )
         .map_err(|e| format!("Max Orchard bundle size failed: {e:?}"))?;
+    let ironwood_action_count = ::orchard::builder::BundleType::DEFAULT
+        .num_actions(
+            ::orchard::bundle::BundleVersion::ironwood_v3().default_flags(),
+            ironwood_input_count,
+            0,
+        )
+        .map_err(|e| format!("Max Ironwood bundle size failed: {e:?}"))?;
 
     let fee = fee_rule
         .fee_required(
@@ -774,6 +2521,7 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
             sapling_input_count,
             sapling_output_count,
             orchard_action_count,
+            ironwood_action_count,
         )
         .map_err(|e| format!("Max fee calculation failed: {e}"))?;
 
@@ -788,7 +2536,7 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
     let request = TransactionRequest::new(vec![payment]).map_err(|e| format!("{e:?}"))?;
 
     let shielded_inputs = nonempty::NonEmpty::from_vec(spendable_notes.into_vec(&RetainAllNotes))
-        .map(|notes| ShieldedInputs::from_parts(anchor_height, notes))
+        .map(ShieldedInputs::from_parts)
         .ok_or("No shielded funds available to send")?;
 
     let balance = TransactionBalance::new(vec![], fee)
@@ -799,10 +2547,17 @@ fn build_transparent_recipient_send_max_proposal_from_notes<NoteRef>(
         BTreeMap::from([(0usize, PoolType::TRANSPARENT)]),
         vec![],
         Some(shielded_inputs),
+        anchor_height,
         balance,
         fee_rule,
         target_height,
+        // Matches the flow's proposal policy (see zip317_helper callers).
+        ConfirmationsPolicy::default(),
         false,
+        network.is_nu_active(
+            zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
+            BlockHeight::from(target_height),
+        ),
     )
     .map_err(|e| format!("Propose transparent max failed: {e}"))
 }
@@ -898,6 +2653,1309 @@ fn proposal_shielded_zatoshi(proposal: &Proposal<WalletFeeRule, Infallible>) -> 
         .sum()
 }
 
+fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Result<(), String> {
+    let pczt = pczt::Pczt::parse(pczt_bytes)
+        .map_err(|e| format!("Parse transparent shielding PCZT: {e:?}"))?;
+    if *pczt.global().tx_version() != zcash_protocol::constants::V6_TX_VERSION {
+        return Err("Transparent shielding PCZT must use transaction v6 after NU6.3.".to_string());
+    }
+    if pczt.ironwood().actions().is_empty() {
+        return Err("Transparent shielding PCZT did not target Ironwood.".to_string());
+    }
+    if !pczt.orchard().actions().is_empty() {
+        return Err(
+            "Transparent shielding PCZT unexpectedly contains legacy Orchard actions.".to_string(),
+        );
+    }
+
+    Ok(())
+}
+
+fn same_prepared_note_without_nullifier(
+    lhs: &super::migration::PreparedOrchardNoteRef,
+    rhs: &super::migration::PreparedOrchardNoteRef,
+) -> bool {
+    lhs.txid_hex.eq_ignore_ascii_case(&rhs.txid_hex)
+        && lhs.output_index == rhs.output_index
+        && lhs.value_zatoshi == rhs.value_zatoshi
+        && lhs.note_version == rhs.note_version
+}
+
+fn orchard_anchor_and_witnesses_for_denomination_inputs(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    inputs: &[super::migration::DenominationStageInputRef],
+) -> Result<Option<(orchard::Anchor, Vec<(String, orchard::tree::MerklePath)>)>, String> {
+    if inputs.is_empty() {
+        return Err("Denomination stage has no inputs".to_string());
+    }
+
+    let mut db = open_wallet_db(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("{e}"))?
+        .ok_or("Account not found")?;
+    let orchard_fvk = account
+        .ufvk()
+        .and_then(|ufvk| ufvk.orchard().cloned())
+        .ok_or("Orchard viewing key not available")?;
+    let (_, anchor_height) = db
+        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .map_err(|e| format!("Failed to read anchor height: {e}"))?
+        .ok_or("Wallet must sync before finalizing a denomination stage")?;
+    // Select at the trusted anchor rather than through `get_spendable_note`.
+    // The latter intentionally hides a note once any unexpired local
+    // transaction spends it. After a reorg we need to reprove the same signed
+    // effecting data, so the old unmined authorization must not hide the
+    // stage-owned input from recovery.
+    let available_notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+
+    let mut selected_notes = Vec::with_capacity(inputs.len());
+    let mut nullifiers = Vec::with_capacity(inputs.len());
+    for input in inputs {
+        if input.note_version != 2 {
+            return Err("Denomination stage input is not an Orchard V2 note".to_string());
+        }
+        let Some(selected) = available_notes.iter().find(|selected| {
+            format!("{}", selected.txid()).eq_ignore_ascii_case(&input.txid_hex)
+                && selected.output_index() as u32 == input.output_index
+        }) else {
+            return Ok(None);
+        };
+        let orchard_note = *selected.note();
+        if orchard_note.version() != orchard::note::NoteVersion::V2 {
+            return Err("Denomination stage input revalidated as non-V2 Orchard".to_string());
+        }
+        let selected_value: Zatoshis = orchard_note
+            .value()
+            .inner()
+            .try_into()
+            .map_err(|e| format!("Denomination stage input value invalid: {e}"))?;
+        if u64::from(selected_value) != input.value_zatoshi {
+            return Err("Denomination stage input value changed during revalidation".to_string());
+        }
+        let nullifier_hex = hex::encode(orchard_note.nullifier(&orchard_fvk).to_bytes());
+        let expected_nullifier = input
+            .nullifier_hex
+            .as_deref()
+            .ok_or("Denomination stage input nullifier is missing")?;
+        if !nullifier_hex.eq_ignore_ascii_case(expected_nullifier) {
+            return Err(
+                "Denomination stage input nullifier changed during revalidation".to_string(),
+            );
+        }
+        nullifiers.push(nullifier_hex);
+        selected_notes.push(ReceivedNote::from_parts(
+            *selected.internal_note_id(),
+            *selected.txid(),
+            selected.output_index(),
+            orchard_note,
+            selected.spending_key_scope(),
+            selected.note_commitment_tree_position(),
+            selected.mined_height(),
+            selected.max_shielding_input_height(),
+        ));
+    }
+
+    let (anchor, witnesses) = orchard_witnesses(&mut db, anchor_height, &selected_notes)?;
+    if witnesses.len() != nullifiers.len() {
+        return Err("Denomination stage witness count changed".to_string());
+    }
+    Ok(Some((
+        anchor,
+        nullifiers
+            .into_iter()
+            .zip(witnesses.into_iter().map(|(_, witness)| witness))
+            .collect(),
+    )))
+}
+
+fn orchard_anchor_and_witness_for_prepared_note(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    note_ref: &super::migration::PreparedOrchardNoteRef,
+    preferred_anchor_boundary_height: Option<u32>,
+    timing_policy: super::migration::MigrationTimingPolicy,
+    anchor_cohort_counts: &mut BTreeMap<u32, u32>,
+) -> Result<Option<(u32, orchard::Anchor, orchard::tree::MerklePath)>, String> {
+    if note_ref.note_version != 2 {
+        return Err("Prepared migration note is not an Orchard V2 note".to_string());
+    }
+
+    let mut db = open_wallet_db(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    db.get_account(account_id)
+        .map_err(|e| format!("{e}"))?
+        .ok_or("Account not found")?;
+
+    let (_, anchor_height) = db
+        .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
+        .map_err(|e| format!("Failed to read anchor height: {e}"))?
+        .ok_or("Wallet must sync before finalizing migration")?;
+    let available_notes =
+        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    let Some(selected) = available_notes.iter().find(|selected| {
+        format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
+            && selected.output_index() as u32 == note_ref.output_index
+    }) else {
+        return Ok(None);
+    };
+    let orchard_note = *selected.note();
+    if orchard_note.version() != orchard::note::NoteVersion::V2 {
+        return Err("Prepared note revalidated as non-V2 Orchard".to_string());
+    }
+    let selected_value: Zatoshis = orchard_note
+        .value()
+        .inner()
+        .try_into()
+        .map_err(|e| format!("Prepared note value invalid: {e}"))?;
+    if u64::from(selected_value) != note_ref.value_zatoshi {
+        return Err("Prepared note value changed during revalidation".to_string());
+    }
+    let anchor_height_u32 = u32::from(anchor_height);
+    let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
+    let mined_height = selected
+        .mined_height()
+        .ok_or("Prepared migration note mined height unavailable")?;
+    let mined_height = u32::from(mined_height);
+    let checkpoint_heights = orchard_checkpoint_heights(&mut db)?;
+    // The ZIP 318 bucket is a logical chain height. Empty blocks do not always
+    // create an Orchard checkpoint, so the tree root for a bucket can live at
+    // the last checkpoint before that boundary. Preserve the newest such root
+    // while it is still young; one bucket later it becomes eligible instead of
+    // being pruned before the proof attempt.
+    if let Some(latest_boundary) = super::migration::zip318_anchor_boundary_at_or_before_with_policy(
+        network,
+        timing_policy,
+        anchor_height_u32,
+    ) {
+        if let Some(checkpoint_height) =
+            representative_orchard_checkpoint(&checkpoint_heights, latest_boundary, mined_height)
+        {
+            retain_orchard_checkpoint(&mut db, checkpoint_height)?;
+        }
+    }
+    let policy_candidates = super::migration::zip318_anchor_candidate_boundaries_with_policy(
+        network,
+        timing_policy,
+        anchor_height_u32,
+        mined_height,
+        nu6_3_activation_height,
+    );
+    let available_anchor_candidates =
+        available_orchard_anchor_candidates(&policy_candidates, &checkpoint_heights, mined_height);
+    let available_candidates = available_anchor_candidates
+        .iter()
+        .map(|(boundary, _)| *boundary)
+        .collect::<Vec<_>>();
+    let mut checkpoint_cohort_counts = BTreeMap::<u32, u32>::new();
+    for (boundary, count) in anchor_cohort_counts.iter() {
+        if let Some(checkpoint) =
+            representative_orchard_checkpoint(&checkpoint_heights, *boundary, mined_height)
+        {
+            let cohort_count = checkpoint_cohort_counts.entry(checkpoint).or_default();
+            *cohort_count = cohort_count
+                .checked_add(*count)
+                .ok_or("Migration anchor cohort count overflow")?;
+        }
+    }
+    let draw_cohort_counts = available_anchor_candidates
+        .iter()
+        .map(|(boundary, checkpoint)| {
+            (
+                *boundary,
+                checkpoint_cohort_counts
+                    .get(checkpoint)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let anchor_boundary_height = preferred_anchor_boundary_height
+        .filter(|boundary| {
+            available_anchor_candidates
+                .iter()
+                .find(|(candidate, _)| candidate == boundary)
+                .is_some_and(|(_, checkpoint)| {
+                    checkpoint_cohort_counts
+                        .get(checkpoint)
+                        .copied()
+                        .unwrap_or_default()
+                        < super::migration::ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
+                })
+                && super::migration::zip318_anchor_boundary_is_candidate_with_policy(
+                    network,
+                    timing_policy,
+                    *boundary,
+                    anchor_height_u32,
+                    mined_height,
+                    nu6_3_activation_height,
+                )
+                && available_candidates.contains(boundary)
+        })
+        .or_else(|| {
+            super::migration::zip318_draw_anchor_boundary_from_available_with_policy(
+                network,
+                timing_policy,
+                anchor_height_u32,
+                &available_candidates,
+                &draw_cohort_counts,
+            )
+        });
+    let Some(anchor_boundary_height) = anchor_boundary_height else {
+        return Ok(None);
+    };
+    let checkpoint_height = available_anchor_candidates
+        .iter()
+        .find_map(|(boundary, checkpoint)| {
+            (*boundary == anchor_boundary_height).then_some(*checkpoint)
+        })
+        .ok_or("Orchard migration checkpoint disappeared during anchor selection")?;
+    retain_orchard_checkpoint(&mut db, checkpoint_height)?;
+    *anchor_cohort_counts
+        .entry(anchor_boundary_height)
+        .or_default() += 1;
+
+    let orchard_selected = ReceivedNote::from_parts(
+        *selected.internal_note_id(),
+        *selected.txid(),
+        selected.output_index(),
+        orchard_note,
+        selected.spending_key_scope(),
+        selected.note_commitment_tree_position(),
+        selected.mined_height(),
+        selected.max_shielding_input_height(),
+    );
+    let (orchard_anchor, mut orchard_inputs) = migration_orchard_witnesses(
+        &mut db,
+        network,
+        BlockHeight::from(checkpoint_height),
+        std::slice::from_ref(&orchard_selected),
+    )?;
+    let (_, witness) = orchard_inputs
+        .pop()
+        .ok_or("Prepared migration note witness missing")?;
+    Ok(Some((anchor_boundary_height, orchard_anchor, witness)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rebuild_expired_software_migration_parts(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    recoveries: Vec<super::migration::PendingMigrationPartRecovery>,
+    usk: &UnifiedSpendingKey,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<(), String> {
+    let retained_message_ids = super::migration::signed_child_message_ids_by_part(db_path, run_id)?;
+    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
+    let approved_schedule = super::migration::approved_schedule_for_run(db_path, run_id)?;
+    let target_values = super::migration::target_values_for_run(db_path, run_id)?;
+    let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
+    let mut replacements = Vec::with_capacity(recoveries.len());
+    let mut replacement_children = Vec::with_capacity(recoveries.len());
+
+    for (index, recovery) in recoveries.into_iter().enumerate() {
+        let schedule_block_offset = super::migration::schedule_block_offset_for_part(
+            &approved_schedule,
+            &target_values,
+            recovery.part_index,
+            recovery.value_zatoshi,
+        )
+        .ok_or("Approved migration schedule is missing a recovery child")?;
+        let created = create_orchard_to_ironwood_pczt_from_note(
+            db_path,
+            network,
+            account_uuid,
+            &recovery.selected_note,
+            (index + 1) as u32,
+            schedule_block_offset,
+            timing_policy,
+            &mut anchor_cohort_counts,
+            true,
+        )?
+        .ok_or("Expired migration funding note is not spendable at a canonical anchor")?;
+        if created.migrated_zatoshi != recovery.value_zatoshi {
+            return Err("Expired migration denomination changed during rebuild".to_string());
+        }
+        if created.fee_zatoshi != recovery.fee_zatoshi {
+            return Err(
+                "Canonical migration fee changed while rebuilding an expired part".to_string(),
+            );
+        }
+
+        let signed_pczt = sign_orchard_migration_pczt_with_usk(
+            &created.base_pczt,
+            &created.orchard_spend_action_indices,
+            usk,
+        )?;
+        let sigs = super::pczt::extract_required_compact_sigs_from_signed_pczt(
+            &created.base_pczt,
+            &signed_pczt,
+        )?;
+        super::pczt::preflight_orchard_spend_auth_signatures(&created.base_pczt, &sigs)?;
+        let proofed = super::pczt::add_proofs_to_pczt(&created.base_pczt, None, None)?;
+        let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
+        let retained_message_id = retained_message_ids
+            .get(&recovery.part_index)
+            .ok_or("Retained migration signature record is missing for expired part")?;
+        let metadata = super::migration::PendingMigrationTxMetadata {
+            tx_kind: "migration".to_string(),
+            funding_account_uuid: account_uuid.to_string(),
+            selected_note: recovery.selected_note.clone(),
+        };
+
+        replacements.push(super::migration::PendingMigrationTxReplacement {
+            old_txid_hex: recovery.old_txid_hex,
+            replacement: super::migration::PendingMigrationTxInsert {
+                part_index: recovery.part_index,
+                txid_hex: extracted.txid.to_string(),
+                raw_tx: extracted.raw_tx,
+                target_height: created.target_height,
+                anchor_boundary_height: created.anchor_boundary_height,
+                expiry_height: created.expiry_height,
+                scheduled_height: created.scheduled_height,
+                value_zatoshi: created.migrated_zatoshi,
+                fee_zatoshi: created.fee_zatoshi,
+                selected_note: recovery.selected_note.clone(),
+                metadata: metadata.clone(),
+            },
+        });
+        replacement_children.push(super::migration::SignedMigrationPcztInsert {
+            message_id: retained_message_id.clone(),
+            child_index: recovery.part_index,
+            base_pczt: created.base_pczt,
+            sigs,
+            target_height: created.target_height,
+            anchor_boundary_height: created.anchor_boundary_height,
+            expiry_height: created.expiry_height,
+            scheduled_height: created.scheduled_height,
+            value_zatoshi: created.migrated_zatoshi,
+            fee_zatoshi: created.fee_zatoshi,
+            selected_note: recovery.selected_note,
+            metadata,
+        });
+    }
+
+    super::migration::replace_resigned_pending_parts(
+        db_path,
+        run_id,
+        network,
+        replacements,
+        replacement_children,
+        pending_password,
+        pending_salt_base64,
+    )
+}
+
+fn finalize_presigned_migration_children(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<usize, String> {
+    if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
+        return Ok(0);
+    }
+    if !prepared_note_spend_metadata_is_available(db_path, run_id)? {
+        let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
+        if let Some(retry_height) = super::migration::prepared_notes_proof_ready_height(
+            db_path,
+            run_id,
+            network,
+            timing_policy,
+        )? {
+            super::migration::set_proof_retry_height(db_path, run_id, retry_height)?;
+        }
+        return Ok(0);
+    }
+
+    let mut signed_children = super::migration::signed_child_pczts_for_run(
+        db_path,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    if signed_children.is_empty() {
+        return Ok(0);
+    }
+    let current_batch_index = child_proof_batch_index(signed_children[0].child_index);
+    signed_children
+        .retain(|child| child_proof_batch_index(child.child_index) == current_batch_index);
+
+    let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
+    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
+    let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
+    let mut anchor_cohort_counts = super::migration::pending_anchor_cohort_counts(db_path, run_id)?;
+    let signed_child_count = signed_children.len();
+    let proof_limit = policy.proof_limit(signed_child_count);
+    let mut finalized_count = 0usize;
+    let mut deferred_child_seen = false;
+    let mut stopped_at_proof_limit = false;
+    for (child_index, child) in signed_children.into_iter().enumerate() {
+        if policy.is_cancelled() {
+            break;
+        }
+        if finalized_count >= proof_limit {
+            stopped_at_proof_limit = true;
+            break;
+        }
+        if already_pending.contains(&(
+            child.selected_note.txid_hex.to_ascii_lowercase(),
+            child.selected_note.output_index,
+        )) {
+            continue;
+        }
+        let current_note = current_prepared
+            .iter()
+            .find(|note| same_prepared_note_without_nullifier(note, &child.selected_note))
+            .ok_or("Prepared migration notes changed before child finalization")?;
+        let mut candidate_anchor_cohort_counts = anchor_cohort_counts.clone();
+        let Some((anchor_boundary_height, orchard_anchor, orchard_witness)) =
+            (match orchard_anchor_and_witness_for_prepared_note(
+                db_path,
+                network,
+                account_uuid,
+                current_note,
+                child.anchor_boundary_height,
+                timing_policy,
+                &mut candidate_anchor_cohort_counts,
+            ) {
+                Ok(result) => result,
+                Err(e) if is_orchard_witness_not_ready_error(&e) => {
+                    deferred_child_seen = true;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            })
+        else {
+            deferred_child_seen = true;
+            continue;
+        };
+        anchor_cohort_counts = candidate_anchor_cohort_counts;
+        let current_note_nullifier_hex = current_note
+            .nullifier_hex
+            .as_deref()
+            .ok_or("Prepared migration note nullifier unavailable")?;
+
+        // Set the real anchor/witness on the base before proving — Orchard
+        // proofs depend on the real anchor. The stored spend-authorization
+        // signatures are anchor-independent (the ZIP-244 spend-auth sighash does
+        // not commit to the anchor), so we apply them directly onto the proofed
+        // base via the compact path instead of re-anchoring a full signed PCZT.
+        let base_pczt = super::pczt::set_orchard_anchor_and_witness(
+            &child.base_pczt,
+            orchard_anchor,
+            &orchard_witness,
+            current_note_nullifier_hex,
+        )?;
+        log::debug!(
+            "migration: proving child {}/{} for run {}",
+            child_index + 1,
+            signed_child_count,
+            run_id,
+        );
+        let pczt_with_proofs = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
+        let extracted =
+            super::pczt::apply_sigs_and_extract(&pczt_with_proofs, &child.sigs, None, None)?;
+        log::debug!(
+            "migration: proved child {}/{} for run {} as {} from {}:{}",
+            child_index + 1,
+            signed_child_count,
+            run_id,
+            extracted.txid,
+            current_note.txid_hex,
+            current_note.output_index,
+        );
+        let pending_insert = super::migration::PendingMigrationTxInsert {
+            part_index: child.child_index,
+            txid_hex: extracted.txid.to_string(),
+            raw_tx: extracted.raw_tx,
+            target_height: child.target_height,
+            anchor_boundary_height: Some(anchor_boundary_height),
+            expiry_height: child.expiry_height,
+            scheduled_height: child.scheduled_height,
+            value_zatoshi: child.value_zatoshi,
+            fee_zatoshi: child.fee_zatoshi,
+            selected_note: current_note.clone(),
+            metadata: super::migration::PendingMigrationTxMetadata {
+                tx_kind: child.metadata.tx_kind,
+                funding_account_uuid: child.metadata.funding_account_uuid,
+                selected_note: current_note.clone(),
+            },
+        };
+        // Persist each completed proof independently so an OS expiration loses
+        // at most the proof that is currently in flight.
+        super::migration::promote_signed_child_pczts_to_pending_txs(
+            db_path,
+            run_id,
+            vec![pending_insert],
+            pending_password,
+            pending_salt_base64,
+        )?;
+        finalized_count = finalized_count
+            .checked_add(1)
+            .ok_or("Finalized migration proof count overflow")?;
+    }
+
+    if deferred_child_seen && !stopped_at_proof_limit && !policy.is_cancelled() {
+        let mut retry_height = super::migration::next_anchor_retry_height_after(
+            network,
+            timing_policy,
+            current_migration_scanned_height(db_path, network)?,
+        )?;
+        if let Some(ready_height) = super::migration::prepared_notes_proof_ready_height(
+            db_path,
+            run_id,
+            network,
+            timing_policy,
+        )? {
+            retry_height = retry_height.max(ready_height);
+        }
+        defer_presigned_proof_until(db_path, run_id, retry_height)?;
+    }
+
+    Ok(finalized_count)
+}
+
+fn child_proof_batch_index(part_index: u32) -> u32 {
+    part_index / ZIP318_MAX_PARTS_PER_ANCHOR_COHORT
+}
+
+fn finalize_ready_denomination_stages(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<usize, String> {
+    let stages = {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::denomination_stages_for_run(
+            &conn,
+            run_id,
+            pending_password,
+            pending_salt_base64,
+        )?
+    };
+    if stages.is_empty() {
+        return Ok(0);
+    }
+
+    let awaiting_count = stages
+        .iter()
+        .filter(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
+        .count();
+    let proof_limit = policy.proof_limit(awaiting_count);
+    let mut promoted_count = 0usize;
+    for stage in stages
+        .iter()
+        .filter(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
+    {
+        if policy.is_cancelled() || promoted_count >= proof_limit {
+            break;
+        }
+        let Some((anchor, witnesses)) = (match orchard_anchor_and_witnesses_for_denomination_inputs(
+            db_path,
+            network,
+            account_uuid,
+            &stage.inputs,
+        ) {
+            Ok(result) => result,
+            Err(e) if is_orchard_witness_not_ready_error(&e) => return Ok(promoted_count),
+            Err(e) => return Err(e),
+        }) else {
+            continue;
+        };
+        let base_pczt = super::pczt::set_orchard_anchor_and_witnesses(
+            &stage.base_pczt,
+            anchor,
+            witnesses
+                .iter()
+                .map(|(nullifier, witness)| (nullifier.as_str(), witness)),
+        )?;
+        let pczt_with_proofs = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
+        let extracted =
+            super::pczt::apply_sigs_and_extract(&pczt_with_proofs, &stage.sigs, None, None)?;
+        if !extracted
+            .txid
+            .to_string()
+            .eq_ignore_ascii_case(&stage.expected_txid_hex)
+        {
+            return Err(format!(
+                "Denomination stage {} extracted an unexpected txid",
+                stage.stage_index
+            ));
+        }
+
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        let scheduled_height = super::migration::next_preparation_scheduled_height(
+            &conn,
+            run_id,
+            network,
+            current_migration_scanned_height(db_path, network)?,
+            &mut OsRng,
+        )?;
+        super::migration::promote_awaiting_denomination_stage(
+            &conn,
+            run_id,
+            stage.stage_index,
+            &stage.expected_txid_hex,
+            extracted.raw_tx,
+            scheduled_height,
+            pending_password,
+            pending_salt_base64,
+        )?;
+        promoted_count = promoted_count
+            .checked_add(1)
+            .ok_or("Finalized denomination proof count overflow")?;
+    }
+    Ok(promoted_count)
+}
+
+async fn broadcast_pending_denomination_stages(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<Option<CreatedBroadcastResult>, String> {
+    let pending = {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::pending_raw_denomination_stages(
+            &conn,
+            run_id,
+            pending_password,
+            pending_salt_base64,
+        )?
+    };
+    if pending.is_empty() {
+        return Ok(None);
+    }
+    let preparation_timing_policy =
+        super::migration::preparation_timing_policy_for_run(db_path, run_id)?;
+    let observed_height = current_migration_scanned_height(db_path, network)?;
+    let due = pending
+        .iter()
+        .filter(|stage| {
+            preparation_timing_policy == super::migration::PreparationTimingPolicy::Immediate
+                || stage.scheduled_height <= observed_height
+        })
+        .collect::<Vec<_>>();
+    if due.is_empty() {
+        return Ok(None);
+    }
+
+    let txids = pending
+        .iter()
+        .map(|stage| stage.expected_txid_hex.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let total_count = u32::try_from(pending.len())
+        .map_err(|_| "Pending denomination stage count exceeds u32".to_string())?;
+    if policy.is_cancelled() {
+        return Ok(Some(CreatedBroadcastResult {
+            txids,
+            status: CreatedBroadcastResult::PENDING_BROADCAST,
+            broadcasted_count: 0,
+            total_count,
+            message: Some(
+                "Background migration stopped before denomination broadcast.".to_string(),
+            ),
+        }));
+    }
+    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+        Ok(client) => client,
+        Err(e) => {
+            return Ok(Some(CreatedBroadcastResult {
+                txids,
+                status: CreatedBroadcastResult::PENDING_BROADCAST,
+                broadcasted_count: 0,
+                total_count,
+                message: Some(format!("Denomination split broadcast could not start: {e}")),
+            }));
+        }
+    };
+
+    let mut broadcasted_count = 0u32;
+    let broadcast_limit =
+        if preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced {
+            1
+        } else {
+            policy.limit(due.len())
+        };
+    for stage in due.into_iter().take(broadcast_limit) {
+        if policy.is_cancelled() {
+            break;
+        }
+        if let Err(e) = broadcast_raw_transaction(&mut client, &stage.raw_tx).await {
+            return Ok(Some(CreatedBroadcastResult {
+                txids,
+                status: if broadcasted_count == 0 {
+                    CreatedBroadcastResult::PENDING_BROADCAST
+                } else {
+                    CreatedBroadcastResult::PARTIAL_BROADCAST
+                },
+                broadcasted_count,
+                total_count,
+                message: Some(format!(
+                    "Denomination split broadcast failed for {}: {e}",
+                    stage.expected_txid_hex
+                )),
+            }));
+        }
+
+        if let Err(e) = decrypt_and_store_migration_tx(db_path, network, &stage.raw_tx) {
+            let message =
+                migration_storage_retry_message("Denomination split", &stage.expected_txid_hex, &e);
+            log::warn!("migration: {message}");
+            return Ok(Some(CreatedBroadcastResult {
+                txids,
+                status: if broadcasted_count == 0 {
+                    CreatedBroadcastResult::PENDING_BROADCAST
+                } else {
+                    CreatedBroadcastResult::PARTIAL_BROADCAST
+                },
+                broadcasted_count,
+                total_count,
+                message: Some(message),
+            }));
+        }
+
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::mark_denomination_stage_broadcasted(
+            &conn,
+            run_id,
+            &stage.expected_txid_hex,
+        )?;
+        broadcasted_count = broadcasted_count
+            .checked_add(1)
+            .ok_or("Broadcasted denomination stage count overflow")?;
+        log::info!(
+            "migration: broadcast denomination stage {} ({})",
+            stage.stage_index,
+            stage.expected_txid_hex
+        );
+    }
+    if broadcasted_count > 0
+        && preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
+    {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::reschedule_remaining_preparation_stages(
+            &conn,
+            run_id,
+            network,
+            observed_height,
+            &mut OsRng,
+        )?;
+    }
+
+    Ok(Some(CreatedBroadcastResult {
+        txids,
+        status: if broadcasted_count == 0 {
+            CreatedBroadcastResult::PENDING_BROADCAST
+        } else {
+            super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS
+        },
+        broadcasted_count,
+        total_count,
+        message: Some(if policy.is_cancelled() {
+            "Background migration stopped before the next denomination broadcast.".to_string()
+        } else if broadcasted_count < total_count
+            && (policy.max_per_step.is_some()
+                || preparation_timing_policy
+                    == super::migration::PreparationTimingPolicy::Zip318Spaced)
+        {
+            "One denomination stage was submitted. Remaining stages will continue on later migration advances."
+                .to_string()
+        } else if total_count == 1 {
+            "Denomination split stage was created. Migration will continue after confirmation."
+                .to_string()
+        } else {
+            format!(
+                "{total_count} independent denomination split stages were created. Migration will continue after confirmation."
+            )
+        }),
+    }))
+}
+
+async fn broadcast_due_scheduled_migration_txs(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+    fallback_total_count: u32,
+    fallback_migrated_zatoshi: u64,
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<IronwoodMigrationResult, String> {
+    let totals_before = super::migration::pending_totals_for_run(db_path, run_id)?;
+    if totals_before.total_count == 0 {
+        return Ok(migration_result_from_pending_totals(
+            totals_before,
+            super::migration::PHASE_READY_TO_MIGRATE,
+            Some("No signed migration transactions are scheduled yet.".to_string()),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
+
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if let Some(message) =
+        pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)?
+    {
+        super::migration::retire_run_for_rebuild(db_path, run_id, &message)?;
+        return Ok(migration_result_from_pending_totals(
+            totals_before,
+            super::migration::PHASE_FAILED_TERMINAL,
+            Some(message),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
+
+    let expired_count =
+        super::migration::expired_unconfirmed_pending_count(db_path, run_id, chain_tip_height)?;
+    if expired_count > 0 {
+        let message = format!(
+            "{expired_count} migration transaction(s) expired before confirmation. Re-sign the affected denomination(s) with fresh anchors and expiry heights."
+        );
+        super::migration::mark_expired_pending_parts_for_resign(db_path, run_id, chain_tip_height)?;
+        return Ok(migration_result_from_pending_totals(
+            totals_before,
+            super::migration::PHASE_READY_TO_MIGRATE,
+            Some(message),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
+    let noncanonical_due_count =
+        super::migration::mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+            db_path,
+            run_id,
+            chain_tip_height,
+        )?;
+    if noncanonical_due_count > 0 {
+        let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+        return Ok(migration_result_from_pending_totals(
+            totals,
+            super::migration::PHASE_READY_TO_MIGRATE,
+            Some(format!(
+                "{noncanonical_due_count} migration transaction(s) crossed a ZIP 318 expiry boundary and need fresh signatures."
+            )),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
+    let due = super::migration::due_pending_txs(
+        db_path,
+        run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    if due.is_empty() {
+        let status = super::migration::run_phase(db_path, run_id)?;
+        let message = if status == super::migration::PHASE_BROADCAST_SCHEDULED
+            && super::migration::next_scheduled_height(db_path, run_id)?.is_none()
+        {
+            "Migration is waiting to prepare the next transaction."
+        } else {
+            "Migration transactions are scheduled for delayed broadcast."
+        };
+        return Ok(migration_result_from_pending_totals(
+            totals_before,
+            &status,
+            Some(message.to_string()),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
+    if policy.is_cancelled() {
+        return Ok(migration_result_from_pending_totals(
+            totals_before,
+            super::migration::PHASE_BROADCAST_SCHEDULED,
+            Some("Background migration stopped before the next broadcast.".to_string()),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ));
+    }
+
+    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+        Ok(client) => client,
+        Err(e) => {
+            let message = format!("Migration broadcast could not start: {e}");
+            super::migration::mark_run_phase(
+                db_path,
+                run_id,
+                super::migration::PHASE_FAILED_RECOVERABLE,
+                Some(&message),
+            )?;
+            return Ok(IronwoodMigrationResult {
+                txids: String::new(),
+                status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
+                broadcasted_count: 0,
+                total_count: fallback_total_count,
+                message: Some(message),
+                fee_zatoshi: 0,
+                migrated_zatoshi: fallback_migrated_zatoshi,
+            });
+        }
+    };
+
+    super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
+    for pending in due.into_iter().take(policy.limit(usize::MAX)) {
+        if policy.is_cancelled() {
+            super::migration::mark_run_phase(
+                db_path,
+                run_id,
+                super::migration::PHASE_BROADCAST_SCHEDULED,
+                Some("Background migration stopped before the next broadcast."),
+            )?;
+            break;
+        }
+        if let Err(e) = broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
+            log::error!(
+                "migration: broadcast rejected for {}: {}",
+                pending.txid_hex,
+                e,
+            );
+            let message = format!(
+                "Migration broadcast failed for {}. Error: {e}",
+                pending.txid_hex
+            );
+            if migration_broadcast_failure_requires_rebuild(&e) {
+                let rebuild_message = format!(
+                    "Migration transaction {} was rejected by the network. Review and approve a fresh schedule for the remaining Orchard balance. Error: {e}",
+                    pending.txid_hex
+                );
+                super::migration::retire_run_for_rebuild(db_path, run_id, &rebuild_message)?;
+                let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+                return Ok(migration_result_from_pending_totals(
+                    totals,
+                    super::migration::PHASE_FAILED_TERMINAL,
+                    Some(rebuild_message),
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
+                ));
+            }
+            super::migration::mark_run_phase(
+                db_path,
+                run_id,
+                super::migration::PHASE_FAILED_RECOVERABLE,
+                Some(&message),
+            )?;
+            let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+            return Ok(migration_result_from_pending_totals(
+                totals,
+                super::migration::PHASE_FAILED_RECOVERABLE,
+                Some(message),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ));
+        }
+
+        if let Some(result) = record_accepted_scheduled_migration_tx(
+            db_path,
+            network,
+            run_id,
+            &pending,
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+            decrypt_and_store_migration_tx,
+        )? {
+            return Ok(result);
+        }
+        super::migration::reschedule_overdue_pending_txs(
+            db_path,
+            run_id,
+            network,
+            chain_tip_height,
+        )?;
+        log::info!("migration: broadcast scheduled tx {}", pending.txid_hex);
+    }
+
+    let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+    let scheduled_remaining = super::migration::scheduled_pending_count(db_path, run_id)?;
+    let status = super::migration::run_phase(db_path, run_id)?;
+    let message = if scheduled_remaining > 0 {
+        "Due migration transactions were submitted. More are scheduled.".to_string()
+    } else if status == super::migration::PHASE_BROADCAST_SCHEDULED {
+        "Due migration transactions were submitted. More proofs remain to prepare.".to_string()
+    } else {
+        "Migration transactions were broadcast on the saved schedule.".to_string()
+    };
+    Ok(migration_result_from_pending_totals(
+        totals,
+        &status,
+        Some(message),
+        fallback_total_count,
+        fallback_migrated_zatoshi,
+    ))
+}
+
+fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {
+    error.starts_with("Broadcast rejected:")
+}
+
+fn decrypt_and_store_migration_tx(
+    db_path: &str,
+    network: WalletNetwork,
+    raw_tx: &[u8],
+) -> Result<(), String> {
+    super::transactions::decrypt_and_store_transaction(db_path, network, raw_tx, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reconcile_orchard_migration_outbox_receipt(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    txid_hex: &str,
+    outcome: &str,
+    remote_height: u32,
+    response_message: Option<&str>,
+    schedule_updates: Vec<(String, u32, u32)>,
+    accepted_raw_transaction: Option<Vec<u8>>,
+) -> Result<(), String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let state = super::migration::migration_outbox_tx_state(
+        db_path,
+        account_uuid,
+        network,
+        run_id,
+        txid_hex,
+    )?;
+    match outcome {
+        "accepted" | "acceptedEquivalent" => {
+            if state.run_phase == super::migration::PHASE_FAILED_TERMINAL
+                || state.run_phase == super::migration::PHASE_ABANDONED
+            {
+                return Err(
+                    "Migration outbox receipt cannot accept a retired migration run".to_string(),
+                );
+            }
+            let raw_tx = accepted_raw_transaction.ok_or_else(|| {
+                "Accepted migration outbox receipt is missing its raw transaction".to_string()
+            })?;
+            let actual_txid = {
+                use zcash_primitives::transaction::Transaction;
+                use zcash_protocol::consensus::BranchId;
+
+                let tx = Transaction::read(&raw_tx[..], BranchId::Sapling)
+                    .map_err(|e| format!("Failed to read accepted migration transaction: {e}"))?;
+                tx.txid().to_string()
+            };
+            if !actual_txid.eq_ignore_ascii_case(txid_hex) {
+                return Err(format!(
+                    "Accepted migration outbox transaction ID mismatch: expected {txid_hex}, got {actual_txid}"
+                ));
+            }
+            decrypt_and_store_migration_tx(db_path, network, &raw_tx)?;
+            let schedule_updates = schedule_updates
+                .into_iter()
+                .map(|(item_id, scheduled_height, schedule_start_height)| {
+                    super::migration::MigrationOutboxScheduleUpdate {
+                        item_id,
+                        scheduled_height,
+                        schedule_start_height,
+                    }
+                })
+                .collect::<Vec<_>>();
+            super::migration::apply_accepted_migration_outbox_receipt(
+                db_path,
+                account_uuid,
+                network,
+                run_id,
+                txid_hex,
+                remote_height,
+                &schedule_updates,
+            )
+        }
+        "rejected" => {
+            if !schedule_updates.is_empty() {
+                return Err("Rejected migration outbox receipt cannot update schedules".to_string());
+            }
+            if state.run_phase == super::migration::PHASE_FAILED_TERMINAL {
+                return Ok(());
+            }
+            let message = response_message
+                .filter(|message| !message.is_empty())
+                .map(|message| {
+                    format!("Swift outbox rejected migration transaction {txid_hex}: {message}")
+                })
+                .unwrap_or_else(|| {
+                    format!("Swift outbox rejected migration transaction {txid_hex}")
+                });
+            super::migration::retire_run_for_rebuild(db_path, run_id, &message)
+        }
+        "expired" => {
+            if !schedule_updates.is_empty() {
+                return Err("Expired migration outbox receipt cannot update schedules".to_string());
+            }
+            if state.expiry_height == 0 || state.expiry_height > remote_height {
+                return Err(
+                    "Migration outbox receipt expired before the transaction expiry height"
+                        .to_string(),
+                );
+            }
+            if state.status == "needs_resign" {
+                return Ok(());
+            }
+            if !matches!(state.status.as_str(), "scheduled" | "broadcasted") {
+                return Err(format!(
+                    "Migration outbox receipt cannot expire a transaction in status {}",
+                    state.status
+                ));
+            }
+            let updated = super::migration::mark_expired_pending_parts_for_resign(
+                db_path,
+                run_id,
+                remote_height,
+            )?;
+            if updated == 0 {
+                return Err(
+                    "Migration outbox expiry receipt did not find an expired transaction"
+                        .to_string(),
+                );
+            }
+            Ok(())
+        }
+        "needsResign" => {
+            if !schedule_updates.is_empty() {
+                return Err("Migration outbox re-sign receipt cannot update schedules".to_string());
+            }
+            let canonical_expiry =
+                super::migration::zip318_canonical_migration_expiry_height(remote_height)?;
+            if state.expiry_height == canonical_expiry {
+                return Err(
+                    "Migration outbox re-sign receipt still has canonical expiry at the broadcast height"
+                        .to_string(),
+                );
+            }
+            if state.status == "needs_resign" {
+                return Ok(());
+            }
+            if state.status != "scheduled" {
+                return Err(format!(
+                    "Migration outbox receipt cannot re-sign a transaction in status {}",
+                    state.status
+                ));
+            }
+            let updated =
+                super::migration::mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+                    db_path,
+                    run_id,
+                    remote_height,
+                )?;
+            if updated == 0 {
+                return Err(
+                    "Migration outbox re-sign receipt did not find a due noncanonical transaction"
+                        .to_string(),
+                );
+            }
+            Ok(())
+        }
+        _ => Err(format!(
+            "Unsupported migration outbox receipt outcome: {outcome}"
+        )),
+    }
+}
+
+fn migration_storage_retry_message(tx_label: &str, txid_hex: &str, error: &str) -> String {
+    format!(
+        "{tx_label} {txid_hex} was accepted by lightwalletd, but local wallet storage failed: {error}. Vizor will retry until local state is recorded."
+    )
+}
+
+fn record_accepted_scheduled_migration_tx<F>(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending: &super::migration::DuePendingMigrationTx,
+    fallback_total_count: u32,
+    fallback_migrated_zatoshi: u64,
+    store_tx: F,
+) -> Result<Option<IronwoodMigrationResult>, String>
+where
+    F: FnOnce(&str, WalletNetwork, &[u8]) -> Result<(), String>,
+{
+    if let Err(e) = store_tx(db_path, network, &pending.raw_tx) {
+        let message =
+            migration_storage_retry_message("Migration transaction", &pending.txid_hex, &e);
+        log::warn!("migration: {message}");
+        super::migration::mark_run_phase(
+            db_path,
+            run_id,
+            super::migration::PHASE_BROADCAST_SCHEDULED,
+            Some(&message),
+        )?;
+        let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+        return Ok(Some(migration_result_from_pending_totals(
+            totals,
+            super::migration::PHASE_BROADCAST_SCHEDULED,
+            Some(message),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        )));
+    }
+
+    super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)?;
+    Ok(None)
+}
+
+fn migration_result_from_pending_totals(
+    totals: super::migration::PendingMigrationTotals,
+    status: &str,
+    message: Option<String>,
+    fallback_total_count: u32,
+    fallback_migrated_zatoshi: u64,
+) -> IronwoodMigrationResult {
+    IronwoodMigrationResult {
+        txids: totals.txids.join(","),
+        status: status.to_string(),
+        broadcasted_count: totals.broadcasted_count,
+        total_count: totals.total_count.max(fallback_total_count),
+        message,
+        fee_zatoshi: totals.fee_zatoshi,
+        migrated_zatoshi: totals.value_zatoshi.max(fallback_migrated_zatoshi),
+    }
+}
+
+fn migration_result_from_split_broadcast(
+    result: CreatedBroadcastResult,
+    fallback_total_count: u32,
+    fee_zatoshi: u64,
+    migrated_zatoshi: u64,
+) -> IronwoodMigrationResult {
+    IronwoodMigrationResult {
+        txids: result.txids,
+        status: result.status.to_string(),
+        broadcasted_count: result.broadcasted_count,
+        total_count: fallback_total_count,
+        message: result.message,
+        fee_zatoshi,
+        migrated_zatoshi,
+    }
+}
+
 #[derive(Debug)]
 struct CreatedBroadcastResult {
     txids: String,
@@ -911,7 +3969,6 @@ impl CreatedBroadcastResult {
     const BROADCASTED: &'static str = "broadcasted";
     const PENDING_BROADCAST: &'static str = "pending_broadcast";
     const PARTIAL_BROADCAST: &'static str = "partial_broadcast";
-
     fn into_execute_result(self) -> ExecuteProposalResult {
         ExecuteProposalResult {
             txids: self.txids,
@@ -1055,11 +4112,8 @@ async fn broadcast_raw_transaction(
         .await
         .map_err(|e| format!("SendTransaction gRPC failed: {e}"))?;
 
-    if resp.error_code != 0 {
-        return Err(format!(
-            "Broadcast rejected: {} (code {})",
-            resp.error_message, resp.error_code
-        ));
+    if let Some(error) = super::broadcast::send_response_rejection_error(&resp) {
+        return Err(error);
     }
 
     Ok(())
@@ -1091,8 +4145,8 @@ pub(crate) struct ResubmitStats {
 ///   * The candidate list comes from
 ///     [`crate::wallet::sync::transactions::get_resubmittable_txs`]
 ///     — the same SQL predicate the SDK uses
-///     (`mined_height IS NULL AND expiry_height > current_tip AND
-///     account_balance_delta < 0`).
+///     (`mined_height IS NULL AND (expiry_height = 0 OR expiry_height
+///     > current_tip) AND account_balance_delta < 0`).
 ///   * Each failed broadcast retries exactly **once**, matching
 ///     `TRANSACTION_RESUBMIT_RETRIES = 1` in the SDK. After that we
 ///     log and move on rather than aborting the whole pass — a
@@ -1244,23 +4298,35 @@ where
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
+    proposed_tx_version: Option<TxVersion>,
+    unpadded_orchard_pool_bundles: bool,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
     GreedyInputSelector<DbT>,
 ) {
-    (
-        MultiOutputChangeStrategy::new(
-            ConservativeZip317FeeRule,
-            change_memo,
-            ShieldedProtocol::Orchard,
-            DustOutputPolicy::default(),
-            SplitPolicy::with_min_output_value(
-                NonZeroUsize::new(4).unwrap(),
-                Zatoshis::const_from_u64(1000_0000),
-            ),
+    let change_strategy = MultiOutputChangeStrategy::new(
+        ConservativeZip317FeeRule,
+        change_memo,
+        ShieldedProtocol::Orchard,
+        DustOutputPolicy::default(),
+        SplitPolicy::with_min_output_value(
+            NonZeroUsize::new(4).unwrap(),
+            Zatoshis::const_from_u64(1000_0000),
         ),
-        GreedyInputSelector::new(),
-    )
+    );
+    // Migration children only: count exactly the requested actions so the
+    // proposal's fee matches the unpadded bundle the PCZT builder produces.
+    let change_strategy = if unpadded_orchard_pool_bundles {
+        change_strategy.with_unpadded_orchard_pool_bundles()
+    } else {
+        change_strategy
+    };
+    // No V5 legacy-change override is needed anymore: change-pool selection
+    // follows the input pools (an Orchard-input V5 send yields Orchard change)
+    // and enforces the Ironwood turnstile.
+    let _ = proposed_tx_version;
+
+    (change_strategy, GreedyInputSelector::new())
 }
 
 // ======================== No-op Sapling Provers ========================
@@ -1355,287 +4421,4 @@ impl OutputProver for NoOpOutputProver {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    use incrementalmerkletree::Position;
-    use transparent::bundle::{OutPoint, TxOut};
-    use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
-    use zcash_keys::keys::{ReceiverRequirement, UnifiedSpendingKey};
-    use zcash_protocol::consensus::BlockHeight;
-
-    fn taddr(seed: u8) -> TransparentAddress {
-        TransparentAddress::PublicKeyHash([seed; 20])
-    }
-
-    fn balance(value: u64) -> Balance {
-        let mut balance = Balance::ZERO;
-        balance
-            .add_spendable_value(Zatoshis::from_u64(value).unwrap())
-            .unwrap();
-        balance
-    }
-
-    fn receiver(value: u64, scope: TransparentKeyScope) -> (TransparentKeyOrigin, Balance) {
-        (TransparentKeyOrigin::Derived { scope }, balance(value))
-    }
-
-    #[test]
-    fn shield_result_preserves_pending_broadcast_status() {
-        let result = CreatedBroadcastResult {
-            txids: "abc123".to_string(),
-            status: CreatedBroadcastResult::PENDING_BROADCAST,
-            broadcasted_count: 0,
-            total_count: 1,
-            message: Some("Broadcast could not start".to_string()),
-        }
-        .into_shield_transparent_result(10_000, 90_000);
-
-        assert_eq!(result.txids, "abc123");
-        assert_eq!(result.status, CreatedBroadcastResult::PENDING_BROADCAST);
-        assert_eq!(result.broadcasted_count, 0);
-        assert_eq!(result.total_count, 1);
-        assert_eq!(result.message.as_deref(), Some("Broadcast could not start"));
-        assert_eq!(result.fee_zatoshi, 10_000);
-        assert_eq!(result.shielded_zatoshi, 90_000);
-    }
-
-    #[test]
-    fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() {
-        let network = WalletNetwork::Regtest;
-        let height = BlockHeight::from_u32(1_000);
-        let undersized_inputs = vec![
-            TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE - 50),
-            TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE - 50),
-            TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE - 50),
-        ];
-        let standard_inputs = vec![
-            TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE),
-            TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE),
-            TransparentInputSize::Known(P2PKH_STANDARD_INPUT_SIZE),
-        ];
-
-        let conservative_fee = ConservativeZip317FeeRule
-            .fee_required(
-                &network,
-                height,
-                undersized_inputs.clone(),
-                std::iter::empty::<usize>(),
-                0,
-                0,
-                0,
-            )
-            .unwrap();
-        let standard_p2pkh_fee = StandardFeeRule::Zip317
-            .fee_required(
-                &network,
-                height,
-                standard_inputs,
-                std::iter::empty::<usize>(),
-                0,
-                0,
-                0,
-            )
-            .unwrap();
-        let standard_undersized_fee = StandardFeeRule::Zip317
-            .fee_required(
-                &network,
-                height,
-                undersized_inputs,
-                std::iter::empty::<usize>(),
-                0,
-                0,
-                0,
-            )
-            .unwrap();
-
-        assert_eq!(conservative_fee, standard_p2pkh_fee);
-        assert_eq!(u64::from(conservative_fee), 15_000);
-        assert_eq!(u64::from(standard_undersized_fee), 10_000);
-    }
-
-    #[test]
-    fn transparent_recipient_send_max_proposal_spends_shielded_notes() {
-        let network = WalletNetwork::Regtest;
-        let input_value = 60_000u64;
-        let spending_key = sapling_crypto::zip32::ExtendedSpendingKey::master(&[7u8; 32]);
-        let (_, recipient) = spending_key.default_address();
-        let note = sapling_crypto::Note::from_parts(
-            recipient,
-            sapling_crypto::value::NoteValue::from_raw(input_value),
-            sapling_crypto::Rseed::AfterZip212([3u8; 32]),
-        );
-        let received_note = ReceivedNote::from_parts(
-            1u32,
-            TxId::from_bytes([4u8; 32]),
-            0,
-            note,
-            zip32::Scope::External,
-            Position::from(0u64),
-            Some(BlockHeight::from_u32(20)),
-            None,
-        );
-        let recipient = Address::Transparent(taddr(9)).to_zcash_address(&network);
-
-        let proposal = build_transparent_recipient_send_max_proposal_from_notes(
-            network,
-            TargetHeight::from(BlockHeight::from_u32(1_000)),
-            BlockHeight::from_u32(900),
-            recipient,
-            None,
-            ReceivedNotes::new(vec![received_note], vec![]),
-            ConservativeZip317FeeRule,
-        )
-        .expect("transparent-recipient send-max should build from shielded notes");
-
-        let step = proposal.steps().iter().next().unwrap();
-        assert_eq!(step.payment_pools().get(&0), Some(&PoolType::TRANSPARENT));
-        assert_eq!(step.transparent_inputs().len(), 0);
-        assert_eq!(step.shielded_inputs().unwrap().notes().len(), 1);
-
-        let estimate = summarize_send_max_proposal(&proposal).unwrap();
-        assert_eq!(estimate.amount_zatoshi + estimate.fee_zatoshi, input_value);
-        assert!(estimate.fee_zatoshi > 0);
-        assert!(estimate.needs_sapling_params);
-    }
-
-    #[test]
-    #[ignore = "slow librustzcash transaction-construction regression (~100s); run explicitly when touching shielding transaction construction"]
-    fn many_utxo_shielding_builds_with_conservative_zip317_fee() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("wallet.db");
-        let db_path = db_path.to_str().unwrap();
-        let network = WalletNetwork::Regtest;
-        let mnemonic = crate::wallet::keys::generate_mnemonic();
-        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
-        let (account_uuid, _) = crate::wallet::keys::init_db_and_create_account(
-            db_path,
-            network,
-            &seed,
-            Some(1),
-            "repro",
-        )
-        .unwrap();
-        let account_id = parse_account_uuid(&account_uuid).unwrap();
-
-        let mut db = open_wallet_db(db_path, network).unwrap();
-        let tip = BlockHeight::from_u32(1_000);
-        db.update_chain_tip(tip).unwrap();
-
-        let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
-            ReceiverRequirement::Require,
-            ReceiverRequirement::Require,
-            ReceiverRequirement::Require,
-        )
-        .unwrap();
-        let (ua, _) = db
-            .get_next_available_address(account_id, ua_request)
-            .unwrap()
-            .unwrap();
-        let taddr = *ua.transparent().unwrap();
-        let value = Zatoshis::const_from_u64(1_000_000);
-
-        for i in 0..322u32 {
-            let mut txid = [0u8; 32];
-            txid[..4].copy_from_slice(&i.to_le_bytes());
-            txid[4..8].copy_from_slice(&0xfeed_beefu32.to_le_bytes());
-            let outpoint = OutPoint::new(txid, 0);
-            let txout = TxOut::new(value, taddr.script().into());
-            let utxo = WalletTransparentOutput::from_parts(outpoint, txout, Some(tip)).unwrap();
-            db.put_received_transparent_utxo(&utxo).unwrap();
-        }
-
-        let shielding_threshold = Zatoshis::const_from_u64(SHIELDING_THRESHOLD_ZATOSHI);
-        let (proposal, selected_value) =
-            build_shielding_proposal(&mut db, network, account_id, shielding_threshold).unwrap();
-        assert_eq!(u64::from(selected_value), 322_000_000);
-
-        let seed = SecretVec::new(seed.expose_secret().to_vec());
-        let usk =
-            UnifiedSpendingKey::from_seed(&network, seed.expose_secret(), zip32::AccountId::ZERO)
-                .unwrap();
-        let spend_prover = NoOpSpendProver;
-        let output_prover = NoOpOutputProver;
-        let txids = create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
-            &mut db,
-            &network,
-            &spend_prover,
-            &output_prover,
-            &wallet::SpendingKeys::from_unified_spending_key(usk),
-            OvkPolicy::Sender,
-            &proposal,
-            None,
-        )
-        .expect("many-UTXO shielding should build without a fee/change mismatch");
-        let change_values = proposal
-            .steps()
-            .iter()
-            .flat_map(|step| step.balance().proposed_change().iter())
-            .map(|change| u64::from(change.value()).to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        eprintln!(
-            "repro fixed: utxos=322 selected={} proposal_fee={} proposed_shielded={} change_values=[{}] txids={:?}",
-            u64::from(selected_value),
-            proposal_fee_zatoshi(&proposal),
-            proposal_shielded_zatoshi(&proposal),
-            change_values,
-            txids,
-        );
-
-        assert_eq!(txids.len(), 1);
-        assert_eq!(proposal_fee_zatoshi(&proposal), 1_630_000);
-        assert_eq!(proposal_shielded_zatoshi(&proposal), 320_370_000);
-    }
-
-    #[test]
-    fn selects_fragmented_non_ephemeral_sources_by_aggregate_threshold() {
-        let mut receivers = HashMap::new();
-        receivers.insert(taddr(1), receiver(60_000, TransparentKeyScope::EXTERNAL));
-        receivers.insert(taddr(2), receiver(50_000, TransparentKeyScope::INTERNAL));
-
-        let threshold = Zatoshis::from_u64(100_000).unwrap();
-        let (addresses, total) = select_shielding_sources(receivers, threshold).unwrap();
-
-        assert_eq!(addresses.len(), 2);
-        assert_eq!(u64::from(total), 110_000);
-    }
-
-    #[test]
-    fn rejects_non_ephemeral_sources_below_aggregate_threshold() {
-        let mut receivers = HashMap::new();
-        receivers.insert(taddr(1), receiver(40_000, TransparentKeyScope::EXTERNAL));
-        receivers.insert(taddr(2), receiver(50_000, TransparentKeyScope::INTERNAL));
-
-        let threshold = Zatoshis::from_u64(100_000).unwrap();
-        let err = select_shielding_sources(receivers, threshold).unwrap_err();
-
-        assert!(err.contains("No transparent funds available"));
-    }
-
-    #[test]
-    fn selects_largest_ephemeral_source_only() {
-        let mut receivers = HashMap::new();
-        receivers.insert(taddr(1), receiver(110_000, TransparentKeyScope::EPHEMERAL));
-        receivers.insert(taddr(2), receiver(150_000, TransparentKeyScope::EPHEMERAL));
-
-        let threshold = Zatoshis::from_u64(100_000).unwrap();
-        let (addresses, total) = select_shielding_sources(receivers, threshold).unwrap();
-
-        assert_eq!(addresses, vec![taddr(2)]);
-        assert_eq!(u64::from(total), 150_000);
-    }
-
-    #[test]
-    fn prefers_non_ephemeral_sources_over_ephemeral_sources() {
-        let mut receivers = HashMap::new();
-        receivers.insert(taddr(1), receiver(140_000, TransparentKeyScope::EPHEMERAL));
-        receivers.insert(taddr(2), receiver(120_000, TransparentKeyScope::EXTERNAL));
-
-        let threshold = Zatoshis::from_u64(100_000).unwrap();
-        let (addresses, total) = select_shielding_sources(receivers, threshold).unwrap();
-
-        assert_eq!(addresses, vec![taddr(2)]);
-        assert_eq!(u64::from(total), 120_000);
-    }
-}
+mod tests;

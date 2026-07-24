@@ -124,7 +124,7 @@ class _ActivityTransactionStatusScreenState
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
         try {
-          detail = rust_sync.getTransactionDetail(
+          detail = await rust_sync.getTransactionDetail(
             dbPath: dbPath,
             network: endpoint.networkName,
             accountUuid: accountUuid,

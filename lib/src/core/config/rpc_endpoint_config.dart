@@ -5,6 +5,7 @@ export 'network_config.dart';
 
 const kDefaultRpcEndpointPresetId = 'default-mainnet';
 const kCustomRpcEndpointPresetId = 'custom';
+const kIronwoodMasqueradeRpcEndpointPresetId = 'ironwood-masquerade';
 const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
@@ -62,6 +63,14 @@ class RpcEndpointPreset {
 
 // Public lightwalletd presets. Keep the mainnet default aligned with Zodl's
 // default endpoint while preserving zec.rocks as a selectable fallback.
+const kIronwoodMasqueradeRpcEndpointPreset = RpcEndpointPreset(
+  id: kIronwoodMasqueradeRpcEndpointPresetId,
+  region: 'Ironwood',
+  label: 'Ironwood Masquerade',
+  url: 'https://lwd.157.245.208.35.sslip.io:443',
+  isDefault: true,
+);
+
 final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
   RpcEndpointPreset(
     id: kDefaultRpcEndpointPresetId,
@@ -179,7 +188,10 @@ final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
 List<RpcEndpointPreset> rpcEndpointPresetsForNetwork(String networkName) {
   final network = zcashNetworkFromName(networkName);
   return switch (network) {
-    ZcashNetwork.mainnet => kMainnetRpcEndpointPresets,
+    ZcashNetwork.mainnet =>
+      kZcashIronwoodMasquerade
+          ? const [kIronwoodMasqueradeRpcEndpointPreset]
+          : kMainnetRpcEndpointPresets,
     ZcashNetwork.testnet => kTestnetRpcEndpointPresets,
     ZcashNetwork.regtest => kRegtestRpcEndpointPresets,
   };
@@ -201,6 +213,15 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
 
 bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
   return config.presetId == kCustomRpcEndpointPresetId;
+}
+
+bool isRpcEndpointAllowedForBuild(String lightwalletdUrl) {
+  if (!kZcashIronwoodMasquerade) return true;
+  return normalizeRpcEndpointUrl(lightwalletdUrl, allowDefaultPort: true) ==
+      normalizeRpcEndpointUrl(
+        kIronwoodMasqueradeRpcEndpointPreset.url,
+        allowDefaultPort: true,
+      );
 }
 
 RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
@@ -260,6 +281,10 @@ RpcEndpointConfig resolveStoredRpcEndpointConfig({
   required String? storedUrl,
   required String? storedPresetId,
 }) {
+  if (kZcashIronwoodMasquerade) {
+    return defaultRpcEndpointConfig(ZcashNetwork.mainnet.name);
+  }
+
   final network = zcashNetworkFromName(networkName);
   final presetId = storedPresetId?.trim();
   if (presetId != null &&
@@ -303,7 +328,10 @@ RpcEndpointPreset? findRpcEndpointPresetByUrl(
 }) {
   final normalized = normalizeRpcEndpointUrl(url, allowDefaultPort: true);
   final presets = networkName == null
-      ? [...kMainnetRpcEndpointPresets, ...kTestnetRpcEndpointPresets]
+      ? [
+          ...rpcEndpointPresetsForNetwork(ZcashNetwork.mainnet.name),
+          ...kTestnetRpcEndpointPresets,
+        ]
       : rpcEndpointPresetsForNetwork(networkName);
   for (final preset in presets) {
     if (normalizeRpcEndpointUrl(preset.url, allowDefaultPort: true) ==

@@ -1,10 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart' show log;
@@ -24,9 +22,6 @@ const _networkKey = 'zcash_wallet_network';
 // Mirrors kBiometricUnlockEnabledKey in providers/biometric_unlock_provider.dart;
 // kept local to avoid a bootstrap → provider import cycle.
 const _biometricUnlockEnabledKey = 'zcash_biometric_unlock_enabled';
-const _backgroundSyncChannel = MethodChannel(
-  'com.zcash.wallet/background_sync',
-);
 const _e2eLightwalletdUrlOverride = String.fromEnvironment(
   'ZCASH_E2E_LIGHTWALLETD_URL',
 );
@@ -135,9 +130,11 @@ class AppSyncSnapshot {
     required this.transparentBalance,
     required this.saplingBalance,
     required this.orchardBalance,
+    required this.ironwoodBalance,
     required this.transparentPendingBalance,
     required this.saplingPendingBalance,
     required this.orchardPendingBalance,
+    required this.ironwoodPendingBalance,
     required this.canShieldTransparentBalance,
     required this.shieldTransparentFee,
     required this.shieldTransparentAmount,
@@ -155,9 +152,11 @@ class AppSyncSnapshot {
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
+  final BigInt ironwoodBalance;
   final BigInt transparentPendingBalance;
   final BigInt saplingPendingBalance;
   final BigInt orchardPendingBalance;
+  final BigInt ironwoodPendingBalance;
   final bool canShieldTransparentBalance;
   final BigInt shieldTransparentFee;
   final BigInt shieldTransparentAmount;
@@ -172,9 +171,11 @@ class AppSyncSnapshot {
     transparentBalance: BigInt.zero,
     saplingBalance: BigInt.zero,
     orchardBalance: BigInt.zero,
+    ironwoodBalance: BigInt.zero,
     transparentPendingBalance: BigInt.zero,
     saplingPendingBalance: BigInt.zero,
     orchardPendingBalance: BigInt.zero,
+    ironwoodPendingBalance: BigInt.zero,
     canShieldTransparentBalance: false,
     shieldTransparentFee: BigInt.zero,
     shieldTransparentAmount: BigInt.zero,
@@ -191,9 +192,11 @@ class AppSyncSnapshot {
     transparentBalance: BigInt.zero,
     saplingBalance: BigInt.zero,
     orchardBalance: BigInt.zero,
+    ironwoodBalance: BigInt.zero,
     transparentPendingBalance: BigInt.zero,
     saplingPendingBalance: BigInt.zero,
     orchardPendingBalance: BigInt.zero,
+    ironwoodPendingBalance: BigInt.zero,
     canShieldTransparentBalance: false,
     shieldTransparentFee: BigInt.zero,
     shieldTransparentAmount: BigInt.zero,
@@ -227,7 +230,6 @@ Future<AppBootstrapState> loadAppBootstrap() async {
       await storage.readString(_networkKey),
     );
     final rpcEndpointConfig = await _readRpcEndpointConfig(storage, network);
-    await _seedNativeRpcEndpointMirror(rpcEndpointConfig);
     final themeMode = await _readThemeMode(storage);
     final privacyModeEnabled = await _readPrivacyModeEnabled(storage);
     final swapEnabledOverrideCachedForRelease =
@@ -422,23 +424,6 @@ AccountInfo mergeBootstrappedAccountInfo({
   );
 }
 
-Future<void> _seedNativeRpcEndpointMirror(RpcEndpointConfig endpoint) async {
-  if (!Platform.isIOS) return;
-  try {
-    final success = await _backgroundSyncChannel
-        .invokeMethod<bool>('updateEndpoint', {
-          'lightwalletdUrl': endpoint.normalizedLightwalletdUrl,
-          'network': endpoint.networkName,
-          'presetId': endpoint.effectivePresetId,
-        });
-    if (success != true) {
-      log('bootstrap: iOS RPC endpoint mirror seed returned $success');
-    }
-  } catch (e) {
-    log('bootstrap: failed to seed iOS RPC endpoint mirror: $e');
-  }
-}
-
 Future<RpcEndpointConfig> _readRpcEndpointConfig(
   AppSecureStore storage,
   String network,
@@ -616,9 +601,11 @@ Future<AppSyncSnapshot> _loadInitialSyncSnapshot({
       transparentBalance: balance.transparent,
       saplingBalance: balance.sapling,
       orchardBalance: balance.orchard,
+      ironwoodBalance: balance.ironwood,
       transparentPendingBalance: balance.transparentPending,
       saplingPendingBalance: balance.saplingPending,
       orchardPendingBalance: balance.orchardPending,
+      ironwoodPendingBalance: balance.ironwoodPending,
       canShieldTransparentBalance: canShieldTransparentBalance,
       shieldTransparentFee: shieldTransparentFee,
       shieldTransparentAmount: shieldTransparentAmount,

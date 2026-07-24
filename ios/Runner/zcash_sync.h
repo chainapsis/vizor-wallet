@@ -17,23 +17,48 @@ typedef struct {
 
 typedef void (*SyncProgressCallback)(CSyncProgress);
 
-/// Run full sync. Blocks until complete or cancelled.
-/// Returns 0 on success, 1 on error, 2 on panic.
-int32_t zcash_run_full_sync(
+typedef struct {
+    uint8_t state;
+    uint32_t confirmation_count;
+    uint32_t confirmation_target;
+    uint32_t completed_stage_count;
+    uint32_t total_stage_count;
+} CMigrationPreparationProgress;
+
+int32_t zcash_inspect_migration_preparation(
+    const char* db_path,
+    const char* network,
+    const char* account_uuid,
+    const char* expected_run_id,
+    CMigrationPreparationProgress* output
+);
+
+int32_t zcash_run_full_sync_for_migration_preparation(
     const char* db_path,
     const char* lightwalletd_url,
     const char* network,
     SyncProgressCallback progress_callback
 );
 
-/// Cancel a running sync.
-void zcash_cancel_sync(void);
+/// Begin/end one serial migration preparation operation. The operation owns
+/// its cancellation token across both sync and advance calls.
+bool zcash_begin_migration_preparation_operation(void);
+void zcash_end_migration_preparation_operation(void);
 
-/// Get the current desired sync mode (0=none, 1=foreground, 2=background).
-uint8_t zcash_get_sync_mode(void);
+int32_t zcash_advance_migration_preparation(
+    const char* db_path,
+    const char* lightwalletd_url,
+    const char* network,
+    const char* account_uuid,
+    const char* expected_run_id,
+    const uint8_t* credential,
+    uintptr_t credential_len,
+    const char* salt_base64,
+    CMigrationPreparationProgress* output
+);
 
-/// Set the desired sync mode (0=none, 1=foreground, 2=background).
-void zcash_set_sync_mode(uint8_t mode);
+/// Cancel only the active migration preparation operation.
+bool zcash_cancel_migration_preparation_sync(void);
 
 /// Check if a sync is currently running.
 bool zcash_is_sync_running(void);

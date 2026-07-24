@@ -1,18 +1,30 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/config/network_config.dart';
 import '../../rust/api/voting_config.dart' as rust_config_api;
 import '../../rust/third_party/zcash_voting/config.dart' as rust_config;
 import 'voting_http.dart';
 import 'voting_models.dart';
 
-/// Hash-pinned static trust anchor used to discover the mutable voting config.
+/// Production static trust anchor used to discover the mutable voting config.
 ///
 /// The URL itself is expected to stay stable in the app, while the fetched JSON
 /// points at the current dynamic service configuration.
-const kDefaultStaticVotingConfigSource =
+const kProductionStaticVotingConfigSource =
     'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
     '671f76403eea8aaf64a87cb484c4b0cdaea596db/prod/static-voting-config.json'
     '?checksum=sha256:c06f1dfa2f0a30b3614aefcf00ac7e31d61ebc3cf551b3031d1b194232d1056d';
+
+/// Stage static trust anchor used by public testnet builds.
+const kStageStaticVotingConfigSource =
+    'https://raw.githubusercontent.com/valargroup/token-holder-voting-config/'
+    '491e55306aa5c539a0314d30a8b2c51946b88b73/stage/static-voting-config.json'
+    '?checksum=sha256:80890a6de9acc7293c3e2fabf870bb3e5755dbe0e69de4a59feb8f696134d4dc';
+
+/// Bundled voting config for the selected launch network.
+const kDefaultStaticVotingConfigSource = kZcashDefaultNetworkRaw == 'test'
+    ? kStageStaticVotingConfigSource
+    : kProductionStaticVotingConfigSource;
 
 /// Authenticates static config bytes and returns the dynamic config URL to
 /// fetch next. Injectable so tests can stub the Rust boundary.

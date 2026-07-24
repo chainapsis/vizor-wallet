@@ -105,19 +105,23 @@ void main() {
         await tapUntilVisible(
           tester,
           trigger: find.text('Password'),
-          outcome: find.text('Enter Passcode'),
+          outcome: find.byKey(const ValueKey('mobile_change_passcode_verify')),
           description: 'change-passcode screen',
         );
         await enterPasscode(tester, current);
         await pumpUntil(
           tester,
-          () => tester.any(find.text('Update Passcode')),
+          () => tester.any(
+            find.byKey(const ValueKey('mobile_change_passcode_create')),
+          ),
           description: 'new-passcode phase',
         );
         await enterPasscode(tester, next);
         await pumpUntil(
           tester,
-          () => tester.any(find.text('Confirm Passcode')),
+          () => tester.any(
+            find.byKey(const ValueKey('mobile_change_passcode_confirm')),
+          ),
           description: 'confirm-passcode phase',
         );
         await enterPasscode(tester, next);

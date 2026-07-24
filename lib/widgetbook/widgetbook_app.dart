@@ -314,6 +314,170 @@ class WidgetbookApp extends StatelessWidget {
               ],
             ),
             WidgetbookFolder(
+              name: 'Ironwood migration',
+              children: [
+                WidgetbookComponent(
+                  name: 'Desktop',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Preparing',
+                      builder:
+                          buildIronwoodMigrationPrivateStatusWaitingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migrating',
+                      builder:
+                          buildIronwoodMigrationPrivateStatusMigratingUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Home - Migration required',
+                      builder: buildMobileHomeIronwoodMigrationRequiredUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration in progress',
+                      builder:
+                          buildMobileHomeIronwoodMigrationInProgressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Announcement modal',
+                      builder: buildMobileHomeIronwoodAnnouncementUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration complete',
+                      builder: buildMobileHomeIronwoodMigrationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'About Ironwood',
+                      builder: buildMobileIronwoodMigrationIntroUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Ironwood steps',
+                      builder: buildMobileIronwoodMigrationHowItWorksUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type',
+                      builder: buildMobileIronwoodMigrationOptionsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Private',
+                      builder: buildMobileIronwoodMigrationPrivateReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Private (many parts)',
+                      builder:
+                          buildMobileIronwoodMigrationPrivateManyPartsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Analyzing',
+                      builder:
+                          buildMobileIronwoodMigrationAnalyzingMotionUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Fast',
+                      builder: buildMobileIronwoodMigrationFastReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Notifications - Enable',
+                      builder:
+                          buildMobileIronwoodMigrationNotificationsPromptUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Notifications - Confirm skip',
+                      builder:
+                          buildMobileIronwoodMigrationNotificationsConfirmationUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation - Active',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationActiveUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation - Continue',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationPausedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation - Continue with Keystone',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationPausedKeystoneUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation - Syncing',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Syncing',
+                      builder: buildMobileIronwoodMigrationSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Preparation done',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Waiting (notifications on)',
+                      builder:
+                          buildMobileIronwoodMigrationWaitingNotificationsOnUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Waiting (notifications off)',
+                      builder:
+                          buildMobileIronwoodMigrationWaitingNotificationsOffUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Needs input (batch blinking)',
+                      builder: buildMobileIronwoodMigrationNeedsInputUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Keystone sign all',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneSignAllUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Broadcasting',
+                      builder: buildMobileIronwoodMigrationBroadcastingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration - Complete',
+                      builder: buildMobileIronwoodMigrationCompleteUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration needs input',
+                      builder: buildMobileIronwoodMigrationHomeAttentionUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Home - Migration needs input modal',
+                      builder:
+                          buildMobileIronwoodMigrationHomeAttentionModalUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - QR scan help',
+                      builder: buildMobileIronwoodMigrationKeystoneHelpUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Preparing',
+                      builder: buildMobileIronwoodMigrationPreparingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Migrating',
+                      builder: buildMobileIronwoodMigrationMigratingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration type - Recovery required',
+                      builder:
+                          buildMobileIronwoodMigrationRecoveryRequiredUseCase,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            WidgetbookFolder(
               name: 'Accounts',
               children: [
                 WidgetbookComponent(
@@ -359,6 +523,11 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Remove account',
                       builder: buildMobileAccountsRemoveAccountUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Remove account during migration',
+                      builder:
+                          buildMobileAccountsActiveMigrationRemoveAccountUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Many accounts',

@@ -15,8 +15,8 @@ import '../../../address_scan/widgets/mobile_address_scan_card.dart';
 import '../../../address_scan/widgets/mobile_address_scan_view.dart'
     show MobileScanOutcome;
 import '../../../../providers/account_provider.dart';
-import '../../../../providers/sync_provider.dart';
 import '../../../address_book/providers/address_book_provider.dart';
+import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../swap/models/swap_intent_presentation_mapper.dart'
     show swapIntentsFromRecords;
 import '../../../swap/models/swap_models.dart';
@@ -253,12 +253,6 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
-    final sync = ref.watch(
-      syncProvider.select(
-        (value) =>
-            (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
-      ),
-    );
     _syncController(
       _amountController,
       swapState.receiveAmountInputMode == SwapAmountInputMode.fiat
@@ -304,6 +298,9 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
       _MobilePayStep.amount => 'Pay in ${swapState.externalAsset.symbol}',
       _MobilePayStep.recipient => 'Select Recipient',
     };
+    final migrationSpendable = ref.watch(
+      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    );
 
     return Scaffold(
       backgroundColor: context.colors.background.window,
@@ -322,7 +319,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     state: swapState,
                     controller: _amountController,
                     focusNode: _amountFocusNode,
-                    zecAvailableZatoshi: sync.displaySpendableBalance,
+                    zecAvailableZatoshi: migrationSpendable,
                     onAmountChanged: swapNotifier.updateReceiveAmount,
                     onFiatAmountChanged: swapNotifier.updateReceiveAmountFiat,
                     onToggleFiatInputMode: () => swapNotifier

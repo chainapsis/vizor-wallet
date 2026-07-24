@@ -118,6 +118,7 @@ rust_sync.TransactionInfo _transaction({
   BigInt? minedHeight,
   bool expiredUnmined = false,
   BigInt? displayAmount,
+  String displayPool = 'shielded',
 }) {
   return rust_sync.TransactionInfo(
     txidHex: 'ab12cd34',
@@ -129,7 +130,7 @@ rust_sync.TransactionInfo _transaction({
     isTransparent: false,
     txKind: txKind,
     displayAmount: displayAmount ?? BigInt.from(12000000000),
-    displayPool: 'shielded',
+    displayPool: displayPool,
     createdTime: BigInt.from(1750000000),
   );
 }

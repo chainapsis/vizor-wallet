@@ -10,6 +10,10 @@ import 'package:zcash_wallet/src/features/activity/screens/activity_screen.dart'
 import 'package:zcash_wallet/src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'package:zcash_wallet/src/features/home/screens/home_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_provider_config.dart';
@@ -23,8 +27,98 @@ final _swapFeatureToggleProvider =
     NotifierProvider<_SwapFeatureToggleNotifier, bool>(
       _SwapFeatureToggleNotifier.new,
     );
+final _migrationFlowData = IronwoodMigrationFlowData(
+  amountZatoshi: BigInt.from(10_000_000),
+  accountName: 'Account 1',
+  profilePictureId: 'pfp-03',
+);
 
 void main() {
+  for (final location in [
+    '/send',
+    '/send/review',
+    '/send/keystone/scan',
+    '/send/status',
+    '/receive',
+    '/pay',
+    '/pay/review',
+    '/swap',
+    '/swap/review',
+  ]) {
+    testWidgets(
+      'Ironwood migration lock redirects $location to migration intro',
+      (tester) async {
+        await tester.pumpWidget(
+          _appHarness(
+            location,
+            ironwoodPostMigrationState:
+                const IronwoodPostMigrationState.required(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                ),
+            ironwoodHomeMigrationCtaState:
+                const IronwoodHomeMigrationCtaState.start(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                ),
+            ironwoodMigrationFlowData: _migrationFlowData,
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        expect(find.byType(IronwoodMigrationFlowScreen), findsOneWidget);
+        expect(find.byType(SendScreen), findsNothing);
+        expect(find.byType(SwapScreen), findsNothing);
+        expect(find.byType(HomeScreen), findsNothing);
+      },
+    );
+  }
+
+  testWidgets(
+    'mobile migration presentation lock survives unavailable raw state',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/send',
+          ironwoodPostMigrationState:
+              const IronwoodPostMigrationState.unavailable(),
+          ironwoodHomeMigrationCtaState:
+              const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+          ironwoodMigrationFlowData: _migrationFlowData,
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MobileIronwoodMigrationFlowScreen), findsOneWidget);
+      expect(find.byType(SendScreen), findsNothing);
+    },
+    tags: 'mobile',
+  );
+
+  testWidgets('completed Ironwood migration leaves swap route accessible', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/swap',
+        ironwoodPostMigrationState: const IronwoodPostMigrationState.complete(
+          network: 'main',
+          accountUuid: 'account-1',
+        ),
+      ),
+    );
+
+    await _pumpUntilPresent(tester, find.byType(SwapScreen));
+
+    expect(find.byType(SwapScreen), findsOneWidget);
+    expect(find.byType(IronwoodMigrationFlowScreen), findsNothing);
+  });
+
   testWidgets('disabled swap route redirects to home', (tester) async {
     await tester.pumpWidget(_appHarness('/swap', swapEnabled: false));
     await tester.pumpAndSettle();
@@ -209,6 +303,11 @@ Widget _appHarness(
   Override? swapFeatureOverride,
   String network = 'main',
   SwapActivityStore? swapActivityStore,
+  IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
+      const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodPostMigrationState ironwoodPostMigrationState =
+      const IronwoodPostMigrationState.inactive(),
+  IronwoodMigrationFlowData? ironwoodMigrationFlowData,
 }) {
   return ProviderScope(
     overrides: [
@@ -226,6 +325,22 @@ Widget _appHarness(
       swapIntentProvider.overrideWithValue(const _FakeSwapProvider()),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
+      ironwoodHomeMigrationCtaProvider.overrideWith((ref) {
+        return ironwoodHomeMigrationCtaState;
+      }),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        ironwoodHomeMigrationCtaState,
+      ),
+      ironwoodMigrationRouteCtaProvider.overrideWith((ref) {
+        return ironwoodHomeMigrationCtaState;
+      }),
+      ironwoodPostMigrationStateProvider.overrideWith((ref) {
+        return ironwoodPostMigrationState;
+      }),
+      if (ironwoodMigrationFlowData != null)
+        ironwoodMigrationFlowDataProvider.overrideWith((ref) {
+          return ironwoodMigrationFlowData;
+        }),
     ],
     child: const ZcashWalletApp(),
   );

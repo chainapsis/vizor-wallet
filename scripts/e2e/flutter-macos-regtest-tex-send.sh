@@ -56,4 +56,5 @@ fvm flutter test \
   --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
   --dart-define=ZCASH_E2E_ZCASHD_RPC_URL="$ZCASHD_RPC_URL" \
-  --dart-define=ZCASH_E2E_TEX_ADDRESS="$receiver_tex_address"
+  --dart-define=ZCASH_E2E_TEX_ADDRESS="$receiver_tex_address" \
+  --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"

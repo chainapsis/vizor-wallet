@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,9 +29,16 @@ void runFigmaCompareCaptureTest({
           'scripts/figma-compare.sh so the required define is always passed.',
     );
 
+    if (expectedFormFactor == AppFormFactor.mobile) {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    }
+
     final configuration = FigmaCompareConfiguration.fromEnvironment(
       defaultLogicalSize: defaultLogicalSize,
       defaultPixelRatio: defaultPixelRatio,
+      defaultScenarioId: expectedFormFactor == AppFormFactor.mobile
+          ? 'mobile-home-default'
+          : 'pay-recipient',
     );
     final scenario = configuration.resolveScenario(expectedFormFactor);
     final output = File(
@@ -70,12 +79,22 @@ void runFigmaCompareCaptureTest({
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     await _precacheRenderedImages(tester);
-    await tester.pump();
+    // Route- and provider-driven modal scenarios are presented after the
+    // first frame. Advance the standard Material sheet transition to its
+    // resting state without using pumpAndSettle, which would hang on the
+    // intentionally looping home-screen illustration motion.
+    await tester.pump(const Duration(milliseconds: 400));
 
-    await expectLater(
-      find.byKey(captureBoundaryKey),
-      matchesGoldenFile(output.uri),
-    );
+    if (configuration.outputPath.isEmpty) {
+      expect(find.byKey(captureBoundaryKey), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } else {
+      await expectLater(
+        find.byKey(captureBoundaryKey),
+        matchesGoldenFile(output.uri),
+      );
+    }
+    debugDefaultTargetPlatformOverride = null;
     debugPrint(
       'Figma comparison widget: ${output.path} '
       '(${configuration.logicalSize.width.toInt()}x'
@@ -118,6 +137,7 @@ Future<void> _loadAppFonts() async {
       'assets/fonts/GeistMono-Medium.ttf',
     ],
     'Young Serif': ['assets/fonts/YoungSerif-Regular.ttf'],
+    'MaterialIcons': ['fonts/MaterialIcons-Regular.otf'],
   };
 
   for (final entry in fonts.entries) {

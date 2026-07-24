@@ -68,7 +68,10 @@ Future<void> _runUninstallFlow(
     await tester.pumpAndSettle();
 
     if (openFromSettings) {
-      await tester.tap(find.text('Uninstall Vizor'));
+      final uninstallEntry = find.text('Uninstall Vizor');
+      await tester.ensureVisible(uninstallEntry);
+      await tester.pumpAndSettle();
+      await tester.tap(uninstallEntry);
       await tester.pumpAndSettle();
     }
 
@@ -195,7 +198,6 @@ class _TestSyncNotifier extends SyncNotifier {
     return const WalletMutationSyncPause(
       hadActiveSync: false,
       hadPolling: false,
-      hadBackgroundSync: false,
       hadMempoolObserver: false,
     );
   }

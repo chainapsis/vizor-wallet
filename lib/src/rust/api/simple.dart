@@ -8,3 +8,17 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 String greet({required String name}) =>
     RustLib.instance.api.crateApiSimpleGreet(name: name);
+
+/// Keep wallet consensus parameters aligned with the local Ironwood regtest
+/// node. Production builds leave the default activation-at-height-1 behavior.
+Future<void> configureRegtestIronwoodActivationHeight({required int height}) =>
+    RustLib.instance.api.crateApiSimpleConfigureRegtestIronwoodActivationHeight(
+      height: height,
+    );
+
+/// Enables Regtest-speed migration timing on Testnet only. Mainnet and
+/// Regtest consensus behavior are unaffected.
+Future<void> configureFastTestnetMigration({required bool enabled}) => RustLib
+    .instance
+    .api
+    .crateApiSimpleConfigureFastTestnetMigration(enabled: enabled);

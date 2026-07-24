@@ -22,12 +22,15 @@ class ChainMetadata extends $pb.GeneratedMessage {
   factory ChainMetadata({
     $core.int? saplingCommitmentTreeSize,
     $core.int? orchardCommitmentTreeSize,
+    $core.int? ironwoodCommitmentTreeSize,
   }) {
     final result = create();
     if (saplingCommitmentTreeSize != null)
       result.saplingCommitmentTreeSize = saplingCommitmentTreeSize;
     if (orchardCommitmentTreeSize != null)
       result.orchardCommitmentTreeSize = orchardCommitmentTreeSize;
+    if (ironwoodCommitmentTreeSize != null)
+      result.ironwoodCommitmentTreeSize = ironwoodCommitmentTreeSize;
     return result;
   }
 
@@ -49,6 +52,8 @@ class ChainMetadata extends $pb.GeneratedMessage {
         protoName: 'saplingCommitmentTreeSize', fieldType: $pb.PbFieldType.OU3)
     ..aI(2, _omitFieldNames ? '' : 'orchardCommitmentTreeSize',
         protoName: 'orchardCommitmentTreeSize', fieldType: $pb.PbFieldType.OU3)
+    ..aI(3, _omitFieldNames ? '' : 'ironwoodCommitmentTreeSize',
+        protoName: 'ironwoodCommitmentTreeSize', fieldType: $pb.PbFieldType.OU3)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -89,6 +94,16 @@ class ChainMetadata extends $pb.GeneratedMessage {
   $core.bool hasOrchardCommitmentTreeSize() => $_has(1);
   @$pb.TagNumber(2)
   void clearOrchardCommitmentTreeSize() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get ironwoodCommitmentTreeSize => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set ironwoodCommitmentTreeSize($core.int value) =>
+      $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasIronwoodCommitmentTreeSize() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearIronwoodCommitmentTreeSize() => $_clearField(3);
 }
 
 /// A compact representation of a Zcash block.
@@ -262,6 +277,7 @@ class CompactTx extends $pb.GeneratedMessage {
     $core.Iterable<CompactOrchardAction>? actions,
     $core.Iterable<CompactTxIn>? vin,
     $core.Iterable<TxOut>? vout,
+    $core.Iterable<CompactOrchardAction>? ironwoodActions,
   }) {
     final result = create();
     if (index != null) result.index = index;
@@ -272,6 +288,7 @@ class CompactTx extends $pb.GeneratedMessage {
     if (actions != null) result.actions.addAll(actions);
     if (vin != null) result.vin.addAll(vin);
     if (vout != null) result.vout.addAll(vout);
+    if (ironwoodActions != null) result.ironwoodActions.addAll(ironwoodActions);
     return result;
   }
 
@@ -303,6 +320,8 @@ class CompactTx extends $pb.GeneratedMessage {
     ..pPM<CompactTxIn>(7, _omitFieldNames ? '' : 'vin',
         subBuilder: CompactTxIn.create)
     ..pPM<TxOut>(8, _omitFieldNames ? '' : 'vout', subBuilder: TxOut.create)
+    ..pPM<CompactOrchardAction>(9, _omitFieldNames ? '' : 'ironwoodActions',
+        protoName: 'ironwoodActions', subBuilder: CompactOrchardAction.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -351,7 +370,8 @@ class CompactTx extends $pb.GeneratedMessage {
   /// stateless server and a transaction with transparent inputs, this will be
   /// unset because the calculation requires reference to prior transactions.
   /// If there are no transparent inputs, the fee will be calculable as:
-  ///    valueBalanceSapling + valueBalanceOrchard + sum(vPubNew) - sum(vPubOld) - sum(tOut)
+  ///    valueBalanceSapling + valueBalanceOrchard + valueBalanceIronwood
+  ///    + sum(vPubNew) - sum(vPubOld) - sum(tOut)
   @$pb.TagNumber(3)
   $core.int get fee => $_getIZ(2);
   @$pb.TagNumber(3)
@@ -382,6 +402,11 @@ class CompactTx extends $pb.GeneratedMessage {
   /// A sequence of transparent outputs being created by the transaction.
   @$pb.TagNumber(8)
   $pb.PbList<TxOut> get vout => $_getList(7);
+
+  /// A sequence of Ironwood actions in the transaction. Ironwood reuses the
+  /// compact Orchard action shape because the pools have identical action fields.
+  @$pb.TagNumber(9)
+  $pb.PbList<CompactOrchardAction> get ironwoodActions => $_getList(8);
 }
 
 /// A compact representation of a transparent transaction input.
@@ -683,6 +708,9 @@ class CompactSaplingOutput extends $pb.GeneratedMessage {
 }
 
 /// A compact representation of an [Orchard Action](https://zips.z.cash/protocol/protocol.pdf#actionencodingandconsensus).
+///
+/// This shape is also used for Ironwood actions because Ironwood action fields
+/// are identical to Orchard action fields.
 class CompactOrchardAction extends $pb.GeneratedMessage {
   factory CompactOrchardAction({
     $core.List<$core.int>? nullifier,

@@ -12,14 +12,39 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     FreshInstallKeychainCleaner.runIfNeeded()
+    BackgroundMigrationManager.shared.registerBackgroundTask()
 
     if #available(iOS 26.0, *) {
-      BackgroundSyncManager.shared.registerBackgroundTask()
+      // One-release tombstone for requests submitted by the removed general
+      // background-sync feature. Do not register a handler for this identifier.
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: "com.keplr.vizor.sync"
+      )
+      // A BGTask cold-launches the app with a background application state.
+      // Cancelling here unconditionally removes the very request iOS is
+      // launching us to service. Only a user-driven foreground launch should
+      // discard a stale pending preparation request.
+      if application.applicationState != .background {
+        BackgroundMigrationPreparationManager.shared
+          .handoffPendingRequestForForegroundLaunch()
+      }
+      BackgroundMigrationPreparationManager.shared.registerBackgroundTask()
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: "com.keplr.vizor.txtrack"
       )
     }
+    if application.applicationState != .background {
+      IronwoodMigrationNotificationGate.shared.enforceOnForeground()
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  override func applicationWillEnterForeground(_ application: UIApplication) {
+    IronwoodMigrationNotificationGate.shared.enforceOnForeground()
+    if #available(iOS 26.0, *) {
+      BackgroundMigrationManager.shared.handoffToForeground()
+    }
+    super.applicationWillEnterForeground(application)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
@@ -27,56 +52,218 @@ import UIKit
 
     let messenger = engineBridge.applicationRegistrar.messenger()
 
-    // MethodChannel for background sync control
-    let methodChannel = FlutterMethodChannel(
-      name: "com.zcash.wallet/background_sync",
+    let backgroundMigrationChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/background_migration",
       binaryMessenger: messenger
     )
-    methodChannel.setMethodCallHandler { (call, result) in
+    backgroundMigrationChannel.setMethodCallHandler { call, result in
       switch call.method {
-      case "isAvailable":
-        #if targetEnvironment(simulator)
+      case "getNotificationAuthorizationStatus":
+        IronwoodMigrationNotificationGate.shared.status { status in
+          DispatchQueue.main.async { result(status.rawValue) }
+        }
+      case "requestNotificationAuthorization":
+        IronwoodMigrationNotificationGate.shared.requestAuthorization {
+          status in
+          if !status.allowsBackgroundMigration {
+            IronwoodMigrationNotificationGate.shared.hardDisable()
+          }
+          DispatchQueue.main.async { result(status.rawValue) }
+        }
+      case "openNotificationSettings":
+        IronwoodMigrationNotificationGate.shared.openSettings {
+          opened in result(opened)
+        }
+      case "schedule":
+        BackgroundMigrationManager.shared.schedule { scheduled in
+          DispatchQueue.main.async { result(scheduled) }
+        }
+      case "startPreparation":
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared.start {
+            success in DispatchQueue.main.async { result(success) }
+          }
+        } else {
           result(false)
-        #else
-          if #available(iOS 26.0, *) {
-            result(true)
+        }
+      case "getPreparationRuntimeState":
+        guard
+          let arguments = call.arguments as? [String: Any],
+          let network = arguments["network"] as? String,
+          let accountUuid = arguments["accountUuid"] as? String,
+          let runId = arguments["runId"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "Missing Ironwood preparation scope.",
+              details: nil
+            )
+          )
+          return
+        }
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared.runtimeState(
+            network: network,
+            accountUuid: accountUuid,
+            runId: runId
+          ) { state in
+            DispatchQueue.main.async { result(state.rawValue) }
+          }
+        } else {
+          result(BackgroundMigrationPreparationRuntimeState.idle.rawValue)
+        }
+      case "ackPreparationForegroundContinuation":
+        guard
+          let arguments = call.arguments as? [String: Any],
+          let network = arguments["network"] as? String,
+          let accountUuid = arguments["accountUuid"] as? String,
+          let runId = arguments["runId"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "Missing Ironwood preparation scope.",
+              details: nil
+            )
+          )
+          return
+        }
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared
+            .acknowledgeForegroundContinuation(
+              network: network,
+              accountUuid: accountUuid,
+              runId: runId
+            )
+        }
+        result(true)
+      case "stageOutboxBatch":
+        do {
+          result(try BackgroundMigrationOutboxChannel.stageBatch(arguments: call.arguments))
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
+      case "armOutboxBatch":
+        do {
+          try BackgroundMigrationOutboxChannel.armBatch(arguments: call.arguments)
+          self.completeOutboxArmWithBackgroundSchedule(result: result)
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
+      case "recoverOutboxBatch":
+        do {
+          let recovered = try BackgroundMigrationOutboxChannel.recoverBatch(
+            arguments: call.arguments
+          )
+          if recovered {
+            self.completeOutboxArmWithBackgroundSchedule(result: result)
           } else {
             result(false)
           }
-        #endif
-      case "startBackgroundSync":
-        if #available(iOS 26.0, *) {
-          let args = call.arguments as? [String: Any]
-          let lightwalletdUrl = args?["lightwalletdUrl"] as? String
-          let network = args?["network"] as? String
-          let presetId = args?["presetId"] as? String
-          let success = BackgroundSyncManager.shared.startBackgroundSync(
-            lightwalletdUrl: lightwalletdUrl,
-            network: network,
-            presetId: presetId
-          )
-          result(success)
-        } else {
-          result(false)
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
         }
-      case "stopBackgroundSync":
-        if #available(iOS 26.0, *) {
-          let success = BackgroundSyncManager.shared.stopBackgroundSync()
-          result(success)
-        } else {
-          result(false)
+      case "listOutboxReceipts":
+        do {
+          result(try BackgroundMigrationOutboxChannel.listReceipts())
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
         }
-      case "updateEndpoint":
-        let args = call.arguments as? [String: Any]
-        let lightwalletdUrl = args?["lightwalletdUrl"] as? String
-        let network = args?["network"] as? String
-        let presetId = args?["presetId"] as? String
-        RpcEndpointConfigStore.save(
-          lightwalletdUrl: lightwalletdUrl,
-          network: network,
-          presetId: presetId
-        )
+      case "ackOutboxReceipts":
+        do {
+          try BackgroundMigrationOutboxChannel.acknowledgeReceipts(arguments: call.arguments)
+          result(true)
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
+      case "runOutboxOnceNow":
+        DispatchQueue.global(qos: .utility).async {
+          let outcome = BackgroundMigrationOutboxChannel.runOnceNow()
+          DispatchQueue.main.async { result(self.backgroundOutboxResult(outcome)) }
+        }
+      case "cancel":
+        BackgroundMigrationManager.shared.cancelIfNoRunnableWork()
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared
+            .cancelIfNoActivePreparation()
+        }
         result(true)
+      case "quiesce":
+        BackgroundMigrationManager.shared.quiesce {
+          outboxSuccess in
+          guard outboxSuccess else {
+            result(false)
+            return
+          }
+          if #available(iOS 26.0, *) {
+            BackgroundMigrationPreparationManager.shared.quiesce {
+              preparationSuccess in result(preparationSuccess)
+            }
+          } else {
+            result(true)
+          }
+        }
+      case "resume":
+        BackgroundMigrationManager.shared.resumeAfterFailedMutation {
+          resumed in
+          if #available(iOS 26.0, *) {
+            BackgroundMigrationPreparationManager.shared.resumeAfterMutation()
+          }
+          DispatchQueue.main.async { result(resumed) }
+        }
+      case "revokeAccount":
+        guard let arguments = call.arguments as? [String: Any],
+          let network = arguments["network"] as? String,
+          let accountUuid = arguments["accountUuid"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "Missing Ironwood migration account scope.",
+              details: nil
+            )
+          )
+          return
+        }
+        BackgroundMigrationManager.shared.revokeAccount(
+          network: network,
+          accountUuid: accountUuid,
+          completion: { success in
+            if success {
+              if #available(iOS 26.0, *) {
+                BackgroundMigrationPreparationManager.shared
+                  .cancelIfNoActivePreparation()
+              }
+            }
+            result(success)
+          }
+        )
+      case "revokeAll":
+        BackgroundMigrationManager.shared.revokeAll {
+          success in
+          if success {
+            if #available(iOS 26.0, *) {
+              BackgroundMigrationPreparationManager.shared
+                .cancelIfNoActivePreparation()
+            }
+          }
+          result(success)
+        }
+      #if DEBUG || targetEnvironment(simulator)
+        case "runOnceForTesting":
+          DispatchQueue.global(qos: .utility).async {
+            let outcome = BackgroundMigrationManager.shared.runOnceForTesting()
+            DispatchQueue.main.async {
+              result(self.backgroundOutboxResult(outcome))
+            }
+          }
+        case "resumeWithoutSchedulingForTesting":
+          result(
+            BackgroundMigrationManager.shared
+              .resumeWithoutSchedulingForTesting()
+          )
+      #endif
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -208,13 +395,6 @@ import UIKit
       }
     }
 
-    // EventChannel for sync progress (Swift → Dart)
-    let eventChannel = FlutterEventChannel(
-      name: "com.zcash.wallet/sync_progress",
-      binaryMessenger: messenger
-    )
-    eventChannel.setStreamHandler(SyncProgressStreamHandler.shared)
-
     // EventChannel for screenshot detection — sensitive screens (secret
     // passphrase) warn when the user captures them.
     let screenshotChannel = FlutterEventChannel(
@@ -222,6 +402,89 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+  }
+
+  private func completeOutboxArmWithBackgroundSchedule(
+    result: @escaping FlutterResult
+  ) {
+    IronwoodMigrationNotificationGate.shared.status { status in
+      guard status.allowsBackgroundMigration else {
+        // The durable outbox remains intentionally usable from the foreground
+        // when the user declines notifications. Only the background lane is
+        // disabled in this mode.
+        IronwoodMigrationNotificationGate.shared.hardDisable()
+        let success = IronwoodMigrationOutboxArmSchedulePolicy.reportsSuccess(
+          authorization: status,
+          submitted: false
+        )
+        DispatchQueue.main.async { result(success) }
+        return
+      }
+      BackgroundMigrationManager.shared.schedule { submitted in
+        // With authorization granted, a scheduler submission failure must be
+        // surfaced so Dart does not mistake an unscheduled outbox for a
+        // background-tracked one.
+        let success = IronwoodMigrationOutboxArmSchedulePolicy.reportsSuccess(
+          authorization: status,
+          submitted: submitted
+        )
+        DispatchQueue.main.async { result(success) }
+      }
+    }
+  }
+
+  private func backgroundMigrationFlutterError(_ error: Error) -> FlutterError {
+    FlutterError(
+      code: "ironwood_outbox_error",
+      message: String(describing: error),
+      details: nil
+    )
+  }
+
+  private func backgroundOutboxResult(
+    _ runResult: BackgroundMigrationOutboxRunResult
+  ) -> [String: Any?] {
+    let transport = backgroundTransportResult(runResult.transport)
+    var result = transport
+    result["transport"] = transport
+    if let proofReady = runResult.proofReady {
+      result["proofReady"] = [
+        "batchId": proofReady.batchId,
+        "observedHeight": proofReady.observedHeight,
+      ]
+    } else {
+      result["proofReady"] = NSNull()
+    }
+    return result
+  }
+
+  private func backgroundTransportResult(
+    _ outcome: BackgroundMigrationTransportOutcome
+  ) -> [String: Any?] {
+    switch outcome {
+    case .noWork:
+      return ["outcome": "noWork"]
+    case .waiting(let nextHeight, let observedHeight, let delay):
+      return [
+        "outcome": "waiting",
+        "nextHeight": nextHeight,
+        "observedHeight": observedHeight,
+        "delaySeconds": delay,
+      ]
+    case .accepted(let nextHeight, let observedHeight, let delay):
+      return [
+        "outcome": "accepted",
+        "nextHeight": nextHeight,
+        "observedHeight": observedHeight,
+        "delaySeconds": delay,
+      ]
+    case .needsUserAction:
+      return ["outcome": "needsUserAction"]
+    case .temporarilyUnavailable:
+      return ["outcome": "temporarilyUnavailable"]
+    case .cancelled:
+      return ["outcome": "cancelled"]
+    }
   }
 
   private func performSendSuccessHaptic() -> Bool {
@@ -262,7 +525,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.00),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.00)
               ],
               relativeTime: 0.06,
               duration: 0.04
@@ -311,7 +574,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70)
               ],
               relativeTime: 0,
               duration: 0.04
@@ -319,7 +582,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.70)
               ],
               relativeTime: 0.08,
               duration: 0.04
@@ -327,7 +590,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.90),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.90)
               ],
               relativeTime: 0.16,
               duration: 0.04
@@ -335,7 +598,7 @@ import UIKit
             CHHapticEvent(
               eventType: .hapticContinuous,
               parameters: [
-                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.60),
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.60)
               ],
               relativeTime: 0.24,
               duration: 0.05
@@ -413,13 +676,13 @@ private enum WindowAppearanceHandler {
       style = .light
     }
 
-    UIApplication.shared.connectedScenes
+    let windows = UIApplication.shared.connectedScenes
       .compactMap { $0 as? UIWindowScene }
       .flatMap { $0.windows }
-      .forEach { window in
-        window.overrideUserInterfaceStyle = style
-        window.rootViewController?.overrideUserInterfaceStyle = style
-      }
+    for window in windows {
+      window.overrideUserInterfaceStyle = style
+      window.rootViewController?.overrideUserInterfaceStyle = style
+    }
   }
 }
 

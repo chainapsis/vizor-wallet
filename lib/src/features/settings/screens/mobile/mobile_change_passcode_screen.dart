@@ -249,10 +249,9 @@ class _MobileChangePasscodeScreenState
       setState(() {
         _submitting = false;
         _entry = '';
-        _error =
-            e.kind == DeviceOwnerAuthErrorKind.unavailable
-                ? kWalletResetDeviceAuthRequiredMessage
-                : kWalletResetDeviceAuthFailedMessage;
+        _error = e.kind == DeviceOwnerAuthErrorKind.unavailable
+            ? kWalletResetDeviceAuthRequiredMessage
+            : kWalletResetDeviceAuthFailedMessage;
       });
       return;
     } catch (e, st) {
@@ -300,6 +299,9 @@ class _MobileChangePasscodeScreenState
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
+                              key: ValueKey(
+                                'mobile_change_passcode_${_phase.name}',
+                              ),
                               title,
                               textAlign: TextAlign.center,
                               style: AppTypography.displayLarge.copyWith(

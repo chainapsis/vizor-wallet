@@ -591,6 +591,22 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
     Ok(accounts)
 }
 
+/// Return whether the wallet database still contains the requested account.
+///
+/// Background migration uses this immediately before advancing an authorized
+/// run so a stale Keychain manifest cannot outlive account deletion.
+pub(crate) fn account_exists(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<bool, String> {
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let account_id = parse_account_uuid(account_uuid)?;
+    db.get_account(account_id)
+        .map(|account| account.is_some())
+        .map_err(|e| format!("Failed to get account: {e}"))
+}
+
 pub fn get_account_export_metadata(
     db_path: &str,
     network: WalletNetwork,
@@ -663,7 +679,16 @@ pub fn delete_account(
         // while the SQL expects `:to_address`. Keep this local copy aligned
         // with upstream except for that binding until the dependency is fixed.
         drop(db);
-        delete_account_rows(db_path, account_id)
+        delete_account_rows(db_path, account_id)?;
+        if let Err(error) = crate::wallet::sync::discard_keystone_migration_requests_for_account(
+            account_uuid,
+            network,
+        ) {
+            log::warn!(
+                "Failed to discard Keystone migration requests after deleting account: {error}"
+            );
+        }
+        Ok(())
     })
 }
 
@@ -681,6 +706,7 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
         .transaction()
         .map_err(|e| format!("Failed to begin account delete transaction: {e}"))?;
     let account_uuid = account_id.expose_uuid();
+    let account_uuid_text = account_uuid.to_string();
     let account_uuid_bytes = account_uuid.as_bytes().as_slice();
 
     {
@@ -765,6 +791,8 @@ fn delete_account_rows(db_path: &str, account_id: AccountUuid) -> Result<(), Str
         named_params![":account_uuid": account_uuid_bytes],
     )
     .map_err(|e| format!("Failed to delete account-only transactions: {e}"))?;
+
+    crate::wallet::sync::delete_account_migration_rows_with_tx(&tx, &account_uuid_text)?;
 
     tx.execute(
         "DELETE FROM accounts WHERE uuid = :account_uuid",

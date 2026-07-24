@@ -1,4 +1,4 @@
-use rust_lib_zcash_wallet::api::wallet;
+use rust_lib_zcash_wallet::api::{sync, wallet};
 use serde_json::json;
 use zcash_address::{ConversionError, ToAddress, TryFromAddress, ZcashAddress};
 use zcash_protocol::consensus::NetworkType;
@@ -17,9 +17,19 @@ impl TryFromAddress for P2pkhBytes {
 }
 
 fn main() {
-    let mnemonic = std::env::args()
-        .nth(1)
+    let mut args = std::env::args().skip(1);
+    let mnemonic = args
+        .next()
         .expect("usage: cargo run --example regtest_wallet_addresses -- <mnemonic>");
+    let address_count = args
+        .next()
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .expect("address count must be an integer")
+        })
+        .unwrap_or(1);
+    assert!(address_count > 0, "address count must be positive");
 
     let tempdir = tempfile::tempdir().expect("tempdir");
     let db_path = tempdir.path().join("zcash_wallet.db");
@@ -35,18 +45,33 @@ fn main() {
     .expect("import regtest wallet");
 
     let transparent_address = wallet::get_transparent_receive_address(
-        db_path,
+        db_path.clone(),
         "regtest".to_string(),
         Some(result.account_uuid.clone()),
     )
     .expect("transparent address");
     let tex_address = tex_address_for_transparent(&transparent_address);
+    let mut unified_addresses = vec![result.unified_address.clone()];
+    sync::update_chain_tip(db_path.clone(), "regtest".to_string(), 1)
+        .expect("initialize temporary wallet chain tip");
+    for _ in 1..address_count {
+        unified_addresses.push(
+            sync::get_next_available_address(
+                db_path.clone(),
+                "regtest".to_string(),
+                result.account_uuid.clone(),
+                "orchard".to_string(),
+            )
+            .expect("diversified Orchard address"),
+        );
+    }
 
     println!(
         "{}",
         json!({
             "accountUuid": result.account_uuid,
             "unifiedAddress": result.unified_address,
+            "unifiedAddresses": unified_addresses,
             "transparentAddress": transparent_address,
             "texAddress": tex_address,
         })

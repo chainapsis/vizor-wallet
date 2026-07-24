@@ -81,9 +81,30 @@ const kZcashDefaultNetworkRaw = String.fromEnvironment(
   defaultValue: 'main',
 );
 
-final String kZcashDefaultNetworkName = normalizeZcashNetworkName(
-  kZcashDefaultNetworkRaw,
+const kZcashRegtestIronwoodActivationHeightEnvKey =
+    'ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT';
+const kZcashRegtestIronwoodActivationHeight = int.fromEnvironment(
+  kZcashRegtestIronwoodActivationHeightEnvKey,
+  defaultValue: 0xFFFFFFFF,
 );
+
+const kZcashFastTestnetMigrationEnvKey = 'ZCASH_FAST_TESTNET_MIGRATION';
+const kZcashFastTestnetMigration = bool.fromEnvironment(
+  kZcashFastTestnetMigrationEnvKey,
+  defaultValue: false,
+);
+
+/// Opt-in test build for Adam's private Ironwood chain that presents itself as
+/// mainnet so normal-mode Keystone devices can use mainnet 133'/u1 derivation.
+const kZcashIronwoodMasqueradeEnvKey = 'ZCASH_IRONWOOD_MASQUERADE';
+const kZcashIronwoodMasquerade = bool.fromEnvironment(
+  kZcashIronwoodMasqueradeEnvKey,
+  defaultValue: false,
+);
+
+final String kZcashDefaultNetworkName = kZcashIronwoodMasquerade
+    ? 'main'
+    : normalizeZcashNetworkName(kZcashDefaultNetworkRaw);
 
 final String kZcashDefaultCurrencyTicker = zcashNetworkFromName(
   kZcashDefaultNetworkName,
@@ -98,6 +119,7 @@ String normalizeZcashNetworkName(String networkName) {
 }
 
 String resolveStoredOrDefaultZcashNetworkName(String? storedNetworkName) {
+  if (kZcashIronwoodMasquerade) return 'main';
   final stored = storedNetworkName?.trim();
   if (stored == null || stored.isEmpty) return kZcashDefaultNetworkName;
   return normalizeZcashNetworkName(stored);
@@ -113,6 +135,9 @@ ZcashNetwork zcashNetworkFromName(String networkName) {
 
 String secureStoreServiceForNetwork(String networkName) {
   final network = normalizeZcashNetworkName(networkName);
+  if (kZcashIronwoodMasquerade && network == 'main') {
+    return 'com.keplr.vizor.ironwood.secure_store';
+  }
   return network == 'main'
       ? 'com.keplr.vizor.secure_store'
       : 'com.keplr.vizor.$network.secure_store';

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
-use shardtree::error::{InsertionError, ShardTreeError};
+use shardtree::error::{InsertionError, QueryError, ShardTreeError};
 use tonic::transport::Channel;
 use zcash_client_backend::{
     data_api::{
@@ -32,7 +32,7 @@ use crate::wallet::{
 
 use {
     ::transparent::{
-        address::Script,
+        address::{Script, TransparentAddress},
         bundle::{OutPoint, TxOut},
         keys::TransparentKeyScope,
     },
@@ -56,8 +56,8 @@ pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{download_blocks, download_subtree_roots, get_tree_state};
 pub(crate) use lwd::{
-    get_latest_block, get_taddress_txids, next_stream_message, open_lwd_channel, send_transaction,
-    send_transaction_with_status,
+    get_latest_block, get_taddress_txids, get_transaction, next_stream_message, open_lwd_channel,
+    send_transaction, send_transaction_with_status,
 };
 
 /// Progress event sent to caller (Dart or Swift).
@@ -135,6 +135,27 @@ fn batch_size_for_range(base_batch_size: u32, start: BlockHeight, range_end: Blo
     } else {
         base_batch_size
     }
+}
+
+fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
+    let current_tip = u32::try_from(current_tip_height).unwrap_or(u32::MAX);
+    BlockHeight::from_u32(current_tip.saturating_add(1))
+}
+
+fn scannable_batch_end(
+    base_batch_size: u32,
+    start: BlockHeight,
+    range_end: BlockHeight,
+    current_tip_height: u64,
+) -> Option<(u32, BlockHeight)> {
+    let available_end = std::cmp::min(range_end, chain_tip_exclusive_end(current_tip_height));
+    if start >= available_end {
+        return None;
+    }
+
+    let batch_size = batch_size_for_range(base_batch_size, start, available_end);
+    let end = std::cmp::min(start + batch_size, available_end);
+    Some((batch_size, end))
 }
 
 fn effective_base_batch_size(default_batch_size: u32) -> u32 {
@@ -654,8 +675,27 @@ fn queue_witness_repairs_if_needed(
     }
 
     let rescan_ranges = with_wallet_db_write_lock("sync_engine.check_witnesses", || {
-        db.check_witnesses()
-            .map_err(|e| SyncError::db(format!("check_witnesses: {e}")))
+        match db.check_witnesses() {
+            Ok(ranges) => Ok(ranges),
+            Err(error) if is_witness_position_beyond_tree(&error) => {
+                let cleared = clear_unmined_note_commitment_positions(db_data_path)?;
+                if cleared == 0 {
+                    return Err(SyncError::db(format!("check_witnesses: {error}")));
+                }
+
+                log::warn!(
+                    "[{}] sync: cleared {} stale commitment-tree position(s) from unmined notes after reorg; retrying witness check",
+                    elapsed(),
+                    cleared,
+                );
+                db.check_witnesses().map_err(|retry_error| {
+                    SyncError::db(format!(
+                        "check_witnesses after clearing unmined note positions: {retry_error}"
+                    ))
+                })
+            }
+            Err(error) => Err(SyncError::db(format!("check_witnesses: {error}"))),
+        }
     })?;
 
     let Some(nonempty_ranges) = NonEmpty::from_vec(rescan_ranges) else {
@@ -723,6 +763,7 @@ fn queue_witness_repairs_if_needed(
 async fn repair_anchor_root_mismatch_if_needed(
     client: &mut CompactTxStreamerClient<Channel>,
     db: &mut WalletDatabase,
+    network: WalletNetwork,
     current_tip_height: u64,
     repair_passes_this_run: &mut u32,
 ) -> Result<Option<u64>, SyncError> {
@@ -739,6 +780,15 @@ async fn repair_anchor_root_mismatch_if_needed(
     let local_orchard = db
         .with_orchard_tree_mut(|tree| tree.root_at_checkpoint_id(&anchor_height))
         .map_err(|e| SyncError::db(format!("orchard root at {anchor_height}: {e}")))?;
+    let ironwood_enabled = lwd::ironwood_sync_enabled(network, anchor_height);
+    let local_ironwood = if ironwood_enabled {
+        Some(
+            db.with_ironwood_tree_mut(|tree| tree.root_at_checkpoint_id(&anchor_height))
+                .map_err(|e| SyncError::db(format!("ironwood root at {anchor_height}: {e}")))?,
+        )
+    } else {
+        None
+    };
 
     let anchor_chain_state = get_tree_state(client, u32::from(anchor_height) as u64)
         .await?
@@ -753,8 +803,20 @@ async fn repair_anchor_root_mismatch_if_needed(
 
     let canonical_sapling = anchor_chain_state.final_sapling_tree().root();
     let canonical_orchard = anchor_chain_state.final_orchard_tree().root();
+    let canonical_ironwood =
+        ironwood_enabled.then(|| anchor_chain_state.final_ironwood_tree().root());
+    let ironwood_roots_match = match (&local_ironwood, &canonical_ironwood) {
+        // `with_ironwood_tree_mut` reports `None` when the backend tracks no
+        // Ironwood tree; treat that like a missing root so repair kicks in.
+        (Some(local), Some(canonical)) => {
+            local.as_ref().and_then(|root| root.as_ref()) == Some(canonical)
+        }
+        (None, None) => true,
+        _ => false,
+    };
     if local_sapling.as_ref() == Some(&canonical_sapling)
         && local_orchard.as_ref() == Some(&canonical_orchard)
+        && ironwood_roots_match
     {
         return Ok(None);
     }
@@ -783,7 +845,8 @@ async fn repair_anchor_root_mismatch_if_needed(
             "[{}] sync: anchor root mismatch at {anchor_height} \
              (target={}, repair_height={repair_height}, pass {}/{}); \
              local_sapling={:?}, canonical_sapling={:?}, local_orchard={:?}, \
-             canonical_orchard={:?}; rewinding to canonical chain state",
+             canonical_orchard={:?}, local_ironwood={:?}, canonical_ironwood={:?}; \
+             rewinding to canonical chain state",
             elapsed(),
             u32::from(target_height),
             *repair_passes_this_run,
@@ -792,6 +855,8 @@ async fn repair_anchor_root_mismatch_if_needed(
             canonical_sapling,
             local_orchard,
             canonical_orchard,
+            local_ironwood,
+            canonical_ironwood,
         );
 
         let current_tip = BlockHeight::from_u32(current_tip_height as u32);
@@ -874,6 +939,29 @@ async fn repair_anchor_root_mismatch_if_needed(
     )))
 }
 
+fn transparent_utxo_query_network(network: WalletNetwork) -> WalletNetwork {
+    #[cfg(ironwood_masquerade)]
+    if network == WalletNetwork::Main {
+        return WalletNetwork::Test;
+    }
+
+    network
+}
+
+fn transparent_address_for_query(
+    address: &str,
+    source_network: WalletNetwork,
+    query_network: WalletNetwork,
+) -> Result<String, String> {
+    if source_network == query_network {
+        return Ok(address.to_string());
+    }
+
+    TransparentAddress::decode(&source_network, address)
+        .map(|address| address.encode(&query_network))
+        .map_err(|e| format!("decode transparent address {address}: {e}"))
+}
+
 async fn refresh_utxos(
     client: &mut CompactTxStreamerClient<Channel>,
     db_data_path: &str,
@@ -899,12 +987,18 @@ async fn refresh_utxos(
                 u64::from(u32::from(safety_start_height))
             });
 
-        let external_addresses = keys::get_external_transparent_receive_addresses_from_db(
+        let query_network = transparent_utxo_query_network(network);
+        let mut external_addresses = keys::get_external_transparent_receive_addresses_from_db(
             db_data_path,
             network,
             Some(&account_uuid),
         )
         .map_err(|e| SyncError::db(format!("external transparent receive addresses: {e}")))?;
+        for address in &mut external_addresses {
+            address.address =
+                transparent_address_for_query(&address.address, network, query_network)
+                    .map_err(SyncError::parse)?;
+        }
         let external_batches = match transparent_receive_cache::plan_external_utxo_refresh(
             db_data_path,
             network,
@@ -979,7 +1073,7 @@ async fn refresh_utxos(
             .map_err(|e| SyncError::db(format!("get_transparent_receivers: {e}")))?
             .into_iter()
             .filter(|(_, metadata)| metadata.scope() != Some(TransparentKeyScope::EXTERNAL))
-            .map(|(addr, _)| addr.encode(&network))
+            .map(|(addr, _)| addr.encode(&query_network))
             .filter(|addr| !external_selected.contains(addr.as_str()))
             .collect();
 
@@ -1086,6 +1180,9 @@ async fn refresh_transparent_addresses(
             OutPoint::new(txid, index),
             TxOut::new(value, Script(script::Code(reply.script))),
             Some(BlockHeight::from_u32(height)),
+            None,
+            None,
+            None,
         )
         .ok_or_else(|| {
             SyncError::parse("transparent UTXO script did not decode to a wallet address")
@@ -1116,6 +1213,7 @@ pub async fn run_sync_inner(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
+    allow_resubmit: bool,
     progress_fn: impl Fn(SyncProgressEvent) + Send + Sync,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
@@ -1155,6 +1253,7 @@ pub async fn run_sync_inner(
             cancel.clone(),
             running_mode,
             desired_mode,
+            allow_resubmit,
             &progress_fn,
         )
         .await
@@ -1211,6 +1310,7 @@ async fn run_sync_impl(
     cancel: Arc<AtomicBool>,
     running_mode: u8,
     desired_mode: &AtomicU8,
+    allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
     let default_batch_size = if running_mode == 2 {
@@ -1253,8 +1353,15 @@ async fn run_sync_impl(
     log::info!("[{}] sync: chain tip = {}", elapsed(), tip.height);
 
     with_wallet_db_write_lock("sync_engine.update_chain_tip.initial", || {
-        db.update_chain_tip(tip_height)
-            .map_err(|e| SyncError::db(format!("update_chain_tip: {e}")))
+        db.update_chain_tip(tip_height).map_err(|e| {
+            if is_sqlite_lock_contention(&e) {
+                SyncError::other(format!(
+                    "update_chain_tip: transient SQLite lock contention: {e}"
+                ))
+            } else {
+                SyncError::db(format!("update_chain_tip: {e}"))
+            }
+        })
     })?;
 
     // Match the cancellation granularity we already use for
@@ -1271,14 +1378,6 @@ async fn run_sync_impl(
 
     refresh_utxos(&mut client, db_data_path, &mut db, network, tip_height).await?;
 
-    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
-        log::info!(
-            "[{}] sync: exiting after transparent UTXO refresh",
-            elapsed()
-        );
-        return Ok(());
-    }
-
     // 2.5. Resubmit any unmined, unexpired wallet txs now that we
     // know the current tip. Matches the first of the three
     // resubmit call sites in zcash-android-wallet-sdk's
@@ -1292,7 +1391,10 @@ async fn run_sync_impl(
     // slow connection, which is long enough for the user to hit
     // stop. Skip the whole pass in that case instead of sending
     // one more round of broadcasts after the UI asked us to quit.
-    if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+    if !allow_resubmit {
+        log::info!("[{}] sync: startup resubmit disabled", elapsed());
+    } else if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
+    {
         log::info!(
             "[{}] sync: cancel/mode observed before startup resubmit, skipping",
             elapsed(),
@@ -1311,7 +1413,7 @@ async fn run_sync_impl(
     }
 
     // 3. Download subtree roots (incremental)
-    download_subtree_roots(&mut client, &mut db).await?;
+    download_subtree_roots(&mut client, &mut db, network, tip_height).await?;
 
     // Rescue pass (VZR-89): demote orphaned scan ranges left below the surviving
     // accounts' birthday by a pre-fix account deletion, so a wallet bricked by
@@ -1498,6 +1600,7 @@ async fn run_sync_impl(
                 } else if let Some(repair_pending_blocks) = repair_anchor_root_mismatch_if_needed(
                     &mut client,
                     &mut db,
+                    network,
                     current_tip_height,
                     &mut anchor_root_repair_passes_this_run,
                 )
@@ -1542,6 +1645,7 @@ async fn run_sync_impl(
         }
 
         let start = range.block_range().start;
+        let range_end = range.block_range().end;
         // Adaptive batch size: shrink to BATCH_SIZE_SANDBLASTING
         // when the current range overlaps the known Zcash mainnet
         // sandblasting attack window. These blocks contain an
@@ -1549,8 +1653,17 @@ async fn run_sync_impl(
         // making scan_cached_blocks much slower per block and
         // using more memory. Matches the SDK's
         // `SANDBLASTING_RANGE` check.
-        let batch_size = batch_size_for_range(base_batch_size, start, range.block_range().end);
-        let end = std::cmp::min(start + batch_size, range.block_range().end);
+        let Some((batch_size, end)) =
+            scannable_batch_end(base_batch_size, start, range_end, current_tip_height)
+        else {
+            log::info!(
+                "[{}] sync: pending range {} starts after current tip {}, waiting for tip advance",
+                elapsed(),
+                describe_block_range(range.block_range()),
+                current_tip_height,
+            );
+            break;
+        };
         let batch_blocks = u32::from(end).saturating_sub(u32::from(start)) as u64;
         let current_pct = if initial_total > 0 {
             1.0 - (prev_remaining as f64 / initial_total as f64)
@@ -1606,17 +1719,17 @@ async fn run_sync_impl(
                     _ => {
                         // Prefetch failed — download synchronously.
                         log::warn!("[{}] sync: prefetch failed, downloading fresh", elapsed(),);
-                        download_blocks(&mut client, start, end - 1).await?
+                        download_blocks(&mut client, start, end - 1, network).await?
                     }
                 }
             } else {
                 // Range changed (reorg, priority switch, etc.) —
                 // Drop the Prefetch, which aborts the background task.
                 drop(pf);
-                download_blocks(&mut client, start, end - 1).await?
+                download_blocks(&mut client, start, end - 1, network).await?
             }
         } else {
-            download_blocks(&mut client, start, end - 1).await?
+            download_blocks(&mut client, start, end - 1, network).await?
         };
 
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
@@ -1941,16 +2054,18 @@ async fn run_sync_impl(
                         }
                     }
                 }
-                let _ = crate::wallet::sync::resubmit_pending_transactions(
-                    db_data_path,
-                    &mut client,
-                    fresh_tip_height,
-                    || {
-                        cancel.load(Ordering::Relaxed)
-                            || desired_mode.load(Ordering::SeqCst) != running_mode
-                    },
-                )
-                .await;
+                if allow_resubmit {
+                    let _ = crate::wallet::sync::resubmit_pending_transactions(
+                        db_data_path,
+                        &mut client,
+                        fresh_tip_height,
+                        || {
+                            cancel.load(Ordering::Relaxed)
+                                || desired_mode.load(Ordering::SeqCst) != running_mode
+                        },
+                    )
+                    .await;
+                }
             }
             Err(e) => {
                 log::warn!(
@@ -2049,20 +2164,29 @@ async fn run_sync_impl(
         // the prefetch — the next range comes from
         // suggest_scan_ranges() which needs the DB state the current
         // scan just committed, and we can't predict it in advance.
-        if end < range.block_range().end && !cancel.load(Ordering::Relaxed) {
+        if end < range_end && !cancel.load(Ordering::Relaxed) {
             let pf_start = end;
             // Recompute batch_size for the prefetch range in case
             // it crosses a sandblasting boundary differently.
-            let pf_batch = batch_size_for_range(base_batch_size, pf_start, range.block_range().end);
-            let pf_end = std::cmp::min(pf_start + pf_batch, range.block_range().end);
-            let mut pf_client = client.clone();
-            prefetch = Some(Prefetch {
-                start: pf_start,
-                end: pf_end,
-                handle: Some(tokio::spawn(async move {
-                    download_blocks(&mut pf_client, pf_start, pf_end - 1).await
-                })),
-            });
+            if let Some((_, pf_end)) =
+                scannable_batch_end(base_batch_size, pf_start, range_end, current_tip_height)
+            {
+                let mut pf_client = client.clone();
+                prefetch = Some(Prefetch {
+                    start: pf_start,
+                    end: pf_end,
+                    handle: Some(tokio::spawn(async move {
+                        download_blocks(&mut pf_client, pf_start, pf_end - 1, network).await
+                    })),
+                });
+            } else {
+                log::debug!(
+                    "[{}] sync: skipping prefetch from {} past current tip {}",
+                    elapsed(),
+                    u32::from(pf_start),
+                    current_tip_height,
+                );
+            }
         }
     }
 
@@ -2149,6 +2273,59 @@ fn is_commitment_tree_root_conflict(err: &SqliteClientError) -> bool {
     )
 }
 
+fn is_witness_position_beyond_tree(err: &SqliteClientError) -> bool {
+    matches!(
+        err,
+        SqliteClientError::CommitmentTree(ShardTreeError::Query(QueryError::NotContained(_)))
+    )
+}
+
+fn clear_unmined_note_commitment_positions(db_data_path: &str) -> Result<usize, SyncError> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)
+        .map_err(|e| SyncError::db(format!("open DB to repair unmined note positions: {e}")))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| SyncError::db(format!("begin unmined note position repair: {e}")))?;
+    let mut cleared = 0;
+
+    for table in [
+        "sapling_received_notes",
+        "orchard_received_notes",
+        "ironwood_received_notes",
+    ] {
+        let exists = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+                [table],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|e| SyncError::db(format!("inspect {table} before position repair: {e}")))?;
+        if !exists {
+            continue;
+        }
+
+        cleared += tx
+            .execute(
+                &format!(
+                    "UPDATE {table} AS rn
+                     SET commitment_tree_position = NULL
+                     WHERE commitment_tree_position IS NOT NULL
+                     AND EXISTS (
+                         SELECT 1 FROM transactions AS tx
+                         WHERE tx.id_tx = rn.transaction_id
+                         AND tx.mined_height IS NULL
+                     )"
+                ),
+                [],
+            )
+            .map_err(|e| SyncError::db(format!("repair unmined positions in {table}: {e}")))?;
+    }
+
+    tx.commit()
+        .map_err(|e| SyncError::db(format!("commit unmined note position repair: {e}")))?;
+    Ok(cleared)
+}
+
 fn should_use_empty_chain_state(
     network: &WalletNetwork,
     start: BlockHeight,
@@ -2190,6 +2367,32 @@ mod tests {
         assert!(
             !should_use_empty_chain_state(&WalletNetwork::Regtest, BlockHeight::from_u32(141))
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn scannable_batch_end_clamps_to_current_tip() {
+        assert_eq!(
+            scannable_batch_end(
+                2_000,
+                BlockHeight::from_u32(121),
+                BlockHeight::from_u32(131),
+                121,
+            ),
+            Some((2_000, BlockHeight::from_u32(122))),
+        );
+    }
+
+    #[test]
+    fn scannable_batch_end_skips_ranges_past_current_tip() {
+        assert_eq!(
+            scannable_batch_end(
+                2_000,
+                BlockHeight::from_u32(122),
+                BlockHeight::from_u32(131),
+                121,
+            ),
+            None,
         );
     }
 
@@ -2405,5 +2608,74 @@ mod tests {
             zcash_protocol::consensus::BlockHeight::from_u32(2_500_000),
         );
         assert!(!is_commitment_tree_root_conflict(&block_conflict));
+    }
+
+    #[test]
+    fn witness_position_beyond_tree_is_recognised() {
+        use incrementalmerkletree::{Address, Level};
+
+        let not_contained = SqliteClientError::CommitmentTree(ShardTreeError::Query(
+            QueryError::NotContained(Address::from_parts(Level::new(0), 0)),
+        ));
+        assert!(is_witness_position_beyond_tree(&not_contained));
+
+        let incomplete = SqliteClientError::CommitmentTree(ShardTreeError::Query(
+            QueryError::TreeIncomplete(vec![]),
+        ));
+        assert!(!is_witness_position_beyond_tree(&incomplete));
+    }
+
+    #[test]
+    fn unmined_note_position_repair_preserves_mined_notes() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                id_tx INTEGER PRIMARY KEY,
+                mined_height INTEGER
+             );
+             CREATE TABLE sapling_received_notes (
+                id INTEGER PRIMARY KEY,
+                transaction_id INTEGER NOT NULL,
+                commitment_tree_position INTEGER
+             );
+             CREATE TABLE ironwood_received_notes (
+                id INTEGER PRIMARY KEY,
+                transaction_id INTEGER NOT NULL,
+                commitment_tree_position INTEGER
+             );
+             INSERT INTO transactions (id_tx, mined_height) VALUES (1, NULL), (2, 500);
+             INSERT INTO sapling_received_notes
+                (id, transaction_id, commitment_tree_position)
+                VALUES (1, 1, 3), (2, 2, 4);
+             INSERT INTO ironwood_received_notes
+                (id, transaction_id, commitment_tree_position)
+                VALUES (1, 1, 0), (2, 2, 1);",
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(clear_unmined_note_commitment_positions(db_path).unwrap(), 2);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        let sapling_positions = conn
+            .prepare("SELECT commitment_tree_position FROM sapling_received_notes ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, Option<u64>>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let ironwood_positions = conn
+            .prepare("SELECT commitment_tree_position FROM ironwood_received_notes ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, Option<u64>>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(sapling_positions, vec![None, Some(4)]);
+        assert_eq!(ironwood_positions, vec![None, Some(1)]);
+        assert_eq!(clear_unmined_note_commitment_positions(db_path).unwrap(), 0);
     }
 }

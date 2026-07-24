@@ -31,8 +31,8 @@
   <tr>
     <td><span class="badge ffi">C FFI</span></td>
     <td>C / Swift</td>
-    <td>iOS background sync용. <code>ffi.rs</code>가 <code>#[no_mangle] pub extern "C"</code>로 Rust sync를 노출. Swift가 <code>zcash_sync.h</code>를 통해 호출. FRB와 별개의 경로.</td>
-    <td><code>rust/src/ffi.rs</code>, <code>ios/Runner/zcash_sync.h</code>, <code>ios/Runner/BackgroundSyncManager.swift</code></td>
+    <td>iOS Ironwood migration preparation 전용. <code>ffi.rs</code>가 preparation operation, sync, inspect, advance, cancel을 노출한다. Swift가 <code>zcash_sync.h</code>를 통해 호출하며 일반 wallet sync에는 사용하지 않는다.</td>
+    <td><code>rust/src/ffi.rs</code>, <code>ios/Runner/zcash_sync.h</code>, <code>ios/Runner/BackgroundMigrationPreparationManager.swift</code></td>
   </tr>
   <tr>
     <td><span class="badge dart">Dart UI</span></td>
@@ -50,13 +50,13 @@
                                     |
                     +---------------+---------------+
                     |                               |
-           Dart (foreground)              Swift (iOS background)
+           Dart (foreground)          Swift (Ironwood preparation)
                     |                               |
               FRB 호출                        C FFI 호출
                     |                               |
         +-----------+-----------+       +-----------+-----------+
         |  rust/src/api/sync.rs |       |  rust/src/ffi.rs      |
-        |  start_full_sync()    |       |  zcash_run_full_sync()|
+        |  start_full_sync()    |       |  preparation sync     |
         +-----------+-----------+       +-----------+-----------+
                     |                               |
                     +----------- 공통 ---------------+

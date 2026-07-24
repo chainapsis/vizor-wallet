@@ -79,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -30850900;
+  int get rustContentHash => -728521566;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -112,6 +112,26 @@ abstract class RustLibApi extends BaseApi {
     required int proposalId,
     required int shareIndex,
     required List<String> newUrls,
+  });
+
+  Future<IronwoodMigrationResult>
+  crateApiSyncBroadcastDueOrchardMigrationTransactions({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+  });
+
+  Future<IronwoodMigrationResult>
+  crateApiSyncBroadcastOneDueOrchardMigrationTransaction({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
   });
 
   Future<KeystoneSigningRequest> crateApiVotingBuildKeystoneDelegationRequest({
@@ -160,6 +180,52 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String accountUuid,
     required String roundId,
+  });
+
+  Future<IronwoodMigrationResult>
+  crateApiSyncCompleteOrchardMigrationBatchPczt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String requestId,
+    required List<KeystoneSignedMigrationMessage> signedMessages,
+    required String password,
+    required String saltBase64,
+  });
+
+  Future<IronwoodMigrationResult>
+  crateApiSyncCompleteOrchardMigrationDenominationsPczt({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String requestId,
+    required List<KeystoneSignedMigrationMessage> signedMessages,
+    required String password,
+    required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
+  });
+
+  Future<IronwoodMigrationResult>
+  crateApiSyncCompleteOrchardMigrationSingleQrPczt({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String requestId,
+    required List<KeystoneSignedMigrationMessage> signedMessages,
+    required String password,
+    required String saltBase64,
+    required bool spacePreparationBroadcasts,
+  });
+
+  Future<void> crateApiSimpleConfigureFastTestnetMigration({
+    required bool enabled,
+  });
+
+  Future<void> crateApiSimpleConfigureRegtestIronwoodActivationHeight({
+    required int height,
   });
 
   Future<DelegationConfirmation> crateApiVotingConfirmDelegationSubmission({
@@ -220,6 +286,21 @@ abstract class RustLibApi extends BaseApi {
 
   Future<Uint8List> crateApiKeystoneDecodeUrToPczt({required String urString});
 
+  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
+  });
+
+  Future<ZcashBatchSignResult> crateApiKeystoneDecodeZcashSignResultCbor({
+    required List<int> cbor,
+  });
+
+  Future<KeystoneSigResult>
+  crateApiKeystoneDecodeZcashSignResultCborAsSigResult({
+    required List<int> cbor,
+  });
+
   Future<void> crateApiSyncDecryptAndStoreTransaction({
     required String dbPath,
     required String network,
@@ -260,6 +341,12 @@ abstract class RustLibApi extends BaseApi {
     required String saltBase64,
   });
 
+  Future<void> crateApiSyncDiscardAllKeystoneMigrationRequests();
+
+  Future<void> crateApiSyncDiscardKeystoneMigrationRequest({
+    required String requestId,
+  });
+
   Future<void> crateApiSyncDiscardProposal({
     required BigInt proposalId,
     required String sendFlowId,
@@ -279,6 +366,12 @@ abstract class RustLibApi extends BaseApi {
 
   Future<List<String>> crateApiKeystoneEncodePcztUrParts({
     required List<int> pcztBytes,
+    required BigInt maxFragmentLen,
+  });
+
+  Future<List<String>> crateApiKeystoneEncodeZcashSignBatchUrParts({
+    required String requestId,
+    required List<ZcashBatchMessageInput> messages,
     required BigInt maxFragmentLen,
   });
 
@@ -331,6 +424,14 @@ abstract class RustLibApi extends BaseApi {
     String? outputParamsPath,
   });
 
+  Future<MigrationOutboxBatch?> crateApiSyncExportOrchardMigrationOutbox({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+  });
+
   Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
     required String dbPath,
     required String lightwalletdUrl,
@@ -374,6 +475,17 @@ abstract class RustLibApi extends BaseApi {
 
   String crateApiSyncGetBlocksDir({required String cachePath});
 
+  Future<ChainUpgradeStatus> crateApiWalletGetChainUpgradeStatus({
+    required String lightwalletdUrl,
+    required String network,
+  });
+
+  Future<ChainUpgradeActivationStatus>
+  crateApiWalletGetChainUpgradeStatusAtHeight({
+    required String network,
+    required BigInt tipHeight,
+  });
+
   Future<BigInt> crateApiSyncGetExportBirthdayHeight({
     required String dbPath,
     required String network,
@@ -404,6 +516,26 @@ abstract class RustLibApi extends BaseApi {
   Future<SubtreeIndices> crateApiSyncGetNextSubtreeIndices({
     required String dbPath,
     required String network,
+  });
+
+  Future<OrchardMigrationImmediatePlan?>
+  crateApiSyncGetOrchardMigrationImmediatePlan({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  });
+
+  Future<OrchardMigrationPrivatePlan?>
+  crateApiSyncGetOrchardMigrationPrivatePlan({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  });
+
+  Future<MigrationStatus> crateApiSyncGetOrchardMigrationStatus({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
   });
 
   Future<int> crateApiSyncGetPreviousTransactionCountForAddress({
@@ -451,7 +583,7 @@ abstract class RustLibApi extends BaseApi {
     required String network,
   });
 
-  TransactionDetail crateApiSyncGetTransactionDetail({
+  Future<TransactionDetail> crateApiSyncGetTransactionDetail({
     required String dbPath,
     required String network,
     required String accountUuid,
@@ -542,6 +674,9 @@ abstract class RustLibApi extends BaseApi {
 
   bool crateApiSyncIsSyncRunning();
 
+  Future<KeystoneMigrationProofStatus>
+  crateApiSyncKeystoneMigrationProofStatus({required String requestId});
+
   BigInt? crateApiVotingLastMomentBufferSeconds({
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
@@ -578,6 +713,43 @@ abstract class RustLibApi extends BaseApi {
     required String txHash,
   });
 
+  Future<IronwoodMigrationResult> crateApiSyncMigrateOrchardToIronwood({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required List<int> mnemonicBytes,
+    required String password,
+    required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
+  });
+
+  Future<IronwoodMigrationResult>
+  crateApiSyncMigrateOrchardToIronwoodImmediately({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required List<int> mnemonicBytes,
+    required BigInt approvedTotalInputZatoshi,
+    required BigInt approvedFeeZatoshi,
+    required BigInt approvedMigratedZatoshi,
+    required int approvedInputNoteCount,
+  });
+
+  Future<IronwoodMigrationResult>
+  crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
+  });
+
   List<String> crateApiWalletMnemonicWordList();
 
   Future<BigInt?> crateApiVotingNextShareTrackingDelaySeconds({
@@ -588,6 +760,10 @@ abstract class RustLibApi extends BaseApi {
   Future<ParsedSignedVotingPczt> crateApiVotingParseSignedVotingPczt({
     required List<int> signedPcztBytes,
     required int actionIndex,
+  });
+
+  Future<List<String>> crateApiKeystonePcztSpendNullifiers({
+    required List<int> pcztBytes,
   });
 
   Future<List<ShareSubmissionPlan>> crateApiVotingPlanShareSubmissions({
@@ -605,6 +781,36 @@ abstract class RustLibApi extends BaseApi {
     required String pirServerUrl,
     required List<int> storedHotkeySecret,
     required int bundleIndex,
+  });
+
+  Future<KeystoneMigrationSigningRequest>
+  crateApiSyncPrepareOrchardMigrationBatchPczt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  });
+
+  Future<KeystoneMigrationSigningRequest>
+  crateApiSyncPrepareOrchardMigrationDenominationsPczt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  });
+
+  Future<IronwoodMigrationResult> crateApiSyncPrepareOrchardMigrationOutbox({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+  });
+
+  Future<KeystoneMigrationSigningRequest>
+  crateApiSyncPrepareOrchardMigrationSingleQrPczt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
   });
 
   Future<BigInt> crateApiWalletPreviewSoftwareAccountTransparentBalance({
@@ -631,6 +837,21 @@ abstract class RustLibApi extends BaseApi {
     required List<SubtreeRoot> saplingRoots,
     required BigInt orchardStartIndex,
     required List<SubtreeRoot> orchardRoots,
+    required BigInt ironwoodStartIndex,
+    required List<SubtreeRoot> ironwoodRoots,
+  });
+
+  Future<void> crateApiSyncReconcileOrchardMigrationOutboxReceipt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String runId,
+    required String txidHex,
+    required String outcome,
+    required int remoteHeight,
+    String? responseMessage,
+    required List<MigrationOutboxScheduleUpdate> scheduleUpdates,
+    Uint8List? acceptedRawTransaction,
   });
 
   Future<void> crateApiVotingRecordShareDelegation({
@@ -690,6 +911,14 @@ abstract class RustLibApi extends BaseApi {
     ResolvedVotingConfig? previous,
   });
 
+  Future<void> crateApiSyncRetireUnbroadcastOrchardMigration({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String expectedRunId,
+  });
+
   Future<BigInt> crateApiSyncRewindToHeight({
     required String dbPath,
     required String network,
@@ -714,6 +943,7 @@ abstract class RustLibApi extends BaseApi {
     required int treeStateTime,
     required String treeStateSaplingTree,
     required String treeStateOrchardTree,
+    required String treeStateIronwoodTree,
     required BigInt limit,
   });
 
@@ -985,6 +1215,126 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<IronwoodMigrationResult>
+  crateApiSyncBroadcastDueOrchardMigrationTransactions({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 4,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiSyncBroadcastDueOrchardMigrationTransactionsConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          password,
+          saltBase64,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSyncBroadcastDueOrchardMigrationTransactionsConstMeta =>
+      const TaskConstMeta(
+        debugName: "broadcast_due_orchard_migration_transactions",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "password",
+          "saltBase64",
+        ],
+      );
+
+  @override
+  Future<IronwoodMigrationResult>
+  crateApiSyncBroadcastOneDueOrchardMigrationTransaction({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiSyncBroadcastOneDueOrchardMigrationTransactionConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          password,
+          saltBase64,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSyncBroadcastOneDueOrchardMigrationTransactionConstMeta =>
+      const TaskConstMeta(
+        debugName: "broadcast_one_due_orchard_migration_transaction",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "password",
+          "saltBase64",
+        ],
+      );
+
+  @override
   Future<KeystoneSigningRequest> crateApiVotingBuildKeystoneDelegationRequest({
     required ApiVotingRoundContext ctx,
     required List<int> storedHotkeySecret,
@@ -1000,7 +1350,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 6,
             port: port_,
           );
         },
@@ -1048,7 +1398,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 5,
+              funcId: 7,
               port: port_,
             );
           },
@@ -1116,7 +1466,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 6,
+              funcId: 8,
               port: port_,
             );
           },
@@ -1187,7 +1537,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 7,
+              funcId: 9,
               port: port_,
             );
           },
@@ -1236,7 +1586,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 8)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1264,7 +1614,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 11,
             port: port_,
           );
         },
@@ -1301,7 +1651,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 12,
             port: port_,
           );
         },
@@ -1320,6 +1670,295 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "clear_recovery_state",
         argNames: ["dbPath", "accountUuid", "roundId"],
+      );
+
+  @override
+  Future<IronwoodMigrationResult>
+  crateApiSyncCompleteOrchardMigrationBatchPczt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String requestId,
+    required List<KeystoneSignedMigrationMessage> signedMessages,
+    required String password,
+    required String saltBase64,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(requestId, serializer);
+          sse_encode_list_keystone_signed_migration_message(
+            signedMessages,
+            serializer,
+          );
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 13,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncCompleteOrchardMigrationBatchPcztConstMeta,
+        argValues: [
+          dbPath,
+          network,
+          accountUuid,
+          requestId,
+          signedMessages,
+          password,
+          saltBase64,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncCompleteOrchardMigrationBatchPcztConstMeta =>
+      const TaskConstMeta(
+        debugName: "complete_orchard_migration_batch_pczt",
+        argNames: [
+          "dbPath",
+          "network",
+          "accountUuid",
+          "requestId",
+          "signedMessages",
+          "password",
+          "saltBase64",
+        ],
+      );
+
+  @override
+  Future<IronwoodMigrationResult>
+  crateApiSyncCompleteOrchardMigrationDenominationsPczt({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String requestId,
+    required List<KeystoneSignedMigrationMessage> signedMessages,
+    required String password,
+    required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(requestId, serializer);
+          sse_encode_list_keystone_signed_migration_message(
+            signedMessages,
+            serializer,
+          );
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          sse_encode_list_migration_scheduled_transfer(
+            approvedSchedule,
+            serializer,
+          );
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 14,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiSyncCompleteOrchardMigrationDenominationsPcztConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          requestId,
+          signedMessages,
+          password,
+          saltBase64,
+          approvedSchedule,
+          spacePreparationBroadcasts,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSyncCompleteOrchardMigrationDenominationsPcztConstMeta =>
+      const TaskConstMeta(
+        debugName: "complete_orchard_migration_denominations_pczt",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "requestId",
+          "signedMessages",
+          "password",
+          "saltBase64",
+          "approvedSchedule",
+          "spacePreparationBroadcasts",
+        ],
+      );
+
+  @override
+  Future<IronwoodMigrationResult>
+  crateApiSyncCompleteOrchardMigrationSingleQrPczt({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String requestId,
+    required List<KeystoneSignedMigrationMessage> signedMessages,
+    required String password,
+    required String saltBase64,
+    required bool spacePreparationBroadcasts,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(requestId, serializer);
+          sse_encode_list_keystone_signed_migration_message(
+            signedMessages,
+            serializer,
+          );
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 15,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncCompleteOrchardMigrationSingleQrPcztConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          requestId,
+          signedMessages,
+          password,
+          saltBase64,
+          spacePreparationBroadcasts,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSyncCompleteOrchardMigrationSingleQrPcztConstMeta =>
+      const TaskConstMeta(
+        debugName: "complete_orchard_migration_single_qr_pczt",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "requestId",
+          "signedMessages",
+          "password",
+          "saltBase64",
+          "spacePreparationBroadcasts",
+        ],
+      );
+
+  @override
+  Future<void> crateApiSimpleConfigureFastTestnetMigration({
+    required bool enabled,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 16,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSimpleConfigureFastTestnetMigrationConstMeta,
+        argValues: [enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleConfigureFastTestnetMigrationConstMeta =>
+      const TaskConstMeta(
+        debugName: "configure_fast_testnet_migration",
+        argNames: ["enabled"],
+      );
+
+  @override
+  Future<void> crateApiSimpleConfigureRegtestIronwoodActivationHeight({
+    required int height,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_32(height, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 17,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiSimpleConfigureRegtestIronwoodActivationHeightConstMeta,
+        argValues: [height],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSimpleConfigureRegtestIronwoodActivationHeightConstMeta =>
+      const TaskConstMeta(
+        debugName: "configure_regtest_ironwood_activation_height",
+        argNames: ["height"],
       );
 
   @override
@@ -1344,7 +1983,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 18,
             port: port_,
           );
         },
@@ -1403,7 +2042,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 19,
             port: port_,
           );
         },
@@ -1458,7 +2097,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 20,
             port: port_,
           );
         },
@@ -1495,7 +2134,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 21,
             port: port_,
           );
         },
@@ -1534,7 +2173,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 22,
             port: port_,
           );
         },
@@ -1566,7 +2205,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 23,
             port: port_,
           );
         },
@@ -1599,7 +2238,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 24,
             port: port_,
           );
         },
@@ -1632,7 +2271,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 25,
             port: port_,
           );
         },
@@ -1667,7 +2306,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 26,
             port: port_,
           );
         },
@@ -1698,7 +2337,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 27,
             port: port_,
           );
         },
@@ -1720,6 +2359,112 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<KeystoneSigResult> crateApiKeystoneDecodeZcashBatchSignResponse({
+    required List<int> cbor,
+    required String expectedRequestId,
+    required List<String> messageIds,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(cbor, serializer);
+          sse_encode_String(expectedRequestId, serializer);
+          sse_encode_list_String(messageIds, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 28,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_keystone_sig_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta,
+        argValues: [cbor, expectedRequestId, messageIds],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKeystoneDecodeZcashBatchSignResponseConstMeta =>
+      const TaskConstMeta(
+        debugName: "decode_zcash_batch_sign_response",
+        argNames: ["cbor", "expectedRequestId", "messageIds"],
+      );
+
+  @override
+  Future<ZcashBatchSignResult> crateApiKeystoneDecodeZcashSignResultCbor({
+    required List<int> cbor,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(cbor, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 29,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_zcash_batch_sign_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKeystoneDecodeZcashSignResultCborConstMeta,
+        argValues: [cbor],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKeystoneDecodeZcashSignResultCborConstMeta =>
+      const TaskConstMeta(
+        debugName: "decode_zcash_sign_result_cbor",
+        argNames: ["cbor"],
+      );
+
+  @override
+  Future<KeystoneSigResult>
+  crateApiKeystoneDecodeZcashSignResultCborAsSigResult({
+    required List<int> cbor,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(cbor, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 30,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_keystone_sig_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiKeystoneDecodeZcashSignResultCborAsSigResultConstMeta,
+        argValues: [cbor],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiKeystoneDecodeZcashSignResultCborAsSigResultConstMeta =>
+      const TaskConstMeta(
+        debugName: "decode_zcash_sign_result_cbor_as_sig_result",
+        argNames: ["cbor"],
+      );
+
+  @override
   Future<void> crateApiSyncDecryptAndStoreTransaction({
     required String dbPath,
     required String network,
@@ -1737,7 +2482,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1774,7 +2519,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1810,7 +2555,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1847,7 +2592,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 24,
+            funcId: 34,
             port: port_,
           );
         },
@@ -1886,7 +2631,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1921,7 +2666,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1956,7 +2701,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1978,6 +2723,69 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiSyncDiscardAllKeystoneMigrationRequests() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 38,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncDiscardAllKeystoneMigrationRequestsConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncDiscardAllKeystoneMigrationRequestsConstMeta =>
+      const TaskConstMeta(
+        debugName: "discard_all_keystone_migration_requests",
+        argNames: [],
+      );
+
+  @override
+  Future<void> crateApiSyncDiscardKeystoneMigrationRequest({
+    required String requestId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(requestId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 39,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncDiscardKeystoneMigrationRequestConstMeta,
+        argValues: [requestId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncDiscardKeystoneMigrationRequestConstMeta =>
+      const TaskConstMeta(
+        debugName: "discard_keystone_migration_request",
+        argNames: ["requestId"],
+      );
+
+  @override
   Future<void> crateApiSyncDiscardProposal({
     required BigInt proposalId,
     required String sendFlowId,
@@ -1991,7 +2799,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 40,
             port: port_,
           );
         },
@@ -2035,7 +2843,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 41,
             port: port_,
           );
         },
@@ -2083,7 +2891,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 42,
             port: port_,
           );
         },
@@ -2118,7 +2926,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 43,
             port: port_,
           );
         },
@@ -2140,6 +2948,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<List<String>> crateApiKeystoneEncodeZcashSignBatchUrParts({
+    required String requestId,
+    required List<ZcashBatchMessageInput> messages,
+    required BigInt maxFragmentLen,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(requestId, serializer);
+          sse_encode_list_zcash_batch_message_input(messages, serializer);
+          sse_encode_usize(maxFragmentLen, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 44,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKeystoneEncodeZcashSignBatchUrPartsConstMeta,
+        argValues: [requestId, messages, maxFragmentLen],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKeystoneEncodeZcashSignBatchUrPartsConstMeta =>
+      const TaskConstMeta(
+        debugName: "encode_zcash_sign_batch_ur_parts",
+        argNames: ["requestId", "messages", "maxFragmentLen"],
+      );
+
+  @override
   Future<String> crateApiSecretEncryptSecretPayload({
     required List<int> plainBytes,
     required String password,
@@ -2155,7 +3000,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 45,
             port: port_,
           );
         },
@@ -2190,7 +3035,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 46,
             port: port_,
           );
         },
@@ -2233,7 +3078,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 47,
             port: port_,
           );
         },
@@ -2287,7 +3132,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 48,
             port: port_,
           );
         },
@@ -2332,7 +3177,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 49,
             port: port_,
           );
         },
@@ -2394,7 +3239,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 50,
             port: port_,
           );
         },
@@ -2433,6 +3278,53 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<MigrationOutboxBatch?> crateApiSyncExportOrchardMigrationOutbox({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 51,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_box_autoadd_migration_outbox_batch,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncExportOrchardMigrationOutboxConstMeta,
+        argValues: [dbPath, network, accountUuid, password, saltBase64],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncExportOrchardMigrationOutboxConstMeta =>
+      const TaskConstMeta(
+        debugName: "export_orchard_migration_outbox",
+        argNames: [
+          "dbPath",
+          "network",
+          "accountUuid",
+          "password",
+          "saltBase64",
+        ],
+      );
+
+  @override
   Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
     required String dbPath,
     required String lightwalletdUrl,
@@ -2456,7 +3348,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 52,
             port: port_,
           );
         },
@@ -2499,7 +3391,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2535,7 +3427,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 40,
+            funcId: 54,
             port: port_,
           );
         },
@@ -2574,7 +3466,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 55,
             port: port_,
           );
         },
@@ -2611,7 +3503,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 56,
             port: port_,
           );
         },
@@ -2648,7 +3540,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 43,
+            funcId: 57,
             port: port_,
           );
         },
@@ -2682,7 +3574,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 44,
+            funcId: 58,
             port: port_,
           );
         },
@@ -2709,7 +3601,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(cachePath, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2724,6 +3616,77 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSyncGetBlocksDirConstMeta =>
       const TaskConstMeta(debugName: "get_blocks_dir", argNames: ["cachePath"]);
+
+  @override
+  Future<ChainUpgradeStatus> crateApiWalletGetChainUpgradeStatus({
+    required String lightwalletdUrl,
+    required String network,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 60,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_chain_upgrade_status,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiWalletGetChainUpgradeStatusConstMeta,
+        argValues: [lightwalletdUrl, network],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiWalletGetChainUpgradeStatusConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_chain_upgrade_status",
+        argNames: ["lightwalletdUrl", "network"],
+      );
+
+  @override
+  Future<ChainUpgradeActivationStatus>
+  crateApiWalletGetChainUpgradeStatusAtHeight({
+    required String network,
+    required BigInt tipHeight,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(network, serializer);
+          sse_encode_u_64(tipHeight, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 61,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_chain_upgrade_activation_status,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiWalletGetChainUpgradeStatusAtHeightConstMeta,
+        argValues: [network, tipHeight],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiWalletGetChainUpgradeStatusAtHeightConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_chain_upgrade_status_at_height",
+        argNames: ["network", "tipHeight"],
+      );
 
   @override
   Future<BigInt> crateApiSyncGetExportBirthdayHeight({
@@ -2741,7 +3704,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 46,
+            funcId: 62,
             port: port_,
           );
         },
@@ -2778,7 +3741,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 47,
+            funcId: 63,
             port: port_,
           );
         },
@@ -2811,7 +3774,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 48,
+            funcId: 64,
             port: port_,
           );
         },
@@ -2844,7 +3807,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 49,
+            funcId: 65,
             port: port_,
           );
         },
@@ -2883,7 +3846,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 50,
+            funcId: 66,
             port: port_,
           );
         },
@@ -2918,7 +3881,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 51,
+            funcId: 67,
             port: port_,
           );
         },
@@ -2940,6 +3903,121 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<OrchardMigrationImmediatePlan?>
+  crateApiSyncGetOrchardMigrationImmediatePlan({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 68,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_opt_box_autoadd_orchard_migration_immediate_plan,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncGetOrchardMigrationImmediatePlanConstMeta,
+        argValues: [dbPath, network, accountUuid],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncGetOrchardMigrationImmediatePlanConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_orchard_migration_immediate_plan",
+        argNames: ["dbPath", "network", "accountUuid"],
+      );
+
+  @override
+  Future<OrchardMigrationPrivatePlan?>
+  crateApiSyncGetOrchardMigrationPrivatePlan({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 69,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_opt_box_autoadd_orchard_migration_private_plan,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncGetOrchardMigrationPrivatePlanConstMeta,
+        argValues: [dbPath, network, accountUuid],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncGetOrchardMigrationPrivatePlanConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_orchard_migration_private_plan",
+        argNames: ["dbPath", "network", "accountUuid"],
+      );
+
+  @override
+  Future<MigrationStatus> crateApiSyncGetOrchardMigrationStatus({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 70,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_migration_status,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncGetOrchardMigrationStatusConstMeta,
+        argValues: [dbPath, network, accountUuid],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncGetOrchardMigrationStatusConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_orchard_migration_status",
+        argNames: ["dbPath", "network", "accountUuid"],
+      );
+
+  @override
   Future<int> crateApiSyncGetPreviousTransactionCountForAddress({
     required String dbPath,
     required String network,
@@ -2957,7 +4035,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 52,
+            funcId: 71,
             port: port_,
           );
         },
@@ -2997,7 +4075,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 53,
+            funcId: 72,
             port: port_,
           );
         },
@@ -3037,7 +4115,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 54,
+            funcId: 73,
             port: port_,
           );
         },
@@ -3073,7 +4151,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 55,
+            funcId: 74,
             port: port_,
           );
         },
@@ -3110,7 +4188,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 56,
+            funcId: 75,
             port: port_,
           );
         },
@@ -3137,7 +4215,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 57)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 76)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_8,
@@ -3167,7 +4245,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 58,
+            funcId: 77,
             port: port_,
           );
         },
@@ -3201,7 +4279,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 59,
+            funcId: 78,
             port: port_,
           );
         },
@@ -3223,23 +4301,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  TransactionDetail crateApiSyncGetTransactionDetail({
+  Future<TransactionDetail> crateApiSyncGetTransactionDetail({
     required String dbPath,
     required String network,
     required String accountUuid,
     required String txidHex,
     required String txKind,
   }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(txidHex, serializer);
           sse_encode_String(txKind, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 79,
+            port: port_,
+          );
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_transaction_detail,
@@ -3276,7 +4359,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 61,
+            funcId: 80,
             port: port_,
           );
         },
@@ -3313,7 +4396,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 62,
+            funcId: 81,
             port: port_,
           );
         },
@@ -3350,7 +4433,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 63,
+            funcId: 82,
             port: port_,
           );
         },
@@ -3378,7 +4461,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(name, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 83)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -3418,7 +4501,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 65,
+            funcId: 84,
             port: port_,
           );
         },
@@ -3480,7 +4563,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 66,
+            funcId: 85,
             port: port_,
           );
         },
@@ -3544,7 +4627,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 67,
+            funcId: 86,
             port: port_,
           );
         },
@@ -3606,7 +4689,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 68,
+            funcId: 87,
             port: port_,
           );
         },
@@ -3641,7 +4724,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 69,
+            funcId: 88,
             port: port_,
           );
         },
@@ -3672,7 +4755,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_64(nowSeconds, serializer);
           sse_encode_u_64(ceremonyStartSeconds, serializer);
           sse_encode_u_64(voteEndTimeSeconds, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 89)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -3696,7 +4779,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 90)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -3733,7 +4816,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 72,
+            funcId: 91,
             port: port_,
           );
         },
@@ -3761,7 +4844,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 92)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -3783,7 +4866,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 93)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -3800,6 +4883,38 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "is_sync_running", argNames: []);
 
   @override
+  Future<KeystoneMigrationProofStatus>
+  crateApiSyncKeystoneMigrationProofStatus({required String requestId}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(requestId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 94,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_keystone_migration_proof_status,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncKeystoneMigrationProofStatusConstMeta,
+        argValues: [requestId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncKeystoneMigrationProofStatusConstMeta =>
+      const TaskConstMeta(
+        debugName: "keystone_migration_proof_status",
+        argNames: ["requestId"],
+      );
+
+  @override
   BigInt? crateApiVotingLastMomentBufferSeconds({
     required BigInt ceremonyStartSeconds,
     required BigInt voteEndTimeSeconds,
@@ -3810,7 +4925,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_64(ceremonyStartSeconds, serializer);
           sse_encode_u_64(voteEndTimeSeconds, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 95)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_u_64,
@@ -3843,7 +4958,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 76,
+            funcId: 96,
             port: port_,
           );
         },
@@ -3883,7 +4998,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 77,
+            funcId: 97,
             port: port_,
           );
         },
@@ -3926,7 +5041,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 78,
+            funcId: 98,
             port: port_,
           );
         },
@@ -3983,7 +5098,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 79,
+            funcId: 99,
             port: port_,
           );
         },
@@ -4019,12 +5134,229 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<IronwoodMigrationResult> crateApiSyncMigrateOrchardToIronwood({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required List<int> mnemonicBytes,
+    required String password,
+    required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_list_prim_u_8_loose(mnemonicBytes, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          sse_encode_list_migration_scheduled_transfer(
+            approvedSchedule,
+            serializer,
+          );
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 100,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncMigrateOrchardToIronwoodConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          mnemonicBytes,
+          password,
+          saltBase64,
+          approvedSchedule,
+          spacePreparationBroadcasts,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncMigrateOrchardToIronwoodConstMeta =>
+      const TaskConstMeta(
+        debugName: "migrate_orchard_to_ironwood",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "mnemonicBytes",
+          "password",
+          "saltBase64",
+          "approvedSchedule",
+          "spacePreparationBroadcasts",
+        ],
+      );
+
+  @override
+  Future<IronwoodMigrationResult>
+  crateApiSyncMigrateOrchardToIronwoodImmediately({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required List<int> mnemonicBytes,
+    required BigInt approvedTotalInputZatoshi,
+    required BigInt approvedFeeZatoshi,
+    required BigInt approvedMigratedZatoshi,
+    required int approvedInputNoteCount,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_list_prim_u_8_loose(mnemonicBytes, serializer);
+          sse_encode_u_64(approvedTotalInputZatoshi, serializer);
+          sse_encode_u_64(approvedFeeZatoshi, serializer);
+          sse_encode_u_64(approvedMigratedZatoshi, serializer);
+          sse_encode_u_32(approvedInputNoteCount, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 101,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncMigrateOrchardToIronwoodImmediatelyConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          mnemonicBytes,
+          approvedTotalInputZatoshi,
+          approvedFeeZatoshi,
+          approvedMigratedZatoshi,
+          approvedInputNoteCount,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncMigrateOrchardToIronwoodImmediatelyConstMeta =>
+      const TaskConstMeta(
+        debugName: "migrate_orchard_to_ironwood_immediately",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "mnemonicBytes",
+          "approvedTotalInputZatoshi",
+          "approvedFeeZatoshi",
+          "approvedMigratedZatoshi",
+          "approvedInputNoteCount",
+        ],
+      );
+
+  @override
+  Future<IronwoodMigrationResult>
+  crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+    required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          sse_encode_list_migration_scheduled_transfer(
+            approvedSchedule,
+            serializer,
+          );
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 102,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonicConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          password,
+          saltBase64,
+          approvedSchedule,
+          spacePreparationBroadcasts,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonicConstMeta =>
+      const TaskConstMeta(
+        debugName: "migrate_orchard_to_ironwood_with_macos_stored_mnemonic",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "password",
+          "saltBase64",
+          "approvedSchedule",
+          "spacePreparationBroadcasts",
+        ],
+      );
+
+  @override
   List<String> crateApiWalletMnemonicWordList() {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 80)!;
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 103,
+          )!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -4054,7 +5386,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 81,
+            funcId: 104,
             port: port_,
           );
         },
@@ -4089,7 +5421,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 82,
+            funcId: 105,
             port: port_,
           );
         },
@@ -4108,6 +5440,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "parse_signed_voting_pczt",
         argNames: ["signedPcztBytes", "actionIndex"],
+      );
+
+  @override
+  Future<List<String>> crateApiKeystonePcztSpendNullifiers({
+    required List<int> pcztBytes,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_8_loose(pcztBytes, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 106,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_String,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKeystonePcztSpendNullifiersConstMeta,
+        argValues: [pcztBytes],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKeystonePcztSpendNullifiersConstMeta =>
+      const TaskConstMeta(
+        debugName: "pczt_spend_nullifiers",
+        argNames: ["pcztBytes"],
       );
 
   @override
@@ -4132,7 +5497,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 83,
+            funcId: 107,
             port: port_,
           );
         },
@@ -4186,7 +5551,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 84,
+            funcId: 108,
             port: port_,
           );
         },
@@ -4208,6 +5573,179 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<KeystoneMigrationSigningRequest>
+  crateApiSyncPrepareOrchardMigrationBatchPczt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 109,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_keystone_migration_signing_request,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncPrepareOrchardMigrationBatchPcztConstMeta,
+        argValues: [dbPath, network, accountUuid],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPrepareOrchardMigrationBatchPcztConstMeta =>
+      const TaskConstMeta(
+        debugName: "prepare_orchard_migration_batch_pczt",
+        argNames: ["dbPath", "network", "accountUuid"],
+      );
+
+  @override
+  Future<KeystoneMigrationSigningRequest>
+  crateApiSyncPrepareOrchardMigrationDenominationsPczt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 110,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_keystone_migration_signing_request,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta:
+            kCrateApiSyncPrepareOrchardMigrationDenominationsPcztConstMeta,
+        argValues: [dbPath, network, accountUuid],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSyncPrepareOrchardMigrationDenominationsPcztConstMeta =>
+      const TaskConstMeta(
+        debugName: "prepare_orchard_migration_denominations_pczt",
+        argNames: ["dbPath", "network", "accountUuid"],
+      );
+
+  @override
+  Future<IronwoodMigrationResult> crateApiSyncPrepareOrchardMigrationOutbox({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String password,
+    required String saltBase64,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(password, serializer);
+          sse_encode_String(saltBase64, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 111,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_ironwood_migration_result,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncPrepareOrchardMigrationOutboxConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          password,
+          saltBase64,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPrepareOrchardMigrationOutboxConstMeta =>
+      const TaskConstMeta(
+        debugName: "prepare_orchard_migration_outbox",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "password",
+          "saltBase64",
+        ],
+      );
+
+  @override
+  Future<KeystoneMigrationSigningRequest>
+  crateApiSyncPrepareOrchardMigrationSingleQrPczt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 112,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_keystone_migration_signing_request,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncPrepareOrchardMigrationSingleQrPcztConstMeta,
+        argValues: [dbPath, network, accountUuid],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncPrepareOrchardMigrationSingleQrPcztConstMeta =>
+      const TaskConstMeta(
+        debugName: "prepare_orchard_migration_single_qr_pczt",
+        argNames: ["dbPath", "network", "accountUuid"],
+      );
+
+  @override
   Future<BigInt> crateApiWalletPreviewSoftwareAccountTransparentBalance({
     required String mnemonic,
     required String network,
@@ -4225,7 +5763,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 85,
+            funcId: 113,
             port: port_,
           );
         },
@@ -4277,7 +5815,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 86,
+            funcId: 114,
             port: port_,
           );
         },
@@ -4321,6 +5859,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<SubtreeRoot> saplingRoots,
     required BigInt orchardStartIndex,
     required List<SubtreeRoot> orchardRoots,
+    required BigInt ironwoodStartIndex,
+    required List<SubtreeRoot> ironwoodRoots,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4332,10 +5872,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_subtree_root(saplingRoots, serializer);
           sse_encode_u_64(orchardStartIndex, serializer);
           sse_encode_list_subtree_root(orchardRoots, serializer);
+          sse_encode_u_64(ironwoodStartIndex, serializer);
+          sse_encode_list_subtree_root(ironwoodRoots, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 87,
+            funcId: 115,
             port: port_,
           );
         },
@@ -4351,6 +5893,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           saplingRoots,
           orchardStartIndex,
           orchardRoots,
+          ironwoodStartIndex,
+          ironwoodRoots,
         ],
         apiImpl: this,
       ),
@@ -4367,6 +5911,88 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "saplingRoots",
           "orchardStartIndex",
           "orchardRoots",
+          "ironwoodStartIndex",
+          "ironwoodRoots",
+        ],
+      );
+
+  @override
+  Future<void> crateApiSyncReconcileOrchardMigrationOutboxReceipt({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String runId,
+    required String txidHex,
+    required String outcome,
+    required int remoteHeight,
+    String? responseMessage,
+    required List<MigrationOutboxScheduleUpdate> scheduleUpdates,
+    Uint8List? acceptedRawTransaction,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(runId, serializer);
+          sse_encode_String(txidHex, serializer);
+          sse_encode_String(outcome, serializer);
+          sse_encode_u_32(remoteHeight, serializer);
+          sse_encode_opt_String(responseMessage, serializer);
+          sse_encode_list_migration_outbox_schedule_update(
+            scheduleUpdates,
+            serializer,
+          );
+          sse_encode_opt_list_prim_u_8_strict(
+            acceptedRawTransaction,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 116,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncReconcileOrchardMigrationOutboxReceiptConstMeta,
+        argValues: [
+          dbPath,
+          network,
+          accountUuid,
+          runId,
+          txidHex,
+          outcome,
+          remoteHeight,
+          responseMessage,
+          scheduleUpdates,
+          acceptedRawTransaction,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiSyncReconcileOrchardMigrationOutboxReceiptConstMeta =>
+      const TaskConstMeta(
+        debugName: "reconcile_orchard_migration_outbox_receipt",
+        argNames: [
+          "dbPath",
+          "network",
+          "accountUuid",
+          "runId",
+          "txidHex",
+          "outcome",
+          "remoteHeight",
+          "responseMessage",
+          "scheduleUpdates",
+          "acceptedRawTransaction",
         ],
       );
 
@@ -4396,7 +6022,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 88,
+            funcId: 117,
             port: port_,
           );
         },
@@ -4455,7 +6081,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 89,
+            funcId: 118,
             port: port_,
           );
         },
@@ -4502,7 +6128,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 90,
+            funcId: 119,
             port: port_,
           );
         },
@@ -4547,7 +6173,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 91,
+            funcId: 120,
             port: port_,
           );
         },
@@ -4574,7 +6200,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 92)!;
+          return pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 121,
+          )!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -4606,7 +6236,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 93,
+            funcId: 122,
             port: port_,
           );
         },
@@ -4643,7 +6273,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 94,
+            funcId: 123,
             port: port_,
           );
         },
@@ -4678,7 +6308,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 95,
+            funcId: 124,
             port: port_,
           );
         },
@@ -4720,7 +6350,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 96,
+            funcId: 125,
             port: port_,
           );
         },
@@ -4742,6 +6372,59 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiSyncRetireUnbroadcastOrchardMigration({
+    required String dbPath,
+    required String lightwalletdUrl,
+    required String network,
+    required String accountUuid,
+    required String expectedRunId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(dbPath, serializer);
+          sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_String(network, serializer);
+          sse_encode_String(accountUuid, serializer);
+          sse_encode_String(expectedRunId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 126,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiSyncRetireUnbroadcastOrchardMigrationConstMeta,
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          network,
+          accountUuid,
+          expectedRunId,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSyncRetireUnbroadcastOrchardMigrationConstMeta =>
+      const TaskConstMeta(
+        debugName: "retire_unbroadcast_orchard_migration",
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "network",
+          "accountUuid",
+          "expectedRunId",
+        ],
+      );
+
+  @override
   Future<BigInt> crateApiSyncRewindToHeight({
     required String dbPath,
     required String network,
@@ -4757,7 +6440,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 97,
+            funcId: 127,
             port: port_,
           );
         },
@@ -4795,7 +6478,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 98,
+            funcId: 128,
             port: port_,
           );
         },
@@ -4828,6 +6511,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int treeStateTime,
     required String treeStateSaplingTree,
     required String treeStateOrchardTree,
+    required String treeStateIronwoodTree,
     required BigInt limit,
   }) {
     return handler.executeNormal(
@@ -4844,11 +6528,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_32(treeStateTime, serializer);
           sse_encode_String(treeStateSaplingTree, serializer);
           sse_encode_String(treeStateOrchardTree, serializer);
+          sse_encode_String(treeStateIronwoodTree, serializer);
           sse_encode_u_64(limit, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 99,
+            funcId: 129,
             port: port_,
           );
         },
@@ -4868,6 +6553,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           treeStateTime,
           treeStateSaplingTree,
           treeStateOrchardTree,
+          treeStateIronwoodTree,
           limit,
         ],
         apiImpl: this,
@@ -4888,6 +6574,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "treeStateTime",
       "treeStateSaplingTree",
       "treeStateOrchardTree",
+      "treeStateIronwoodTree",
       "limit",
     ],
   );
@@ -4916,7 +6603,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 100,
+            funcId: 130,
             port: port_,
           );
         },
@@ -4963,7 +6650,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 101,
+            funcId: 131,
           )!;
         },
         codec: SseCodec(
@@ -4998,7 +6685,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 102,
+            funcId: 132,
             port: port_,
           );
         },
@@ -5031,7 +6718,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 103,
+            funcId: 133,
             port: port_,
           );
         },
@@ -5071,7 +6758,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 104,
+            funcId: 134,
             port: port_,
           );
         },
@@ -5112,7 +6799,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 105,
+            funcId: 135,
             port: port_,
           );
         },
@@ -5166,7 +6853,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 106,
+            funcId: 136,
             port: port_,
           );
         },
@@ -5216,7 +6903,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 107,
+              funcId: 137,
               port: port_,
             );
           },
@@ -5257,7 +6944,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 108,
+              funcId: 138,
               port: port_,
             );
           },
@@ -5289,7 +6976,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 109,
+            funcId: 139,
           )!;
         },
         codec: SseCodec(
@@ -5330,7 +7017,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 110,
+            funcId: 140,
             port: port_,
           );
         },
@@ -5381,7 +7068,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 111,
+            funcId: 141,
             port: port_,
           );
         },
@@ -5420,7 +7107,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 112,
+            funcId: 142,
             port: port_,
           );
         },
@@ -5463,7 +7150,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 113,
+            funcId: 143,
             port: port_,
           );
         },
@@ -5513,7 +7200,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 114,
+            funcId: 144,
             port: port_,
           );
         },
@@ -5545,7 +7232,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 115,
+            funcId: 145,
             port: port_,
           );
         },
@@ -5573,7 +7260,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 116,
+            funcId: 146,
           )!;
         },
         codec: SseCodec(
@@ -5605,7 +7292,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 117,
+            funcId: 147,
             port: port_,
           );
         },
@@ -5642,7 +7329,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 118,
+            funcId: 148,
             port: port_,
           );
         },
@@ -5673,7 +7360,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 119,
+            funcId: 149,
           )!;
         },
         codec: SseCodec(
@@ -5704,7 +7391,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 120,
+            funcId: 150,
             port: port_,
           );
         },
@@ -5967,6 +7654,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MigrationOutboxBatch dco_decode_box_autoadd_migration_outbox_batch(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_migration_outbox_batch(raw);
+  }
+
+  @protected
+  OrchardMigrationImmediatePlan
+  dco_decode_box_autoadd_orchard_migration_immediate_plan(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_orchard_migration_immediate_plan(raw);
+  }
+
+  @protected
+  OrchardMigrationPrivatePlan
+  dco_decode_box_autoadd_orchard_migration_private_plan(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_orchard_migration_private_plan(raw);
+  }
+
+  @protected
   ResolvedVotingConfig dco_decode_box_autoadd_resolved_voting_config(
     dynamic raw,
   ) {
@@ -6037,6 +7746,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bundleCount: dco_decode_u_32(arr[0]),
       eligibleWeight: dco_decode_u_64(arr[1]),
       droppedCount: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  ChainUpgradeActivationStatus dco_decode_chain_upgrade_activation_status(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return ChainUpgradeActivationStatus(
+      network: dco_decode_String(arr[0]),
+      tipHeight: dco_decode_u_64(arr[1]),
+      nu63ActivationHeight: dco_decode_opt_box_autoadd_u_64(arr[2]),
+      ironwoodActiveAtTip: dco_decode_bool(arr[3]),
+    );
+  }
+
+  @protected
+  ChainUpgradeStatus dco_decode_chain_upgrade_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    return ChainUpgradeStatus(
+      network: dco_decode_String(arr[0]),
+      lightwalletdChainName: dco_decode_String(arr[1]),
+      tipHeight: dco_decode_u_64(arr[2]),
+      lightwalletdReportedHeight: dco_decode_u_64(arr[3]),
+      lightwalletdEstimatedHeight: dco_decode_u_64(arr[4]),
+      lightwalletdConsensusBranchId: dco_decode_String(arr[5]),
+      lightwalletdUpgradeName: dco_decode_String(arr[6]),
+      lightwalletdUpgradeHeight: dco_decode_u_64(arr[7]),
+      nu63ActivationHeight: dco_decode_opt_box_autoadd_u_64(arr[8]),
+      ironwoodActiveAtTip: dco_decode_bool(arr[9]),
+      endpointMatchesNetwork: dco_decode_bool(arr[10]),
     );
   }
 
@@ -6242,6 +7988,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  IronwoodMigrationResult dco_decode_ironwood_migration_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return IronwoodMigrationResult(
+      txids: dco_decode_String(arr[0]),
+      status: dco_decode_String(arr[1]),
+      broadcastedCount: dco_decode_u_32(arr[2]),
+      totalCount: dco_decode_u_32(arr[3]),
+      message: dco_decode_opt_String(arr[4]),
+      feeZatoshi: dco_decode_u_64(arr[5]),
+      migratedZatoshi: dco_decode_u_64(arr[6]),
+    );
+  }
+
+  @protected
   KeystoneAccountInfo dco_decode_keystone_account_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -6256,6 +8019,88 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  KeystoneActionSig dco_decode_keystone_action_sig(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return KeystoneActionSig(
+      pool: dco_decode_u_8(arr[0]),
+      actionIndex: dco_decode_u_32(arr[1]),
+      sig: dco_decode_list_prim_u_8_strict(arr[2]),
+    );
+  }
+
+  @protected
+  KeystoneMigrationMessage dco_decode_keystone_migration_message(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return KeystoneMigrationMessage(
+      id: dco_decode_String(arr[0]),
+      redactedPczt: dco_decode_list_prim_u_8_strict(arr[1]),
+    );
+  }
+
+  @protected
+  KeystoneMigrationProofStatus dco_decode_keystone_migration_proof_status(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return KeystoneMigrationProofStatus(
+      readyCount: dco_decode_u_32(arr[0]),
+      totalCount: dco_decode_u_32(arr[1]),
+      isReady: dco_decode_bool(arr[2]),
+      isFailed: dco_decode_bool(arr[3]),
+      message: dco_decode_opt_String(arr[4]),
+    );
+  }
+
+  @protected
+  KeystoneMigrationSigningRequest dco_decode_keystone_migration_signing_request(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return KeystoneMigrationSigningRequest(
+      requestId: dco_decode_String(arr[0]),
+      messages: dco_decode_list_keystone_migration_message(arr[1]),
+      signingBatchLimit: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  KeystoneMsgSig dco_decode_keystone_msg_sig(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return KeystoneMsgSig(
+      messageId: dco_decode_list_prim_u_8_strict(arr[0]),
+      sigs: dco_decode_list_keystone_action_sig(arr[1]),
+    );
+  }
+
+  @protected
+  KeystoneSigResult dco_decode_keystone_sig_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return KeystoneSigResult(
+      firmwareVersion: dco_decode_list_prim_u_8_strict(arr[0]),
+      requestId: dco_decode_list_prim_u_8_strict(arr[1]),
+      results: dco_decode_list_keystone_msg_sig(arr[2]),
+    );
+  }
+
+  @protected
   KeystoneSignatureRecord dco_decode_keystone_signature_record(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -6266,6 +8111,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sig: dco_decode_list_prim_u_8_strict(arr[1]),
       sighash: dco_decode_list_prim_u_8_strict(arr[2]),
       rk: dco_decode_list_prim_u_8_strict(arr[3]),
+    );
+  }
+
+  @protected
+  KeystoneSignedMigrationMessage dco_decode_keystone_signed_migration_message(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return KeystoneSignedMigrationMessage(
+      id: dco_decode_String(arr[0]),
+      sigs: dco_decode_list_keystone_action_sig(arr[1]),
     );
   }
 
@@ -6373,6 +8232,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<KeystoneActionSig> dco_decode_list_keystone_action_sig(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_keystone_action_sig).toList();
+  }
+
+  @protected
+  List<KeystoneMigrationMessage> dco_decode_list_keystone_migration_message(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_keystone_migration_message)
+        .toList();
+  }
+
+  @protected
+  List<KeystoneMsgSig> dco_decode_list_keystone_msg_sig(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_keystone_msg_sig).toList();
+  }
+
+  @protected
   List<KeystoneSignatureRecord> dco_decode_list_keystone_signature_record(
     dynamic raw,
   ) {
@@ -6383,9 +8264,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<KeystoneSignedMigrationMessage>
+  dco_decode_list_keystone_signed_migration_message(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_keystone_signed_migration_message)
+        .toList();
+  }
+
+  @protected
   List<Uint8List> dco_decode_list_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_list_prim_u_8_strict).toList();
+  }
+
+  @protected
+  List<MigrationOutboxItem> dco_decode_list_migration_outbox_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_migration_outbox_item)
+        .toList();
+  }
+
+  @protected
+  List<MigrationOutboxScheduleUpdate>
+  dco_decode_list_migration_outbox_schedule_update(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_migration_outbox_schedule_update)
+        .toList();
+  }
+
+  @protected
+  List<MigrationPartStatus> dco_decode_list_migration_part_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_migration_part_status)
+        .toList();
+  }
+
+  @protected
+  List<MigrationScheduledBroadcast>
+  dco_decode_list_migration_scheduled_broadcast(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_migration_scheduled_broadcast)
+        .toList();
+  }
+
+  @protected
+  List<MigrationScheduledTransfer> dco_decode_list_migration_scheduled_transfer(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_migration_scheduled_transfer)
+        .toList();
   }
 
   @protected
@@ -6404,6 +8338,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint32List;
+  }
+
+  @protected
+  Uint64List dco_decode_list_prim_u_64_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeUint64List(raw);
   }
 
   @protected
@@ -6552,6 +8492,169 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<ZcashBatchMessageInput> dco_decode_list_zcash_batch_message_input(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_zcash_batch_message_input)
+        .toList();
+  }
+
+  @protected
+  List<ZcashBatchSignedMessage> dco_decode_list_zcash_batch_signed_message(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_zcash_batch_signed_message)
+        .toList();
+  }
+
+  @protected
+  MigrationOutboxBatch dco_decode_migration_outbox_batch(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return MigrationOutboxBatch(
+      runId: dco_decode_String(arr[0]),
+      timingMeanBlocks: dco_decode_u_32(arr[1]),
+      timingMaxBlocks: dco_decode_u_32(arr[2]),
+      nextProofHeight: dco_decode_opt_box_autoadd_u_32(arr[3]),
+      items: dco_decode_list_migration_outbox_item(arr[4]),
+    );
+  }
+
+  @protected
+  MigrationOutboxItem dco_decode_migration_outbox_item(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 8)
+      throw Exception('unexpected arr length: expect 8 but see ${arr.length}');
+    return MigrationOutboxItem(
+      itemId: dco_decode_String(arr[0]),
+      partIndex: dco_decode_u_32(arr[1]),
+      txidHex: dco_decode_String(arr[2]),
+      rawTransaction: dco_decode_list_prim_u_8_strict(arr[3]),
+      anchorBoundaryHeight: dco_decode_u_32(arr[4]),
+      scheduledHeight: dco_decode_u_32(arr[5]),
+      scheduleStartHeight: dco_decode_u_32(arr[6]),
+      expiryHeight: dco_decode_u_32(arr[7]),
+    );
+  }
+
+  @protected
+  MigrationOutboxScheduleUpdate dco_decode_migration_outbox_schedule_update(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return MigrationOutboxScheduleUpdate(
+      itemId: dco_decode_String(arr[0]),
+      scheduledHeight: dco_decode_u_32(arr[1]),
+      scheduleStartHeight: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  MigrationPartState dco_decode_migration_part_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return MigrationPartState.values[raw as int];
+  }
+
+  @protected
+  MigrationPartStatus dco_decode_migration_part_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    return MigrationPartStatus(
+      partIndex: dco_decode_u_32(arr[0]),
+      scheduleOrder: dco_decode_opt_box_autoadd_u_32(arr[1]),
+      valueZatoshi: dco_decode_u_64(arr[2]),
+      state: dco_decode_migration_part_state(arr[3]),
+      txidHex: dco_decode_opt_String(arr[4]),
+      scheduleStartHeight: dco_decode_opt_box_autoadd_u_32(arr[5]),
+      scheduledHeight: dco_decode_opt_box_autoadd_u_32(arr[6]),
+      confirmationCount: dco_decode_u_32(arr[7]),
+      confirmationTarget: dco_decode_u_32(arr[8]),
+    );
+  }
+
+  @protected
+  MigrationScheduledBroadcast dco_decode_migration_scheduled_broadcast(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return MigrationScheduledBroadcast(
+      txidHex: dco_decode_String(arr[0]),
+      valueZatoshi: dco_decode_u_64(arr[1]),
+      scheduledAtMs: dco_decode_i_64(arr[2]),
+      scheduleStartHeight: dco_decode_opt_box_autoadd_u_32(arr[3]),
+      scheduledHeight: dco_decode_u_32(arr[4]),
+      status: dco_decode_String(arr[5]),
+    );
+  }
+
+  @protected
+  MigrationScheduledTransfer dco_decode_migration_scheduled_transfer(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return MigrationScheduledTransfer(
+      partIndex: dco_decode_u_32(arr[0]),
+      valueZatoshi: dco_decode_u_64(arr[1]),
+      blockOffset: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  MigrationStatus dco_decode_migration_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 25)
+      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
+    return MigrationStatus(
+      phase: dco_decode_String(arr[0]),
+      activeRunId: dco_decode_opt_String(arr[1]),
+      targetValuesZatoshi: dco_decode_list_prim_u_64_strict(arr[2]),
+      preparedNoteCount: dco_decode_u_32(arr[3]),
+      denominationConfirmationCount: dco_decode_u_32(arr[4]),
+      denominationConfirmationTarget: dco_decode_u_32(arr[5]),
+      denominationSplitCompletedCount: dco_decode_u_32(arr[6]),
+      denominationSplitTotalCount: dco_decode_u_32(arr[7]),
+      pendingTxCount: dco_decode_u_32(arr[8]),
+      broadcastedTxCount: dco_decode_u_32(arr[9]),
+      confirmedTxCount: dco_decode_u_32(arr[10]),
+      totalCount: dco_decode_u_32(arr[11]),
+      signedChildPcztCount: dco_decode_u_32(arr[12]),
+      pendingSplitStageCount: dco_decode_u_32(arr[13]),
+      message: dco_decode_opt_String(arr[14]),
+      canAbandon: dco_decode_bool(arr[15]),
+      signingBatchLimit: dco_decode_u_32(arr[16]),
+      scheduleMeanDelayBlocks: dco_decode_u_32(arr[17]),
+      scheduleMaxDelayBlocks: dco_decode_u_32(arr[18]),
+      maxPreparedNotesPerRun: dco_decode_u_32(arr[19]),
+      nextActionHeight: dco_decode_opt_box_autoadd_u_32(arr[20]),
+      estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[21]),
+      nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[22]),
+      scheduledBroadcasts: dco_decode_list_migration_scheduled_broadcast(
+        arr[23],
+      ),
+      parts: dco_decode_list_migration_part_status(arr[24]),
+    );
+  }
+
+  @protected
   NextStepView dco_decode_next_step_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -6585,6 +8688,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_f_64(raw);
+  }
+
+  @protected
+  MigrationOutboxBatch? dco_decode_opt_box_autoadd_migration_outbox_batch(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_migration_outbox_batch(raw);
+  }
+
+  @protected
+  OrchardMigrationImmediatePlan?
+  dco_decode_opt_box_autoadd_orchard_migration_immediate_plan(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_orchard_migration_immediate_plan(raw);
+  }
+
+  @protected
+  OrchardMigrationPrivatePlan?
+  dco_decode_opt_box_autoadd_orchard_migration_private_plan(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_orchard_migration_private_plan(raw);
   }
 
   @protected
@@ -6631,6 +8762,50 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_list_prim_u_8_strict(raw);
+  }
+
+  @protected
+  OrchardMigrationImmediatePlan dco_decode_orchard_migration_immediate_plan(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return OrchardMigrationImmediatePlan(
+      totalInputZatoshi: dco_decode_u_64(arr[0]),
+      feeZatoshi: dco_decode_u_64(arr[1]),
+      migratedZatoshi: dco_decode_u_64(arr[2]),
+      inputNoteCount: dco_decode_u_32(arr[3]),
+    );
+  }
+
+  @protected
+  OrchardMigrationPrivatePlan dco_decode_orchard_migration_private_plan(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    return OrchardMigrationPrivatePlan(
+      targetValuesZatoshi: dco_decode_list_prim_u_64_strict(arr[0]),
+      totalInputZatoshi: dco_decode_u_64(arr[1]),
+      totalMigratableZatoshi: dco_decode_u_64(arr[2]),
+      orchardChangeZatoshi: dco_decode_opt_box_autoadd_u_64(arr[3]),
+      denominationSplitFeeZatoshi: dco_decode_u_64(arr[4]),
+      migrationFeeZatoshi: dco_decode_u_64(arr[5]),
+      estimatedTotalFeeZatoshi: dco_decode_u_64(arr[6]),
+      plannedBatchCount: dco_decode_u_32(arr[7]),
+      denominationSplitStageCount: dco_decode_u_32(arr[8]),
+      signingBatchLimit: dco_decode_u_32(arr[9]),
+      scheduleMeanDelayBlocks: dco_decode_u_32(arr[10]),
+      scheduleMaxDelayBlocks: dco_decode_u_32(arr[11]),
+      proofReadinessDelayBlocks: dco_decode_u_32(arr[12]),
+      estimatedProofReadyHeight: dco_decode_opt_box_autoadd_u_32(arr[13]),
+      maxPreparedNotesPerRun: dco_decode_u_32(arr[14]),
+      scheduledTransfers: dco_decode_list_migration_scheduled_transfer(arr[15]),
+    );
   }
 
   @protected
@@ -6995,11 +9170,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   SubtreeIndices dco_decode_subtree_indices(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return SubtreeIndices(
       nextSapling: dco_decode_u_64(arr[0]),
       nextOrchard: dco_decode_u_64(arr[1]),
+      nextIronwood: dco_decode_u_64(arr[2]),
     );
   }
 
@@ -7282,21 +9458,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletBalance dco_decode_wallet_balance(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return WalletBalance(
       availability: dco_decode_wallet_balance_availability(arr[0]),
       transparent: dco_decode_u_64(arr[1]),
       sapling: dco_decode_u_64(arr[2]),
       orchard: dco_decode_u_64(arr[3]),
-      transparentPending: dco_decode_u_64(arr[4]),
-      saplingPending: dco_decode_u_64(arr[5]),
-      orchardPending: dco_decode_u_64(arr[6]),
-      changePendingConfirmation: dco_decode_u_64(arr[7]),
-      valuePendingSpendability: dco_decode_u_64(arr[8]),
-      uneconomicValue: dco_decode_u_64(arr[9]),
-      spendable: dco_decode_u_64(arr[10]),
-      total: dco_decode_u_64(arr[11]),
+      ironwood: dco_decode_u_64(arr[4]),
+      transparentPending: dco_decode_u_64(arr[5]),
+      saplingPending: dco_decode_u_64(arr[6]),
+      orchardPending: dco_decode_u_64(arr[7]),
+      ironwoodPending: dco_decode_u_64(arr[8]),
+      changePendingConfirmation: dco_decode_u_64(arr[9]),
+      valuePendingSpendability: dco_decode_u_64(arr[10]),
+      uneconomicValue: dco_decode_u_64(arr[11]),
+      spendable: dco_decode_u_64(arr[12]),
+      total: dco_decode_u_64(arr[13]),
     );
   }
 
@@ -7343,6 +9521,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       c1: dco_decode_list_prim_u_8_strict(arr[0]),
       c2: dco_decode_list_prim_u_8_strict(arr[1]),
       shareIndex: dco_decode_u_32(arr[2]),
+    );
+  }
+
+  @protected
+  ZcashBatchMessageInput dco_decode_zcash_batch_message_input(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ZcashBatchMessageInput(
+      id: dco_decode_String(arr[0]),
+      pcztBytes: dco_decode_list_prim_u_8_strict(arr[1]),
+    );
+  }
+
+  @protected
+  ZcashBatchSignResult dco_decode_zcash_batch_sign_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ZcashBatchSignResult(
+      version: dco_decode_u_32(arr[0]),
+      requestId: dco_decode_String(arr[1]),
+      results: dco_decode_list_zcash_batch_signed_message(arr[2]),
+    );
+  }
+
+  @protected
+  ZcashBatchSignedMessage dco_decode_zcash_batch_signed_message(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return ZcashBatchSignedMessage(
+      id: dco_decode_String(arr[0]),
+      status: dco_decode_u_32(arr[1]),
+      kind: dco_decode_u_32(arr[2]),
+      signedPcztBytes: dco_decode_list_prim_u_8_strict(arr[3]),
+      payloadDigestHex: dco_decode_String(arr[4]),
     );
   }
 
@@ -7628,6 +9846,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MigrationOutboxBatch sse_decode_box_autoadd_migration_outbox_batch(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_migration_outbox_batch(deserializer));
+  }
+
+  @protected
+  OrchardMigrationImmediatePlan
+  sse_decode_box_autoadd_orchard_migration_immediate_plan(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_orchard_migration_immediate_plan(deserializer));
+  }
+
+  @protected
+  OrchardMigrationPrivatePlan
+  sse_decode_box_autoadd_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_orchard_migration_private_plan(deserializer));
+  }
+
+  @protected
   ResolvedVotingConfig sse_decode_box_autoadd_resolved_voting_config(
     SseDeserializer deserializer,
   ) {
@@ -7704,6 +9948,58 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       bundleCount: var_bundleCount,
       eligibleWeight: var_eligibleWeight,
       droppedCount: var_droppedCount,
+    );
+  }
+
+  @protected
+  ChainUpgradeActivationStatus sse_decode_chain_upgrade_activation_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_network = sse_decode_String(deserializer);
+    var var_tipHeight = sse_decode_u_64(deserializer);
+    var var_nu63ActivationHeight = sse_decode_opt_box_autoadd_u_64(
+      deserializer,
+    );
+    var var_ironwoodActiveAtTip = sse_decode_bool(deserializer);
+    return ChainUpgradeActivationStatus(
+      network: var_network,
+      tipHeight: var_tipHeight,
+      nu63ActivationHeight: var_nu63ActivationHeight,
+      ironwoodActiveAtTip: var_ironwoodActiveAtTip,
+    );
+  }
+
+  @protected
+  ChainUpgradeStatus sse_decode_chain_upgrade_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_network = sse_decode_String(deserializer);
+    var var_lightwalletdChainName = sse_decode_String(deserializer);
+    var var_tipHeight = sse_decode_u_64(deserializer);
+    var var_lightwalletdReportedHeight = sse_decode_u_64(deserializer);
+    var var_lightwalletdEstimatedHeight = sse_decode_u_64(deserializer);
+    var var_lightwalletdConsensusBranchId = sse_decode_String(deserializer);
+    var var_lightwalletdUpgradeName = sse_decode_String(deserializer);
+    var var_lightwalletdUpgradeHeight = sse_decode_u_64(deserializer);
+    var var_nu63ActivationHeight = sse_decode_opt_box_autoadd_u_64(
+      deserializer,
+    );
+    var var_ironwoodActiveAtTip = sse_decode_bool(deserializer);
+    var var_endpointMatchesNetwork = sse_decode_bool(deserializer);
+    return ChainUpgradeStatus(
+      network: var_network,
+      lightwalletdChainName: var_lightwalletdChainName,
+      tipHeight: var_tipHeight,
+      lightwalletdReportedHeight: var_lightwalletdReportedHeight,
+      lightwalletdEstimatedHeight: var_lightwalletdEstimatedHeight,
+      lightwalletdConsensusBranchId: var_lightwalletdConsensusBranchId,
+      lightwalletdUpgradeName: var_lightwalletdUpgradeName,
+      lightwalletdUpgradeHeight: var_lightwalletdUpgradeHeight,
+      nu63ActivationHeight: var_nu63ActivationHeight,
+      ironwoodActiveAtTip: var_ironwoodActiveAtTip,
+      endpointMatchesNetwork: var_endpointMatchesNetwork,
     );
   }
 
@@ -7936,6 +10232,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  IronwoodMigrationResult sse_decode_ironwood_migration_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_txids = sse_decode_String(deserializer);
+    var var_status = sse_decode_String(deserializer);
+    var var_broadcastedCount = sse_decode_u_32(deserializer);
+    var var_totalCount = sse_decode_u_32(deserializer);
+    var var_message = sse_decode_opt_String(deserializer);
+    var var_feeZatoshi = sse_decode_u_64(deserializer);
+    var var_migratedZatoshi = sse_decode_u_64(deserializer);
+    return IronwoodMigrationResult(
+      txids: var_txids,
+      status: var_status,
+      broadcastedCount: var_broadcastedCount,
+      totalCount: var_totalCount,
+      message: var_message,
+      feeZatoshi: var_feeZatoshi,
+      migratedZatoshi: var_migratedZatoshi,
+    );
+  }
+
+  @protected
   KeystoneAccountInfo sse_decode_keystone_account_info(
     SseDeserializer deserializer,
   ) {
@@ -7949,6 +10268,88 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ufvk: var_ufvk,
       index: var_index,
       seedFingerprint: var_seedFingerprint,
+    );
+  }
+
+  @protected
+  KeystoneActionSig sse_decode_keystone_action_sig(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_pool = sse_decode_u_8(deserializer);
+    var var_actionIndex = sse_decode_u_32(deserializer);
+    var var_sig = sse_decode_list_prim_u_8_strict(deserializer);
+    return KeystoneActionSig(
+      pool: var_pool,
+      actionIndex: var_actionIndex,
+      sig: var_sig,
+    );
+  }
+
+  @protected
+  KeystoneMigrationMessage sse_decode_keystone_migration_message(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_redactedPczt = sse_decode_list_prim_u_8_strict(deserializer);
+    return KeystoneMigrationMessage(id: var_id, redactedPczt: var_redactedPczt);
+  }
+
+  @protected
+  KeystoneMigrationProofStatus sse_decode_keystone_migration_proof_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_readyCount = sse_decode_u_32(deserializer);
+    var var_totalCount = sse_decode_u_32(deserializer);
+    var var_isReady = sse_decode_bool(deserializer);
+    var var_isFailed = sse_decode_bool(deserializer);
+    var var_message = sse_decode_opt_String(deserializer);
+    return KeystoneMigrationProofStatus(
+      readyCount: var_readyCount,
+      totalCount: var_totalCount,
+      isReady: var_isReady,
+      isFailed: var_isFailed,
+      message: var_message,
+    );
+  }
+
+  @protected
+  KeystoneMigrationSigningRequest sse_decode_keystone_migration_signing_request(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_requestId = sse_decode_String(deserializer);
+    var var_messages = sse_decode_list_keystone_migration_message(deserializer);
+    var var_signingBatchLimit = sse_decode_u_32(deserializer);
+    return KeystoneMigrationSigningRequest(
+      requestId: var_requestId,
+      messages: var_messages,
+      signingBatchLimit: var_signingBatchLimit,
+    );
+  }
+
+  @protected
+  KeystoneMsgSig sse_decode_keystone_msg_sig(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_messageId = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_sigs = sse_decode_list_keystone_action_sig(deserializer);
+    return KeystoneMsgSig(messageId: var_messageId, sigs: var_sigs);
+  }
+
+  @protected
+  KeystoneSigResult sse_decode_keystone_sig_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_firmwareVersion = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_requestId = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_results = sse_decode_list_keystone_msg_sig(deserializer);
+    return KeystoneSigResult(
+      firmwareVersion: var_firmwareVersion,
+      requestId: var_requestId,
+      results: var_results,
     );
   }
 
@@ -7967,6 +10368,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       sighash: var_sighash,
       rk: var_rk,
     );
+  }
+
+  @protected
+  KeystoneSignedMigrationMessage sse_decode_keystone_signed_migration_message(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_sigs = sse_decode_list_keystone_action_sig(deserializer);
+    return KeystoneSignedMigrationMessage(id: var_id, sigs: var_sigs);
   }
 
   @protected
@@ -8146,6 +10557,48 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<KeystoneActionSig> sse_decode_list_keystone_action_sig(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KeystoneActionSig>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_keystone_action_sig(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<KeystoneMigrationMessage> sse_decode_list_keystone_migration_message(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KeystoneMigrationMessage>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_keystone_migration_message(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<KeystoneMsgSig> sse_decode_list_keystone_msg_sig(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KeystoneMsgSig>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_keystone_msg_sig(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<KeystoneSignatureRecord> sse_decode_list_keystone_signature_record(
     SseDeserializer deserializer,
   ) {
@@ -8160,6 +10613,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<KeystoneSignedMigrationMessage>
+  sse_decode_list_keystone_signed_migration_message(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <KeystoneSignedMigrationMessage>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_keystone_signed_migration_message(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<Uint8List> sse_decode_list_list_prim_u_8_strict(
     SseDeserializer deserializer,
   ) {
@@ -8169,6 +10637,76 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <Uint8List>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_list_prim_u_8_strict(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<MigrationOutboxItem> sse_decode_list_migration_outbox_item(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MigrationOutboxItem>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_migration_outbox_item(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<MigrationOutboxScheduleUpdate>
+  sse_decode_list_migration_outbox_schedule_update(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MigrationOutboxScheduleUpdate>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_migration_outbox_schedule_update(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<MigrationPartStatus> sse_decode_list_migration_part_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MigrationPartStatus>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_migration_part_status(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<MigrationScheduledBroadcast>
+  sse_decode_list_migration_scheduled_broadcast(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MigrationScheduledBroadcast>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_migration_scheduled_broadcast(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<MigrationScheduledTransfer> sse_decode_list_migration_scheduled_transfer(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MigrationScheduledTransfer>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_migration_scheduled_transfer(deserializer));
     }
     return ans_;
   }
@@ -8199,6 +10737,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint32List(len_);
+  }
+
+  @protected
+  Uint64List sse_decode_list_prim_u_64_strict(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var len_ = sse_decode_i_32(deserializer);
+    return deserializer.buffer.getUint64List(len_);
   }
 
   @protected
@@ -8451,6 +10996,228 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<ZcashBatchMessageInput> sse_decode_list_zcash_batch_message_input(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ZcashBatchMessageInput>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_zcash_batch_message_input(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<ZcashBatchSignedMessage> sse_decode_list_zcash_batch_signed_message(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <ZcashBatchSignedMessage>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_zcash_batch_signed_message(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  MigrationOutboxBatch sse_decode_migration_outbox_batch(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_runId = sse_decode_String(deserializer);
+    var var_timingMeanBlocks = sse_decode_u_32(deserializer);
+    var var_timingMaxBlocks = sse_decode_u_32(deserializer);
+    var var_nextProofHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_items = sse_decode_list_migration_outbox_item(deserializer);
+    return MigrationOutboxBatch(
+      runId: var_runId,
+      timingMeanBlocks: var_timingMeanBlocks,
+      timingMaxBlocks: var_timingMaxBlocks,
+      nextProofHeight: var_nextProofHeight,
+      items: var_items,
+    );
+  }
+
+  @protected
+  MigrationOutboxItem sse_decode_migration_outbox_item(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_itemId = sse_decode_String(deserializer);
+    var var_partIndex = sse_decode_u_32(deserializer);
+    var var_txidHex = sse_decode_String(deserializer);
+    var var_rawTransaction = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_anchorBoundaryHeight = sse_decode_u_32(deserializer);
+    var var_scheduledHeight = sse_decode_u_32(deserializer);
+    var var_scheduleStartHeight = sse_decode_u_32(deserializer);
+    var var_expiryHeight = sse_decode_u_32(deserializer);
+    return MigrationOutboxItem(
+      itemId: var_itemId,
+      partIndex: var_partIndex,
+      txidHex: var_txidHex,
+      rawTransaction: var_rawTransaction,
+      anchorBoundaryHeight: var_anchorBoundaryHeight,
+      scheduledHeight: var_scheduledHeight,
+      scheduleStartHeight: var_scheduleStartHeight,
+      expiryHeight: var_expiryHeight,
+    );
+  }
+
+  @protected
+  MigrationOutboxScheduleUpdate sse_decode_migration_outbox_schedule_update(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_itemId = sse_decode_String(deserializer);
+    var var_scheduledHeight = sse_decode_u_32(deserializer);
+    var var_scheduleStartHeight = sse_decode_u_32(deserializer);
+    return MigrationOutboxScheduleUpdate(
+      itemId: var_itemId,
+      scheduledHeight: var_scheduledHeight,
+      scheduleStartHeight: var_scheduleStartHeight,
+    );
+  }
+
+  @protected
+  MigrationPartState sse_decode_migration_part_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return MigrationPartState.values[inner];
+  }
+
+  @protected
+  MigrationPartStatus sse_decode_migration_part_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_partIndex = sse_decode_u_32(deserializer);
+    var var_scheduleOrder = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_valueZatoshi = sse_decode_u_64(deserializer);
+    var var_state = sse_decode_migration_part_state(deserializer);
+    var var_txidHex = sse_decode_opt_String(deserializer);
+    var var_scheduleStartHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_scheduledHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_confirmationCount = sse_decode_u_32(deserializer);
+    var var_confirmationTarget = sse_decode_u_32(deserializer);
+    return MigrationPartStatus(
+      partIndex: var_partIndex,
+      scheduleOrder: var_scheduleOrder,
+      valueZatoshi: var_valueZatoshi,
+      state: var_state,
+      txidHex: var_txidHex,
+      scheduleStartHeight: var_scheduleStartHeight,
+      scheduledHeight: var_scheduledHeight,
+      confirmationCount: var_confirmationCount,
+      confirmationTarget: var_confirmationTarget,
+    );
+  }
+
+  @protected
+  MigrationScheduledBroadcast sse_decode_migration_scheduled_broadcast(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_txidHex = sse_decode_String(deserializer);
+    var var_valueZatoshi = sse_decode_u_64(deserializer);
+    var var_scheduledAtMs = sse_decode_i_64(deserializer);
+    var var_scheduleStartHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_scheduledHeight = sse_decode_u_32(deserializer);
+    var var_status = sse_decode_String(deserializer);
+    return MigrationScheduledBroadcast(
+      txidHex: var_txidHex,
+      valueZatoshi: var_valueZatoshi,
+      scheduledAtMs: var_scheduledAtMs,
+      scheduleStartHeight: var_scheduleStartHeight,
+      scheduledHeight: var_scheduledHeight,
+      status: var_status,
+    );
+  }
+
+  @protected
+  MigrationScheduledTransfer sse_decode_migration_scheduled_transfer(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_partIndex = sse_decode_u_32(deserializer);
+    var var_valueZatoshi = sse_decode_u_64(deserializer);
+    var var_blockOffset = sse_decode_u_32(deserializer);
+    return MigrationScheduledTransfer(
+      partIndex: var_partIndex,
+      valueZatoshi: var_valueZatoshi,
+      blockOffset: var_blockOffset,
+    );
+  }
+
+  @protected
+  MigrationStatus sse_decode_migration_status(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_phase = sse_decode_String(deserializer);
+    var var_activeRunId = sse_decode_opt_String(deserializer);
+    var var_targetValuesZatoshi = sse_decode_list_prim_u_64_strict(
+      deserializer,
+    );
+    var var_preparedNoteCount = sse_decode_u_32(deserializer);
+    var var_denominationConfirmationCount = sse_decode_u_32(deserializer);
+    var var_denominationConfirmationTarget = sse_decode_u_32(deserializer);
+    var var_denominationSplitCompletedCount = sse_decode_u_32(deserializer);
+    var var_denominationSplitTotalCount = sse_decode_u_32(deserializer);
+    var var_pendingTxCount = sse_decode_u_32(deserializer);
+    var var_broadcastedTxCount = sse_decode_u_32(deserializer);
+    var var_confirmedTxCount = sse_decode_u_32(deserializer);
+    var var_totalCount = sse_decode_u_32(deserializer);
+    var var_signedChildPcztCount = sse_decode_u_32(deserializer);
+    var var_pendingSplitStageCount = sse_decode_u_32(deserializer);
+    var var_message = sse_decode_opt_String(deserializer);
+    var var_canAbandon = sse_decode_bool(deserializer);
+    var var_signingBatchLimit = sse_decode_u_32(deserializer);
+    var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
+    var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
+    var var_maxPreparedNotesPerRun = sse_decode_u_32(deserializer);
+    var var_nextActionHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_estimatedCompletionHeight = sse_decode_opt_box_autoadd_u_32(
+      deserializer,
+    );
+    var var_nextActionPartIndex = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_scheduledBroadcasts = sse_decode_list_migration_scheduled_broadcast(
+      deserializer,
+    );
+    var var_parts = sse_decode_list_migration_part_status(deserializer);
+    return MigrationStatus(
+      phase: var_phase,
+      activeRunId: var_activeRunId,
+      targetValuesZatoshi: var_targetValuesZatoshi,
+      preparedNoteCount: var_preparedNoteCount,
+      denominationConfirmationCount: var_denominationConfirmationCount,
+      denominationConfirmationTarget: var_denominationConfirmationTarget,
+      denominationSplitCompletedCount: var_denominationSplitCompletedCount,
+      denominationSplitTotalCount: var_denominationSplitTotalCount,
+      pendingTxCount: var_pendingTxCount,
+      broadcastedTxCount: var_broadcastedTxCount,
+      confirmedTxCount: var_confirmedTxCount,
+      totalCount: var_totalCount,
+      signedChildPcztCount: var_signedChildPcztCount,
+      pendingSplitStageCount: var_pendingSplitStageCount,
+      message: var_message,
+      canAbandon: var_canAbandon,
+      signingBatchLimit: var_signingBatchLimit,
+      scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
+      scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
+      maxPreparedNotesPerRun: var_maxPreparedNotesPerRun,
+      nextActionHeight: var_nextActionHeight,
+      estimatedCompletionHeight: var_estimatedCompletionHeight,
+      nextActionPartIndex: var_nextActionPartIndex,
+      scheduledBroadcasts: var_scheduledBroadcasts,
+      parts: var_parts,
+    );
+  }
+
+  @protected
   NextStepView sse_decode_next_step_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_kind = sse_decode_String(deserializer);
@@ -8498,6 +11265,51 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_f_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  MigrationOutboxBatch? sse_decode_opt_box_autoadd_migration_outbox_batch(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_migration_outbox_batch(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  OrchardMigrationImmediatePlan?
+  sse_decode_opt_box_autoadd_orchard_migration_immediate_plan(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_orchard_migration_immediate_plan(
+        deserializer,
+      ));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  OrchardMigrationPrivatePlan?
+  sse_decode_opt_box_autoadd_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_orchard_migration_private_plan(
+        deserializer,
+      ));
     } else {
       return null;
     }
@@ -8579,6 +11391,72 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     } else {
       return null;
     }
+  }
+
+  @protected
+  OrchardMigrationImmediatePlan sse_decode_orchard_migration_immediate_plan(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_totalInputZatoshi = sse_decode_u_64(deserializer);
+    var var_feeZatoshi = sse_decode_u_64(deserializer);
+    var var_migratedZatoshi = sse_decode_u_64(deserializer);
+    var var_inputNoteCount = sse_decode_u_32(deserializer);
+    return OrchardMigrationImmediatePlan(
+      totalInputZatoshi: var_totalInputZatoshi,
+      feeZatoshi: var_feeZatoshi,
+      migratedZatoshi: var_migratedZatoshi,
+      inputNoteCount: var_inputNoteCount,
+    );
+  }
+
+  @protected
+  OrchardMigrationPrivatePlan sse_decode_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_targetValuesZatoshi = sse_decode_list_prim_u_64_strict(
+      deserializer,
+    );
+    var var_totalInputZatoshi = sse_decode_u_64(deserializer);
+    var var_totalMigratableZatoshi = sse_decode_u_64(deserializer);
+    var var_orchardChangeZatoshi = sse_decode_opt_box_autoadd_u_64(
+      deserializer,
+    );
+    var var_denominationSplitFeeZatoshi = sse_decode_u_64(deserializer);
+    var var_migrationFeeZatoshi = sse_decode_u_64(deserializer);
+    var var_estimatedTotalFeeZatoshi = sse_decode_u_64(deserializer);
+    var var_plannedBatchCount = sse_decode_u_32(deserializer);
+    var var_denominationSplitStageCount = sse_decode_u_32(deserializer);
+    var var_signingBatchLimit = sse_decode_u_32(deserializer);
+    var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
+    var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
+    var var_proofReadinessDelayBlocks = sse_decode_u_32(deserializer);
+    var var_estimatedProofReadyHeight = sse_decode_opt_box_autoadd_u_32(
+      deserializer,
+    );
+    var var_maxPreparedNotesPerRun = sse_decode_u_32(deserializer);
+    var var_scheduledTransfers = sse_decode_list_migration_scheduled_transfer(
+      deserializer,
+    );
+    return OrchardMigrationPrivatePlan(
+      targetValuesZatoshi: var_targetValuesZatoshi,
+      totalInputZatoshi: var_totalInputZatoshi,
+      totalMigratableZatoshi: var_totalMigratableZatoshi,
+      orchardChangeZatoshi: var_orchardChangeZatoshi,
+      denominationSplitFeeZatoshi: var_denominationSplitFeeZatoshi,
+      migrationFeeZatoshi: var_migrationFeeZatoshi,
+      estimatedTotalFeeZatoshi: var_estimatedTotalFeeZatoshi,
+      plannedBatchCount: var_plannedBatchCount,
+      denominationSplitStageCount: var_denominationSplitStageCount,
+      signingBatchLimit: var_signingBatchLimit,
+      scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
+      scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
+      proofReadinessDelayBlocks: var_proofReadinessDelayBlocks,
+      estimatedProofReadyHeight: var_estimatedProofReadyHeight,
+      maxPreparedNotesPerRun: var_maxPreparedNotesPerRun,
+      scheduledTransfers: var_scheduledTransfers,
+    );
   }
 
   @protected
@@ -9013,9 +11891,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_nextSapling = sse_decode_u_64(deserializer);
     var var_nextOrchard = sse_decode_u_64(deserializer);
+    var var_nextIronwood = sse_decode_u_64(deserializer);
     return SubtreeIndices(
       nextSapling: var_nextSapling,
       nextOrchard: var_nextOrchard,
+      nextIronwood: var_nextIronwood,
     );
   }
 
@@ -9353,9 +12233,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_transparent = sse_decode_u_64(deserializer);
     var var_sapling = sse_decode_u_64(deserializer);
     var var_orchard = sse_decode_u_64(deserializer);
+    var var_ironwood = sse_decode_u_64(deserializer);
     var var_transparentPending = sse_decode_u_64(deserializer);
     var var_saplingPending = sse_decode_u_64(deserializer);
     var var_orchardPending = sse_decode_u_64(deserializer);
+    var var_ironwoodPending = sse_decode_u_64(deserializer);
     var var_changePendingConfirmation = sse_decode_u_64(deserializer);
     var var_valuePendingSpendability = sse_decode_u_64(deserializer);
     var var_uneconomicValue = sse_decode_u_64(deserializer);
@@ -9366,9 +12248,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       transparent: var_transparent,
       sapling: var_sapling,
       orchard: var_orchard,
+      ironwood: var_ironwood,
       transparentPending: var_transparentPending,
       saplingPending: var_saplingPending,
       orchardPending: var_orchardPending,
+      ironwoodPending: var_ironwoodPending,
       changePendingConfirmation: var_changePendingConfirmation,
       valuePendingSpendability: var_valuePendingSpendability,
       uneconomicValue: var_uneconomicValue,
@@ -9426,6 +12310,50 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       c1: var_c1,
       c2: var_c2,
       shareIndex: var_shareIndex,
+    );
+  }
+
+  @protected
+  ZcashBatchMessageInput sse_decode_zcash_batch_message_input(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_pcztBytes = sse_decode_list_prim_u_8_strict(deserializer);
+    return ZcashBatchMessageInput(id: var_id, pcztBytes: var_pcztBytes);
+  }
+
+  @protected
+  ZcashBatchSignResult sse_decode_zcash_batch_sign_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_version = sse_decode_u_32(deserializer);
+    var var_requestId = sse_decode_String(deserializer);
+    var var_results = sse_decode_list_zcash_batch_signed_message(deserializer);
+    return ZcashBatchSignResult(
+      version: var_version,
+      requestId: var_requestId,
+      results: var_results,
+    );
+  }
+
+  @protected
+  ZcashBatchSignedMessage sse_decode_zcash_batch_signed_message(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_status = sse_decode_u_32(deserializer);
+    var var_kind = sse_decode_u_32(deserializer);
+    var var_signedPcztBytes = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_payloadDigestHex = sse_decode_String(deserializer);
+    return ZcashBatchSignedMessage(
+      id: var_id,
+      status: var_status,
+      kind: var_kind,
+      signedPcztBytes: var_signedPcztBytes,
+      payloadDigestHex: var_payloadDigestHex,
     );
   }
 
@@ -9692,6 +12620,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_migration_outbox_batch(
+    MigrationOutboxBatch self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_migration_outbox_batch(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_orchard_migration_immediate_plan(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_orchard_migration_private_plan(
+    OrchardMigrationPrivatePlan self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_orchard_migration_private_plan(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_resolved_voting_config(
     ResolvedVotingConfig self,
     SseSerializer serializer,
@@ -9772,6 +12727,37 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.bundleCount, serializer);
     sse_encode_u_64(self.eligibleWeight, serializer);
     sse_encode_u_32(self.droppedCount, serializer);
+  }
+
+  @protected
+  void sse_encode_chain_upgrade_activation_status(
+    ChainUpgradeActivationStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.network, serializer);
+    sse_encode_u_64(self.tipHeight, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.nu63ActivationHeight, serializer);
+    sse_encode_bool(self.ironwoodActiveAtTip, serializer);
+  }
+
+  @protected
+  void sse_encode_chain_upgrade_status(
+    ChainUpgradeStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.network, serializer);
+    sse_encode_String(self.lightwalletdChainName, serializer);
+    sse_encode_u_64(self.tipHeight, serializer);
+    sse_encode_u_64(self.lightwalletdReportedHeight, serializer);
+    sse_encode_u_64(self.lightwalletdEstimatedHeight, serializer);
+    sse_encode_String(self.lightwalletdConsensusBranchId, serializer);
+    sse_encode_String(self.lightwalletdUpgradeName, serializer);
+    sse_encode_u_64(self.lightwalletdUpgradeHeight, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.nu63ActivationHeight, serializer);
+    sse_encode_bool(self.ironwoodActiveAtTip, serializer);
+    sse_encode_bool(self.endpointMatchesNetwork, serializer);
   }
 
   @protected
@@ -9950,6 +12936,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_ironwood_migration_result(
+    IronwoodMigrationResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.txids, serializer);
+    sse_encode_String(self.status, serializer);
+    sse_encode_u_32(self.broadcastedCount, serializer);
+    sse_encode_u_32(self.totalCount, serializer);
+    sse_encode_opt_String(self.message, serializer);
+    sse_encode_u_64(self.feeZatoshi, serializer);
+    sse_encode_u_64(self.migratedZatoshi, serializer);
+  }
+
+  @protected
   void sse_encode_keystone_account_info(
     KeystoneAccountInfo self,
     SseSerializer serializer,
@@ -9962,6 +12963,72 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_keystone_action_sig(
+    KeystoneActionSig self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_8(self.pool, serializer);
+    sse_encode_u_32(self.actionIndex, serializer);
+    sse_encode_list_prim_u_8_strict(self.sig, serializer);
+  }
+
+  @protected
+  void sse_encode_keystone_migration_message(
+    KeystoneMigrationMessage self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_list_prim_u_8_strict(self.redactedPczt, serializer);
+  }
+
+  @protected
+  void sse_encode_keystone_migration_proof_status(
+    KeystoneMigrationProofStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.readyCount, serializer);
+    sse_encode_u_32(self.totalCount, serializer);
+    sse_encode_bool(self.isReady, serializer);
+    sse_encode_bool(self.isFailed, serializer);
+    sse_encode_opt_String(self.message, serializer);
+  }
+
+  @protected
+  void sse_encode_keystone_migration_signing_request(
+    KeystoneMigrationSigningRequest self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.requestId, serializer);
+    sse_encode_list_keystone_migration_message(self.messages, serializer);
+    sse_encode_u_32(self.signingBatchLimit, serializer);
+  }
+
+  @protected
+  void sse_encode_keystone_msg_sig(
+    KeystoneMsgSig self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_prim_u_8_strict(self.messageId, serializer);
+    sse_encode_list_keystone_action_sig(self.sigs, serializer);
+  }
+
+  @protected
+  void sse_encode_keystone_sig_result(
+    KeystoneSigResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_prim_u_8_strict(self.firmwareVersion, serializer);
+    sse_encode_list_prim_u_8_strict(self.requestId, serializer);
+    sse_encode_list_keystone_msg_sig(self.results, serializer);
+  }
+
+  @protected
   void sse_encode_keystone_signature_record(
     KeystoneSignatureRecord self,
     SseSerializer serializer,
@@ -9971,6 +13038,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_prim_u_8_strict(self.sig, serializer);
     sse_encode_list_prim_u_8_strict(self.sighash, serializer);
     sse_encode_list_prim_u_8_strict(self.rk, serializer);
+  }
+
+  @protected
+  void sse_encode_keystone_signed_migration_message(
+    KeystoneSignedMigrationMessage self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_list_keystone_action_sig(self.sigs, serializer);
   }
 
   @protected
@@ -10121,6 +13198,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_keystone_action_sig(
+    List<KeystoneActionSig> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_keystone_action_sig(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_keystone_migration_message(
+    List<KeystoneMigrationMessage> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_keystone_migration_message(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_keystone_msg_sig(
+    List<KeystoneMsgSig> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_keystone_msg_sig(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_keystone_signature_record(
     List<KeystoneSignatureRecord> self,
     SseSerializer serializer,
@@ -10133,6 +13246,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_keystone_signed_migration_message(
+    List<KeystoneSignedMigrationMessage> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_keystone_signed_migration_message(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_list_prim_u_8_strict(
     List<Uint8List> self,
     SseSerializer serializer,
@@ -10141,6 +13266,66 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_list_prim_u_8_strict(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_migration_outbox_item(
+    List<MigrationOutboxItem> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_migration_outbox_item(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_migration_outbox_schedule_update(
+    List<MigrationOutboxScheduleUpdate> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_migration_outbox_schedule_update(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_migration_part_status(
+    List<MigrationPartStatus> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_migration_part_status(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_migration_scheduled_broadcast(
+    List<MigrationScheduledBroadcast> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_migration_scheduled_broadcast(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_migration_scheduled_transfer(
+    List<MigrationScheduledTransfer> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_migration_scheduled_transfer(item, serializer);
     }
   }
 
@@ -10176,6 +13361,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint32List(self);
+  }
+
+  @protected
+  void sse_encode_list_prim_u_64_strict(
+    Uint64List self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    serializer.buffer.putUint64List(self);
   }
 
   @protected
@@ -10405,6 +13600,157 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_zcash_batch_message_input(
+    List<ZcashBatchMessageInput> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_zcash_batch_message_input(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_zcash_batch_signed_message(
+    List<ZcashBatchSignedMessage> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_zcash_batch_signed_message(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_migration_outbox_batch(
+    MigrationOutboxBatch self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.runId, serializer);
+    sse_encode_u_32(self.timingMeanBlocks, serializer);
+    sse_encode_u_32(self.timingMaxBlocks, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.nextProofHeight, serializer);
+    sse_encode_list_migration_outbox_item(self.items, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_outbox_item(
+    MigrationOutboxItem self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.itemId, serializer);
+    sse_encode_u_32(self.partIndex, serializer);
+    sse_encode_String(self.txidHex, serializer);
+    sse_encode_list_prim_u_8_strict(self.rawTransaction, serializer);
+    sse_encode_u_32(self.anchorBoundaryHeight, serializer);
+    sse_encode_u_32(self.scheduledHeight, serializer);
+    sse_encode_u_32(self.scheduleStartHeight, serializer);
+    sse_encode_u_32(self.expiryHeight, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_outbox_schedule_update(
+    MigrationOutboxScheduleUpdate self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.itemId, serializer);
+    sse_encode_u_32(self.scheduledHeight, serializer);
+    sse_encode_u_32(self.scheduleStartHeight, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_part_state(
+    MigrationPartState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_part_status(
+    MigrationPartStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.partIndex, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.scheduleOrder, serializer);
+    sse_encode_u_64(self.valueZatoshi, serializer);
+    sse_encode_migration_part_state(self.state, serializer);
+    sse_encode_opt_String(self.txidHex, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.scheduleStartHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.scheduledHeight, serializer);
+    sse_encode_u_32(self.confirmationCount, serializer);
+    sse_encode_u_32(self.confirmationTarget, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_scheduled_broadcast(
+    MigrationScheduledBroadcast self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.txidHex, serializer);
+    sse_encode_u_64(self.valueZatoshi, serializer);
+    sse_encode_i_64(self.scheduledAtMs, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.scheduleStartHeight, serializer);
+    sse_encode_u_32(self.scheduledHeight, serializer);
+    sse_encode_String(self.status, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_scheduled_transfer(
+    MigrationScheduledTransfer self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.partIndex, serializer);
+    sse_encode_u_64(self.valueZatoshi, serializer);
+    sse_encode_u_32(self.blockOffset, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_status(
+    MigrationStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.phase, serializer);
+    sse_encode_opt_String(self.activeRunId, serializer);
+    sse_encode_list_prim_u_64_strict(self.targetValuesZatoshi, serializer);
+    sse_encode_u_32(self.preparedNoteCount, serializer);
+    sse_encode_u_32(self.denominationConfirmationCount, serializer);
+    sse_encode_u_32(self.denominationConfirmationTarget, serializer);
+    sse_encode_u_32(self.denominationSplitCompletedCount, serializer);
+    sse_encode_u_32(self.denominationSplitTotalCount, serializer);
+    sse_encode_u_32(self.pendingTxCount, serializer);
+    sse_encode_u_32(self.broadcastedTxCount, serializer);
+    sse_encode_u_32(self.confirmedTxCount, serializer);
+    sse_encode_u_32(self.totalCount, serializer);
+    sse_encode_u_32(self.signedChildPcztCount, serializer);
+    sse_encode_u_32(self.pendingSplitStageCount, serializer);
+    sse_encode_opt_String(self.message, serializer);
+    sse_encode_bool(self.canAbandon, serializer);
+    sse_encode_u_32(self.signingBatchLimit, serializer);
+    sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
+    sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);
+    sse_encode_u_32(self.maxPreparedNotesPerRun, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.nextActionHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.estimatedCompletionHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.nextActionPartIndex, serializer);
+    sse_encode_list_migration_scheduled_broadcast(
+      self.scheduledBroadcasts,
+      serializer,
+    );
+    sse_encode_list_migration_part_status(self.parts, serializer);
+  }
+
+  @protected
   void sse_encode_next_step_view(NextStepView self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.kind, serializer);
@@ -10444,6 +13790,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_f_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_migration_outbox_batch(
+    MigrationOutboxBatch? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_migration_outbox_batch(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_orchard_migration_immediate_plan(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_orchard_migration_private_plan(
+    OrchardMigrationPrivatePlan? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_orchard_migration_private_plan(self, serializer);
     }
   }
 
@@ -10517,6 +13902,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (self != null) {
       sse_encode_list_prim_u_8_strict(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_orchard_migration_immediate_plan(
+    OrchardMigrationImmediatePlan self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.totalInputZatoshi, serializer);
+    sse_encode_u_64(self.feeZatoshi, serializer);
+    sse_encode_u_64(self.migratedZatoshi, serializer);
+    sse_encode_u_32(self.inputNoteCount, serializer);
+  }
+
+  @protected
+  void sse_encode_orchard_migration_private_plan(
+    OrchardMigrationPrivatePlan self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_prim_u_64_strict(self.targetValuesZatoshi, serializer);
+    sse_encode_u_64(self.totalInputZatoshi, serializer);
+    sse_encode_u_64(self.totalMigratableZatoshi, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.orchardChangeZatoshi, serializer);
+    sse_encode_u_64(self.denominationSplitFeeZatoshi, serializer);
+    sse_encode_u_64(self.migrationFeeZatoshi, serializer);
+    sse_encode_u_64(self.estimatedTotalFeeZatoshi, serializer);
+    sse_encode_u_32(self.plannedBatchCount, serializer);
+    sse_encode_u_32(self.denominationSplitStageCount, serializer);
+    sse_encode_u_32(self.signingBatchLimit, serializer);
+    sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
+    sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);
+    sse_encode_u_32(self.proofReadinessDelayBlocks, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.estimatedProofReadyHeight, serializer);
+    sse_encode_u_32(self.maxPreparedNotesPerRun, serializer);
+    sse_encode_list_migration_scheduled_transfer(
+      self.scheduledTransfers,
+      serializer,
+    );
   }
 
   @protected
@@ -10833,6 +14257,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_u_64(self.nextSapling, serializer);
     sse_encode_u_64(self.nextOrchard, serializer);
+    sse_encode_u_64(self.nextIronwood, serializer);
   }
 
   @protected
@@ -11075,9 +14500,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.transparent, serializer);
     sse_encode_u_64(self.sapling, serializer);
     sse_encode_u_64(self.orchard, serializer);
+    sse_encode_u_64(self.ironwood, serializer);
     sse_encode_u_64(self.transparentPending, serializer);
     sse_encode_u_64(self.saplingPending, serializer);
     sse_encode_u_64(self.orchardPending, serializer);
+    sse_encode_u_64(self.ironwoodPending, serializer);
     sse_encode_u_64(self.changePendingConfirmation, serializer);
     sse_encode_u_64(self.valuePendingSpendability, serializer);
     sse_encode_u_64(self.uneconomicValue, serializer);
@@ -11124,5 +14551,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_prim_u_8_strict(self.c1, serializer);
     sse_encode_list_prim_u_8_strict(self.c2, serializer);
     sse_encode_u_32(self.shareIndex, serializer);
+  }
+
+  @protected
+  void sse_encode_zcash_batch_message_input(
+    ZcashBatchMessageInput self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_list_prim_u_8_strict(self.pcztBytes, serializer);
+  }
+
+  @protected
+  void sse_encode_zcash_batch_sign_result(
+    ZcashBatchSignResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.version, serializer);
+    sse_encode_String(self.requestId, serializer);
+    sse_encode_list_zcash_batch_signed_message(self.results, serializer);
+  }
+
+  @protected
+  void sse_encode_zcash_batch_signed_message(
+    ZcashBatchSignedMessage self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_u_32(self.status, serializer);
+    sse_encode_u_32(self.kind, serializer);
+    sse_encode_list_prim_u_8_strict(self.signedPcztBytes, serializer);
+    sse_encode_String(self.payloadDigestHex, serializer);
   }
 }

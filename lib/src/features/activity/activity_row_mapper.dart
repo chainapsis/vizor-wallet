@@ -65,7 +65,7 @@ ActivityRowData buildTransactionActivityRow({
         amount: amount,
         signedAmount: signedAmount,
         isFailed: isFailed,
-        isShielded: isShielded,
+        isUnsignedAmount: isShielded,
         kind: kind,
         privacyModeEnabled: privacyModeEnabled,
       ),
@@ -110,7 +110,7 @@ String _transactionAmountText({
   required BigInt amount,
   required BigInt signedAmount,
   required bool isFailed,
-  required bool isShielded,
+  required bool isUnsignedAmount,
   required String kind,
   required bool privacyModeEnabled,
 }) {
@@ -122,7 +122,7 @@ String _transactionAmountText({
     );
   }
   if (amount == BigInt.zero) return '--';
-  if (isFailed || isShielded) {
+  if (isFailed || isUnsignedAmount) {
     return ZecAmount.fromZatoshi(amount).activity.toString();
   }
   return ZecAmount.fromZatoshi(signedAmount).signedActivity.toString();
@@ -181,6 +181,7 @@ String? _poolLabel(String pool) {
   return switch (pool) {
     'transparent' => 'Transparent',
     'shielded' => 'Shielded',
+    'ironwood' => 'Ironwood',
     'mixed' => 'Mixed',
     _ => null,
   };
@@ -190,6 +191,7 @@ String? _poolIcon(String pool) {
   return switch (pool) {
     'transparent' => AppIcons.transparentBalance,
     'shielded' => AppIcons.shieldKeyholeOutline,
+    'ironwood' => AppIcons.shieldKeyholeOutline,
     _ => null,
   };
 }

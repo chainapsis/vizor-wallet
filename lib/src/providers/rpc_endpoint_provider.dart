@@ -1,11 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
 import '../core/storage/app_secure_store.dart';
 import '../rust/api/wallet.dart' as rust_wallet;
-import '../services/background_sync_service.dart' as bg_sync;
 
 class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
   static final _store = AppSecureStore.instance;
@@ -19,6 +17,7 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
       preset.url,
       allowDefaultPort: true,
     );
+    _requireAllowedEndpoint(normalized);
     await _verifyNetwork(normalized);
     await _persist(
       state.copyWith(lightwalletdUrl: normalized, presetId: preset.id),
@@ -27,6 +26,7 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
 
   Future<void> setCustom(String input) async {
     final normalized = normalizeRpcEndpointUrl(input, allowDefaultPort: true);
+    _requireAllowedEndpoint(normalized);
     await _verifyNetwork(normalized);
     await _persist(
       state.copyWith(
@@ -34,6 +34,14 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
         presetId: kCustomRpcEndpointPresetId,
       ),
     );
+  }
+
+  void _requireAllowedEndpoint(String lightwalletdUrl) {
+    if (!isRpcEndpointAllowedForBuild(lightwalletdUrl)) {
+      throw const FormatException(
+        'Ironwood Masquerade uses a fixed test endpoint.',
+      );
+    }
   }
 
   Future<void> _persist(RpcEndpointConfig next) async {
@@ -47,11 +55,6 @@ class RpcEndpointNotifier extends Notifier<RpcEndpointConfig> {
         next.normalizedLightwalletdUrl,
       );
       await _store.writePlain(kRpcEndpointPresetKey, effectivePresetId);
-    }
-    try {
-      await bg_sync.updateBackgroundSyncEndpoint(endpoint: next);
-    } catch (e) {
-      log('RpcEndpointNotifier: failed to update iOS endpoint mirror: $e');
     }
     state = next;
   }

@@ -38,6 +38,7 @@ Future<T?> showAppMobileSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isDismissible = true,
+  bool enableDrag = true,
   bool transparentBackground = false,
 }) {
   final appTheme = context.appTheme;
@@ -59,6 +60,7 @@ Future<T?> showAppMobileSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     isDismissible: isDismissible,
+    enableDrag: enableDrag,
     isScrollControlled: true,
     useSafeArea: true,
     // Root navigator so the sheet and its scrim cover the floating tab
@@ -158,6 +160,39 @@ class MobileModalCard extends StatelessWidget {
         bottom: bottomGap,
       ),
       child: card,
+    );
+  }
+}
+
+/// Shared inline presentation for deterministic previews and full-screen
+/// routes that need the standard floating mobile modal without pushing a
+/// second route.
+///
+/// The scrim, bottom anchoring, side inset, safe-area gap, surface, radius and
+/// shadow stay owned by the same primitives as [showAppMobileSheet]. Callers
+/// provide only the obscured [background] and modal [child].
+class MobileModalOverlay extends StatelessWidget {
+  const MobileModalOverlay({
+    required this.background,
+    required this.child,
+    super.key,
+  });
+
+  final Widget background;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        background,
+        ColoredBox(color: context.colors.background.neutralScrim),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: MobileModalCard(child: child),
+        ),
+      ],
     );
   }
 }

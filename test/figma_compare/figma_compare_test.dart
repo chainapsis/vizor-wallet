@@ -19,6 +19,7 @@ void main() {
         'pay-in-progress',
         'pay-completed',
         'mobile-home-default',
+        'ironwood-migration-announcement-modal',
       ]),
     );
   });
@@ -32,6 +33,14 @@ void main() {
       figmaCompareWindowCapturePath('/tmp/pay-recipient/content'),
       '/tmp/pay-recipient/content.window.png',
     );
+  });
+
+  test('capture configuration accepts a form-factor-specific default', () {
+    final configuration = FigmaCompareConfiguration.fromEnvironment(
+      defaultScenarioId: 'mobile-home-default',
+    );
+
+    expect(configuration.scenarioId, 'mobile-home-default');
   });
 
   test(

@@ -5,6 +5,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -19,9 +21,11 @@ import 'package:zcash_wallet/src/core/widgets/mobile/mobile_account_avatar.dart'
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/biometric_unlock_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -52,6 +56,7 @@ Widget _app(
   AccountNotifier Function()? accountNotifier,
   BiometricUnlockNotifier Function()? biometricNotifier,
   SyncNotifier Function()? syncNotifier,
+  Map<String, rust_sync.MigrationStatus> migrationStatuses = const {},
 }) {
   final router = GoRouter(
     initialLocation: '/accounts',
@@ -78,6 +83,9 @@ Widget _app(
       syncProvider.overrideWith(
         syncNotifier ?? () => FakeSyncNotifier(SyncState()),
       ),
+      ironwoodMigrationCoordinatorProvider.overrideWith(
+        () => _FakeMigrationCoordinator(migrationStatuses),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -85,6 +93,40 @@ Widget _app(
     ),
   );
 }
+
+class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
+  _FakeMigrationCoordinator(this.statuses);
+
+  final Map<String, rust_sync.MigrationStatus> statuses;
+
+  @override
+  IronwoodMigrationCoordinatorState build() =>
+      IronwoodMigrationCoordinatorState(statuses: statuses);
+}
+
+rust_sync.MigrationStatus _activeMigrationStatus() => rust_sync.MigrationStatus(
+  phase: 'waiting_migration_confirmations',
+  activeRunId: 'run-1',
+  targetValuesZatoshi: frb.Uint64List.fromList([100_000_000]),
+  preparedNoteCount: 1,
+  denominationConfirmationCount: 1,
+  denominationConfirmationTarget: 1,
+  denominationSplitCompletedCount: 1,
+  denominationSplitTotalCount: 1,
+  pendingTxCount: 1,
+  broadcastedTxCount: 1,
+  confirmedTxCount: 0,
+  totalCount: 1,
+  signedChildPcztCount: 0,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 12,
+  scheduleMeanDelayBlocks: 144,
+  scheduleMaxDelayBlocks: 576,
+  maxPreparedNotesPerRun: 12,
+  scheduledBroadcasts: const [],
+  parts: const [],
+);
 
 class _FakeAccountNotifier extends AccountNotifier {
   _FakeAccountNotifier(this.initialState);
@@ -124,7 +166,6 @@ class _FakeWalletMutationSyncNotifier extends FakeSyncNotifier {
     return const WalletMutationSyncPause(
       hadActiveSync: true,
       hadPolling: false,
-      hadBackgroundSync: false,
       hadMempoolObserver: false,
     );
   }
@@ -333,10 +374,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_account_menu_remove')));
     await tester.pumpAndSettle();
 
-    expect(
-      find.textContaining('completely reset the Vizor app'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('deletes every account'), findsOneWidget);
     expect(find.text('Reset Vizor'), findsOneWidget);
 
     await tester.tap(
@@ -686,7 +724,7 @@ void main() {
     expect(find.text('add account route'), findsOneWidget);
   });
 
-  testWidgets('remove asks for confirmation with the design copy', (
+  testWidgets('remove explains that the account can be re-imported', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -709,12 +747,15 @@ void main() {
 
     expect(find.byType(MobileModalScaffold), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
-    expect(find.textContaining("can't be reverted"), findsOneWidget);
+    expect(find.textContaining('deletes its local data'), findsOneWidget);
+    expect(find.textContaining('re-import it'), findsOneWidget);
     final title = tester.widget<Text>(find.text('Remove account'));
     expect(title.style?.fontSize, 16);
     expect(title.style?.height, 24 / 16);
     expect(title.style?.fontWeight, FontWeight.w600);
-    final body = tester.widget<Text>(find.textContaining("can't be reverted"));
+    final body = tester.widget<Text>(
+      find.textContaining('deletes its local data'),
+    );
     expect(body.style?.fontSize, 14);
     expect(body.style?.height, 21 / 14);
     expect(body.style?.fontWeight, FontWeight.w400);
@@ -729,6 +770,74 @@ void main() {
 
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(find.textContaining("can't be reverted"), findsNothing);
+    expect(find.textContaining('deletes its local data'), findsNothing);
+  });
+
+  testWidgets('remove explains what happens to an active migration', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(393, 852)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _app(
+        AccountState(
+          accounts: [
+            _account('a', 'Knight', isSeedAnchor: true),
+            _account('b', 'Viking'),
+          ],
+          activeAccountUuid: 'a',
+        ),
+        migrationStatuses: {'b': _activeMigrationStatus()},
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove account'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('will no longer continue in Vizor'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('already submitted to the Zcash network'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('fully sync'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reset explains what happens to active migrations', (
+    tester,
+  ) async {
+    final accountState = AccountState(
+      accounts: [_account('a', 'Knight', isSeedAnchor: true)],
+      activeAccountUuid: 'a',
+    );
+    await tester.pumpWidget(
+      _app(accountState, migrationStatuses: {'a': _activeMigrationStatus()}),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove account'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('stops migrations on this device'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('deletes every account'), findsOneWidget);
+    expect(
+      find.textContaining('already submitted to the Zcash network'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('fully sync'), findsOneWidget);
+    expect(find.text('Reset Vizor'), findsOneWidget);
   });
 }

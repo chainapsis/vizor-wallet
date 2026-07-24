@@ -31,6 +31,7 @@ import '../../../rust/api/sync.dart' as rust_sync;
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/providers/address_book_provider.dart';
 import '../../address_book/widgets/address_book_contact_picker_modal.dart';
+import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/send_prefill_args.dart';
 import '../services/send_amount_conversion.dart';
 import '../services/send_flow.dart';
@@ -64,8 +65,15 @@ class _SendScreenState extends ConsumerState<SendScreen> {
             (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
       ),
     );
-    final spendableBalance = sync.spendableBalance;
-    final displaySpendableBalance = sync.displaySpendableBalance;
+    final migrationCta = ref.watch(ironwoodHomeMigrationCtaProvider).value;
+    final migrationInProgress =
+        migrationCta?.mode == IronwoodHomeMigrationCtaMode.resume;
+    final spendableBalance = migrationInProgress
+        ? sync.ironwoodBalance
+        : sync.spendableBalance;
+    final displaySpendableBalance = migrationInProgress
+        ? sync.ironwoodBalance
+        : sync.displaySpendableBalance;
     final isUsingCompletedSpendableSnapshot =
         sync.isUsingCompletedSpendableSnapshot;
 

@@ -1,7 +1,11 @@
 @Tags(['mobile'])
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,8 +17,13 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/config/swap_feature_config.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/home/screens/mobile/mobile_home_screen.dart';
 import 'package:zcash_wallet/src/features/home/services/pay_introduction_badge_store.dart';
+import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
@@ -76,6 +85,71 @@ class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
     required String accountUuid,
     required SwapAsset asset,
   }) async {}
+}
+
+class _FakeIronwoodAnnouncementStore
+    implements IronwoodMigrationAnnouncementStore {
+  bool seen = false;
+
+  @override
+  Future<bool> isSeen({required String network, required String accountUuid}) {
+    return Future.value(seen);
+  }
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+  }) async {
+    seen = true;
+  }
+}
+
+class _FakeIronwoodCompletionStore implements IronwoodMigrationCompletionStore {
+  bool seen = false;
+  int markCount = 0;
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async => seen;
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    markCount += 1;
+    seen = true;
+  }
+}
+
+class _ResumeGateMigrationCoordinator extends IronwoodMigrationCoordinator {
+  final Completer<void> refresh = Completer<void>();
+  int refreshCount = 0;
+
+  @override
+  IronwoodMigrationCoordinatorState build() =>
+      const IronwoodMigrationCoordinatorState();
+
+  @override
+  Future<void> synchronizeAndReconcileAfterReentry() async {
+    refreshCount++;
+    await refresh.future;
+  }
+}
+
+class _SeededMigrationAttentionSession
+    extends MobileIronwoodMigrationAttentionSession {
+  _SeededMigrationAttentionSession(this.fingerprints);
+
+  final Set<String> fingerprints;
+
+  @override
+  Set<String> build() => fingerprints;
 }
 
 class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
@@ -156,6 +230,16 @@ Widget _app(
   SyncKeepAwakeNotifier? syncKeepAwakeNotifier,
   bool? swapEnabled,
   PayIntroductionBadgeStore? badgeStore,
+  IronwoodHomeMigrationCtaState migrationCta =
+      const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodHomeMigrationCtaState? migrationPresentationCta,
+  IronwoodMigrationAnnouncementState announcement =
+      const IronwoodMigrationAnnouncementState.hidden(),
+  IronwoodMigrationCompletionState completion =
+      const IronwoodMigrationCompletionState.hidden(),
+  _FakeIronwoodCompletionStore? completionStore,
+  IronwoodMigrationCoordinator Function()? migrationCoordinator,
+  Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
@@ -185,6 +269,10 @@ Widget _app(
           },
         ),
       ),
+      GoRoute(
+        path: '/migration/intro',
+        builder: (_, _) => const Text('migration intro route'),
+      ),
     ],
   );
 
@@ -209,6 +297,31 @@ Widget _app(
       payIntroductionBadgeMotionEnabledProvider.overrideWithValue(false),
       if (swapEnabled != null)
         swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
+      ironwoodHomeMigrationCtaProvider.overrideWith(
+        (ref) async => migrationCta,
+      ),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        migrationPresentationCta ?? migrationCta,
+      ),
+      ironwoodMigrationAnnouncementProvider.overrideWith(
+        (ref) async => announcement,
+      ),
+      ironwoodMigrationAnnouncementStoreProvider.overrideWithValue(
+        _FakeIronwoodAnnouncementStore(),
+      ),
+      ironwoodMigrationCompletionProvider.overrideWith(
+        (ref) async => completion,
+      ),
+      ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+        completionStore ?? _FakeIronwoodCompletionStore(),
+      ),
+      if (migrationCoordinator != null)
+        ironwoodMigrationCoordinatorProvider.overrideWith(migrationCoordinator),
+      mobileIronwoodMigrationAttentionSessionProvider.overrideWith(
+        () => _SeededMigrationAttentionSession(
+          seenMigrationAttentionFingerprints,
+        ),
+      ),
       if (swapActivityStore != null)
         swapActivityStoreProvider.overrideWithValue(swapActivityStore),
     ],
@@ -221,7 +334,11 @@ Widget _app(
 
 SyncState _syncedState({
   BigInt? orchardBalance,
+  BigInt? ironwoodBalance,
+  BigInt? ironwoodPendingBalance,
   BigInt? transparentBalance,
+  int scannedHeight = 0,
+  int chainTipHeight = 0,
   bool canShieldTransparentBalance = false,
 }) => SyncState(
   accountUuid: 'account-1',
@@ -229,9 +346,91 @@ SyncState _syncedState({
   percentage: 1.0,
   displayPercentage: 1.0,
   orchardBalance: orchardBalance ?? BigInt.zero,
+  ironwoodBalance: ironwoodBalance ?? BigInt.zero,
+  ironwoodPendingBalance: ironwoodPendingBalance ?? BigInt.zero,
   transparentBalance: transparentBalance ?? BigInt.zero,
+  scannedHeight: scannedHeight,
+  chainTipHeight: chainTipHeight,
   canShieldTransparentBalance: canShieldTransparentBalance,
 );
+
+rust_sync.MigrationStatus _lateMigrationStatus() {
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationBroadcastScheduledPhase,
+    activeRunId: 'run-1',
+    targetValuesZatoshi: frb.Uint64List.fromList([100000000]),
+    preparedNoteCount: 1,
+    denominationConfirmationCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 1,
+    pendingTxCount: 1,
+    broadcastedTxCount: 0,
+    confirmedTxCount: 0,
+    totalCount: 1,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 50,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
+    maxPreparedNotesPerRun: 64,
+    scheduledBroadcasts: [
+      rust_sync.MigrationScheduledBroadcast(
+        txidHex: 'overdue',
+        valueZatoshi: BigInt.from(100000000),
+        scheduledAtMs: DateTime.now()
+            .subtract(const Duration(hours: 3))
+            .millisecondsSinceEpoch,
+        scheduledHeight: 3000000,
+        status: 'scheduled',
+      ),
+    ],
+    parts: const [],
+  );
+}
+
+rust_sync.MigrationStatus _proofReadyMigrationStatus({
+  bool needsInput = false,
+  String phase = kIronwoodMigrationReadyToMigratePhase,
+  int nextActionHeight = 3000000,
+  List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
+}) {
+  return rust_sync.MigrationStatus(
+    phase: phase,
+    activeRunId: 'run-proof-ready',
+    targetValuesZatoshi: frb.Uint64List.fromList([100000000]),
+    preparedNoteCount: 1,
+    denominationConfirmationCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 1,
+    pendingTxCount: 1,
+    broadcastedTxCount: 0,
+    confirmedTxCount: 0,
+    totalCount: 1,
+    signedChildPcztCount: 1,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 50,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
+    maxPreparedNotesPerRun: 64,
+    nextActionHeight: nextActionHeight,
+    scheduledBroadcasts: scheduledBroadcasts,
+    parts: [
+      rust_sync.MigrationPartStatus(
+        partIndex: 0,
+        valueZatoshi: BigInt.one,
+        state: needsInput
+            ? rust_sync.MigrationPartState.needsInput
+            : rust_sync.MigrationPartState.preparing,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+    ],
+  );
+}
 
 rust_sync.TransactionInfo _tx(int index) {
   final seconds = BigInt.from(1800000000 + index);
@@ -432,11 +631,929 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('143.12', findRichText: true), findsOneWidget);
-    expect(find.text(r'$10.02K'), findsOneWidget);
+    expect(find.text(r'$10,018.40'), findsOneWidget);
     expect(find.text('+ 13.12% (24h)'), findsOneWidget);
     expect(find.text('Send'), findsOneWidget);
     expect(find.text('Receive'), findsOneWidget);
     expect(find.text('No activity, yet...'), findsOneWidget);
+  });
+
+  testWidgets('includes Ironwood funds in the mobile shielded balance', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          ironwoodBalance: BigInt.from(200000000),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('3 ZEC', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('shows the Ironwood home card state without hiding actions', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(211200000)),
+        marketData: const ZecMarketData(
+          usdPrice: 568.2386363,
+          change24hPct: 13.12,
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.start(
+          network: 'main',
+          accountUuid: 'account-1',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Migration required'), findsOneWidget);
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey('mobile_home_ironwood_migration_required_pill'),
+            ),
+          )
+          .height,
+      40,
+    );
+    expect(find.text(r'$1,200.12'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('mobile_home_ironwood_migration_banner_background'),
+      ),
+      findsOneWidget,
+    );
+    final migrationPill = find.byKey(
+      const ValueKey('mobile_home_ironwood_migration_required_pill'),
+    );
+    final migrationPillIcon = find.descendant(
+      of: migrationPill,
+      matching: find.byType(AppIcon),
+    );
+    final migrationPillLabel = find.descendant(
+      of: migrationPill,
+      matching: find.text('Migration required'),
+    );
+    expect(
+      tester.getTopLeft(migrationPillLabel).dx -
+          tester.getTopRight(migrationPillIcon).dx,
+      8,
+    );
+    expect(
+      tester
+          .widget<Image>(
+            find.byKey(
+              const ValueKey(
+                'mobile_home_ironwood_migration_banner_background',
+              ),
+            ),
+          )
+          .fit,
+      BoxFit.fill,
+    );
+    final imageMask = tester.widget<ShaderMask>(
+      find.byKey(
+        const ValueKey('mobile_home_ironwood_migration_banner_image_mask'),
+      ),
+    );
+    expect(imageMask.blendMode, BlendMode.dstIn);
+    final maskShader = imageMask.shaderCallback(
+      const Rect.fromLTWH(0, 0, 361, 52),
+    );
+    expect(maskShader, isA<Shader>());
+    final blinkRipple = find.byKey(
+      const ValueKey('mobile_home_ironwood_migration_blink_ripple'),
+    );
+    expect(tester.widget<Opacity>(blinkRipple).opacity, 1);
+    expect(tester.getSize(blinkRipple), const Size.square(8));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.widget<Opacity>(blinkRipple).opacity, closeTo(0.5, 0.001));
+    expect(tester.getSize(blinkRipple), const Size.square(32));
+    final rippleDecoration =
+        tester
+                .widget<DecoratedBox>(
+                  find.descendant(
+                    of: blinkRipple,
+                    matching: find.byType(DecoratedBox),
+                  ),
+                )
+                .decoration
+            as BoxDecoration;
+    expect((rippleDecoration.border! as Border).top.width, 2);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Opacity>(blinkRipple).opacity, 0);
+    expect(tester.getSize(blinkRipple), const Size.square(56));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Opacity>(blinkRipple).opacity, 1);
+    expect(tester.getSize(blinkRipple), const Size.square(8));
+    expect(find.text('Send'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
+          .onPressed,
+      isNull,
+    );
+    expect(find.text('Receive'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
+          )
+          .height,
+      52,
+    );
+
+    await tester.tap(find.text('Migration required'));
+    await tester.pumpAndSettle();
+    expect(find.text('migration intro route'), findsOneWidget);
+  });
+
+  testWidgets('keeps the required migration lock while the raw CTA is hidden', (
+    tester,
+  ) async {
+    const requiredCta = IronwoodHomeMigrationCtaState.start(
+      network: 'main',
+      accountUuid: 'account-1',
+    );
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)),
+        migrationPresentationCta: requiredCta,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Migration required'), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
+          .onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets('shows total balance and remaining amount while migrating', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final status = rust_sync.MigrationStatus(
+      phase: kIronwoodMigrationWaitingConfirmationsPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: frb.Uint64List.fromList([100000000, 200000000]),
+      preparedNoteCount: 2,
+      denominationConfirmationCount: 3,
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 1,
+      pendingTxCount: 1,
+      broadcastedTxCount: 2,
+      confirmedTxCount: 1,
+      totalCount: 2,
+      signedChildPcztCount: 0,
+      pendingSplitStageCount: 0,
+      canAbandon: false,
+      signingBatchLimit: 50,
+      scheduleMeanDelayBlocks: 144,
+      scheduleMaxDelayBlocks: 576,
+      maxPreparedNotesPerRun: 64,
+      scheduledBroadcasts: [
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'confirmed',
+          valueZatoshi: BigInt.from(100000000),
+          scheduledAtMs: now,
+          scheduledHeight: 3000000,
+          status: 'confirmed',
+        ),
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'scheduled',
+          valueZatoshi: BigInt.from(200000000),
+          scheduledAtMs: now,
+          scheduledHeight: 3000144,
+          status: 'scheduled',
+        ),
+      ],
+      parts: const [],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(200000000),
+          ironwoodBalance: BigInt.from(150000000),
+          ironwoodPendingBalance: BigInt.from(50000000),
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('mobile_home_shielded_balance')),
+          )
+          .textSpan
+          ?.toPlainText(),
+      '4 ZEC',
+    );
+    expect(find.text('2 ZEC still migrating'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_loader')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets(
+    'keeps the Orchard balance visible before any Ironwood funds arrive',
+    (tester) async {
+      final status = rust_sync.MigrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        targetValuesZatoshi: frb.Uint64List.fromList([200000000]),
+        preparedNoteCount: 1,
+        denominationConfirmationCount: 1,
+        denominationConfirmationTarget: 3,
+        denominationSplitCompletedCount: 0,
+        denominationSplitTotalCount: 1,
+        pendingTxCount: 0,
+        broadcastedTxCount: 0,
+        confirmedTxCount: 0,
+        totalCount: 1,
+        signedChildPcztCount: 0,
+        pendingSplitStageCount: 1,
+        canAbandon: false,
+        signingBatchLimit: 50,
+        scheduleMeanDelayBlocks: 144,
+        scheduleMaxDelayBlocks: 576,
+        maxPreparedNotesPerRun: 64,
+        scheduledBroadcasts: const [],
+        parts: const [],
+      );
+
+      await tester.pumpWidget(
+        _app(
+          _syncedState(orchardBalance: BigInt.from(200000000)),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('mobile_home_shielded_balance')),
+            )
+            .textSpan
+            ?.toPlainText(),
+        '2 ZEC',
+      );
+      expect(find.text('Receive your first ZEC'), findsNothing);
+      expect(find.text('Migration in progress'), findsOneWidget);
+    },
+  );
+
+  testWidgets('uses every incomplete part for the remaining amount', (
+    tester,
+  ) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final status = rust_sync.MigrationStatus(
+      phase: kIronwoodMigrationWaitingConfirmationsPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: frb.Uint64List.fromList([
+        100000000,
+        200000000,
+        300000000,
+      ]),
+      preparedNoteCount: 3,
+      denominationConfirmationCount: 3,
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 1,
+      pendingTxCount: 2,
+      broadcastedTxCount: 0,
+      confirmedTxCount: 1,
+      totalCount: 3,
+      signedChildPcztCount: 0,
+      pendingSplitStageCount: 0,
+      canAbandon: false,
+      signingBatchLimit: 50,
+      scheduleMeanDelayBlocks: 144,
+      scheduleMaxDelayBlocks: 576,
+      maxPreparedNotesPerRun: 64,
+      scheduledBroadcasts: [
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'incomplete-broadcast-subset',
+          valueZatoshi: BigInt.from(300000000),
+          scheduledAtMs: now,
+          scheduledHeight: 3000144,
+          status: 'scheduled',
+        ),
+      ],
+      parts: [
+        rust_sync.MigrationPartStatus(
+          partIndex: 0,
+          valueZatoshi: BigInt.from(100000000),
+          state: rust_sync.MigrationPartState.completed,
+          confirmationCount: 3,
+          confirmationTarget: 3,
+        ),
+        rust_sync.MigrationPartStatus(
+          partIndex: 1,
+          valueZatoshi: BigInt.from(200000000),
+          state: rust_sync.MigrationPartState.migrating,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+        rust_sync.MigrationPartStatus(
+          partIndex: 2,
+          valueZatoshi: BigInt.from(300000000),
+          state: rust_sync.MigrationPartState.scheduled,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(500000000),
+          ironwoodBalance: BigInt.from(100000000),
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('5 ZEC still migrating'), findsOneWidget);
+    expect(find.text('3 ZEC still migrating'), findsNothing);
+  });
+
+  testWidgets('marks a migration that is more than two hours late', (
+    tester,
+  ) async {
+    final status = _lateMigrationStatus();
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          chainTipHeight: 3000096,
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Migration needs attention'), findsOneWidget);
+    expect(
+      find.text('A migration transaction needs attention'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('ready for signing'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_attention')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_home_ironwood_migration_banner_background'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_loader')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('labels proof-ready work without calling it signing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 3000000,
+          chainTipHeight: 3000000,
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _proofReadyMigrationStatus(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Next migration batch is ready'), findsOneWidget);
+    expect(find.text('Your next migration batch is ready'), findsOneWidget);
+    expect(find.textContaining('sign'), findsNothing);
+  });
+
+  testWidgets(
+    'recognizes a due proof batch before a later scheduled broadcast',
+    (tester) async {
+      final status = _proofReadyMigrationStatus(
+        phase: kIronwoodMigrationBroadcastScheduledPhase,
+        scheduledBroadcasts: [
+          rust_sync.MigrationScheduledBroadcast(
+            txidHex: 'future',
+            valueZatoshi: BigInt.from(100000000),
+            scheduledAtMs: DateTime.now()
+                .add(const Duration(hours: 3))
+                .millisecondsSinceEpoch,
+            scheduledHeight: 3000100,
+            status: 'scheduled',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        _app(
+          _syncedState(
+            orchardBalance: BigInt.from(100000000),
+            scannedHeight: 3000000,
+            chainTipHeight: 3000000,
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Next migration batch is ready'), findsOneWidget);
+      expect(find.text('Your next migration batch is ready'), findsOneWidget);
+      expect(find.text('Migration needs attention'), findsNothing);
+      expect(
+        find.text('A migration transaction needs attention'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('does not mistake an overdue broadcast for a proof batch', (
+    tester,
+  ) async {
+    final status = _proofReadyMigrationStatus(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      nextActionHeight: 2999904,
+      scheduledBroadcasts: [
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'overdue',
+          valueZatoshi: BigInt.from(100000000),
+          scheduledAtMs: DateTime.now()
+              .subtract(const Duration(hours: 3))
+              .millisecondsSinceEpoch,
+          scheduledHeight: 2999904,
+          status: 'scheduled',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 3000000,
+          chainTipHeight: 3000000,
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration needs attention'), findsOneWidget);
+    expect(find.text('Next migration batch is ready'), findsNothing);
+  });
+
+  testWidgets('labels software needs-input work as continue', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _proofReadyMigrationStatus(needsInput: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue your migration'), findsNWidgets(2));
+    expect(find.textContaining('sign'), findsNothing);
+  });
+
+  testWidgets(
+    'does not mark a migration late before scanned height catches up',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          _syncedState(
+            orchardBalance: BigInt.from(100000000),
+            scannedHeight: 2999999,
+            chainTipHeight: 3000096,
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _lateMigrationStatus(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('mobile_home_ironwood_migration_attention')),
+        findsNothing,
+      );
+      expect(find.text('Go to migration page'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'does not present migration attention just because sync advances',
+    (tester) async {
+      final syncNotifier = FakeSyncNotifier(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 2999999,
+          chainTipHeight: 3000096,
+        ),
+      );
+      await tester.pumpWidget(
+        _app(
+          syncNotifier.initialState!,
+          syncNotifier: syncNotifier,
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _lateMigrationStatus(),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Go to migration page'), findsNothing);
+
+      syncNotifier.setSyncState(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 3000096,
+          chainTipHeight: 3000096,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Go to migration page'), findsNothing);
+    },
+  );
+
+  testWidgets('unmounts migration attention outside the Home route', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(_syncedState(orchardBalance: BigInt.from(100000000))),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile_home_migration_attention_host')),
+      findsOneWidget,
+    );
+
+    final homeContext = tester.element(find.byType(MobileHomeScreen));
+    homeContext.push('/send');
+    await tester.pumpAndSettle();
+
+    expect(find.text('send route'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_migration_attention_host')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'does not repeat the same migration attention after resume reconciliation',
+    (tester) async {
+      final coordinator = _ResumeGateMigrationCoordinator();
+      await tester.pumpWidget(
+        _app(
+          _syncedState(
+            orchardBalance: BigInt.from(100000000),
+            scannedHeight: 3000096,
+            chainTipHeight: 3000096,
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _lateMigrationStatus(),
+          ),
+          migrationCoordinator: () => coordinator,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Go to migration page'), findsOneWidget);
+      await tester.tap(find.text('I’ll visit later'));
+      await tester.pumpAndSettle();
+      expect(find.text('Go to migration page'), findsNothing);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(coordinator.refreshCount, 1);
+      expect(find.text('Go to migration page'), findsNothing);
+
+      coordinator.refresh.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Go to migration page'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'does not present an action already seen on the migration status screen',
+    (tester) async {
+      final status = _lateMigrationStatus();
+      const currentHeight = 3000096;
+      final attention = mobileIronwoodMigrationAttention(
+        status,
+        currentHeight: currentHeight,
+        isHardware: false,
+      )!;
+      final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
+        accountUuid: 'account-1',
+        runId: status.activeRunId!,
+        status: status,
+        attention: attention,
+      );
+
+      await tester.pumpWidget(
+        _app(
+          _syncedState(
+            orchardBalance: BigInt.from(100000000),
+            scannedHeight: currentHeight,
+            chainTipHeight: currentHeight,
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          seenMigrationAttentionFingerprints: {fingerprint},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Go to migration page'), findsNothing);
+      expect(find.text('Migration needs attention'), findsOneWidget);
+    },
+  );
+
+  testWidgets('shows the mobile Ironwood announcement sheet', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        announcement: IronwoodMigrationAnnouncementState.visible(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: rust_sync.MigrationStatus(
+            phase: kIronwoodMigrationReadyPhase,
+            activeRunId: null,
+            preparedNoteCount: 0,
+            targetValuesZatoshi: frb.Uint64List.fromList([]),
+            denominationConfirmationCount: 0,
+            denominationConfirmationTarget: 0,
+            denominationSplitCompletedCount: 0,
+            denominationSplitTotalCount: 0,
+            pendingTxCount: 0,
+            broadcastedTxCount: 0,
+            confirmedTxCount: 0,
+            totalCount: 0,
+            signedChildPcztCount: 0,
+            pendingSplitStageCount: 0,
+            message: null,
+            canAbandon: false,
+            signingBatchLimit: 0,
+            scheduleMeanDelayBlocks: 144,
+            scheduleMaxDelayBlocks: 576,
+            maxPreparedNotesPerRun: 0,
+            scheduledBroadcasts: const [],
+            parts: const [],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_sheet')),
+      findsOneWidget,
+    );
+    expect(find.text('Upgrade to Ironwood'), findsOneWidget);
+    expect(find.text('Official announcement'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_announcement_close_button')),
+      findsOneWidget,
+    );
+
+    final bodyRect = tester.getRect(
+      find.textContaining('Zcash’s latest shielded pool'),
+    );
+    final startRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_start_migration_button')),
+    );
+    final announcementRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_release_notes_button')),
+    );
+    expect(startRect.top, greaterThanOrEqualTo(bodyRect.bottom));
+    expect(announcementRect.top, greaterThanOrEqualTo(startRect.bottom));
+  });
+
+  testWidgets('shows and acknowledges the completed migration receipt', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final completionStore = _FakeIronwoodCompletionStore();
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(14_212_300_000)),
+        completion: IronwoodMigrationCompletionState.visible(
+          network: 'main',
+          accountUuid: 'account-1',
+          completionId: '14000000000_212300000',
+          transferredZatoshi: BigInt.from(14_212_300_000),
+        ),
+        completionStore: completionStore,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_complete_sheet')),
+      findsOneWidget,
+    );
+    expect(find.text('Transferred: 142.123 ZEC'), findsOneWidget);
+    expect(find.text('Your funds now\nin Ironwood'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(completionStore.markCount, 0);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_migration_complete_done')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(completionStore.markCount, 1);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_migration_complete_sheet')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Ironwood home surfaces do not overflow at 320 by 568', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(14312000000)),
+        migrationCta: IronwoodHomeMigrationCtaState.start(
+          network: 'main',
+          accountUuid: 'account-1',
+        ),
+        announcement: IronwoodMigrationAnnouncementState.visible(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: rust_sync.MigrationStatus(
+            phase: kIronwoodMigrationReadyPhase,
+            activeRunId: null,
+            preparedNoteCount: 0,
+            targetValuesZatoshi: frb.Uint64List.fromList([]),
+            denominationConfirmationCount: 0,
+            denominationConfirmationTarget: 0,
+            denominationSplitCompletedCount: 0,
+            denominationSplitTotalCount: 0,
+            pendingTxCount: 0,
+            broadcastedTxCount: 0,
+            confirmedTxCount: 0,
+            totalCount: 0,
+            signedChildPcztCount: 0,
+            pendingSplitStageCount: 0,
+            message: null,
+            canAbandon: false,
+            signingBatchLimit: 0,
+            scheduleMeanDelayBlocks: 144,
+            scheduleMaxDelayBlocks: 576,
+            maxPreparedNotesPerRun: 0,
+            scheduledBroadcasts: const [],
+            parts: const [],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Upgrade to Ironwood'), findsOneWidget);
+    await tester.ensureVisible(find.text('Official announcement'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('announcement scrolls at 320 width with larger text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    tester.platformDispatcher.textScaleFactorTestValue = 1.4;
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
+        home: Align(
+          alignment: Alignment.bottomCenter,
+          child: SizedBox(
+            width: 288,
+            height: 536,
+            child: MobileIronwoodMigrationAnnouncementSheet(
+              onStartMigration: () {},
+              onOpenReleaseNotes: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Official announcement'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('uses compact balance precision for long decimals', (

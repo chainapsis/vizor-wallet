@@ -64,7 +64,8 @@ fvm flutter test \
   integration_test/regtest_shield_transparent_retry_test.dart \
   -d "$FLUTTER_DEVICE" \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
-  --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL"
+  --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL" \
+  --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
 status="$?"
 set -e
 

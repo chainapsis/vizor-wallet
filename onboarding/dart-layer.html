@@ -55,19 +55,11 @@
 <p><strong>Sync 제어:</strong></p>
 <ul>
   <li><code>stopSync()</code>: <code>++_syncGen</code> + <code>cancelFullSync()</code> + <code>_stopPolling()</code>. 다음 app resume에서 재개</li>
-  <li>Background sync는 <code>BackgroundSyncDelegate</code>에 위임 (Platform 분기 없음)</li>
-  <li><code>disableBackgroundSync()</code>: <code>delegate.disable()</code>가 <code>bool</code> 반환 — iOS=<code>true</code>(fg 재시작 필요), Android=<code>false</code></li>
-</ul>
-<p><strong>BackgroundSyncDelegate</strong> (<code>background_sync_delegate.dart</code>):</p>
-<ul>
-  <li>Abstract 인터페이스 + Android/iOS/NoOp 구현체. 모든 <code>Platform.isAndroid</code>/<code>Platform.isIOS</code> 분기가 여기에 격리됨</li>
-  <li><code>shouldSuppressPolling</code>: Android=<code>false</code> (notification뿐), iOS=<code>_active</code> (BGTask가 sync 관리)</li>
-  <li>Android <code>onSyncDone()</code>: <code>_active</code> 유지 (notification은 유저가 disable할 때까지 지속)</li>
-  <li>iOS <code>onResume()</code>: bg sync 완료/expiration 감지 → <code>_active</code> 리셋</li>
+  <li>Account mutation은 migration preparation quiesce &rarr; foreground sync pause &rarr; DB mutation &rarr; sync resume &rarr; active preparation resume 순서를 지킨다.</li>
 </ul>
 <p><strong>Lifecycle:</strong></p>
 <ul>
-  <li><code>onResume</code>: balance 새로고침 → <code>delegate.onResume()</code> → <code>_checkAndSync()</code> (내부에서 polling 시작)</li>
+  <li><code>onResume</code>: balance 새로고침 → <code>_checkAndSync()</code> (내부에서 polling 시작)</li>
   <li><code>onHide</code>: polling 중단</li>
   <li>Polling 시작 경로는 3곳만: <code>_onSyncDone</code>, <code>_checkAndSync</code>, 계정 생성 시</li>
 </ul>

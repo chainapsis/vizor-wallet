@@ -115,7 +115,47 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     }
   }
 
-  void _openTransactionStatus(
+  Future<void> _openTransactionStatus(
+    BuildContext context,
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    rust_sync.TransactionDetail? detail;
+    try {
+      final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      detail = await rust_sync.getTransactionDetail(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+      );
+    } catch (e, st) {
+      log('MobileActivity: transaction detail load failed: $e\n$st');
+    }
+    if (!mounted ||
+        accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      return;
+    }
+
+    context.push(
+      Uri(
+        path: '/activity/tx/${transaction.txidHex}',
+        queryParameters: {'kind': transaction.txKind},
+      ).toString(),
+      extra: MobileTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+        initialTransaction: transaction,
+        initialDetail: detail,
+      ),
+    );
+  }
+
+  void _openLoadedTransactionStatus(
     BuildContext context,
     rust_sync.TransactionInfo transaction,
   ) {
@@ -193,7 +233,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
                 context: context,
                 transaction: tx,
                 privacyModeEnabled: privacyModeEnabled,
-                onTap: () => _openTransactionStatus(context, tx),
+                onTap: () => unawaited(_openTransactionStatus(context, tx)),
               ),
             ),
       for (final item in swapItems)
@@ -216,7 +256,7 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
             ),
             onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
               null => null,
-              final tx => () => _openTransactionStatus(context, tx),
+              final tx => () => _openLoadedTransactionStatus(context, tx),
             },
           ),
         ),
