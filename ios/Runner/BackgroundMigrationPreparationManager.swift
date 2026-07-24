@@ -521,8 +521,8 @@ final class BackgroundMigrationPreparationManager {
         self.scheduleWatchdog()
         let request = BGContinuedProcessingTaskRequest(
           identifier: Self.taskIdentifier,
-          title: "Preparing migration",
-          subtitle: "You can continue using your device"
+          title: "Preparing",
+          subtitle: "Migration"
         )
         request.strategy = .fail
         let submission = self.stateLock.withPreparationLock {
@@ -1540,7 +1540,7 @@ final class BackgroundMigrationPreparationManager {
       return
     }
     let content = UNMutableNotificationContent()
-    content.title = "Migration preparation paused"
+    content.title = "Paused"
     content.body = "Open Vizor to continue preparing your migration."
     content.sound = .default
     let request = UNNotificationRequest(
@@ -1706,7 +1706,7 @@ final class BackgroundMigrationPreparationManager {
       return
     }
     let content = UNMutableNotificationContent()
-    content.title = "Continue your Ironwood migration"
+    content.title = "Ready to sign"
     content.body = "Open Vizor to continue your migration."
     content.sound = .default
     addNotificationIfEnabled(

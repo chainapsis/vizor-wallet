@@ -974,7 +974,7 @@ final class BackgroundMigrationManager {
   private func postNeedsUserActionNotification() {
     guard !isNotificationWorkDisabled else { return }
     let content = UNMutableNotificationContent()
-    content.title = "Ironwood migration needs attention"
+    content.title = "Needs attention"
     content.body = "Open Vizor to review and continue your migration."
     content.sound = .default
     addNotificationIfEnabled(
@@ -1048,9 +1048,8 @@ final class BackgroundMigrationManager {
     completion: @escaping (Bool) -> Void
   ) {
     let content = UNMutableNotificationContent()
-    content.title = "Migration transfers sent"
-    content.body =
-      "All scheduled transfers were submitted. Open Vizor to check the status."
+    content.title = "All transfers sent"
+    content.body = "Open Vizor to check the status."
     content.sound = .default
     addNotificationIfEnabled(
       UNNotificationRequest(
@@ -1069,7 +1068,7 @@ final class BackgroundMigrationManager {
     completion: @escaping (Bool) -> Void
   ) {
     let content = UNMutableNotificationContent()
-    content.title = "Continue your Ironwood migration"
+    content.title = "Ready to sign"
     content.body = "Open Vizor to prepare the next migration transfer."
     content.sound = .default
     addNotificationIfEnabled(
