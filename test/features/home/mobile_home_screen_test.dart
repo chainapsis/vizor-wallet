@@ -341,9 +341,12 @@ rust_sync.MigrationStatus _lateMigrationStatus() {
 
 rust_sync.MigrationStatus _proofReadyMigrationStatus({
   bool needsInput = false,
+  String phase = kIronwoodMigrationReadyToMigratePhase,
+  int nextActionHeight = 3000000,
+  List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
   return rust_sync.MigrationStatus(
-    phase: kIronwoodMigrationReadyToMigratePhase,
+    phase: phase,
     activeRunId: 'run-proof-ready',
     targetValuesZatoshi: frb.Uint64List.fromList([100000000]),
     preparedNoteCount: 1,
@@ -362,8 +365,8 @@ rust_sync.MigrationStatus _proofReadyMigrationStatus({
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     maxPreparedNotesPerRun: 64,
-    nextActionHeight: 3000000,
-    scheduledBroadcasts: const [],
+    nextActionHeight: nextActionHeight,
+    scheduledBroadcasts: scheduledBroadcasts,
     parts: [
       rust_sync.MigrationPartStatus(
         partIndex: 0,
@@ -955,6 +958,89 @@ void main() {
     expect(find.textContaining('sign'), findsNothing);
   });
 
+  testWidgets(
+    'recognizes a due proof batch before a later scheduled broadcast',
+    (tester) async {
+      final status = _proofReadyMigrationStatus(
+        phase: kIronwoodMigrationBroadcastScheduledPhase,
+        scheduledBroadcasts: [
+          rust_sync.MigrationScheduledBroadcast(
+            txidHex: 'future',
+            valueZatoshi: BigInt.from(100000000),
+            scheduledAtMs: DateTime.now()
+                .add(const Duration(hours: 3))
+                .millisecondsSinceEpoch,
+            scheduledHeight: 3000100,
+            status: 'scheduled',
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        _app(
+          _syncedState(
+            orchardBalance: BigInt.from(100000000),
+            scannedHeight: 3000000,
+            chainTipHeight: 3000000,
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Next migration batch is ready'), findsOneWidget);
+      expect(find.text('Your next migration batch is ready'), findsOneWidget);
+      expect(find.text('Migration needs attention'), findsNothing);
+      expect(
+        find.text('A migration transaction needs attention'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('does not mistake an overdue broadcast for a proof batch', (
+    tester,
+  ) async {
+    final status = _proofReadyMigrationStatus(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      nextActionHeight: 2999904,
+      scheduledBroadcasts: [
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: 'overdue',
+          valueZatoshi: BigInt.from(100000000),
+          scheduledAtMs: DateTime.now()
+              .subtract(const Duration(hours: 3))
+              .millisecondsSinceEpoch,
+          scheduledHeight: 2999904,
+          status: 'scheduled',
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 3000000,
+          chainTipHeight: 3000000,
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration needs attention'), findsOneWidget);
+    expect(find.text('Next migration batch is ready'), findsNothing);
+  });
+
   testWidgets('labels software needs-input work as continue', (tester) async {
     await tester.pumpWidget(
       _app(
@@ -998,6 +1084,67 @@ void main() {
       expect(find.text('Go to migration page'), findsNothing);
     },
   );
+
+  testWidgets(
+    'does not present migration attention just because sync advances',
+    (tester) async {
+      final syncNotifier = FakeSyncNotifier(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 2999999,
+          chainTipHeight: 3000096,
+        ),
+      );
+      await tester.pumpWidget(
+        _app(
+          syncNotifier.initialState!,
+          syncNotifier: syncNotifier,
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _lateMigrationStatus(),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Go to migration page'), findsNothing);
+
+      syncNotifier.setSyncState(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 3000096,
+          chainTipHeight: 3000096,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Go to migration page'), findsNothing);
+    },
+  );
+
+  testWidgets('unmounts migration attention outside the Home route', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(_syncedState(orchardBalance: BigInt.from(100000000))),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile_home_migration_attention_host')),
+      findsOneWidget,
+    );
+
+    final homeContext = tester.element(find.byType(MobileHomeScreen));
+    homeContext.push('/send');
+    await tester.pumpAndSettle();
+
+    expect(find.text('send route'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_home_migration_attention_host')),
+      findsNothing,
+    );
+  });
 
   testWidgets(
     'waits for resume reconciliation before showing attention again',

@@ -38,6 +38,7 @@ import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
 import '../../../migration/models/mobile_ironwood_migration_status_entry.dart';
+import '../../../migration/models/ironwood_migration_presentation.dart';
 import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -71,6 +72,7 @@ class MobileHomeScreen extends ConsumerWidget {
     final ironwoodMigrationCta = ref.watch(
       ironwoodHomeMigrationPresentationProvider,
     );
+    final isCurrentHomeRoute = GoRouterState.of(context).uri.path == '/home';
 
     final isImporting =
         activeAccountUuid != null &&
@@ -115,7 +117,9 @@ class MobileHomeScreen extends ConsumerWidget {
           const _SyncKeepAwakePromptHost(),
           const _IronwoodMigrationAnnouncementHost(),
           const _IronwoodMigrationCompletionHost(),
-          const _IronwoodMigrationAttentionHost(),
+          _IronwoodMigrationAttentionMountGate(
+            isHomeCurrent: isCurrentHomeRoute,
+          ),
         ],
       ),
     );
@@ -124,8 +128,39 @@ class MobileHomeScreen extends ConsumerWidget {
 
 enum _IronwoodAttentionAction { openMigration, later }
 
+class _IronwoodMigrationAttentionMountGate extends StatefulWidget {
+  const _IronwoodMigrationAttentionMountGate({required this.isHomeCurrent});
+
+  final bool isHomeCurrent;
+
+  @override
+  State<_IronwoodMigrationAttentionMountGate> createState() =>
+      _IronwoodMigrationAttentionMountGateState();
+}
+
+class _IronwoodMigrationAttentionMountGateState
+    extends State<_IronwoodMigrationAttentionMountGate> {
+  bool _hasMountedHost = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isHomeCurrent) return const SizedBox.shrink();
+    final evaluateInitialEntry = !_hasMountedHost;
+    _hasMountedHost = true;
+    return _IronwoodMigrationAttentionHost(
+      key: const ValueKey('mobile_home_migration_attention_host'),
+      evaluateInitialEntry: evaluateInitialEntry,
+    );
+  }
+}
+
 class _IronwoodMigrationAttentionHost extends ConsumerStatefulWidget {
-  const _IronwoodMigrationAttentionHost();
+  const _IronwoodMigrationAttentionHost({
+    required this.evaluateInitialEntry,
+    super.key,
+  });
+
+  final bool evaluateInitialEntry;
 
   @override
   ConsumerState<_IronwoodMigrationAttentionHost> createState() =>
@@ -138,17 +173,23 @@ class _IronwoodMigrationAttentionHostState
   bool _showing = false;
   bool _wasBackgrounded = false;
   bool _resumeRefreshInProgress = false;
+  late bool _initialEvaluationPending;
   String? _shownFingerprint;
 
   @override
   void initState() {
     super.initState();
+    _initialEvaluationPending = widget.evaluateInitialEntry;
     _lifecycleListener = AppLifecycleListener(
       onHide: _markBackgrounded,
       onPause: _markBackgrounded,
       onResume: _resumeIfNeeded,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) => _evaluate());
+    if (_initialEvaluationPending) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _evaluateInitialEntry(),
+      );
+    }
   }
 
   @override
@@ -159,16 +200,29 @@ class _IronwoodMigrationAttentionHostState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(syncProvider, (_, _) => _evaluateInitialEntry());
     ref.listen(
       ironwoodHomeMigrationPresentationProvider,
-      (_, _) => _evaluate(),
+      (_, _) => _evaluateInitialEntry(),
     );
-    ref.listen(syncProvider, (_, _) => _evaluate());
     return const SizedBox.shrink();
+  }
+
+  void _evaluateInitialEntry() {
+    if (!mounted || !_initialEvaluationPending) return;
+    if (ref.read(syncProvider).value == null) return;
+    final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
+    if (!cta.visible &&
+        ref.read(ironwoodPostMigrationStateProvider).isLoading) {
+      return;
+    }
+    _initialEvaluationPending = false;
+    _evaluate();
   }
 
   void _evaluate() {
     if (!mounted || _showing || _resumeRefreshInProgress) return;
+    if (GoRouterState.of(context).uri.path != '/home') return;
     final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
     if (cta.mode != IronwoodHomeMigrationCtaMode.resume) return;
     final accountUuid = cta.accountUuid;
@@ -242,9 +296,7 @@ class _IronwoodMigrationAttentionHostState
       if (action == _IronwoodAttentionAction.openMigration) {
         context.push(
           '/migration/private/status',
-          extra: const MobileIronwoodMigrationStatusEntry(
-            synchronizeOnEntry: true,
-          ),
+          extra: const MobileIronwoodMigrationStatusEntry(),
         );
       }
     } finally {
@@ -1448,6 +1500,12 @@ _MobileIronwoodMigrationAttention? _mobileIronwoodMigrationAttention(
         count: 1,
       );
     }
+  }
+  if (migrationHasDueProofBatch(status, currentHeight: currentHeight)) {
+    return const _MobileIronwoodMigrationAttention(
+      kind: MobileIronwoodMigrationAttentionKind.proof,
+      count: 1,
+    );
   }
   if (currentHeight <= 0) return null;
   final hasLateBroadcast = status.scheduledBroadcasts.any(
