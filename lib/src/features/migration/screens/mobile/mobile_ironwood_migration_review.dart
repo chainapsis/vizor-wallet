@@ -291,10 +291,7 @@ class _MobileMigrationPrivateReviewState
     ref.invalidate(ironwoodMigrationPrivatePlanProvider);
     context.go(
       '/migration/private/status',
-      extra: MobileIronwoodMigrationStatusEntry(
-        approvedPlan: plan,
-        synchronizeOnEntry: false,
-      ),
+      extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
     );
   }
 
@@ -601,10 +598,7 @@ class _MobileMigrationFastReviewState
     final canBroadcast = !widget.isHardware && plan != null && !_isBroadcasting;
     final migratedText = plan == null
         ? (planUnavailable ? 'Unavailable' : 'Calculating…')
-        : '${ZecAmount.fromZatoshi(plan.migratedZatoshi).pretty(
-            minFractionDigits: 2,
-            maxFractionDigits: 2,
-          ).amountText} ZEC';
+        : '${ZecAmount.fromZatoshi(plan.migratedZatoshi).pretty(minFractionDigits: 2, maxFractionDigits: 2).amountText} ZEC';
     return _MobileMigrationReviewScaffold(
       onBack: () => context.go('/migration/options'),
       bottom: Column(
@@ -665,9 +659,7 @@ class _MobileMigrationFastReviewState
                   const SizedBox(height: AppSpacing.xs),
                   _ReviewRow(
                     label: 'Migration complete in',
-                    value: widget.previewPlan != null
-                        ? '~5 mins'
-                        : 'A few minutes',
+                    value: _mobileImmediateMigrationCompletionEstimate,
                     height: 32,
                   ),
                 ],
@@ -776,4 +768,16 @@ class _MobileMigrationFastReviewState
       ),
     );
   }
+}
+
+const _mobileImmediateEstimatedSecondsPerBlock = 75;
+const _mobileImmediateConfirmationBlocks = 3;
+
+String get _mobileImmediateMigrationCompletionEstimate {
+  final estimatedMinutes =
+      (_mobileImmediateEstimatedSecondsPerBlock *
+      _mobileImmediateConfirmationBlocks /
+      Duration.secondsPerMinute);
+  final roundedFiveMinuteUnits = (estimatedMinutes / 5).ceil();
+  return '~${roundedFiveMinuteUnits * 5} mins';
 }

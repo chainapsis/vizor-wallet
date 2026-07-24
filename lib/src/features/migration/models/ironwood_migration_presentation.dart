@@ -5,6 +5,35 @@ const _estimatedSecondsPerBlock = 75;
 const _preparationConfirmationBlocks = 3;
 const _preparationBroadcastBufferBlocks = 1;
 
+bool migrationHasDueProofBatch(
+  rust_sync.MigrationStatus status, {
+  required int currentHeight,
+}) {
+  final nextActionHeight = status.nextActionHeight;
+  if (status.phase != kIronwoodMigrationBroadcastScheduledPhase ||
+      status.signedChildPcztCount <= 0 ||
+      nextActionHeight == null ||
+      currentHeight <= 0 ||
+      nextActionHeight > currentHeight) {
+    return false;
+  }
+
+  int? earliestScheduledHeight;
+  for (final broadcast in status.scheduledBroadcasts) {
+    if (broadcast.status.toLowerCase() != 'scheduled' ||
+        broadcast.scheduledHeight <= 0) {
+      continue;
+    }
+    if (earliestScheduledHeight == null ||
+        broadcast.scheduledHeight < earliestScheduledHeight) {
+      earliestScheduledHeight = broadcast.scheduledHeight;
+    }
+  }
+
+  return earliestScheduledHeight == null ||
+      nextActionHeight < earliestScheduledHeight;
+}
+
 String plannedMigrationBatchesLabel(int count) =>
     '$count planned ${_pluralized(count, 'batch', 'batches')}';
 

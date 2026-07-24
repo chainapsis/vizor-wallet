@@ -671,7 +671,7 @@ final ironwoodMigrationCompletionProvider =
   }
 
   final accountUuid = inputs.accountUuid!;
-  final completionId = _ironwoodMigrationCompletionId(status);
+  final completionId = ironwoodMigrationCompletionId(status);
   final store = ref.watch(ironwoodMigrationCompletionStoreProvider);
   if (await store.isSeen(
     network: inputs.network,
@@ -689,7 +689,7 @@ final ironwoodMigrationCompletionProvider =
   );
 });
 
-String _ironwoodMigrationCompletionId(rust_sync.MigrationStatus status) {
+String ironwoodMigrationCompletionId(rust_sync.MigrationStatus status) {
   final partIds = status.parts
       .where((part) => part.txidHex?.isNotEmpty ?? false)
       .map((part) => '${part.partIndex}:${part.txidHex}')

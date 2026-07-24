@@ -526,9 +526,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       );
       context.go(
         '/migration/private/status',
-        extra: const MobileIronwoodMigrationStatusEntry(
-          synchronizeOnEntry: false,
-        ),
+        extra: const MobileIronwoodMigrationStatusEntry(),
       );
     } catch (e, st) {
       log(

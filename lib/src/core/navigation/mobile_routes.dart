@@ -330,17 +330,13 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         final entry = switch (state.extra) {
           MobileIronwoodMigrationStatusEntry value => value,
           rust_sync.OrchardMigrationPrivatePlan plan =>
-            MobileIronwoodMigrationStatusEntry(
-              approvedPlan: plan,
-              synchronizeOnEntry: false,
-            ),
+            MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
           _ => null,
         };
         return CupertinoPage(
           key: state.pageKey,
           child: MobileIronwoodMigrationPrivateStatusScreen(
             approvedPlan: entry?.approvedPlan,
-            synchronizeOnEntry: entry?.synchronizeOnEntry ?? true,
           ),
         );
       },
