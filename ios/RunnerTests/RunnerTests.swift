@@ -249,6 +249,40 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testMigrationPreparationForegroundLaunchHandsPendingWorkToForeground() {
+    XCTAssertTrue(
+      shouldMarkMigrationPreparationForegroundContinuation(
+        hasPendingRequest: true,
+        hasBoundPreparation: true,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testMigrationPreparationForegroundLaunchDoesNotInventContinuation() {
+    XCTAssertFalse(
+      shouldMarkMigrationPreparationForegroundContinuation(
+        hasPendingRequest: false,
+        hasBoundPreparation: true,
+        notificationsDisabled: false
+      )
+    )
+    XCTAssertFalse(
+      shouldMarkMigrationPreparationForegroundContinuation(
+        hasPendingRequest: true,
+        hasBoundPreparation: false,
+        notificationsDisabled: false
+      )
+    )
+    XCTAssertFalse(
+      shouldMarkMigrationPreparationForegroundContinuation(
+        hasPendingRequest: true,
+        hasBoundPreparation: true,
+        notificationsDisabled: true
+      )
+    )
+  }
+
   func testMigrationPreparationDefersChainWaitsToProcessingTask() {
     XCTAssertEqual(
       migrationPreparationPassResult(states: [0]),

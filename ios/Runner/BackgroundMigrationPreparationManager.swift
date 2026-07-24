@@ -27,6 +27,14 @@ enum BackgroundMigrationPreparationRuntimeState: String, Equatable {
   case foregroundContinuationPending
 }
 
+func shouldMarkMigrationPreparationForegroundContinuation(
+  hasPendingRequest: Bool,
+  hasBoundPreparation: Bool,
+  notificationsDisabled: Bool
+) -> Bool {
+  hasPendingRequest && hasBoundPreparation && !notificationsDisabled
+}
+
 func migrationPreparationRuntimeState(
   hasMatchingManifest: Bool,
   notificationsDisabled: Bool,
@@ -89,6 +97,8 @@ final class BackgroundMigrationPreparationManager {
     "ironwoodMigrationPreparationSchedulingStateUpdatedAt"
   private static let schedulingErrorKey =
     "ironwoodMigrationPreparationSchedulingError"
+  private static let foregroundContinuationScopesKey =
+    "ironwoodMigrationPreparationForegroundContinuationScopes"
 
   private let queue = DispatchQueue(
     label: "com.keplr.vizor.ironwood-preparation",
@@ -103,20 +113,54 @@ final class BackgroundMigrationPreparationManager {
   private var notificationAuthorization =
     IronwoodMigrationNotificationAuthorizationEpochState()
   private var foregroundHandoffRequested = false
-  private var foregroundContinuationScopes = Set<String>()
+  private var foregroundContinuationScopes: Set<String>
   private var taskProgress: Progress?
   private var lastCompletedUnitCount: Int64 = 0
   private var authorizationMonitor:
     IronwoodMigrationNotificationAuthorizationMonitor?
 
-  private init() {}
-
-  func cancelPendingRequestForForegroundLaunch() {
-    BGTaskScheduler.shared.cancel(
-      taskRequestWithIdentifier: Self.taskIdentifier
+  private init() {
+    foregroundContinuationScopes = Set(
+      UserDefaults.standard.stringArray(
+        forKey: Self.foregroundContinuationScopesKey
+      ) ?? []
     )
-    recordSchedulingState("cancelled_on_launch")
-    cancelWatchdog()
+  }
+
+  func handoffPendingRequestForForegroundLaunch() {
+    BGTaskScheduler.shared.getPendingTaskRequests { [weak self] requests in
+      guard let self else { return }
+      let hasPendingRequest = requests.contains {
+        $0.identifier == Self.taskIdentifier
+      }
+      let notificationsDisabled = self.stateLock.withPreparationLock {
+        self.notificationAuthorization.isDisabled
+      }
+      let hasBoundPreparation =
+        hasPendingRequest && !notificationsDisabled
+        && self.markForegroundContinuationsReady()
+      let shouldContinue =
+        shouldMarkMigrationPreparationForegroundContinuation(
+          hasPendingRequest: hasPendingRequest,
+          hasBoundPreparation: hasBoundPreparation,
+          notificationsDisabled: notificationsDisabled
+        )
+      if !shouldContinue {
+        BGTaskScheduler.shared.cancel(
+          taskRequestWithIdentifier: Self.taskIdentifier
+        )
+      }
+      self.recordSchedulingState(
+        shouldContinue
+          ? "pending_handed_off_to_foreground_launch"
+          : "cancelled_on_launch"
+      )
+      if shouldContinue {
+        self.scheduleWatchdog()
+      } else {
+        self.cancelWatchdog()
+      }
+    }
   }
 
   func handoffToForeground() {
@@ -157,10 +201,10 @@ final class BackgroundMigrationPreparationManager {
             && !self.notificationAuthorization.isDisabled
         }
         if shouldClaimPendingRequest {
+          self.markForegroundContinuationsReady()
           BGTaskScheduler.shared.cancel(
             taskRequestWithIdentifier: Self.taskIdentifier
           )
-          self.markForegroundContinuationsReady()
           self.recordSchedulingState("pending_handed_off_to_foreground")
         }
         let hasMatchingManifest =
@@ -169,6 +213,12 @@ final class BackgroundMigrationPreparationManager {
               && $0.accountUuid == accountUuid
               && $0.expectedRunId == runId
           } ?? false
+        if !hasMatchingManifest {
+          self.stateLock.withPreparationLock {
+            self.foregroundContinuationScopes.remove(scope)
+            self.persistForegroundContinuationScopesLocked()
+          }
+        }
         let state = self.stateLock.withPreparationLock {
           migrationPreparationRuntimeState(
             hasMatchingManifest: hasMatchingManifest,
@@ -207,9 +257,11 @@ final class BackgroundMigrationPreparationManager {
       accountUuid: accountUuid,
       runId: runId
     )
-    _ = stateLock.withPreparationLock {
+    stateLock.withPreparationLock {
       foregroundContinuationScopes.remove(scope)
+      persistForegroundContinuationScopesLocked()
     }
+    cancelIfNoActivePreparation()
   }
 
   func registerBackgroundTask() {
@@ -408,6 +460,7 @@ final class BackgroundMigrationPreparationManager {
       submissionInFlight = false
       notificationAuthorization.disable()
       foregroundContinuationScopes.removeAll()
+      persistForegroundContinuationScopesLocked()
       defer { authorizationMonitor = nil }
       return authorizationMonitor
     }
@@ -453,6 +506,10 @@ final class BackgroundMigrationPreparationManager {
       return code != 0 || preparation.state == 0 || preparation.state == 5
     }
     guard !hasPreparation else { return }
+    stateLock.withPreparationLock {
+      foregroundContinuationScopes.removeAll()
+      persistForegroundContinuationScopesLocked()
+    }
     BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
     )
@@ -469,6 +526,7 @@ final class BackgroundMigrationPreparationManager {
       submissionInFlight = false
       mutationQuiesced = true
       foregroundContinuationScopes.removeAll()
+      persistForegroundContinuationScopesLocked()
     }
     _ = zcash_cancel_migration_preparation_sync()
     queue.async {
@@ -767,6 +825,12 @@ final class BackgroundMigrationPreparationManager {
     quiescedForMutation: Bool,
     disabledForNotifications: Bool
   ) {
+    if passCompleted {
+      stateLock.withPreparationLock {
+        foregroundContinuationScopes.removeAll()
+        persistForegroundContinuationScopesLocked()
+      }
+    }
     let success =
       passCompleted || deferredToProcessing || recoveredInProcessing
       || handedOff || quiescedForMutation || disabledForNotifications
@@ -869,9 +933,10 @@ final class BackgroundMigrationPreparationManager {
     }
   }
 
-  private func markForegroundContinuationsReady() {
+  @discardableResult
+  private func markForegroundContinuationsReady() -> Bool {
     guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
-    else { return }
+    else { return false }
     let scopes = manifests.compactMap { manifest -> String? in
       guard let runId = manifest.expectedRunId else { return nil }
       return Self.foregroundContinuationScope(
@@ -882,7 +947,16 @@ final class BackgroundMigrationPreparationManager {
     }
     stateLock.withPreparationLock {
       foregroundContinuationScopes.formUnion(scopes)
+      persistForegroundContinuationScopesLocked()
     }
+    return !scopes.isEmpty
+  }
+
+  private func persistForegroundContinuationScopesLocked() {
+    UserDefaults.standard.set(
+      foregroundContinuationScopes.sorted(),
+      forKey: Self.foregroundContinuationScopesKey
+    )
   }
 
   private func runPreparationPass()

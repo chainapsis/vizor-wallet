@@ -26,7 +26,7 @@ import UIKit
       // discard a stale pending preparation request.
       if application.applicationState != .background {
         BackgroundMigrationPreparationManager.shared
-          .cancelPendingRequestForForegroundLaunch()
+          .handoffPendingRequestForForegroundLaunch()
       }
       BackgroundMigrationPreparationManager.shared.registerBackgroundTask()
       BGTaskScheduler.shared.cancel(
