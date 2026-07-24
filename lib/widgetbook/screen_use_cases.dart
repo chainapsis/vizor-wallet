@@ -1181,6 +1181,7 @@ Widget _buildMobileIronwoodMigrationKeystoneSigningUseCase(
         onCancel: () {},
         onToggleFlashlight: () {},
         onShowRequestQr: () {},
+        onShowScanHelp: () {},
       ),
     ),
   );

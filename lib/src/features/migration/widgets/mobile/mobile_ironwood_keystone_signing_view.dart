@@ -192,20 +192,10 @@ class _StepOneContent extends StatelessWidget {
                         ),
                       )
                     else
-                      _KeystoneScanPrompt(color: colors.text.secondary),
-                    if (!loading && onShowScanHelp != null) ...[
-                      const SizedBox(height: AppSpacing.xs),
-                      AppButton(
-                        key: const ValueKey(
-                          'mobile_ironwood_keystone_scan_help',
-                        ),
-                        variant: AppButtonVariant.ghost,
-                        expand: true,
-                        constrainContent: true,
-                        onPressed: onShowScanHelp,
-                        child: const Text('Having issues scanning?'),
+                      _KeystoneScanPrompt(
+                        color: colors.text.secondary,
+                        onShowHelp: onShowScanHelp,
                       ),
-                    ],
                     const Spacer(),
                     Padding(
                       padding: const EdgeInsets.symmetric(
@@ -330,33 +320,62 @@ class _LoadingQrState extends State<_LoadingQr>
 }
 
 class _KeystoneScanPrompt extends StatelessWidget {
-  const _KeystoneScanPrompt({required this.color});
+  const _KeystoneScanPrompt({required this.color, this.onShowHelp});
 
   final Color color;
+  final VoidCallback? onShowHelp;
 
   @override
   Widget build(BuildContext context) {
     final style = AppTypography.bodyMedium.copyWith(color: color);
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 6,
-          runSpacing: 2,
-          children: [
-            Text('Tap', style: style),
-            const _KeystoneScanPromptIcon(),
-            Text('on your Keystone,', style: style),
-          ],
+        Flexible(
+          fit: FlexFit.loose,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 6,
+                runSpacing: 2,
+                children: [
+                  Text('Tap', style: style),
+                  const _KeystoneScanPromptIcon(),
+                  Text('on your Keystone,', style: style),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'then scan this QR code',
+                textAlign: TextAlign.center,
+                style: style,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 2),
-        Text(
-          'then scan this QR code',
-          textAlign: TextAlign.center,
-          style: style,
-        ),
+        if (onShowHelp != null) ...[
+          const SizedBox(width: 6),
+          Semantics(
+            button: true,
+            label: 'Keystone QR scanning help',
+            excludeSemantics: true,
+            child: GestureDetector(
+              key: const ValueKey('mobile_ironwood_keystone_scan_help'),
+              behavior: HitTestBehavior.opaque,
+              onTap: onShowHelp,
+              child: SizedBox.square(
+                dimension: 28,
+                child: Center(
+                  child: AppIcon(AppIcons.help, size: 20, color: color),
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

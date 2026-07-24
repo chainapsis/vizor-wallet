@@ -549,7 +549,9 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                             ),
                                           ),
                                         ),
-                                      if (canScan && widget.decoding)
+                                      if (canScan &&
+                                          widget.decoding &&
+                                          !fullBleed)
                                         Positioned(
                                           left: -2,
                                           top: -2,

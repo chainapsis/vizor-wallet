@@ -15,6 +15,7 @@ Widget _app({
   VoidCallback? onCancel,
   VoidCallback? onToggleFlashlight,
   VoidCallback? onShowRequestQr,
+  VoidCallback? onShowScanHelp,
 }) {
   return MaterialApp(
     home: AppTheme(
@@ -28,6 +29,7 @@ Widget _app({
         onCancel: onCancel,
         onToggleFlashlight: onToggleFlashlight,
         onShowRequestQr: onShowRequestQr,
+        onShowScanHelp: onShowScanHelp,
       ),
     ),
   );
@@ -109,12 +111,14 @@ void main() {
     _useMobileViewport(tester);
     var nexts = 0;
     var cancels = 0;
+    var helpRequests = 0;
     await tester.pumpWidget(
       _app(
         state: MobileIronwoodKeystoneSigningViewState.ready,
         qrCode: const ColoredBox(color: Colors.black),
         onNext: () => nexts++,
         onCancel: () => cancels++,
+        onShowScanHelp: () => helpRequests++,
       ),
     );
 
@@ -122,6 +126,31 @@ void main() {
     expect(find.text('Tap'), findsOneWidget);
     expect(find.text('on your Keystone,'), findsOneWidget);
     expect(find.text('then scan this QR code'), findsOneWidget);
+    expect(find.text('Having issues scanning?'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_keystone_scan_help'),
+        ),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.help,
+        ),
+      ),
+      findsOneWidget,
+    );
+    final helpRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_scan_help')),
+    );
+    final firstLineRect = tester.getRect(find.text('on your Keystone,'));
+    final secondLineRect = tester.getRect(
+      find.text('then scan this QR code'),
+    );
+    expect(helpRect.left, greaterThan(firstLineRect.right));
+    expect(helpRect.left, greaterThan(secondLineRect.right));
+    expect(
+      helpRect.center.dy,
+      inInclusiveRange(firstLineRect.top, secondLineRect.bottom),
+    );
     expect(
       find.byWidgetPredicate(
         (widget) => widget is AppIcon && widget.name == AppIcons.keystoneScan,
@@ -147,8 +176,12 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('mobile_ironwood_keystone_signing_cancel')),
     );
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_scan_help')),
+    );
     expect(nexts, 1);
     expect(cancels, 1);
+    expect(helpRequests, 1);
   });
 
   testWidgets('scanner exposes camera, target, and wired controls only', (
