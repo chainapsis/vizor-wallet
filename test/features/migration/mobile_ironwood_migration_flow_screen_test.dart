@@ -1313,7 +1313,7 @@ void main() {
   });
 
   testWidgets(
-    'saves a software private draft before leaving migration options',
+    'saves a software private draft only after the notification gate',
     (tester) async {
       _useMobileViewport(tester);
       var savedDraftCount = 0;
@@ -1339,8 +1339,16 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(savedDraftCount, 1);
+      expect(savedDraftCount, 0);
       expect(find.text('Keep your migration on schedule'), findsOneWidget);
+
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue without notifications'));
+      await tester.pumpAndSettle();
+
+      expect(savedDraftCount, 1);
+      expect(find.text('Keep your migration on schedule'), findsNothing);
     },
   );
 

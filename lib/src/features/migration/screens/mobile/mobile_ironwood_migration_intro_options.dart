@@ -171,6 +171,7 @@ class _MobileMigrationOptionsState
       _continueError = null;
     });
     rust_sync.OrchardMigrationPrivatePlan? plan;
+    String? accountUuid;
     try {
       plan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
       if (!mounted) return;
@@ -179,7 +180,7 @@ class _MobileMigrationOptionsState
       }
       final accountState = await ref.read(accountProvider.future);
       if (!mounted) return;
-      final accountUuid = accountState.activeAccountUuid;
+      accountUuid = accountState.activeAccountUuid;
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
@@ -191,17 +192,8 @@ class _MobileMigrationOptionsState
           );
         }
       }
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .savePrivateMigrationDraft(
-            accountUuid: accountUuid,
-            approvedSchedule: plan.scheduledTransfers,
-          );
-      ref.invalidate(ironwoodMigrationRouteCtaProvider);
-      ref.invalidate(ironwoodHomeMigrationCtaProvider);
-      ref.invalidate(ironwoodPostMigrationStateProvider);
     } catch (error) {
-      debugPrint('Failed to save private migration draft: $error');
+      debugPrint('Failed to prepare private migration choice: $error');
       if (!mounted) return;
       setState(() {
         _continueError = "Couldn't prepare the migration plan. Try again.";
@@ -228,6 +220,15 @@ class _MobileMigrationOptionsState
         context.go('/migration/private/notifications', extra: plan);
         return;
       }
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .savePrivateMigrationDraft(
+            accountUuid: accountUuid,
+            approvedSchedule: plan.scheduledTransfers,
+          );
+      if (!mounted) return;
+      await _refreshPrivateMigrationDraftPresentation(ref);
+      if (!mounted) return;
       await _continuePrivateMigrationAfterNotificationGate(ref, plan);
       if (!mounted) return;
       context.go(
@@ -312,6 +313,19 @@ class _MobileMigrationOptionsState
         ],
       ),
     );
+  }
+}
+
+Future<void> _refreshPrivateMigrationDraftPresentation(WidgetRef ref) async {
+  ref.invalidate(ironwoodMigrationRouteCtaProvider);
+  ref.invalidate(ironwoodHomeMigrationCtaProvider);
+  ref.invalidate(ironwoodPostMigrationStateProvider);
+  try {
+    await ref.read(ironwoodHomeMigrationCtaProvider.future);
+  } catch (error) {
+    // The durable draft is already saved. Let the destination screen reconcile
+    // it rather than trapping the user on the option picker for a stale read.
+    debugPrint('Failed to refresh private migration presentation: $error');
   }
 }
 
