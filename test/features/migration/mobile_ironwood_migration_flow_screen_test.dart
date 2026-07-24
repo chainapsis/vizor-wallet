@@ -150,6 +150,26 @@ class _SuccessfulEntrySyncTestMigrationCoordinator
   }
 }
 
+class _ControlledRefreshTestMigrationCoordinator
+    extends IronwoodMigrationCoordinator {
+  final List<Completer<void>> refreshes = [];
+
+  @override
+  IronwoodMigrationCoordinatorState build() {
+    return const IronwoodMigrationCoordinatorState();
+  }
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {
+    final refresh = Completer<void>();
+    refreshes.add(refresh);
+    await refresh.future;
+    if (ref.mounted) {
+      ref.invalidate(ironwoodMigrationRouteCtaProvider);
+    }
+  }
+}
+
 class _PreparationHandoffTestMigrationCoordinator
     extends IronwoodMigrationCoordinator {
   _PreparationHandoffTestMigrationCoordinator({this.failRetry = false});
@@ -510,6 +530,7 @@ Widget _productionApp({
   rust_sync.MigrationStatus? startedStatus,
   Future<rust_sync.MigrationStatus> Function()? statusLoader,
   IronwoodHomeMigrationCtaState Function()? ctaBuilder,
+  Future<IronwoodHomeMigrationCtaState> Function()? ctaLoader,
   bool hardware = false,
   rust_sync.OrchardMigrationPrivatePlan? privatePlan,
   Future<rust_sync.OrchardMigrationPrivatePlan?>? privatePlanFuture,
@@ -605,9 +626,10 @@ Widget _productionApp({
       ironwoodMigrationImmediatePlanProvider.overrideWith(
         (ref) => Future.value(_immediatePlan),
       ),
-      ironwoodMigrationRouteCtaProvider.overrideWith(
-        (ref) async => ctaBuilder?.call() ?? cta,
-      ),
+      ironwoodMigrationRouteCtaProvider.overrideWith((ref) async {
+        if (ctaLoader != null) return ctaLoader();
+        return ctaBuilder?.call() ?? cta;
+      }),
       ironwoodMigrationStatusProvider.overrideWith(
         (ref, request) async =>
             await statusLoader?.call() ??
@@ -3416,7 +3438,7 @@ void main() {
   });
 
   testWidgets(
-    'shows the preparation sync surface only when wallet sync stays active',
+    'shows the preparation sync surface immediately when entering during sync',
     (tester) async {
       _useMobileViewport(tester);
       final coordinator = _SuccessfulEntrySyncTestMigrationCoordinator();
@@ -3452,9 +3474,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(coordinator.synchronizeCount, 0);
-      expect(find.text('Preparing your migration'), findsOneWidget);
-      expect(find.text('Syncing your wallet…'), findsNothing);
-      expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
+      expect(find.text('Syncing your wallet…'), findsOneWidget);
+      expect(find.text('Preparation will\ntake 10–20 min'), findsNothing);
 
       await tester.pump(const Duration(milliseconds: 850));
 
@@ -3484,6 +3505,107 @@ void main() {
       expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
     },
   );
+
+  testWidgets('waits for initial and post-sync migration status refreshes', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final coordinator = _ControlledRefreshTestMigrationCoordinator();
+    final status = _status(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+    );
+    final cta = IronwoodHomeMigrationCtaState.resume(
+      network: 'main',
+      accountUuid: 'account-1',
+      status: status,
+    );
+    var ctaLoadCount = 0;
+    final ctaRefreshes = <Completer<IronwoodHomeMigrationCtaState>>[];
+    final syncNotifier = FakeSyncNotifier(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+      ),
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        migrationCoordinator: () => coordinator,
+        status: status,
+        ctaLoader: () {
+          ctaLoadCount++;
+          if (ctaLoadCount == 1) return Future.value(cta);
+          final refresh = Completer<IronwoodHomeMigrationCtaState>();
+          ctaRefreshes.add(refresh);
+          return refresh.future;
+        },
+        syncNotifier: syncNotifier,
+      ),
+    );
+    await tester.pump();
+
+    expect(coordinator.refreshes, hasLength(1));
+    expect(find.text('Syncing your wallet…'), findsOneWidget);
+    expect(find.text('Preparation will\ntake 10–20 min'), findsNothing);
+
+    coordinator.refreshes.first.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(ctaRefreshes, hasLength(1));
+    expect(find.text('Syncing your wallet…'), findsOneWidget);
+
+    ctaRefreshes.first.complete(cta);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Syncing your wallet…'), findsNothing);
+    expect(find.text('Preparing your migration'), findsOneWidget);
+
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncing: true,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('Syncing your wallet…'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 800));
+    expect(find.text('Syncing your wallet…'), findsOneWidget);
+
+    syncNotifier.emit(
+      SyncState(
+        accountUuid: 'account-1',
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+      ),
+    );
+    await tester.pump();
+
+    expect(coordinator.refreshes, hasLength(2));
+    expect(find.text('Syncing your wallet…'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('Syncing your wallet…'), findsOneWidget);
+
+    coordinator.refreshes.last.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(ctaRefreshes, hasLength(2));
+    expect(find.text('Syncing your wallet…'), findsOneWidget);
+
+    ctaRefreshes.last.complete(cta);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Syncing your wallet…'), findsNothing);
+    expect(find.text('Preparing your migration'), findsOneWidget);
+  });
 
   testWidgets(
     'maps denomination confirmation progress into the preparation ring',
@@ -3551,7 +3673,7 @@ void main() {
   );
 
   testWidgets(
-    'delays the migration sync surface until the sync is perceptible',
+    'shows migration syncing immediately before the initial status refresh',
     (tester) async {
       _useMobileViewport(tester);
       SharedPreferences.setMockInitialValues({
@@ -3578,8 +3700,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.text('Migration in progress…'), findsOneWidget);
-      expect(find.text('Syncing the migration progress.'), findsNothing);
+      expect(find.text('Syncing the migration progress.'), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 850));
 
