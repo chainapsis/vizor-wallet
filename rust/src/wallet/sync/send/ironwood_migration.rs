@@ -606,16 +606,20 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
             .map(|recovery| recovery.selected_note.clone())
             .collect()
     };
-    if prepared_notes.is_empty() {
-        return Err("Migration run has no prepared denomination notes".to_string());
-    }
     let pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-    if initial_signing
-        && (pending_totals.total_count > 0
-            || super::migration::signed_child_pczt_count(db_path, &run.run_id)? > 0)
-    {
-        return Err("Migration transactions are already signed and scheduled".to_string());
-    }
+    let signed_child_pczt_count =
+        super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
+    let recovery_part_indices = recoveries
+        .iter()
+        .map(|recovery| recovery.part_index)
+        .collect::<Vec<_>>();
+    let signing_part_indices = super::migration::select_migration_batch_signing_part_indices(
+        u32::try_from(prepared_notes.len())
+            .map_err(|_| "Prepared migration note count exceeds u32".to_string())?,
+        pending_totals.total_count,
+        signed_child_pczt_count,
+        &recovery_part_indices,
+    )?;
     if !initial_signing && !prepared_note_spend_metadata_is_available(db_path, &run.run_id)? {
         return Err(
             "Prepared denomination notes are not spendable yet. Sync and try again.".to_string(),
@@ -633,10 +637,9 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let approved_schedule =
         super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
     for (index, note_ref) in prepared_notes.iter().enumerate() {
-        let part_index = recoveries
+        let part_index = *signing_part_indices
             .get(index)
-            .map(|recovery| recovery.part_index)
-            .unwrap_or(index as u32);
+            .ok_or("Migration signing selector omitted a prepared note")?;
         let schedule_block_offset = super::migration::schedule_block_offset_for_part(
             &approved_schedule,
             &run.target_values_zatoshi,
@@ -646,10 +649,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 .ok_or("Migration part is outside the approved target list")?,
         )
         .ok_or("Approved migration schedule is missing a child")?;
-        let migration_index = recoveries
-            .get(index)
-            .map(|recovery| recovery.part_index + 1)
-            .unwrap_or((index + 1) as u32);
+        let migration_index = part_index + 1;
         let pczt_result = if initial_signing {
             create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
                 db_path,

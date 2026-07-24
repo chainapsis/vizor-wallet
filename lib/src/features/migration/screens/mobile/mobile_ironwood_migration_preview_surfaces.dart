@@ -53,18 +53,21 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           state: _MigrationProgressState.waitingNotificationsOff,
         ),
       MobileIronwoodMigrationPreviewSurface.migrationNeedsInput =>
-        const _MigrationProgressPreview(
+        _MigrationProgressPreview(
           state: _MigrationProgressState.needsInput,
-          currentBatchPartCount: _migrationPartsPerBatch,
+          currentSigningPartIndices: {
+            for (var index = 0; index < _migrationPartsPerBatch; index++) index,
+          },
           migratedAmountText: '777.888 ZEC',
           totalAmountText: '999.999 ZEC',
         ),
       MobileIronwoodMigrationPreviewSurface.migrationKeystoneSignAll =>
-        const _MigrationProgressPreview(
+        _MigrationProgressPreview(
           state: _MigrationProgressState.needsInput,
           totalParts: 50,
-          currentBatchPartCount: 8,
-          highlightCurrentBatch: false,
+          currentSigningPartIndices: {
+            for (var index = 0; index < 50; index++) index,
+          },
           migratedAmountText: '0 ZEC',
           totalAmountText: '50 ZEC',
           actionLabel: 'Sign migration transactions',
@@ -979,11 +982,9 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.totalParts = 24,
     this.completedBatches,
     this.totalBatches,
-    this.currentBatchStartIndex,
-    this.currentBatchPartCount,
     this.completedRingSegments,
+    this.currentSigningPartIndices = const {},
     this.segmentValuesZatoshi,
-    this.highlightCurrentBatch = true,
     this.migratedAmountText,
     this.totalAmountText,
     this.availableAmountText,
@@ -1004,11 +1005,9 @@ class _MigrationProgressPreview extends StatelessWidget {
   final int totalParts;
   final int? completedBatches;
   final int? totalBatches;
-  final int? currentBatchStartIndex;
-  final int? currentBatchPartCount;
   final Set<int>? completedRingSegments;
+  final Set<int> currentSigningPartIndices;
   final List<BigInt>? segmentValuesZatoshi;
-  final bool highlightCurrentBatch;
   final String? migratedAmountText;
   final String? totalAmountText;
   final String? availableAmountText;
@@ -1040,17 +1039,6 @@ class _MigrationProgressPreview extends StatelessWidget {
         (resolvedCompletedParts >= totalParts
             ? resolvedTotalBatches
             : resolvedCompletedParts ~/ _migrationPartsPerBatch);
-    final resolvedCurrentBatchStartIndex =
-        currentBatchStartIndex ??
-        math.min(
-          math.max(0, totalParts - 1),
-          resolvedCompletedBatches * _migrationPartsPerBatch,
-        );
-    final resolvedBatchPartCount =
-        currentBatchPartCount ??
-        (state == _MigrationProgressState.needsInput
-            ? math.min(3, totalParts)
-            : math.min(_migrationPartsPerBatch, totalParts));
     final resolvedCompletedRingSegments =
         completedRingSegments ??
         {
@@ -1104,11 +1092,12 @@ class _MigrationProgressPreview extends StatelessWidget {
                   completedBatches: resolvedCompletedBatches,
                   totalBatches: resolvedTotalBatches,
                   totalParts: totalParts,
-                  currentBatchStartIndex: resolvedCurrentBatchStartIndex,
-                  currentBatchPartCount: resolvedBatchPartCount,
                   completedSegments: resolvedCompletedRingSegments,
+                  highlightedSegments:
+                      state == _MigrationProgressState.needsInput
+                      ? currentSigningPartIndices
+                      : const {},
                   segmentWeights: resolvedSegmentWeights,
-                  highlightCurrentBatch: highlightCurrentBatch,
                   dimension: compact ? 192 : 256,
                   migratedAmountText: migratedAmountText,
                   totalAmountText: totalAmountText,
@@ -1151,11 +1140,9 @@ class _MigrationBatchDial extends StatelessWidget {
     required this.completedBatches,
     required this.totalBatches,
     required this.totalParts,
-    required this.currentBatchStartIndex,
-    required this.currentBatchPartCount,
     required this.completedSegments,
+    required this.highlightedSegments,
     required this.segmentWeights,
-    this.highlightCurrentBatch = true,
     this.dimension = 256,
     this.migratedAmountText,
     this.totalAmountText,
@@ -1165,18 +1152,15 @@ class _MigrationBatchDial extends StatelessWidget {
   final int completedBatches;
   final int totalBatches;
   final int totalParts;
-  final int currentBatchStartIndex;
-  final int currentBatchPartCount;
   final Set<int> completedSegments;
+  final Set<int> highlightedSegments;
   final List<double> segmentWeights;
-  final bool highlightCurrentBatch;
   final double dimension;
   final String? migratedAmountText;
   final String? totalAmountText;
 
   @override
   Widget build(BuildContext context) {
-    final needsInput = state == _MigrationProgressState.needsInput;
     final migrated = migratedAmountText?.replaceFirst(RegExp(r'\s+ZEC$'), '');
     final total = totalAmountText ?? '100 ZEC';
     final combinedAmount = migrated == null ? '0/100 ZEC' : '$migrated/$total';
@@ -1190,21 +1174,6 @@ class _MigrationBatchDial extends StatelessWidget {
     )..layout();
     final splitAmount =
         amountPainter.width > dimension * 0.75 || combinedAmount.length >= 18;
-    final highlightedSegments = needsInput && highlightCurrentBatch
-        ? {
-            for (
-              var index = currentBatchStartIndex;
-              index <
-                  math.min(
-                    totalParts,
-                    currentBatchStartIndex +
-                        currentBatchPartCount.clamp(0, _migrationPartsPerBatch),
-                  );
-              index++
-            )
-              index,
-          }
-        : const <int>{};
     return SizedBox.square(
       dimension: dimension,
       child: Stack(
@@ -2304,11 +2273,11 @@ class _AnimatedMigrationAttentionRingState
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
-      value: 1,
+      duration: const Duration(milliseconds: 400),
+      value: 0,
     );
     _opacity = Tween<double>(
-      begin: 0.32,
+      begin: 0.40,
       end: 1,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
@@ -2333,6 +2302,7 @@ class _AnimatedMigrationAttentionRingState
       return;
     }
     if (!_controller.isAnimating) {
+      _controller.value = 0;
       _controller.repeat(reverse: true);
     }
   }
@@ -2348,6 +2318,7 @@ class _AnimatedMigrationAttentionRingState
     return AnimatedBuilder(
       animation: _opacity,
       builder: (context, _) => CustomPaint(
+        key: const ValueKey('mobile_ironwood_migration_attention_ring'),
         size: Size.square(widget.dimension),
         painter: _MigrationRingPainter(
           trackColor: context.colors.border.subtle,

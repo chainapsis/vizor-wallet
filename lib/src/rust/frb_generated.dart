@@ -8629,8 +8629,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationStatus dco_decode_migration_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 24)
-      throw Exception('unexpected arr length: expect 24 but see ${arr.length}');
+    if (arr.length != 25)
+      throw Exception('unexpected arr length: expect 25 but see ${arr.length}');
     return MigrationStatus(
       phase: dco_decode_String(arr[0]),
       activeRunId: dco_decode_opt_String(arr[1]),
@@ -8654,10 +8654,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       nextActionHeight: dco_decode_opt_box_autoadd_u_32(arr[19]),
       estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[20]),
       nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[21]),
+      currentSigningPartIndices: dco_decode_opt_list_prim_u_32_strict(arr[22]),
       scheduledBroadcasts: dco_decode_list_migration_scheduled_broadcast(
-        arr[22],
+        arr[23],
       ),
-      parts: dco_decode_list_migration_part_status(arr[23]),
+      parts: dco_decode_list_migration_part_status(arr[24]),
     );
   }
 
@@ -8763,6 +8764,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
+  }
+
+  @protected
+  Uint32List? dco_decode_opt_list_prim_u_32_strict(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_list_prim_u_32_strict(raw);
   }
 
   @protected
@@ -11190,6 +11197,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deserializer,
     );
     var var_nextActionPartIndex = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_currentSigningPartIndices = sse_decode_opt_list_prim_u_32_strict(
+      deserializer,
+    );
     var var_scheduledBroadcasts = sse_decode_list_migration_scheduled_broadcast(
       deserializer,
     );
@@ -11217,6 +11227,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       nextActionHeight: var_nextActionHeight,
       estimatedCompletionHeight: var_estimatedCompletionHeight,
       nextActionPartIndex: var_nextActionPartIndex,
+      currentSigningPartIndices: var_currentSigningPartIndices,
       scheduledBroadcasts: var_scheduledBroadcasts,
       parts: var_parts,
     );
@@ -11382,6 +11393,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_u_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  Uint32List? sse_decode_opt_list_prim_u_32_strict(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_prim_u_32_strict(deserializer));
     } else {
       return null;
     }
@@ -13747,6 +13771,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_32(self.nextActionHeight, serializer);
     sse_encode_opt_box_autoadd_u_32(self.estimatedCompletionHeight, serializer);
     sse_encode_opt_box_autoadd_u_32(self.nextActionPartIndex, serializer);
+    sse_encode_opt_list_prim_u_32_strict(
+      self.currentSigningPartIndices,
+      serializer,
+    );
     sse_encode_list_migration_scheduled_broadcast(
       self.scheduledBroadcasts,
       serializer,
@@ -13892,6 +13920,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_prim_u_32_strict(
+    Uint32List? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_prim_u_32_strict(self, serializer);
     }
   }
 

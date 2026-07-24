@@ -415,8 +415,6 @@ class _MobileMigrationRedesignedStatusState
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
-        currentBatchStartIndex: batchProgress.currentBatchStartIndex,
-        currentBatchPartCount: batchProgress.currentBatchPartCount,
         completedRingSegments: _completedRingSegments(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
@@ -461,8 +459,6 @@ class _MobileMigrationRedesignedStatusState
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
-        currentBatchStartIndex: batchProgress.currentBatchStartIndex,
-        currentBatchPartCount: batchProgress.currentBatchPartCount,
         completedRingSegments: _completedRingSegments(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
@@ -538,11 +534,8 @@ class _MobileMigrationRedesignedStatusState
       segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
       completedBatches: batchProgress.completedBatches,
       totalBatches: batchProgress.totalBatches,
-      currentBatchStartIndex: batchProgress.currentBatchStartIndex,
-      currentBatchPartCount: batchProgress.currentBatchPartCount,
       completedRingSegments: _completedRingSegments(widget.status),
-      highlightCurrentBatch:
-          !signingAllKeystoneTransactions && !resigningKeystoneTransactions,
+      currentSigningPartIndices: _currentSigningPartIndices(widget.status),
       migratedAmountText: _migratedAmountText(widget.status),
       totalAmountText: _totalAmountText(widget.status),
       availableAmountText: _availableAmountText(accountUuid),
@@ -1025,6 +1018,10 @@ class _MobileMigrationRedesignedStatusState
         math.max(status.parts.length, status.targetValuesZatoshi.length),
       ),
     );
+  }
+
+  Set<int> _currentSigningPartIndices(rust_sync.MigrationStatus status) {
+    return status.currentSigningPartIndices?.toSet() ?? const {};
   }
 
   List<BigInt>? _migrationRingSegmentValues(rust_sync.MigrationStatus status) {
