@@ -26,6 +26,7 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/models/mobile_ironwood_migration_attention_state.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -92,6 +93,69 @@ class _RustApiFake implements RustLibApi {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FailingBindCredentialStore
+    extends IronwoodMigrationBackgroundCredentialStore {
+  _FailingBindCredentialStore({
+    required this.failAtBindCall,
+    String? initialRunId,
+  }) : _manifest = _manifestFor(initialRunId);
+
+  final int failAtBindCall;
+  IronwoodMigrationBackgroundCredentialManifest _manifest;
+  int bindCallCount = 0;
+
+  static IronwoodMigrationBackgroundCredentialManifest _manifestFor(
+    String? runId,
+  ) {
+    return IronwoodMigrationBackgroundCredentialManifest(
+      version: 1,
+      network: 'main',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: defaultRpcEndpointConfig(
+        'main',
+      ).normalizedLightwalletdUrl,
+      credentialHex: List.filled(64, '0').join(),
+      saltBase64: 'AAAAAAAAAAAAAAAAAAAAAA==',
+      expectedRunId: runId,
+    );
+  }
+
+  @override
+  Future<IronwoodMigrationBackgroundCredentialManifest> prepare({
+    required String network,
+    required String accountUuid,
+    required String dbPath,
+    required String lightwalletdUrl,
+  }) async {
+    _manifest = _manifestFor(null);
+    return _manifest;
+  }
+
+  @override
+  Future<IronwoodMigrationBackgroundCredentialManifest?> read({
+    required String network,
+    required String accountUuid,
+  }) async {
+    return _manifest;
+  }
+
+  @override
+  Future<bool> bindExpectedRunId({
+    required String network,
+    required String accountUuid,
+    required String expectedRunId,
+  }) async {
+    bindCallCount++;
+    if (bindCallCount == failAtBindCall) {
+      throw StateError('Injected credential reconciliation failure.');
+    }
+    if (_manifest.expectedRunId == expectedRunId) return false;
+    _manifest = _manifest.bindToRun(expectedRunId);
+    return true;
+  }
 }
 
 class _HardwareAccountNotifier extends AccountNotifier {
@@ -606,6 +670,7 @@ Widget _productionApp({
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   IronwoodMigrationCompletionStore? completionStore,
   bool realKeystoneDenominationRoute = false,
+  bool realKeystoneBatchRoute = false,
   bool disableAnimations = true,
 }) {
   final cta = status == null
@@ -664,7 +729,9 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/private/keystone/batch/sign',
-        builder: (_, _) => const Text('keystone batch sign route'),
+        builder: (_, _) => realKeystoneBatchRoute
+            ? const MobileIronwoodMigrationKeystoneBatchSignScreen()
+            : const Text('keystone batch sign route'),
       ),
     ],
   );
@@ -2914,6 +2981,222 @@ void main() {
       requestMessages.map((message) => message.id),
     );
   });
+
+  testWidgets(
+    'leaves signing after a completion error when the migration was committed',
+    (tester) async {
+      _useMobileViewport(tester);
+      var committed = false;
+      var completionCount = 0;
+      final credentialStore = _FailingBindCredentialStore(failAtBindCall: 1);
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                committed
+                ? _status(
+                    phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                    activeRunId: 'committed-run',
+                  )
+                : _status(
+                    phase: kIronwoodMigrationReadyPhase,
+                    activeRunId: null,
+                  ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _plan,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: credentialStore,
+        getEndpoint: () => defaultRpcEndpointConfig('main'),
+        getSessionPassword: () => 'test-password',
+        isMobile: () => true,
+        prepareKeystoneDenominationMigration:
+            ({required dbPath, required network, required accountUuid}) async =>
+                rust_sync.KeystoneMigrationSigningRequest(
+                  requestId: 'partial-success-request',
+                  messages: [
+                    rust_sync.KeystoneMigrationMessage(
+                      id: 'split-1',
+                      redactedPczt: Uint8List.fromList([1]),
+                    ),
+                  ],
+                  signingBatchLimit: 35,
+                ),
+        completeKeystoneDenominationMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async {
+              completionCount++;
+              committed = true;
+              return _migrationResult();
+            },
+        getKeystoneProofStatus: ({required requestId}) async =>
+            const rust_sync.KeystoneMigrationProofStatus(
+              readyCount: 1,
+              totalCount: 1,
+              isReady: true,
+              isFailed: false,
+            ),
+      );
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/keystone/denominations/sign',
+          migrationService: service,
+          hardware: true,
+          realKeystoneDenominationRoute: true,
+          statusLoader: () async => committed
+              ? _status(
+                  phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                  activeRunId: 'committed-run',
+                )
+              : _status(phase: kIronwoodMigrationReadyPhase, activeRunId: null),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final nextButton = find.byKey(
+        const ValueKey('mobile_ironwood_keystone_signing_next'),
+      );
+      await tester.ensureVisible(nextButton);
+      await tester.tap(nextButton);
+      await tester.pump();
+      tester
+          .widget<KeystoneQrScannerCard>(find.byType(KeystoneQrScannerCard))
+          .onComplete(
+            const ScanResult(urType: 'zcash-batch-sig-result', data: [1]),
+          );
+      await tester.pumpAndSettle();
+
+      expect(completionCount, 1);
+      expect(credentialStore.bindCallCount, 1);
+      expect(
+        find.byType(MobileIronwoodMigrationKeystoneDenominationSignScreen),
+        findsNothing,
+      );
+      expect(
+        find.text('This Keystone signing request expired. Prepare it again.'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'leaves batch re-signing after a completion error when parts advanced',
+    (tester) async {
+      _useMobileViewport(tester);
+      var committed = false;
+      var completionCount = 0;
+      final credentialStore = _FailingBindCredentialStore(
+        failAtBindCall: 2,
+        initialRunId: 'run-1',
+      );
+      rust_sync.MigrationStatus status() => committed
+          ? _status(
+              phase: kIronwoodMigrationBroadcastScheduledPhase,
+              activeRunId: 'run-1',
+              signedChildPcztCount: 1,
+            )
+          : _status(
+              phase: kIronwoodMigrationReadyToMigratePhase,
+              activeRunId: 'run-1',
+            );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                status(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _plan,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: credentialStore,
+        getEndpoint: () => defaultRpcEndpointConfig('main'),
+        getSessionPassword: () => 'test-password',
+        isMobile: () => true,
+        prepareKeystoneBatchMigration:
+            ({required dbPath, required network, required accountUuid}) async =>
+                rust_sync.KeystoneMigrationSigningRequest(
+                  requestId: 'partial-success-batch-request',
+                  messages: [
+                    rust_sync.KeystoneMigrationMessage(
+                      id: 'child-1',
+                      redactedPczt: Uint8List.fromList([1]),
+                    ),
+                  ],
+                  signingBatchLimit: 35,
+                ),
+        completeKeystoneBatchMigration:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+            }) async {
+              completionCount++;
+              committed = true;
+              return _migrationResult();
+            },
+        getKeystoneProofStatus: ({required requestId}) async =>
+            const rust_sync.KeystoneMigrationProofStatus(
+              readyCount: 1,
+              totalCount: 1,
+              isReady: true,
+              isFailed: false,
+            ),
+      );
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/keystone/batch/sign',
+          migrationService: service,
+          hardware: true,
+          realKeystoneBatchRoute: true,
+          statusLoader: () async => status(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final nextButton = find.byKey(
+        const ValueKey('mobile_ironwood_keystone_signing_next'),
+      );
+      await tester.ensureVisible(nextButton);
+      await tester.tap(nextButton);
+      await tester.pump();
+      tester
+          .widget<KeystoneQrScannerCard>(find.byType(KeystoneQrScannerCard))
+          .onComplete(
+            const ScanResult(urType: 'zcash-batch-sig-result', data: [1]),
+          );
+      await tester.pumpAndSettle();
+
+      expect(completionCount, 1);
+      expect(credentialStore.bindCallCount, 2);
+      expect(
+        find.byType(MobileIronwoodMigrationKeystoneBatchSignScreen),
+        findsNothing,
+      );
+      expect(
+        find.text('This Keystone signing request expired. Prepare it again.'),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('allows a Keystone plan that needs multiple signing rounds', (
     tester,
