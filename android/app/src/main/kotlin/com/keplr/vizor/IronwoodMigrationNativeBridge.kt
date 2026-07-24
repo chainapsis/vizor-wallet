@@ -154,20 +154,51 @@ internal object IronwoodMigrationJniBindings : IronwoodMigrationNativeBindings {
     ): IronwoodMigrationNativeCallResult
 }
 
+internal interface IronwoodMigrationPreparationNative {
+    fun beginOperation(): Boolean
+    fun endOperation()
+    fun cancelOperation(): Boolean
+    fun isSyncRunning(): Boolean
+    fun inspect(
+        dbPath: String,
+        network: String,
+        accountUuid: String,
+        expectedRunId: String,
+    ): IronwoodMigrationNativePreparationProgress
+
+    @Suppress("LongParameterList")
+    fun advance(
+        dbPath: String,
+        lightwalletdUrl: String,
+        network: String,
+        accountUuid: String,
+        expectedRunId: String,
+        credential: ByteArray,
+        saltBase64: String,
+    ): IronwoodMigrationNativePreparationProgress
+
+    fun runSync(
+        dbPath: String,
+        lightwalletdUrl: String,
+        network: String,
+        onProgress: (IronwoodMigrationNativeSyncProgress) -> Unit,
+    )
+}
+
 internal class IronwoodMigrationNativeBridge(
     private val bindings: IronwoodMigrationNativeBindings = IronwoodMigrationJniBindings,
-) {
-    fun beginOperation(): Boolean = bindings.nativeBeginOperation()
+) : IronwoodMigrationPreparationNative {
+    override fun beginOperation(): Boolean = bindings.nativeBeginOperation()
 
-    fun endOperation() {
+    override fun endOperation() {
         bindings.nativeEndOperation()
     }
 
-    fun cancelOperation(): Boolean = bindings.nativeCancelOperation()
+    override fun cancelOperation(): Boolean = bindings.nativeCancelOperation()
 
-    fun isSyncRunning(): Boolean = bindings.nativeIsSyncRunning()
+    override fun isSyncRunning(): Boolean = bindings.nativeIsSyncRunning()
 
-    fun inspect(
+    override fun inspect(
         dbPath: String,
         network: String,
         accountUuid: String,
@@ -179,7 +210,7 @@ internal class IronwoodMigrationNativeBridge(
         )
 
     @Suppress("LongParameterList")
-    fun advance(
+    override fun advance(
         dbPath: String,
         lightwalletdUrl: String,
         network: String,
@@ -201,7 +232,7 @@ internal class IronwoodMigrationNativeBridge(
             "advance",
         )
 
-    fun runSync(
+    override fun runSync(
         dbPath: String,
         lightwalletdUrl: String,
         network: String,

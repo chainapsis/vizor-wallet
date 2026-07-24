@@ -183,15 +183,57 @@ internal class IronwoodMigrationSecureStore(
         network: String,
         accountUuid: String,
         manifestJson: String,
-    ) {
-        put(manifestKey(network, accountUuid), manifestJson.toByteArray(Charsets.UTF_8))
+    ) = lock.withLock {
+        val recordKey = manifestKey(network, accountUuid)
+        val manifestKeys = readManifestKeysLocked()
+        val addedToIndex = manifestKeys.add(recordKey)
+        if (addedToIndex) {
+            writeManifestKeysLocked(manifestKeys)
+        }
+        try {
+            put(recordKey, manifestJson.toByteArray(Charsets.UTF_8))
+        } catch (error: Exception) {
+            if (addedToIndex) {
+                manifestKeys.remove(recordKey)
+                try {
+                    writeManifestKeysLocked(manifestKeys)
+                } catch (rollbackError: Exception) {
+                    error.addSuppressed(rollbackError)
+                }
+            }
+            throw error
+        }
     }
 
     fun readManifest(network: String, accountUuid: String): String? =
         get(manifestKey(network, accountUuid))?.toString(Charsets.UTF_8)
 
-    fun deleteManifest(network: String, accountUuid: String) {
-        remove(manifestKey(network, accountUuid))
+    fun readAllManifests(): List<String> = lock.withLock {
+        val manifestKeys = readManifestKeysLocked()
+        val staleKeys = mutableSetOf<String>()
+        val manifests = manifestKeys.mapNotNull { recordKey ->
+            val payload = get(recordKey)
+            if (payload == null) {
+                staleKeys.add(recordKey)
+                null
+            } else {
+                payload.toString(Charsets.UTF_8)
+            }
+        }
+        if (staleKeys.isNotEmpty()) {
+            manifestKeys.removeAll(staleKeys)
+            writeManifestKeysLocked(manifestKeys)
+        }
+        manifests
+    }
+
+    fun deleteManifest(network: String, accountUuid: String) = lock.withLock {
+        val recordKey = manifestKey(network, accountUuid)
+        val manifestKeys = readManifestKeysLocked()
+        remove(recordKey)
+        if (manifestKeys.remove(recordKey)) {
+            writeManifestKeysLocked(manifestKeys)
+        }
     }
 
     fun writeOutboxBatch(
@@ -209,8 +251,13 @@ internal class IronwoodMigrationSecureStore(
         batchId: String,
     ): ByteArray? = get(outboxKey(network, accountUuid, batchId))
 
-    fun revokeAccount(network: String, accountUuid: String) {
-        remove(manifestKey(network, accountUuid))
+    fun revokeAccount(network: String, accountUuid: String) = lock.withLock {
+        val recordKey = manifestKey(network, accountUuid)
+        val manifestKeys = readManifestKeysLocked()
+        remove(recordKey)
+        if (manifestKeys.remove(recordKey)) {
+            writeManifestKeysLocked(manifestKeys)
+        }
         removePrefix("$RECORD_VERSION:outbox:$network:$accountUuid:")
     }
 
@@ -262,6 +309,90 @@ internal class IronwoodMigrationSecureStore(
                 "Failed to remove native migration data.",
             )
         }
+    }
+
+    private fun readManifestKeysLocked(): MutableSet<String> {
+        get(MANIFEST_INDEX_KEY)?.let {
+            return decodeManifestIndex(it)
+        }
+
+        // Upgrade path for stores created before the encrypted index existed.
+        // This is the only path that opens non-manifest records.
+        recoverInterruptedWrites()
+        val recordFiles = directory.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(RECORD_SUFFIX) }
+            .orEmpty()
+        val manifestKeys = recordFiles
+            .mapNotNull { file ->
+                val recordId = file.name.removeSuffix(RECORD_SUFFIX)
+                val record = decodeRecord(cipher.open(file.readBytes(), recordId))
+                record.first.takeIf { it.startsWith(MANIFEST_PREFIX) }
+            }
+            .toMutableSet()
+        if (recordFiles.isNotEmpty()) {
+            writeManifestKeysLocked(manifestKeys)
+        }
+        return manifestKeys
+    }
+
+    private fun writeManifestKeysLocked(manifestKeys: Set<String>) {
+        put(MANIFEST_INDEX_KEY, encodeManifestIndex(manifestKeys))
+    }
+
+    private fun encodeManifestIndex(manifestKeys: Set<String>): ByteArray =
+        ByteArrayOutputStream().use { bytes ->
+            DataOutputStream(bytes).use { output ->
+                output.writeInt(MANIFEST_INDEX_MAGIC)
+                output.writeInt(MANIFEST_INDEX_VERSION)
+                output.writeInt(manifestKeys.size)
+                manifestKeys.sorted().forEach { recordKey ->
+                    val keyBytes = recordKey.toByteArray(Charsets.UTF_8)
+                    output.writeInt(keyBytes.size)
+                    output.write(keyBytes)
+                }
+            }
+            bytes.toByteArray()
+        }
+
+    private fun decodeManifestIndex(payload: ByteArray): MutableSet<String> {
+        val input = DataInputStream(ByteArrayInputStream(payload))
+        if (
+            input.readInt() != MANIFEST_INDEX_MAGIC ||
+            input.readInt() != MANIFEST_INDEX_VERSION
+        ) {
+            throw IronwoodMigrationSecureStoreException(
+                "Unsupported migration manifest index.",
+            )
+        }
+        val count = input.readInt()
+        if (count < 0 || count > MAX_MANIFEST_COUNT) {
+            throw IronwoodMigrationSecureStoreException(
+                "Invalid migration manifest index count.",
+            )
+        }
+        val manifestKeys = linkedSetOf<String>()
+        repeat(count) {
+            val keySize = input.readInt()
+            if (keySize <= 0 || keySize > MAX_KEY_BYTES || input.available() < keySize) {
+                throw IronwoodMigrationSecureStoreException(
+                    "Invalid migration manifest index entry.",
+                )
+            }
+            val recordKey = ByteArray(keySize)
+                .also(input::readFully)
+                .toString(Charsets.UTF_8)
+            if (!recordKey.startsWith(MANIFEST_PREFIX) || !manifestKeys.add(recordKey)) {
+                throw IronwoodMigrationSecureStoreException(
+                    "Invalid migration manifest index scope.",
+                )
+            }
+        }
+        if (input.available() != 0) {
+            throw IronwoodMigrationSecureStoreException(
+                "Invalid migration manifest index length.",
+            )
+        }
+        return manifestKeys
     }
 
     private fun removePrefix(prefix: String) = lock.withLock {
@@ -386,7 +517,7 @@ internal class IronwoodMigrationSecureStore(
     }
 
     private fun manifestKey(network: String, accountUuid: String) =
-        "$RECORD_VERSION:manifest:$network:$accountUuid"
+        "$MANIFEST_PREFIX$network:$accountUuid"
 
     private fun outboxKey(network: String, accountUuid: String, batchId: String) =
         "$RECORD_VERSION:outbox:$network:$accountUuid:$batchId"
@@ -405,8 +536,13 @@ internal class IronwoodMigrationSecureStore(
         const val TEMP_SUFFIX = ".tmp"
         const val BACKUP_SUFFIX = ".bak"
         const val RECORD_MAGIC = 0x56495231 // VIR1
+        const val MANIFEST_INDEX_MAGIC = 0x56494D49 // VIMI
+        const val MANIFEST_INDEX_VERSION = 1
+        const val MAX_MANIFEST_COUNT = 10_000
         const val MAX_KEY_BYTES = 4 * 1024
         const val MAX_PAYLOAD_BYTES = 48 * 1024 * 1024
+        const val MANIFEST_PREFIX = "$RECORD_VERSION:manifest:"
+        const val MANIFEST_INDEX_KEY = "$RECORD_VERSION:index:manifests"
         val STORE_LOCK = ReentrantLock()
     }
 }

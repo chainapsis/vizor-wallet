@@ -1,6 +1,7 @@
 package com.keplr.vizor
 
 import java.nio.file.Files
+import java.security.MessageDigest
 import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
 import org.junit.After
@@ -54,16 +55,61 @@ class IronwoodMigrationSecureStoreTest {
     }
 
     @Test
+    fun manifestEnumerationExcludesOutboxRecords() {
+        store.writeManifest("test", "account-1", """{"value":"one"}""")
+        store.writeManifest("main", "account-2", """{"value":"two"}""")
+        store.writeOutboxBatch("test", "account-1", "batch-1", byteArrayOf(1))
+
+        assertEquals(
+            setOf("""{"value":"one"}""", """{"value":"two"}"""),
+            store.readAllManifests().toSet(),
+        )
+    }
+
+    @Test
     fun authenticatedEncryptionRejectsTamperedCiphertext() {
         store.writeManifest("test", "account-1", """{"value":"one"}""")
-        val file = directory.listFiles()!!.single { it.name.endsWith(".bin") }
-        val tampered = file.readBytes()
-        tampered[tampered.lastIndex] = (tampered.last().toInt() xor 1).toByte()
-        file.writeBytes(tampered)
+        directory.listFiles()!!
+            .filter { it.name.endsWith(".bin") }
+            .forEach { file ->
+                val tampered = file.readBytes()
+                tampered[tampered.lastIndex] =
+                    (tampered.last().toInt() xor 1).toByte()
+                file.writeBytes(tampered)
+            }
 
         assertThrows(IronwoodMigrationSecureStoreException::class.java) {
             store.readManifest("test", "account-1")
         }
+    }
+
+    @Test
+    fun indexedManifestEnumerationDoesNotOpenOutboxCiphertext() {
+        val manifest = """{"value":"one"}"""
+        store.writeManifest("test", "account-1", manifest)
+        store.writeOutboxBatch("test", "account-1", "batch-1", byteArrayOf(1, 2, 3))
+        val outboxFile = recordFile("v1:outbox:test:account-1:batch-1")
+        val tampered = outboxFile.readBytes()
+        tampered[tampered.lastIndex] = (tampered.last().toInt() xor 1).toByte()
+        outboxFile.writeBytes(tampered)
+
+        assertEquals(listOf(manifest), store.readAllManifests())
+        assertThrows(IronwoodMigrationSecureStoreException::class.java) {
+            store.readOutboxBatch("test", "account-1", "batch-1")
+        }
+    }
+
+    @Test
+    fun staleIndexedManifestIsPrunedAndCanBeRegisteredAgain() {
+        val manifest = """{"value":"one"}"""
+        store.writeManifest("test", "account-1", manifest)
+        val manifestFile = recordFile("v1:manifest:test:account-1")
+        assertTrue(manifestFile.delete())
+
+        assertTrue(store.readAllManifests().isEmpty())
+
+        store.writeManifest("test", "account-1", manifest)
+        assertEquals(listOf(manifest), store.readAllManifests())
     }
 
     @Test
@@ -102,7 +148,8 @@ class IronwoodMigrationSecureStoreTest {
 
         store.revokeAccount("test", "account-1")
 
-        assertTrue(directory.listFiles().isNullOrEmpty())
+        assertNull(store.readOutboxBatch("test", "account-1", "batch-1"))
+        assertTrue(store.readAllManifests().isEmpty())
     }
 
     @Test
@@ -130,5 +177,14 @@ class IronwoodMigrationSecureStoreTest {
         override fun delete() {
             deleted = true
         }
+    }
+
+    private fun recordFile(recordKey: String): java.io.File {
+        val recordId = MessageDigest.getInstance("SHA-256")
+            .digest(recordKey.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte ->
+                "%02x".format(byte.toInt() and 0xff)
+            }
+        return java.io.File(directory, "$recordId.bin")
     }
 }
