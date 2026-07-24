@@ -68,7 +68,8 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
       );
     }
     final nextActionHeight = status.nextActionHeight;
-    if (nextActionHeight != null &&
+    if (status.proofReady == true &&
+        nextActionHeight != null &&
         currentHeight > 0 &&
         nextActionHeight <= currentHeight) {
       return const MobileIronwoodMigrationAttention(

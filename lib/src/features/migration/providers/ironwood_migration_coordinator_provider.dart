@@ -664,7 +664,9 @@ class IronwoodMigrationCoordinator
 
   bool _canPrepareNextProof(rust_sync.MigrationStatus status) {
     final nextActionHeight = status.nextActionHeight;
-    if (status.signedChildPcztCount <= 0 || nextActionHeight == null) {
+    if (status.signedChildPcztCount <= 0 ||
+        status.proofReady != true ||
+        nextActionHeight == null) {
       return false;
     }
     final currentHeight = _safelyObservedProofHeight();

@@ -393,6 +393,7 @@ rust_sync.MigrationStatus _status({
   List<rust_sync.MigrationPartStatus> parts = const [],
   List<int> targetValues = const [412_000_000, 412_000_000, 412_000_000],
   int? nextActionHeight,
+  bool? proofReady = true,
   int? estimatedCompletionHeight,
   int? nextActionPartIndex,
   List<int>? currentSigningPartIndices,
@@ -422,6 +423,7 @@ rust_sync.MigrationStatus _status({
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    proofReady: proofReady,
     estimatedCompletionHeight: estimatedCompletionHeight,
     nextActionPartIndex: nextActionPartIndex,
     currentSigningPartIndices: currentSigningPartIndices == null
@@ -2604,6 +2606,41 @@ void main() {
     expect(continueCount, greaterThanOrEqualTo(1));
     expect(find.text('keystone batch sign route'), findsNothing);
   });
+
+  testWidgets(
+    'keeps a height-due Keystone proof gated until preflight passes',
+    (tester) async {
+      _useMobileViewport(tester, size: const Size(320, 568));
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            signedChildPcztCount: 1,
+            nextActionHeight: 3_000_000,
+            proofReady: false,
+          ),
+          hardware: true,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 3_000_000,
+            chainTipHeight: 3_000_000,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Prepare batch #1'), findsNothing);
+      expect(
+        find.byKey(
+          const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
+        ),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('keeps proof preparation visibly busy until status refresh', (
     tester,

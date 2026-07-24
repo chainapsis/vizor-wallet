@@ -639,7 +639,8 @@ class _MobileMigrationRedesignedStatusState
     if (_hasLateScheduledBroadcast(status)) return true;
     if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
       final nextHeight = status.nextActionHeight;
-      return nextHeight != null &&
+      return status.proofReady == true &&
+          nextHeight != null &&
           currentHeight > 0 &&
           nextHeight <= currentHeight &&
           !hasChildProofBatchPermit;

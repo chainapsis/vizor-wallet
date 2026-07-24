@@ -25,6 +25,7 @@ bool migrationHasDueProofBatch(
   final nextActionHeight = status.nextActionHeight;
   if (status.phase != kIronwoodMigrationBroadcastScheduledPhase ||
       status.signedChildPcztCount <= 0 ||
+      status.proofReady != true ||
       nextActionHeight == null ||
       currentHeight <= 0 ||
       nextActionHeight > currentHeight) {

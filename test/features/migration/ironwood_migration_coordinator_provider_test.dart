@@ -225,6 +225,7 @@ void main() {
         'broadcast_scheduled',
         signedChildPcztCount: 1,
         nextActionHeight: 1_000,
+        proofReady: true,
       ),
       _hardwareUuid: _status('complete', activeRunId: null),
     };
@@ -338,6 +339,7 @@ void main() {
         'broadcast_scheduled',
         signedChildPcztCount: 1,
         nextActionHeight: 1_000,
+        proofReady: true,
       ),
       _hardwareUuid: _status('complete', activeRunId: null),
     };
@@ -378,6 +380,7 @@ void main() {
         'broadcast_scheduled',
         signedChildPcztCount: 16,
         nextActionHeight: 1_000,
+        proofReady: true,
         scheduledHeight: 1_100,
       ),
       _hardwareUuid: _status('complete', activeRunId: null),
@@ -393,6 +396,7 @@ void main() {
           'broadcast_scheduled',
           signedChildPcztCount: 8,
           nextActionHeight: 1_000,
+          proofReady: true,
           scheduledHeight: 1_100,
         );
         return _result('broadcast_scheduled');
@@ -432,6 +436,7 @@ void main() {
           'ready_to_migrate',
           signedChildPcztCount: 1,
           nextActionHeight: 1_000,
+          proofReady: true,
         ),
       };
       final advances = <String>[];
@@ -493,6 +498,50 @@ void main() {
 
     expect(advances, isEmpty);
   });
+
+  test(
+    'does not prepare a height-due proof until witness preflight passes',
+    () async {
+      final statuses = {
+        _softwareUuid: _status(
+          'broadcast_scheduled',
+          signedChildPcztCount: 1,
+          nextActionHeight: 1_000,
+          proofReady: false,
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final advances = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: advances,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantChildProofBatchPermit(_softwareUuid);
+      await coordinator.refreshNow();
+
+      expect(advances, isEmpty);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .childProofBatchPermits,
+        contains(_softwareUuid),
+      );
+    },
+  );
 
   test('does not prepare proof before any wallet height is scanned', () async {
     final statuses = {
@@ -1626,6 +1675,7 @@ rust_sync.MigrationStatus _status(
   String scheduledTxid = 'scheduled-tx',
   int signedChildPcztCount = 0,
   int? nextActionHeight,
+  bool? proofReady,
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -1647,6 +1697,7 @@ rust_sync.MigrationStatus _status(
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    proofReady: proofReady,
     scheduledBroadcasts: scheduledHeight == null
         ? const []
         : [

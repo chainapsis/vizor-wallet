@@ -362,6 +362,7 @@ rust_sync.MigrationStatus _proofReadyMigrationStatus({
   bool needsInput = false,
   String phase = kIronwoodMigrationReadyToMigratePhase,
   int nextActionHeight = 3000000,
+  bool? proofReady = true,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
   return rust_sync.MigrationStatus(
@@ -384,6 +385,7 @@ rust_sync.MigrationStatus _proofReadyMigrationStatus({
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    proofReady: proofReady,
     scheduledBroadcasts: scheduledBroadcasts,
     parts: [
       rust_sync.MigrationPartStatus(
@@ -1088,6 +1090,29 @@ void main() {
       find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('does not request proof when height is due but preflight is not', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 3000000,
+          chainTipHeight: 3000000,
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _proofReadyMigrationStatus(proofReady: false),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Next migration batch is ready'), findsNothing);
+    expect(find.text('Your next migration batch is ready'), findsNothing);
   });
 
   testWidgets('does not request proof before migration height is known', (
