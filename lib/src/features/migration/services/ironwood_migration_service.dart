@@ -575,6 +575,29 @@ class IronwoodMigrationService {
   bool get _usesNativeMigrationOutbox => isIOS() || isAndroid();
   bool get _usesNativePreparation => isIOS() || isAndroid();
 
+  /// Reads durable migration state without credential or outbox reconciliation.
+  ///
+  /// Completion error recovery uses this after a Rust operation may already
+  /// have committed. Calling [status] there could repeat the same fallible
+  /// post-commit reconciliation that caused the completion to throw.
+  Future<rust_sync.MigrationStatus> readOnlyStatus({
+    required String network,
+    required String accountUuid,
+  }) {
+    return operationRegistry.run(
+      network: network,
+      accountUuid: accountUuid,
+      operation: () async {
+        final dbPath = await getWalletDbPath();
+        return getStatus(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+        );
+      },
+    );
+  }
+
   Future<IronwoodMigrationNotificationAuthorizationStatus>
   notificationAuthorizationStatus() {
     if (!_usesNativeMigrationOutbox) {
