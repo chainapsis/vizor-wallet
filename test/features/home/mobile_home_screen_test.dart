@@ -25,6 +25,7 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/swap_activity_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/features/swap/providers/swap_state_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -162,6 +163,31 @@ class _FakeSyncKeepAwakeNotifier extends SyncKeepAwakeNotifier {
   }
 }
 
+class _FakeSwapActivityStore implements SwapActivityStore {
+  const _FakeSwapActivityStore(this.records);
+
+  final List<SwapIntentRecord> records;
+
+  @override
+  Future<List<SwapIntentRecord>> loadRecords({
+    required String accountUuid,
+  }) async {
+    return [
+      for (final record in records)
+        if (record.accountUuid == accountUuid) record,
+    ];
+  }
+
+  @override
+  Future<void> saveRecords({
+    required String accountUuid,
+    required List<SwapIntentRecord> records,
+  }) async {}
+
+  @override
+  Future<void> deleteForAccount({required String accountUuid}) async {}
+}
+
 TextStyle _effectiveTextStyle(WidgetTester tester, Finder finder) {
   final text = tester.widget<Text>(finder);
   final defaultStyle = DefaultTextStyle.of(tester.element(finder)).style;
@@ -214,6 +240,7 @@ Widget _app(
   _FakeIronwoodCompletionStore? completionStore,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
+  SwapActivityStore? swapActivityStore,
 }) {
   final effectiveSyncNotifier = syncNotifier ?? FakeSyncNotifier(syncState);
   final router = GoRouter(
@@ -225,6 +252,11 @@ Widget _app(
       GoRoute(
         path: '/activity',
         builder: (_, _) => const Text('activity route'),
+      ),
+      GoRoute(
+        path: '/activity/tx/:txid',
+        builder: (_, state) =>
+            Text('activity tx route ${state.pathParameters['txid']}'),
       ),
       GoRoute(
         path: '/pay',
@@ -290,6 +322,8 @@ Widget _app(
           seenMigrationAttentionFingerprints,
         ),
       ),
+      if (swapActivityStore != null)
+        swapActivityStoreProvider.overrideWithValue(swapActivityStore),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -412,6 +446,90 @@ rust_sync.TransactionInfo _tx(int index) {
     displayAmount: BigInt.from(index) * BigInt.from(100000000),
     displayPool: 'shielded',
     createdTime: seconds,
+  );
+}
+
+rust_sync.TransactionInfo _sentZecTx({required String txidHex}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.zero,
+    expiredUnmined: false,
+    accountBalanceDelta: -19540000,
+    fee: BigInt.from(15000),
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'sent',
+    displayAmount: BigInt.from(19540000),
+    displayPool: 'transparent',
+    createdTime: BigInt.from(1800000000),
+  );
+}
+
+SwapIntentRecord _payActivityRecord({
+  required String id,
+  required String depositTxHash,
+}) {
+  return SwapIntentRecord(
+    id: id,
+    providerLabel: 'NEAR Intents',
+    pairText: 'ZEC -> USDC',
+    sellAmountText: '0.1954 ZEC',
+    receiveEstimateText: '100 USDC',
+    status: SwapIntentStatus.processing,
+    nextAction: 'Payment in progress',
+    direction: SwapDirection.zecToExternal,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: 't1paydeposit',
+    depositTxHash: depositTxHash,
+    providerQuoteId: 'quote-$id',
+    accountUuid: 'account-1',
+    payMode: true,
+    lastStatusCheckedAt: DateTime.now().toUtc(),
+    createdAt: DateTime.utc(2026, 7, 20, 10),
+    updatedAt: DateTime.utc(2026, 7, 20, 10),
+  );
+}
+
+rust_sync.TransactionInfo _receivedZecTx({
+  required String txidHex,
+  required BigInt zatoshi,
+}) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.from(2000000),
+    expiredUnmined: false,
+    accountBalanceDelta: zatoshi.toInt(),
+    fee: BigInt.zero,
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: zatoshi,
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
+  );
+}
+
+SwapIntentRecord _externalToZecActivityRecord({
+  required String id,
+  required String destinationChainTxHash,
+}) {
+  return SwapIntentRecord(
+    id: id,
+    providerLabel: 'NEAR Intents',
+    pairText: 'USDC -> ZEC',
+    sellAmountText: '101.23 USDC',
+    receiveEstimateText: '4.12 ZEC',
+    status: SwapIntentStatus.complete,
+    nextAction: 'Payment complete',
+    direction: SwapDirection.externalToZec,
+    externalAsset: SwapAsset.usdc,
+    depositAddress: 'near-staging-address',
+    providerQuoteId: 'quote-$id',
+    destinationChainTxHash: destinationChainTxHash,
+    accountUuid: 'account-1',
+    createdAt: DateTime.utc(2026, 7, 20, 10),
+    updatedAt: DateTime.utc(2026, 7, 20, 10),
+    completedAt: DateTime.utc(2026, 7, 20, 10, 5),
   );
 }
 
@@ -1779,6 +1897,91 @@ void main() {
       find.byKey(const ValueKey('mobile_home_activity_row_10')),
       findsNothing,
     );
+  });
+
+  testWidgets('recent activity absorbs a Pay deposit transaction duplicate', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const depositDisplayOrder =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    final depositWalletOrder = swapChainTxidToWalletTxidHex(
+      depositDisplayOrder,
+    )!;
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)).copyWith(
+          recentTransactions: [_sentZecTx(txidHex: depositWalletOrder)],
+        ),
+        swapEnabled: true,
+        swapActivityStore: _FakeSwapActivityStore([
+          _payActivityRecord(
+            id: 'pay-home-dedupe',
+            depositTxHash: depositDisplayOrder,
+          ),
+        ]),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Payment in progress'), findsOneWidget);
+    expect(find.text('100 USDC'), findsOneWidget);
+    expect(find.text('Sending...'), findsNothing);
+    expect(find.text('Sent'), findsNothing);
+    expect(find.text('Transparent'), findsNothing);
+  });
+
+  testWidgets('recent activity keeps absorbed receive amount and tap-through', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1400));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const destinationDisplayOrder =
+        'aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899';
+    final receiveWalletOrder = swapChainTxidToWalletTxidHex(
+      destinationDisplayOrder,
+    )!;
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(100000000)).copyWith(
+          recentTransactions: [
+            _receivedZecTx(
+              txidHex: receiveWalletOrder,
+              zatoshi: BigInt.from(1213000000),
+            ),
+          ],
+        ),
+        swapEnabled: true,
+        swapActivityStore: _FakeSwapActivityStore([
+          _externalToZecActivityRecord(
+            id: 'swap-home-receive',
+            destinationChainTxHash: destinationDisplayOrder,
+          ),
+        ]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Swapped'), findsOneWidget);
+    expect(find.text('Received ZEC'), findsOneWidget);
+    expect(find.text('+12.13 ZEC'), findsOneWidget);
+    expect(find.text('+4.12 ZEC'), findsNothing);
+    expect(find.text('Received'), findsNothing);
+
+    await tester.tap(find.text('Received ZEC'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('activity tx route $receiveWalletOrder'), findsOneWidget);
   });
 
   testWidgets('recent activity section uses the Figma inner inset', (

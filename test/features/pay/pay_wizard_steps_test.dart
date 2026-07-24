@@ -5,6 +5,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon_hover_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/pay/models/pay_recent_recipients.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_add_contact_modal.dart';
@@ -134,6 +135,48 @@ void main() {
   });
 
   group('PayAddContactModal', () {
+    testWidgets('uses one generated picture for the preview and save', (
+      tester,
+    ) async {
+      String? savedPicture;
+      var generatorCalls = 0;
+      await tester.pumpWidget(
+        _harness(
+          PayAddContactModal(
+            network: AddressBookNetwork.ethereum,
+            address: _unknownAddress,
+            onCancel: () {},
+            onSave: (_, picture) async => savedPicture = picture,
+            profilePictureIdGenerator: () {
+              generatorCalls += 1;
+              return 'pfp-09';
+            },
+          ),
+        ),
+      );
+
+      expect(generatorCalls, 1);
+      expect(
+        tester
+            .widget<AppProfilePicture>(find.byType(AppProfilePicture))
+            .profilePictureId,
+        'pfp-09',
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('pay_add_contact_label_field')),
+        'Mike',
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('pay_add_contact_save_button')),
+      );
+      await tester.pump();
+
+      expect(savedPicture, 'pfp-09');
+      expect(generatorCalls, 1);
+    });
+
     testWidgets('waits for persistence and recovers from a save failure', (
       tester,
     ) async {

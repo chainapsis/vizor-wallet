@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-import '../../../core/profile_pictures.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_profile_picture_picker_modal.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../address_book/contact_label_generator.dart';
 import '../../address_book/models/address_book_contact.dart';
 import '../../address_book/widgets/address_book_network_icon.dart';
 import '../../swap/models/swap_address_formatting.dart';
@@ -23,6 +23,7 @@ class PayAddContactModal extends StatefulWidget {
     required this.address,
     required this.onCancel,
     required this.onSave,
+    this.profilePictureIdGenerator,
     super.key,
   });
 
@@ -34,13 +35,16 @@ class PayAddContactModal extends StatefulWidget {
   /// profile picture id.
   final Future<void> Function(String label, String profilePictureId) onSave;
 
+  /// Overrides the random picture generator for deterministic tests.
+  final String Function()? profilePictureIdGenerator;
+
   @override
   State<PayAddContactModal> createState() => _PayAddContactModalState();
 }
 
 class _PayAddContactModalState extends State<PayAddContactModal> {
   late final TextEditingController _labelController;
-  var _profilePictureId = kDefaultProfilePictureId;
+  late String _profilePictureId;
   var _pickingPicture = false;
   var _saving = false;
   String? _saveError;
@@ -48,6 +52,9 @@ class _PayAddContactModalState extends State<PayAddContactModal> {
   @override
   void initState() {
     super.initState();
+    _profilePictureId =
+        widget.profilePictureIdGenerator?.call() ??
+        randomContactProfilePictureId();
     _labelController = TextEditingController();
     _labelController.addListener(() => setState(() {}));
   }
