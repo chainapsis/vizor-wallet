@@ -408,7 +408,9 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                       ),
                     ),
                     SizedBox(height: headerNavGap),
-                    if (migrationStatus?.activeRunId != null)
+                    if (migrationStatus?.activeRunId != null &&
+                        migrationStatus?.phase !=
+                            kIronwoodMigrationWaitingDenomConfirmationsPhase)
                       _SidebarMigrationHomeSection(
                         status: migrationStatus!,
                         isHardware: activeAccount?.isHardware ?? false,

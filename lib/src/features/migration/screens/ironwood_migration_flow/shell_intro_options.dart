@@ -132,7 +132,10 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
 
 Widget _privateStatusToolbar(BuildContext context) {
   return AppPaneToolbar(
-    leading: AppBackLink(label: 'Home', onTap: () => context.go('/home')),
+    leading: AppBackLink(
+      label: 'Ironwood Pool',
+      onTap: () => context.go('/home'),
+    ),
   );
 }
 
