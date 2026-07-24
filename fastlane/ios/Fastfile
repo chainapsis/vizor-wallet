@@ -254,6 +254,7 @@ platform :ios do
     if ios_testnet_build?
       UI.message("Building the existing iOS App Store Connect app as a Testnet build")
       dart_defines << "ZCASH_DEFAULT_NETWORK=test"
+      dart_defines << "ZCASH_FAST_TESTNET_MIGRATION=true"
     end
 
     with_ios_export_options(profile_mapping) do |export_options_path|
