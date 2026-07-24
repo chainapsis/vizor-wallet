@@ -164,11 +164,13 @@ class _MobileMigrationPrimaryButton extends StatelessWidget {
   const _MobileMigrationPrimaryButton({
     required this.label,
     required this.onPressed,
+    this.busy = false,
     super.key,
   });
 
   final String label;
   final VoidCallback? onPressed;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +179,13 @@ class _MobileMigrationPrimaryButton extends StatelessWidget {
       constrainContent: true,
       height: 50,
       onPressed: onPressed,
+      leading: busy
+          ? const AppIcon(
+              AppIcons.loader,
+              key: ValueKey('mobile_ironwood_options_continue_loading'),
+              size: 20,
+            )
+          : null,
       trailing: const AppIcon(AppIcons.chevronForward, size: 20),
       child: Text(label),
     );

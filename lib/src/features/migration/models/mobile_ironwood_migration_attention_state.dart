@@ -13,6 +13,25 @@ enum MobileIronwoodMigrationAttentionKind {
   lateBroadcast,
 }
 
+int mobileIronwoodSafelyObservedHeight({
+  required int scannedHeight,
+  required int chainTipHeight,
+}) {
+  if (scannedHeight <= 0) return 0;
+  if (chainTipHeight <= 0) return scannedHeight;
+  return math.min(scannedHeight, chainTipHeight);
+}
+
+int mobileIronwoodObservedBroadcastHeight({
+  required int scannedHeight,
+  required int chainTipHeight,
+}) {
+  if (scannedHeight > 0 && chainTipHeight > 0) {
+    return math.min(scannedHeight, chainTipHeight);
+  }
+  return math.max(scannedHeight, chainTipHeight);
+}
+
 class MobileIronwoodMigrationAttention {
   const MobileIronwoodMigrationAttention({
     required this.kind,
@@ -26,6 +45,7 @@ class MobileIronwoodMigrationAttention {
 MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
   rust_sync.MigrationStatus? status, {
   required int currentHeight,
+  required int broadcastHeight,
   required bool isHardware,
 }) {
   if (status == null) return null;
@@ -41,16 +61,16 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
     );
   }
   if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
+    if (isHardware && status.signedChildPcztCount <= 0) {
+      return MobileIronwoodMigrationAttention(
+        kind: MobileIronwoodMigrationAttentionKind.signature,
+        count: math.max(1, status.totalCount),
+      );
+    }
     final nextActionHeight = status.nextActionHeight;
-    if (nextActionHeight == null ||
-        currentHeight <= 0 ||
+    if (nextActionHeight != null &&
+        currentHeight > 0 &&
         nextActionHeight <= currentHeight) {
-      if (isHardware && status.signedChildPcztCount <= 0) {
-        return MobileIronwoodMigrationAttention(
-          kind: MobileIronwoodMigrationAttentionKind.signature,
-          count: math.max(1, status.totalCount),
-        );
-      }
       return const MobileIronwoodMigrationAttention(
         kind: MobileIronwoodMigrationAttentionKind.proof,
         count: 1,
@@ -63,12 +83,12 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
       count: 1,
     );
   }
-  if (currentHeight <= 0) return null;
+  if (broadcastHeight <= 0) return null;
   final hasLateBroadcast = status.scheduledBroadcasts.any(
     (item) =>
         item.status.toLowerCase() == 'scheduled' &&
         item.scheduledHeight > 0 &&
-        currentHeight >=
+        broadcastHeight >=
             item.scheduledHeight + kIronwoodMigrationLateGraceBlocks,
   );
   return hasLateBroadcast

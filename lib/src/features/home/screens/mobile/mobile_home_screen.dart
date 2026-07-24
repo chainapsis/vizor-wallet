@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -229,6 +228,7 @@ class _IronwoodMigrationAttentionHostState
     final attention = mobileIronwoodMigrationAttention(
       cta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
+      broadcastHeight: _mobileIronwoodObservedBroadcastHeight(sync),
       isHardware: ref
           .read(accountProvider.notifier)
           .isHardwareAccount(accountUuid),
@@ -859,6 +859,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final migrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
+    final sendDisabled =
+        migrationRequired ||
+        (migrationInProgress && sync.ironwoodBalance <= BigInt.zero);
     final shieldedBalance = migrationRequired
         ? sync.orchardBalance + sync.orchardPendingBalance
         : sync.saplingBalance +
@@ -889,6 +892,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     final migrationAttention = mobileIronwoodMigrationAttention(
       widget.ironwoodMigrationCta.status,
       currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
+      broadcastHeight: _mobileIronwoodObservedBroadcastHeight(sync),
       isHardware:
           activeAccountUuid != null &&
           ref
@@ -1002,7 +1006,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                           key: const ValueKey('mobile_home_send'),
                           expand: true,
                           constrainContent: true,
-                          onPressed: migrationRequired
+                          onPressed: sendDisabled
                               ? null
                               : () => context.push('/send'),
                           leading: const _ButtonIcon(AppIcons.plane),
@@ -1410,10 +1414,18 @@ String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
 
 int _mobileIronwoodSafelyObservedHeight(SyncState? sync) {
   if (sync == null) return 0;
-  if (sync.scannedHeight > 0 && sync.chainTipHeight > 0) {
-    return math.min(sync.scannedHeight, sync.chainTipHeight);
-  }
-  return math.max(sync.scannedHeight, sync.chainTipHeight);
+  return mobileIronwoodSafelyObservedHeight(
+    scannedHeight: sync.scannedHeight,
+    chainTipHeight: sync.chainTipHeight,
+  );
+}
+
+int _mobileIronwoodObservedBroadcastHeight(SyncState? sync) {
+  if (sync == null) return 0;
+  return mobileIronwoodObservedBroadcastHeight(
+    scannedHeight: sync.scannedHeight,
+    chainTipHeight: sync.chainTipHeight,
+  );
 }
 
 class _MobileIronwoodMigrationPill extends StatelessWidget {

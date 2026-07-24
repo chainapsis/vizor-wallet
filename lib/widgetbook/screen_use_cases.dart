@@ -3122,10 +3122,7 @@ class _PreviewAccountNotifier extends AccountNotifier {
 }
 
 class _PreviewMigrationCoordinator extends IronwoodMigrationCoordinator {
-  _PreviewMigrationCoordinator({
-    required this.accountUuid,
-    this.status,
-  });
+  _PreviewMigrationCoordinator({required this.accountUuid, this.status});
 
   final String? accountUuid;
   final rust_sync.MigrationStatus? status;

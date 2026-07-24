@@ -637,8 +637,8 @@ final ironwoodHomeMigrationPresentationProvider =
       return const IronwoodHomeMigrationCtaState.hidden();
     });
 
-final ironwoodMigrationAwareDisplaySpendableProvider =
-    Provider.autoDispose.family<BigInt, String?>((ref, accountUuid) {
+final ironwoodMigrationAwareDisplaySpendableProvider = Provider.autoDispose
+    .family<BigInt, String?>((ref, accountUuid) {
       final sync = ref.watch(
         syncProvider.select(
           (value) => (value.value ?? SyncState()).scopedToAccount(accountUuid),

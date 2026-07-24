@@ -80,6 +80,41 @@ void main() {
   });
 
   test(
+    'Keystone signing can clear proof approval without pausing foreground',
+    () async {
+      final container = _container(
+        statuses: {
+          _softwareUuid: _status('complete', activeRunId: null),
+          _hardwareUuid: _status(
+            'ready_to_migrate',
+            signedChildPcztCount: 1,
+            nextActionHeight: 1_100,
+          ),
+        },
+        softwareStarts: [],
+        broadcasts: [],
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      coordinator.grantChildProofBatchPermit(_hardwareUuid);
+      coordinator.clearChildProofBatchPermit(_hardwareUuid);
+
+      final state = container.read(ironwoodMigrationCoordinatorProvider);
+      expect(state.foregroundProgressPermits, contains(_hardwareUuid));
+      expect(state.childProofBatchPermits, isNot(contains(_hardwareUuid)));
+    },
+  );
+
+  test(
     'reconciles a scheduled migration even when local height is behind',
     () async {
       final statuses = {
@@ -399,6 +434,40 @@ void main() {
       softwareStarts: [],
       broadcasts: advances,
       syncState: SyncState(scannedHeight: 999, chainTipHeight: 1_001),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantChildProofBatchPermit(_softwareUuid);
+    await coordinator.refreshNow();
+
+    expect(advances, isEmpty);
+  });
+
+  test('does not prepare proof before any wallet height is scanned', () async {
+    final statuses = {
+      _softwareUuid: _status(
+        'broadcast_scheduled',
+        signedChildPcztCount: 1,
+        nextActionHeight: 1_000,
+      ),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final advances = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: advances,
+      syncState: SyncState(scannedHeight: 0, chainTipHeight: 1_001),
     );
     addTearDown(container.dispose);
     final subscription = container.listen(

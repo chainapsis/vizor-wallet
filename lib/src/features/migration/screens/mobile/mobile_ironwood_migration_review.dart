@@ -3,7 +3,9 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 const _mobileMigrationStartVerificationTimeout = Duration(seconds: 2);
 
 class _MobileMigrationPrivateStart extends ConsumerStatefulWidget {
-  const _MobileMigrationPrivateStart();
+  const _MobileMigrationPrivateStart({this.privatePlan});
+
+  final rust_sync.OrchardMigrationPrivatePlan? privatePlan;
 
   @override
   ConsumerState<_MobileMigrationPrivateStart> createState() =>
@@ -13,7 +15,9 @@ class _MobileMigrationPrivateStart extends ConsumerStatefulWidget {
 class _MobileMigrationPrivateStartState
     extends ConsumerState<_MobileMigrationPrivateStart> {
   bool _starting = false;
+  bool _isKeystone = false;
   String? _error;
+  rust_sync.OrchardMigrationPrivatePlan? _keystonePlan;
 
   @override
   void initState() {
@@ -42,13 +46,18 @@ class _MobileMigrationPrivateStartState
         throw StateError('No active account is selected.');
       }
 
-      activePlan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
+      activePlan =
+          widget.privatePlan ??
+          await ref.read(ironwoodMigrationPrivatePlanProvider.future);
       if (!mounted) return;
       if (activePlan == null) {
         throw StateError('Migration plan is unavailable.');
       }
 
       final isHardware = accountState.activeAccount?.isHardware ?? false;
+      setState(() {
+        _isKeystone = isHardware;
+      });
       if (isHardware && !_keystoneTwoRoundPlanSupported(activePlan)) {
         setState(() {
           _error =
@@ -63,10 +72,9 @@ class _MobileMigrationPrivateStartState
         accountUuid: accountUuid,
       );
       if (isHardware) {
-        context.go(
-          '/migration/private/keystone/denominations/sign',
-          extra: activePlan.scheduledTransfers,
-        );
+        setState(() {
+          _keystonePlan = activePlan;
+        });
         return;
       }
 
@@ -119,15 +127,32 @@ class _MobileMigrationPrivateStartState
     );
   }
 
+  void _openKeystoneDenominationSigning(
+    rust_sync.OrchardMigrationPrivatePlan plan,
+  ) {
+    context.go(
+      '/migration/private/keystone/denominations/sign',
+      extra: plan.scheduledTransfers,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final keystonePlan = _keystonePlan;
+    final paused = _error != null || keystonePlan != null;
     return _MigrationPreparationPreview(
-      state: _error == null
-          ? _MigrationPreparationState.active
-          : _MigrationPreparationState.paused,
+      state: paused
+          ? _MigrationPreparationState.paused
+          : _MigrationPreparationState.active,
       progress: 0,
+      isKeystone: _isKeystone,
       pausedMessage: _error,
-      onContinue: _starting ? null : () => unawaited(_start()),
+      onBack: () => context.go('/home'),
+      onContinue: _starting
+          ? null
+          : keystonePlan == null
+          ? () => unawaited(_start())
+          : () => _openKeystoneDenominationSigning(keystonePlan),
     );
   }
 }

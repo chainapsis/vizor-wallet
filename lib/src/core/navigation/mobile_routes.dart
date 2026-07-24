@@ -314,8 +314,12 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/migration/private/start',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
-        child: const MobileIronwoodMigrationFlowScreen(
+        child: MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.privateStart,
+          previewPrivatePlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => null,
+          },
         ),
       ),
     ),
@@ -323,8 +327,12 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/migration/private/notifications',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
-        child: const MobileIronwoodMigrationFlowScreen(
+        child: MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.notifications,
+          previewPrivatePlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => null,
+          },
         ),
       ),
     ),

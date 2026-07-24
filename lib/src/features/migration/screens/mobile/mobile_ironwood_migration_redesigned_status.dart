@@ -216,9 +216,10 @@ class _MobileMigrationRedesignedStatusState
       !_hasCompletedSurfaceRefresh;
 
   Future<void> _refreshNotificationAuthorization() async {
-    final authorized = await ref
-        .read(ironwoodMigrationServiceProvider)
-        .notificationAuthorizationStatus();
+    final authorized =
+        await ref
+            .read(ironwoodMigrationServiceProvider)
+            .notificationAuthorizationStatus();
     if (!mounted) return;
     setState(
       () => _notificationsAuthorized = authorized.allowsBackgroundMigration,
@@ -230,8 +231,9 @@ class _MobileMigrationRedesignedStatusState
         kIronwoodMigrationWaitingDenomConfirmationsPhase) {
       if (mounted) {
         setState(
-          () => _preparationRuntimeState =
-              IronwoodMigrationPreparationRuntimeState.idle,
+          () =>
+              _preparationRuntimeState =
+                  IronwoodMigrationPreparationRuntimeState.idle,
         );
       }
       return;
@@ -242,9 +244,11 @@ class _MobileMigrationRedesignedStatusState
     if (accountUuid == null || runId == null || !_notificationsAuthorized) {
       if (mounted) {
         setState(
-          () => _preparationRuntimeState = !_notificationsAuthorized
-              ? IronwoodMigrationPreparationRuntimeState.disabled
-              : IronwoodMigrationPreparationRuntimeState.idle,
+          () =>
+              _preparationRuntimeState =
+                  !_notificationsAuthorized
+                      ? IronwoodMigrationPreparationRuntimeState.disabled
+                      : IronwoodMigrationPreparationRuntimeState.idle,
         );
       }
       return;
@@ -275,20 +279,21 @@ class _MobileMigrationRedesignedStatusState
     } catch (_) {
       if (mounted) {
         setState(
-          () => _preparationRuntimeState =
-              IronwoodMigrationPreparationRuntimeState.idle,
+          () =>
+              _preparationRuntimeState =
+                  IronwoodMigrationPreparationRuntimeState.idle,
         );
       }
       return;
     }
     if (!mounted) return;
-    final retryError = ref
-        .read(ironwoodMigrationCoordinatorProvider)
-        .errors[accountUuid];
+    final retryError =
+        ref.read(ironwoodMigrationCoordinatorProvider).errors[accountUuid];
     if (retryError != null) {
       setState(
-        () => _preparationRuntimeState =
-            IronwoodMigrationPreparationRuntimeState.idle,
+        () =>
+            _preparationRuntimeState =
+                IronwoodMigrationPreparationRuntimeState.idle,
       );
       return;
     }
@@ -303,8 +308,9 @@ class _MobileMigrationRedesignedStatusState
     }
     if (mounted) {
       setState(
-        () => _preparationRuntimeState =
-            IronwoodMigrationPreparationRuntimeState.idle,
+        () =>
+            _preparationRuntimeState =
+                IronwoodMigrationPreparationRuntimeState.idle,
       );
     }
   }
@@ -351,9 +357,8 @@ class _MobileMigrationRedesignedStatusState
     });
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
-    final coordinatorError = accountUuid == null
-        ? null
-        : coordinator.errors[accountUuid];
+    final coordinatorError =
+        accountUuid == null ? null : coordinator.errors[accountUuid];
     final needsCredentialRecovery =
         accountUuid != null &&
         ironwoodMigrationNeedsCredentialRecovery(coordinatorError);
@@ -370,9 +375,32 @@ class _MobileMigrationRedesignedStatusState
     final hasChildProofBatchPermit =
         accountUuid != null &&
         coordinator.childProofBatchPermits.contains(accountUuid);
+    final actionInProgress =
+        _actionRunning ||
+        (accountUuid != null &&
+            coordinator.advancingAccounts.contains(accountUuid));
     _recordVisibleAttention(accountUuid);
 
-    if (_shouldShowSyncSurface && !_showPreparationComplete) {
+    if (widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase ||
+        widget.status.phase ==
+            kIronwoodMigrationAwaitingDenominationSignaturePhase) {
+      return _MigrationPreparationPreview(
+        state: _MigrationPreparationState.paused,
+        progress: 0,
+        isKeystone: widget.isHardware,
+        onBack: () => context.go('/home'),
+        onContinue:
+            accountUuid == null || !widget.isHardware
+                ? null
+                : () => context.push(
+                  '/migration/private/keystone/denominations/sign',
+                ),
+      );
+    }
+
+    if (_shouldShowSyncSurface &&
+        !_showPreparationComplete &&
+        !actionInProgress) {
       if (widget.status.phase ==
           kIronwoodMigrationWaitingDenomConfirmationsPhase) {
         return _MigrationPreparationPreview(
@@ -400,9 +428,10 @@ class _MobileMigrationRedesignedStatusState
         progress: _preparationProgress(widget.status),
         isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
-        onContinue: accountUuid == null || _actionRunning
-            ? null
-            : () => unawaited(_continuePreparation(accountUuid)),
+        onContinue:
+            accountUuid == null || _actionRunning
+                ? null
+                : () => unawaited(_continuePreparation(accountUuid)),
       );
     }
 
@@ -421,29 +450,36 @@ class _MobileMigrationRedesignedStatusState
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
-        statusValueOverride: needsHardwareCredentialAttention
-            ? 'Keystone account required'
-            : null,
-        actionMessage: needsHardwareCredentialAttention
-            ? 'Reconnect or re-import your Keystone account to continue this '
-                  'migration.'
-            : null,
-        actionLabel: needsHardwareCredentialAttention
-            ? 'Back to home'
-            : needsSoftwareCredentialRecovery
-            ? recoveryInProgress
-                  ? 'Recovering...'
-                  : 'Recover'
-            : _actionRunning
-            ? 'Retrying...'
-            : 'Retry',
-        onAction: accountUuid == null || recoveryInProgress || _actionRunning
-            ? null
-            : needsHardwareCredentialAttention
-            ? () => context.go('/home')
-            : needsSoftwareCredentialRecovery
-            ? () => unawaited(_confirmRecovery(accountUuid))
-            : () => unawaited(_retryAfterError(accountUuid)),
+        statusValueOverride:
+            needsHardwareCredentialAttention
+                ? 'Keystone account required'
+                : null,
+        actionMessage:
+            needsHardwareCredentialAttention
+                ? 'Reconnect or re-import your Keystone account to continue this '
+                    'migration.'
+                : needsSoftwareCredentialRecovery
+                ? 'Your migration credentials need to be restored before '
+                    'continuing.'
+                : "Couldn't continue this migration. Try again.",
+        actionLabel:
+            needsHardwareCredentialAttention
+                ? 'Back to home'
+                : needsSoftwareCredentialRecovery
+                ? recoveryInProgress
+                    ? 'Recovering...'
+                    : 'Recover'
+                : _actionRunning
+                ? 'Retrying...'
+                : 'Retry',
+        onAction:
+            accountUuid == null || recoveryInProgress || _actionRunning
+                ? null
+                : needsHardwareCredentialAttention
+                ? () => context.go('/home')
+                : needsSoftwareCredentialRecovery
+                ? () => unawaited(_confirmRecovery(accountUuid))
+                : () => unawaited(_retryAfterError(accountUuid)),
       );
     }
 
@@ -467,16 +503,18 @@ class _MobileMigrationRedesignedStatusState
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
         actionMessage: widget.status.message,
-        actionLabel: _actionRunning
-            ? paused
-                  ? 'Resuming...'
-                  : 'Retrying...'
-            : paused
-            ? 'Resume'
-            : 'Retry',
-        onAction: accountUuid == null || _actionRunning
-            ? null
-            : () => unawaited(_retryAfterError(accountUuid)),
+        actionLabel:
+            _actionRunning
+                ? paused
+                    ? 'Resuming...'
+                    : 'Retrying...'
+                : paused
+                ? 'Resume'
+                : 'Retry',
+        onAction:
+            accountUuid == null || _actionRunning
+                ? null
+                : () => unawaited(_retryAfterError(accountUuid)),
       );
     }
 
@@ -489,15 +527,17 @@ class _MobileMigrationRedesignedStatusState
               IronwoodMigrationPreparationRuntimeState
                   .foregroundContinuationPending;
       return _MigrationPreparationPreview(
-        state: needsManualResume
-            ? _MigrationPreparationState.paused
-            : _MigrationPreparationState.active,
+        state:
+            needsManualResume
+                ? _MigrationPreparationState.paused
+                : _MigrationPreparationState.active,
         progress: _preparationProgress(widget.status),
         isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
-        onContinue: !needsManualResume || accountUuid == null
-            ? null
-            : () => unawaited(_continuePreparation(accountUuid)),
+        onContinue:
+            !needsManualResume || accountUuid == null
+                ? null
+                : () => unawaited(_continuePreparation(accountUuid)),
       );
     }
 
@@ -530,7 +570,7 @@ class _MobileMigrationRedesignedStatusState
       state: state,
       showPreparationCompleteModal: _showPreparationComplete,
       onPreparationCompleteDone: () => unawaited(_dismissPreparationComplete()),
-      onBack: () => context.go('/home'),
+      onBack: actionInProgress ? null : () => context.go('/home'),
       completedParts: _completedParts(widget.status),
       totalParts: _totalParts(widget.status),
       completedBatches: batchProgress.completedBatches,
@@ -548,25 +588,30 @@ class _MobileMigrationRedesignedStatusState
         widget.status,
         batchNumber: batchNumber,
         hasLateScheduledBroadcast: hasLateScheduledBroadcast,
+        actionInProgress: actionInProgress,
       ),
-      actionBatchLabel: signingAllKeystoneTransactions
-          ? 'All transactions'
-          : resigningKeystoneTransactions
-          ? 'Transactions needing signature'
-          : 'Batch #$batchNumber',
-      actionBatchValue: signingAllKeystoneTransactions
-          ? _allMigrationActionValueText(widget.status)
-          : resigningKeystoneTransactions
-          ? _needsInputActionValueText(widget.status)
-          : batchProgress.currentBatchParts.isEmpty
-          ? null
-          : _actionBatchValueText(
-              widget.status,
-              batchProgress.currentBatchParts,
-            ),
-      onAction: accountUuid == null || _actionRunning
-          ? null
-          : () => unawaited(_performRequiredAction(accountUuid)),
+      actionBatchLabel:
+          signingAllKeystoneTransactions
+              ? 'All transactions'
+              : resigningKeystoneTransactions
+              ? 'Transactions needing signature'
+              : 'Batch #$batchNumber',
+      actionBatchValue:
+          signingAllKeystoneTransactions
+              ? _allMigrationActionValueText(widget.status)
+              : resigningKeystoneTransactions
+              ? _needsInputActionValueText(widget.status)
+              : batchProgress.currentBatchParts.isEmpty
+              ? null
+              : _actionBatchValueText(
+                widget.status,
+                batchProgress.currentBatchParts,
+              ),
+      actionInProgress: actionInProgress,
+      onAction:
+          accountUuid == null || actionInProgress
+              ? null
+              : () => unawaited(_performRequiredAction(accountUuid)),
     );
   }
 
@@ -600,21 +645,26 @@ class _MobileMigrationRedesignedStatusState
     )) {
       return true;
     }
+    if (widget.isHardware &&
+        status.phase == kIronwoodMigrationReadyToMigratePhase &&
+        status.signedChildPcztCount <= 0) {
+      return true;
+    }
     final currentHeight = _currentHeight();
     if (_hasDueProofBatch(status)) return !hasChildProofBatchPermit;
     if (_hasLateScheduledBroadcast(status)) return true;
-    final nextHeight = status.nextActionHeight;
-    if (nextHeight != null && currentHeight > 0 && nextHeight > currentHeight) {
-      return false;
-    }
     if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
-      return !hasChildProofBatchPermit;
+      final nextHeight = status.nextActionHeight;
+      return nextHeight != null &&
+          currentHeight > 0 &&
+          nextHeight <= currentHeight &&
+          !hasChildProofBatchPermit;
     }
     return false;
   }
 
   bool _hasLateScheduledBroadcast(rust_sync.MigrationStatus status) {
-    final currentHeight = _currentHeight();
+    final currentHeight = _currentBroadcastHeight();
     return currentHeight > 0 &&
         status.scheduledBroadcasts.any(
           (broadcast) =>
@@ -635,12 +685,13 @@ class _MobileMigrationRedesignedStatusState
   }) {
     final currentHeight = _currentHeight();
     final nextHeight = status.nextActionHeight;
-    final timing = nextHeight != null && currentHeight > 0
-        ? migrationHeightRemainingDurationLabel(
-            nextHeight,
-            currentHeight: currentHeight,
-          ).replaceFirst('~in ', '~')
-        : 'Timing is updating';
+    final timing =
+        nextHeight != null && currentHeight > 0
+            ? migrationHeightRemainingDurationLabel(
+              nextHeight,
+              currentHeight: currentHeight,
+            ).replaceFirst('~in ', '~')
+            : 'Timing is updating';
     if (state == _MigrationProgressState.waitingNotificationsOff) {
       if (nextHeight != null) {
         return 'Notifications are disabled. Open Vizor after block '
@@ -691,10 +742,11 @@ class _MobileMigrationRedesignedStatusState
     final appTheme = AppTheme.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AppTheme(
-        data: appTheme,
-        child: const _MobileMigrationRecoveryDialog(),
-      ),
+      builder:
+          (_) => AppTheme(
+            data: appTheme,
+            child: const _MobileMigrationRecoveryDialog(),
+          ),
     );
     if (confirmed != true || !mounted) return;
     setState(() => _actionRunning = true);
@@ -713,11 +765,18 @@ class _MobileMigrationRedesignedStatusState
       context.push('/migration/private/keystone/batch/sign');
       return;
     }
-    setState(() => _actionRunning = true);
+    setState(() {
+      _actionRunning = true;
+    });
     try {
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .retry(accountUuid);
+          .retry(accountUuid, status: widget.status);
+      if (!mounted) return;
+      await ref.read(ironwoodMigrationRouteCtaProvider.future);
+    } catch (_) {
+      // The coordinator records the error for this screen to render. Avoid an
+      // unawaited tap future escaping after the action button returns idle.
     } finally {
       if (mounted) setState(() => _actionRunning = false);
     }
@@ -737,9 +796,15 @@ class _MobileMigrationRedesignedStatusState
     rust_sync.MigrationStatus status, {
     required int batchNumber,
     required bool hasLateScheduledBroadcast,
+    required bool actionInProgress,
   }) {
+    if (actionInProgress) {
+      return hasLateScheduledBroadcast
+          ? 'Retrying broadcast...'
+          : 'Preparing batch #$batchNumber...';
+    }
     if (hasLateScheduledBroadcast) return 'Retry broadcast';
-    if (!widget.isHardware) return 'Sign batch #$batchNumber';
+    if (!widget.isHardware) return 'Prepare batch #$batchNumber';
     if (_requiresKeystoneSignature(status)) {
       final isResigning = status.parts.any(
         (part) => part.state == rust_sync.MigrationPartState.needsInput,
@@ -762,10 +827,10 @@ class _MobileMigrationRedesignedStatusState
   int _currentHeight() {
     final sync = ref.read(syncProvider).value;
     if (sync == null) return 0;
-    if (sync.scannedHeight > 0 && sync.chainTipHeight > 0) {
-      return math.min(sync.scannedHeight, sync.chainTipHeight);
-    }
-    return math.max(sync.scannedHeight, sync.chainTipHeight);
+    return mobileIronwoodSafelyObservedHeight(
+      scannedHeight: sync.scannedHeight,
+      chainTipHeight: sync.chainTipHeight,
+    );
   }
 
   void _recordVisibleAttention(String? accountUuid) {
@@ -774,6 +839,7 @@ class _MobileMigrationRedesignedStatusState
     final attention = mobileIronwoodMigrationAttention(
       widget.status,
       currentHeight: _currentHeight(),
+      broadcastHeight: _currentBroadcastHeight(),
       isHardware: widget.isHardware,
     );
     if (attention == null) return;
@@ -903,15 +969,17 @@ class _MobileMigrationRedesignedStatusState
       _migrationPartsPerBatch,
       math.max(0, totalParts - currentBatchStart),
     );
-    final currentBatchPartCount = currentBatchParts.isEmpty
-        ? inferredCurrentBatchPartCount
-        : currentBatchParts.length;
+    final currentBatchPartCount =
+        currentBatchParts.isEmpty
+            ? inferredCurrentBatchPartCount
+            : currentBatchParts.length;
     var completedBatches = 0;
     if (ordered.isEmpty) {
       final completedParts = _completedParts(status).clamp(0, totalParts);
-      completedBatches = completedParts >= totalParts
-          ? totalBatches
-          : completedParts ~/ _migrationPartsPerBatch;
+      completedBatches =
+          completedParts >= totalParts
+              ? totalBatches
+              : completedParts ~/ _migrationPartsPerBatch;
     } else {
       for (
         var start = 0;
@@ -945,6 +1013,15 @@ class _MobileMigrationRedesignedStatusState
     );
   }
 
+  int _currentBroadcastHeight() {
+    final sync = ref.read(syncProvider).value;
+    if (sync == null) return 0;
+    return mobileIronwoodObservedBroadcastHeight(
+      scannedHeight: sync.scannedHeight,
+      chainTipHeight: sync.chainTipHeight,
+    );
+  }
+
   String _actionBatchValueText(
     rust_sync.MigrationStatus status,
     List<rust_sync.MigrationPartStatus> parts,
@@ -965,15 +1042,16 @@ class _MobileMigrationRedesignedStatusState
   }
 
   String _allMigrationActionValueText(rust_sync.MigrationStatus status) {
-    final total = status.parts.isNotEmpty
-        ? status.parts.fold<BigInt>(
-            BigInt.zero,
-            (sum, part) => sum + part.valueZatoshi,
-          )
-        : status.targetValuesZatoshi.fold<BigInt>(
-            BigInt.zero,
-            (sum, value) => sum + value,
-          );
+    final total =
+        status.parts.isNotEmpty
+            ? status.parts.fold<BigInt>(
+              BigInt.zero,
+              (sum, part) => sum + part.valueZatoshi,
+            )
+            : status.targetValuesZatoshi.fold<BigInt>(
+              BigInt.zero,
+              (sum, value) => sum + value,
+            );
     final amount = ZecAmount.fromZatoshi(total).compactBalance.amountText;
     return '$amount ZEC (100%)';
   }
@@ -987,9 +1065,10 @@ class _MobileMigrationRedesignedStatusState
         .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
         .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi);
     final amount = ZecAmount.fromZatoshi(needsInput).compactBalance.amountText;
-    final percentage = total <= BigInt.zero
-        ? 0
-        : ((needsInput * BigInt.from(100)) ~/ total).toInt();
+    final percentage =
+        total <= BigInt.zero
+            ? 0
+            : ((needsInput * BigInt.from(100)) ~/ total).toInt();
     return '$amount ZEC ($percentage%)';
   }
 
@@ -1001,10 +1080,14 @@ class _MobileMigrationRedesignedStatusState
       totalStages,
     );
     final confirmationTarget = status.denominationConfirmationTarget;
-    final currentStageProgress = confirmationTarget <= 0
-        ? 0.0
-        : status.denominationConfirmationCount.clamp(0, confirmationTarget) /
-              confirmationTarget;
+    final currentStageProgress =
+        confirmationTarget <= 0
+            ? 0.0
+            : status.denominationConfirmationCount.clamp(
+                  0,
+                  confirmationTarget,
+                ) /
+                confirmationTarget;
     return ((completedStages + currentStageProgress) / totalStages)
         .clamp(0.0, 1.0)
         .toDouble();
@@ -1021,34 +1104,38 @@ class _MobileMigrationRedesignedStatusState
   }
 
   String _migratedAmountText(rust_sync.MigrationStatus status) {
-    final completed = status.parts.isNotEmpty
-        ? status.parts
-              .where(
-                (part) => part.state == rust_sync.MigrationPartState.completed,
-              )
-              .fold<BigInt>(
-                BigInt.zero,
-                (total, part) => total + part.valueZatoshi,
-              )
-        : status.targetValuesZatoshi
-              .take(status.confirmedTxCount)
-              .fold<BigInt>(BigInt.zero, (total, value) => total + value);
+    final completed =
+        status.parts.isNotEmpty
+            ? status.parts
+                .where(
+                  (part) =>
+                      part.state == rust_sync.MigrationPartState.completed,
+                )
+                .fold<BigInt>(
+                  BigInt.zero,
+                  (total, part) => total + part.valueZatoshi,
+                )
+            : status.targetValuesZatoshi
+                .take(status.confirmedTxCount)
+                .fold<BigInt>(BigInt.zero, (total, value) => total + value);
     return '${ZecAmount.fromZatoshi(completed).compactBalance.amountText} ZEC';
   }
 
   String _totalAmountText(rust_sync.MigrationStatus status) {
-    final total = status.parts.isNotEmpty
-        ? status.parts.fold<BigInt>(
-            BigInt.zero,
-            (sum, part) => sum + part.valueZatoshi,
-          )
-        : status.targetValuesZatoshi.fold<BigInt>(
-            BigInt.zero,
-            (sum, value) => sum + value,
-          );
-    final fallback = total > BigInt.zero
-        ? ZecAmount.fromZatoshi(total).compactBalance.amountText
-        : widget.data.amountText;
+    final total =
+        status.parts.isNotEmpty
+            ? status.parts.fold<BigInt>(
+              BigInt.zero,
+              (sum, part) => sum + part.valueZatoshi,
+            )
+            : status.targetValuesZatoshi.fold<BigInt>(
+              BigInt.zero,
+              (sum, value) => sum + value,
+            );
+    final fallback =
+        total > BigInt.zero
+            ? ZecAmount.fromZatoshi(total).compactBalance.amountText
+            : widget.data.amountText;
     return '$fallback ZEC';
   }
 

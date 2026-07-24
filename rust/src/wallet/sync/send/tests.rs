@@ -106,6 +106,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 network: WalletNetwork::Test,
                 state: KeystoneMigrationRequestState::ProofReady,
                 proof_error: None,
+                draft_run_id: None,
                 split_stages: vec![],
                 total_migratable_zatoshi: plan.total_migratable_zatoshi,
                 plan: plan.clone(),

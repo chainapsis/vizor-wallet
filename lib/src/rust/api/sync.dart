@@ -490,6 +490,20 @@ prepareOrchardMigrationDenominationsPczt({
   accountUuid: accountUuid,
 );
 
+Future<String> createOrResumePrivateMigrationDraft({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api.crateApiSyncCreateOrResumePrivateMigrationDraft(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+);
+
 Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required String dbPath,
   required String lightwalletdUrl,

@@ -511,9 +511,15 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         approvedSchedule: widget.approvedSchedule,
       );
       if (!mounted) return;
-      ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .grantChildProofBatchPermit(accountUuid);
+      final coordinator = ref.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.clearChildProofBatchPermit(accountUuid);
+      if (widget.step == _KeystonePrivateSignStep.denominations) {
+        coordinator.grantForegroundProgressPermit(accountUuid);
+      }
+      await coordinator.refreshNow();
+      if (!mounted) return;
       _stopProofPolling();
       _requestCompleted = true;
       _pendingSignedMessages = null;

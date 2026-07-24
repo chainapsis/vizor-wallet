@@ -88,9 +88,12 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         immediateEnabled: !isHardware,
       ),
       MobileIronwoodMigrationStep.notifications =>
-        const _MobileMigrationNotificationPermissionScreen(),
-      MobileIronwoodMigrationStep.privateStart =>
-        const _MobileMigrationPrivateStart(),
+        _MobileMigrationNotificationPermissionScreen(
+          privatePlan: previewPrivatePlan,
+        ),
+      MobileIronwoodMigrationStep.privateStart => _MobileMigrationPrivateStart(
+        privatePlan: previewPrivatePlan,
+      ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
         previewPlan: previewImmediatePlan,
@@ -135,6 +138,9 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         }
         final status = cta.status;
         final accountUuid = cta.accountUuid;
+        final isHardware =
+            ref.watch(accountProvider).value?.activeAccount?.isHardware ??
+            false;
         if (cta.mode != IronwoodHomeMigrationCtaMode.resume ||
             status == null ||
             accountUuid == null ||
@@ -146,12 +152,14 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         if (!_hasRenderableMobileMigrationStatus(status)) {
           return const _MobileMigrationLoadingScreen();
         }
+        if (status.phase == kIronwoodMigrationAwaitingPreparationPhase &&
+            !isHardware) {
+          return const _MobileMigrationRedirectTo('/migration/private/start');
+        }
         return _MobileMigrationLiveStatus(
           data: data,
           status: status,
-          isHardware:
-              ref.watch(accountProvider).value?.activeAccount?.isHardware ??
-              false,
+          isHardware: isHardware,
         );
       },
     );
@@ -165,7 +173,9 @@ bool _hasRenderableMobileMigrationStatus(rust_sync.MigrationStatus status) {
 }
 
 bool _hasMobileMigrationStatusDesign(String phase) {
-  return phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
+  return phase == kIronwoodMigrationAwaitingPreparationPhase ||
+      phase == kIronwoodMigrationAwaitingDenominationSignaturePhase ||
+      phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
       phase == kIronwoodMigrationReadyToMigratePhase ||
       phase == kIronwoodMigrationBroadcastScheduledPhase ||
       phase == kIronwoodMigrationBroadcastingPhase ||

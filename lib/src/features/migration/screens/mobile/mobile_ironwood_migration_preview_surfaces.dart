@@ -176,7 +176,9 @@ class _MigrationPreviewPage extends StatelessWidget {
 
 class _MobileMigrationNotificationPermissionScreen
     extends ConsumerStatefulWidget {
-  const _MobileMigrationNotificationPermissionScreen();
+  const _MobileMigrationNotificationPermissionScreen({this.privatePlan});
+
+  final rust_sync.OrchardMigrationPrivatePlan? privatePlan;
 
   @override
   ConsumerState<_MobileMigrationNotificationPermissionScreen> createState() =>
@@ -211,7 +213,7 @@ class _MobileMigrationNotificationPermissionScreenState
           .notificationAuthorizationStatus();
       if (!mounted) return;
       if (status.allowsBackgroundMigration) {
-        context.go('/migration/private/start');
+        context.go('/migration/private/start', extra: widget.privatePlan);
       }
     } catch (_) {
       // Native status is fail-closed; keep the explanatory screen visible.
@@ -232,7 +234,7 @@ class _MobileMigrationNotificationPermissionScreenState
           : await service.requestNotificationPermission();
       if (!mounted) return;
       if (status.allowsBackgroundMigration) {
-        context.go('/migration/private/start');
+        context.go('/migration/private/start', extra: widget.privatePlan);
         return;
       }
       if (status == IronwoodMigrationNotificationAuthorizationStatus.denied) {
@@ -274,7 +276,9 @@ class _MobileMigrationNotificationPermissionScreenState
         await _allowNotifications();
         return;
       case _NotificationConfirmationAction.continueWithout:
-        if (mounted) context.go('/migration/private/start');
+        if (mounted) {
+          context.go('/migration/private/start', extra: widget.privatePlan);
+        }
         return;
     }
   }
@@ -622,7 +626,8 @@ class _MigrationPreparationDial extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   paused
-                      ? 'Preparation was paused because you left.'
+                      ? pausedMessage ??
+                            'Preparation was paused because you left.'
                       : syncing
                       ? 'Syncing your wallet…'
                       : 'Preparation will\ntake 10–20 min',
@@ -725,6 +730,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.actionLabel,
     this.actionBatchLabel,
     this.actionBatchValue,
+    this.actionInProgress = false,
     this.onAction,
     this.onBack,
     this.onPreparationCompleteDone,
@@ -749,6 +755,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final String? actionLabel;
   final String? actionBatchLabel;
   final String? actionBatchValue;
+  final bool actionInProgress;
   final VoidCallback? onAction;
   final VoidCallback? onBack;
   final VoidCallback? onPreparationCompleteDone;
@@ -850,6 +857,7 @@ class _MigrationProgressPreview extends StatelessWidget {
                     actionLabel: actionLabel,
                     batchLabel: actionBatchLabel,
                     batchValue: actionBatchValue,
+                    actionInProgress: actionInProgress,
                     onAction: onAction,
                   )
                 else
@@ -863,6 +871,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     if (!showPreparationCompleteModal) return body;
     return _MigrationModalPreview(
       background: body,
+      animateEntrance: true,
       child: _PreparationCompleteModalBody(onDone: onPreparationCompleteDone),
     );
   }
@@ -1427,6 +1436,7 @@ class _MigrationNeedsInputCard extends StatelessWidget {
     this.actionLabel,
     this.batchLabel,
     this.batchValue,
+    this.actionInProgress = false,
     this.onAction,
   });
 
@@ -1434,6 +1444,7 @@ class _MigrationNeedsInputCard extends StatelessWidget {
   final String? actionLabel;
   final String? batchLabel;
   final String? batchValue;
+  final bool actionInProgress;
   final VoidCallback? onAction;
 
   @override
@@ -1477,7 +1488,10 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           expand: true,
           constrainContent: true,
           height: 50,
-          onPressed: onAction ?? () {},
+          onPressed: onAction,
+          leading: actionInProgress
+              ? const AppIcon(AppIcons.loader, size: 20)
+              : null,
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(actionLabel ?? 'Sign batch #1'),
@@ -1847,23 +1861,60 @@ class _MigrationKeystoneHelpPreview extends StatelessWidget {
 }
 
 class _MigrationModalPreview extends StatelessWidget {
-  const _MigrationModalPreview({required this.background, required this.child});
+  const _MigrationModalPreview({
+    required this.background,
+    required this.child,
+    this.animateEntrance = false,
+  });
 
   final Widget background;
   final Widget child;
+  final bool animateEntrance;
 
   @override
   Widget build(BuildContext context) {
-    return MobileModalOverlay(
-      background: background,
-      child: MobileModalScaffold(
-        title: '',
-        showTitle: false,
-        showClose: false,
-        bottomPadding: AppSpacing.base,
-        onClose: _noopMigrationPreviewAction,
-        child: child,
-      ),
+    final modal = MobileModalScaffold(
+      title: '',
+      showTitle: false,
+      showClose: false,
+      bottomPadding: AppSpacing.base,
+      onClose: _noopMigrationPreviewAction,
+      child: child,
+    );
+    if (!animateEntrance) {
+      return MobileModalOverlay(background: background, child: modal);
+    }
+
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final scrim = context.colors.background.neutralScrim;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: disableAnimations
+          ? Duration.zero
+          : const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+      builder: (context, progress, _) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            background,
+            ColoredBox(
+              color:
+                  Color.lerp(const Color(0x00000000), scrim, progress) ?? scrim,
+            ),
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: FractionalTranslation(
+                translation: Offset(0, 1 - progress),
+                child: Opacity(
+                  opacity: progress,
+                  child: MobileModalCard(child: modal),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

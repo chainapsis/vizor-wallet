@@ -67,10 +67,13 @@ void main() {
           seenAccountUuid = accountUuid;
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -111,13 +114,16 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              seenDbPath = dbPath;
-              seenNetwork = network;
-              seenAccountUuid = accountUuid;
-              return Future.value(expected);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          seenDbPath = dbPath;
+          seenNetwork = network;
+          seenAccountUuid = accountUuid;
+          return Future.value(expected);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -146,17 +152,21 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
-        getEndpoint: () => const RpcEndpointConfig(
-          networkName: 'test',
-          lightwalletdUrl: 'https://lwd.example:443',
-        ),
+        getEndpoint:
+            () => const RpcEndpointConfig(
+              networkName: 'test',
+              lightwalletdUrl: 'https://lwd.example:443',
+            ),
         getSessionPassword: () => 'test-password',
         getMnemonicBytesForAccount: (_) async {
           final bytes = Uint8List.fromList([1, 2, 3, 4]);
@@ -164,21 +174,20 @@ void main() {
           return bytes;
         },
         isMacOS: () => false,
-        startSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required approvedSchedule,
-              required mnemonicBytes,
-              required password,
-              required saltBase64,
-            }) {
-              seenSalts.add(saltBase64);
-              seenMnemonicPayloads.add(List<int>.from(mnemonicBytes));
-              return Future.value(_migrationResult());
-            },
+        startSoftwareMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+        }) {
+          seenSalts.add(saltBase64);
+          seenMnemonicPayloads.add(List<int>.from(mnemonicBytes));
+          return Future.value(_migrationResult());
+        },
       );
 
       await service.startSoftwarePrivateMigration(
@@ -237,22 +246,22 @@ void main() {
           events.add('startBackgroundPreparation');
           return true;
         },
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        getNotificationAuthorizationStatus:
+            () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async => true,
         listMigrationOutboxReceipts: () async => const [],
-        prepareMigrationOutbox:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required password,
-              required saltBase64,
-            }) async {
-              events.add('prepareOutbox');
-              return _migrationResult(status: 'ready_to_migrate');
-            },
+        prepareMigrationOutbox: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          events.add('prepareOutbox');
+          return _migrationResult(status: 'ready_to_migrate');
+        },
         exportMigrationOutbox:
             ({
               required dbPath,
@@ -315,8 +324,9 @@ void main() {
           preparationStartCount++;
           return true;
         },
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        getNotificationAuthorizationStatus:
+            () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async => true,
         listMigrationOutboxReceipts: () async => const [],
         completeKeystoneDenominationMigration:
@@ -374,8 +384,9 @@ void main() {
           preparationStartCount++;
           return true;
         },
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        getNotificationAuthorizationStatus:
+            () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async => true,
         listMigrationOutboxReceipts: () async => const [],
         prepareMigrationOutbox:
@@ -449,8 +460,9 @@ void main() {
           preparationStartCount++;
           return true;
         },
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        getNotificationAuthorizationStatus:
+            () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
         listMigrationOutboxReceipts: () async => const [],
         prepareMigrationOutbox:
             ({
@@ -529,8 +541,8 @@ void main() {
           requestCount++;
           return false;
         },
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.denied,
+        getNotificationAuthorizationStatus:
+            () async => IronwoodMigrationNotificationAuthorizationStatus.denied,
         startBackgroundPreparation: () async {
           preparationStartCount++;
           return true;
@@ -596,10 +608,7 @@ void main() {
     var requestCount = 0;
     final service = _notificationAuthorizationService(
       isIOS: false,
-      statuses: [
-        _migrationStatus(),
-        _migrationStatus(activeRunId: 'run-1'),
-      ],
+      statuses: [_migrationStatus(), _migrationStatus(activeRunId: 'run-1')],
       requestNotificationAuthorization: () async {
         requestCount++;
         return true;
@@ -691,8 +700,9 @@ void main() {
           preparationStartCount++;
           return true;
         },
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        getNotificationAuthorizationStatus:
+            () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
       );
 
       await service.status(network: 'test', accountUuid: 'account-1');
@@ -737,8 +747,9 @@ void main() {
         preparationStartCount++;
         return true;
       },
-      getNotificationAuthorizationStatus: () async =>
-          IronwoodMigrationNotificationAuthorizationStatus.authorized,
+      getNotificationAuthorizationStatus:
+          () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
     );
 
     await service.resumeBackgroundPreparationIfNeeded(
@@ -792,8 +803,9 @@ void main() {
         preparationStartCount++;
         return true;
       },
-      getNotificationAuthorizationStatus: () async =>
-          IronwoodMigrationNotificationAuthorizationStatus.authorized,
+      getNotificationAuthorizationStatus:
+          () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
     );
 
     await service.resumeBackgroundPreparationIfNeeded(
@@ -824,21 +836,20 @@ void main() {
       getSessionPassword: () => 'test-password',
       isMacOS: () => true,
       operationRegistry: registry,
-      startMacosSoftwareMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-            required approvedSchedule,
-          }) async {
-            startCount += 1;
-            started.complete();
-            await finish.future;
-            return _migrationResult();
-          },
+      startMacosSoftwareMigration: ({
+        required dbPath,
+        required lightwalletdUrl,
+        required network,
+        required accountUuid,
+        required password,
+        required saltBase64,
+        required approvedSchedule,
+      }) async {
+        startCount += 1;
+        started.complete();
+        await finish.future;
+        return _migrationResult();
+      },
     );
 
     final migration = service.startSoftwarePrivateMigration(
@@ -882,35 +893,39 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
-        getEndpoint: () => const RpcEndpointConfig(
-          networkName: 'test',
-          lightwalletdUrl: 'https://lwd.example:443',
-        ),
+        getEndpoint:
+            () => const RpcEndpointConfig(
+              networkName: 'test',
+              lightwalletdUrl: 'https://lwd.example:443',
+            ),
         getSessionPassword: () => 'test-password',
-        getMnemonicBytesForAccount: (_) =>
-            throw StateError('mnemonic bytes should not be read on macOS'),
+        getMnemonicBytesForAccount:
+            (_) =>
+                throw StateError('mnemonic bytes should not be read on macOS'),
         isMacOS: () => true,
-        startMacosSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required approvedSchedule,
-              required password,
-              required saltBase64,
-            }) {
-              seenPassword = password;
-              seenSalt = saltBase64;
-              return Future.value(_migrationResult());
-            },
+        startMacosSoftwareMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+          required password,
+          required saltBase64,
+        }) {
+          seenPassword = password;
+          seenSalt = saltBase64;
+          return Future.value(_migrationResult());
+        },
         startSoftwareMigration:
             ({
               required dbPath,
@@ -942,32 +957,35 @@ void main() {
       getStatus: ({required dbPath, required network, required accountUuid}) {
         return Future.value(_migrationStatus());
       },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
+      getPrivatePlan: ({
+        required dbPath,
+        required network,
+        required accountUuid,
+      }) {
+        return Future.value(null);
+      },
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
-      getEndpoint: () => const RpcEndpointConfig(
-        networkName: 'test',
-        lightwalletdUrl: 'https://lwd.example:443',
-      ),
+      getEndpoint:
+          () => const RpcEndpointConfig(
+            networkName: 'test',
+            lightwalletdUrl: 'https://lwd.example:443',
+          ),
       getSessionPassword: () => 'test-password',
       isHardwareAccount: (_) => true,
-      broadcastDueMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-          }) {
-            seenPassword = password;
-            seenSalts.add(saltBase64);
-            return Future.value(_migrationResult());
-          },
+      broadcastDueMigration: ({
+        required dbPath,
+        required lightwalletdUrl,
+        required network,
+        required accountUuid,
+        required password,
+        required saltBase64,
+      }) {
+        seenPassword = password;
+        seenSalts.add(saltBase64);
+        return Future.value(_migrationResult());
+      },
     );
 
     await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
@@ -986,45 +1004,47 @@ void main() {
       getStatus: ({required dbPath, required network, required accountUuid}) {
         return Future.value(_migrationStatus());
       },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
+      getPrivatePlan: ({
+        required dbPath,
+        required network,
+        required accountUuid,
+      }) {
+        return Future.value(null);
+      },
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
-      getEndpoint: () => const RpcEndpointConfig(
-        networkName: 'test',
-        lightwalletdUrl: 'https://lwd.example:443',
-      ),
+      getEndpoint:
+          () => const RpcEndpointConfig(
+            networkName: 'test',
+            lightwalletdUrl: 'https://lwd.example:443',
+          ),
       getSessionPassword: () => 'test-password',
       isHardwareAccount: (_) => false,
       isMacOS: () => true,
-      broadcastDueMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-          }) {
-            return Future.value(_migrationResult(status: 'ready_to_migrate'));
-          },
-      startMacosSoftwareMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-            required approvedSchedule,
-          }) {
-            seenSchedule = approvedSchedule;
-            seenSalt = saltBase64;
-            return Future.value(_migrationResult());
-          },
+      broadcastDueMigration: ({
+        required dbPath,
+        required lightwalletdUrl,
+        required network,
+        required accountUuid,
+        required password,
+        required saltBase64,
+      }) {
+        return Future.value(_migrationResult(status: 'ready_to_migrate'));
+      },
+      startMacosSoftwareMigration: ({
+        required dbPath,
+        required lightwalletdUrl,
+        required network,
+        required accountUuid,
+        required password,
+        required saltBase64,
+        required approvedSchedule,
+      }) {
+        seenSchedule = approvedSchedule;
+        seenSalt = saltBase64;
+        return Future.value(_migrationResult());
+      },
     );
 
     await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
@@ -1045,24 +1065,31 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
-        getEndpoint: () => const RpcEndpointConfig(
-          networkName: 'test',
-          lightwalletdUrl: 'https://lwd.example:443',
-        ),
-        prepareKeystoneDenominationMigration:
-            ({required dbPath, required network, required accountUuid}) {
-              seenDbPath = dbPath;
-              seenNetwork = network;
-              seenAccountUuid = accountUuid;
-              return Future.value(expected);
-            },
+        getEndpoint:
+            () => const RpcEndpointConfig(
+              networkName: 'test',
+              lightwalletdUrl: 'https://lwd.example:443',
+            ),
+        prepareKeystoneDenominationMigration: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          seenDbPath = dbPath;
+          seenNetwork = network;
+          seenAccountUuid = accountUuid;
+          return Future.value(expected);
+        },
       );
 
       final request = await service.prepareKeystoneDenominationPrivateMigration(
@@ -1073,6 +1100,58 @@ void main() {
       expect(seenDbPath, '/tmp/wallet.db');
       expect(seenNetwork, 'test');
       expect(seenAccountUuid, 'account-1');
+    },
+  );
+
+  test(
+    'saved unstarted private draft recreates a missing mobile credential',
+    () async {
+      final store = _backgroundCredentialStore();
+      final status = _migrationStatus(
+        phase: 'awaiting_preparation',
+        activeRunId: 'draft-run-1',
+      );
+      var createCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                status,
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        createPrivateMigrationDraft: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+        }) async {
+          createCount += 1;
+          return 'draft-run-1';
+        },
+      );
+
+      final runId = await service.savePrivateMigrationDraft(
+        accountUuid: 'account-1',
+        approvedSchedule: const [],
+      );
+
+      expect(runId, 'draft-run-1');
+      expect(createCount, 1);
+      final manifest = await store.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+      expect(manifest, isNotNull);
+      expect(manifest!.expectedRunId, 'draft-run-1');
     },
   );
 
@@ -1089,37 +1168,40 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
-        getEndpoint: () => const RpcEndpointConfig(
-          networkName: 'test',
-          lightwalletdUrl: 'https://lwd.example:443',
-        ),
+        getEndpoint:
+            () => const RpcEndpointConfig(
+              networkName: 'test',
+              lightwalletdUrl: 'https://lwd.example:443',
+            ),
         getSessionPassword: () => 'test-password',
-        completeKeystoneDenominationMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required requestId,
-              required signedMessages,
-              required password,
-              required saltBase64,
-              required approvedSchedule,
-            }) {
-              seenRequestId = requestId;
-              seenPassword = password;
-              seenSalts.add(saltBase64);
-              seenMessages.add(signedMessages);
-              seenSchedules.add(approvedSchedule);
-              return Future.value(_migrationResult());
-            },
+        completeKeystoneDenominationMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required requestId,
+          required signedMessages,
+          required password,
+          required saltBase64,
+          required approvedSchedule,
+        }) {
+          seenRequestId = requestId;
+          seenPassword = password;
+          seenSalts.add(saltBase64);
+          seenMessages.add(signedMessages);
+          seenSchedules.add(approvedSchedule);
+          return Future.value(_migrationResult());
+        },
       );
       final signedMessages = [_signedMigrationMessage()];
       final approvedSchedule = [
@@ -1164,24 +1246,31 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
-        getEndpoint: () => const RpcEndpointConfig(
-          networkName: 'test',
-          lightwalletdUrl: 'https://lwd.example:443',
-        ),
-        prepareKeystoneBatchMigration:
-            ({required dbPath, required network, required accountUuid}) {
-              seenDbPath = dbPath;
-              seenNetwork = network;
-              seenAccountUuid = accountUuid;
-              return Future.value(expected);
-            },
+        getEndpoint:
+            () => const RpcEndpointConfig(
+              networkName: 'test',
+              lightwalletdUrl: 'https://lwd.example:443',
+            ),
+        prepareKeystoneBatchMigration: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          seenDbPath = dbPath;
+          seenNetwork = network;
+          seenAccountUuid = accountUuid;
+          return Future.value(expected);
+        },
       );
 
       final request = await service.prepareKeystoneBatchPrivateMigration(
@@ -1207,34 +1296,37 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
-        getEndpoint: () => const RpcEndpointConfig(
-          networkName: 'test',
-          lightwalletdUrl: 'https://lwd.example:443',
-        ),
+        getEndpoint:
+            () => const RpcEndpointConfig(
+              networkName: 'test',
+              lightwalletdUrl: 'https://lwd.example:443',
+            ),
         getSessionPassword: () => 'test-password',
-        completeKeystoneBatchMigration:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required requestId,
-              required signedMessages,
-              required password,
-              required saltBase64,
-            }) {
-              seenRequestId = requestId;
-              seenPassword = password;
-              seenSalts.add(saltBase64);
-              seenMessages.add(signedMessages);
-              return Future.value(_migrationResult());
-            },
+        completeKeystoneBatchMigration: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required requestId,
+          required signedMessages,
+          required password,
+          required saltBase64,
+        }) {
+          seenRequestId = requestId;
+          seenPassword = password;
+          seenSalts.add(saltBase64);
+          seenMessages.add(signedMessages);
+          return Future.value(_migrationResult());
+        },
       );
       final signedMessages = [_signedMigrationMessage()];
 
@@ -1264,10 +1356,13 @@ void main() {
       getStatus: ({required dbPath, required network, required accountUuid}) {
         return Future.value(_migrationStatus());
       },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
+      getPrivatePlan: ({
+        required dbPath,
+        required network,
+        required accountUuid,
+      }) {
+        return Future.value(null);
+      },
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
@@ -1299,10 +1394,13 @@ void main() {
       getStatus: ({required dbPath, required network, required accountUuid}) {
         return Future.value(_migrationStatus());
       },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
+      getPrivatePlan: ({
+        required dbPath,
+        required network,
+        required accountUuid,
+      }) {
+        return Future.value(null);
+      },
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
@@ -1334,10 +1432,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(statuses.removeAt(0));
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -1347,27 +1448,26 @@ void main() {
         isMobile: () => true,
         isIOS: () => true,
         isHardwareAccount: (_) => true,
-        recoverMigrationOutboxBatch:
-            ({
-              required batchId,
-              required network,
-              required accountUuid,
-              required runId,
-              required lightwalletdUrl,
-              required expectedTxids,
-            }) async {
-              recovery = {
-                'batchId': batchId,
-                'network': network,
-                'accountUuid': accountUuid,
-                'runId': runId,
-                'lightwalletdUrl': lightwalletdUrl,
-                'expectedTxids': expectedTxids,
-              };
-              return true;
-            },
-        runMigrationOutboxOnceNow: () async =>
-            const IronwoodMigrationOutboxRunResult(
+        recoverMigrationOutboxBatch: ({
+          required batchId,
+          required network,
+          required accountUuid,
+          required runId,
+          required lightwalletdUrl,
+          required expectedTxids,
+        }) async {
+          recovery = {
+            'batchId': batchId,
+            'network': network,
+            'accountUuid': accountUuid,
+            'runId': runId,
+            'lightwalletdUrl': lightwalletdUrl,
+            'expectedTxids': expectedTxids,
+          };
+          return true;
+        },
+        runMigrationOutboxOnceNow:
+            () async => const IronwoodMigrationOutboxRunResult(
               outcome: IronwoodMigrationOutboxRunOutcome.noWork,
             ),
         listMigrationOutboxReceipts: () async => const [],
@@ -1414,18 +1514,17 @@ void main() {
           return 'session-password';
         },
         isMobile: () => true,
-        broadcastDueMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required password,
-              required saltBase64,
-            }) async {
-              broadcastCalled = true;
-              return _migrationResult();
-            },
+        broadcastDueMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          broadcastCalled = true;
+          return _migrationResult();
+        },
       );
 
       await expectLater(
@@ -1483,44 +1582,45 @@ void main() {
               required lightwalletdUrl,
               required expectedTxids,
             }) async => false,
-        revokeMigrationAccount:
-            ({required network, required accountUuid}) async {
-              events.add('revoke:$network:$accountUuid');
-            },
-        retireUnbroadcastMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required expectedRunId,
-            }) async {
-              events.add('retire:$expectedRunId');
-            },
-        startSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required mnemonicBytes,
-              required password,
-              required saltBase64,
-              required approvedSchedule,
-            }) async {
-              events.add('start');
-              startedPassword = password;
-              startedSalt = saltBase64;
-              expect(mnemonicBytes, [1, 2, 3, 4]);
-              expect(approvedSchedule, isEmpty);
-              return _migrationResult();
-            },
+        revokeMigrationAccount: ({
+          required network,
+          required accountUuid,
+        }) async {
+          events.add('revoke:$network:$accountUuid');
+        },
+        retireUnbroadcastMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required expectedRunId,
+        }) async {
+          events.add('retire:$expectedRunId');
+        },
+        startSoftwareMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+          required approvedSchedule,
+        }) async {
+          events.add('start');
+          startedPassword = password;
+          startedSalt = saltBase64;
+          expect(mnemonicBytes, [1, 2, 3, 4]);
+          expect(approvedSchedule, isEmpty);
+          return _migrationResult();
+        },
         startBackgroundPreparation: () async {
           events.add('prepare-background');
           return true;
         },
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        getNotificationAuthorizationStatus:
+            () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async => true,
       );
 
@@ -1591,20 +1691,19 @@ void main() {
               required accountUuid,
               required expectedRunId,
             }) async => throw StateError('network verification failed'),
-        startSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required mnemonicBytes,
-              required password,
-              required saltBase64,
-              required approvedSchedule,
-            }) async {
-              startCalled = true;
-              return _migrationResult();
-            },
+        startSoftwareMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+          required approvedSchedule,
+        }) async {
+          startCalled = true;
+          return _migrationResult();
+        },
       );
 
       await expectLater(
@@ -1637,10 +1736,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(statuses.removeAt(0));
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -1654,25 +1756,25 @@ void main() {
           scheduledCount++;
           return true;
         },
-        startSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required approvedSchedule,
-              required mnemonicBytes,
-              required password,
-              required saltBase64,
-            }) async {
-              expectedRunIdDuringStart = (await store.read(
+        startSoftwareMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+        }) async {
+          expectedRunIdDuringStart =
+              (await store.read(
                 network: network,
                 accountUuid: accountUuid,
               ))?.expectedRunId;
-              seenPassword = password;
-              seenSalt = saltBase64;
-              return _migrationResult();
-            },
+          seenPassword = password;
+          seenSalt = saltBase64;
+          return _migrationResult();
+        },
       );
 
       await service.startSoftwarePrivateMigration(
@@ -1706,10 +1808,13 @@ void main() {
             _migrationStatus(activeRunId: runCreated ? 'run-1' : null),
           );
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -1720,22 +1825,21 @@ void main() {
         isMobile: () => true,
         isMacOS: () => false,
         scheduleBackgroundMigration: () async => true,
-        startSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required approvedSchedule,
-              required mnemonicBytes,
-              required password,
-              required saltBase64,
-            }) async {
-              startEntered.complete();
-              await releaseStart.future;
-              runCreated = true;
-              return _migrationResult();
-            },
+        startSoftwareMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+        }) async {
+          startEntered.complete();
+          await releaseStart.future;
+          runCreated = true;
+          return _migrationResult();
+        },
       );
 
       final startFuture = service.startSoftwarePrivateMigration(
@@ -1783,10 +1887,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus(activeRunId: 'run-1'));
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -1812,10 +1919,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus());
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -1861,10 +1971,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus(activeRunId: 'run-1'));
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -1895,10 +2008,13 @@ void main() {
       getStatus: ({required dbPath, required network, required accountUuid}) {
         return Future.value(_migrationStatus(activeRunId: 'run-1'));
       },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
+      getPrivatePlan: ({
+        required dbPath,
+        required network,
+        required accountUuid,
+      }) {
+        return Future.value(null);
+      },
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
@@ -1938,10 +2054,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus(activeRunId: 'run-1'));
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -1954,8 +2073,8 @@ void main() {
           notificationAuthorizationRequestCount++;
           return true;
         },
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.denied,
+        getNotificationAuthorizationStatus:
+            () async => IronwoodMigrationNotificationAuthorizationStatus.denied,
         listMigrationOutboxReceipts: () async => const [],
         prepareMigrationOutbox:
             ({
@@ -1978,11 +2097,13 @@ void main() {
           stageCalls++;
           return const {'txid-1': 'digest-1'};
         },
-        armMigrationOutboxBatch:
-            ({required batchId, required expectedDigests}) async {
-              armCalls++;
-              return true;
-            },
+        armMigrationOutboxBatch: ({
+          required batchId,
+          required expectedDigests,
+        }) async {
+          armCalls++;
+          return true;
+        },
         runMigrationOutboxOnceNow: () async {
           foregroundRunCalls++;
           return const IronwoodMigrationOutboxRunResult(
@@ -2026,10 +2147,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(statuses.removeAt(0));
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -2117,10 +2241,13 @@ void main() {
       getStatus: ({required dbPath, required network, required accountUuid}) {
         return Future.value(_migrationStatus(activeRunId: 'run-2'));
       },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(null);
-          },
+      getPrivatePlan: ({
+        required dbPath,
+        required network,
+        required accountUuid,
+      }) {
+        return Future.value(null);
+      },
       secureStore: AppSecureStore.testing(
         storage: const FlutterSecureStorage(),
       ),
@@ -2128,18 +2255,17 @@ void main() {
       getEndpoint: _testEndpoint,
       isMobile: () => true,
       isHardwareAccount: (_) => true,
-      broadcastDueMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-          }) {
-            rustCalled = true;
-            return Future.value(_migrationResult());
-          },
+      broadcastDueMigration: ({
+        required dbPath,
+        required lightwalletdUrl,
+        required network,
+        required accountUuid,
+        required password,
+        required saltBase64,
+      }) {
+        rustCalled = true;
+        return Future.value(_migrationResult());
+      },
     );
 
     await expectLater(
@@ -2315,10 +2441,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(statuses.removeAt(0));
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),
@@ -2328,8 +2457,9 @@ void main() {
         isMobile: () => true,
         isIOS: () => true,
         startBackgroundPreparation: () async => true,
-        getNotificationAuthorizationStatus: () async =>
-            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        getNotificationAuthorizationStatus:
+            () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
         requestNotificationAuthorization: () async {
           notificationAuthorizationRequestCount++;
           return true;
@@ -2359,37 +2489,35 @@ void main() {
         prepareKeystoneDenominationMigration:
             ({required dbPath, required network, required accountUuid}) async =>
                 _keystoneSigningRequest(),
-        completeKeystoneDenominationMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required requestId,
-              required signedMessages,
-              required password,
-              required saltBase64,
-              required approvedSchedule,
-            }) async {
-              credentials.add('$password:$saltBase64');
-              return _migrationResult();
-            },
+        completeKeystoneDenominationMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required requestId,
+          required signedMessages,
+          required password,
+          required saltBase64,
+          required approvedSchedule,
+        }) async {
+          credentials.add('$password:$saltBase64');
+          return _migrationResult();
+        },
         prepareKeystoneBatchMigration:
             ({required dbPath, required network, required accountUuid}) async =>
                 _keystoneSigningRequest(),
-        completeKeystoneBatchMigration:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required requestId,
-              required signedMessages,
-              required password,
-              required saltBase64,
-            }) async {
-              credentials.add('$password:$saltBase64');
-              return _migrationResult();
-            },
+        completeKeystoneBatchMigration: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required requestId,
+          required signedMessages,
+          required password,
+          required saltBase64,
+        }) async {
+          credentials.add('$password:$saltBase64');
+          return _migrationResult();
+        },
       );
 
       await service.prepareKeystoneDenominationPrivateMigration(
@@ -2472,43 +2600,40 @@ void main() {
         isMobile: () => true,
         isIOS: () => true,
         isMacOS: () => false,
-        startSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required mnemonicBytes,
-              required password,
-              required saltBase64,
-              required approvedSchedule,
-            }) async {
-              events.add('credentialOperation');
-              return _migrationResult();
-            },
-        prepareMigrationOutbox:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required password,
-              required saltBase64,
-            }) async {
-              events.add('prepareOutbox');
-              return _migrationResult();
-            },
-        exportMigrationOutbox:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required password,
-              required saltBase64,
-            }) async {
-              events.add('exportOutbox');
-              return _outboxBatch();
-            },
+        startSoftwareMigration: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+          required approvedSchedule,
+        }) async {
+          events.add('credentialOperation');
+          return _migrationResult();
+        },
+        prepareMigrationOutbox: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          events.add('prepareOutbox');
+          return _migrationResult();
+        },
+        exportMigrationOutbox: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          events.add('exportOutbox');
+          return _outboxBatch();
+        },
       );
 
       await service.startSoftwarePrivateMigration(
@@ -2580,8 +2705,8 @@ void main() {
       stageMigrationOutboxBatch: (_) async => const {'txid-1': 'digest-1'},
       armMigrationOutboxBatch:
           ({required batchId, required expectedDigests}) async => true,
-      runMigrationOutboxOnceNow: () async =>
-          const IronwoodMigrationOutboxRunResult(
+      runMigrationOutboxOnceNow:
+          () async => const IronwoodMigrationOutboxRunResult(
             outcome: IronwoodMigrationOutboxRunOutcome.waiting,
             nextHeight: 288,
             observedHeight: 300,
@@ -2624,48 +2749,57 @@ void main() {
         getSessionPassword: () => 'session-password',
         isMobile: () => true,
         isIOS: () => true,
-        listMigrationOutboxReceipts: () async => receiptsAvailable
-            ? [
-                _outboxReceipt(receiptId: 'receipt-good', txidHex: 'tx-good'),
-                _outboxReceipt(receiptId: 'receipt-bad', txidHex: 'tx-bad'),
-                _outboxReceipt(receiptId: 'receipt-later', txidHex: 'tx-later'),
-              ]
-            : const [],
-        reconcileMigrationOutboxReceipt:
-            ({
-              required dbPath,
-              required network,
-              required accountUuid,
-              required runId,
-              required txidHex,
-              required outcome,
-              required remoteHeight,
-              responseMessage,
-              required scheduleUpdates,
-              acceptedRawTransaction,
-            }) async {
-              events.add('rust:$txidHex');
-              if (txidHex == 'tx-bad') {
-                throw StateError('Rust rejected receipt');
-              }
-            },
+        listMigrationOutboxReceipts:
+            () async =>
+                receiptsAvailable
+                    ? [
+                      _outboxReceipt(
+                        receiptId: 'receipt-good',
+                        txidHex: 'tx-good',
+                      ),
+                      _outboxReceipt(
+                        receiptId: 'receipt-bad',
+                        txidHex: 'tx-bad',
+                      ),
+                      _outboxReceipt(
+                        receiptId: 'receipt-later',
+                        txidHex: 'tx-later',
+                      ),
+                    ]
+                    : const [],
+        reconcileMigrationOutboxReceipt: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required runId,
+          required txidHex,
+          required outcome,
+          required remoteHeight,
+          responseMessage,
+          required scheduleUpdates,
+          acceptedRawTransaction,
+        }) async {
+          events.add('rust:$txidHex');
+          if (txidHex == 'tx-bad') {
+            throw StateError('Rust rejected receipt');
+          }
+        },
         acknowledgeMigrationOutboxReceipts: (receiptIds) async {
           events.add('ack:${receiptIds.join(',')}');
           acknowledgedReceiptIds = receiptIds;
           receiptsAvailable = false;
         },
-        prepareMigrationOutbox:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required password,
-              required saltBase64,
-            }) async {
-              prepareCount++;
-              return _migrationResult();
-            },
+        prepareMigrationOutbox: ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          prepareCount++;
+          return _migrationResult();
+        },
         exportMigrationOutbox:
             ({
               required dbPath,
@@ -2710,18 +2844,17 @@ void main() {
       isMobile: () => true,
       isIOS: () => true,
       listMigrationOutboxReceipts: () async => const [],
-      prepareMigrationOutbox:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-          }) async {
-            prepareCount++;
-            return _migrationResult();
-          },
+      prepareMigrationOutbox: ({
+        required dbPath,
+        required lightwalletdUrl,
+        required network,
+        required accountUuid,
+        required password,
+        required saltBase64,
+      }) async {
+        prepareCount++;
+        return _migrationResult();
+      },
       exportMigrationOutbox:
           ({
             required dbPath,
@@ -2730,18 +2863,17 @@ void main() {
             required password,
             required saltBase64,
           }) async => null,
-      broadcastDueMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required password,
-            required saltBase64,
-          }) async {
-            dueBroadcastCount++;
-            return _migrationResult();
-          },
+      broadcastDueMigration: ({
+        required dbPath,
+        required lightwalletdUrl,
+        required network,
+        required accountUuid,
+        required password,
+        required saltBase64,
+      }) async {
+        dueBroadcastCount++;
+        return _migrationResult();
+      },
     );
 
     await service.continueSoftwarePrivateMigration(accountUuid: 'account-1');
@@ -2771,10 +2903,13 @@ void main() {
         getStatus: ({required dbPath, required network, required accountUuid}) {
           return Future.value(_migrationStatus(phase: 'complete'));
         },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(null);
-            },
+        getPrivatePlan: ({
+          required dbPath,
+          required network,
+          required accountUuid,
+        }) {
+          return Future.value(null);
+        },
         secureStore: AppSecureStore.testing(
           storage: const FlutterSecureStorage(),
         ),

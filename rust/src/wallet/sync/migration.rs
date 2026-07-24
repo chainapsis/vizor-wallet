@@ -86,6 +86,10 @@ pub(crate) const PHASE_WAITING_FOR_SPENDABLE_ORCHARD: &str = "waiting_for_spenda
 pub(crate) const PHASE_WAITING_FOR_IRONWOOD_SPENDABILITY: &str =
     "waiting_for_ironwood_spendability";
 pub(crate) const PHASE_READY_TO_PREPARE: &str = "ready_to_prepare";
+pub(crate) const PHASE_AWAITING_PREPARATION: &str = "awaiting_preparation";
+// Kept readable so drafts created by pre-unification mobile builds remain
+// resumable after an upgrade.
+pub(crate) const PHASE_AWAITING_DENOMINATION_SIGNATURE: &str = "awaiting_denomination_signature";
 pub(crate) const PHASE_WAITING_DENOM_CONFIRMATIONS: &str = "waiting_denom_confirmations";
 pub(crate) const PHASE_READY_TO_MIGRATE: &str = "ready_to_migrate";
 pub(crate) const PHASE_BROADCAST_SCHEDULED: &str = "broadcast_scheduled";
@@ -699,6 +703,140 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     Ok(run_id)
 }
 
+pub(crate) fn create_or_resume_private_migration_draft(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    target_values_zatoshi: &[u64],
+    approved_schedule: &[MigrationScheduleEntry],
+    preparation_timing_policy: PreparationTimingPolicy,
+) -> Result<String, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    if let Some(run) = active_run(&conn, account_uuid, network)? {
+        if is_private_migration_draft_phase(&run.phase) {
+            if run.target_values_zatoshi != target_values_zatoshi {
+                return Err(
+                    "Saved private migration plan no longer matches this balance".to_string(),
+                );
+            }
+            return Ok(run.run_id);
+        }
+        return Err(format!("Migration already active: {}", run.run_id));
+    }
+
+    let timing_policy = configured_timing_policy(network);
+    validate_schedule_with_policy(
+        approved_schedule,
+        target_values_zatoshi,
+        network,
+        timing_policy,
+    )?;
+    let run_id = new_run_id(account_uuid);
+    let now = now_ms()?;
+    let target_values_json = serde_json::to_string(target_values_zatoshi)
+        .map_err(|e| format!("Encode Keystone migration targets: {e}"))?;
+    let schedule_json = serde_json::to_string(approved_schedule)
+        .map_err(|e| format!("Encode Keystone migration schedule: {e}"))?;
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
+              updated_at_ms, target_values_json, timing_policy, schedule_json,
+              preparation_timing_policy)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10)"
+        ),
+        params![
+            run_id,
+            account_uuid,
+            network_name(network),
+            db_path,
+            PHASE_AWAITING_PREPARATION,
+            now,
+            target_values_json,
+            timing_policy.as_str(),
+            schedule_json,
+            preparation_timing_policy.as_str(),
+        ],
+    )
+    .map_err(|e| format!("Create private migration draft: {e}"))?;
+    Ok(run_id)
+}
+
+fn is_private_migration_draft_phase(phase: &str) -> bool {
+    matches!(
+        phase,
+        PHASE_AWAITING_PREPARATION | PHASE_AWAITING_DENOMINATION_SIGNATURE
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finalize_private_migration_draft(
+    db_path: &str,
+    run_id: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    plan: &DenominationPlan,
+    prepared_notes: &[PreparedOrchardNoteRef],
+    signed_children: Vec<SignedMigrationPcztInsert>,
+    denomination_stages: Vec<DenominationStageInsert>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    if denomination_stages.is_empty() {
+        return Err("Staged migration has no denomination transactions".to_string());
+    }
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let run = active_run(&conn, account_uuid, network)?
+        .ok_or("Saved private migration draft was not found")?;
+    if run.run_id != run_id || !is_private_migration_draft_phase(&run.phase) {
+        return Err("Saved private migration draft is no longer awaiting preparation".to_string());
+    }
+    if run.target_values_zatoshi != plan.migration_outputs {
+        return Err("Prepared transactions do not match the saved migration plan".to_string());
+    }
+    let preparation_timing_policy = preparation_timing_policy_for_run_with_conn(&conn, run_id)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin private migration draft finalization: {e}"))?;
+    insert_prepared_notes_with_tx(&tx, run_id, prepared_notes, true)?;
+    insert_denomination_stages_with_tx(&tx, run_id, denomination_stages, password, salt_base64)?;
+    initialize_preparation_schedule_with_tx(
+        &tx,
+        run_id,
+        network,
+        preparation_timing_policy,
+        &mut OsRng,
+    )?;
+    insert_signed_child_pczts_with_tx(
+        &tx,
+        run_id,
+        signed_children,
+        password,
+        salt_base64,
+        SignedChildInsertMode::Initial,
+    )?;
+    tx.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+             WHERE run_id = ?3 AND phase IN (?4, ?5)"
+        ),
+        params![
+            PHASE_WAITING_DENOM_CONFIRMATIONS,
+            now_ms()?,
+            run_id,
+            PHASE_AWAITING_PREPARATION,
+            PHASE_AWAITING_DENOMINATION_SIGNATURE,
+        ],
+    )
+    .map_err(|e| format!("Activate private migration draft: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit private migration draft: {e}"))?;
+    Ok(())
+}
+
 pub(crate) fn mark_run_phase(
     db_path: &str,
     run_id: &str,
@@ -833,12 +971,27 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     tx.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
-             SET proof_retry_height = NULL, updated_at_ms = ?1
+             SET proof_retry_height = CASE
+                     WHEN EXISTS (
+                         SELECT 1
+                         FROM {SIGNED_CHILD_PCZTS_TABLE} c
+                         WHERE c.run_id = ?2
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM {PENDING_TXS_TABLE} p
+                               WHERE p.run_id = c.run_id
+                                 AND p.part_index = c.child_index
+                           )
+                     )
+                     THEN proof_retry_height
+                     ELSE NULL
+                 END,
+                 updated_at_ms = ?1
              WHERE run_id = ?2"
         ),
         params![now_ms()?, run_id],
     )
-    .map_err(|e| format!("Clear migration proof retry height: {e}"))?;
+    .map_err(|e| format!("Update migration proof retry height after promotion: {e}"))?;
     // Retain the compact signatures and base PCZTs until the run completes.
     // If a trusted denomination transaction is later reorged, the affected
     // children can be re-anchored and proved again without another Keystone

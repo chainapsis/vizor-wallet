@@ -12,6 +12,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
+import '../models/mobile_ironwood_migration_attention_state.dart';
 import '../services/ironwood_migration_service.dart';
 import 'ironwood_migration_announcement_provider.dart';
 
@@ -19,10 +20,10 @@ const _migrationStatusPollInterval = Duration(seconds: 5);
 const _migrationAdvanceInterval = Duration(
   seconds:
       String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
-      ? 1
-      : kZcashFastTestnetMigration
-      ? 5
-      : 30,
+          ? 1
+          : kZcashFastTestnetMigration
+          ? 5
+          : 30,
 );
 
 class IronwoodMigrationCoordinatorState {
@@ -151,6 +152,23 @@ class IronwoodMigrationCoordinator
     );
   }
 
+  /// Removes a previously granted child-proof approval without revoking the
+  /// broader foreground continuation permit.
+  ///
+  /// Keystone QR signing and child proof generation are separate user actions.
+  /// Completing a QR round must therefore leave the account waiting until the
+  /// proof window is actually due and the user explicitly approves that batch.
+  void clearChildProofBatchPermit(String accountUuid) {
+    if (kAppFormFactor != AppFormFactor.mobile ||
+        !state.childProofBatchPermits.contains(accountUuid)) {
+      return;
+    }
+    state = state.copyWith(
+      childProofBatchPermits: {...state.childProofBatchPermits}
+        ..remove(accountUuid),
+    );
+  }
+
   /// Performs the one foreground sync required when a migration status flow is
   /// entered from a cold launch or after returning from background, then
   /// reconciles status without advancing migration work.
@@ -230,9 +248,17 @@ class IronwoodMigrationCoordinator
     await refreshNow(forceAdvance: true);
   }
 
-  Future<void> retry(String accountUuid) async {
-    final status = state.statuses[accountUuid];
-    if (status != null && _isChildProofBatchAdvance(status)) {
+  Future<void> retry(
+    String accountUuid, {
+    rust_sync.MigrationStatus? status,
+  }) async {
+    // A status screen can be the first migration surface after a cold launch.
+    // Its route provider may already have a current status while this
+    // coordinator has not completed its first polling pass. Preserve that
+    // observed proof state for the explicit user action.
+    final statusForAdvance = status ?? state.statuses[accountUuid];
+    if (statusForAdvance != null &&
+        _isChildProofBatchAdvance(statusForAdvance)) {
       grantChildProofBatchPermit(accountUuid);
     } else {
       grantForegroundProgressPermit(accountUuid);
@@ -246,7 +272,7 @@ class IronwoodMigrationCoordinator
           // A manual retry must still run after the automatic attempt fails.
         }
       }
-      await _advance(accountUuid, status: status);
+      await _advance(accountUuid, status: statusForAdvance);
       if (!ref.mounted) return;
       state = state.copyWith(
         errors: Map<String, String>.from(state.errors)..remove(accountUuid),
@@ -440,7 +466,7 @@ class IronwoodMigrationCoordinator
   }
 
   bool _hasDueScheduledBroadcast(rust_sync.MigrationStatus status) {
-    final currentHeight = _safelyObservedHeight();
+    final currentHeight = _observedBroadcastHeight();
     if (currentHeight <= 0) return false;
 
     return status.scheduledBroadcasts.any(
@@ -456,20 +482,26 @@ class IronwoodMigrationCoordinator
     if (status.signedChildPcztCount <= 0 || nextActionHeight == null) {
       return false;
     }
-    final currentHeight = _safelyObservedHeight();
+    final currentHeight = _safelyObservedProofHeight();
     return currentHeight > 0 && nextActionHeight <= currentHeight;
   }
 
-  int _safelyObservedHeight() {
+  int _safelyObservedProofHeight() {
     final syncState = ref.read(syncProvider).value;
     if (syncState == null) return 0;
+    return mobileIronwoodSafelyObservedHeight(
+      scannedHeight: syncState.scannedHeight,
+      chainTipHeight: syncState.chainTipHeight,
+    );
+  }
 
-    final scannedHeight = syncState.scannedHeight;
-    final chainTipHeight = syncState.chainTipHeight;
-    final currentHeight = scannedHeight > 0 && chainTipHeight > 0
-        ? (scannedHeight < chainTipHeight ? scannedHeight : chainTipHeight)
-        : (scannedHeight > chainTipHeight ? scannedHeight : chainTipHeight);
-    return currentHeight;
+  int _observedBroadcastHeight() {
+    final syncState = ref.read(syncProvider).value;
+    if (syncState == null) return 0;
+    return mobileIronwoodObservedBroadcastHeight(
+      scannedHeight: syncState.scannedHeight,
+      chainTipHeight: syncState.chainTipHeight,
+    );
   }
 
   Future<void> _advance(
@@ -566,11 +598,10 @@ class IronwoodMigrationCoordinator
   }
 }
 
-final ironwoodMigrationCoordinatorProvider =
-    NotifierProvider<
-      IronwoodMigrationCoordinator,
-      IronwoodMigrationCoordinatorState
-    >(IronwoodMigrationCoordinator.new);
+final ironwoodMigrationCoordinatorProvider = NotifierProvider<
+  IronwoodMigrationCoordinator,
+  IronwoodMigrationCoordinatorState
+>(IronwoodMigrationCoordinator.new);
 
 class IronwoodMigrationCoordinatorHost extends ConsumerStatefulWidget {
   const IronwoodMigrationCoordinatorHost({required this.child, super.key});
@@ -599,15 +630,18 @@ class _IronwoodMigrationCoordinatorHostState
       );
     });
     _lifecycleListener = AppLifecycleListener(
-      onResume: () => ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .setForeground(true),
-      onHide: () => ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .setForeground(false),
-      onPause: () => ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .setForeground(false),
+      onResume:
+          () => ref
+              .read(ironwoodMigrationCoordinatorProvider.notifier)
+              .setForeground(true),
+      onHide:
+          () => ref
+              .read(ironwoodMigrationCoordinatorProvider.notifier)
+              .setForeground(false),
+      onPause:
+          () => ref
+              .read(ironwoodMigrationCoordinatorProvider.notifier)
+              .setForeground(false),
     );
   }
 

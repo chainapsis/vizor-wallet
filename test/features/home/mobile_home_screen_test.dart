@@ -912,6 +912,12 @@ void main() {
       );
       expect(find.text('Receive your first ZEC'), findsNothing);
       expect(find.text('Migration in progress'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
+            .onPressed,
+        isNull,
+      );
     },
   );
 
@@ -1060,6 +1066,56 @@ void main() {
     expect(find.text('Next migration batch is ready'), findsOneWidget);
     expect(find.text('Your next migration batch is ready'), findsOneWidget);
     expect(find.textContaining('sign'), findsNothing);
+  });
+
+  testWidgets('does not request a signed batch before its proof window', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 3000000,
+          chainTipHeight: 3000000,
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _proofReadyMigrationStatus(nextActionHeight: 3000020),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Next migration batch is ready'), findsNothing);
+    expect(find.text('Your next migration batch is ready'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_home_ironwood_migration_banner')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('does not request proof before migration height is known', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(100000000),
+          scannedHeight: 0,
+          chainTipHeight: 3000020,
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _proofReadyMigrationStatus(nextActionHeight: 3000020),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Next migration batch is ready'), findsNothing);
+    expect(find.text('Your next migration batch is ready'), findsNothing);
   });
 
   testWidgets(
@@ -1302,6 +1358,7 @@ void main() {
       final attention = mobileIronwoodMigrationAttention(
         status,
         currentHeight: currentHeight,
+        broadcastHeight: currentHeight,
         isHardware: false,
       )!;
       final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
