@@ -370,6 +370,7 @@ rust_sync.MigrationStatus _status({
   int? nextActionHeight,
   int? estimatedCompletionHeight,
   int? nextActionPartIndex,
+  List<int>? currentSigningPartIndices,
   int pendingTxCount = 2,
   int signedChildPcztCount = 0,
   String? message,
@@ -397,6 +398,9 @@ rust_sync.MigrationStatus _status({
     nextActionHeight: nextActionHeight,
     estimatedCompletionHeight: estimatedCompletionHeight,
     nextActionPartIndex: nextActionPartIndex,
+    currentSigningPartIndices: currentSigningPartIndices == null
+        ? null
+        : frb.Uint32List.fromList(currentSigningPartIndices),
     message: message,
     scheduledBroadcasts:
         scheduledBroadcasts ??
@@ -3250,6 +3254,7 @@ void main() {
           phase: kIronwoodMigrationReadyToMigratePhase,
           parts: parts,
           targetValues: List<int>.filled(10, 100_000_000),
+          currentSigningPartIndices: const [8, 9],
         ),
       ),
     );
@@ -3268,11 +3273,303 @@ void main() {
     final painter = ring.painter as dynamic;
     expect(painter.segments, 10);
     expect(painter.completedSegments, {
-      for (var index = 0; index < 8; index++) index,
+      for (var index = 1; index <= 8; index++) index,
     });
-    expect(painter.highlightedSegments, {8, 9});
+    expect(painter.highlightedSegments, {0, 9});
     expect(painter.visibleSegmentGap, 4);
     expect(tester.getCenter(find.text('2 ZEC (20%)')).dx, greaterThan(250));
+  });
+
+  testWidgets('keeps action batch selection in part-index order', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 10; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index == 8 ? 0 : index + 1,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: index == 2 || index == 8
+              ? rust_sync.MigrationPartState.needsInput
+              : rust_sync.MigrationPartState.scheduled,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(10, 100_000_000),
+          currentSigningPartIndices: const [2, 8],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Batch #1'), findsOneWidget);
+    expect(find.text('8 ZEC (80%)'), findsOneWidget);
+    expect(find.text('Sign batch #1'), findsOneWidget);
+  });
+
+  testWidgets('highlights every part in the initial signing request', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 10; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: rust_sync.MigrationPartState.preparing,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(10, 100_000_000),
+          currentSigningPartIndices: List<int>.generate(10, (index) => index),
+        ),
+        hardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ring = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('mobile_ironwood_migration_attention_ring')),
+    );
+    final painter = ring.painter as dynamic;
+    expect(painter.highlightedSegments, {
+      for (var index = 0; index < 10; index++) index,
+    });
+  });
+
+  testWidgets(
+    'highlights only the multiple parts marked for the signing request',
+    (tester) async {
+      _useMobileViewport(tester);
+      final parts = [
+        for (var index = 0; index < 12; index++)
+          rust_sync.MigrationPartStatus(
+            partIndex: index,
+            scheduleOrder: index,
+            valueZatoshi: BigInt.from(100_000_000),
+            state: index == 1 || index == 10
+                ? rust_sync.MigrationPartState.needsInput
+                : rust_sync.MigrationPartState.scheduled,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+      ];
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            parts: parts,
+            targetValues: List<int>.filled(12, 100_000_000),
+            currentSigningPartIndices: const [1, 10],
+          ),
+          hardware: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ring = tester.widget<CustomPaint>(
+        find.byKey(const ValueKey('mobile_ironwood_migration_attention_ring')),
+      );
+      final painter = ring.painter as dynamic;
+      expect(painter.highlightedSegments, {1, 10});
+    },
+  );
+
+  testWidgets('pulses only the current migration signing parts', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 12; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: index == 1 || index == 10
+              ? rust_sync.MigrationPartState.needsInput
+              : rust_sync.MigrationPartState.scheduled,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(12, 100_000_000),
+          currentSigningPartIndices: const [1, 10],
+        ),
+        hardware: true,
+        disableAnimations: false,
+      ),
+    );
+
+    final ringFinder = find.byKey(
+      const ValueKey('mobile_ironwood_migration_attention_ring'),
+    );
+    for (var attempt = 0; attempt < 20 && !tester.any(ringFinder); attempt++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    ({Set<int> highlightedSegments, double highlightOpacity}) painter() {
+      final customPaint = tester.widget<CustomPaint>(ringFinder);
+      final ringPainter = customPaint.painter as dynamic;
+      return (
+        highlightedSegments: Set<int>.of(
+          ringPainter.highlightedSegments as Set<int>,
+        ),
+        highlightOpacity: ringPainter.highlightOpacity as double,
+      );
+    }
+
+    expect(painter().highlightedSegments, {1, 10});
+    expect(painter().highlightOpacity, closeTo(0.40, 0.0001));
+
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(painter().highlightOpacity, closeTo(1, 0.0001));
+
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(painter().highlightOpacity, closeTo(0.40, 0.0001));
+  });
+
+  testWidgets(
+    'keeps migration signing parts fully visible with reduced motion',
+    (tester) async {
+      _useMobileViewport(tester);
+      final parts = [
+        for (var index = 0; index < 12; index++)
+          rust_sync.MigrationPartStatus(
+            partIndex: index,
+            scheduleOrder: index,
+            valueZatoshi: BigInt.from(100_000_000),
+            state: index == 1 || index == 10
+                ? rust_sync.MigrationPartState.needsInput
+                : rust_sync.MigrationPartState.scheduled,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+      ];
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            parts: parts,
+            targetValues: List<int>.filled(12, 100_000_000),
+            currentSigningPartIndices: const [1, 10],
+          ),
+          hardware: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ringFinder = find.byKey(
+        const ValueKey('mobile_ironwood_migration_attention_ring'),
+      );
+      double opacity() {
+        final customPaint = tester.widget<CustomPaint>(ringFinder);
+        final painter = customPaint.painter as dynamic;
+        return painter.highlightOpacity as double;
+      }
+
+      final ring = tester.widget<CustomPaint>(ringFinder);
+      final ringPainter = ring.painter as dynamic;
+      expect(ringPainter.highlightedSegments, {1, 10});
+      expect(opacity(), 1);
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(opacity(), 1);
+    },
+  );
+
+  testWidgets('orders migration ring by current scheduled execution', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      rust_sync.MigrationPartStatus(
+        partIndex: 2,
+        scheduleOrder: 0,
+        scheduledHeight: 3_000_200,
+        txidHex: 'bb',
+        valueZatoshi: BigInt.from(300_000_000),
+        state: rust_sync.MigrationPartState.completed,
+        confirmationCount: 3,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPartStatus(
+        partIndex: 0,
+        scheduleOrder: 2,
+        scheduledHeight: 3_000_100,
+        txidHex: 'cc',
+        valueZatoshi: BigInt.from(100_000_000),
+        state: rust_sync.MigrationPartState.scheduled,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPartStatus(
+        partIndex: 1,
+        scheduleOrder: 1,
+        scheduledHeight: 3_000_200,
+        txidHex: 'aa',
+        valueZatoshi: BigInt.from(200_000_000),
+        state: rust_sync.MigrationPartState.needsInput,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: const [100_000_000, 200_000_000, 300_000_000],
+          currentSigningPartIndices: const [1],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ring = tester.widget<CustomPaint>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter.runtimeType.toString() == '_MigrationRingPainter',
+      ),
+    );
+    final painter = ring.painter as dynamic;
+    final weights = painter.segmentWeights as List<double>;
+    expect(weights, hasLength(3));
+    expect(weights[0], closeTo(1 / 6, 0.000001));
+    expect(weights[1], closeTo(2 / 6, 0.000001));
+    expect(weights[2], closeTo(3 / 6, 0.000001));
+    expect(weights.reduce((sum, value) => sum + value), closeTo(1, 1e-12));
+    expect(painter.completedSegments, {2});
+    expect(painter.highlightedSegments, {1});
   });
 
   testWidgets('shows the animated loader while a software batch is signing', (
@@ -3896,7 +4193,7 @@ void main() {
   });
 
   testWidgets(
-    'maps denomination confirmation progress into the preparation ring',
+    'renders the neutral preparation idle ring when animations are disabled',
     (tester) async {
       _useMobileViewport(tester);
       await tester.pumpWidget(
@@ -3911,13 +4208,58 @@ void main() {
       await tester.pumpAndSettle();
 
       final ring = tester.widget<CustomPaint>(
-        find.byKey(const ValueKey('mobile_ironwood_preparation_progress_ring')),
+        find.byKey(const ValueKey('mobile_ironwood_preparation_idle_ring')),
       );
       final painter = ring.painter as dynamic;
-      expect(painter.progress as double, closeTo(5 / 9, 0.0001));
+      final weights = painter.weights as List<double>;
+      expect(weights, hasLength(9));
+      expect(weights.reduce((a, b) => a + b), closeTo(1, 0.0001));
+      expect(painter.rotation as double, 0);
       expect(painter.visibleSegmentGap as double, 4);
     },
   );
+
+  testWidgets('animates the preparation idle ring', (tester) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.migrating,
+        previewSurface: MobileIronwoodMigrationPreviewSurface.preparationActive,
+        disableAnimations: false,
+      ),
+    );
+    await tester.pump();
+
+    final ringFinder = find.byKey(
+      const ValueKey('mobile_ironwood_preparation_idle_ring'),
+    );
+    final initialPainter =
+        tester.widget<CustomPaint>(ringFinder).painter as dynamic;
+    final initialWeights = List<double>.of(
+      initialPainter.weights as List<double>,
+    );
+    final initialRotation = initialPainter.rotation as double;
+
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    var didAnimate = false;
+    for (var frame = 0; frame < 12; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      final animatedPainter =
+          tester.widget<CustomPaint>(ringFinder).painter as dynamic;
+      final animatedWeights = animatedPainter.weights as List<double>;
+      final animatedRotation = animatedPainter.rotation as double;
+      didAnimate =
+          didAnimate ||
+          animatedWeights.asMap().entries.any(
+            (entry) => entry.value != initialWeights[entry.key],
+          ) ||
+          animatedRotation != initialRotation;
+    }
+
+    expect(didAnimate, isTrue);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'keeps the preparation complete modal visible during wallet sync',

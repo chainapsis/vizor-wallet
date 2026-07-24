@@ -3981,6 +3981,26 @@ fn ready_to_migrate_does_not_report_denomination_parts_as_completed_transfers() 
 }
 
 #[test]
+fn migration_batch_signing_selector_reports_initial_and_resign_requests_exactly() {
+    assert_eq!(
+        select_migration_batch_signing_part_indices(3, 0, 0, &[]).unwrap(),
+        vec![0, 1, 2]
+    );
+    assert_eq!(
+        select_migration_batch_signing_part_indices(2, 2, 2, &[1, 10]).unwrap(),
+        vec![1, 10]
+    );
+    assert_eq!(
+        select_migration_batch_signing_part_indices(0, 0, 0, &[]).unwrap_err(),
+        "Migration run has no prepared denomination notes"
+    );
+    assert_eq!(
+        select_migration_batch_signing_part_indices(3, 1, 0, &[]).unwrap_err(),
+        "Migration transactions are already signed and scheduled"
+    );
+}
+
+#[test]
 fn legacy_pending_parts_backfill_from_signed_child_identity() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();

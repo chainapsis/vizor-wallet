@@ -23,6 +23,43 @@ class MobileIronwoodMigrationPartPresentation {
   final double? progress;
 }
 
+List<rust_sync.MigrationPartStatus> _orderedMobileMigrationParts(
+  Iterable<rust_sync.MigrationPartStatus> parts,
+) {
+  final orderedParts = [...parts];
+  if (orderedParts.every((part) => part.scheduledHeight != null)) {
+    orderedParts.sort((left, right) {
+      final byHeight = left.scheduledHeight!.compareTo(right.scheduledHeight!);
+      if (byHeight != 0) return byHeight;
+      final leftTxid = left.txidHex;
+      final rightTxid = right.txidHex;
+      if (leftTxid != null && rightTxid != null) {
+        final byTxid = leftTxid.compareTo(rightTxid);
+        if (byTxid != 0) return byTxid;
+      }
+      final leftOrder = left.scheduleOrder;
+      final rightOrder = right.scheduleOrder;
+      if (leftOrder != null && rightOrder != null) {
+        final bySchedule = leftOrder.compareTo(rightOrder);
+        if (bySchedule != 0) return bySchedule;
+      }
+      return left.partIndex.compareTo(right.partIndex);
+    });
+  } else if (orderedParts.every((part) => part.scheduleOrder != null)) {
+    orderedParts.sort((left, right) {
+      final bySchedule = left.scheduleOrder!.compareTo(right.scheduleOrder!);
+      return bySchedule != 0
+          ? bySchedule
+          : left.partIndex.compareTo(right.partIndex);
+    });
+  } else {
+    orderedParts.sort(
+      (left, right) => left.partIndex.compareTo(right.partIndex),
+    );
+  }
+  return orderedParts;
+}
+
 List<MobileIronwoodMigrationPartPresentation>
 _mobileMigrationPartPresentations({
   required rust_sync.MigrationStatus? status,
@@ -42,28 +79,7 @@ _mobileMigrationPartPresentations({
       for (final transfer in previewPlan?.scheduledTransfers ?? const [])
         transfer.partIndex: transfer,
     };
-    final orderedParts = [...statusParts];
-    if (orderedParts.every((part) => part.scheduleOrder != null)) {
-      orderedParts.sort((left, right) {
-        final bySchedule = left.scheduleOrder!.compareTo(right.scheduleOrder!);
-        return bySchedule != 0
-            ? bySchedule
-            : left.partIndex.compareTo(right.partIndex);
-      });
-    } else if (orderedParts.every((part) => part.scheduledHeight != null)) {
-      orderedParts.sort((left, right) {
-        final byHeight = left.scheduledHeight!.compareTo(
-          right.scheduledHeight!,
-        );
-        return byHeight != 0
-            ? byHeight
-            : left.partIndex.compareTo(right.partIndex);
-      });
-    } else {
-      orderedParts.sort(
-        (left, right) => left.partIndex.compareTo(right.partIndex),
-      );
-    }
+    final orderedParts = _orderedMobileMigrationParts(statusParts);
     return List.generate(orderedParts.length, (displayIndex) {
       final part = orderedParts[displayIndex];
       final needsAttention =

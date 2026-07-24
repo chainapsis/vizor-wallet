@@ -1475,6 +1475,7 @@ class MigrationStatus {
   final int? nextActionHeight;
   final int? estimatedCompletionHeight;
   final int? nextActionPartIndex;
+  final Uint32List? currentSigningPartIndices;
   final List<MigrationScheduledBroadcast> scheduledBroadcasts;
   final List<MigrationPartStatus> parts;
 
@@ -1501,6 +1502,7 @@ class MigrationStatus {
     this.nextActionHeight,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
+    this.currentSigningPartIndices,
     required this.scheduledBroadcasts,
     required this.parts,
   });
@@ -1529,6 +1531,7 @@ class MigrationStatus {
       nextActionHeight.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
+      currentSigningPartIndices.hashCode ^
       scheduledBroadcasts.hashCode ^
       parts.hashCode;
 
@@ -1562,6 +1565,7 @@ class MigrationStatus {
           nextActionHeight == other.nextActionHeight &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&
+          currentSigningPartIndices == other.currentSigningPartIndices &&
           scheduledBroadcasts == other.scheduledBroadcasts &&
           parts == other.parts;
 }
