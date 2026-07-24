@@ -981,7 +981,6 @@ final _readyMigrationStatus = rust_sync.MigrationStatus(
   signingBatchLimit: 50,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
-  maxPreparedNotesPerRun: 64,
   scheduledBroadcasts: const [],
   parts: const [],
 );
@@ -1009,7 +1008,6 @@ final _mixedMigrationStatus = rust_sync.MigrationStatus(
   signingBatchLimit: 50,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
-  maxPreparedNotesPerRun: 64,
   scheduledBroadcasts: const [],
   parts: [
     rust_sync.MigrationPartStatus(

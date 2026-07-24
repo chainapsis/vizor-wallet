@@ -845,7 +845,6 @@ MigrationStatus _migrationStatus(String phase) {
     signingBatchLimit: 0,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
-    maxPreparedNotesPerRun: 64,
     scheduledBroadcasts: const [],
     parts: const [],
   );

@@ -146,7 +146,8 @@ class _MobileMigrationPrivateStartState
           : _MigrationPreparationState.active,
       progress: 0,
       isKeystone: _isKeystone,
-      pausedMessage: _error ??
+      pausedMessage:
+          _error ??
           (keystonePlan == null ? null : _keystonePreparationSignatureMessage),
       onBack: () => context.go('/home'),
       onContinue: _starting
@@ -193,10 +194,7 @@ Future<void> _recoverMobileBackgroundTrackingBestEffort(
 bool _keystoneTwoRoundPlanSupported(
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) {
-  final limit = plan.signingBatchLimit;
-  if (limit <= 0) return false;
-  return plan.denominationSplitStageCount <= limit &&
-      plan.plannedBatchCount <= limit;
+  return plan.signingBatchLimit > 0;
 }
 
 String _mobilePrivateMigrationStartErrorMessage(Object error) {

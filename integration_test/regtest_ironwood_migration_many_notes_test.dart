@@ -77,6 +77,7 @@ void main() {
         dbPath: await getWalletDbPath(),
         network: 'regtest',
         accountUuid: accountUuid,
+        spacePreparationBroadcasts: true,
       );
       expect(plan, isNotNull);
       final migrationPlan = plan!;

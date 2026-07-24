@@ -319,16 +319,20 @@ rust_sync.MigrationStatus _status({
         (broadcastStatuses == null
             ? const []
             : [
-              for (var index = 0; index < broadcastStatuses.length; index++)
-                rust_sync.MigrationScheduledBroadcast(
-                  txidHex: 'tx-$index',
-                  valueZatoshi: BigInt.from(412_000_000),
-                  scheduledAtMs:
-                      DateTime(2026, 7, 20, 10).millisecondsSinceEpoch,
-                  scheduledHeight: 3_000_000 + index,
-                  status: broadcastStatuses[index],
-                ),
-            ]),
+                for (var index = 0; index < broadcastStatuses.length; index++)
+                  rust_sync.MigrationScheduledBroadcast(
+                    txidHex: 'tx-$index',
+                    valueZatoshi: BigInt.from(412_000_000),
+                    scheduledAtMs: DateTime(
+                      2026,
+                      7,
+                      20,
+                      10,
+                    ).millisecondsSinceEpoch,
+                    scheduledHeight: 3_000_000 + index,
+                    status: broadcastStatuses[index],
+                  ),
+              ]),
     parts: parts,
   );
 }
@@ -488,13 +492,12 @@ Widget _app({
       data: theme,
       child: MaterialApp.router(
         routerConfig: router,
-        builder:
-            (context, child) => MediaQuery(
-              data: MediaQuery.of(
-                context,
-              ).copyWith(disableAnimations: disableAnimations),
-              child: child!,
-            ),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(disableAnimations: disableAnimations),
+          child: child!,
+        ),
       ),
     ),
   );
@@ -517,17 +520,16 @@ Widget _productionApp({
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   bool disableAnimations = true,
 }) {
-  final cta =
-      status == null
-          ? const IronwoodHomeMigrationCtaState.start(
-            network: 'main',
-            accountUuid: 'account-1',
-          )
-          : IronwoodHomeMigrationCtaState.resume(
-            network: 'main',
-            accountUuid: 'account-1',
-            status: status,
-          );
+  final cta = status == null
+      ? const IronwoodHomeMigrationCtaState.start(
+          network: 'main',
+          accountUuid: 'account-1',
+        )
+      : IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        );
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: [
@@ -538,46 +540,41 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/options',
-        builder:
-            (_, _) => const MobileIronwoodMigrationFlowScreen(
-              step: MobileIronwoodMigrationStep.options,
-            ),
+        builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.options,
+        ),
       ),
       GoRoute(
         path: '/migration/private/start',
-        builder:
-            (_, state) => MobileIronwoodMigrationFlowScreen(
-              step: MobileIronwoodMigrationStep.privateStart,
-              previewPrivatePlan: switch (state.extra) {
-                rust_sync.OrchardMigrationPrivatePlan plan => plan,
-                _ => null,
-              },
-            ),
+        builder: (_, state) => MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.privateStart,
+          previewPrivatePlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => null,
+          },
+        ),
       ),
       GoRoute(
         path: '/migration/private/notifications',
-        builder:
-            (_, state) => MobileIronwoodMigrationFlowScreen(
-              step: MobileIronwoodMigrationStep.notifications,
-              previewPrivatePlan: switch (state.extra) {
-                rust_sync.OrchardMigrationPrivatePlan plan => plan,
-                _ => null,
-              },
-            ),
+        builder: (_, state) => MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.notifications,
+          previewPrivatePlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => null,
+          },
+        ),
       ),
       GoRoute(
         path: '/migration/fast/review',
-        builder:
-            (_, _) => const MobileIronwoodMigrationFlowScreen(
-              step: MobileIronwoodMigrationStep.fastReview,
-            ),
+        builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.fastReview,
+        ),
       ),
       GoRoute(
         path: '/migration/private/status',
-        builder:
-            (_, _) => MobileIronwoodMigrationPrivateStatusScreen(
-              approvedPlan: privatePlan,
-            ),
+        builder: (_, _) => MobileIronwoodMigrationPrivateStatusScreen(
+          approvedPlan: privatePlan,
+        ),
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
@@ -635,13 +632,12 @@ Widget _productionApp({
       data: AppThemeData.light,
       child: MaterialApp.router(
         routerConfig: router,
-        builder:
-            (context, child) => MediaQuery(
-              data: MediaQuery.of(
-                context,
-              ).copyWith(disableAnimations: disableAnimations),
-              child: child!,
-            ),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(disableAnimations: disableAnimations),
+          child: child!,
+        ),
       ),
     ),
   );
@@ -891,12 +887,11 @@ void main() {
     BoxDecoration decorationFor(String key) {
       final keyed = find.byKey(ValueKey(key));
       final widget = tester.widget(keyed);
-      final container =
-          widget is Container
-              ? widget
-              : tester.widget<Container>(
-                find.descendant(of: keyed, matching: find.byType(Container)),
-              );
+      final container = widget is Container
+          ? widget
+          : tester.widget<Container>(
+              find.descendant(of: keyed, matching: find.byType(Container)),
+            );
       return container.decoration! as BoxDecoration;
     }
 
@@ -1155,9 +1150,8 @@ void main() {
               expect(approvedSchedule, _plan.scheduledTransfers);
               return 'software-draft-run';
             },
-            getNotificationAuthorizationStatus:
-                () async =>
-                    IronwoodMigrationNotificationAuthorizationStatus.denied,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.denied,
           ),
         ),
       );
@@ -1193,18 +1187,16 @@ void main() {
           },
         ),
         startedStatus: startedStatus,
-        ctaBuilder:
-            () =>
-                started
-                    ? IronwoodHomeMigrationCtaState.resume(
-                      network: 'main',
-                      accountUuid: 'account-1',
-                      status: startedStatus,
-                    )
-                    : const IronwoodHomeMigrationCtaState.start(
-                      network: 'main',
-                      accountUuid: 'account-1',
-                    ),
+        ctaBuilder: () => started
+            ? IronwoodHomeMigrationCtaState.resume(
+                network: 'main',
+                accountUuid: 'account-1',
+                status: startedStatus,
+              )
+            : const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
       ),
     );
     await tester.pumpAndSettle();
@@ -1275,9 +1267,8 @@ void main() {
         initialLocation: '/migration/private/notifications',
         migrationService: _migrationService(
           ios: true,
-          getNotificationAuthorizationStatus:
-              () async =>
-                  IronwoodMigrationNotificationAuthorizationStatus.denied,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.denied,
         ),
         privatePlanFuture: planCompleter.future,
       ),
@@ -1315,9 +1306,8 @@ void main() {
         initialLocation: '/migration/private/notifications',
         migrationService: _migrationService(
           ios: true,
-          getNotificationAuthorizationStatus:
-              () async =>
-                  IronwoodMigrationNotificationAuthorizationStatus.denied,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.denied,
           requestNotificationAuthorization: () async {
             requestCount++;
             return false;
@@ -1490,14 +1480,18 @@ void main() {
       final centerFinder = find.byKey(
         const ValueKey('mobile_ironwood_preparation_complete_center'),
       );
-      final initialTurns =
-          tester.widget<RotationTransition>(orbitFinder).turns.value;
+      final initialTurns = tester
+          .widget<RotationTransition>(orbitFinder)
+          .turns
+          .value;
       final initialCenter = tester.getCenter(centerFinder);
 
       await tester.pump(const Duration(milliseconds: 7500));
 
-      final updatedTurns =
-          tester.widget<RotationTransition>(orbitFinder).turns.value;
+      final updatedTurns = tester
+          .widget<RotationTransition>(orbitFinder)
+          .turns
+          .value;
       expect(updatedTurns, closeTo(initialTurns + 0.25, 0.01));
       expect(tester.getCenter(centerFinder), initialCenter);
     },
@@ -2030,31 +2024,27 @@ void main() {
           storage: const FlutterSecureStorage(),
         ),
         getEndpoint: () => defaultRpcEndpointConfig('main'),
-        prepareKeystoneDenominationMigration: ({
-          required dbPath,
-          required network,
-          required accountUuid,
-        }) async {
-          prepareCount += 1;
-          return rust_sync.KeystoneMigrationSigningRequest(
-            requestId: 'request-$prepareCount',
-            messages: [
-              rust_sync.KeystoneMigrationMessage(
-                id: 'message-$prepareCount',
-                redactedPczt: Uint8List.fromList([prepareCount]),
-              ),
-            ],
-            signingBatchLimit: 50,
-          );
-        },
-        getKeystoneProofStatus:
-            ({required requestId}) async =>
-                const rust_sync.KeystoneMigrationProofStatus(
-                  readyCount: 1,
-                  totalCount: 1,
-                  isReady: true,
-                  isFailed: false,
-                ),
+        prepareKeystoneDenominationMigration:
+            ({required dbPath, required network, required accountUuid}) async {
+              prepareCount += 1;
+              return rust_sync.KeystoneMigrationSigningRequest(
+                requestId: 'request-$prepareCount',
+                messages: [
+                  rust_sync.KeystoneMigrationMessage(
+                    id: 'message-$prepareCount',
+                    redactedPczt: Uint8List.fromList([prepareCount]),
+                  ),
+                ],
+                signingBatchLimit: 50,
+              );
+            },
+        getKeystoneProofStatus: ({required requestId}) async =>
+            const rust_sync.KeystoneMigrationProofStatus(
+              readyCount: 1,
+              totalCount: 1,
+              isReady: true,
+              isFailed: false,
+            ),
         discardKeystoneMigrationRequest: ({required requestId}) async {
           discardedRequestIds.add(requestId);
           if (!discardStarted.isCompleted) {
@@ -2313,10 +2303,9 @@ void main() {
           partIndex: index,
           scheduleOrder: index == 8 ? 0 : index + 1,
           valueZatoshi: BigInt.from(100_000_000),
-          state:
-              index < 8
-                  ? rust_sync.MigrationPartState.completed
-                  : rust_sync.MigrationPartState.needsInput,
+          state: index < 8
+              ? rust_sync.MigrationPartState.completed
+              : rust_sync.MigrationPartState.needsInput,
           confirmationCount: index < 8 ? 3 : 0,
           confirmationTarget: 3,
         ),
@@ -2382,13 +2371,12 @@ void main() {
       find.byType(MobileIronwoodMigrationPrivateStatusScreen),
     );
     final container = ProviderScope.containerOf(context);
-    final attention =
-        mobileIronwoodMigrationAttention(
-          status,
-          currentHeight: 3_000_000,
-          broadcastHeight: 3_000_000,
-          isHardware: true,
-        )!;
+    final attention = mobileIronwoodMigrationAttention(
+      status,
+      currentHeight: 3_000_000,
+      broadcastHeight: 3_000_000,
+      isHardware: true,
+    )!;
     final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
       accountUuid: 'account-1',
       runId: status.activeRunId!,
@@ -2609,20 +2597,18 @@ void main() {
           phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
           activeRunId: 'run-1',
         ),
-        ctaBuilder:
-            () =>
-                started
-                    ? IronwoodHomeMigrationCtaState.resume(
-                      network: 'main',
-                      accountUuid: 'account-1',
-                      status: _status(
-                        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
-                      ),
-                    )
-                    : const IronwoodHomeMigrationCtaState.start(
-                      network: 'main',
-                      accountUuid: 'account-1',
-                    ),
+        ctaBuilder: () => started
+            ? IronwoodHomeMigrationCtaState.resume(
+                network: 'main',
+                accountUuid: 'account-1',
+                status: _status(
+                  phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                ),
+              )
+            : const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
       ),
     );
     await tester.pumpAndSettle();
@@ -2650,20 +2636,18 @@ void main() {
           statusReadCount++;
           throw StateError('temporary status failure');
         },
-        ctaBuilder:
-            () =>
-                started
-                    ? IronwoodHomeMigrationCtaState.resume(
-                      network: 'main',
-                      accountUuid: 'account-1',
-                      status: _status(
-                        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
-                      ),
-                    )
-                    : const IronwoodHomeMigrationCtaState.start(
-                      network: 'main',
-                      accountUuid: 'account-1',
-                    ),
+        ctaBuilder: () => started
+            ? IronwoodHomeMigrationCtaState.resume(
+                network: 'main',
+                accountUuid: 'account-1',
+                status: _status(
+                  phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                ),
+              )
+            : const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
       ),
     );
     await tester.pumpAndSettle();
@@ -2764,9 +2748,8 @@ void main() {
           initialLocation: '/migration/private/status',
           migrationService: _migrationService(
             ios: true,
-            getNotificationAuthorizationStatus:
-                () async =>
-                    IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
             getPreparationRuntimeState:
                 ({
                   required network,
@@ -3035,9 +3018,8 @@ void main() {
           initialLocation: '/migration/private/status',
           migrationService: _migrationService(
             ios: true,
-            getNotificationAuthorizationStatus:
-                () async =>
-                    IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
             getPreparationRuntimeState:
                 ({
                   required network,
@@ -3068,24 +3050,23 @@ void main() {
           initialLocation: '/migration/private/status',
           migrationService: _migrationService(
             ios: true,
-            getNotificationAuthorizationStatus:
-                () async =>
-                    IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
             getPreparationRuntimeState:
                 ({
                   required network,
                   required accountUuid,
                   required runId,
-                }) async =>
-                    IronwoodMigrationPreparationRuntimeState
-                        .foregroundContinuationPending,
-            acknowledgePreparationForegroundContinuation: ({
-              required network,
-              required accountUuid,
-              required runId,
-            }) async {
-              acknowledgementCount++;
-            },
+                }) async => IronwoodMigrationPreparationRuntimeState
+                    .foregroundContinuationPending,
+            acknowledgePreparationForegroundContinuation:
+                ({
+                  required network,
+                  required accountUuid,
+                  required runId,
+                }) async {
+                  acknowledgementCount++;
+                },
           ),
           migrationCoordinator: () => coordinator,
           status: _status(
@@ -3115,24 +3096,19 @@ void main() {
         initialLocation: '/migration/private/status',
         migrationService: _migrationService(
           ios: true,
-          getNotificationAuthorizationStatus:
-              () async =>
-                  IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
           getPreparationRuntimeState:
               ({
                 required network,
                 required accountUuid,
                 required runId,
-              }) async =>
-                  IronwoodMigrationPreparationRuntimeState
-                      .foregroundContinuationPending,
-          acknowledgePreparationForegroundContinuation: ({
-            required network,
-            required accountUuid,
-            required runId,
-          }) async {
-            acknowledgementCount++;
-          },
+              }) async => IronwoodMigrationPreparationRuntimeState
+                  .foregroundContinuationPending,
+          acknowledgePreparationForegroundContinuation:
+              ({required network, required accountUuid, required runId}) async {
+                acknowledgementCount++;
+              },
         ),
         migrationCoordinator: () => coordinator,
         status: _status(

@@ -75,7 +75,7 @@ fn migration_anchor_counts_empty_buckets_with_the_same_root_once() {
 }
 
 #[test]
-fn keystone_migration_signing_rejects_more_than_fifty_messages() {
+fn keystone_migration_signing_accepts_multiple_firmware_rounds() {
     let messages = (0..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
         .map(|index| KeystoneMigrationMessage {
             id: format!("message-{index}"),
@@ -83,10 +83,7 @@ fn keystone_migration_signing_rejects_more_than_fifty_messages() {
         })
         .collect::<Vec<_>>();
 
-    let error = validate_keystone_migration_messages(&messages).unwrap_err();
-
-    assert!(error.contains("at most 50 PCZTs per round"));
-    assert!(error.contains("needs 51"));
+    validate_keystone_migration_messages(&messages).unwrap();
 }
 
 #[test]
@@ -108,6 +105,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 proof_error: None,
                 draft_run_id: None,
                 split_stages: vec![],
+                direct_prepared_refs: vec![],
                 total_migratable_zatoshi: plan.total_migratable_zatoshi,
                 plan: plan.clone(),
             },
@@ -147,6 +145,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                     state: KeystoneMigrationRequestState::ProofReady,
                     proof_error: None,
                     split_stages: vec![],
+                    direct_prepared_refs: vec![],
                     total_migratable_zatoshi: plan.total_migratable_zatoshi,
                     plan: plan.clone(),
                     child_messages: vec![],
@@ -175,31 +174,65 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
 }
 
 #[test]
-fn child_migration_policy_caps_each_proof_batch_at_k_max() {
+fn foreground_migration_policy_keeps_existing_batch_behavior() {
     assert_eq!(MigrationBroadcastPolicy::FOREGROUND.limit(500), 500);
-    assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(0), 0);
-    assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(7), 7);
-    assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(9), 9);
-
-    let child_policy = MigrationBroadcastPolicy::FOREGROUND.child_proof_batch();
-    assert_eq!(child_policy.proof_limit(0), 0);
-    assert_eq!(child_policy.proof_limit(7), 7);
-    assert_eq!(child_policy.proof_limit(8), 8);
-    assert_eq!(
-        child_policy.proof_limit(9),
-        ZIP318_MAX_PARTS_PER_ANCHOR_COHORT as usize
-    );
+    assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(500), 500);
     assert!(!MigrationBroadcastPolicy::FOREGROUND.should_defer_broadcast(500));
     assert!(!MigrationBroadcastPolicy::FOREGROUND.is_cancelled());
 }
 
 #[test]
-fn child_proof_batches_follow_persistent_part_indexes() {
-    assert_eq!(child_proof_batch_index(0), 0);
-    assert_eq!(child_proof_batch_index(7), 0);
-    assert_eq!(child_proof_batch_index(8), 1);
-    assert_eq!(child_proof_batch_index(15), 1);
-    assert_eq!(child_proof_batch_index(16), 2);
+fn private_plan_timing_accounts_for_spaced_preparation_transactions() {
+    let immediate = private_plan_proof_timing(
+        WalletNetwork::Main,
+        migration::PreparationTimingPolicy::Immediate,
+        1008,
+        1006,
+        5,
+        1,
+        &[],
+    )
+    .unwrap();
+    let spaced = private_plan_proof_timing(
+        WalletNetwork::Main,
+        migration::PreparationTimingPolicy::Zip318Spaced,
+        1008,
+        1006,
+        5,
+        1,
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(immediate, (144, Some(1154)));
+    assert_eq!(spaced, (288, Some(1298)));
+}
+
+#[test]
+fn private_plan_timing_uses_direct_note_mined_height_without_split_layers() {
+    let waiting = private_plan_proof_timing(
+        WalletNetwork::Main,
+        migration::PreparationTimingPolicy::Immediate,
+        1008,
+        1010,
+        0,
+        0,
+        &[1008],
+    )
+    .unwrap();
+    let already_ready = private_plan_proof_timing(
+        WalletNetwork::Main,
+        migration::PreparationTimingPolicy::Immediate,
+        1008,
+        1010,
+        0,
+        0,
+        &[700],
+    )
+    .unwrap();
+
+    assert_eq!(waiting, (144, Some(1154)));
+    assert_eq!(already_ready, (0, Some(866)));
 }
 
 #[test]

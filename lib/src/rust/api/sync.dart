@@ -383,10 +383,12 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncGetOrchardMigrationPrivatePlan(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 /// Foreground-only migration preparation for the Swift-owned outbox.
@@ -1484,7 +1486,6 @@ class MigrationStatus {
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
-  final int maxPreparedNotesPerRun;
   final int? nextActionHeight;
   final int? estimatedCompletionHeight;
   final int? nextActionPartIndex;
@@ -1511,7 +1512,6 @@ class MigrationStatus {
     required this.signingBatchLimit,
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
-    required this.maxPreparedNotesPerRun,
     this.nextActionHeight,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
@@ -1540,7 +1540,6 @@ class MigrationStatus {
       signingBatchLimit.hashCode ^
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
-      maxPreparedNotesPerRun.hashCode ^
       nextActionHeight.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
@@ -1574,7 +1573,6 @@ class MigrationStatus {
           signingBatchLimit == other.signingBatchLimit &&
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
-          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           nextActionHeight == other.nextActionHeight &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&
@@ -1623,18 +1621,18 @@ class OrchardMigrationPrivatePlan {
   final BigInt estimatedTotalFeeZatoshi;
   final int plannedBatchCount;
   final int denominationSplitStageCount;
+  final int denominationSplitLayerCount;
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
 
-  /// Estimated blocks after preparation confirmation, derived from the
-  /// projected final prepared-note height rather than a fixed bucket count.
+  /// Estimated preparation spacing plus the remaining blocks until every
+  /// funding note can use a valid migration anchor.
   final int proofReadinessDelayBlocks;
 
   /// Estimated absolute height at which the projected final prepared note
   /// can first use a valid migration anchor.
   final int? estimatedProofReadyHeight;
-  final int maxPreparedNotesPerRun;
   final List<MigrationScheduledTransfer> scheduledTransfers;
 
   const OrchardMigrationPrivatePlan({
@@ -1647,12 +1645,12 @@ class OrchardMigrationPrivatePlan {
     required this.estimatedTotalFeeZatoshi,
     required this.plannedBatchCount,
     required this.denominationSplitStageCount,
+    required this.denominationSplitLayerCount,
     required this.signingBatchLimit,
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
     required this.proofReadinessDelayBlocks,
     this.estimatedProofReadyHeight,
-    required this.maxPreparedNotesPerRun,
     required this.scheduledTransfers,
   });
 
@@ -1667,12 +1665,12 @@ class OrchardMigrationPrivatePlan {
       estimatedTotalFeeZatoshi.hashCode ^
       plannedBatchCount.hashCode ^
       denominationSplitStageCount.hashCode ^
+      denominationSplitLayerCount.hashCode ^
       signingBatchLimit.hashCode ^
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
       proofReadinessDelayBlocks.hashCode ^
       estimatedProofReadyHeight.hashCode ^
-      maxPreparedNotesPerRun.hashCode ^
       scheduledTransfers.hashCode;
 
   @override
@@ -1689,12 +1687,12 @@ class OrchardMigrationPrivatePlan {
           estimatedTotalFeeZatoshi == other.estimatedTotalFeeZatoshi &&
           plannedBatchCount == other.plannedBatchCount &&
           denominationSplitStageCount == other.denominationSplitStageCount &&
+          denominationSplitLayerCount == other.denominationSplitLayerCount &&
           signingBatchLimit == other.signingBatchLimit &&
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
           estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
-          maxPreparedNotesPerRun == other.maxPreparedNotesPerRun &&
           scheduledTransfers == other.scheduledTransfers;
 }
 

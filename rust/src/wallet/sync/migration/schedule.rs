@@ -1,4 +1,15 @@
-fn random_schedule_block_offsets_with_rng<R: Rng + ?Sized>(
+const UNIT_STEP: f64 = 1.0 / ((1u64 << 53) as f64);
+const U64_TO_MANTISSA_SHIFT: u32 = 11;
+
+fn draw_unit_left_open<R: RngCore + ?Sized>(rng: &mut R) -> f64 {
+    1.0 - ((rng.next_u64() >> U64_TO_MANTISSA_SHIFT) as f64) * UNIT_STEP
+}
+
+fn round_nonnegative_to_u32(value: f64) -> u32 {
+    (value + 0.5) as u64 as u32
+}
+
+fn random_schedule_block_offsets_with_rng<R: RngCore + CryptoRng + ?Sized>(
     count: usize,
     mean_delay_blocks: u32,
     max_delay_blocks: u32,
@@ -11,9 +22,9 @@ fn random_schedule_block_offsets_with_rng<R: Rng + ?Sized>(
     let mut elapsed_blocks = 0u32;
     for _ in 0..count {
         let delay = loop {
-            let uniform = rng.gen_range(f64::MIN_POSITIVE..1.0);
-            let sampled = (-uniform.ln() * f64::from(mean_delay_blocks)).ceil() as u32;
-            let sampled = sampled.max(1);
+            let uniform = draw_unit_left_open(rng);
+            let sampled =
+                round_nonnegative_to_u32(-uniform.ln() * f64::from(mean_delay_blocks));
             if sampled <= max_delay_blocks {
                 break sampled;
             }
@@ -30,7 +41,7 @@ pub(crate) fn planned_transfer_schedule<R, I>(
     rng: &mut R,
 ) -> Vec<MigrationScheduleEntry>
 where
-    R: Rng + ?Sized,
+    R: RngCore + CryptoRng + ?Sized,
     I: IntoIterator<Item = u64>,
 {
     planned_transfer_schedule_for_parts_with_policy(
@@ -51,7 +62,7 @@ fn planned_transfer_schedule_with_policy<R, I>(
     rng: &mut R,
 ) -> Vec<MigrationScheduleEntry>
 where
-    R: Rng + ?Sized,
+    R: RngCore + CryptoRng + ?Sized,
     I: IntoIterator<Item = u64>,
 {
     planned_transfer_schedule_for_parts_with_policy(
@@ -72,21 +83,19 @@ fn planned_transfer_schedule_for_parts_with_policy<R, I>(
     rng: &mut R,
 ) -> Vec<MigrationScheduleEntry>
 where
-    R: Rng + ?Sized,
+    R: RngCore + CryptoRng + ?Sized,
     I: IntoIterator<Item = (u32, u64)>,
 {
     let mut parts = parts.into_iter().collect::<Vec<_>>();
     parts.shuffle(rng);
     let (mean_delay_blocks, max_delay_blocks) =
         schedule_parameters_with_policy(network, timing_policy);
-    let offsets = std::iter::once(0)
-        .chain(random_schedule_block_offsets_with_rng(
-            parts.len().saturating_sub(1),
-            mean_delay_blocks,
-            max_delay_blocks,
-            rng,
-        ))
-        .take(parts.len());
+    let offsets = random_schedule_block_offsets_with_rng(
+        parts.len(),
+        mean_delay_blocks,
+        max_delay_blocks,
+        rng,
+    );
     parts
         .into_iter()
         .zip(offsets)
@@ -137,17 +146,12 @@ fn validate_schedule_with_policy(
 
     let (_, max_delay_blocks) = schedule_parameters_with_policy(network, timing_policy);
     let mut previous_offset = 0;
-    for (index, entry) in schedule.iter().enumerate() {
+    for entry in schedule {
         let gap = entry
             .block_offset
             .checked_sub(previous_offset)
             .ok_or("Approved migration schedule is not ordered")?;
-        let valid_gap = if index == 0 {
-            gap <= max_delay_blocks
-        } else {
-            (1..=max_delay_blocks).contains(&gap)
-        };
-        if !valid_gap {
+        if gap > max_delay_blocks {
             return Err("Approved migration schedule delay is outside policy".to_string());
         }
         previous_offset = entry.block_offset;

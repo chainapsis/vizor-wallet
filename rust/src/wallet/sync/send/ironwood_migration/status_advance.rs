@@ -153,10 +153,7 @@ async fn advance_staged_denomination_run(
         pending_salt_base64,
     )?;
     if stages.is_empty() {
-        return Err(format!(
-            "Migration state invariant failed: active run {} has no denomination stages",
-            run.run_id
-        ));
+        return Ok(StagedDenominationAdvance::Ready);
     }
 
     let fallback_total_count = u32::try_from(run.target_values_zatoshi.len())
@@ -334,7 +331,10 @@ fn prepare_software_migration_run(
         }
         split_sigs.insert(stage.id.clone(), sigs);
     }
-    let prepared_refs = prepared_refs_from_denomination_stages(&split.stages);
+    let prepared_refs = prepared_refs_from_denomination_split(
+        &split.direct_prepared_refs,
+        &split.stages,
+    );
     let denomination_stages = signed_denomination_stage_inserts(&split.stages, &split_sigs)?;
 
     let child_messages = split

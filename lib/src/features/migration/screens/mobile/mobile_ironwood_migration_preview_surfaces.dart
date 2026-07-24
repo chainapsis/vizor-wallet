@@ -736,6 +736,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.actionBatchValue,
     this.actionInProgress = false,
     this.onAction,
+    this.actionRunning = false,
     this.onBack,
     this.onPreparationCompleteDone,
   });
@@ -761,6 +762,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final String? actionBatchValue;
   final bool actionInProgress;
   final VoidCallback? onAction;
+  final bool actionRunning;
   final VoidCallback? onBack;
   final VoidCallback? onPreparationCompleteDone;
 
@@ -863,6 +865,7 @@ class _MigrationProgressPreview extends StatelessWidget {
                     batchValue: actionBatchValue,
                     actionInProgress: actionInProgress,
                     onAction: onAction,
+                    actionRunning: actionRunning,
                   )
                 else
                   _MigrationProgressStatus(
@@ -1442,6 +1445,7 @@ class _MigrationNeedsInputCard extends StatelessWidget {
     this.batchValue,
     this.actionInProgress = false,
     this.onAction,
+    this.actionRunning = false,
   });
 
   final String? message;
@@ -1450,6 +1454,7 @@ class _MigrationNeedsInputCard extends StatelessWidget {
   final String? batchValue;
   final bool actionInProgress;
   final VoidCallback? onAction;
+  final bool actionRunning;
 
   @override
   Widget build(BuildContext context) {
@@ -1492,9 +1497,12 @@ class _MigrationNeedsInputCard extends StatelessWidget {
           expand: true,
           constrainContent: true,
           height: 50,
-          onPressed: onAction,
-          leading: actionInProgress
-              ? const AppIcon(AppIcons.loader, size: 20)
+          onPressed: actionRunning ? null : onAction ?? () {},
+          leading: actionRunning
+              ? const AppIcon(
+                  AppIcons.loader,
+                  semanticLabel: 'Migration action in progress',
+                )
               : null,
           child: FittedBox(
             fit: BoxFit.scaleDown,

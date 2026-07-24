@@ -123,7 +123,6 @@ rust_sync.MigrationStatus _activeMigrationStatus() => rust_sync.MigrationStatus(
   signingBatchLimit: 12,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
-  maxPreparedNotesPerRun: 12,
   scheduledBroadcasts: const [],
   parts: const [],
 );

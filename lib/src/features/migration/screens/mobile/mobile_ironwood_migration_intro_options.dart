@@ -210,10 +210,9 @@ class _MobileMigrationOptionsState
     }
 
     try {
-      final authorization =
-          await ref
-              .read(ironwoodMigrationServiceProvider)
-              .notificationAuthorizationStatus();
+      final authorization = await ref
+          .read(ironwoodMigrationServiceProvider)
+          .notificationAuthorizationStatus();
       if (!mounted) return;
       context.go(
         authorization.allowsBackgroundMigration
@@ -283,17 +282,15 @@ class _MobileMigrationOptionsState
           _MobileMigrationOptionCard(
             key: const ValueKey('mobile_ironwood_immediate_option'),
             title: 'Immediate',
-            body:
-                widget.immediateEnabled
-                    ? 'Migrates your entire balance in one batch. '
-                        'Fast, but less private.'
-                    : 'Not available with Keystone.',
+            body: widget.immediateEnabled
+                ? 'Migrates your entire balance in one batch. '
+                      'Fast, but less private.'
+                : 'Not available with Keystone.',
             selected: immediateSelected,
             icon: _MigrationChoiceIcon.immediate,
-            onTap:
-                widget.immediateEnabled
-                    ? () => _select(_MobileMigrationOption.immediate)
-                    : null,
+            onTap: widget.immediateEnabled
+                ? () => _select(_MobileMigrationOption.immediate)
+                : null,
           ),
         ],
       ),

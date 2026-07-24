@@ -48,6 +48,7 @@ struct CreatedDenominationStagePczt {
 struct CreatedPaddedDenominationPczts {
     stages: Vec<CreatedDenominationStagePczt>,
     predicted_notes: Vec<PredictedMigrationNote>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
 }
@@ -59,6 +60,7 @@ struct StoredDenominationPczt {
     proof_error: Option<String>,
     draft_run_id: Option<String>,
     split_stages: Vec<CreatedDenominationStagePczt>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
 }
@@ -66,6 +68,7 @@ struct StoredDenominationPczt {
 struct StoredDenominationCompletion {
     draft_run_id: Option<String>,
     split_stages: Vec<CreatedDenominationStagePczt>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
 }
@@ -113,6 +116,7 @@ struct StoredSingleQrMigrationPczt {
     state: KeystoneMigrationRequestState,
     proof_error: Option<String>,
     split_stages: Vec<CreatedDenominationStagePczt>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
     child_messages: Vec<CreatedMigrationPczt>,
@@ -121,6 +125,7 @@ struct StoredSingleQrMigrationPczt {
 
 struct StoredSingleQrMigrationCompletion {
     split_stages: Vec<CreatedDenominationStagePczt>,
+    direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
     plan: super::migration::DenominationPlan,
     child_messages: Vec<CreatedMigrationPczt>,
@@ -242,12 +247,6 @@ fn validate_keystone_migration_messages(
 ) -> Result<(), String> {
     if messages.is_empty() {
         return Err("Keystone migration request has no messages".to_string());
-    }
-    if messages.len() > ZCASH_SIGN_BATCH_MAX_MESSAGES {
-        return Err(format!(
-            "Keystone migration signing supports at most {ZCASH_SIGN_BATCH_MAX_MESSAGES} PCZTs per round, but this round needs {}.",
-            messages.len()
-        ));
     }
     let mut ids = HashSet::with_capacity(messages.len());
     let mut payloads = HashSet::with_capacity(messages.len());

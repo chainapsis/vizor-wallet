@@ -202,7 +202,6 @@ final _activeMigrationStatus = MigrationStatus(
   signingBatchLimit: 50,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
-  maxPreparedNotesPerRun: 64,
   scheduledBroadcasts: const [],
   parts: const [],
 );
