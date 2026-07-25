@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -656,6 +657,7 @@ Widget _productionApp({
   bool realKeystoneDenominationRoute = false,
   bool realKeystoneBatchRoute = false,
   bool disableAnimations = true,
+  List<Override> extraOverrides = const [],
 }) {
   final cta = status == null
       ? const IronwoodHomeMigrationCtaState.start(
@@ -730,6 +732,7 @@ Widget _productionApp({
 
   return ProviderScope(
     overrides: [
+      ...extraOverrides,
       appBootstrapProvider.overrideWithValue(_bootstrap(hardware: hardware)),
       if (hardware) accountProvider.overrideWith(_HardwareAccountNotifier.new),
       syncProvider.overrideWith(
@@ -1316,11 +1319,11 @@ void main() {
               find
                   .ancestor(
                     of: find.byKey(
-                      const ValueKey(
-                        'mobile_ironwood_options_continue_button',
-                      ),
+                      const ValueKey('mobile_ironwood_options_continue_button'),
                     ),
-                    matching: find.byWidgetPredicate((widget) => widget is PopScope),
+                    matching: find.byWidgetPredicate(
+                      (widget) => widget is PopScope,
+                    ),
                   )
                   .first,
             )
@@ -3350,6 +3353,44 @@ void main() {
     }
   });
 
+  testWidgets('marks the displayed account seen, not a stale published one', (
+    tester,
+  ) async {
+    // The completion provider keeps serving its previous value while it
+    // reloads, so right after an account switch the published identity can
+    // still be the account the user left. Trusting it would mark that account
+    // seen while the one on screen stays unseen and keeps being routed back to.
+    _useMobileViewport(tester);
+    final seen = <String>[];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationCompletePhase,
+          targetValues: const [412_000_000],
+        ),
+        extraOverrides: [
+          ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+            _RecordingCompletionStore(seen),
+          ),
+          ironwoodMigrationCompletionProvider.overrideWith(
+            (ref) => IronwoodMigrationCompletionState.visible(
+              network: 'main',
+              accountUuid: 'account-left-behind',
+              completionId: 'stale-completion',
+              transferredZatoshi: BigInt.from(412_000_000),
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(seen, hasLength(1));
+    expect(seen.single, startsWith('main:account-1:'));
+  });
+
   testWidgets('returns home from the full-screen completion state', (
     tester,
   ) async {
@@ -4707,4 +4748,26 @@ void main() {
     expect(find.text('Migration complete'), findsNothing);
     expect(find.text('0/1 Batch'), findsOneWidget);
   });
+}
+
+class _RecordingCompletionStore implements IronwoodMigrationCompletionStore {
+  _RecordingCompletionStore(this.seen);
+
+  final List<String> seen;
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async => false;
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    seen.add('$network:$accountUuid:$completionId');
+  }
 }

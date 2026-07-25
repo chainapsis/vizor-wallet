@@ -849,11 +849,16 @@ class _MobileMigrationRedesignedStatusState
     // it here from this screen's status can disagree with the status the
     // provider read, and a key that never matches leaves the run forever
     // unseen, so home would route back to this screen on every return.
-    final published = ref.read(ironwoodMigrationCompletionProvider).value;
-    final accountUuid =
-        published?.accountUuid ??
-        ref.read(accountProvider).value?.activeAccountUuid;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
+    // Only when it is for the account on screen. A refresh keeps serving the
+    // previous value, so right after an account switch the published identity
+    // can still be the account the user left — marking that one seen while the
+    // account they are looking at stays unseen and keeps being routed back to.
+    final publishedValue = ref.read(ironwoodMigrationCompletionProvider).value;
+    final published = publishedValue?.accountUuid == accountUuid
+        ? publishedValue
+        : null;
     final network =
         published?.network ?? ref.read(ironwoodMigrationInputsProvider).network;
     final completionId =
