@@ -4,7 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
-import 'package:flutter/services.dart' show MethodCall, MethodChannel;
+import 'package:flutter/services.dart'
+    show MethodCall, MethodChannel, PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -386,7 +387,7 @@ void main() {
   );
 
   test(
-    'foreground recovery rejects a missing requested-account outbox batch',
+    'foreground recovery requests credential recovery without a manifest',
     () async {
       var foregroundRuns = 0;
       final service = IronwoodMigrationService(
@@ -417,12 +418,11 @@ void main() {
               required runId,
               required expectedTxids,
               required requiredTxids,
-            }) async => false,
+            }) async => true,
         runMigrationOutboxOnceNow: () async {
           foregroundRuns++;
           return const IronwoodMigrationOutboxRunResult(
-            outcome: IronwoodMigrationOutboxRunOutcome.waiting,
-            nextHeight: 1_001,
+            outcome: IronwoodMigrationOutboxRunOutcome.noWork,
             observedHeight: 1_000,
           );
         },
@@ -437,11 +437,538 @@ void main() {
           isA<StateError>().having(
             (error) => error.message,
             'message',
-            contains('not available in the background outbox'),
+            contains('credential is missing for the active run'),
           ),
         ),
       );
-      expect(foregroundRuns, 0);
+      expect(foregroundRuns, 1);
+    },
+  );
+
+  test(
+    'a stale conflicting batch is revoked and restaged once before broadcast',
+    () async {
+      // A native record that cannot accept this run's scheduled transactions
+      // deadlocks every recovery attempt: staging keeps hitting the same
+      // conflict and nothing else can clear the record. While no transaction of
+      // the run has been broadcast, that record is stale and may be discarded.
+      final events = <String>[];
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      var stageCalls = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'txid-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'txid-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => throw PlatformException(
+              code: kIronwoodMigrationConflictingOutboxBatchCode,
+              message: 'conflictingBatch',
+            ),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(),
+        stageMigrationOutboxBatch: (_) async {
+          stageCalls++;
+          events.add('stage');
+          if (stageCalls == 1) {
+            throw PlatformException(
+              code: kIronwoodMigrationConflictingOutboxBatchCode,
+              message: 'conflictingBatch',
+            );
+          }
+          return const {'txid-1': 'digest-1'};
+        },
+        discardMigrationOutboxBatch: ({required batchId}) async {
+          events.add('discard');
+          return true;
+        },
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              events.add('revoke');
+            },
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async {
+              events.add('arm');
+              return true;
+            },
+        runMigrationOutboxOnceNow: () async {
+          events.add('run');
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.accepted,
+            observedHeight: 1_000,
+          );
+        },
+      );
+
+      final result = await service.recoverDueMigrationOutbox(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+
+      expect(events, ['stage', 'discard', 'stage', 'arm', 'run']);
+      expect(result.outcome, IronwoodMigrationOutboxRunOutcome.accepted);
+    },
+  );
+
+  test(
+    'a broadcast run keeps a conflicting batch instead of discarding it',
+    () async {
+      // Once a transaction of the run reached the network, the native record
+      // may hold submission state that a rebuild would lose. Such a conflict
+      // must surface instead of being cleared automatically.
+      final events = <String>[];
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  broadcastedTxCount: 1,
+                  parts: [_migrationPart(txidHex: 'txid-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'txid-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => throw PlatformException(
+              code: kIronwoodMigrationConflictingOutboxBatchCode,
+              message: 'conflictingBatch',
+            ),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(),
+        stageMigrationOutboxBatch: (_) async {
+          events.add('stage');
+          throw PlatformException(
+            code: kIronwoodMigrationConflictingOutboxBatchCode,
+            message: 'conflictingBatch',
+          );
+        },
+        discardMigrationOutboxBatch: ({required batchId}) async {
+          events.add('discard');
+          return true;
+        },
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              events.add('revoke');
+            },
+      );
+
+      await expectLater(
+        service.recoverDueMigrationOutbox(
+          network: 'test',
+          accountUuid: 'account-1',
+        ),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(events, ['stage']);
+    },
+  );
+
+  test(
+    'a conflicting native batch is repaired instead of failing the retry',
+    () async {
+      // The native store throws `conflictingBatch` when a batch record exists
+      // under this run's batch id but cannot deliver its scheduled
+      // transactions (no items, or items that do not cover them). That is the
+      // exact state a recovery has to repair, so the inspection call must
+      // report "no usable batch" instead of propagating and skipping the
+      // restore path entirely.
+      final events = <String>[];
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'txid-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'txid-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => throw PlatformException(
+              code: kIronwoodMigrationConflictingOutboxBatchCode,
+              message: 'conflictingBatch',
+            ),
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(),
+        stageMigrationOutboxBatch: (_) async {
+          events.add('stage');
+          return const {'txid-1': 'digest-1'};
+        },
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async {
+              events.add('arm');
+              return true;
+            },
+        runMigrationOutboxOnceNow: () async {
+          events.add('run');
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.accepted,
+            observedHeight: 1_000,
+          );
+        },
+      );
+
+      final result = await service.recoverDueMigrationOutbox(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+
+      expect(events, ['stage', 'arm', 'run']);
+      expect(result.outcome, IronwoodMigrationOutboxRunOutcome.accepted);
+    },
+  );
+
+  test(
+    'foreground recovery requests credential recovery for an unusable manifest',
+    () async {
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => false,
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async =>
+                throw StateError('Failed to decrypt secure-storage payload'),
+      );
+
+      await expectLater(
+        service.recoverDueMigrationOutbox(
+          network: 'test',
+          accountUuid: 'account-1',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('credential is missing for the active run'),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'a malformed native outbox reply is not a credential recovery request',
+    () async {
+      // A channel/payload-shape fault must surface as itself. Reporting it as an
+      // unusable credential would offer the user a rebuild that revokes a batch
+      // and retires a run over what is only a transport error.
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => false,
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => throw const IronwoodMigrationOutboxProtocolException(
+              'Ironwood migration outbox value is invalid: outcome.',
+            ),
+      );
+
+      Object? caught;
+      try {
+        await service.recoverDueMigrationOutbox(
+          network: 'test',
+          accountUuid: 'account-1',
+        );
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught, isA<IronwoodMigrationOutboxProtocolException>());
+      expect(
+        ironwoodMigrationNeedsCredentialRecovery(caught.toString()),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'explicit recovery refuses a run whose native outbox batch is intact',
+    () async {
+      // Recovery revokes the native outbox before it restages, and a failed
+      // restage falls through to run retirement. That window must stay closed
+      // for a run whose credential still exports it and whose native batch is
+      // already present: there is nothing to recover there.
+      final events = <String>[];
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'txid-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'txid-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getMnemonicBytesForAccount: (_) async =>
+            Uint8List.fromList([1, 2, 3, 4]),
+        isMobile: () => true,
+        isIOS: () => true,
+        isMacOS: () => false,
+        isHardwareAccount: (_) => false,
+        listMigrationOutboxReceipts: () async => const [],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => true,
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(),
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              events.add('revoke:$accountUuid');
+            },
+        retireUnbroadcastMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+            }) async {
+              events.add('retire:$expectedRunId');
+            },
+      );
+
+      await expectLater(
+        service.recoverSoftwarePrivateMigration(accountUuid: 'account-1'),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('still has a usable credential'),
+          ),
+        ),
+      );
+      expect(events, isEmpty);
     },
   );
 
@@ -1937,6 +2464,17 @@ void main() {
         ),
       ];
       final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'old-run',
+      );
       String? startedPassword;
       String? startedSalt;
       final service = IronwoodMigrationService(
@@ -1966,6 +2504,15 @@ void main() {
               required lightwalletdUrl,
               required expectedTxids,
             }) async => false,
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async =>
+                throw StateError('Failed to decrypt secure-storage payload'),
         revokeMigrationAccount:
             ({required network, required accountUuid}) async {
               events.add('revoke:$network:$accountUuid');
@@ -3291,6 +3838,7 @@ void main() {
 rust_sync.MigrationStatus _migrationStatus({
   String phase = 'ready_to_prepare',
   String? activeRunId,
+  int broadcastedTxCount = 0,
   List<rust_sync.MigrationPartStatus> parts = const [],
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
@@ -3304,7 +3852,7 @@ rust_sync.MigrationStatus _migrationStatus({
     denominationSplitCompletedCount: 0,
     denominationSplitTotalCount: 0,
     pendingTxCount: 0,
-    broadcastedTxCount: 0,
+    broadcastedTxCount: broadcastedTxCount,
     confirmedTxCount: 0,
     totalCount: 0,
     signedChildPcztCount: 0,

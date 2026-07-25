@@ -842,6 +842,27 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     }
   }
 
+  /// Removes one stale batch record without touching the rest of the account
+  /// scope.
+  ///
+  /// Recovery needs this when a record cannot accept its run's scheduled
+  /// transactions: revoking the whole account would also delete the run's
+  /// background credential, which is what re-staging depends on. Refuses while
+  /// the record still has delivery state, so nothing in flight is dropped.
+  mutating func discardBatch(batchId: String) throws -> Bool {
+    guard let batchIndex = batches.firstIndex(where: { $0.batchId == batchId })
+    else {
+      return false
+    }
+    guard !batches[batchIndex].items.contains(where: { $0.status == .submitting }),
+      !receipts.contains(where: { $0.batchId == batchId })
+    else {
+      throw BackgroundMigrationOutboxError.conflictingBatch
+    }
+    batches.remove(at: batchIndex)
+    return true
+  }
+
   mutating func revoke(network: String, accountUuid: String) {
     let batchIds = Set(
       batches.filter { $0.network == network && $0.accountUuid == accountUuid }

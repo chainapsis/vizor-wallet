@@ -164,6 +164,20 @@ import UIKit
         } catch {
           result(self.backgroundMigrationFlutterError(error))
         }
+      case "discardOutboxBatch":
+        do {
+          // Re-staging follows immediately and arms its own schedule, and
+          // discarding can only remove work, so no scheduling change is needed
+          // here. The batch id is reused, so notification bookkeeping stays
+          // keyed to the same record.
+          result(
+            try BackgroundMigrationOutboxChannel.discardBatch(
+              arguments: call.arguments
+            )
+          )
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
       case "hasOutboxBatch":
         do {
           result(try BackgroundMigrationOutboxChannel.hasBatch(arguments: call.arguments))
@@ -440,7 +454,20 @@ import UIKit
   }
 
   private func backgroundMigrationFlutterError(_ error: Error) -> FlutterError {
-    FlutterError(
+    // A conflicting batch is a repairable state, not a generic failure: a batch
+    // record exists for this run but cannot deliver its scheduled
+    // transactions. Dart distinguishes it by code so recovery can restage the
+    // missing items instead of aborting on the inspection call.
+    if let outboxError = error as? BackgroundMigrationOutboxError,
+      outboxError == .conflictingBatch
+    {
+      return FlutterError(
+        code: "ironwood_outbox_conflicting_batch",
+        message: String(describing: error),
+        details: nil
+      )
+    }
+    return FlutterError(
       code: "ironwood_outbox_error",
       message: String(describing: error),
       details: nil

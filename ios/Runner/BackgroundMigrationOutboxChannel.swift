@@ -59,6 +59,19 @@ enum BackgroundMigrationOutboxChannel {
     return recovered
   }
 
+  static func discardBatch(
+    arguments: Any?,
+    store: BackgroundMigrationOutboxStore = .shared
+  ) throws -> Bool {
+    let arguments = try dictionary(arguments)
+    let batchId = try string(arguments, "batchId")
+    var discarded = false
+    _ = try store.update { snapshot in
+      discarded = try snapshot.discardBatch(batchId: batchId)
+    }
+    return discarded
+  }
+
   static func hasBatch(
     arguments: Any?,
     store: BackgroundMigrationOutboxStore = .shared

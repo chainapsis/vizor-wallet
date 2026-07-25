@@ -4,7 +4,7 @@ import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart' show MethodChannel;
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 
 import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/layout/app_form_factor.dart';
@@ -23,6 +23,77 @@ const _credentialRecoveryRequiredError =
 
 bool ironwoodMigrationNeedsCredentialRecovery(String? error) {
   return error?.contains(_credentialRecoveryRequiredError) ?? false;
+}
+
+/// Platform error code the native outbox reports when a batch record exists
+/// under the requested batch id but cannot deliver that run's scheduled
+/// transactions — no items, or items that do not cover them.
+///
+/// This is the state a recovery exists to repair, so inspection calls treat it
+/// as "no usable batch" rather than a failure. Staging can merge the missing
+/// items back into that record; refusing early leaves the run stuck with
+/// nothing able to restore it.
+const kIronwoodMigrationConflictingOutboxBatchCode =
+    'ironwood_outbox_conflicting_batch';
+
+bool _isConflictingOutboxBatchError(Object error) =>
+    error is PlatformException &&
+    error.code == kIronwoodMigrationConflictingOutboxBatchCode;
+
+/// Whether a conflicting native batch for this run may be discarded and rebuilt
+/// without losing delivery state.
+///
+/// Only before anything of the run reaches the network. After that the record
+/// can hold submission or receipt state that a rebuild would drop, so such a
+/// conflict must surface instead of being cleared automatically.
+bool _canDiscardStaleNativeOutboxBatch(rust_sync.MigrationStatus status) {
+  if (status.broadcastedTxCount > 0 || status.confirmedTxCount > 0) {
+    return false;
+  }
+  return status.scheduledBroadcasts.every(
+    (broadcast) => broadcast.status.toLowerCase() == 'scheduled',
+  );
+}
+
+/// A malformed reply from the native migration outbox channel.
+///
+/// This is a transport fault, not a credential fault. Recovery paths must not
+/// read it as an unusable credential: a channel or payload-shape mismatch would
+/// otherwise be reported to the user as "the stored migration credential cannot
+/// restore the scheduled transaction" and could route an explicit recovery into
+/// run retirement. It stays a [FormatException] subtype so callers that already
+/// treat malformed stored payloads as recoverable keep working.
+class IronwoodMigrationOutboxProtocolException extends FormatException {
+  const IronwoodMigrationOutboxProtocolException(super.message);
+}
+
+/// The stored credential manifest belongs to a different wallet context
+/// (network, account, or database) than the active one.
+class IronwoodMigrationCredentialContextMismatchException extends StateError {
+  IronwoodMigrationCredentialContextMismatchException()
+    : super(
+        'Ironwood migration credential manifest does not match the active '
+        'wallet context.',
+      );
+}
+
+/// Whether [error] means the stored background credential can no longer unlock
+/// this run's persisted transactions, which is the only condition that may
+/// escalate to credential recovery.
+///
+/// Native-channel protocol faults are excluded on purpose. The remaining text
+/// match covers the one signal that has no typed channel yet: Rust reports a
+/// failed payload decrypt as a plain string across FRB
+/// (`rust/src/wallet/secret_payload.rs`). Do not extend this list without a
+/// captured runtime error to justify the entry.
+bool _isUnusableMigrationCredentialError(Object error) {
+  if (error is IronwoodMigrationOutboxProtocolException) return false;
+  if (error is FormatException ||
+      error is IronwoodMigrationBackgroundCredentialRunMismatchException ||
+      error is IronwoodMigrationCredentialContextMismatchException) {
+    return true;
+  }
+  return error.toString().contains('Failed to decrypt secure-storage payload');
 }
 
 typedef IronwoodMigrationStatusGetter =
@@ -71,6 +142,8 @@ typedef IronwoodMigrationAccountRevoker =
       required String network,
       required String accountUuid,
     });
+typedef IronwoodMigrationOutboxBatchDiscarder =
+    Future<bool> Function({required String batchId});
 typedef IronwoodMigrationNotificationAuthorizationRequester =
     Future<bool> Function();
 typedef IronwoodMigrationNotificationAuthorizationStatusGetter =
@@ -259,7 +332,7 @@ class IronwoodMigrationOutboxRunResult {
       'temporarilyUnavailable' =>
         IronwoodMigrationOutboxRunOutcome.temporarilyUnavailable,
       'cancelled' => IronwoodMigrationOutboxRunOutcome.cancelled,
-      _ => throw const FormatException(
+      _ => throw const IronwoodMigrationOutboxProtocolException(
         'Ironwood migration outbox returned an invalid outcome.',
       ),
     };
@@ -432,6 +505,7 @@ class IronwoodMigrationService {
     IronwoodMigrationPreparationForegroundContinuationAcknowledger?
     acknowledgePreparationForegroundContinuation,
     IronwoodMigrationAccountRevoker? revokeMigrationAccount,
+    IronwoodMigrationOutboxBatchDiscarder? discardMigrationOutboxBatch,
     IronwoodMigrationNotificationAuthorizationRequester?
     requestNotificationAuthorization,
     IronwoodMigrationNotificationAuthorizationStatusGetter?
@@ -496,6 +570,8 @@ class IronwoodMigrationService {
        revokeMigrationAccount =
            revokeMigrationAccount ??
            IronwoodMigrationBackgroundLifecycle.instance.revokeAccount,
+       discardMigrationOutboxBatch =
+           discardMigrationOutboxBatch ?? _defaultDiscardMigrationOutboxBatch,
        _requestNotificationAuthorization =
            requestNotificationAuthorization ??
            _defaultRequestNotificationAuthorization,
@@ -587,6 +663,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationPreparationForegroundContinuationAcknowledger
   acknowledgePreparationForegroundContinuation;
   final IronwoodMigrationAccountRevoker revokeMigrationAccount;
+  final IronwoodMigrationOutboxBatchDiscarder discardMigrationOutboxBatch;
   final IronwoodMigrationNotificationAuthorizationRequester
   _requestNotificationAuthorization;
   final IronwoodMigrationNotificationAuthorizationStatusGetter
@@ -789,51 +866,84 @@ class IronwoodMigrationService {
             status: status,
           );
           if (!available) {
-            final manifest = await backgroundCredentialStore.read(
-              network: context.network,
-              accountUuid: context.accountUuid,
-            );
-            if (manifest == null || status.activeRunId == null) {
-              throw StateError(
-                'The scheduled migration transaction is not available in the '
-                'background outbox.',
+            try {
+              final manifest = await backgroundCredentialStore.read(
+                network: context.network,
+                accountUuid: context.accountUuid,
               );
-            }
-            final resolvedManifest = await _resolveManifestContext(
-              manifest,
-              context,
-            );
-            await backgroundCredentialStore.bindExpectedRunId(
-              network: context.network,
-              accountUuid: context.accountUuid,
-              expectedRunId: status.activeRunId!,
-            );
-            final restored = await _stagePersistedMigrationOutbox(
-              context: context,
-              credential: _MigrationCredential(
+              if (manifest == null) {
+                throw StateError(
+                  '$_credentialRecoveryRequiredError '
+                  'The scheduled migration transaction is not available in '
+                  'the background outbox.',
+                );
+              }
+              if (status.activeRunId == null) {
+                throw StateError(
+                  'The scheduled migration transaction is not available in '
+                  'the background outbox.',
+                );
+              }
+              final resolvedManifest = await _resolveManifestContext(
+                manifest,
+                context,
+              );
+              await backgroundCredentialStore.bindExpectedRunId(
+                network: context.network,
+                accountUuid: context.accountUuid,
+                expectedRunId: status.activeRunId!,
+              );
+              final credential = _MigrationCredential(
                 password: resolvedManifest.credentialHex,
                 saltBase64: resolvedManifest.saltBase64,
-              ),
-              expectedRunId: status.activeRunId,
-              requiredTxids: status.scheduledBroadcasts
+              );
+              final requiredTxids = status.scheduledBroadcasts
                   .where(
                     (broadcast) =>
                         broadcast.status.toLowerCase() == 'scheduled' &&
                         broadcast.txidHex.isNotEmpty,
                   )
                   .map((broadcast) => broadcast.txidHex.toLowerCase())
-                  .toSet(),
-            );
-            if (restored == null) {
+                  .toSet();
+              final restored = await _stagePersistedMigrationOutbox(
+                context: context,
+                credential: credential,
+                expectedRunId: status.activeRunId,
+                requiredTxids: requiredTxids,
+                statusForStaleBatchDiscard: status,
+              );
+              if (restored == null) {
+                throw StateError(
+                  '$_credentialRecoveryRequiredError '
+                  'The scheduled migration transaction could not be restored '
+                  'to the background outbox.',
+                );
+              }
+            } catch (error) {
+              if (!_isUnusableMigrationCredentialError(error)) rethrow;
               throw StateError(
-                'The scheduled migration transaction could not be restored '
-                'to the background outbox.',
+                '$_credentialRecoveryRequiredError '
+                'The stored migration credential cannot restore the '
+                'scheduled transaction.',
               );
             }
           }
         }
         final result = await runMigrationOutboxOnceNow();
         await _reconcileMigrationOutboxReceipts(context: context);
+        if (result.outcome == IronwoodMigrationOutboxRunOutcome.noWork) {
+          final refreshedStatus = await _getStatusForContext(context);
+          final stillScheduled = refreshedStatus.scheduledBroadcasts.any(
+            (broadcast) => broadcast.status.toLowerCase() == 'scheduled',
+          );
+          if (stillScheduled) {
+            throw StateError(
+              '$_credentialRecoveryRequiredError '
+              'The scheduled migration transaction is not runnable in the '
+              'background outbox.',
+            );
+          }
+        }
         return result;
       }),
     );
@@ -1169,6 +1279,7 @@ class IronwoodMigrationService {
             context: context,
             credential: credential,
             prepare: true,
+            statusForStaleBatchDiscard: status,
           );
           return refresh.staged;
         }
@@ -1210,19 +1321,100 @@ class IronwoodMigrationService {
         if (oldRunId == null) {
           throw StateError('There is no active Ironwood migration to recover.');
         }
-        final existingManifest = await backgroundCredentialStore.read(
-          network: context.network,
-          accountUuid: context.accountUuid,
-        );
-        if (existingManifest != null) {
-          throw StateError(
-            'The active Ironwood migration still has a usable credential.',
+        final requiredTxids = oldStatus.scheduledBroadcasts
+            .where(
+              (broadcast) =>
+                  broadcast.status.toLowerCase() == 'scheduled' &&
+                  broadcast.txidHex.isNotEmpty,
+            )
+            .map((broadcast) => broadcast.txidHex.toLowerCase())
+            .toSet();
+        IronwoodMigrationBackgroundCredentialManifest? existingManifest;
+        var existingCredentialIsUnusable = false;
+        // Set only when the stored credential still exports this run and covers
+        // every scheduled transaction. Reading the credential is the only work
+        // inside the classifying `try`: the side effects below must never be
+        // reinterpreted as a credential fault.
+        _MigrationCredential? usableCredential;
+        try {
+          existingManifest = await backgroundCredentialStore.read(
+            network: context.network,
+            accountUuid: context.accountUuid,
           );
+          if (existingManifest != null) {
+            final resolvedManifest = await _resolveManifestContext(
+              existingManifest,
+              context,
+            );
+            await backgroundCredentialStore.bindExpectedRunId(
+              network: context.network,
+              accountUuid: context.accountUuid,
+              expectedRunId: oldRunId,
+            );
+            final batch = await exportMigrationOutbox(
+              dbPath: context.dbPath,
+              network: context.network,
+              accountUuid: context.accountUuid,
+              password: resolvedManifest.credentialHex,
+              saltBase64: resolvedManifest.saltBase64,
+            );
+            final exportedTxids =
+                batch?.items
+                    .map((item) => item.txidHex.toLowerCase())
+                    .toSet() ??
+                const <String>{};
+            if (batch == null ||
+                batch.runId != oldRunId ||
+                !exportedTxids.containsAll(requiredTxids)) {
+              existingCredentialIsUnusable = true;
+            } else {
+              usableCredential = _MigrationCredential(
+                password: resolvedManifest.credentialHex,
+                saltBase64: resolvedManifest.saltBase64,
+              );
+            }
+          }
+        } catch (error) {
+          if (!_isUnusableMigrationCredentialError(error)) rethrow;
+          existingCredentialIsUnusable = true;
         }
-        if (await _recoverPersistedMigrationOutbox(
-          context: context,
-          status: oldStatus,
-        )) {
+        if (usableCredential != null) {
+          if (await _hasPersistedMigrationOutboxBatch(
+            context: context,
+            status: oldStatus,
+          )) {
+            // Nothing is missing: the credential opens this run and the native
+            // batch is staged. Rebuilding here would revoke a healthy batch and,
+            // on a failed restage, fall through to retiring the run.
+            throw StateError(
+              'The active Ironwood migration still has a usable credential.',
+            );
+          }
+          // Same-run restage. A stale record is discarded on demand rather than
+          // revoking the account scope, which would delete the very credential
+          // this restage depends on. A failed restage leaves the DB run intact
+          // for the rebuild below.
+          final restored = await _stagePersistedMigrationOutbox(
+            context: context,
+            credential: usableCredential,
+            expectedRunId: oldRunId,
+            requiredTxids: requiredTxids,
+            statusForStaleBatchDiscard: oldStatus,
+          );
+          if (restored == null) {
+            existingCredentialIsUnusable = true;
+          } else {
+            await runMigrationOutboxOnceNow();
+            await _reconcileMigrationOutboxReceipts(context: context);
+            return;
+          }
+        }
+        if (existingManifest == null &&
+            !existingCredentialIsUnusable &&
+            await _recoverPersistedMigrationOutbox(
+              context: context,
+              status: oldStatus,
+            )) {
           return;
         }
 
@@ -1289,6 +1481,7 @@ class IronwoodMigrationService {
               context: context,
               credential: credential,
               prepare: true,
+              statusForStaleBatchDiscard: currentStatus,
             );
           }
           if (startError != null) {
@@ -1506,6 +1699,7 @@ class IronwoodMigrationService {
                 context: context,
                 credential: credential,
                 prepare: prepareOutboxAfterOperation,
+                statusForStaleBatchDiscard: currentStatus,
               );
               if ((prepareOutboxAfterOperation && onCurrentStatus != null) ||
                   outboxRefresh.reconciledReceipt) {
@@ -1624,14 +1818,23 @@ class IronwoodMigrationService {
     final expectedTxids = _migrationOutboxExpectedTxids(status);
     if (expectedTxids.isEmpty) return false;
 
-    final recovered = await recoverMigrationOutboxBatch(
-      batchId: _migrationOutboxBatchId(context, runId),
-      network: context.network,
-      accountUuid: context.accountUuid,
-      runId: runId,
-      lightwalletdUrl: lightwalletdUrl,
-      expectedTxids: expectedTxids,
-    );
+    bool recovered;
+    try {
+      recovered = await recoverMigrationOutboxBatch(
+        batchId: _migrationOutboxBatchId(context, runId),
+        network: context.network,
+        accountUuid: context.accountUuid,
+        runId: runId,
+        lightwalletdUrl: lightwalletdUrl,
+        expectedTxids: expectedTxids,
+      );
+    } catch (error) {
+      // A conflicting record cannot be re-armed in place. Report "not
+      // recovered" so the caller falls through to credential-backed restaging,
+      // which can merge the missing items back into that record.
+      if (!_isConflictingOutboxBatchError(error)) rethrow;
+      recovered = false;
+    }
     if (!recovered) return false;
 
     _scheduledBackgroundMigrations.add(_credentialKey(context));
@@ -1656,14 +1859,19 @@ class IronwoodMigrationService {
         .toSet()
         .toList(growable: false);
     if (expectedTxids.isEmpty || requiredTxids.isEmpty) return false;
-    return hasMigrationOutboxBatch(
-      batchId: _migrationOutboxBatchId(context, runId),
-      network: context.network,
-      accountUuid: context.accountUuid,
-      runId: runId,
-      expectedTxids: expectedTxids,
-      requiredTxids: requiredTxids,
-    );
+    try {
+      return await hasMigrationOutboxBatch(
+        batchId: _migrationOutboxBatchId(context, runId),
+        network: context.network,
+        accountUuid: context.accountUuid,
+        runId: runId,
+        expectedTxids: expectedTxids,
+        requiredTxids: requiredTxids,
+      );
+    } catch (error) {
+      if (!_isConflictingOutboxBatchError(error)) rethrow;
+      return false;
+    }
   }
 
   List<String> _migrationOutboxExpectedTxids(rust_sync.MigrationStatus status) {
@@ -1790,16 +1998,14 @@ class IronwoodMigrationService {
       }
     }
 
-    throw StateError(
-      'Ironwood migration credential manifest does not match the active '
-      'wallet context.',
-    );
+    throw IronwoodMigrationCredentialContextMismatchException();
   }
 
   Future<_MigrationOutboxRefreshResult> _refreshMigrationOutbox({
     required _MigrationCredentialContext context,
     required _MigrationCredential credential,
     required bool prepare,
+    rust_sync.MigrationStatus? statusForStaleBatchDiscard,
   }) async {
     final lightwalletdUrl = context.lightwalletdUrl;
     if (lightwalletdUrl == null) {
@@ -1820,6 +2026,7 @@ class IronwoodMigrationService {
     final batch = await _stagePersistedMigrationOutbox(
       context: context,
       credential: credential,
+      statusForStaleBatchDiscard: statusForStaleBatchDiscard,
     );
     if (batch == null) return const _MigrationOutboxRefreshResult();
 
@@ -1838,11 +2045,18 @@ class IronwoodMigrationService {
     );
   }
 
+  /// Stages this run's persisted transactions into the native outbox.
+  ///
+  /// Pass [statusForStaleBatchDiscard] to authorise clearing a stale record: a
+  /// native batch that cannot accept the run's scheduled transactions rejects
+  /// every staging attempt, and nothing else can remove it. The status decides
+  /// whether discarding is safe, so callers without one keep failing closed.
   Future<rust_sync.MigrationOutboxBatch?> _stagePersistedMigrationOutbox({
     required _MigrationCredentialContext context,
     required _MigrationCredential credential,
     String? expectedRunId,
     Set<String> requiredTxids = const {},
+    rust_sync.MigrationStatus? statusForStaleBatchDiscard,
   }) async {
     final lightwalletdUrl = context.lightwalletdUrl;
     if (lightwalletdUrl == null) return null;
@@ -1871,7 +2085,7 @@ class IronwoodMigrationService {
     }
 
     final batchId = _migrationOutboxBatchId(context, batch.runId);
-    final expectedDigests = await stageMigrationOutboxBatch({
+    final stagePayload = <String, Object?>{
       'batchId': batchId,
       'network': context.network,
       'accountUuid': context.accountUuid,
@@ -1895,7 +2109,24 @@ class IronwoodMigrationService {
             },
           )
           .toList(growable: false),
-    });
+    };
+    Map<String, String> expectedDigests;
+    try {
+      expectedDigests = await stageMigrationOutboxBatch(stagePayload);
+    } catch (error) {
+      final status = statusForStaleBatchDiscard;
+      if (!_isConflictingOutboxBatchError(error) ||
+          status == null ||
+          !_canDiscardStaleNativeOutboxBatch(status)) {
+        rethrow;
+      }
+      // The stored record cannot accept this run's scheduled transactions and
+      // no transaction of the run has reached the network, so it holds no
+      // delivery state worth keeping. Discarding only that record leaves the
+      // run's background credential and the rest of the account scope intact.
+      if (!await discardMigrationOutboxBatch(batchId: batchId)) rethrow;
+      expectedDigests = await stageMigrationOutboxBatch(stagePayload);
+    }
     final armedAndScheduled = await armMigrationOutboxBatch(
       batchId: batchId,
       expectedDigests: expectedDigests,
@@ -2262,6 +2493,16 @@ Future<bool> _defaultRecoverMigrationOutboxBatch({
       false;
 }
 
+Future<bool> _defaultDiscardMigrationOutboxBatch({
+  required String batchId,
+}) async {
+  return await _backgroundMigrationChannel.invokeMethod<bool>(
+        'discardOutboxBatch',
+        {'batchId': batchId},
+      ) ??
+      false;
+}
+
 Future<bool> _defaultHasMigrationOutboxBatch({
   required String batchId,
   required String network,
@@ -2306,7 +2547,7 @@ _defaultRunMigrationOutboxOnceNow() async {
   final result = await _backgroundMigrationChannel
       .invokeMethod<Map<Object?, Object?>>('runOutboxOnceNow');
   if (result == null) {
-    throw const FormatException(
+    throw const IronwoodMigrationOutboxProtocolException(
       'Ironwood migration outbox returned no result.',
     );
   }
@@ -2374,7 +2615,7 @@ class _MigrationOutboxReceipt {
   factory _MigrationOutboxReceipt.fromMap(Map<Object?, Object?> values) {
     final rawUpdates = values['scheduleUpdates'];
     if (rawUpdates is! List<Object?>) {
-      throw const FormatException(
+      throw const IronwoodMigrationOutboxProtocolException(
         'Ironwood migration outbox receipt has invalid schedule updates.',
       );
     }
@@ -2391,7 +2632,7 @@ class _MigrationOutboxReceipt {
       scheduleUpdates: rawUpdates
           .map((rawUpdate) {
             if (rawUpdate is! Map<Object?, Object?>) {
-              throw const FormatException(
+              throw const IronwoodMigrationOutboxProtocolException(
                 'Ironwood migration outbox receipt has an invalid schedule update.',
               );
             }
@@ -2428,11 +2669,15 @@ String _migrationOutboxBatchId(
 String _requiredOutboxString(Map<Object?, Object?> values, String key) {
   final value = values[key];
   if (value is String && value.isNotEmpty) return value;
-  throw FormatException('Ironwood migration outbox value is invalid: $key.');
+  throw IronwoodMigrationOutboxProtocolException(
+    'Ironwood migration outbox value is invalid: $key.',
+  );
 }
 
 int _requiredOutboxInt(Map<Object?, Object?> values, String key) {
   final value = values[key];
   if (value is int && value >= 0) return value;
-  throw FormatException('Ironwood migration outbox value is invalid: $key.');
+  throw IronwoodMigrationOutboxProtocolException(
+    'Ironwood migration outbox value is invalid: $key.',
+  );
 }

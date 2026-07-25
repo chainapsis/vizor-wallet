@@ -7,6 +7,40 @@ import XCTest
 final class BackgroundMigrationOutboxTests: XCTestCase {
   private let now = Date(timeIntervalSince1970: 1_750_000_000)
 
+  func testDiscardBatchRemovesAnIdleRecordButKeepsTheAccountScope() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let batch = makeBatch(batchId: "batch-a", account: "account-a")
+    let other = makeBatch(batchId: "batch-b", account: "account-a")
+    try snapshot.stage(batch)
+    try snapshot.stage(other)
+
+    XCTAssertTrue(try snapshot.discardBatch(batchId: batch.batchId))
+
+    XCTAssertEqual(snapshot.batches.map(\.batchId), [other.batchId])
+    XCTAssertFalse(try snapshot.discardBatch(batchId: batch.batchId))
+  }
+
+  func testDiscardBatchRefusesAnInFlightSubmission() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100])
+    try snapshot.stage(batch)
+    try snapshot.armBatch(
+      batchId: batch.batchId,
+      expectedDigests: digests(batch),
+      at: now
+    )
+    try snapshot.beginSubmission(
+      itemId: batch.items[0].itemId,
+      attemptId: "attempt",
+      at: now
+    )
+
+    XCTAssertThrowsError(try snapshot.discardBatch(batchId: batch.batchId)) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .conflictingBatch)
+    }
+    XCTAssertEqual(snapshot.batches.count, 1)
+  }
+
   func testStageAndArmAreIdempotentButConflictsFailClosed() throws {
     let batch = makeBatch(
       batchId: "batch-a",
