@@ -14,11 +14,7 @@ resolver = "2"
 orchard = { version = "0.15", features = ["unstable-voting-circuits"] }
 voting-circuits = "=0.9.0-rc.3"
 
-# These resolve to a librustzcash git rev (see `[patch.crates-io]` below) until
-# librustzcash releases the merged Ironwood historical selector. The pin is expressed
-# as a patch rather than inline `git`/`rev` on each dependency so that a downstream
-# consumer can redirect the whole librustzcash stack to a rev of its choosing via its
-# own `[patch.crates-io]`; inline git pins would force this exact rev on every consumer.
+# These published librustzcash versions include the Ironwood historical selector.
 pczt = { version = "0.8.0", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
 zcash_client_backend = { version = "0.24.0-rc.2", default-features = false, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
 zcash_client_sqlite = { version = "0.22.0-rc.2", default-features = false, features = ["orchard"] }
