@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,6 +20,118 @@ String ironwoodMigrationAnnouncementSeenStorageKey({
   required String accountUuid,
 }) {
   return 'zcash_ironwood_migration_announcement_seen_${network}_$accountUuid';
+}
+
+String ironwoodMigrationCompletionSeenStorageKey({
+  required String network,
+  required String accountUuid,
+  required String completionId,
+}) {
+  return 'zcash_ironwood_migration_completion_seen_'
+      '${network}_${accountUuid}_$completionId';
+}
+
+/// Remembers that a finished migration has already been presented, so the
+/// completion screen is shown once per completed run instead of on every
+/// return to home.
+abstract class IronwoodMigrationCompletionStore {
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  });
+
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  });
+}
+
+class SharedPreferencesIronwoodMigrationCompletionStore
+    implements IronwoodMigrationCompletionStore {
+  const SharedPreferencesIronwoodMigrationCompletionStore();
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(
+          ironwoodMigrationCompletionSeenStorageKey(
+            network: network,
+            accountUuid: accountUuid,
+            completionId: completionId,
+          ),
+        ) ??
+        false;
+  }
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(
+      ironwoodMigrationCompletionSeenStorageKey(
+        network: network,
+        accountUuid: accountUuid,
+        completionId: completionId,
+      ),
+      true,
+    );
+  }
+}
+
+/// Whether a finished migration still owes the user its completion screen.
+class IronwoodMigrationCompletionState {
+  const IronwoodMigrationCompletionState._({
+    required this.visible,
+    this.network,
+    this.accountUuid,
+    this.completionId,
+    this.transferredZatoshi,
+  });
+
+  const IronwoodMigrationCompletionState.hidden() : this._(visible: false);
+
+  const IronwoodMigrationCompletionState.visible({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+    required BigInt transferredZatoshi,
+  }) : this._(
+         visible: true,
+         network: network,
+         accountUuid: accountUuid,
+         completionId: completionId,
+         transferredZatoshi: transferredZatoshi,
+       );
+
+  final bool visible;
+  final String? network;
+  final String? accountUuid;
+  final String? completionId;
+  final BigInt? transferredZatoshi;
+}
+
+/// Identifies one completed migration by the transactions it settled, so the
+/// screen is not re-shown for the same run and is shown again for a new one.
+String ironwoodMigrationCompletionId(rust_sync.MigrationStatus status) {
+  final partIds =
+      status.parts
+          .where((part) => part.txidHex?.isNotEmpty ?? false)
+          .map((part) => '${part.partIndex}:${part.txidHex}')
+          .toList()
+        ..sort();
+  final material = partIds.isNotEmpty
+      ? 'transactions:${partIds.join('|')}'
+      : 'values:${status.targetValuesZatoshi.join('|')}';
+  return sha256.convert(utf8.encode(material)).toString();
 }
 
 abstract class IronwoodMigrationAnnouncementStore {
@@ -419,6 +534,11 @@ final ironwoodMigrationAnnouncementStoreProvider =
       (_) => const SharedPreferencesIronwoodMigrationAnnouncementStore(),
     );
 
+final ironwoodMigrationCompletionStoreProvider =
+    Provider<IronwoodMigrationCompletionStore>(
+      (_) => const SharedPreferencesIronwoodMigrationCompletionStore(),
+    );
+
 final orchardMigrationStatusGetterProvider =
     Provider<OrchardMigrationStatusGetter>(
       (_) => rust_sync.getOrchardMigrationStatus,
@@ -534,6 +654,65 @@ final ironwoodPostMigrationStateProvider =
     FutureProvider<IronwoodPostMigrationState>((ref) async {
       final inputs = ref.watch(ironwoodMigrationInputsProvider);
       return _loadIronwoodPostMigrationState(ref, inputs);
+    });
+
+/// Surfaces a finished migration that the user has not been shown yet.
+///
+/// A migration usually finishes while the app is in the background or the user
+/// is somewhere other than the migration status screen, and the home CTA hides
+/// itself once the run is complete. Without this the completion screen is only
+/// reachable by standing on the status screen at the exact moment the phase
+/// flips, so the result is never presented.
+final ironwoodMigrationCompletionProvider =
+    FutureProvider<IronwoodMigrationCompletionState>((ref) async {
+      final inputs = ref.watch(ironwoodMigrationInputsProvider);
+      if (!inputs.ironwoodActiveAtTip ||
+          inputs.accountUuid == null ||
+          !inputs.hasAccountScopedData ||
+          inputs.isSyncing ||
+          inputs.isBackgroundMode ||
+          !inputs.isSyncComplete ||
+          inputs.hasSyncFailure ||
+          !inputs.hasIronwoodSpendableFunds) {
+        return const IronwoodMigrationCompletionState.hidden();
+      }
+
+      final postMigration = await ref.watch(
+        ironwoodPostMigrationStateProvider.future,
+      );
+      final status = postMigration.status;
+      if (postMigration.mode != IronwoodPostMigrationMode.complete ||
+          status == null ||
+          status.phase != kIronwoodMigrationCompletePhase ||
+          status.targetValuesZatoshi.isEmpty) {
+        return const IronwoodMigrationCompletionState.hidden();
+      }
+
+      final transferredZatoshi = status.targetValuesZatoshi.fold<BigInt>(
+        BigInt.zero,
+        (sum, value) => sum + value,
+      );
+      if (transferredZatoshi <= BigInt.zero) {
+        return const IronwoodMigrationCompletionState.hidden();
+      }
+
+      final accountUuid = inputs.accountUuid!;
+      final completionId = ironwoodMigrationCompletionId(status);
+      final store = ref.watch(ironwoodMigrationCompletionStoreProvider);
+      if (await store.isSeen(
+        network: inputs.network,
+        accountUuid: accountUuid,
+        completionId: completionId,
+      )) {
+        return const IronwoodMigrationCompletionState.hidden();
+      }
+
+      return IronwoodMigrationCompletionState.visible(
+        network: inputs.network,
+        accountUuid: accountUuid,
+        completionId: completionId,
+        transferredZatoshi: transferredZatoshi,
+      );
     });
 
 final ironwoodMigrationAnnouncementProvider =

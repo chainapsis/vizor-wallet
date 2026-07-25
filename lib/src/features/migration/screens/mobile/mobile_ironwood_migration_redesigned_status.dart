@@ -60,6 +60,7 @@ class _MobileMigrationRedesignedStatusState
       IronwoodMigrationPreparationRuntimeState.idle;
   bool _showPreparationComplete = false;
   bool _actionRunning = false;
+  bool _completionSeenRecorded = false;
   String? _recordedAttentionFingerprint;
 
   @override
@@ -526,6 +527,7 @@ class _MobileMigrationRedesignedStatusState
     }
 
     if (widget.status.phase == kIronwoodMigrationCompletePhase) {
+      _recordCompletionSeen();
       return _MigrationCompletePreview(
         amountText: _totalAmountText(widget.status),
         onDone: () => context.go('/home'),
@@ -824,6 +826,38 @@ class _MobileMigrationRedesignedStatusState
       scannedHeight: sync.scannedHeight,
       chainTipHeight: sync.chainTipHeight,
     );
+  }
+
+  /// Records that this completed run has been presented, so home stops routing
+  /// back here. Deliberately keyed to the screen actually rendering rather than
+  /// to the navigation that brought the user here: a launch that dies before
+  /// the frame is drawn should still owe the user its result.
+  void _recordCompletionSeen() {
+    if (_completionSeenRecorded) return;
+    _completionSeenRecorded = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_markCompletionSeen());
+    });
+  }
+
+  Future<void> _markCompletionSeen() async {
+    if (!mounted) return;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    final network = ref.read(ironwoodMigrationInputsProvider).network;
+    try {
+      await ref
+          .read(ironwoodMigrationCompletionStoreProvider)
+          .markSeen(
+            network: network,
+            accountUuid: accountUuid,
+            completionId: ironwoodMigrationCompletionId(widget.status),
+          );
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(ironwoodMigrationCompletionProvider);
   }
 
   void _recordVisibleAttention(String? accountUuid) {

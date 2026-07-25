@@ -144,10 +144,68 @@ class _IronwoodMigrationAttentionMountGateState
     if (!widget.isHomeCurrent) return const SizedBox.shrink();
     final evaluateInitialEntry = !_hasMountedHost;
     _hasMountedHost = true;
-    return _IronwoodMigrationAttentionHost(
-      key: const ValueKey('mobile_home_migration_attention_host'),
-      evaluateInitialEntry: evaluateInitialEntry,
+    return Stack(
+      children: [
+        _IronwoodMigrationAttentionHost(
+          key: const ValueKey('mobile_home_migration_attention_host'),
+          evaluateInitialEntry: evaluateInitialEntry,
+        ),
+        const _IronwoodMigrationCompletionHost(
+          key: ValueKey('mobile_home_migration_completion_host'),
+        ),
+      ],
     );
+  }
+}
+
+/// Opens the migration completion screen once for a run that finished while
+/// the user was elsewhere.
+///
+/// A migration normally completes in the background, and the home CTA hides
+/// itself once the run is complete, so without this the result screen is only
+/// reachable by standing on the status screen at the moment the phase flips.
+/// The status screen records the run as seen when it renders, so this navigates
+/// at most once per completed run.
+class _IronwoodMigrationCompletionHost extends ConsumerStatefulWidget {
+  const _IronwoodMigrationCompletionHost({super.key});
+
+  @override
+  ConsumerState<_IronwoodMigrationCompletionHost> createState() =>
+      _IronwoodMigrationCompletionHostState();
+}
+
+class _IronwoodMigrationCompletionHostState
+    extends ConsumerState<_IronwoodMigrationCompletionHost> {
+  String? _navigatedFor;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _evaluate(ref.read(ironwoodMigrationCompletionProvider).value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(ironwoodMigrationCompletionProvider, (_, next) {
+      _evaluate(next.value);
+    });
+    return const SizedBox.shrink();
+  }
+
+  void _evaluate(IronwoodMigrationCompletionState? completion) {
+    if (!mounted || completion == null || !completion.visible) return;
+    final network = completion.network;
+    final accountUuid = completion.accountUuid;
+    final completionId = completion.completionId;
+    if (network == null || accountUuid == null || completionId == null) return;
+    final key = '$network:$accountUuid:$completionId';
+    if (_navigatedFor == key) return;
+    if (GoRouterState.of(context).uri.path != '/home') return;
+    _navigatedFor = key;
+    context.go('/migration/private/status');
   }
 }
 

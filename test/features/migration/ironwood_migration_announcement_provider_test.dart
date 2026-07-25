@@ -31,6 +31,91 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  test('completion surfaces a settled migration receipt once', () async {
+    final completionStore = _FakeCompletionStore();
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationCompletePhase,
+      migrationTargetValues: const [14_000_000_000, 212_300_000],
+      migrationPartTxids: const ['tx-a', 'tx-b'],
+      completionStore: completionStore,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        ironwoodBalance: BigInt.from(14_212_300_000),
+        spendableBalance: BigInt.from(14_212_300_000),
+        totalBalance: BigInt.from(14_212_300_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(
+      ironwoodMigrationCompletionProvider.future,
+    );
+
+    expect(state.visible, isTrue);
+    expect(state.network, 'main');
+    expect(state.accountUuid, _accountUuid);
+    expect(state.transferredZatoshi, BigInt.from(14_212_300_000));
+    expect(state.completionId, hasLength(64));
+  });
+
+  test('completion ignores an Ironwood balance without a receipt', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationCompletePhase,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        ironwoodBalance: BigInt.from(100_000_000),
+        spendableBalance: BigInt.from(100_000_000),
+        totalBalance: BigInt.from(100_000_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(
+      ironwoodMigrationCompletionProvider.future,
+    );
+
+    expect(state.visible, isFalse);
+  });
+
+  test('completion stays hidden once the run was presented', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationCompletePhase,
+      migrationTargetValues: const [14_000_000_000, 212_300_000],
+      completionStore: _FakeCompletionStore(seesEverything: true),
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        ironwoodBalance: BigInt.from(14_212_300_000),
+        spendableBalance: BigInt.from(14_212_300_000),
+        totalBalance: BigInt.from(14_212_300_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(
+      ironwoodMigrationCompletionProvider.future,
+    );
+
+    expect(state.visible, isFalse);
+  });
+
   test('resolves hidden while chain upgrade status is still loading', () async {
     final chainStatus = Completer<rust_wallet.ChainUpgradeStatus>();
     final container = _container(
@@ -802,6 +887,7 @@ ProviderContainer _container({
   String? migrationActiveRunId,
   ChainUpgradeStatusGetter? getChainUpgradeStatus,
   _FakeAnnouncementStore? announcementStore,
+  _FakeCompletionStore? completionStore,
   List<String>? migrationStatusCalls,
   List<int> migrationTargetValues = const [],
   List<String> migrationPartTxids = const [],
@@ -812,6 +898,9 @@ ProviderContainer _container({
   return ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+        completionStore ?? _FakeCompletionStore(),
+      ),
       chainUpgradeStatusGetterProvider.overrideWithValue(
         getChainUpgradeStatus ??
             ({required lightwalletdUrl, required network}) async =>
@@ -1044,3 +1133,38 @@ class _FakeAnnouncementStore implements IronwoodMigrationAnnouncementStore {
 }
 
 String _seenKey(String network, String accountUuid) => '$network|$accountUuid';
+
+class _FakeCompletionStore implements IronwoodMigrationCompletionStore {
+  _FakeCompletionStore({Set<String>? seenKeys, this.seesEverything = false})
+    : _seenKeys = seenKeys ?? <String>{};
+
+  final Set<String> _seenKeys;
+  final bool seesEverything;
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    return seesEverything ||
+        _seenKeys.contains(
+          _completionSeenKey(network, accountUuid, completionId),
+        );
+  }
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    _seenKeys.add(_completionSeenKey(network, accountUuid, completionId));
+  }
+}
+
+String _completionSeenKey(
+  String network,
+  String accountUuid,
+  String completionId,
+) => '$network|$accountUuid|$completionId';
