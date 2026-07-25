@@ -224,7 +224,7 @@ class _IronwoodMigrationCompletionHostState
     final key = '$network:$accountUuid:$completionId';
     final routed = ref.read(_ironwoodMigrationRoutedCompletionsProvider);
     if (routed.contains(key)) return;
-    if (GoRouterState.of(context).uri.path != '/home') return;
+    if (!_isOnHome()) return;
     // A tap that is already opening another screen has not committed its route
     // when this fires, which is how the completion screen ended up layered over
     // whatever the user had just asked for. Re-check everything on the next
@@ -234,10 +234,24 @@ class _IronwoodMigrationCompletionHostState
       if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
         return;
       }
-      if (GoRouterState.of(context).uri.path != '/home') return;
+      if (!_isOnHome()) return;
       routed.add(key);
       context.go('/migration/private/status');
     });
+  }
+
+  /// Whether home is the screen the user is actually looking at.
+  ///
+  /// `GoRouterState.of` resolves the nearest enclosing page, and this host
+  /// lives inside a `StatefulShellRoute.indexedStack` branch that stays mounted
+  /// behind other tabs and under pushed routes. It therefore keeps reporting
+  /// `/home` no matter where the user navigated, which made the guard vacuous.
+  /// The router's current configuration is the actual location.
+  bool _isOnHome() {
+    return GoRouter.of(
+          context,
+        ).routerDelegate.currentConfiguration.uri.path ==
+        '/home';
   }
 
   /// Routing is a foreground courtesy. A wake in the background must not move

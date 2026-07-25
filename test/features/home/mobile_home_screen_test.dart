@@ -214,6 +214,8 @@ Widget _app(
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
   AsyncValue<IronwoodMigrationCompletionState>? migrationCompletion,
+  Future<IronwoodMigrationCompletionState>? migrationCompletionFuture,
+  bool useShellRouter = false,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
@@ -222,7 +224,33 @@ Widget _app(
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
-      GoRoute(path: '/home', builder: (_, _) => const MobileHomeScreen()),
+      if (useShellRouter)
+        // The production mobile shell keeps every branch mounted, so a widget
+        // on the home branch keeps reporting its own /home route after the user
+        // moves elsewhere. Route checks have to survive that.
+        StatefulShellRoute.indexedStack(
+          builder: (_, _, shell) => shell,
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/home',
+                  builder: (_, _) => const MobileHomeScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/shell-activity',
+                  builder: (_, _) => const Text('shell activity route'),
+                ),
+              ],
+            ),
+          ],
+        )
+      else
+        GoRoute(path: '/home', builder: (_, _) => const MobileHomeScreen()),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
       GoRoute(
@@ -259,12 +287,14 @@ Widget _app(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
-      if (migrationCompletion != null)
+      if (migrationCompletion != null || migrationCompletionFuture != null)
         ironwoodMigrationCompletionProvider.overrideWith(
-          (ref) => switch (migrationCompletion) {
-            AsyncData(:final value) => Future.value(value),
-            _ => Completer<IronwoodMigrationCompletionState>().future,
-          },
+          (ref) =>
+              migrationCompletionFuture ??
+              switch (migrationCompletion) {
+                AsyncData(:final value) => Future.value(value),
+                _ => Completer<IronwoodMigrationCompletionState>().future,
+              },
         ),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
       if (syncKeepAwakeNotifier != null)
@@ -793,6 +823,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('migration status route'), findsNothing);
+  });
+
+  testWidgets('does not route away from the tab the user switched to', (
+    tester,
+  ) async {
+    // The host stays mounted on the home branch of the shell, where
+    // `GoRouterState.of` keeps reporting /home after the user switches tabs.
+    // Reading that instead of the router's location let a finished migration
+    // pull the user off whatever they were doing.
+    final completion = Completer<IronwoodMigrationCompletionState>();
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.zero),
+        migrationCompletionFuture: completion.future,
+        useShellRouter: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    GoRouter.of(
+      tester.element(find.byType(MobileHomeScreen)),
+    ).go('/shell-activity');
+    await tester.pumpAndSettle();
+    expect(find.text('shell activity route'), findsOneWidget);
+
+    completion.complete(
+      IronwoodMigrationCompletionState.visible(
+        network: 'main',
+        accountUuid: 'account-1',
+        completionId: 'completion-1',
+        transferredZatoshi: BigInt.from(14_212_300_000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration status route'), findsNothing);
+    expect(find.text('shell activity route'), findsOneWidget);
   });
 
   testWidgets('does not route to another account\'s completion', (
