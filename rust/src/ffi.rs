@@ -204,6 +204,64 @@ pub extern "C" fn zcash_inspect_migration_preparation(
     }
 }
 
+#[no_mangle]
+pub extern "C" fn zcash_inspect_migration_proof_readiness(
+    db_path: *const c_char,
+    network: *const c_char,
+    account_uuid: *const c_char,
+    expected_run_id: *const c_char,
+    output: *mut bool,
+) -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
+            return 1;
+        };
+        let Some(network_str) = (unsafe { c_str_to_str(network) }) else {
+            return 1;
+        };
+        let Some(account_uuid) = (unsafe { c_str_to_str(account_uuid) }) else {
+            return 1;
+        };
+        let Some(expected_run_id) = (unsafe { c_str_to_str(expected_run_id) }) else {
+            return 1;
+        };
+        let Some(output) = (unsafe { output.as_mut() }) else {
+            return 1;
+        };
+        let network = match keys::parse_network(network_str) {
+            Ok(network) => network,
+            Err(error) => {
+                log::error!("ffi: parse migration proof-readiness network: {error}");
+                return 1;
+            }
+        };
+
+        match migration_preparation::inspect_proof_readiness(
+            db_path,
+            network,
+            account_uuid,
+            expected_run_id,
+        ) {
+            Ok(ready) => {
+                *output = ready;
+                0
+            }
+            Err(error) => {
+                log::error!("ffi: inspect migration proof readiness: {error}");
+                1
+            }
+        }
+    });
+
+    match result {
+        Ok(code) => code,
+        Err(panic) => {
+            log_panic("migration proof readiness inspection", panic);
+            2
+        }
+    }
+}
+
 /// Advance denomination preparation once and stop before child proof creation.
 /// Returns 0 on success, 1 on validation/execution error, and 2 on panic.
 #[no_mangle]

@@ -876,6 +876,66 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testRunnerDoesNotArmProofNotificationBeforePreparationVerification() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "watch-only",
+      account: "account-a",
+      heights: [],
+      nextProofHeight: 288
+    )
+    try stageAndArm(batch, in: harness.store)
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in .success(288) },
+      sendTransaction: { _, _, _ in
+        XCTFail("A proof watch must not submit a transaction")
+        return .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    let candidate = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      requiresPreparationProofVerification: true,
+      dependencies: dependencies
+    )
+    XCTAssertEqual(
+      candidate.proofReady,
+      BackgroundMigrationProofReadyMetadata(
+        batchId: batch.batchId,
+        observedHeight: 288
+      )
+    )
+    XCTAssertNil(
+      try harness.store.read().batches.first?.proofReadyNotificationPendingAt
+    )
+
+    _ = try harness.store.update { snapshot in
+      XCTAssertTrue(
+        snapshot.recordVerifiedProofReadiness(
+          runId: batch.runId,
+          at: now.addingTimeInterval(1)
+        )
+      )
+    }
+    let verified = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now.addingTimeInterval(2),
+      requiresPreparationProofVerification: true,
+      dependencies: dependencies
+    )
+    XCTAssertEqual(verified.proofReady, candidate.proofReady)
+    XCTAssertEqual(
+      try harness.store.read().batches.first?.proofReadyNotificationPendingAt,
+      now.addingTimeInterval(1)
+    )
+  }
+
   func testRunnerWaitsForFutureProofHeightWithoutFinalizedTransactions() throws {
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }

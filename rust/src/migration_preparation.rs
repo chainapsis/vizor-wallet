@@ -230,6 +230,34 @@ pub fn inspect(
     progress_for_status(db_path, network, account_uuid, &status)
 }
 
+pub fn inspect_proof_readiness(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<bool, MigrationPreparationError> {
+    let status = sync::migration_status(db_path, network, account_uuid, 0, 0, 0, 0)
+        .map_err(MigrationPreparationError::Execution)?;
+    if status.active_run_id.as_deref() != Some(expected_run_id) {
+        return Ok(false);
+    }
+    let scanned_height = sync::get_sync_progress(db_path, network)
+        .and_then(|progress| {
+            u32::try_from(progress.scanned_height)
+                .map_err(|_| "Migration scanned height exceeds u32".to_string())
+        })
+        .map_err(MigrationPreparationError::Execution)?;
+    sync::orchard_migration_proof_readiness_at_scanned_height(
+        db_path,
+        network,
+        account_uuid,
+        &status,
+        scanned_height,
+    )
+    .map(|readiness| readiness == Some(true))
+    .map_err(MigrationPreparationError::Execution)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn advance(
     db_path: &str,
@@ -309,10 +337,17 @@ fn progress_for_status(
                 .map_err(|_| "Migration scanned height exceeds u32".to_string())
         })
         .map_err(MigrationPreparationError::Execution)?;
+    let next_proof_height = status
+        .active_run_id
+        .as_deref()
+        .map(|run_id| sync::proof_retry_height(db_path, run_id))
+        .transpose()
+        .map_err(MigrationPreparationError::Execution)?
+        .flatten();
     let proof_ready = if proof_readiness_preflight_needed(
         &status.phase,
         status.signed_child_pczt_count,
-        status.next_action_height,
+        next_proof_height,
         scanned_height,
     ) {
         let started_at = Instant::now();
@@ -342,7 +377,7 @@ fn progress_for_status(
         state: classify_state(
             &status.phase,
             status.signed_child_pczt_count,
-            status.next_action_height,
+            next_proof_height,
             scanned_height,
             proof_ready,
         ),
@@ -356,18 +391,18 @@ fn progress_for_status(
 fn proof_readiness_preflight_needed(
     phase: &str,
     signed_child_pczt_count: u32,
-    next_action_height: Option<u32>,
+    next_proof_height: Option<u32>,
     scanned_height: u32,
 ) -> bool {
     phase == "ready_to_migrate"
         && signed_child_pczt_count > 0
-        && next_action_height.is_some_and(|height| height <= scanned_height)
+        && next_proof_height.is_some_and(|height| height <= scanned_height)
 }
 
 fn classify_state(
     phase: &str,
     signed_child_pczt_count: u32,
-    next_action_height: Option<u32>,
+    next_proof_height: Option<u32>,
     scanned_height: u32,
     proof_ready: Option<bool>,
 ) -> MigrationPreparationState {
@@ -375,7 +410,7 @@ fn classify_state(
         "waiting_denom_confirmations" => {
             MigrationPreparationState::WaitingForDenominationPreparation
         }
-        "ready_to_migrate" if signed_child_pczt_count > 0 => match next_action_height {
+        "ready_to_migrate" if signed_child_pczt_count > 0 => match next_proof_height {
             Some(height) if height <= scanned_height && proof_ready == Some(true) => {
                 MigrationPreparationState::ProofReady
             }

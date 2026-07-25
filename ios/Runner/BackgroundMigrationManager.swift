@@ -687,35 +687,74 @@ final class BackgroundMigrationManager {
           self.finishForegroundOnly(task)
           return
         }
+        let requiresPreparationProofVerification: Bool
+        if #available(iOS 26.0, *) {
+          requiresPreparationProofVerification = true
+        } else {
+          requiresPreparationProofVerification = false
+        }
         let runResult = BackgroundMigrationOutboxRunner.runOnce(
-          cancellation: cancellation
+          cancellation: cancellation,
+          requiresPreparationProofVerification: requiresPreparationProofVerification
         )
         self.clearActiveCancellation()
-        guard self.wakeDisposition == .continueBackgroundWork else {
-          self.finishForegroundOnly(task)
-          return
-        }
-        self.finishWake(
-          runResult,
-          preparationResult: preparationResult
-        ) { rescheduled in
-          let preparationSucceeded =
-            migrationPreparationBackgroundWakeSucceeded(preparationResult)
-          self.stopAuthorizationMonitoring()
-          if self.wakeDisposition == .finishForegroundOnly {
-            task.setTaskCompleted(
-              success: self.wakeDisposition.taskCompletionIsSuccessful
+        if #available(iOS 26.0, *), let proofCandidate = runResult.proofReady {
+          BackgroundMigrationPreparationManager.shared.verifyProofReadiness(
+            batchId: proofCandidate.batchId
+          ) { verified in
+            let verifiedResult = BackgroundMigrationOutboxRunResult(
+              transport: runResult.transport,
+              proofReady: verified ? proofCandidate : nil,
+              broadcastComplete: runResult.broadcastComplete,
+              transportAccountUuid: runResult.transportAccountUuid
             )
-            return
+            self.queue.async {
+              self.finishOutboxRun(
+                verifiedResult,
+                task: task,
+                preparationResult: preparationResult
+              )
+            }
           }
-          task.setTaskCompleted(
-            success: runResult.transport != .temporarilyUnavailable
-              && runResult.transport != .cancelled
-              && preparationSucceeded
-              && rescheduled
+        } else {
+          self.finishOutboxRun(
+            runResult,
+            task: task,
+            preparationResult: preparationResult
           )
         }
       }
+    }
+  }
+
+  private func finishOutboxRun(
+    _ runResult: BackgroundMigrationOutboxRunResult,
+    task: BGProcessingTask,
+    preparationResult: BackgroundMigrationPreparationPassResult
+  ) {
+    guard wakeDisposition == .continueBackgroundWork else {
+      finishForegroundOnly(task)
+      return
+    }
+    finishWake(
+      runResult,
+      preparationResult: preparationResult
+    ) { rescheduled in
+      let preparationSucceeded =
+        migrationPreparationBackgroundWakeSucceeded(preparationResult)
+      self.stopAuthorizationMonitoring()
+      if self.wakeDisposition == .finishForegroundOnly {
+        task.setTaskCompleted(
+          success: self.wakeDisposition.taskCompletionIsSuccessful
+        )
+        return
+      }
+      task.setTaskCompleted(
+        success: runResult.transport != .temporarilyUnavailable
+          && runResult.transport != .cancelled
+          && preparationSucceeded
+          && rescheduled
+      )
     }
   }
 

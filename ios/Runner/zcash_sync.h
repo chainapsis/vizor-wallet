@@ -33,6 +33,14 @@ int32_t zcash_inspect_migration_preparation(
     CMigrationPreparationProgress* output
 );
 
+int32_t zcash_inspect_migration_proof_readiness(
+    const char* db_path,
+    const char* network,
+    const char* account_uuid,
+    const char* expected_run_id,
+    bool* output
+);
+
 int32_t zcash_run_full_sync_for_migration_preparation(
     const char* db_path,
     const char* lightwalletd_url,

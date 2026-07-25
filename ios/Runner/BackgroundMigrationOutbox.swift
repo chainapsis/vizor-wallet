@@ -435,14 +435,50 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     endpoint: String,
     at date: Date
   ) -> BackgroundMigrationProofReadyMetadata? {
+    guard
+      let candidate = proofReadinessCandidate(
+        remoteHeight: remoteHeight,
+        endpoint: endpoint
+      ),
+      let batchIndex = batches.firstIndex(where: { $0.batchId == candidate.batchId })
+    else { return nil }
+
+    if batches[batchIndex].proofReadyNotificationPendingAt == nil {
+      batches[batchIndex].proofReadyNotificationPendingAt = date
+    }
+    return candidate
+  }
+
+  func proofReadinessCandidate(
+    remoteHeight: UInt64,
+    endpoint: String
+  ) -> BackgroundMigrationProofReadyMetadata? {
+    batches
+      .filter { batch in
+        guard let nextProofHeight = batch.nextProofHeight else { return false }
+        return batch.lightwalletdUrl == endpoint
+          && batch.armedAt != nil
+          && batch.proofReadyNotifiedAt == nil
+          && nextProofHeight <= remoteHeight
+      }
+      .sorted {
+        ($0.nextProofHeight ?? 0, $0.batchId) < ($1.nextProofHeight ?? 0, $1.batchId)
+      }
+      .first
+      .map {
+        BackgroundMigrationProofReadyMetadata(
+          batchId: $0.batchId,
+          observedHeight: remoteHeight
+        )
+      }
+  }
+
+  mutating func recordVerifiedProofReadiness(runId: String, at date: Date) -> Bool {
     let candidates = batches.indices.filter { batchIndex in
       let batch = batches[batchIndex]
-      guard batch.lightwalletdUrl == endpoint,
-        batch.armedAt != nil,
-        batch.proofReadyNotifiedAt == nil,
-        let nextProofHeight = batch.nextProofHeight
-      else { return false }
-      return nextProofHeight <= remoteHeight
+      return batch.runId == runId
+        && batch.armedAt != nil
+        && batch.nextProofHeight != nil
     }
     guard
       let batchIndex = candidates.sorted(by: {
@@ -450,15 +486,34 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         let rhs = batches[$1]
         return (lhs.nextProofHeight ?? 0, lhs.batchId) < (rhs.nextProofHeight ?? 0, rhs.batchId)
       }).first
-    else { return nil }
+    else { return false }
 
-    if batches[batchIndex].proofReadyNotificationPendingAt == nil {
+    if batches[batchIndex].proofReadyNotifiedAt == nil,
+      batches[batchIndex].proofReadyNotificationPendingAt == nil
+    {
       batches[batchIndex].proofReadyNotificationPendingAt = date
     }
-    return BackgroundMigrationProofReadyMetadata(
-      batchId: batches[batchIndex].batchId,
-      observedHeight: remoteHeight
-    )
+    return true
+  }
+
+  func pendingProofReadyNotification() -> BackgroundMigrationProofReadyMetadata? {
+    batches
+      .filter {
+        $0.armedAt != nil
+          && $0.proofReadyNotificationPendingAt != nil
+          && $0.proofReadyNotifiedAt == nil
+          && $0.nextProofHeight != nil
+      }
+      .sorted {
+        ($0.nextProofHeight ?? 0, $0.batchId) < ($1.nextProofHeight ?? 0, $1.batchId)
+      }
+      .first
+      .map {
+        BackgroundMigrationProofReadyMetadata(
+          batchId: $0.batchId,
+          observedHeight: $0.nextProofHeight ?? 0
+        )
+      }
   }
 
   mutating func acknowledgeProofReadyNotification(batchId: String, at date: Date) throws {

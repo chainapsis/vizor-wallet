@@ -794,6 +794,102 @@ final class BackgroundMigrationPreparationManager {
     return result
   }
 
+  func verifyProofReadiness(
+    batchId: String,
+    completion: @escaping (Bool) -> Void
+  ) {
+    queue.async {
+      guard
+        let batch = try? BackgroundMigrationOutboxStore.shared.read().batches.first(
+          where: { $0.batchId == batchId }
+        ),
+        let manifest = IronwoodMigrationBackgroundCredentialStore.loadAll()?.first(
+          where: {
+            $0.expectedRunId == batch.runId
+              && $0.accountUuid == batch.accountUuid
+              && $0.network == batch.network
+          }
+        )
+      else {
+        completion(false)
+        return
+      }
+
+      let mayRun = self.stateLock.withPreparationLock { () -> Bool in
+        guard !self.mutationQuiesced
+          && !self.notificationAuthorization.isDisabled
+          && !self.taskRunning
+        else { return false }
+        self.taskRunning = true
+        self.deferredPassRunning = true
+        self.expired = false
+        self.foregroundHandoffRequested = false
+        return true
+      }
+      guard mayRun else {
+        completion(false)
+        return
+      }
+      defer {
+        self.stateLock.withPreparationLock {
+          self.taskRunning = false
+          self.deferredPassRunning = false
+          self.foregroundHandoffRequested = false
+        }
+      }
+
+      var ready = false
+      var inspectCode = zcash_inspect_migration_proof_readiness(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        batch.runId,
+        &ready
+      )
+      if inspectCode == 0 && !ready {
+        guard zcash_begin_migration_preparation_operation() else {
+          completion(false)
+          return
+        }
+        defer { zcash_end_migration_preparation_operation() }
+        guard self.waitForRunningSync(), !self.isStopRequested else {
+          completion(false)
+          return
+        }
+        let syncCode = self.runSync(manifest)
+        guard syncCode == 0, !self.isStopRequested else {
+          completion(false)
+          return
+        }
+        inspectCode = zcash_inspect_migration_proof_readiness(
+          manifest.dbPath,
+          manifest.network,
+          manifest.accountUuid,
+          batch.runId,
+          &ready
+        )
+      }
+      guard inspectCode == 0, ready else {
+        completion(false)
+        return
+      }
+
+      do {
+        var matched = false
+        _ = try BackgroundMigrationOutboxStore.shared.update { snapshot in
+          matched = snapshot.recordVerifiedProofReadiness(
+            runId: batch.runId,
+            at: Date()
+          )
+        }
+        completion(matched)
+      } catch {
+        print("[BGPreparation] persist verified proof readiness failed: \(error)")
+        completion(false)
+      }
+    }
+  }
+
   func expireDeferredPass() {
     let shouldCancel = stateLock.withPreparationLock { () -> Bool in
       guard deferredPassRunning else { return false }
