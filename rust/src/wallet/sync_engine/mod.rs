@@ -1325,7 +1325,7 @@ async fn run_sync_impl(
     allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
-    let migration_anchor_retention_required =
+    let mut migration_anchor_retention_required =
         crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
             .map_err(SyncError::db)?;
     let default_batch_size = if running_mode == 2 {
@@ -1333,9 +1333,11 @@ async fn run_sync_impl(
     } else {
         BATCH_SIZE_FOREGROUND
     };
-    let base_batch_size = effective_base_batch_size(default_batch_size);
-    let base_batch_size =
-        migration_anchor_retention_batch_size(base_batch_size, migration_anchor_retention_required);
+    let unclamped_base_batch_size = effective_base_batch_size(default_batch_size);
+    let mut base_batch_size = migration_anchor_retention_batch_size(
+        unclamped_base_batch_size,
+        migration_anchor_retention_required,
+    );
     log::info!(
         "[{}] sync: starting (mode={}, base_batch={}, migration_anchor_retention={})",
         elapsed(),
@@ -2012,6 +2014,27 @@ async fn run_sync_impl(
                 log::info!(
                     "[{}] sync: retained {retained} migration anchor checkpoint(s)",
                     elapsed(),
+                );
+            }
+            // Retention costs every remaining batch of this sync: the batch size
+            // stays below the checkpoint pruning depth and each batch runs this
+            // maintenance pass. Re-check so a run that finished, was abandoned,
+            // or released its last reference mid-sync stops paying for it. The
+            // check only runs while retention is already required, so a sync
+            // without a migration keeps its full batch size for free.
+            let still_required =
+                crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
+                    .map_err(SyncError::db)?;
+            if !still_required {
+                migration_anchor_retention_required = false;
+                base_batch_size = migration_anchor_retention_batch_size(
+                    unclamped_base_batch_size,
+                    migration_anchor_retention_required,
+                );
+                log::info!(
+                    "[{}] sync: migration anchor retention released (base_batch={})",
+                    elapsed(),
+                    base_batch_size,
                 );
             }
         }
