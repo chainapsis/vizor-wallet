@@ -6,25 +6,24 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 # Unreleased
 
-## Changed
-- Updated the pinned librustzcash family to `zcash_primitives 0.30.0` and
-  `pczt 0.8.0`. Downstream workspaces must select a compatible family revision
-  in their root `[patch.crates-io]` table.
+## v2.0.0-rc.1
+
+### Changed
+- Updated the librustzcash dependency family to published `zcash_primitives 0.30.0`,
+  `zcash_keys 0.16.0`, `zcash_client_backend 0.24.0-rc.2`,
+  `zcash_client_sqlite 0.22.0-rc.2`, and `pczt 0.8.0`.
 - Aligned the Ironwood crate line on `voting-circuits 0.9.0-rc.3`,
-  `pir-client 0.4.0-rc.2`, `pir-types 0.3.0-rc.2`, and a pinned librustzcash
-  revision containing Ironwood historical note selection. Wallet integrations
+  `pir-client 0.4.0-rc.2`, and `pir-types 0.3.0-rc.2`. Wallet integrations
   resolve one shielded/PCZT stack, vote tree storage APIs use `shardtree 0.7`,
   and the wallet crates require Rust 1.88 or newer.
 - Updated snapshot selection and governance PCZT construction to use only
   Ironwood/V3 notes. Pre-NU6.3 Orchard/V2 voting is no longer supported on this
   branch, and Ironwood voting no longer requires a custom Rust compile flag.
-- Persisted each voting round's wallet network and validate governance PCZT
-  branch IDs against the stored round snapshot before writing PCZT setup state.
-- Expressed the librustzcash revision pin as a `[patch.crates-io]` stanza with
-  plain crates.io version requirements, rather than inline `git`/`rev` on each
-  workspace dependency. Building this workspace directly is unaffected, but a
-  downstream consumer can now redirect the whole librustzcash stack to a
-  revision of its choosing via its own `[patch.crates-io]`.
+- Changed public round initialization and delegation APIs to require an explicit
+  wallet network, which is persisted with the round state.
+- Moved governance PCZT construction behind `VotingDb::build_governance_pczt`,
+  which validates branch IDs against the stored round snapshot before writing
+  PCZT setup state.
 
 ## v1.0.0
 
