@@ -20,20 +20,8 @@ voting-circuits = "=0.9.0-rc.3"
 # consumer can redirect the whole librustzcash stack to a rev of its choosing via its
 # own `[patch.crates-io]`; inline git pins would force this exact rev on every consumer.
 pczt = { version = "0.8.0", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
-zcash_client_backend = { version = "0.24.0-rc.1", default-features = false, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
-zcash_client_sqlite = { version = "0.22.0-rc.1", default-features = false, features = ["orchard"] }
-zcash_keys = { version = "0.15.0", features = ["orchard"] }
+zcash_client_backend = { version = "0.24.0-rc.2", default-features = false, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
+zcash_client_sqlite = { version = "0.22.0-rc.2", default-features = false, features = ["orchard"] }
+zcash_keys = { version = "0.16.0", features = ["orchard"] }
 zcash_primitives = { version = "0.30.0" }
 zcash_protocol = { version = "0.10.1" }
-
-# Pin the librustzcash stack to the git rev carrying the merged Ironwood historical
-# selector. This patch applies when this workspace is built directly; when `zcash_voting`
-# is consumed as a dependency, the consuming workspace's own `[patch.crates-io]` governs
-# instead, so consumers are free to select a different librustzcash rev.
-[patch.crates-io]
-pczt = { git = "https://github.com/zcash/librustzcash", rev = "57b844dc00bf1f25254b5859b8d5faa8e5730f98" }
-zcash_client_backend = { git = "https://github.com/zcash/librustzcash", rev = "57b844dc00bf1f25254b5859b8d5faa8e5730f98" }
-zcash_client_sqlite = { git = "https://github.com/zcash/librustzcash", rev = "57b844dc00bf1f25254b5859b8d5faa8e5730f98" }
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "57b844dc00bf1f25254b5859b8d5faa8e5730f98" }
-zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "57b844dc00bf1f25254b5859b8d5faa8e5730f98" }
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "57b844dc00bf1f25254b5859b8d5faa8e5730f98" }
