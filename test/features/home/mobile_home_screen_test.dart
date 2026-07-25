@@ -795,6 +795,27 @@ void main() {
     expect(find.text('migration status route'), findsNothing);
   });
 
+  testWidgets('does not route to another account\'s completion', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.zero),
+        migrationCompletion: AsyncData(
+          IronwoodMigrationCompletionState.visible(
+            network: 'main',
+            accountUuid: 'another-account',
+            completionId: 'completion-2',
+            transferredZatoshi: BigInt.from(14_212_300_000),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration status route'), findsNothing);
+  });
+
   testWidgets('does not route while the completion state is unsettled', (
     tester,
   ) async {

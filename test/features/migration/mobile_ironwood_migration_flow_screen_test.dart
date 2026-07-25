@@ -2957,7 +2957,11 @@ void main() {
           valueZatoshi: BigInt.from(100_000_000),
           state: switch (index) {
             0 => rust_sync.MigrationPartState.completed,
-            1 || 2 => rust_sync.MigrationPartState.confirming,
+            // Rust reports a broadcast part as migrating until it is mined and
+            // confirming until it reaches its target, so the ring has to treat
+            // both as awaiting.
+            1 => rust_sync.MigrationPartState.migrating,
+            2 => rust_sync.MigrationPartState.confirming,
             _ => rust_sync.MigrationPartState.scheduled,
           },
           confirmationCount: index == 0 ? 3 : 0,

@@ -929,10 +929,18 @@ class _MobileMigrationRedesignedStatusState
         displayIndex < partOrder.length;
         displayIndex++
       )
-        if (stateByPartIndex[partOrder[displayIndex]] ==
-            rust_sync.MigrationPartState.confirming)
+        if (_awaitsConfirmation(stateByPartIndex[partOrder[displayIndex]]))
           displayIndex,
     };
+  }
+
+  /// Whether a part is on the network but not final yet. Rust reports a
+  /// broadcast part as `migrating` until it is mined and `confirming` until it
+  /// reaches its confirmation target; both are past the point the user can act
+  /// on, so both read the same way on the ring.
+  static bool _awaitsConfirmation(rust_sync.MigrationPartState? state) {
+    return state == rust_sync.MigrationPartState.migrating ||
+        state == rust_sync.MigrationPartState.confirming;
   }
 
   Set<int> _completedRingSegments(rust_sync.MigrationStatus status) {

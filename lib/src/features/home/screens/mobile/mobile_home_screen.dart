@@ -215,12 +215,36 @@ class _IronwoodMigrationCompletionHostState
     final accountUuid = completion.accountUuid;
     final completionId = completion.completionId;
     if (network == null || accountUuid == null || completionId == null) return;
+    // Only present the account the user is actually on. Switching accounts must
+    // not drag them into another account's result screen.
+    if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+      return;
+    }
+    if (!_isForeground) return;
     final key = '$network:$accountUuid:$completionId';
     final routed = ref.read(_ironwoodMigrationRoutedCompletionsProvider);
     if (routed.contains(key)) return;
     if (GoRouterState.of(context).uri.path != '/home') return;
-    routed.add(key);
-    context.go('/migration/private/status');
+    // A tap that is already opening another screen has not committed its route
+    // when this fires, which is how the completion screen ended up layered over
+    // whatever the user had just asked for. Re-check everything on the next
+    // frame and yield to that navigation if it happened.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || routed.contains(key) || !_isForeground) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (GoRouterState.of(context).uri.path != '/home') return;
+      routed.add(key);
+      context.go('/migration/private/status');
+    });
+  }
+
+  /// Routing is a foreground courtesy. A wake in the background must not move
+  /// the user's place in the app.
+  bool get _isForeground {
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return lifecycle == null || lifecycle == AppLifecycleState.resumed;
   }
 }
 
