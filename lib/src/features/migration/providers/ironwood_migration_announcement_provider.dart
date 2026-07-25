@@ -265,9 +265,13 @@ class IronwoodMigrationInputs {
   /// rust/src/wallet/sync/migration/policy.rs can actually plan, fees included
   /// — the status lookup can fail, and this gate is what decides whether the
   /// start CTA appears when it does.
+  ///
+  /// Spendable value only. The planner is handed `orchard_spendable`, and
+  /// pending value has its own phase there
+  /// (`PHASE_WAITING_FOR_SPENDABLE_ORCHARD`), so counting it here offered a
+  /// migration that cannot be planned until those funds confirm.
   bool get hasOrchardFunds =>
-      orchardBalance + orchardPendingBalance >=
-      kIronwoodMigrationMinimumStartableZatoshi;
+      orchardBalance >= kIronwoodMigrationMinimumStartableZatoshi;
 
   bool get hasIronwoodSpendableFunds => ironwoodBalance > BigInt.zero;
 

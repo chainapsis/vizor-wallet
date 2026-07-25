@@ -97,6 +97,37 @@ void main() {
   );
 
   test(
+    'stays hidden while the balance that clears the gate is pending',
+    () async {
+      // The planner is handed spendable value only, and pending Orchard has its
+      // own waiting phase there, so counting it here offered a migration that
+      // cannot be planned until those funds confirm.
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(95_000),
+          orchardPendingBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(95_000),
+          totalBalance: BigInt.from(1_095_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+
+      expect(
+        (await container.read(ironwoodPostMigrationStateProvider.future)).mode,
+        isNot(IronwoodPostMigrationMode.required),
+      );
+    },
+  );
+
+  test(
     'still prompts once Orchard funds cover a denomination and its fees',
     () async {
       final container = _container(
