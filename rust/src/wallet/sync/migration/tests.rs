@@ -2740,7 +2740,11 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
         vec![format!("{:064x}", 11)]
     );
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    for recoverable_phase in [PHASE_FAILED_RECOVERABLE, PHASE_PAUSED] {
+    // PHASE_BROADCASTING is persisted before the first send of a broadcast
+    // pass, so an interrupted pass leaves a run there while it still owns
+    // unpromoted signed children. Dropping it from retention released their
+    // anchors and let the next full-size scan batch prune the checkpoint.
+    for recoverable_phase in [PHASE_FAILED_RECOVERABLE, PHASE_PAUSED, PHASE_BROADCASTING] {
         conn.execute(
             &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = 'run-1'"),
             params![recoverable_phase],

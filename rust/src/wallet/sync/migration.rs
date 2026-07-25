@@ -1300,7 +1300,7 @@ pub(crate) fn prepared_anchor_retention_candidates(
              FROM {RUNS_TABLE} r
              INNER JOIN {PREPARED_NOTES_TABLE} p ON p.run_id = r.run_id
              WHERE r.network = ?1
-               AND r.phase IN (?2, ?3, ?4, ?5, ?6)
+               AND r.phase IN (?2, ?3, ?4, ?5, ?6, ?7)
                AND p.note_version = 2
              ORDER BY r.account_uuid, p.txid_hex, p.output_index"
         ))
@@ -1312,6 +1312,11 @@ pub(crate) fn prepared_anchor_retention_candidates(
                 PHASE_WAITING_DENOM_CONFIRMATIONS,
                 PHASE_READY_TO_MIGRATE,
                 PHASE_BROADCAST_SCHEDULED,
+                // A broadcast pass persists this phase before its first send
+                // and only leaves it once a send is recorded, so an interrupted
+                // pass keeps the phase while the run still owns unpromoted
+                // signed children. Omitting it released their anchors.
+                PHASE_BROADCASTING,
                 PHASE_FAILED_RECOVERABLE,
                 PHASE_PAUSED,
             ],
@@ -1347,7 +1352,10 @@ pub(crate) fn prepared_anchor_retention_candidates(
         // that have not reached the signing step yet.
         if matches!(
             phase.as_str(),
-            PHASE_BROADCAST_SCHEDULED | PHASE_FAILED_RECOVERABLE | PHASE_PAUSED
+            PHASE_BROADCAST_SCHEDULED
+                | PHASE_BROADCASTING
+                | PHASE_FAILED_RECOVERABLE
+                | PHASE_PAUSED
         ) {
             let remaining = match remaining_by_run.entry(run_id.clone()) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
