@@ -274,6 +274,28 @@ class IronwoodMigrationCoordinator
           // A manual retry must still run after the automatic attempt fails.
         }
       }
+      final service = ref.read(ironwoodMigrationServiceProvider);
+      if (statusForAdvance != null &&
+          service.supportsBackgroundMigrationRetry &&
+          _manualRetryNeedsOutboxRecovery(statusForAdvance)) {
+        final recovery = await service.recoverDueMigrationOutbox(
+          network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+          accountUuid: accountUuid,
+        );
+        final refreshedStatus = await service.status(
+          network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+          accountUuid: accountUuid,
+        );
+        if (_manualRetryNeedsOutboxRecovery(refreshedStatus)) {
+          _validateDueOutboxRecovery(recovery, accountUuid: accountUuid);
+        }
+        if (!ref.mounted) return;
+        state = state.copyWith(
+          errors: Map<String, String>.from(state.errors)..remove(accountUuid),
+        );
+        await refreshNow();
+        return;
+      }
       await _advance(accountUuid, status: statusForAdvance);
       if (!ref.mounted) return;
       state = state.copyWith(
@@ -528,6 +550,32 @@ class IronwoodMigrationCoordinator
       return true;
     }
     return !DateTime.now().isBefore(window.retryAt);
+  }
+
+  /// Whether an explicit retry must go through native outbox recovery instead of
+  /// the ordinary advance.
+  ///
+  /// A manual retry can run before sync reports a height: a migration status
+  /// screen may be the first surface after a cold launch, and
+  /// [_safelyObservedProofHeight] stays 0 until the first sync snapshot arrives.
+  /// Reading that unknown height as "not due" is what sent an explicit retry
+  /// back into [_advance], which cannot restore a missing native outbox batch.
+  /// Recovery neither creates proofs nor signs anything, and the native runner
+  /// applies its own height gate before it submits, so an unknown height resolves
+  /// to recovery whenever a scheduled broadcast exists.
+  bool _manualRetryNeedsOutboxRecovery(rust_sync.MigrationStatus status) {
+    final currentHeight = _safelyObservedProofHeight();
+    if (currentHeight > 0) {
+      return migrationHasDueScheduledBroadcast(
+        status,
+        currentHeight: currentHeight,
+      );
+    }
+    return status.scheduledBroadcasts.any(
+      (broadcast) =>
+          broadcast.status.toLowerCase() == 'scheduled' &&
+          broadcast.txidHex.isNotEmpty,
+    );
   }
 
   void _validateDueOutboxRecovery(

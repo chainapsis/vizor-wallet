@@ -333,6 +333,105 @@ void main() {
     },
   );
 
+  test('manual retry uses the due native outbox recovery lane', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final recoveries = <String>[];
+    final broadcasts = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: broadcasts,
+      outboxRecoveries: recoveries,
+      recoverOutbox: (_) async => throw StateError(
+        'Ironwood migration credential is missing for the active run.',
+      ),
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    await coordinator.refreshNow();
+    recoveries.clear();
+
+    await expectLater(
+      coordinator.retry(_softwareUuid, status: statuses[_softwareUuid]),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(recoveries, [_softwareUuid]);
+    expect(broadcasts, isEmpty);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .errors[_softwareUuid],
+      contains('credential is missing for the active run'),
+    );
+  });
+
+  test(
+    'manual retry recovers a due outbox before sync reports a height',
+    () async {
+      // A status screen can be the first surface after a cold launch, so an
+      // explicit retry can run before the first sync snapshot arrives. Treating
+      // the unknown height as "not due" would route the user action back into the
+      // ordinary advance that cannot restore a missing native outbox batch.
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final recoveries = <String>[];
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+        outboxRecoveries: recoveries,
+        recoverOutbox: (_) async => throw StateError(
+          'Ironwood migration credential is missing for the active run.',
+        ),
+        syncState: SyncState(),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await expectLater(
+        coordinator.retry(_softwareUuid, status: statuses[_softwareUuid]),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(recoveries, [_softwareUuid]);
+      expect(broadcasts, isEmpty);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .errors[_softwareUuid],
+        contains('credential is missing for the active run'),
+      );
+    },
+  );
+
   test('resumes proof preparation when its anchor height is scanned', () async {
     final statuses = {
       _softwareUuid: _status(
