@@ -489,6 +489,15 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_signed_child_run
             ON {SIGNED_CHILD_PCZTS_TABLE}(run_id, child_index);
+        CREATE TABLE IF NOT EXISTS {RETAINED_ANCHORS_TABLE} (
+            network TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            checkpoint_height INTEGER NOT NULL,
+            owns_retention INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (network, run_id, checkpoint_height)
+        );
+        CREATE INDEX IF NOT EXISTS idx_vizor_migration_retained_anchor_height
+            ON {RETAINED_ANCHORS_TABLE}(network, checkpoint_height);
 
         "
     ))

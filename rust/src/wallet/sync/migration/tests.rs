@@ -2721,6 +2721,29 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
             .collect::<Vec<_>>(),
         vec![format!("{:064x}", 11)]
     );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    for recoverable_phase in [PHASE_FAILED_RECOVERABLE, PHASE_PAUSED] {
+        conn.execute(
+            &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = 'run-1'"),
+            params![recoverable_phase],
+        )
+        .unwrap();
+        let candidates =
+            prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest).unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.note.txid_hex.as_str())
+                .collect::<Vec<_>>(),
+            vec![format!("{:064x}", 11)]
+        );
+    }
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = 'run-1'"),
+        params![PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
+    drop(conn);
     let candidates = signed_child_proof_candidates_for_run(&db_path, "run-1").unwrap();
     assert_eq!(
         candidates,
@@ -2774,6 +2797,90 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert_eq!(stored, vec![(1, 500, 501), (0, 500, 502)]);
+}
+
+#[test]
+fn paused_unmaterialized_run_retains_all_prepared_notes() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES ('run-1', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,200]')"
+        ),
+        params![db_path, PHASE_PAUSED],
+    )
+    .unwrap();
+    for index in 0..2 {
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version, lock_state)
+                 VALUES ('run-1', ?1, 0, ?2, 2, 'locked')"
+            ),
+            params![format!("{:064x}", index + 1), 100 + index],
+        )
+        .unwrap();
+    }
+    drop(conn);
+
+    assert_eq!(
+        prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest)
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn migration_anchor_retention_ownership_transfers_and_releases() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    drop(conn);
+
+    let desired = BTreeSet::from([("run-1".to_string(), 100), ("run-1".to_string(), 101)]);
+    assert!(stage_migration_anchor_retention_references(
+        &db_path,
+        WalletNetwork::Regtest,
+        &desired,
+        &BTreeSet::from([100]),
+    )
+    .unwrap()
+    .is_empty());
+
+    let desired = BTreeSet::from([("run-2".to_string(), 101)]);
+    assert!(stage_migration_anchor_retention_references(
+        &db_path,
+        WalletNetwork::Regtest,
+        &desired,
+        &BTreeSet::from([100, 101]),
+    )
+    .unwrap()
+    .is_empty());
+
+    let released = stage_migration_anchor_retention_references(
+        &db_path,
+        WalletNetwork::Regtest,
+        &BTreeSet::new(),
+        &BTreeSet::from([100, 101]),
+    )
+    .unwrap();
+    assert_eq!(released, vec![101]);
+    assert!(migration_anchor_retention_references_exist(&db_path, WalletNetwork::Regtest).unwrap());
+
+    finish_migration_anchor_retention_releases(&db_path, WalletNetwork::Regtest, &released)
+        .unwrap();
+    assert!(
+        !migration_anchor_retention_references_exist(&db_path, WalletNetwork::Regtest).unwrap()
+    );
 }
 
 #[test]
