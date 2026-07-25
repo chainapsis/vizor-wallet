@@ -174,37 +174,52 @@ class _IronwoodMigrationCompletionHost extends ConsumerStatefulWidget {
       _IronwoodMigrationCompletionHostState();
 }
 
+/// Completions this session already routed to.
+///
+/// The host is unmounted whenever home is not the current route, so a
+/// widget-local guard forgets the moment the user returns from the completion
+/// screen. Keeping it in the provider scope bounds the routing to once per run
+/// per session even if recording the run as seen fails.
+final _ironwoodMigrationRoutedCompletionsProvider = Provider<Set<String>>(
+  (_) => <String>{},
+);
+
 class _IronwoodMigrationCompletionHostState
     extends ConsumerState<_IronwoodMigrationCompletionHost> {
-  String? _navigatedFor;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _evaluate(ref.read(ironwoodMigrationCompletionProvider).value);
+      _evaluate(ref.read(ironwoodMigrationCompletionProvider));
     });
   }
 
   @override
   Widget build(BuildContext context) {
     ref.listen(ironwoodMigrationCompletionProvider, (_, next) {
-      _evaluate(next.value);
+      _evaluate(next);
     });
     return const SizedBox.shrink();
   }
 
-  void _evaluate(IronwoodMigrationCompletionState? completion) {
-    if (!mounted || completion == null || !completion.visible) return;
+  void _evaluate(AsyncValue<IronwoodMigrationCompletionState> completionAsync) {
+    if (!mounted) return;
+    // A refresh keeps serving the previous value, and recording the run as seen
+    // triggers exactly such a refresh. Acting on that stale value would route
+    // back to a completion the user has already been shown.
+    if (completionAsync.isLoading || completionAsync.hasError) return;
+    final completion = completionAsync.value;
+    if (completion == null || !completion.visible) return;
     final network = completion.network;
     final accountUuid = completion.accountUuid;
     final completionId = completion.completionId;
     if (network == null || accountUuid == null || completionId == null) return;
     final key = '$network:$accountUuid:$completionId';
-    if (_navigatedFor == key) return;
+    final routed = ref.read(_ironwoodMigrationRoutedCompletionsProvider);
+    if (routed.contains(key)) return;
     if (GoRouterState.of(context).uri.path != '/home') return;
-    _navigatedFor = key;
+    routed.add(key);
     context.go('/migration/private/status');
   }
 }

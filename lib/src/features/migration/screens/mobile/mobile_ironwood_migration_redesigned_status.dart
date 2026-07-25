@@ -842,16 +842,26 @@ class _MobileMigrationRedesignedStatusState
 
   Future<void> _markCompletionSeen() async {
     if (!mounted) return;
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    // Record the identity the completion provider itself published. Recomputing
+    // it here from this screen's status can disagree with the status the
+    // provider read, and a key that never matches leaves the run forever
+    // unseen, so home would route back to this screen on every return.
+    final published = ref.read(ironwoodMigrationCompletionProvider).value;
+    final accountUuid =
+        published?.accountUuid ??
+        ref.read(accountProvider).value?.activeAccountUuid;
     if (accountUuid == null) return;
-    final network = ref.read(ironwoodMigrationInputsProvider).network;
+    final network =
+        published?.network ?? ref.read(ironwoodMigrationInputsProvider).network;
+    final completionId =
+        published?.completionId ?? ironwoodMigrationCompletionId(widget.status);
     try {
       await ref
           .read(ironwoodMigrationCompletionStoreProvider)
           .markSeen(
             network: network,
             accountUuid: accountUuid,
-            completionId: ironwoodMigrationCompletionId(widget.status),
+            completionId: completionId,
           );
     } catch (_) {
       return;

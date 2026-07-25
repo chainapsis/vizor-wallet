@@ -213,6 +213,7 @@ Widget _app(
   IronwoodHomeMigrationCtaState? migrationPresentationCta,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
+  AsyncValue<IronwoodMigrationCompletionState>? migrationCompletion,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
@@ -248,12 +249,23 @@ Widget _app(
         path: '/migration/intro',
         builder: (_, _) => const Text('migration intro route'),
       ),
+      GoRoute(
+        path: '/migration/private/status',
+        builder: (_, _) => const Text('migration status route'),
+      ),
     ],
   );
 
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      if (migrationCompletion != null)
+        ironwoodMigrationCompletionProvider.overrideWith(
+          (ref) => switch (migrationCompletion) {
+            AsyncData(:final value) => Future.value(value),
+            _ => Completer<IronwoodMigrationCompletionState>().future,
+          },
+        ),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
       if (syncKeepAwakeNotifier != null)
         syncKeepAwakeProvider.overrideWith(() => syncKeepAwakeNotifier),
@@ -753,6 +765,50 @@ void main() {
     expect(find.text('migration intro route'), findsOneWidget);
   });
 
+  testWidgets('routes to a finished migration once per session', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.zero),
+        migrationCompletion: AsyncData(
+          IronwoodMigrationCompletionState.visible(
+            network: 'main',
+            accountUuid: 'account-1',
+            completionId: 'completion-1',
+            transferredZatoshi: BigInt.from(14_212_300_000),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration status route'), findsOneWidget);
+
+    // Leaving the completion screen unmounts the host. Returning home must not
+    // route back into a completion the user was already shown.
+    GoRouter.of(
+      tester.element(find.text('migration status route')),
+    ).go('/home');
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration status route'), findsNothing);
+  });
+
+  testWidgets('does not route while the completion state is unsettled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.zero),
+        migrationCompletion: const AsyncLoading(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration status route'), findsNothing);
+  });
+
   testWidgets('keeps the required migration lock while the raw CTA is hidden', (
     tester,
   ) async {
@@ -1092,28 +1148,29 @@ void main() {
     );
   });
 
-  testWidgets('does not request proof when height is due but preflight is not', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-        _syncedState(
-          orchardBalance: BigInt.from(100000000),
-          scannedHeight: 3000000,
-          chainTipHeight: 3000000,
+  testWidgets(
+    'does not request proof when height is due but preflight is not',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          _syncedState(
+            orchardBalance: BigInt.from(100000000),
+            scannedHeight: 3000000,
+            chainTipHeight: 3000000,
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _proofReadyMigrationStatus(proofReady: false),
+          ),
         ),
-        migrationCta: IronwoodHomeMigrationCtaState.resume(
-          network: 'main',
-          accountUuid: 'account-1',
-          status: _proofReadyMigrationStatus(proofReady: false),
-        ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(find.text('Next migration batch is ready'), findsNothing);
-    expect(find.text('Your next migration batch is ready'), findsNothing);
-  });
+      expect(find.text('Next migration batch is ready'), findsNothing);
+      expect(find.text('Your next migration batch is ready'), findsNothing);
+    },
+  );
 
   testWidgets('does not request proof before migration height is known', (
     tester,
