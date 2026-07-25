@@ -764,6 +764,16 @@ final class BackgroundMigrationManager {
         let announced = runResult.proofReady.flatMap {
           self.unverifiedProofReadyNotice(for: $0)
         }
+        // A run waiting on denomination confirmations needs a scan to move, and
+        // this wake does not scan. Saying nothing leaves it stalled until the
+        // user happens to reopen the app. The notification is deduplicated by
+        // the preparation state it reports, and that state cannot change while
+        // nothing is scanning, so a stalled run is announced once rather than
+        // on every wake.
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared
+            .notifyPreparationNeedsForeground()
+        }
         self.finishOutboxRun(
           BackgroundMigrationOutboxRunResult(
             transport: runResult.transport,

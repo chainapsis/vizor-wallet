@@ -999,6 +999,47 @@ final class BackgroundMigrationPreparationManager {
     return target == .continuedProcessing || target == .backgroundProcessing
   }
 
+  /// Tells the user a bound preparation can only continue in the foreground.
+  ///
+  /// The silent wake broadcasts and queries but never scans, and preparation
+  /// needs a scan to see its denomination confirmations. Without this the run
+  /// simply stalls until the user happens to reopen the app.
+  ///
+  /// Frequency is governed by the existing needs-action fingerprint: it carries
+  /// the inspected preparation state, and that state cannot move while nothing
+  /// is scanning, so a stalled run is announced once and only speaks again when
+  /// its progress actually changes.
+  func notifyPreparationNeedsForeground() {
+    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    else { return }
+    for manifest in manifests {
+      guard let runId = manifest.expectedRunId else { continue }
+      var preparation = CMigrationPreparationProgress(
+        state: 0,
+        confirmation_count: 0,
+        confirmation_target: 0,
+        completed_stage_count: 0,
+        total_stage_count: 0
+      )
+      guard
+        zcash_inspect_migration_preparation(
+          manifest.dbPath,
+          manifest.network,
+          manifest.accountUuid,
+          runId,
+          &preparation
+        ) == 0
+      else { continue }
+      // 0 is "still preparing": the phase that needs a scan we will not do here.
+      guard preparation.state == 0 else { continue }
+      postNeedsActionNotification(
+        reason: "foreground-preparation-required",
+        manifest: manifest,
+        progress: preparation
+      )
+    }
+  }
+
   private func preparationResumeTarget()
     -> BackgroundMigrationPreparationResumeTarget
   {
