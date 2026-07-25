@@ -2586,6 +2586,24 @@ fn last_broadcast_keeps_run_materializing_while_signed_child_remains() {
 }
 
 #[test]
+fn durable_anchor_check_matches_the_pinned_librustzcash_interval() {
+    // librustzcash retains interval-aligned checkpoints at or after anchor
+    // retention activation. Releasing one of those would drop a witness anchor
+    // the wallet still depends on, so migration must recognise every one of
+    // them, not only the ones that happen to be multiples of a wider interval.
+    let floor = Some(BlockHeight::from_u32(1_000));
+
+    assert!(is_wallet_durable_anchor(1_008, floor));
+    assert!(is_wallet_durable_anchor(1_152, floor));
+    assert!(!is_wallet_durable_anchor(1_100, floor));
+
+    // Below activation librustzcash retains nothing, so migration owns the
+    // checkpoint outright and may release it.
+    assert!(!is_wallet_durable_anchor(864, floor));
+    assert!(!is_wallet_durable_anchor(144, None));
+}
+
+#[test]
 fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");

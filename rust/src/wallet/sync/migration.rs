@@ -12,6 +12,7 @@ use crate::wallet::db::{open_readonly_conn_with_timeout, open_wallet_raw_conn_wi
 use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::secret_payload;
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use super::READ_DB_BUSY_TIMEOUT;
 
@@ -1392,6 +1393,21 @@ pub(crate) fn migration_anchor_retention_references_exist(
     .map_err(|e| format!("Check migration anchor retention references: {e}"))
 }
 
+/// Blocks between the checkpoints librustzcash keeps as durable anchors.
+///
+/// Mirrors `ANCHOR_RETENTION_INTERVAL` in
+/// `zcash_client_backend::data_api::ll::wallet`, which is private to that
+/// crate. The pinned revision uses 144; a released version of the crate used
+/// 288, so this must be re-checked whenever the librustzcash pin moves.
+const LIBRUSTZCASH_ANCHOR_RETENTION_INTERVAL: u32 = 144;
+
+/// Whether librustzcash itself retains the checkpoint at `height` as a durable
+/// anchor, mirroring its `should_retain_anchor`.
+fn is_wallet_durable_anchor(height: u32, anchor_retention_floor: Option<BlockHeight>) -> bool {
+    anchor_retention_floor.is_some_and(|floor| height >= u32::from(floor))
+        && height % LIBRUSTZCASH_ANCHOR_RETENTION_INTERVAL == 0
+}
+
 pub(crate) fn stage_migration_anchor_retention_references(
     db_path: &str,
     network: WalletNetwork,
@@ -1430,14 +1446,15 @@ pub(crate) fn stage_migration_anchor_retention_references(
         .iter()
         .map(|(_, height)| *height)
         .collect::<BTreeSet<_>>();
+    // librustzcash independently retains interval-aligned checkpoints at or
+    // after anchor-retention activation as durable anchors. Migration may have
+    // retained the same checkpoint first, but must not later remove the
+    // wallet's durable retention.
+    let anchor_retention_floor = network.activation_height(NetworkUpgrade::Nu6_3);
     let release = currently_owned
         .difference(&desired_heights)
         .copied()
-        // librustzcash independently retains every 288th checkpoint as a
-        // durable anchor after NU6.3. Migration may have first retained the
-        // same checkpoint, but must not later remove the wallet's durable
-        // retention.
-        .filter(|height| height % 288 != 0)
+        .filter(|height| !is_wallet_durable_anchor(*height, anchor_retention_floor))
         .collect::<Vec<_>>();
 
     let tx = conn
