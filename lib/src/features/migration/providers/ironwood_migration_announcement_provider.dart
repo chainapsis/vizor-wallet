@@ -15,6 +15,10 @@ import '../models/ironwood_migration_phases.dart';
 
 export '../models/ironwood_migration_phases.dart';
 
+/// Smallest value ZIP 318 can migrate, in zatoshi (0.01 ZEC). Anything below is
+/// residual value that no denomination can carry.
+final kIronwoodMigrationResidualValueZatoshi = BigInt.from(1000000);
+
 String ironwoodMigrationAnnouncementSeenStorageKey({
   required String network,
   required String accountUuid,
@@ -238,8 +242,17 @@ class IronwoodMigrationInputs {
   final BigInt ironwoodBalance;
   final BigInt ironwoodPendingBalance;
 
+  /// Whether the Orchard balance can still produce a migration output.
+  ///
+  /// ZIP 318's smallest denomination is 0.01 ZEC, so a balance below that is
+  /// residual value: the planner cannot emit any output for it and starting a
+  /// migration would fail on insufficient funds. Asking the user to migrate
+  /// dust they cannot move is noise, so it does not count as Orchard funds
+  /// here. Mirrors ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI in
+  /// rust/src/wallet/sync/migration/policy.rs.
   bool get hasOrchardFunds =>
-      orchardBalance > BigInt.zero || orchardPendingBalance > BigInt.zero;
+      orchardBalance + orchardPendingBalance >=
+      kIronwoodMigrationResidualValueZatoshi;
 
   bool get hasIronwoodSpendableFunds => ironwoodBalance > BigInt.zero;
 

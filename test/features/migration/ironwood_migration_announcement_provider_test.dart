@@ -31,6 +31,65 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  test(
+    'stays hidden for Orchard residual value below a denomination',
+    () async {
+      // ZIP 318's smallest denomination is 0.01 ZEC; less than that cannot be
+      // migrated at all, so prompting for it only produces a dead end.
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(999_999),
+          spendableBalance: BigInt.from(999_999),
+          totalBalance: BigInt.from(999_999),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+
+      expect(
+        (await container.read(
+          ironwoodMigrationAnnouncementProvider.future,
+        )).visible,
+        isFalse,
+      );
+      expect(
+        (await container.read(ironwoodPostMigrationStateProvider.future)).mode,
+        isNot(IronwoodPostMigrationMode.required),
+      );
+    },
+  );
+
+  test('still prompts once Orchard funds reach a denomination', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        orchardBalance: BigInt.from(1_000_000),
+        spendableBalance: BigInt.from(1_000_000),
+        totalBalance: BigInt.from(1_000_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+
+    expect(
+      (await container.read(ironwoodPostMigrationStateProvider.future)).mode,
+      IronwoodPostMigrationMode.required,
+    );
+  });
+
   test('completion surfaces a settled migration receipt once', () async {
     final completionStore = _FakeCompletionStore();
     final container = _container(
