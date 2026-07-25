@@ -1278,6 +1278,59 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('a failed plan releases the migration choice lock', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(ios: true),
+        privatePlanLoader: () =>
+            Future<rust_sync.OrchardMigrationPrivatePlan?>.error(
+              StateError('plan unavailable'),
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("Couldn't prepare the migration plan. Try again."),
+      findsOneWidget,
+    );
+    expect(find.text('Choose How to Migrate'), findsOneWidget);
+    // The lock disables Continue, both option cards and back at once, so
+    // holding it here left the user on an error with no way to retry or leave.
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_loading')),
+      findsNothing,
+    );
+
+    final popScope =
+        tester.widget(
+              find
+                  .ancestor(
+                    of: find.byKey(
+                      const ValueKey(
+                        'mobile_ironwood_options_continue_button',
+                      ),
+                    ),
+                    matching: find.byWidgetPredicate((widget) => widget is PopScope),
+                  )
+                  .first,
+            )
+            as PopScope;
+    expect(popScope.canPop, isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('routes private migration by actual notification authorization', (
     tester,
   ) async {

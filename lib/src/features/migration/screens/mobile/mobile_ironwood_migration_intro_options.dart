@@ -200,6 +200,10 @@ class _MobileMigrationOptionsState
       debugPrint('Failed to prepare private migration choice: $error');
       if (!mounted) return;
       setState(() {
+        // The lock disables back, both option cards and Continue, so any exit
+        // that leaves the user on this screen has to release it. Keeping it
+        // held here strands them on an error they cannot retry or leave.
+        _isContinuing = false;
         _continueError = "Couldn't prepare the migration plan. Try again.";
       });
       return;
