@@ -6,7 +6,7 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 # Unreleased
 
-## v2.0.0
+## v2.0.0-rc.1
 
 ### Changed
 - Updated the librustzcash dependency family to published `zcash_primitives 0.30.0`,
