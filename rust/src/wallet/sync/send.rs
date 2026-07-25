@@ -2386,6 +2386,20 @@ fn representative_orchard_checkpoint(
         .max()
 }
 
+fn migration_anchor_retention_boundary(
+    network: WalletNetwork,
+    timing_policy: super::migration::MigrationTimingPolicy,
+    anchor_height: u32,
+    note_mined_height: u32,
+) -> Option<u32> {
+    super::migration::zip318_anchor_boundary_at_or_before_with_policy(
+        network,
+        timing_policy,
+        anchor_height,
+    )
+    .filter(|boundary| *boundary >= note_mined_height)
+}
+
 fn available_orchard_anchor_candidates(
     logical_boundaries: &[u32],
     checkpoint_heights: &[u32],
@@ -2433,9 +2447,9 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
     db: &mut WalletDatabase,
 ) -> Result<usize, String> {
     // This is deliberately a sync maintenance operation rather than part of a
-    // migration status read. The containing bucket checkpoint can otherwise be
-    // pruned before proof readiness is reached, while ordinary status reads
-    // must remain side-effect free.
+    // migration status read. Roll retention to the newest observed bucket so a
+    // long-lived signed child still has a checkpoint inside the ZIP 318 age
+    // window, while ordinary status reads remain side-effect free.
     let candidates = super::migration::prepared_anchor_retention_candidates(db_path, network)?;
     if candidates.is_empty() {
         return Ok(0);
@@ -2487,18 +2501,17 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
                 .mined_height()
                 .map(u32::from)
                 .ok_or("Prepared migration note mined height unavailable")?;
-            let containing_boundary =
-                super::migration::anchor_boundary_containing_note_with_policy(
-                    network,
-                    candidate.timing_policy,
-                    mined_height,
-                )?;
-            if containing_boundary > anchor_height {
+            let Some(retention_boundary) = migration_anchor_retention_boundary(
+                network,
+                candidate.timing_policy,
+                anchor_height,
+                mined_height,
+            ) else {
                 continue;
-            }
+            };
             if let Some(checkpoint_height) = representative_orchard_checkpoint(
                 &checkpoint_heights,
-                containing_boundary,
+                retention_boundary,
                 mined_height,
             ) {
                 checkpoints_to_retain.insert(checkpoint_height);

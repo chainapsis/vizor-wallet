@@ -112,17 +112,61 @@ fn migration_anchor_never_uses_a_checkpoint_before_the_prepared_note() {
 }
 
 #[test]
-fn migration_anchor_retention_targets_the_notes_containing_bucket() {
-    let containing_boundary = migration::anchor_boundary_containing_note_with_policy(
+fn migration_anchor_retention_rolls_forward_with_the_trusted_anchor() {
+    let first_boundary = migration::anchor_boundary_containing_note_with_policy(
         WalletNetwork::Main,
         migration::MigrationTimingPolicy::Standard,
         5_401,
     )
     .unwrap();
 
-    assert_eq!(containing_boundary, 5_472);
+    assert_eq!(first_boundary, 5_472);
     assert_eq!(
-        representative_orchard_checkpoint(&[5_400, 5_460, 5_500], containing_boundary, 5_401),
+        migration_anchor_retention_boundary(
+            WalletNetwork::Main,
+            migration::MigrationTimingPolicy::Standard,
+            first_boundary,
+            5_401,
+        ),
+        Some(5_472),
+    );
+    assert_eq!(
+        migration_anchor_retention_boundary(
+            WalletNetwork::Main,
+            migration::MigrationTimingPolicy::Standard,
+            5_616,
+            5_401,
+        ),
+        Some(5_616),
+    );
+    let aged_anchor = first_boundary
+        + migration::ZIP318_ANCHOR_BUCKET_MODULUS * (migration::ZIP318_ANCHOR_AGE_CAP + 1);
+    assert!(!migration::zip318_anchor_boundary_is_candidate_with_policy(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        first_boundary,
+        aged_anchor,
+        5_401,
+        0,
+    ));
+    let rolled_boundary = migration_anchor_retention_boundary(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        aged_anchor,
+        5_401,
+    )
+    .unwrap();
+    assert_eq!(rolled_boundary, aged_anchor);
+    assert!(migration::zip318_anchor_boundary_is_candidate_with_policy(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        rolled_boundary,
+        aged_anchor + migration::ZIP318_ANCHOR_BUCKET_MODULUS,
+        5_401,
+        0,
+    ));
+    assert_eq!(
+        representative_orchard_checkpoint(&[5_400, 5_460, 5_500], first_boundary, 5_401),
         Some(5_460),
     );
 }
