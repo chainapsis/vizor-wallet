@@ -19,6 +19,19 @@ export '../models/ironwood_migration_phases.dart';
 /// residual value that no denomination can carry.
 final kIronwoodMigrationResidualValueZatoshi = BigInt.from(1000000);
 
+/// Smallest balance that can actually start a migration, in zatoshi.
+///
+/// The planner subtracts both fees before it looks for a denomination, so the
+/// denomination alone is not enough to clear it. Mirrors
+/// `plan_denominations` with `DENOMINATION_SPLIT_STATUS_FEE_ESTIMATE_ZATOSHI`
+/// and `MIGRATION_STATUS_FEE_ESTIMATE_ZATOSHI` in
+/// rust/src/wallet/sync/migration/policy.rs. Gating on the denomination alone
+/// let a balance in between offer a migration that cannot be planned.
+final kIronwoodMigrationMinimumStartableZatoshi =
+    kIronwoodMigrationResidualValueZatoshi +
+    BigInt.from(80000) + // denomination split fee
+    BigInt.from(15000); // migration fee
+
 String ironwoodMigrationAnnouncementSeenStorageKey({
   required String network,
   required String accountUuid,
@@ -248,11 +261,13 @@ class IronwoodMigrationInputs {
   /// residual value: the planner cannot emit any output for it and starting a
   /// migration would fail on insufficient funds. Asking the user to migrate
   /// dust they cannot move is noise, so it does not count as Orchard funds
-  /// here. Mirrors ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI in
-  /// rust/src/wallet/sync/migration/policy.rs.
+  /// here. Mirrors what `plan_denominations` in
+  /// rust/src/wallet/sync/migration/policy.rs can actually plan, fees included
+  /// — the status lookup can fail, and this gate is what decides whether the
+  /// start CTA appears when it does.
   bool get hasOrchardFunds =>
       orchardBalance + orchardPendingBalance >=
-      kIronwoodMigrationResidualValueZatoshi;
+      kIronwoodMigrationMinimumStartableZatoshi;
 
   bool get hasIronwoodSpendableFunds => ironwoodBalance > BigInt.zero;
 
