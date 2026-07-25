@@ -710,22 +710,18 @@ final class BackgroundMigrationManager {
       self.stateLock.vizorWithLock {
         self.activeCancellation = cancellation
       }
-      if #available(iOS 26.0, *) {
-        BackgroundMigrationPreparationManager.shared.runDeferredPass {
-          preparationResult in
-          self.runOutbox(
-            task: task,
-            cancellation: cancellation,
-            preparationResult: preparationResult
-          )
-        }
-      } else {
-        self.runOutbox(
-          task: task,
-          cancellation: cancellation,
-          preparationResult: .completed
-        )
-      }
+      // This wake is a silent BGProcessingTask. It queries the chain tip,
+      // broadcasts transactions that are already signed, and notifies — it does
+      // not scan. Preparation work needs a chain sync to see its denomination
+      // confirmations, so it belongs to the user-initiated, user-visible
+      // continued-processing task, not here. Running it from this wake meant a
+      // closed app performing multi-minute chain syncs the user never asked
+      // for.
+      self.runOutbox(
+        task: task,
+        cancellation: cancellation,
+        preparationResult: .completed
+      )
     }
   }
 
@@ -754,67 +750,30 @@ final class BackgroundMigrationManager {
           self.finishForegroundOnly(task)
           return
         }
-        // Proof readiness is announced only after the local Orchard witness is
-        // verified. Every supported iOS therefore asks the runner for a
-        // candidate instead of letting it mark readiness from the observed
-        // height alone. Pre-iOS 26 has no preparation verifier, so its
-        // candidate is dropped below rather than announced and acknowledged:
-        // that acknowledgement would suppress the notification the user is owed
-        // once readiness actually holds.
+        // Readiness cannot be established here without scanning, and this wake
+        // does not scan. Reaching the anchor height is a chain-tip question, so
+        // the runner marks the candidate from the observed height and the
+        // notification tells the user to reopen the app, which is where the
+        // sync and the proof belong. The announcement is recorded apart from a
+        // verified one so it does not retire the batch.
         let runResult = BackgroundMigrationOutboxRunner.runOnce(
           cancellation: cancellation,
           requiresPreparationProofVerification: true
         )
         self.clearActiveCancellation()
-        if #available(iOS 26.0, *), let proofCandidate = runResult.proofReady {
-          BackgroundMigrationPreparationManager.shared.verifyProofReadiness(
-            batchId: proofCandidate.batchId
-          ) { verified in
-            let verifiedResult = BackgroundMigrationOutboxRunResult(
-              transport: runResult.transport,
-              proofReady: verified ? proofCandidate : nil,
-              broadcastComplete: runResult.broadcastComplete,
-              transportAccountUuid: runResult.transportAccountUuid
-            )
-            self.queue.async {
-              self.finishOutboxRun(
-                verifiedResult,
-                task: task,
-                preparationResult: preparationResult
-              )
-            }
-          }
-        } else if let proofCandidate = runResult.proofReady {
-          // Versions without background preparation verify from the wallet
-          // database alone, and nothing scans blocks while the app is closed
-          // there, so the scanned height stays frozen at the last foreground
-          // sync and verification cannot succeed from a wake. Announcing the
-          // height-only nudge keeps the one signal that brings these users
-          // back; recording it apart from the verified acknowledgement is what
-          // keeps the real announcement available afterwards.
-          let announced =
-            proofCandidate.verified
-            && IronwoodMigrationProofReadinessCheck
-              .verifyWithoutPreparation(batchId: proofCandidate.batchId)
-            ? proofCandidate
-            : self.unverifiedProofReadyNotice(for: proofCandidate)
-          self.finishOutboxRun(
-            BackgroundMigrationOutboxRunResult(
-              transport: runResult.transport,
-              proofReady: announced,
-              broadcastComplete: runResult.broadcastComplete,
-              transportAccountUuid: runResult.transportAccountUuid
-            ),
-            task: task,
-            preparationResult: preparationResult
-          )
-        } else {
-          self.finishOutboxRun(
-            runResult,
-            task: task,
-            preparationResult: preparationResult
-          )
+        let announced = runResult.proofReady.flatMap {
+          self.unverifiedProofReadyNotice(for: $0)
         }
+        self.finishOutboxRun(
+          BackgroundMigrationOutboxRunResult(
+            transport: runResult.transport,
+            proofReady: announced,
+            broadcastComplete: runResult.broadcastComplete,
+            transportAccountUuid: runResult.transportAccountUuid
+          ),
+          task: task,
+          preparationResult: preparationResult
+        )
       }
     }
   }
@@ -1154,6 +1113,16 @@ final class BackgroundMigrationManager {
     for candidate: BackgroundMigrationProofReadyMetadata
   ) -> BackgroundMigrationProofReadyMetadata? {
     if !candidate.verified { return candidate }
+    // A build that verified readiness here could leave a verified announcement
+    // queued. Nothing marks one any more, so deliver and acknowledge it through
+    // the path that queued it — re-marking it as a nudge is refused, which
+    // would strand the notification with no way to clear it.
+    if let pending = (try? BackgroundMigrationOutboxStore.shared.read())?
+      .pendingProofReadyNotification(),
+      pending.batchId == candidate.batchId
+    {
+      return pending
+    }
     var notice: BackgroundMigrationProofReadyMetadata?
     guard
       (try? BackgroundMigrationOutboxStore.shared.update { snapshot in

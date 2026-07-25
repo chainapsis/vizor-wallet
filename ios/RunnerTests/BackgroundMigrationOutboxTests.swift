@@ -1252,6 +1252,39 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(acknowledged.nextActionHeight(endpoint: batch.lightwalletdUrl))
   }
 
+  func testAVerifiedProofReadyNotificationQueuedByAnOlderBuildStillDrains() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "watch-only",
+      account: "account-a",
+      heights: [],
+      nextProofHeight: 288
+    )
+    try stageAndArm(batch, in: harness.store)
+    // What a build that verified readiness in the wake left behind.
+    _ = try harness.store.update { snapshot in
+      _ = snapshot.recordVerifiedProofReadiness(runId: batch.runId, at: now)
+    }
+
+    let snapshot = try harness.store.read()
+    // Still reported, so the wake can deliver and acknowledge it.
+    XCTAssertEqual(
+      snapshot.pendingProofReadyNotification(),
+      BackgroundMigrationProofReadyMetadata(batchId: batch.batchId, observedHeight: 288)
+    )
+    // And it cannot be re-marked as a nudge, which is why the wake has to
+    // recognise it instead of overwriting it.
+    var renotice: BackgroundMigrationProofReadyMetadata?
+    _ = try harness.store.update { mutable in
+      renotice = mutable.markUnverifiedProofReadyNoticeIfNeeded(
+        batchId: batch.batchId,
+        at: now.addingTimeInterval(1)
+      )
+    }
+    XCTAssertNil(renotice)
+  }
+
   func testRunnerRetriesAnUndeliveredUnverifiedProofReadyNotice() throws {
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }
