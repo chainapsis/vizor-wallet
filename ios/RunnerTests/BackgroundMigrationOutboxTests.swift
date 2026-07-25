@@ -7,6 +7,87 @@ import XCTest
 final class BackgroundMigrationOutboxTests: XCTestCase {
   private let now = Date(timeIntervalSince1970: 1_750_000_000)
 
+  func testBroadcastCompleteIsAnnouncedOncePerRunAcrossRecordCleanup() throws {
+    // Acknowledging receipts prunes the emptied batch record, which used to
+    // take the "already notified" marker with it. A later wave then recreated
+    // the record under the same id and announced the same run again.
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let first = makeBatch(batchId: "batch-a", account: "account-a", heights: [100])
+    try snapshot.stage(first)
+    try snapshot.armBatch(batchId: first.batchId, expectedDigests: digests(first), at: now)
+    let selected = try XCTUnwrap(snapshot.selectDue(remoteHeight: 200, at: now))
+    try snapshot.beginSubmission(itemId: selected.item.itemId, attemptId: "attempt", at: now)
+    var random = SeededOutboxRandom(values: [1, UInt64.max / 2, UInt64.max / 2])
+    try snapshot.recordAccepted(
+      itemId: selected.item.itemId,
+      equivalent: false,
+      remoteHeight: 200,
+      responseCode: 0,
+      responseMessage: "",
+      at: now,
+      random: &random
+    )
+
+    XCTAssertNotNil(
+      snapshot.markBroadcastCompleteIfNeeded(batchId: first.batchId, at: now)
+    )
+    try snapshot.acknowledgeBroadcastCompleteNotification(
+      batchId: first.batchId,
+      at: now
+    )
+    snapshot.acknowledgeReceipts(Set(snapshot.receipts.map(\.receiptId)))
+    XCTAssertTrue(snapshot.batches.isEmpty)
+
+    // A later wave of the same run restages the record from scratch.
+    var second = makeBatch(batchId: "batch-a", account: "account-a", heights: [300])
+    second.items = [
+      BackgroundMigrationOutboxItem(
+        itemId: "item-late",
+        partIndex: 9,
+        txidHex: String(format: "%064x", 99),
+        rawTransaction: Data([0x02, 0x09]),
+        anchorBoundaryHeight: 144,
+        scheduledHeight: 300,
+        scheduleStartHeight: 299,
+        expiryHeight: 69_120
+      )
+    ]
+    try snapshot.stage(second)
+    try snapshot.armBatch(batchId: second.batchId, expectedDigests: digests(second), at: now)
+    let lateSelection = try XCTUnwrap(snapshot.selectDue(remoteHeight: 400, at: now))
+    try snapshot.beginSubmission(
+      itemId: lateSelection.item.itemId,
+      attemptId: "attempt-late",
+      at: now
+    )
+    try snapshot.recordAccepted(
+      itemId: lateSelection.item.itemId,
+      equivalent: false,
+      remoteHeight: 400,
+      responseCode: 0,
+      responseMessage: "",
+      at: now,
+      random: &random
+    )
+
+    XCTAssertNil(
+      snapshot.markBroadcastCompleteIfNeeded(batchId: second.batchId, at: now)
+    )
+  }
+
+  func testSnapshotDecodesWithoutTheAnnouncedRunField() throws {
+    let legacy = """
+      {"version":1,"batches":[],"receipts":[]}
+      """
+    let snapshot = try JSONDecoder().decode(
+      BackgroundMigrationOutboxSnapshot.self,
+      from: Data(legacy.utf8)
+    )
+
+    XCTAssertTrue(snapshot.batches.isEmpty)
+    XCTAssertNil(snapshot.announcedBroadcastCompleteBatchIds)
+  }
+
   func testDiscardBatchRemovesAnIdleRecordButKeepsTheAccountScope() throws {
     var snapshot = BackgroundMigrationOutboxSnapshot()
     let batch = makeBatch(batchId: "batch-a", account: "account-a")

@@ -173,6 +173,15 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
   var receipts: [BackgroundMigrationOutboxReceipt] = []
   var lastAttemptedScopeKey: String?
   var lastInspectedEndpoint: String?
+  /// Batch ids whose "transfers sent" notification has already been delivered.
+  ///
+  /// The per-batch marker cannot carry this on its own: acknowledging receipts
+  /// prunes an emptied record, and a later wave of the same run restages it
+  /// under the same id with no history, so the run would be announced again.
+  /// The id encodes network, account, and run, so revocation can drop a scope's
+  /// entries and a rebuilt run starts clean. Optional so snapshots written
+  /// before this field decode unchanged.
+  var announcedBroadcastCompleteBatchIds: [String]?
 
   mutating func stage(_ batch: BackgroundMigrationOutboxBatch) throws {
     guard !batch.batchId.isEmpty,
@@ -550,6 +559,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     let batch = batches[batchIndex]
     guard batch.nextProofHeight == nil,
       batch.broadcastCompleteNotifiedAt == nil,
+      !(announcedBroadcastCompleteBatchIds ?? []).contains(batchId),
       !batch.items.isEmpty,
       batch.items.allSatisfy({ $0.status == .acceptedAwaitingReconciliation })
     else {
@@ -573,6 +583,11 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     }
     batches[batchIndex].broadcastCompleteNotificationPendingAt = nil
     batches[batchIndex].broadcastCompleteNotifiedAt = date
+    var announced = announcedBroadcastCompleteBatchIds ?? []
+    if !announced.contains(batchId) {
+      announced.append(batchId)
+      announcedBroadcastCompleteBatchIds = announced
+    }
     if batches[batchIndex].items.isEmpty
       && batches[batchIndex].nextProofHeight == nil
     {
@@ -870,6 +885,11 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     )
     batches.removeAll { batchIds.contains($0.batchId) }
     receipts.removeAll { batchIds.contains($0.batchId) }
+    let scopePrefix = "\(network):\(accountUuid):"
+    if var announced = announcedBroadcastCompleteBatchIds {
+      announced.removeAll { $0.hasPrefix(scopePrefix) }
+      announcedBroadcastCompleteBatchIds = announced.isEmpty ? nil : announced
+    }
     if lastAttemptedScopeKey == "\(network):\(accountUuid)" {
       lastAttemptedScopeKey = nil
     }
