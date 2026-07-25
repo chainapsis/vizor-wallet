@@ -687,15 +687,16 @@ final class BackgroundMigrationManager {
           self.finishForegroundOnly(task)
           return
         }
-        let requiresPreparationProofVerification: Bool
-        if #available(iOS 26.0, *) {
-          requiresPreparationProofVerification = true
-        } else {
-          requiresPreparationProofVerification = false
-        }
+        // Proof readiness is announced only after the local Orchard witness is
+        // verified. Every supported iOS therefore asks the runner for a
+        // candidate instead of letting it mark readiness from the observed
+        // height alone. Pre-iOS 26 has no preparation verifier, so its
+        // candidate is dropped below rather than announced and acknowledged:
+        // that acknowledgement would suppress the notification the user is owed
+        // once readiness actually holds.
         let runResult = BackgroundMigrationOutboxRunner.runOnce(
           cancellation: cancellation,
-          requiresPreparationProofVerification: requiresPreparationProofVerification
+          requiresPreparationProofVerification: true
         )
         self.clearActiveCancellation()
         if #available(iOS 26.0, *), let proofCandidate = runResult.proofReady {
@@ -716,6 +717,19 @@ final class BackgroundMigrationManager {
               )
             }
           }
+        } else if runResult.proofReady != nil {
+          // Unverifiable candidate on a pre-iOS 26 wake: keep the transport
+          // outcome and leave readiness unannounced and unacknowledged.
+          self.finishOutboxRun(
+            BackgroundMigrationOutboxRunResult(
+              transport: runResult.transport,
+              proofReady: nil,
+              broadcastComplete: runResult.broadcastComplete,
+              transportAccountUuid: runResult.transportAccountUuid
+            ),
+            task: task,
+            preparationResult: preparationResult
+          )
         } else {
           self.finishOutboxRun(
             runResult,
