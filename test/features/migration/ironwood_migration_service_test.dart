@@ -2448,6 +2448,131 @@ void main() {
   );
 
   test(
+    'a part the export re-marks for re-signing does not condemn the credential',
+    () async {
+      // Exporting is not read-only: it first re-marks due parts whose expiry no
+      // longer matches the current ZIP 318 window as needs_resign, then exports
+      // only the rows still scheduled. Judging the credential against the
+      // pre-export snapshot read that ordinary re-sign as "this credential
+      // cannot open the run" and revoked, retired and re-planned the migration,
+      // discarding signed children and their proofs.
+      final events = <String>[];
+      final statuses = <rust_sync.MigrationStatus>[
+        // Read before the export: the part is still scheduled.
+        _migrationStatus(
+          phase: 'broadcast_scheduled',
+          activeRunId: 'run-1',
+          scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-a')],
+        ),
+        // Read after the export: the same part now needs re-signing.
+        _migrationStatus(phase: 'broadcast_scheduled', activeRunId: 'run-1'),
+      ];
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(
+            statuses.length > 1 ? statuses.removeAt(0) : statuses.first,
+          );
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2]),
+        isMobile: () => true,
+        isIOS: () => true,
+        isMacOS: () => false,
+        isHardwareAccount: (_) => false,
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              events.add('export');
+              // tx-a is absent because the export itself just re-marked it.
+              return _outboxBatch(runId: 'run-1', txids: const []);
+            },
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => true,
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              events.add('revoke');
+            },
+        retireUnbroadcastMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+            }) async {
+              events.add('retire');
+            },
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async {
+              events.add('start');
+              return _migrationResult();
+            },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        requestNotificationAuthorization: () async => true,
+      );
+
+      await expectLater(
+        service.recoverSoftwarePrivateMigration(accountUuid: 'account-1'),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('still has a usable credential'),
+          ),
+        ),
+      );
+      expect(events, ['export']);
+      expect(
+        (await store.read(network: 'test', accountUuid: 'account-1'))
+            ?.expectedRunId,
+        'run-1',
+      );
+    },
+  );
+
+  test(
     'confirmed recovery retires the old run and binds a new credential',
     () async {
       final events = <String>[];
@@ -3999,13 +4124,30 @@ rust_sync.IronwoodMigrationResult _migrationResult({
   );
 }
 
-rust_sync.MigrationOutboxBatch _outboxBatch() {
+rust_sync.MigrationOutboxBatch _outboxBatch({
+  String runId = 'run-1',
+  List<String>? txids,
+}) {
   return rust_sync.MigrationOutboxBatch(
-    runId: 'run-1',
+    runId: runId,
     timingMeanBlocks: 144,
     timingMaxBlocks: 576,
     nextProofHeight: 576,
-    items: [
+    items: txids != null
+        ? [
+            for (final (index, txid) in txids.indexed)
+              rust_sync.MigrationOutboxItem(
+                itemId: txid,
+                partIndex: index,
+                txidHex: txid,
+                rawTransaction: Uint8List.fromList([1, 2, 3, 4]),
+                anchorBoundaryHeight: 144,
+                scheduledHeight: 288,
+                scheduleStartHeight: 288,
+                expiryHeight: 34_560,
+              ),
+          ]
+        : [
       rust_sync.MigrationOutboxItem(
         itemId: 'txid-1',
         partIndex: 0,

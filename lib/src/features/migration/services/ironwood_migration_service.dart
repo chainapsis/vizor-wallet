@@ -897,14 +897,7 @@ class IronwoodMigrationService {
                 password: resolvedManifest.credentialHex,
                 saltBase64: resolvedManifest.saltBase64,
               );
-              final requiredTxids = status.scheduledBroadcasts
-                  .where(
-                    (broadcast) =>
-                        broadcast.status.toLowerCase() == 'scheduled' &&
-                        broadcast.txidHex.isNotEmpty,
-                  )
-                  .map((broadcast) => broadcast.txidHex.toLowerCase())
-                  .toSet();
+              final requiredTxids = _scheduledBroadcastTxids(status);
               final restored = await _stagePersistedMigrationOutbox(
                 context: context,
                 credential: credential,
@@ -1321,14 +1314,7 @@ class IronwoodMigrationService {
         if (oldRunId == null) {
           throw StateError('There is no active Ironwood migration to recover.');
         }
-        final requiredTxids = oldStatus.scheduledBroadcasts
-            .where(
-              (broadcast) =>
-                  broadcast.status.toLowerCase() == 'scheduled' &&
-                  broadcast.txidHex.isNotEmpty,
-            )
-            .map((broadcast) => broadcast.txidHex.toLowerCase())
-            .toSet();
+        final requiredTxids = _scheduledBroadcastTxids(oldStatus);
         IronwoodMigrationBackgroundCredentialManifest? existingManifest;
         var existingCredentialIsUnusable = false;
         // Set only when the stored credential still exports this run and covers
@@ -1365,7 +1351,9 @@ class IronwoodMigrationService {
                 const <String>{};
             if (batch == null ||
                 batch.runId != oldRunId ||
-                !exportedTxids.containsAll(requiredTxids)) {
+                !exportedTxids.containsAll(
+                  await _stillScheduledTxids(context, requiredTxids),
+                )) {
               existingCredentialIsUnusable = true;
             } else {
               usableCredential = _MigrationCredential(
@@ -1849,15 +1837,9 @@ class IronwoodMigrationService {
     if (!_usesNativeMigrationOutbox || runId == null) return false;
 
     final expectedTxids = _migrationOutboxExpectedTxids(status);
-    final requiredTxids = status.scheduledBroadcasts
-        .where(
-          (broadcast) =>
-              broadcast.status.toLowerCase() == 'scheduled' &&
-              broadcast.txidHex.isNotEmpty,
-        )
-        .map((broadcast) => broadcast.txidHex.toLowerCase())
-        .toSet()
-        .toList(growable: false);
+    final requiredTxids = _scheduledBroadcastTxids(
+      status,
+    ).toList(growable: false);
     if (expectedTxids.isEmpty || requiredTxids.isEmpty) return false;
     try {
       return await hasMigrationOutboxBatch(
@@ -1872,6 +1854,39 @@ class IronwoodMigrationService {
       if (!_isConflictingOutboxBatchError(error)) rethrow;
       return false;
     }
+  }
+
+  Set<String> _scheduledBroadcastTxids(rust_sync.MigrationStatus status) {
+    return status.scheduledBroadcasts
+        .where(
+          (broadcast) =>
+              broadcast.status.toLowerCase() == 'scheduled' &&
+              broadcast.txidHex.isNotEmpty,
+        )
+        .map((broadcast) => broadcast.txidHex.toLowerCase())
+        .toSet();
+  }
+
+  /// Narrows [requiredTxids] to the transactions an export is still expected
+  /// to carry.
+  ///
+  /// Exporting is not read-only: it first re-marks due parts whose expiry no
+  /// longer matches the current ZIP 318 window as `needs_resign`, and then
+  /// exports only the rows that are still `scheduled`. A set captured before
+  /// the export can therefore name a transaction the export legitimately
+  /// dropped. Judging the credential against that stale set turned an ordinary
+  /// re-sign into "this credential cannot open the run", which routes recovery
+  /// into revoking the account and re-planning the migration — discarding
+  /// signed children and their proofs.
+  Future<Set<String>> _stillScheduledTxids(
+    _MigrationCredentialContext context,
+    Set<String> requiredTxids,
+  ) async {
+    if (requiredTxids.isEmpty) return const <String>{};
+    final scheduled = _scheduledBroadcastTxids(
+      await _getStatusForContext(context),
+    );
+    return requiredTxids.where(scheduled.contains).toSet();
   }
 
   List<String> _migrationOutboxExpectedTxids(rust_sync.MigrationStatus status) {
@@ -2077,7 +2092,9 @@ class IronwoodMigrationService {
     final exportedTxids = batch.items
         .map((item) => item.txidHex.toLowerCase())
         .toSet();
-    if (!exportedTxids.containsAll(requiredTxids)) {
+    if (!exportedTxids.containsAll(
+      await _stillScheduledTxids(context, requiredTxids),
+    )) {
       throw StateError(
         'The restored migration outbox batch is missing a scheduled '
         'transaction.',
