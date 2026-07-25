@@ -151,6 +151,10 @@ class _MobileMigrationOptionsState
   String? _continueError;
 
   void _select(_MobileMigrationOption option) {
+    // Continue commits to the selected option: it prepares that plan, saves a
+    // draft, and routes on. Switching underneath that would apply one option's
+    // work to the other's screen.
+    if (_isContinuing) return;
     if (option == _MobileMigrationOption.immediate &&
         !widget.immediateEnabled) {
       return;
@@ -253,64 +257,73 @@ class _MobileMigrationOptionsState
     final privateSelected = _selectedOption == _MobileMigrationOption.private;
     final immediateSelected =
         _selectedOption == _MobileMigrationOption.immediate;
-    return _MobileMigrationStepScaffold(
-      onBack: () => context.go('/migration/how-it-works'),
-      navTitle: 'How to Migrate',
-      topGap: 91,
-      childGap: 24,
-      title: 'Choose How to Migrate',
-      subtitle:
-          'Choose between more privacy over time or a faster migration. '
-          'You can review the details before anything moves.',
-      bottom: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_continueError != null) ...[
-            Text(
-              _continueError!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.destructive,
+    return PopScope(
+      // The in-flight step saves a migration draft and then routes on. Leaving
+      // in the middle would strand that work on a screen the user has left.
+      canPop: !_isContinuing,
+      child: _MobileMigrationStepScaffold(
+        onBack: _isContinuing
+            ? () {}
+            : () => context.go('/migration/how-it-works'),
+        navTitle: 'How to Migrate',
+        topGap: 91,
+        childGap: 24,
+        title: 'Choose How to Migrate',
+        subtitle:
+            'Choose between more privacy over time or a faster migration. '
+            'You can review the details before anything moves.',
+        bottom: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_continueError != null) ...[
+              Text(
+                _continueError!,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.destructive,
+                ),
               ),
+              const SizedBox(height: AppSpacing.s),
+            ],
+            _MobileMigrationPrimaryButton(
+              key: const ValueKey('mobile_ironwood_options_continue_button'),
+              label: 'Continue',
+              busy: _isContinuing,
+              onPressed: _isContinuing ? null : _continue,
             ),
-            const SizedBox(height: AppSpacing.s),
           ],
-          _MobileMigrationPrimaryButton(
-            key: const ValueKey('mobile_ironwood_options_continue_button'),
-            label: 'Continue',
-            busy: _isContinuing,
-            onPressed: _isContinuing ? null : _continue,
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          _MobileMigrationOptionCard(
-            key: const ValueKey('mobile_ironwood_private_option'),
-            title: 'Private',
-            body:
-                'Splits transactions into multiple parts to minimize '
-                'traceability, but takes longer.',
-            selected: privateSelected,
-            icon: _MigrationChoiceIcon.private,
-            recommended: true,
-            onTap: () => _select(_MobileMigrationOption.private),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _MobileMigrationOptionCard(
-            key: const ValueKey('mobile_ironwood_immediate_option'),
-            title: 'Immediate',
-            body: widget.immediateEnabled
-                ? 'Migrates your entire balance in one batch. '
-                      'Fast, but less private.'
-                : 'Not available with Keystone.',
-            selected: immediateSelected,
-            icon: _MigrationChoiceIcon.immediate,
-            onTap: widget.immediateEnabled
-                ? () => _select(_MobileMigrationOption.immediate)
-                : null,
-          ),
-        ],
+        ),
+        child: Column(
+          children: [
+            _MobileMigrationOptionCard(
+              key: const ValueKey('mobile_ironwood_private_option'),
+              title: 'Private',
+              body:
+                  'Splits transactions into multiple parts to minimize '
+                  'traceability, but takes longer.',
+              selected: privateSelected,
+              icon: _MigrationChoiceIcon.private,
+              recommended: true,
+              onTap: _isContinuing
+                  ? null
+                  : () => _select(_MobileMigrationOption.private),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MobileMigrationOptionCard(
+              key: const ValueKey('mobile_ironwood_immediate_option'),
+              title: 'Immediate',
+              body: widget.immediateEnabled
+                  ? 'Migrates your entire balance in one batch. '
+                        'Fast, but less private.'
+                  : 'Not available with Keystone.',
+              selected: immediateSelected,
+              icon: _MigrationChoiceIcon.immediate,
+              onTap: widget.immediateEnabled && !_isContinuing
+                  ? () => _select(_MobileMigrationOption.immediate)
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }

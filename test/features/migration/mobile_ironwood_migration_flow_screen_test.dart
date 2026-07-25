@@ -1219,6 +1219,65 @@ void main() {
     );
   });
 
+  testWidgets('locks the migration choice while continue is preparing', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(ios: true),
+        privatePlanFuture: planCompleter.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_loading')),
+      findsOneWidget,
+    );
+
+    // Continue already committed to the private plan, so switching the option
+    // underneath it must not take effect.
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
+    );
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_private_option')),
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
+      findsNothing,
+    );
+
+    // Leaving mid-flight would strand the draft this step is about to save.
+    final lockedPop = tester.widget<PopScope>(
+      find
+          .ancestor(
+            of: find.text('Choose How to Migrate'),
+            matching: find.byType(PopScope),
+          )
+          .first,
+    );
+    expect(lockedPop.canPop, isFalse);
+
+    planCompleter.complete(_plan);
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('routes private migration by actual notification authorization', (
     tester,
   ) async {
