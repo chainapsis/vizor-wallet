@@ -112,6 +112,20 @@ fn migration_anchor_never_uses_a_checkpoint_before_the_prepared_note() {
 }
 
 #[test]
+fn proof_readiness_checks_later_candidates_after_an_unready_child() {
+    let mut checked = Vec::new();
+
+    assert!(
+        any_migration_proof_candidate_ready(&[0, 1, 2], |candidate| {
+            checked.push(*candidate);
+            Ok(*candidate == 1)
+        })
+        .unwrap()
+    );
+    assert_eq!(checked, vec![0, 1]);
+}
+
+#[test]
 fn migration_anchor_counts_empty_buckets_with_the_same_root_once() {
     let checkpoints = [5_400, 5_800];
 

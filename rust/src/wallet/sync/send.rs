@@ -44,7 +44,7 @@ use std::sync::{
 use std::thread;
 use std::time::Instant;
 
-use rand::{rngs::OsRng, seq::SliceRandom, Rng};
+use rand::{rngs::OsRng, Rng};
 use secrecy::{ExposeSecret, SecretVec};
 use shardtree::{
     error::{QueryError, ShardTreeError},
@@ -1946,20 +1946,32 @@ pub(crate) fn orchard_migration_proof_readiness(
         .ok_or("Signed migration proof status has no active run")?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let candidates = super::migration::signed_child_proof_candidates_for_run(db_path, run_id)?;
-    // Finalization uses the same child-index ordering. Probe only the first
-    // child so the five-second status poll remains bounded and conservative.
-    let Some(candidate) = candidates.first() else {
+    if candidates.is_empty() {
         return Ok(Some(false));
-    };
-    orchard_witness_is_available_for_prepared_note(
-        db_path,
-        network,
-        account_uuid,
-        &candidate.selected_note,
-        candidate.anchor_boundary_height,
-        timing_policy,
-    )
+    }
+    any_migration_proof_candidate_ready(&candidates, |candidate| {
+        orchard_witness_is_available_for_prepared_note(
+            db_path,
+            network,
+            account_uuid,
+            &candidate.selected_note,
+            candidate.anchor_boundary_height,
+            timing_policy,
+        )
+    })
     .map(Some)
+}
+
+fn any_migration_proof_candidate_ready<T>(
+    candidates: &[T],
+    mut readiness: impl FnMut(&T) -> Result<bool, String>,
+) -> Result<bool, String> {
+    for candidate in candidates {
+        if readiness(candidate)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Advances only the denomination preparation graph for an existing migration.
@@ -3409,23 +3421,8 @@ fn orchard_anchor_and_witness_for_prepared_note(
             .iter()
             .any(|(candidate, _)| candidate == boundary)
     });
-    let mut candidate_order = available_anchor_candidates;
-    candidate_order.shuffle(&mut OsRng);
-    if let Some(preferred) = preferred {
-        if let Some(index) = candidate_order
-            .iter()
-            .position(|(boundary, _)| *boundary == preferred)
-        {
-            candidate_order.swap(0, index);
-        }
-    }
-
-    // Status preflight reports ready when any eligible checkpoint can witness
-    // the note. Finalization must use the same contract: a randomly selected
-    // checkpoint may have retained its root while its witness nodes were
-    // pruned, so keep trying the remaining randomized candidates instead of
-    // consuming the user's one-shot proof action on that checkpoint.
-    for (anchor_boundary_height, checkpoint_height) in candidate_order {
+    let mut witnessable_candidates = Vec::new();
+    for (anchor_boundary_height, checkpoint_height) in available_anchor_candidates {
         retain_orchard_checkpoint(&mut db, checkpoint_height)?;
         let (orchard_anchor, mut orchard_inputs) = match migration_orchard_witnesses(
             &mut db,
@@ -3440,9 +3437,30 @@ fn orchard_anchor_and_witness_for_prepared_note(
         let (_, witness) = orchard_inputs
             .pop()
             .ok_or("Prepared migration note witness missing")?;
-        return Ok(Some((anchor_boundary_height, orchard_anchor, witness)));
+        witnessable_candidates.push((anchor_boundary_height, orchard_anchor, witness));
     }
-    Ok(None)
+    let witnessable_boundaries = witnessable_candidates
+        .iter()
+        .map(|(boundary, _, _)| *boundary)
+        .collect::<Vec<_>>();
+    let selected_boundary = preferred
+        .filter(|boundary| witnessable_boundaries.contains(boundary))
+        .or_else(|| {
+            super::migration::zip318_draw_anchor_boundary_from_available_with_policy(
+                network,
+                timing_policy,
+                anchor_height_u32,
+                &witnessable_boundaries,
+            )
+        });
+    let Some(selected_boundary) = selected_boundary else {
+        return Ok(None);
+    };
+    let selected_index = witnessable_candidates
+        .iter()
+        .position(|(boundary, _, _)| *boundary == selected_boundary)
+        .ok_or("Selected Orchard migration witness disappeared")?;
+    Ok(Some(witnessable_candidates.swap_remove(selected_index)))
 }
 
 fn orchard_witness_is_available_for_prepared_note(
@@ -3472,7 +3490,7 @@ fn orchard_witness_is_available_for_prepared_note(
         return Ok(false);
     };
     let available_notes =
-        select_all_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
     let Some(selected) = available_notes.iter().find(|selected| {
         format!("{}", selected.txid()).eq_ignore_ascii_case(&note_ref.txid_hex)
             && selected.output_index() as u32 == note_ref.output_index
