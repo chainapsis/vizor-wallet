@@ -799,21 +799,13 @@ final class BackgroundMigrationPreparationManager {
     completion: @escaping (Bool) -> Void
   ) {
     queue.async {
-      guard
-        let batch = try? BackgroundMigrationOutboxStore.shared.read().batches.first(
-          where: { $0.batchId == batchId }
-        ),
-        let manifest = IronwoodMigrationBackgroundCredentialStore.loadAll()?.first(
-          where: {
-            $0.expectedRunId == batch.runId
-              && $0.accountUuid == batch.accountUuid
-              && $0.network == batch.network
-          }
-        )
+      guard let scope = IronwoodMigrationProofReadinessCheck.scope(batchId: batchId)
       else {
         completion(false)
         return
       }
+      let batch = scope.batch
+      let manifest = scope.manifest
 
       let mayRun = self.stateLock.withPreparationLock { () -> Bool in
         guard !self.mutationQuiesced
@@ -838,15 +830,8 @@ final class BackgroundMigrationPreparationManager {
         }
       }
 
-      var ready = false
-      var inspectCode = zcash_inspect_migration_proof_readiness(
-        manifest.dbPath,
-        manifest.network,
-        manifest.accountUuid,
-        batch.runId,
-        &ready
-      )
-      if inspectCode == 0 && !ready {
+      var inspected = IronwoodMigrationProofReadinessCheck.inspect(scope)
+      if inspected == false {
         guard zcash_begin_migration_preparation_operation() else {
           completion(false)
           return
@@ -861,15 +846,9 @@ final class BackgroundMigrationPreparationManager {
           completion(false)
           return
         }
-        inspectCode = zcash_inspect_migration_proof_readiness(
-          manifest.dbPath,
-          manifest.network,
-          manifest.accountUuid,
-          batch.runId,
-          &ready
-        )
+        inspected = IronwoodMigrationProofReadinessCheck.inspect(scope)
       }
-      guard inspectCode == 0, ready else {
+      guard inspected == true else {
         completion(false)
         return
       }

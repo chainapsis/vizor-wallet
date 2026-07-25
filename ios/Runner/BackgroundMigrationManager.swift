@@ -353,6 +353,73 @@ private enum BackgroundMigrationNotification {
   }
 }
 
+/// Confirms migration proof readiness straight from the wallet database.
+///
+/// The inspection is a plain FFI call, so it does not need the preparation task
+/// machinery that only exists on iOS 26. That makes it the whole verification on
+/// older supported versions, where background preparation never runs and this
+/// notification is the only thing that brings the user back to continue the
+/// migration. iOS 26 wraps the same inspection with a preparation sync when the
+/// first look says the witness is not there yet.
+enum IronwoodMigrationProofReadinessCheck {
+  struct Scope {
+    let batch: BackgroundMigrationOutboxBatch
+    let manifest: IronwoodMigrationBackgroundManifest
+  }
+
+  static func scope(batchId: String) -> Scope? {
+    guard
+      let batch = try? BackgroundMigrationOutboxStore.shared.read().batches.first(
+        where: { $0.batchId == batchId }
+      ),
+      let manifest = IronwoodMigrationBackgroundCredentialStore.loadAll()?.first(
+        where: {
+          $0.expectedRunId == batch.runId
+            && $0.accountUuid == batch.accountUuid
+            && $0.network == batch.network
+        }
+      )
+    else {
+      return nil
+    }
+    return Scope(batch: batch, manifest: manifest)
+  }
+
+  /// Returns whether the run's proof is ready, or `nil` when the inspection
+  /// itself failed and readiness stays unknown.
+  static func inspect(_ scope: Scope) -> Bool? {
+    var ready = false
+    let code = zcash_inspect_migration_proof_readiness(
+      scope.manifest.dbPath,
+      scope.manifest.network,
+      scope.manifest.accountUuid,
+      scope.batch.runId,
+      &ready
+    )
+    return code == 0 ? ready : nil
+  }
+
+  /// Verification for versions without background preparation: inspect only,
+  /// and record the readiness so the notification is not announced twice.
+  static func verifyWithoutPreparation(batchId: String) -> Bool {
+    guard let scope = scope(batchId: batchId), inspect(scope) == true else {
+      return false
+    }
+    var matched = false
+    guard
+      (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
+        matched = snapshot.recordVerifiedProofReadiness(
+          runId: scope.batch.runId,
+          at: Date()
+        )
+      }) != nil
+    else {
+      return false
+    }
+    return matched
+  }
+}
+
 final class BackgroundMigrationManager {
   static let shared = BackgroundMigrationManager()
   static let taskIdentifier = "com.keplr.vizor.ironwood-migration"
@@ -717,13 +784,18 @@ final class BackgroundMigrationManager {
               )
             }
           }
-        } else if runResult.proofReady != nil {
-          // Unverifiable candidate on a pre-iOS 26 wake: keep the transport
-          // outcome and leave readiness unannounced and unacknowledged.
+        } else if let proofCandidate = runResult.proofReady {
+          // Versions without background preparation verify from the wallet
+          // database alone. Dropping the candidate outright would silence the
+          // one notification that brings these users back to continue the
+          // migration, and announcing it unverified is what this check exists
+          // to prevent.
+          let verified = IronwoodMigrationProofReadinessCheck
+            .verifyWithoutPreparation(batchId: proofCandidate.batchId)
           self.finishOutboxRun(
             BackgroundMigrationOutboxRunResult(
               transport: runResult.transport,
-              proofReady: nil,
+              proofReady: verified ? proofCandidate : nil,
               broadcastComplete: runResult.broadcastComplete,
               transportAccountUuid: runResult.transportAccountUuid
             ),
