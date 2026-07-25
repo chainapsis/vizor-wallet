@@ -746,11 +746,13 @@ class IronwoodMigrationService {
     );
   }
 
-  /// Runs only the already-armed native transaction outbox and reconciles this
-  /// account's receipts. The native runner is global and may service a
-  /// different account; callers must re-read this account's status before
-  /// interpreting the result. This never creates proofs or signs another
-  /// migration batch, so it is safe to use without a signing permit.
+  /// Runs the durable native transaction outbox and reconciles this account's
+  /// receipts. If the native copy is missing, an existing DB-scheduled batch is
+  /// restored with its bound credential before submission. The native runner
+  /// is global and may service a different account; callers must re-read this
+  /// account's status before interpreting the result. This never creates
+  /// proofs or signs another migration batch, so it is safe to use without a
+  /// signing permit.
   Future<IronwoodMigrationOutboxRunResult> recoverDueMigrationOutbox({
     required String network,
     required String accountUuid,
@@ -766,10 +768,12 @@ class IronwoodMigrationService {
     }
 
     final dbPath = await getWalletDbPath();
-    final context = _MigrationCredentialContext(
-      dbPath: dbPath,
-      network: network,
-      accountUuid: accountUuid,
+    final context = _contextWithCurrentEndpoint(
+      _MigrationCredentialContext(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: accountUuid,
+      ),
     );
     return operationRegistry.run(
       network: network,
@@ -785,10 +789,47 @@ class IronwoodMigrationService {
             status: status,
           );
           if (!available) {
-            throw StateError(
-              'The scheduled migration transaction is not available in the '
-              'background outbox.',
+            final manifest = await backgroundCredentialStore.read(
+              network: context.network,
+              accountUuid: context.accountUuid,
             );
+            if (manifest == null || status.activeRunId == null) {
+              throw StateError(
+                'The scheduled migration transaction is not available in the '
+                'background outbox.',
+              );
+            }
+            final resolvedManifest = await _resolveManifestContext(
+              manifest,
+              context,
+            );
+            await backgroundCredentialStore.bindExpectedRunId(
+              network: context.network,
+              accountUuid: context.accountUuid,
+              expectedRunId: status.activeRunId!,
+            );
+            final restored = await _stagePersistedMigrationOutbox(
+              context: context,
+              credential: _MigrationCredential(
+                password: resolvedManifest.credentialHex,
+                saltBase64: resolvedManifest.saltBase64,
+              ),
+              expectedRunId: status.activeRunId,
+              requiredTxids: status.scheduledBroadcasts
+                  .where(
+                    (broadcast) =>
+                        broadcast.status.toLowerCase() == 'scheduled' &&
+                        broadcast.txidHex.isNotEmpty,
+                  )
+                  .map((broadcast) => broadcast.txidHex.toLowerCase())
+                  .toSet(),
+            );
+            if (restored == null) {
+              throw StateError(
+                'The scheduled migration transaction could not be restored '
+                'to the background outbox.',
+              );
+            }
           }
         }
         final result = await runMigrationOutboxOnceNow();
@@ -1776,6 +1817,36 @@ class IronwoodMigrationService {
       );
     }
 
+    final batch = await _stagePersistedMigrationOutbox(
+      context: context,
+      credential: credential,
+    );
+    if (batch == null) return const _MigrationOutboxRefreshResult();
+
+    final foregroundRun = await runMigrationOutboxOnceNow();
+    final reconciledTxids = await _reconcileMigrationOutboxReceipts(
+      context: context,
+    );
+    _validateForegroundOutboxRun(
+      batch: batch,
+      run: foregroundRun,
+      reconciledTxids: reconciledTxids,
+    );
+    return _MigrationOutboxRefreshResult(
+      staged: true,
+      reconciledReceipt: reconciledTxids.isNotEmpty,
+    );
+  }
+
+  Future<rust_sync.MigrationOutboxBatch?> _stagePersistedMigrationOutbox({
+    required _MigrationCredentialContext context,
+    required _MigrationCredential credential,
+    String? expectedRunId,
+    Set<String> requiredTxids = const {},
+  }) async {
+    final lightwalletdUrl = context.lightwalletdUrl;
+    if (lightwalletdUrl == null) return null;
+
     final batch = await exportMigrationOutbox(
       dbPath: context.dbPath,
       network: context.network,
@@ -1783,7 +1854,21 @@ class IronwoodMigrationService {
       password: credential.password,
       saltBase64: credential.saltBase64,
     );
-    if (batch == null) return const _MigrationOutboxRefreshResult();
+    if (batch == null) return null;
+    if (expectedRunId != null && batch.runId != expectedRunId) {
+      throw StateError(
+        'The restored migration outbox batch does not match the active run.',
+      );
+    }
+    final exportedTxids = batch.items
+        .map((item) => item.txidHex.toLowerCase())
+        .toSet();
+    if (!exportedTxids.containsAll(requiredTxids)) {
+      throw StateError(
+        'The restored migration outbox batch is missing a scheduled '
+        'transaction.',
+      );
+    }
 
     final batchId = _migrationOutboxBatchId(context, batch.runId);
     final expectedDigests = await stageMigrationOutboxBatch({
@@ -1819,20 +1904,7 @@ class IronwoodMigrationService {
       throw StateError('Failed to schedule the Ironwood migration outbox.');
     }
     _scheduledBackgroundMigrations.add(_credentialKey(context));
-
-    final foregroundRun = await runMigrationOutboxOnceNow();
-    final reconciledTxids = await _reconcileMigrationOutboxReceipts(
-      context: context,
-    );
-    _validateForegroundOutboxRun(
-      batch: batch,
-      run: foregroundRun,
-      reconciledTxids: reconciledTxids,
-    );
-    return _MigrationOutboxRefreshResult(
-      staged: true,
-      reconciledReceipt: reconciledTxids.isNotEmpty,
-    );
+    return batch;
   }
 
   void _validateForegroundOutboxRun({

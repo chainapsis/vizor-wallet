@@ -265,6 +265,127 @@ void main() {
   );
 
   test(
+    'foreground recovery rebuilds a missing outbox batch from persisted transactions',
+    () async {
+      final events = <String>[];
+      var receiptReadCount = 0;
+      final store = await _boundBackgroundCredentialStore();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'txid-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'txid-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async {
+          events.add('list');
+          receiptReadCount++;
+          return receiptReadCount == 1
+              ? const []
+              : [_outboxReceipt(receiptId: 'receipt-1', txidHex: 'txid-1')];
+        },
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async {
+              events.add('has');
+              return false;
+            },
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              events.add('export');
+              expect(dbPath, '/tmp/wallet.db');
+              expect(network, 'test');
+              expect(accountUuid, 'account-1');
+              expect(password, isNotEmpty);
+              expect(saltBase64, isNotEmpty);
+              return _outboxBatch();
+            },
+        stageMigrationOutboxBatch: (batch) async {
+          events.add('stage');
+          expect(batch['batchId'], 'test:account-1:run-1');
+          expect(batch['lightwalletdUrl'], 'https://lwd.example:443');
+          return const {'txid-1': 'digest-1'};
+        },
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async {
+              events.add('arm');
+              expect(batchId, 'test:account-1:run-1');
+              expect(expectedDigests, const {'txid-1': 'digest-1'});
+              return true;
+            },
+        runMigrationOutboxOnceNow: () async {
+          events.add('run');
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.accepted,
+            observedHeight: 1_000,
+          );
+        },
+        reconcileMigrationOutboxReceipt:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required runId,
+              required txidHex,
+              required outcome,
+              required remoteHeight,
+              responseMessage,
+              required scheduleUpdates,
+              acceptedRawTransaction,
+            }) async {
+              events.add('receipt');
+            },
+        acknowledgeMigrationOutboxReceipts: (_) async {
+          events.add('ack');
+        },
+      );
+
+      final result = await service.recoverDueMigrationOutbox(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+
+      expect(result.outcome, IronwoodMigrationOutboxRunOutcome.accepted);
+      expect(events, [
+        'list',
+        'has',
+        'export',
+        'stage',
+        'arm',
+        'run',
+        'list',
+        'receipt',
+        'ack',
+      ]);
+    },
+  );
+
+  test(
     'foreground recovery rejects a missing requested-account outbox batch',
     () async {
       var foregroundRuns = 0;
