@@ -923,13 +923,28 @@ class IronwoodMigrationService {
           }
         }
         final result = await runMigrationOutboxOnceNow();
-        await _reconcileMigrationOutboxReceipts(context: context);
+        final reconciliation = await _reconcileMigrationOutboxReceipts(
+          context: context,
+        );
         if (result.outcome == IronwoodMigrationOutboxRunOutcome.noWork) {
           final refreshedStatus = await _getStatusForContext(context);
           final stillScheduled = refreshedStatus.scheduledBroadcasts.any(
             (broadcast) => broadcast.status.toLowerCase() == 'scheduled',
           );
           if (stillScheduled) {
+            // A receipt that could not be applied leaves the DB row scheduled
+            // while the native record has nothing left to send, which looks
+            // identical to a missing batch from here. It is the opposite: the
+            // transaction is already on the network. Reporting it as a
+            // credential fault sends the user to a repair action that refuses,
+            // because the credential is in fact intact.
+            if (reconciliation.unreconciledCount > 0) {
+              throw StateError(
+                'The scheduled migration transaction was already submitted '
+                'and the wallet is still recording the result. Try again in '
+                'a moment.',
+              );
+            }
             throw StateError(
               '$_credentialRecoveryRequiredError '
               'The scheduled migration transaction is not runnable in the '
@@ -2046,9 +2061,9 @@ class IronwoodMigrationService {
     if (batch == null) return const _MigrationOutboxRefreshResult();
 
     final foregroundRun = await runMigrationOutboxOnceNow();
-    final reconciledTxids = await _reconcileMigrationOutboxReceipts(
+    final reconciledTxids = (await _reconcileMigrationOutboxReceipts(
       context: context,
-    );
+    )).reconciledTxids;
     _validateForegroundOutboxRun(
       batch: batch,
       run: foregroundRun,
@@ -2197,7 +2212,14 @@ class IronwoodMigrationService {
     }
   }
 
-  Future<Set<String>> _reconcileMigrationOutboxReceipts({
+  /// Applies the native outbox's delivery receipts to the wallet DB.
+  ///
+  /// Returns the transactions it reconciled and how many receipts it could not
+  /// apply. An unapplied receipt means delivery already happened but the DB
+  /// does not know yet, which reads exactly like "never delivered" downstream —
+  /// callers that diagnose a stuck run need to tell those apart.
+  Future<({Set<String> reconciledTxids, int unreconciledCount})>
+  _reconcileMigrationOutboxReceipts({
     required _MigrationCredentialContext context,
   }) async {
     final rawReceipts = await listMigrationOutboxReceipts();
@@ -2243,7 +2265,10 @@ class IronwoodMigrationService {
         'outbox receipt(s).',
       );
     }
-    return reconciledTxids;
+    return (
+      reconciledTxids: reconciledTxids,
+      unreconciledCount: failedReceiptCount,
+    );
   }
 
   Future<T> _serializeCredentialState<T>(

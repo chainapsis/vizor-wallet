@@ -387,6 +387,98 @@ void main() {
   );
 
   test(
+    'an unapplied receipt is reported as recording, not a missing credential',
+    () async {
+      // The transaction was delivered and a receipt exists, but applying it to
+      // the wallet DB failed, so the DB row stays scheduled while the native
+      // record has nothing left to send. Labelling that a credential fault
+      // sends the user to a repair action that refuses, for a transaction that
+      // is already on the network.
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => [
+          _outboxReceipt(receiptId: 'receipt-1', txidHex: 'tx-1'),
+        ],
+        reconcileMigrationOutboxReceipt:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required runId,
+              required txidHex,
+              required outcome,
+              required remoteHeight,
+              responseMessage,
+              required scheduleUpdates,
+              acceptedRawTransaction,
+            }) async => throw StateError('wallet database is busy'),
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => true,
+        runMigrationOutboxOnceNow: () async =>
+            const IronwoodMigrationOutboxRunResult(
+              outcome: IronwoodMigrationOutboxRunOutcome.noWork,
+              observedHeight: 1_000,
+            ),
+      );
+
+      await expectLater(
+        service.recoverDueMigrationOutbox(
+          network: 'test',
+          accountUuid: 'account-1',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('already submitted'),
+              // The marker that routes the UI to the credential-recovery CTA.
+              isNot(contains('credential is missing for the active run')),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'foreground recovery requests credential recovery without a manifest',
     () async {
       var foregroundRuns = 0;
