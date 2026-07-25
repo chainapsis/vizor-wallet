@@ -126,6 +126,7 @@ enum BackgroundMigrationOutboxRunner {
         proofReady =
           requiresPreparationProofVerification
           ? snapshot.pendingProofReadyNotification()
+            ?? snapshot.pendingUnverifiedProofReadyNotice()
             ?? snapshot.proofReadinessCandidate(
               remoteHeight: remoteHeight,
               endpoint: endpoint

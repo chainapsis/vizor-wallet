@@ -786,16 +786,22 @@ final class BackgroundMigrationManager {
           }
         } else if let proofCandidate = runResult.proofReady {
           // Versions without background preparation verify from the wallet
-          // database alone. Dropping the candidate outright would silence the
-          // one notification that brings these users back to continue the
-          // migration, and announcing it unverified is what this check exists
-          // to prevent.
-          let verified = IronwoodMigrationProofReadinessCheck
-            .verifyWithoutPreparation(batchId: proofCandidate.batchId)
+          // database alone, and nothing scans blocks while the app is closed
+          // there, so the scanned height stays frozen at the last foreground
+          // sync and verification cannot succeed from a wake. Announcing the
+          // height-only nudge keeps the one signal that brings these users
+          // back; recording it apart from the verified acknowledgement is what
+          // keeps the real announcement available afterwards.
+          let announced =
+            proofCandidate.verified
+            && IronwoodMigrationProofReadinessCheck
+              .verifyWithoutPreparation(batchId: proofCandidate.batchId)
+            ? proofCandidate
+            : self.unverifiedProofReadyNotice(for: proofCandidate)
           self.finishOutboxRun(
             BackgroundMigrationOutboxRunResult(
               transport: runResult.transport,
-              proofReady: verified ? proofCandidate : nil,
+              proofReady: announced,
               broadcastComplete: runResult.broadcastComplete,
               transportAccountUuid: runResult.transportAccountUuid
             ),
@@ -1068,7 +1074,7 @@ final class BackgroundMigrationManager {
       (batch.armedAt != nil
         && batch.items.contains { item in
           item.status == .armed || item.status == .submitting
-        }) || (batch.nextProofHeight != nil && batch.proofReadyNotifiedAt == nil)
+        }) || (batch.nextProofHeight != nil && batch.awaitsProofReadyAnnouncement)
         || (batch.broadcastCompleteNotificationPendingAt != nil
           && batch.broadcastCompleteNotifiedAt == nil)
     }
@@ -1141,6 +1147,27 @@ final class BackgroundMigrationManager {
     }
   }
 
+  /// Records that this batch owes the height-only nudge, and returns it so the
+  /// wake delivers it. A retry of an already-queued nudge passes straight
+  /// through; a batch that was nudged before returns nil so it is not repeated.
+  private func unverifiedProofReadyNotice(
+    for candidate: BackgroundMigrationProofReadyMetadata
+  ) -> BackgroundMigrationProofReadyMetadata? {
+    if !candidate.verified { return candidate }
+    var notice: BackgroundMigrationProofReadyMetadata?
+    guard
+      (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
+        notice = snapshot.markUnverifiedProofReadyNoticeIfNeeded(
+          batchId: candidate.batchId,
+          at: Date()
+        )
+      }) != nil
+    else {
+      return nil
+    }
+    return notice
+  }
+
   private func deliverProofReadyNotification(
     _ proofReady: BackgroundMigrationProofReadyMetadata?,
     completion: @escaping (Bool) -> Void
@@ -1158,10 +1185,19 @@ final class BackgroundMigrationManager {
       if delivered {
         acknowledged =
           (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
-            try snapshot.acknowledgeProofReadyNotification(
-              batchId: proofReady.batchId,
-              at: Date()
-            )
+            if proofReady.verified {
+              try snapshot.acknowledgeProofReadyNotification(
+                batchId: proofReady.batchId,
+                at: Date()
+              )
+            } else {
+              // Leaves proofReadyNotifiedAt nil on purpose, so the verified
+              // announcement is still available once readiness holds.
+              try snapshot.acknowledgeUnverifiedProofReadyNotice(
+                batchId: proofReady.batchId,
+                at: Date()
+              )
+            }
           }) != nil
       }
       completion(delivered && acknowledged)

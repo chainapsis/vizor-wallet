@@ -91,11 +91,30 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   var nextProofHeight: UInt64?
   var proofReadyNotificationPendingAt: Date?
   var proofReadyNotifiedAt: Date?
+  // The "chain reached the proof height, come back to Vizor" nudge used where
+  // background preparation is unavailable. It is tracked apart from
+  // `proofReadyNotifiedAt` on purpose: closing the batch out on an unverified
+  // announcement is what suppressed the announcement the user is owed once
+  // readiness actually holds. Absent in snapshots written before this field
+  // existed, which decodes to nil and reads as "not nudged yet".
+  var proofReadyHeightNoticePendingAt: Date? = nil
+  var proofReadyHeightNoticedAt: Date? = nil
   var broadcastCompleteNotificationPendingAt: Date? = nil
   var broadcastCompleteNotifiedAt: Date? = nil
   var items: [BackgroundMigrationOutboxItem]
 
   var scopeKey: String { "\(network):\(accountUuid)" }
+
+  /// Whether this batch still owes the user a proof-ready announcement.
+  ///
+  /// A delivered height-only nudge counts as answered even though it leaves
+  /// `proofReadyNotifiedAt` nil. Without this the batch stays an outstanding
+  /// wake reason forever, which pins the reschedule delay at its floor and
+  /// re-runs a chain sync every minute on versions that verify readiness.
+  var awaitsProofReadyAnnouncement: Bool {
+    proofReadyNotifiedAt == nil
+      && (proofReadyHeightNoticedAt == nil || proofReadyHeightNoticePendingAt != nil)
+  }
 }
 
 struct BackgroundMigrationOutboxScheduleUpdate: Codable, Equatable {
@@ -131,6 +150,10 @@ struct BackgroundMigrationOutboxSelection: Equatable {
 struct BackgroundMigrationProofReadyMetadata: Equatable {
   let batchId: String
   let observedHeight: UInt64
+  /// False for the height-only nudge delivered where readiness cannot be
+  /// verified in the background. Decides which acknowledgement the delivery
+  /// records, so an unverified nudge does not retire the batch.
+  var verified: Bool = true
 }
 
 struct BackgroundMigrationBroadcastCompleteMetadata: Equatable {
@@ -195,6 +218,8 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       !batch.items.isEmpty || batch.nextProofHeight != nil,
       batch.proofReadyNotificationPendingAt == nil,
       batch.proofReadyNotifiedAt == nil,
+      batch.proofReadyHeightNoticePendingAt == nil,
+      batch.proofReadyHeightNoticedAt == nil,
       batch.broadcastCompleteNotificationPendingAt == nil,
       batch.broadcastCompleteNotifiedAt == nil,
       Set(batch.items.map(\.itemId)).count == batch.items.count,
@@ -250,6 +275,8 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         batches[batchIndex].nextProofHeight = batch.nextProofHeight
         batches[batchIndex].proofReadyNotificationPendingAt = nil
         batches[batchIndex].proofReadyNotifiedAt = nil
+        batches[batchIndex].proofReadyHeightNoticePendingAt = nil
+        batches[batchIndex].proofReadyHeightNoticedAt = nil
       }
       if addedItem || existing.nextProofHeight != batch.nextProofHeight {
         batches[batchIndex].broadcastCompleteNotificationPendingAt = nil
@@ -390,7 +417,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       batches.filter { batch in
         batch.armedAt != nil
           && (batch.items.contains(where: { $0.status == .armed })
-            || (batch.nextProofHeight != nil && batch.proofReadyNotifiedAt == nil))
+            || (batch.nextProofHeight != nil && batch.awaitsProofReadyAnnouncement))
       }.map(\.lightwalletdUrl)
     ).sorted()
     guard !endpoints.isEmpty else { return nil }
@@ -414,7 +441,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     let proofHeight = batches.filter {
       $0.lightwalletdUrl == endpoint
         && $0.armedAt != nil
-        && $0.proofReadyNotifiedAt == nil
+        && $0.awaitsProofReadyAnnouncement
         && $0.proofReadyNotificationPendingAt == nil
     }.compactMap(\.nextProofHeight).min()
     return [transactionHeight, proofHeight].compactMap { $0 }.min()
@@ -429,7 +456,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         }
         let hasProof =
           batch.armedAt != nil
-          && batch.proofReadyNotifiedAt == nil
+          && batch.awaitsProofReadyAnnouncement
           && batch.proofReadyNotificationPendingAt == nil
           && batch.nextProofHeight == height
         return hasTransaction || hasProof
@@ -534,6 +561,80 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     }
     batches[batchIndex].proofReadyNotificationPendingAt = nil
     batches[batchIndex].proofReadyNotifiedAt = date
+  }
+
+  /// Queues the height-only nudge for a batch whose readiness cannot be
+  /// verified here.
+  ///
+  /// Where background preparation is unavailable the wallet never scans while
+  /// the app is closed, so verified readiness cannot be observed from a wake at
+  /// all. Announcing nothing leaves the user with no signal that the migration
+  /// is waiting on them. This announces once per proof height, and deliberately
+  /// leaves `proofReadyNotifiedAt` untouched so the verified announcement can
+  /// still be delivered later.
+  /// The caller has already established that the chain reached this batch's
+  /// proof height; this only records that the nudge is owed.
+  mutating func markUnverifiedProofReadyNoticeIfNeeded(
+    batchId: String,
+    at date: Date
+  ) -> BackgroundMigrationProofReadyMetadata? {
+    guard let batchIndex = batches.firstIndex(where: { $0.batchId == batchId }) else {
+      return nil
+    }
+    let batch = batches[batchIndex]
+    guard
+      batch.armedAt != nil,
+      let nextProofHeight = batch.nextProofHeight,
+      batch.proofReadyNotifiedAt == nil,
+      batch.proofReadyNotificationPendingAt == nil,
+      batch.proofReadyHeightNoticePendingAt == nil,
+      batch.proofReadyHeightNoticedAt == nil
+    else { return nil }
+
+    batches[batchIndex].proofReadyHeightNoticePendingAt = date
+    return BackgroundMigrationProofReadyMetadata(
+      batchId: batchId,
+      observedHeight: nextProofHeight,
+      verified: false
+    )
+  }
+
+  /// A nudge whose delivery has not been confirmed yet, so a failed post is
+  /// retried on the next wake instead of being lost.
+  func pendingUnverifiedProofReadyNotice() -> BackgroundMigrationProofReadyMetadata? {
+    batches
+      .filter {
+        $0.armedAt != nil
+          && $0.proofReadyHeightNoticePendingAt != nil
+          && $0.proofReadyHeightNoticedAt == nil
+          && $0.proofReadyNotifiedAt == nil
+          && $0.nextProofHeight != nil
+      }
+      .sorted {
+        ($0.nextProofHeight ?? 0, $0.batchId) < ($1.nextProofHeight ?? 0, $1.batchId)
+      }
+      .first
+      .map {
+        BackgroundMigrationProofReadyMetadata(
+          batchId: $0.batchId,
+          observedHeight: $0.nextProofHeight ?? 0,
+          verified: false
+        )
+      }
+  }
+
+  mutating func acknowledgeUnverifiedProofReadyNotice(
+    batchId: String,
+    at date: Date
+  ) throws {
+    guard let batchIndex = batches.firstIndex(where: { $0.batchId == batchId }) else {
+      throw BackgroundMigrationOutboxError.batchNotFound
+    }
+    guard batches[batchIndex].proofReadyHeightNoticePendingAt != nil else {
+      throw BackgroundMigrationOutboxError.invalidTransition
+    }
+    batches[batchIndex].proofReadyHeightNoticePendingAt = nil
+    batches[batchIndex].proofReadyHeightNoticedAt = date
   }
 
   func pendingBroadcastCompleteNotification()
