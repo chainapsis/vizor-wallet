@@ -59,8 +59,9 @@ pub(crate) use send::{
     discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
     keystone_migration_proof_status, migrate_orchard_to_ironwood,
     migrate_orchard_to_ironwood_immediately, orchard_migration_proof_readiness,
-    prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
-    prepare_orchard_migration_single_qr_pczt, retire_unbroadcast_orchard_migration,
+    orchard_migration_proof_readiness_at_scanned_height, prepare_orchard_migration_batch_pczt,
+    prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_single_qr_pczt,
+    retain_prepared_note_anchor_checkpoints_after_scan, retire_unbroadcast_orchard_migration,
     KeystoneSignedMigrationMessage, OrchardMigrationImmediatePlan,
 };
 pub use send::{
@@ -74,6 +75,7 @@ pub(crate) use send::{
 pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
+pub(crate) use send::migration_anchor_retention_required;
 pub(crate) use send::resubmit_pending_transactions;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ProposalResult;

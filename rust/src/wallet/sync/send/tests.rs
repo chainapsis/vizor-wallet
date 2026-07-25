@@ -112,6 +112,22 @@ fn migration_anchor_never_uses_a_checkpoint_before_the_prepared_note() {
 }
 
 #[test]
+fn migration_anchor_retention_targets_the_notes_containing_bucket() {
+    let containing_boundary = migration::anchor_boundary_containing_note_with_policy(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        5_401,
+    )
+    .unwrap();
+
+    assert_eq!(containing_boundary, 5_472);
+    assert_eq!(
+        representative_orchard_checkpoint(&[5_400, 5_460, 5_500], containing_boundary, 5_401),
+        Some(5_460),
+    );
+}
+
+#[test]
 fn proof_readiness_checks_later_candidates_after_an_unready_child() {
     let mut checked = Vec::new();
 

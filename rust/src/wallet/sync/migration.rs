@@ -113,6 +113,13 @@ pub(crate) struct PreparedOrchardNoteRef {
     pub nullifier_hex: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedAnchorRetentionCandidate {
+    pub account_uuid: String,
+    pub note: PreparedOrchardNoteRef,
+    pub timing_policy: MigrationTimingPolicy,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct PendingMigrationTxMetadata {
     pub tx_kind: String,
@@ -1273,6 +1280,60 @@ pub(crate) fn prepared_notes_for_run(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read prepared notes: {e}"))
+}
+
+pub(crate) fn prepared_anchor_retention_candidates(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<Vec<PreparedAnchorRetentionCandidate>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT r.account_uuid, r.timing_policy,
+                    p.txid_hex, p.output_index, p.value_zatoshi,
+                    p.note_version, p.nullifier_hex
+             FROM {RUNS_TABLE} r
+             INNER JOIN {PREPARED_NOTES_TABLE} p ON p.run_id = r.run_id
+             WHERE r.network = ?1
+               AND r.phase IN (?2, ?3)
+               AND p.note_version = 2
+             ORDER BY r.account_uuid, p.txid_hex, p.output_index"
+        ))
+        .map_err(|e| format!("Prepare migration anchor retention query: {e}"))?;
+    let rows = stmt
+        .query_map(
+            params![
+                network_name(network),
+                PHASE_WAITING_DENOM_CONFIRMATIONS,
+                PHASE_READY_TO_MIGRATE,
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    PreparedOrchardNoteRef {
+                        txid_hex: row.get(2)?,
+                        output_index: row.get(3)?,
+                        value_zatoshi: row.get(4)?,
+                        note_version: row.get(5)?,
+                        nullifier_hex: row.get(6)?,
+                    },
+                ))
+            },
+        )
+        .map_err(|e| format!("Query migration anchor retention candidates: {e}"))?;
+
+    rows.map(|row| {
+        let (account_uuid, timing_policy, note) =
+            row.map_err(|e| format!("Read migration anchor retention candidate: {e}"))?;
+        Ok(PreparedAnchorRetentionCandidate {
+            account_uuid,
+            note,
+            timing_policy: MigrationTimingPolicy::from_str(&timing_policy)?,
+        })
+    })
+    .collect()
 }
 
 fn insert_prepared_notes_with_tx(
