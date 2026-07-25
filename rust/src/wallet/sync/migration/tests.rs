@@ -2586,7 +2586,7 @@ fn last_broadcast_keeps_run_materializing_while_signed_child_remains() {
 }
 
 #[test]
-fn approved_schedule_supports_incremental_proof_persistence() {
+fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -2610,6 +2610,16 @@ fn approved_schedule_supports_incremental_proof_persistence() {
             note_version: 2,
             nullifier_hex: None,
         };
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version,
+                  nullifier_hex, lock_state)
+                 VALUES ('run-1', ?1, 0, ?2, 2, NULL, 'locked')"
+            ),
+            params![selected_note.txid_hex, selected_note.value_zatoshi],
+        )
+        .unwrap();
         conn.execute(
             &format!(
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
@@ -2684,6 +2694,12 @@ fn approved_schedule_supports_incremental_proof_persistence() {
 
     set_proof_retry_height(&db_path, "run-1", 1_200).unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(1_200));
+    assert_eq!(
+        prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest)
+            .unwrap()
+            .len(),
+        2
+    );
     let candidates = signed_child_proof_candidates_for_run(&db_path, "run-1").unwrap();
     assert_eq!(candidates.len(), 2);
     promote_signed_child_pczts_to_pending_txs(
@@ -2696,6 +2712,15 @@ fn approved_schedule_supports_incremental_proof_persistence() {
     )
     .unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(1_200));
+    let retention_candidates =
+        prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest).unwrap();
+    assert_eq!(
+        retention_candidates
+            .iter()
+            .map(|candidate| candidate.note.txid_hex.as_str())
+            .collect::<Vec<_>>(),
+        vec![format!("{:064x}", 11)]
+    );
     let candidates = signed_child_proof_candidates_for_run(&db_path, "run-1").unwrap();
     assert_eq!(
         candidates,
@@ -2720,6 +2745,11 @@ fn approved_schedule_supports_incremental_proof_persistence() {
     )
     .unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), None);
+    assert!(
+        prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest)
+            .unwrap()
+            .is_empty()
+    );
     assert!(signed_child_proof_candidates_for_run(&db_path, "run-1")
         .unwrap()
         .is_empty());

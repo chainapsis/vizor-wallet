@@ -1290,13 +1290,13 @@ pub(crate) fn prepared_anchor_retention_candidates(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT r.account_uuid, r.timing_policy,
+            "SELECT r.run_id, r.phase, r.account_uuid, r.timing_policy,
                     p.txid_hex, p.output_index, p.value_zatoshi,
                     p.note_version, p.nullifier_hex
              FROM {RUNS_TABLE} r
              INNER JOIN {PREPARED_NOTES_TABLE} p ON p.run_id = r.run_id
              WHERE r.network = ?1
-               AND r.phase IN (?2, ?3)
+               AND r.phase IN (?2, ?3, ?4)
                AND p.note_version = 2
              ORDER BY r.account_uuid, p.txid_hex, p.output_index"
         ))
@@ -1307,33 +1307,57 @@ pub(crate) fn prepared_anchor_retention_candidates(
                 network_name(network),
                 PHASE_WAITING_DENOM_CONFIRMATIONS,
                 PHASE_READY_TO_MIGRATE,
+                PHASE_BROADCAST_SCHEDULED,
             ],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
                     PreparedOrchardNoteRef {
-                        txid_hex: row.get(2)?,
-                        output_index: row.get(3)?,
-                        value_zatoshi: row.get(4)?,
-                        note_version: row.get(5)?,
-                        nullifier_hex: row.get(6)?,
+                        txid_hex: row.get(4)?,
+                        output_index: row.get(5)?,
+                        value_zatoshi: row.get(6)?,
+                        note_version: row.get(7)?,
+                        nullifier_hex: row.get(8)?,
                     },
                 ))
             },
         )
         .map_err(|e| format!("Query migration anchor retention candidates: {e}"))?;
+    let rows = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration anchor retention candidate: {e}"))?;
+    drop(stmt);
 
-    rows.map(|row| {
-        let (account_uuid, timing_policy, note) =
-            row.map_err(|e| format!("Read migration anchor retention candidate: {e}"))?;
-        Ok(PreparedAnchorRetentionCandidate {
+    let mut unpromoted_by_run = BTreeMap::new();
+    let mut candidates = Vec::new();
+    for (run_id, phase, account_uuid, timing_policy, note) in rows {
+        // Before materialization, retain every prepared note because Keystone
+        // may not have supplied child signatures yet. After the first proof
+        // schedules the run, retain only notes whose signed children have not
+        // already been promoted to pending transactions.
+        if phase == PHASE_BROADCAST_SCHEDULED {
+            let unpromoted = match unpromoted_by_run.entry(run_id.clone()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let unpromoted =
+                        unpromoted_signed_child_note_outpoints_with_conn(&conn, &run_id)?;
+                    entry.insert(unpromoted)
+                }
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            };
+            if !unpromoted.contains(&(note.txid_hex.to_ascii_lowercase(), note.output_index)) {
+                continue;
+            }
+        }
+        candidates.push(PreparedAnchorRetentionCandidate {
             account_uuid,
             note,
             timing_policy: MigrationTimingPolicy::from_str(&timing_policy)?,
-        })
-    })
-    .collect()
+        });
+    }
+    Ok(candidates)
 }
 
 fn insert_prepared_notes_with_tx(
@@ -2143,6 +2167,14 @@ fn unpromoted_signed_child_pczt_count_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
 ) -> Result<u32, String> {
+    u32::try_from(unpromoted_signed_child_note_outpoints_with_conn(conn, run_id)?.len())
+        .map_err(|_| "Signed migration PCZT count overflow".to_string())
+}
+
+fn unpromoted_signed_child_note_outpoints_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<Vec<(String, u32)>, String> {
     let pending = pending_migration_note_outpoints_with_conn(&conn, run_id)?;
     let mut stmt = conn
         .prepare_cached(&format!(
@@ -2150,23 +2182,22 @@ fn unpromoted_signed_child_pczt_count_with_conn(
              FROM {SIGNED_CHILD_PCZTS_TABLE}
              WHERE run_id = ?1"
         ))
-        .map_err(|e| format!("Prepare signed migration PCZT count: {e}"))?;
+        .map_err(|e| format!("Prepare unpromoted signed migration PCZT query: {e}"))?;
     let rows = stmt
         .query_map(params![run_id], |row| row.get::<_, String>(0))
-        .map_err(|e| format!("Query signed migration PCZT count: {e}"))?;
-    let mut count = 0u32;
+        .map_err(|e| format!("Query unpromoted signed migration PCZTs: {e}"))?;
+    let mut unpromoted = Vec::new();
     for row in rows {
         let selected_note_json =
-            row.map_err(|e| format!("Read signed migration PCZT count: {e}"))?;
+            row.map_err(|e| format!("Read unpromoted signed migration PCZT: {e}"))?;
         let note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
-            .map_err(|e| format!("Decode signed migration PCZT count note: {e}"))?;
-        if !pending.contains(&(note.txid_hex.to_ascii_lowercase(), note.output_index)) {
-            count = count
-                .checked_add(1)
-                .ok_or("Signed migration PCZT count overflow")?;
+            .map_err(|e| format!("Decode unpromoted signed migration PCZT note: {e}"))?;
+        let outpoint = (note.txid_hex.to_ascii_lowercase(), note.output_index);
+        if !pending.contains(&outpoint) {
+            unpromoted.push(outpoint);
         }
     }
-    Ok(count)
+    Ok(unpromoted)
 }
 
 pub(crate) fn pending_migration_note_outpoints(
