@@ -2945,6 +2945,48 @@ void main() {
     });
   });
 
+  testWidgets('marks broadcast parts awaiting confirmation on the ring', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 4; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: switch (index) {
+            0 => rust_sync.MigrationPartState.completed,
+            1 || 2 => rust_sync.MigrationPartState.confirming,
+            _ => rust_sync.MigrationPartState.scheduled,
+          },
+          confirmationCount: index == 0 ? 3 : 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationWaitingConfirmationsPhase,
+          parts: parts,
+          targetValues: List<int>.filled(4, 100_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ring = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('mobile_ironwood_migration_attention_ring')),
+    );
+    final painter = ring.painter as dynamic;
+    // A broadcast part reads as a dimmed form of the confirmed colour, never as
+    // untouched track: the user just watched those transfers leave.
+    expect(painter.completedSegments, {0});
+    expect(painter.awaitingSegments, {1, 2});
+  });
+
   testWidgets(
     'highlights only the multiple parts marked for the signing request',
     (tester) async {

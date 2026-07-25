@@ -1034,6 +1034,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.completedBatches,
     this.totalBatches,
     this.completedRingSegments,
+    this.awaitingRingSegments,
     this.currentSigningPartIndices = const {},
     this.segmentValuesZatoshi,
     this.migratedAmountText,
@@ -1058,6 +1059,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final int? completedBatches;
   final int? totalBatches;
   final Set<int>? completedRingSegments;
+  final Set<int>? awaitingRingSegments;
   final Set<int> currentSigningPartIndices;
   final List<BigInt>? segmentValuesZatoshi;
   final String? migratedAmountText;
@@ -1147,6 +1149,11 @@ class _MigrationProgressPreview extends StatelessWidget {
                   totalBatches: resolvedTotalBatches,
                   totalParts: totalParts,
                   completedSegments: resolvedCompletedRingSegments,
+                  awaitingSegments:
+                      awaitingRingSegments?.difference(
+                        resolvedCompletedRingSegments,
+                      ) ??
+                      const {},
                   highlightedSegments:
                       state == _MigrationProgressState.needsInput
                       ? currentSigningPartIndices
@@ -1197,6 +1204,7 @@ class _MigrationBatchDial extends StatelessWidget {
     required this.totalBatches,
     required this.totalParts,
     required this.completedSegments,
+    this.awaitingSegments = const {},
     required this.highlightedSegments,
     required this.segmentWeights,
     this.dimension = 256,
@@ -1209,6 +1217,7 @@ class _MigrationBatchDial extends StatelessWidget {
   final int totalBatches;
   final int totalParts;
   final Set<int> completedSegments;
+  final Set<int> awaitingSegments;
   final Set<int> highlightedSegments;
   final List<double> segmentWeights;
   final double dimension;
@@ -1239,6 +1248,7 @@ class _MigrationBatchDial extends StatelessWidget {
             dimension: dimension,
             segmentWeights: segmentWeights,
             completedSegments: completedSegments,
+            awaitingSegments: awaitingSegments,
             highlightedSegments: highlightedSegments,
           ),
           Column(
@@ -2338,12 +2348,14 @@ class _AnimatedMigrationAttentionRing extends StatefulWidget {
     required this.dimension,
     required this.segmentWeights,
     required this.completedSegments,
+    required this.awaitingSegments,
     required this.highlightedSegments,
   });
 
   final double dimension;
   final List<double> segmentWeights;
   final Set<int> completedSegments;
+  final Set<int> awaitingSegments;
   final Set<int> highlightedSegments;
 
   @override
@@ -2412,9 +2424,10 @@ class _AnimatedMigrationAttentionRingState
         size: Size.square(widget.dimension),
         painter: _MigrationRingPainter(
           trackColor: context.colors.border.subtle,
-          activeColor: const Color(0xFF00A460),
+          activeColor: context.colors.border.utilityPositiveStrong,
           segmentWeights: widget.segmentWeights,
           completedSegments: widget.completedSegments,
+          awaitingSegments: widget.awaitingSegments,
           highlightedSegments: widget.highlightedSegments,
           highlightColor: context.colors.text.accent,
           highlightOpacity: _reducedMotion ? 1 : _opacity.value,
@@ -2424,12 +2437,16 @@ class _AnimatedMigrationAttentionRingState
   }
 }
 
+/// Opacity the design uses for a broadcast part that is still confirming.
+const double _awaitingSegmentOpacity = 0.5;
+
 class _MigrationRingPainter extends CustomPainter {
   const _MigrationRingPainter({
     required this.trackColor,
     required this.activeColor,
     required this.segmentWeights,
     this.completedSegments = const {},
+    this.awaitingSegments = const {},
     this.highlightedSegments = const {},
     this.highlightColor,
     this.highlightOpacity = 1,
@@ -2439,6 +2456,11 @@ class _MigrationRingPainter extends CustomPainter {
   final Color activeColor;
   final List<double> segmentWeights;
   final Set<int> completedSegments;
+
+  /// Parts already broadcast but still waiting for their confirmations. They
+  /// are past the point the user can influence, yet not final, so they read as
+  /// a dimmed form of the completed colour rather than as untouched track.
+  final Set<int> awaitingSegments;
   final Set<int> highlightedSegments;
   final Color? highlightColor;
   final double highlightOpacity;
@@ -2474,6 +2496,8 @@ class _MigrationRingPainter extends CustomPainter {
         ..strokeWidth = strokeWidth;
       paint.color = completedSegments.contains(index)
           ? activeColor
+          : awaitingSegments.contains(index)
+          ? activeColor.withValues(alpha: _awaitingSegmentOpacity)
           : highlightedSegments.contains(index)
           ? (highlightColor ?? activeColor).withValues(alpha: highlightOpacity)
           : trackColor;
@@ -2488,6 +2512,7 @@ class _MigrationRingPainter extends CustomPainter {
         activeColor != oldDelegate.activeColor ||
         !_sameDoubleList(segmentWeights, oldDelegate.segmentWeights) ||
         completedSegments != oldDelegate.completedSegments ||
+        awaitingSegments != oldDelegate.awaitingSegments ||
         highlightedSegments != oldDelegate.highlightedSegments ||
         highlightColor != oldDelegate.highlightColor ||
         highlightOpacity != oldDelegate.highlightOpacity ||

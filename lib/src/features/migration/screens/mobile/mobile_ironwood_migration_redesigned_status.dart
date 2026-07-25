@@ -442,6 +442,7 @@ class _MobileMigrationRedesignedStatusState
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
         completedRingSegments: _completedRingSegments(widget.status),
+        awaitingRingSegments: _awaitingRingSegments(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
@@ -489,6 +490,7 @@ class _MobileMigrationRedesignedStatusState
         completedBatches: batchProgress.completedBatches,
         totalBatches: batchProgress.totalBatches,
         completedRingSegments: _completedRingSegments(widget.status),
+        awaitingRingSegments: _awaitingRingSegments(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
@@ -563,6 +565,7 @@ class _MobileMigrationRedesignedStatusState
       completedBatches: batchProgress.completedBatches,
       totalBatches: batchProgress.totalBatches,
       completedRingSegments: _completedRingSegments(widget.status),
+      awaitingRingSegments: _awaitingRingSegments(widget.status),
       currentSigningPartIndices: _currentSigningRingSegments(widget.status),
       migratedAmountText: _migratedAmountText(widget.status),
       totalAmountText: _totalAmountText(widget.status),
@@ -903,6 +906,33 @@ class _MobileMigrationRedesignedStatusState
           .length;
     }
     return status.confirmedTxCount;
+  }
+
+  /// Ring segments for parts that are on the network but not yet confirmed.
+  ///
+  /// Without this they render as untouched track, so a user who just watched
+  /// every transfer go out sees an empty ring under a "waiting for
+  /// confirmations" line and cannot tell the two states apart.
+  Set<int> _awaitingRingSegments(rust_sync.MigrationStatus status) {
+    if (status.parts.isEmpty) {
+      final confirmed = status.confirmedTxCount.clamp(0, _totalParts(status));
+      final broadcast = status.broadcastedTxCount.clamp(0, _totalParts(status));
+      return {for (var index = confirmed; index < broadcast; index++) index};
+    }
+    final stateByPartIndex = {
+      for (final part in status.parts) part.partIndex: part.state,
+    };
+    final partOrder = _migrationRingPartOrder(status);
+    return {
+      for (
+        var displayIndex = 0;
+        displayIndex < partOrder.length;
+        displayIndex++
+      )
+        if (stateByPartIndex[partOrder[displayIndex]] ==
+            rust_sync.MigrationPartState.confirming)
+          displayIndex,
+    };
   }
 
   Set<int> _completedRingSegments(rust_sync.MigrationStatus status) {
