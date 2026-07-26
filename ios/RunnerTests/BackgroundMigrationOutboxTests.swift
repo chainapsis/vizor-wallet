@@ -1078,6 +1078,35 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testForegroundChannelDoesNotVerifyProofReadinessFromHeightAlone() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "watch-only",
+      account: "account-a",
+      heights: [],
+      nextProofHeight: 288
+    )
+    try stageAndArm(batch, in: harness.store)
+
+    _ = BackgroundMigrationOutboxChannel.runOnceNow(
+      store: harness.store,
+      dependencies: BackgroundMigrationOutboxRunnerDependencies(
+        latestBlockHeight: { _, _ in .success(288) },
+        sendTransaction: { _, _, _ in
+          XCTFail("A proof watch must not submit a transaction")
+          return .success(
+            NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+          )
+        }
+      )
+    )
+
+    XCTAssertNil(
+      try harness.store.read().batches.first?.proofReadyNotificationPendingAt
+    )
+  }
+
   func testRunnerWaitsForFutureProofHeightWithoutFinalizedTransactions() throws {
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }
@@ -1257,12 +1286,11 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       now.addingTimeInterval(1)
     )
     XCTAssertNil(acknowledged.batches.first?.proofReadyHeightNoticePendingAt)
-    XCTAssertEqual(
+    XCTAssertNil(
       acknowledged.proofReadinessCandidate(
         remoteHeight: 288,
         endpoint: batch.lightwalletdUrl
-      ),
-      BackgroundMigrationProofReadyMetadata(batchId: batch.batchId, observedHeight: 288)
+      )
     )
 
     // It also must not repeat, and must stop pinning the wake cadence to the
@@ -1277,6 +1305,61 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(repeated)
     XCTAssertNil(acknowledged.pendingUnverifiedProofReadyNotice())
     XCTAssertNil(acknowledged.nextActionHeight(endpoint: batch.lightwalletdUrl))
+
+    _ = try harness.store.update { snapshot in
+      XCTAssertTrue(
+        snapshot.recordVerifiedProofReadiness(
+          runId: batch.runId,
+          at: now.addingTimeInterval(3)
+        )
+      )
+    }
+    XCTAssertEqual(
+      try harness.store.read().pendingProofReadyNotification(),
+      BackgroundMigrationProofReadyMetadata(batchId: batch.batchId, observedHeight: 288)
+    )
+  }
+
+  func testProofCandidateSkipsAnAcknowledgedHeightOnlyNotice() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let first = makeBatch(
+      batchId: "watch-first",
+      account: "account-a",
+      heights: [],
+      nextProofHeight: 288
+    )
+    let second = makeBatch(
+      batchId: "watch-second",
+      account: "account-b",
+      heights: [],
+      nextProofHeight: 289
+    )
+    try stageAndArm(first, in: harness.store)
+    try stageAndArm(second, in: harness.store)
+    _ = try harness.store.update { snapshot in
+      _ = snapshot.markUnverifiedProofReadyNoticeIfNeeded(
+        batchId: first.batchId,
+        at: now
+      )
+      try snapshot.acknowledgeUnverifiedProofReadyNotice(
+        batchId: first.batchId,
+        at: now.addingTimeInterval(1)
+      )
+    }
+
+    let candidate = try harness.store.read().proofReadinessCandidate(
+      remoteHeight: 289,
+      endpoint: first.lightwalletdUrl
+    )
+
+    XCTAssertEqual(
+      candidate,
+      BackgroundMigrationProofReadyMetadata(
+        batchId: second.batchId,
+        observedHeight: 289
+      )
+    )
   }
 
   func testAVerifiedProofReadyNotificationQueuedByAnOlderBuildStillDrains() throws {

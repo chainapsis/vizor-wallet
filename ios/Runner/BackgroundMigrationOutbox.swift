@@ -494,7 +494,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         guard let nextProofHeight = batch.nextProofHeight else { return false }
         return batch.lightwalletdUrl == endpoint
           && batch.armedAt != nil
-          && batch.proofReadyNotifiedAt == nil
+          && batch.awaitsProofReadyAnnouncement
           && nextProofHeight <= remoteHeight
       }
       .sorted {

@@ -157,11 +157,14 @@ enum BackgroundMigrationOutboxChannel {
   }
 
   static func runOnceNow(
-    store: BackgroundMigrationOutboxStore = .shared
+    store: BackgroundMigrationOutboxStore = .shared,
+    dependencies: BackgroundMigrationOutboxRunnerDependencies = .live
   ) -> BackgroundMigrationOutboxRunResult {
     BackgroundMigrationOutboxRunner.runOnce(
       store: store,
-      cancellation: BackgroundMigrationCancellation()
+      cancellation: BackgroundMigrationCancellation(),
+      requiresPreparationProofVerification: true,
+      dependencies: dependencies
     )
   }
 
