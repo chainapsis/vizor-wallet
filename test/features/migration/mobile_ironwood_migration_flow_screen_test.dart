@@ -1834,6 +1834,38 @@ void main() {
     expect(find.text('Review Migration Plan'), findsNothing);
   });
 
+  testWidgets(
+    'shows a retry when notification continuation cannot save draft',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/notifications',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.denied,
+            onCreatePrivateDraft: (_, _) async =>
+                throw StateError('draft write failed'),
+          ),
+          privatePlan: _plan,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue without notifications'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text("Couldn't start the migration. Try again."),
+        findsOneWidget,
+      );
+      expect(find.text('Keep your migration on schedule'), findsOneWidget);
+    },
+  );
+
   testWidgets('keeps design label and opens Settings after denial', (
     tester,
   ) async {

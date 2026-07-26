@@ -197,6 +197,7 @@ class _MobileMigrationNotificationPermissionScreenState
     extends ConsumerState<_MobileMigrationNotificationPermissionScreen> {
   AppLifecycleListener? _lifecycleListener;
   var _busy = false;
+  String? _continueError;
 
   @override
   void initState() {
@@ -291,7 +292,12 @@ class _MobileMigrationNotificationPermissionScreenState
 
   Future<void> _continueAfterNotificationGate() async {
     final plan = widget.privatePlan;
-    if (!_busy && mounted) setState(() => _busy = true);
+    if (mounted) {
+      setState(() {
+        _busy = true;
+        _continueError = null;
+      });
+    }
     var draftSaved = false;
     try {
       if (plan == null) {
@@ -328,7 +334,11 @@ class _MobileMigrationNotificationPermissionScreenState
           '/migration/private/status',
           extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
         );
+        return;
       }
+      setState(() {
+        _continueError = "Couldn't start the migration. Try again.";
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -338,6 +348,7 @@ class _MobileMigrationNotificationPermissionScreenState
   Widget build(BuildContext context) {
     return _MigrationNotificationPromptPreview(
       busy: _busy,
+      errorMessage: _continueError,
       onBack: () => context.go('/migration/options'),
       onAllow: () => unawaited(_allowNotifications()),
       onNotNow: () => unawaited(_confirmNotNow()),
@@ -354,6 +365,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
     this.onAllow,
     this.onNotNow,
     this.busy = false,
+    this.errorMessage,
   });
 
   final bool showConfirmation;
@@ -361,6 +373,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
   final VoidCallback? onAllow;
   final VoidCallback? onNotNow;
   final bool busy;
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +385,16 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (errorMessage != null) ...[
+            Text(
+              errorMessage!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: const Color(0xFFFFFFFF),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+          ],
           AppButton(
             key: const ValueKey('migration_preview_not_now'),
             variant: AppButtonVariant.ghost,
