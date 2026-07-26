@@ -283,6 +283,49 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testMigrationPreparationForegroundLaunchRedirectsChainWaits() {
+    XCTAssertTrue(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: true,
+        hasBoundPreparation: false,
+        notificationsDisabled: false,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: false,
+        hasBoundPreparation: false,
+        notificationsDisabled: false,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: true,
+        hasBoundPreparation: false,
+        notificationsDisabled: true,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: true,
+        hasBoundPreparation: true,
+        notificationsDisabled: false,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: true,
+        hasBoundPreparation: false,
+        notificationsDisabled: false,
+        resumeTarget: .continuedProcessing
+      )
+    )
+  }
+
   func testMigrationPreparationDefersChainWaitsToProcessingTask() {
     XCTAssertEqual(
       migrationPreparationPassResult(states: [0]),
@@ -331,6 +374,25 @@ class RunnerTests: XCTestCase {
         migrationPreparationStateNeedsForegroundContinuation(state)
       )
     }
+  }
+
+  func testMigrationPreparationContinuedTaskOnlyRunsConfirmationWork() {
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.continuedProcessing),
+      .run
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.backgroundProcessing),
+      .handoffToBackground
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.idle),
+      .complete
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.terminal),
+      .complete
+    )
   }
 
   func testMigrationPreparationRetriesInspectionFailuresInBackground() {
