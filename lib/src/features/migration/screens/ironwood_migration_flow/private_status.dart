@@ -363,7 +363,11 @@ _StatusAction _statusAction(
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusAction.none,
     kIronwoodMigrationReadyToMigratePhase =>
-      isHardware ? _StatusAction.needsInput : _StatusAction.none,
+      isHardware &&
+              (status.currentSigningPartIndices == null ||
+                  status.currentSigningPartIndices!.isNotEmpty)
+          ? _StatusAction.needsInput
+          : _StatusAction.none,
     kIronwoodMigrationFailedRecoverablePhase => _StatusAction.retry,
     kIronwoodMigrationCompletePhase => _StatusAction.backHome,
     _ => _StatusAction.none,

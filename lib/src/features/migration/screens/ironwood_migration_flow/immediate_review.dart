@@ -19,6 +19,11 @@ class _IronwoodMigrationImmediateReviewContentState
   bool _isBroadcasting = false;
   String? _error;
 
+  void _retryPlan() {
+    setState(() => _error = null);
+    ref.invalidate(ironwoodMigrationImmediatePlanProvider);
+  }
+
   Future<void> _start(rust_sync.OrchardMigrationImmediatePlan plan) async {
     if (_isBroadcasting) return;
     setState(() {
@@ -70,13 +75,26 @@ class _IronwoodMigrationImmediateReviewContentState
             widget.previewPlan,
           );
     final plan = planAsync.asData?.value;
+    final planFailed = planAsync.hasError;
+    final planUnavailable = planAsync.asData != null && plan == null;
+    final planLoading = planAsync.isLoading;
     final colors = context.colors;
-    final amount = plan == null
+    final amount = plan != null
+        ? '${_formatZecAmountCompact(plan.migratedZatoshi)} ZEC'
+        : planLoading
         ? 'Calculating…'
-        : '${_formatZecAmountCompact(plan.migratedZatoshi)} ZEC';
-    final fee = plan == null
-        ? 'Shown before send'
-        : '~${_formatZecAmountCompact(plan.feeZatoshi)} ZEC';
+        : 'Unavailable';
+    final fee = plan != null
+        ? '~${_formatZecAmountCompact(plan.feeZatoshi)} ZEC'
+        : planLoading
+        ? 'Calculating…'
+        : 'Unavailable';
+    final planMessage = planFailed
+        ? "Couldn't calculate the Immediate migration plan. Sync and try again."
+        : planUnavailable
+        ? 'No spendable Orchard balance is available for Immediate migration.'
+        : null;
+    final displayedError = _error ?? planMessage;
 
     return SizedBox(
       key: const ValueKey('ironwood_migration_immediate_review_screen'),
@@ -186,10 +204,10 @@ class _IronwoodMigrationImmediateReviewContentState
                     ),
                   ),
                 ),
-                if (_error != null) ...[
+                if (displayedError != null) ...[
                   const SizedBox(height: 12),
                   Text(
-                    _error!,
+                    displayedError,
                     textAlign: TextAlign.center,
                     style: AppTypography.bodySmall.copyWith(
                       color: colors.text.destructive,
@@ -221,10 +239,16 @@ class _IronwoodMigrationImmediateReviewContentState
                   key: const ValueKey(
                     'ironwood_migration_immediate_broadcast_button',
                   ),
-                  onPressed: plan == null || _isBroadcasting
+                  onPressed: _isBroadcasting
+                      ? null
+                      : planFailed
+                      ? _retryPlan
+                      : plan == null
                       ? null
                       : () => unawaited(_start(plan)),
-                  variant: AppButtonVariant.destructive,
+                  variant: planFailed
+                      ? AppButtonVariant.primary
+                      : AppButtonVariant.destructive,
                   height: 44,
                   minWidth: 230,
                   expand: true,
@@ -236,7 +260,15 @@ class _IronwoodMigrationImmediateReviewContentState
                         )
                       : const AppIcon(AppIcons.warning, size: 18),
                   child: Text(
-                    _isBroadcasting ? 'Authorising…' : 'Authorise anyway',
+                    _isBroadcasting
+                        ? 'Authorising…'
+                        : planFailed
+                        ? 'Retry calculation'
+                        : planLoading
+                        ? 'Calculating…'
+                        : planUnavailable
+                        ? 'Unavailable'
+                        : 'Authorise anyway',
                   ),
                 ),
               ],

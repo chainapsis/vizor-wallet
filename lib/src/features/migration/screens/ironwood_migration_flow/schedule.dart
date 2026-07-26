@@ -14,14 +14,26 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
 
     final request = ref.watch(ironwoodMigrationInputsProvider).statusRequest;
     if (request == null) {
-      return _frame(context, null, ref.watch(syncProvider).asData?.value);
+      return _frame(
+        context,
+        null,
+        ref.watch(syncProvider).asData?.value,
+        statusUnavailable: true,
+      );
     }
     return ref
         .watch(ironwoodMigrationStatusProvider(request))
         .when(
           skipLoadingOnReload: true,
           loading: () => _frame(context, null, null),
-          error: (_, _) => _frame(context, null, null),
+          error: (_, _) => _frame(
+            context,
+            null,
+            null,
+            statusUnavailable: true,
+            onRetry: () =>
+                ref.invalidate(ironwoodMigrationStatusProvider(request)),
+          ),
           data: (status) =>
               _frame(context, status, ref.watch(syncProvider).asData?.value),
         );
@@ -30,8 +42,10 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
   Widget _frame(
     BuildContext context,
     rust_sync.MigrationStatus? status,
-    SyncState? syncState,
-  ) {
+    SyncState? syncState, {
+    bool statusUnavailable = false,
+    VoidCallback? onRetry,
+  }) {
     return _IronwoodMigrationFrame(
       toolbar: AppPaneToolbar(
         leading: AppBackLink(
@@ -40,12 +54,64 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
         ),
       ),
       disableSidebarActions: true,
-      child: status == null
+      child: statusUnavailable
+          ? _MigrationScheduleErrorContent(onRetry: onRetry)
+          : status == null
           ? const Center(child: CircularProgressIndicator())
           : _MigrationScheduleContent(
               status: status,
               currentHeight: _currentMigrationHeight(syncState),
             ),
+    );
+  }
+}
+
+class _MigrationScheduleErrorContent extends StatelessWidget {
+  const _MigrationScheduleErrorContent({this.onRetry});
+
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      key: const ValueKey('ironwood_migration_schedule_error'),
+      width: 420,
+      height: 656,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Migration schedule unavailable',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineSmall.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 318,
+            child: Text(
+              "Vizor couldn't load the latest migration schedule. "
+              'Your saved migration state is unchanged.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          if (onRetry != null) ...[
+            const SizedBox(height: 24),
+            AppButton(
+              key: const ValueKey('ironwood_migration_schedule_retry'),
+              onPressed: onRetry,
+              height: 44,
+              minWidth: 160,
+              child: const Text('Retry'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

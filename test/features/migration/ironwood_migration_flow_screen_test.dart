@@ -116,6 +116,100 @@ void main() {
     expect(find.widgetWithText(AppButton, 'Authorise anyway'), findsOneWidget);
   });
 
+  testWidgets('does not offer Immediate migration to Keystone accounts', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(activeAccountIsHardware: true),
+    );
+    await tester.pumpAndSettle();
+
+    final immediateOption = find.byKey(
+      const ValueKey('ironwood_migration_fast_option'),
+    );
+    final immediateGesture = find.descendant(
+      of: immediateOption,
+      matching: find.byType(GestureDetector),
+    );
+    expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNull);
+    expect(
+      find.text('Immediate migration is not available with Keystone.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Select & review'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
+    expect(find.text('Privacy trade-off'), findsNothing);
+  });
+
+  testWidgets('Immediate review reports an unavailable plan', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/immediate/review',
+        useImmediatePreview: false,
+        migrationService: _immediatePlanService(() async => null),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'No spendable Orchard balance is available for Immediate migration.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(AppButton, 'Unavailable'), findsOneWidget);
+  });
+
+  testWidgets('Immediate review retries a failed plan calculation', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var callCount = 0;
+    var failPlan = true;
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/immediate/review',
+        useImmediatePreview: false,
+        migrationService: _immediatePlanService(() async {
+          callCount++;
+          if (failPlan) throw Exception('plan failed');
+          return _immediatePlan();
+        }),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        "Couldn't calculate the Immediate migration plan. Sync and try again.",
+      ),
+      findsOneWidget,
+    );
+    failPlan = false;
+    await tester.tap(find.widgetWithText(AppButton, 'Retry calculation'));
+    await tester.pumpAndSettle();
+
+    expect(callCount, greaterThanOrEqualTo(2));
+    expect(find.widgetWithText(AppButton, 'Authorise anyway'), findsOneWidget);
+    expect(find.text('0.0999 ZEC'), findsOneWidget);
+  });
+
   testWidgets('private review keeps analyzing visible for minimum duration', (
     tester,
   ) async {
@@ -648,6 +742,48 @@ void main() {
       expect(find.text('0 ZEC'), findsOneWidget);
       expect(find.text('Waiting for anchor block'), findsOneWidget);
       expect(find.text('~2 mins'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'private ready-to-migrate status preserves completed migration notes',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+            proofReady: true,
+            targetValuesZatoshi: const [1_000_000_000, 200_000_000],
+            totalCount: 2,
+            confirmedTxCount: 1,
+            parts: [
+              _migrationPart(
+                0,
+                1_000_000_000,
+                rust_sync.MigrationPartState.completed,
+              ),
+              _migrationPart(
+                1,
+                200_000_000,
+                rust_sync.MigrationPartState.preparing,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Migrated'), findsOneWidget);
+      expect(find.text('10/12 ZEC'), findsOneWidget);
+      expect(find.text('1/2 notes'), findsOneWidget);
+      expect(find.text('10 ZEC'), findsOneWidget);
     },
   );
 
@@ -1391,6 +1527,7 @@ void main() {
           status: _migrationStatus(
             phase: kIronwoodMigrationReadyToMigratePhase,
             activeRunId: 'run-1',
+            currentSigningPartIndices: const [0],
           ),
         ),
         initialLocation: '/migration/private/status',
@@ -1411,6 +1548,102 @@ void main() {
 
     expect(softwareContinued, isFalse);
     expect(find.text('keystone-batch-sign-route'), findsOneWidget);
+  });
+
+  testWidgets(
+    'private status waits for anchor after the final Keystone batch is signed',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [10_000_000],
+            totalCount: 1,
+            signedChildPcztCount: 1,
+            proofReady: false,
+            currentSigningPartIndices: const [],
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.preparing,
+              ),
+            ],
+          ),
+          activeAccountIsHardware: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Waiting for anchor block'), findsOneWidget);
+      expect(find.textContaining('Sign Batch #'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_status_action_button')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('migration schedule retries after status lookup fails', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var failStatus = true;
+    var callCount = 0;
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+          ),
+        ),
+        initialLocation: '/migration/private/schedule',
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) async {
+              callCount += 1;
+              if (failStatus) throw Exception('status unavailable');
+              return _migrationStatus(
+                phase: kIronwoodMigrationReadyToMigratePhase,
+                activeRunId: 'run-1',
+                targetValuesZatoshi: const [10_000_000],
+                totalCount: 1,
+                parts: [
+                  _migrationPart(
+                    0,
+                    10_000_000,
+                    rust_sync.MigrationPartState.scheduled,
+                  ),
+                ],
+              );
+            },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration schedule unavailable'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Retry'), findsOneWidget);
+
+    failStatus = false;
+    await tester.tap(find.widgetWithText(AppButton, 'Retry'));
+    await tester.pumpAndSettle();
+
+    expect(callCount, greaterThanOrEqualTo(2));
+    expect(find.text('Migration Schedule'), findsOneWidget);
+    expect(find.text('Migration schedule unavailable'), findsNothing);
   });
 
   testWidgets('private status retries a recoverable error on request', (
@@ -1861,6 +2094,7 @@ Widget _migrationOptionsHarness({
   rust_sync.MigrationStatus? coordinatorStatus,
   Duration analyzingMinimumDuration = Duration.zero,
   bool disableAnimations = true,
+  bool useImmediatePreview = true,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -1901,12 +2135,7 @@ Widget _migrationOptionsHarness({
             accountName: 'Account 1',
             profilePictureId: kDefaultProfilePictureId,
           ),
-          previewImmediatePlan: rust_sync.OrchardMigrationImmediatePlan(
-            totalInputZatoshi: BigInt.from(10_000_000),
-            feeZatoshi: BigInt.from(10_000),
-            migratedZatoshi: BigInt.from(9_990_000),
-            inputNoteCount: 1,
-          ),
+          previewImmediatePlan: useImmediatePreview ? _immediatePlan() : null,
         ),
       ),
       GoRoute(
@@ -2391,6 +2620,10 @@ Widget _migrationEntryHarness({
             : const Text('private-status-route'),
       ),
       GoRoute(
+        path: '/migration/private/schedule',
+        builder: (_, _) => const IronwoodMigrationScheduleScreen(),
+      ),
+      GoRoute(
         path: '/migration/private/keystone/batch/sign',
         builder: (_, _) => const Text('keystone-batch-sign-route'),
       ),
@@ -2660,6 +2893,33 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
   );
 }
 
+rust_sync.OrchardMigrationImmediatePlan _immediatePlan() {
+  return rust_sync.OrchardMigrationImmediatePlan(
+    totalInputZatoshi: BigInt.from(10_000_000),
+    feeZatoshi: BigInt.from(10_000),
+    migratedZatoshi: BigInt.from(9_990_000),
+    inputNoteCount: 1,
+  );
+}
+
+IronwoodMigrationService _immediatePlanService(
+  Future<rust_sync.OrchardMigrationImmediatePlan?> Function() getPlan,
+) {
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _migrationStatus(),
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _privatePlan(),
+    getImmediatePlan:
+        ({required dbPath, required network, required accountUuid}) =>
+            getPlan(),
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+  );
+}
+
 rust_sync.MigrationStatus _migrationStatus({
   String phase = kIronwoodMigrationReadyPhase,
   String? activeRunId,
@@ -2673,7 +2933,9 @@ rust_sync.MigrationStatus _migrationStatus({
   int denominationConfirmationTarget = 0,
   int denominationSplitCompletedCount = 0,
   int denominationSplitTotalCount = 0,
+  int signedChildPcztCount = 0,
   bool? proofReady,
+  List<int>? currentSigningPartIndices,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
   List<rust_sync.MigrationPartStatus> parts = const [],
 }) {
@@ -2690,13 +2952,16 @@ rust_sync.MigrationStatus _migrationStatus({
     broadcastedTxCount: broadcastedTxCount,
     confirmedTxCount: confirmedTxCount,
     totalCount: totalCount,
-    signedChildPcztCount: 0,
+    signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     proofReady: proofReady,
+    currentSigningPartIndices: currentSigningPartIndices == null
+        ? null
+        : frb.Uint32List.fromList(currentSigningPartIndices),
     scheduledBroadcasts: scheduledBroadcasts,
     parts: parts,
   );

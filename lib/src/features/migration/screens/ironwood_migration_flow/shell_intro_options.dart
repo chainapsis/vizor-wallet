@@ -37,7 +37,7 @@ class _IronwoodMigrationLoadingShell extends StatelessWidget {
   }
 }
 
-class _IronwoodMigrationShell extends StatelessWidget {
+class _IronwoodMigrationShell extends ConsumerWidget {
   const _IronwoodMigrationShell({
     required this.step,
     required this.data,
@@ -55,7 +55,9 @@ class _IronwoodMigrationShell extends StatelessWidget {
   final VoidCallback? onOpenReleaseNotesOverride;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isHardware =
+        ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false;
     final content = switch (step) {
       IronwoodMigrationFlowStep.prepare => const Center(
         child: CircularProgressIndicator(),
@@ -71,6 +73,7 @@ class _IronwoodMigrationShell extends StatelessWidget {
         const _IronwoodMigrationWhatToExpectContent(),
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
+        immediateEnabled: !isHardware,
       ),
       IronwoodMigrationFlowStep.review =>
         _IronwoodMigrationPrivateReviewContent(
@@ -673,9 +676,13 @@ class _MigrationExpectationIllustration extends StatelessWidget {
 }
 
 class _IronwoodMigrationOptionsContent extends StatefulWidget {
-  const _IronwoodMigrationOptionsContent({required this.data});
+  const _IronwoodMigrationOptionsContent({
+    required this.data,
+    required this.immediateEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool immediateEnabled;
 
   @override
   State<_IronwoodMigrationOptionsContent> createState() =>
@@ -689,6 +696,9 @@ class _IronwoodMigrationOptionsContentState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final selected = widget.immediateEnabled
+        ? _selected
+        : _MigrationMode.private;
     return SizedBox(
       width: 420,
       height: 656,
@@ -732,7 +742,7 @@ class _IronwoodMigrationOptionsContentState
                 _MigrationOptionCard(
                   key: const ValueKey('ironwood_migration_private_option'),
                   mode: _MigrationMode.private,
-                  selected: _selected == _MigrationMode.private,
+                  selected: selected == _MigrationMode.private,
                   title: 'Private',
                   badge: 'Recommended',
                   body:
@@ -745,12 +755,15 @@ class _IronwoodMigrationOptionsContentState
                 _MigrationOptionCard(
                   key: const ValueKey('ironwood_migration_fast_option'),
                   mode: _MigrationMode.fast,
-                  selected: _selected == _MigrationMode.fast,
+                  selected: selected == _MigrationMode.fast,
                   title: 'Immediate',
-                  body:
-                      'Migrates your entire balance in one batch. Fast but '
-                      'less private.',
-                  onTap: () => setState(() => _selected = _MigrationMode.fast),
+                  body: widget.immediateEnabled
+                      ? 'Migrates your entire balance in one batch. Fast but '
+                            'less private.'
+                      : 'Immediate migration is not available with Keystone.',
+                  onTap: widget.immediateEnabled
+                      ? () => setState(() => _selected = _MigrationMode.fast)
+                      : null,
                 ),
               ],
             ),
@@ -761,11 +774,16 @@ class _IronwoodMigrationOptionsContentState
             width: 230,
             child: AppButton(
               key: const ValueKey('ironwood_migration_select_review_button'),
-              onPressed: () => context.go(
-                _selected == _MigrationMode.private
-                    ? '/migration/private/review'
-                    : '/migration/immediate/review',
-              ),
+              onPressed: () {
+                final selectedAtTap = widget.immediateEnabled
+                    ? _selected
+                    : _MigrationMode.private;
+                context.go(
+                  selectedAtTap == _MigrationMode.private
+                      ? '/migration/private/review'
+                      : '/migration/immediate/review',
+                );
+              },
               height: 44,
               minWidth: 230,
               expand: true,

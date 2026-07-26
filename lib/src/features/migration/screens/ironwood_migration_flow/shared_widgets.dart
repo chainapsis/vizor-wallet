@@ -911,14 +911,15 @@ class _MigrationOptionCard extends StatelessWidget {
   final bool selected;
   final String title;
   final String body;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final String? badge;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final enabled = onTap != null;
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
@@ -962,7 +963,9 @@ class _MigrationOptionCard extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: AppTypography.bodyLarge.copyWith(
-                                      color: colors.text.accent,
+                                      color: enabled
+                                          ? colors.text.accent
+                                          : colors.text.muted,
                                     ),
                                   ),
                                 ),
@@ -979,7 +982,9 @@ class _MigrationOptionCard extends StatelessWidget {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: AppTypography.bodyMedium.copyWith(
-                                  color: colors.text.secondary,
+                                  color: enabled
+                                      ? colors.text.secondary
+                                      : colors.text.muted,
                                 ),
                               ),
                             ),

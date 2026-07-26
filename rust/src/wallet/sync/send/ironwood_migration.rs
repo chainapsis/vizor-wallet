@@ -353,6 +353,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
             predicted,
             (index + 1) as u32,
             block_offset,
+            None,
         )?
         .ok_or("Predicted migration note is below the migration fee threshold")?;
         child_messages.push(pczt);
@@ -700,6 +701,8 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let timing_policy = super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
     let approved_schedule =
         super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
+    let signed_schedule_origin =
+        super::migration::signed_schedule_origin_for_run(db_path, &run.run_id)?;
     for (index, note_ref) in prepared_notes.iter().enumerate() {
         let part_index = *signing_part_indices
             .get(index)
@@ -722,6 +725,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 note_ref,
                 migration_index,
                 schedule_block_offset,
+                signed_schedule_origin,
             )
         } else {
             with_wallet_db_write_lock("send.migration.prepare_exact_note_pczt", || {
@@ -802,6 +806,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
             fallback_migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
             recovery_old_txids: recoveries
                 .iter()
+                .take(signing_part_indices.len())
                 .map(|recovery| recovery.old_txid_hex.clone())
                 .collect(),
             state: if initial_signing {

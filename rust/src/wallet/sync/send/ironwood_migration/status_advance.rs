@@ -363,6 +363,7 @@ fn prepare_software_migration_run(
                 predicted,
                 (index + 1) as u32,
                 block_offset,
+                None,
             )?
             .ok_or("Predicted migration note is below the migration fee threshold".to_string())
         })

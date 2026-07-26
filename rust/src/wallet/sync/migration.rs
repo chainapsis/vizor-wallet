@@ -1712,6 +1712,24 @@ pub(crate) fn target_values_for_run(db_path: &str, run_id: &str) -> Result<Vec<u
         .map_err(|e| format!("Decode migration target values: {e}"))
 }
 
+pub(crate) fn signed_schedule_origin_for_run(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Option<u32>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!(
+            "SELECT signed_schedule_origin_height
+             FROM {RUNS_TABLE}
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Read signed migration schedule origin: {e}"))
+}
+
 pub(crate) fn schedule_block_offset_for_part(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],

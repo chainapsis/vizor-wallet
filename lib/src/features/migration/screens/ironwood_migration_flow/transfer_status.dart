@@ -74,6 +74,11 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
     if (values.isEmpty && status.phase != kIronwoodMigrationCompletePhase) {
       values = [BigInt.zero];
     }
+    final readyHasMigrationProgress =
+        status.pendingTxCount > 0 ||
+        status.broadcastedTxCount > 0 ||
+        status.confirmedTxCount > 0 ||
+        status.signedChildPcztCount > 0;
     final statuses = status.phase == kIronwoodMigrationCompletePhase
         ? List<_MigrationBatchStatus>.filled(
             values.length,
@@ -82,7 +87,8 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
         // A completed denomination split only means the notes are ready to
         // migrate. It must not paint the transfer ring green before any
         // migration note has actually been signed and confirmed.
-        : status.phase == kIronwoodMigrationReadyToMigratePhase
+        : status.phase == kIronwoodMigrationReadyToMigratePhase &&
+              !readyHasMigrationProgress
         ? List<_MigrationBatchStatus>.filled(
             values.length,
             _MigrationBatchStatus.scheduled,

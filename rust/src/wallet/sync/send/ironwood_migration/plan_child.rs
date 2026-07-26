@@ -294,6 +294,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     predicted: &PredictedMigrationNote,
     migration_index: u32,
     schedule_block_offset: u32,
+    persisted_schedule_origin_height: Option<u32>,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -310,14 +311,15 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     let recipient = orchard_fvk.address_at(0u32, orchard::keys::Scope::Internal);
     let internal_ovk = Some(orchard_fvk.to_ovk(orchard::keys::Scope::Internal));
     let memo = MemoBytes::empty();
-    let (target_height, _) = db
+    let (current_target_height, _) = db
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read target height: {e}"))?
         .ok_or("Wallet must sync before preparing migration")?;
-    let scheduled_height = u32::from(target_height)
-        .saturating_sub(1)
-        .checked_add(schedule_block_offset)
-        .ok_or("Migration scheduled height overflow")?;
+    let (target_height, scheduled_height) = initial_migration_schedule_heights(
+        u32::from(current_target_height),
+        persisted_schedule_origin_height,
+        schedule_block_offset,
+    )?;
     let selected_value: Zatoshis = predicted
         .value_zatoshi
         .try_into()
@@ -390,8 +392,6 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         .map_err(|e| format!("Build predicted migration PCZT failed: {e}"))?;
     let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
     let built_pczt = pczt_from_build_result(build_result, network, account_derivation, 1, 0)?;
-    let target_height_u32: u32 = target_height.into();
-
     Ok(Some(CreatedMigrationPczt {
         part_index: migration_index.saturating_sub(1),
         id: format!("migration-{migration_index}"),
@@ -399,7 +399,7 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
         orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
         pczt_with_proofs: None,
         redacted_pczt: built_pczt.redacted_bytes,
-        target_height: target_height_u32,
+        target_height,
         anchor_boundary_height: None,
         expiry_height,
         scheduled_height,
@@ -415,6 +415,39 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     }))
 }
 
+fn initial_migration_schedule_heights(
+    current_target_height: u32,
+    persisted_schedule_origin_height: Option<u32>,
+    schedule_block_offset: u32,
+) -> Result<(u32, u32), String> {
+    let schedule_origin_height =
+        persisted_schedule_origin_height.unwrap_or_else(|| current_target_height.saturating_sub(1));
+    let target_height = schedule_origin_height
+        .checked_add(1)
+        .ok_or("Migration target height overflow")?;
+    let scheduled_height = schedule_origin_height
+        .checked_add(schedule_block_offset)
+        .ok_or("Migration scheduled height overflow")?;
+    Ok((target_height, scheduled_height))
+}
+
+#[cfg(test)]
+mod schedule_height_tests {
+    use super::initial_migration_schedule_heights;
+
+    #[test]
+    fn later_signing_batches_reuse_the_first_absolute_schedule() {
+        assert_eq!(
+            initial_migration_schedule_heights(900, None, 4).unwrap(),
+            (900, 903)
+        );
+        assert_eq!(
+            initial_migration_schedule_heights(950, Some(899), 4).unwrap(),
+            (900, 903)
+        );
+    }
+}
+
 fn create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
     db_path: &str,
     network: WalletNetwork,
@@ -422,6 +455,7 @@ fn create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
     note_ref: &super::migration::PreparedOrchardNoteRef,
     migration_index: u32,
     schedule_block_offset: u32,
+    persisted_schedule_origin_height: Option<u32>,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
     if note_ref.note_version != 2 {
         return Err("Prepared migration note is not an Orchard V2 note".to_string());
@@ -463,6 +497,7 @@ fn create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
         &predicted,
         migration_index,
         schedule_block_offset,
+        persisted_schedule_origin_height,
     )?;
     if let Some(message) = created.as_mut() {
         message.selected_note = note_ref.clone();
