@@ -905,7 +905,12 @@ class IronwoodMigrationService {
                 requiredTxids: requiredTxids,
                 statusForStaleBatchDiscard: status,
               );
-              if (restored == null) {
+              if (restored == null &&
+                  !await _requiredTxidsNowNeedInput(
+                    context,
+                    expectedRunId: status.activeRunId!,
+                    requiredTxids: requiredTxids,
+                  )) {
                 throw StateError(
                   '$_credentialRecoveryRequiredError '
                   'The scheduled migration transaction could not be restored '
@@ -1364,8 +1369,16 @@ class IronwoodMigrationService {
                     .map((item) => item.txidHex.toLowerCase())
                     .toSet() ??
                 const <String>{};
-            if (batch == null ||
-                batch.runId != oldRunId ||
+            if (batch == null) {
+              if (await _requiredTxidsNowNeedInput(
+                context,
+                expectedRunId: oldRunId,
+                requiredTxids: requiredTxids,
+              )) {
+                return;
+              }
+              existingCredentialIsUnusable = true;
+            } else if (batch.runId != oldRunId ||
                 !exportedTxids.containsAll(
                   await _stillScheduledTxids(context, requiredTxids),
                 )) {
@@ -1405,6 +1418,13 @@ class IronwoodMigrationService {
             statusForStaleBatchDiscard: oldStatus,
           );
           if (restored == null) {
+            if (await _requiredTxidsNowNeedInput(
+              context,
+              expectedRunId: oldRunId,
+              requiredTxids: requiredTxids,
+            )) {
+              return;
+            }
             existingCredentialIsUnusable = true;
           } else {
             await runMigrationOutboxOnceNow();
@@ -1902,6 +1922,29 @@ class IronwoodMigrationService {
       await _getStatusForContext(context),
     );
     return requiredTxids.where(scheduled.contains).toSet();
+  }
+
+  /// Whether an outbox export legitimately returned no batch because every
+  /// transaction it was asked to restore moved from `scheduled` to
+  /// `needs_resign` during that export.
+  ///
+  /// Rust exposes `needs_resign` as [rust_sync.MigrationPartState.needsInput].
+  /// Requiring the same run and the same txids keeps a genuinely empty or
+  /// mismatched export on the credential-recovery path.
+  Future<bool> _requiredTxidsNowNeedInput(
+    _MigrationCredentialContext context, {
+    required String expectedRunId,
+    required Set<String> requiredTxids,
+  }) async {
+    if (requiredTxids.isEmpty) return false;
+    final status = await _getStatusForContext(context);
+    if (status.activeRunId != expectedRunId) return false;
+    final needsInputTxids = status.parts
+        .where((part) => part.state == rust_sync.MigrationPartState.needsInput)
+        .map((part) => part.txidHex?.toLowerCase())
+        .whereType<String>()
+        .toSet();
+    return needsInputTxids.containsAll(requiredTxids);
   }
 
   List<String> _migrationOutboxExpectedTxids(rust_sync.MigrationStatus status) {

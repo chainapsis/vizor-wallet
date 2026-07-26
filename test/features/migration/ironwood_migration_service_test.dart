@@ -895,6 +895,98 @@ void main() {
   );
 
   test(
+    'foreground recovery keeps a usable credential when export re-marks every '
+    'scheduled part for re-signing',
+    () async {
+      final events = <String>[];
+      final statuses = <rust_sync.MigrationStatus>[
+        _migrationStatus(
+          phase: 'broadcast_scheduled',
+          activeRunId: 'run-1',
+          parts: [_migrationPart(txidHex: 'tx-1')],
+          scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+        ),
+        _migrationStatus(
+          phase: 'broadcast_scheduled',
+          activeRunId: 'run-1',
+          parts: [
+            _migrationPart(
+              txidHex: 'tx-1',
+              state: rust_sync.MigrationPartState.needsInput,
+            ),
+          ],
+        ),
+      ];
+      final store = _backgroundCredentialStore();
+      await store.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lightwalletd.test',
+      );
+      await store.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(
+            statuses.length > 1 ? statuses.removeAt(0) : statuses.first,
+          );
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => false,
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              events.add('export');
+              return null;
+            },
+        runMigrationOutboxOnceNow: () async {
+          events.add('run');
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.needsUserAction,
+            observedHeight: 1_000,
+          );
+        },
+      );
+
+      final result = await service.recoverDueMigrationOutbox(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+
+      expect(result.outcome, IronwoodMigrationOutboxRunOutcome.needsUserAction);
+      expect(events, ['export', 'run']);
+    },
+  );
+
+  test(
     'a malformed native outbox reply is not a credential recovery request',
     () async {
       // A channel/payload-shape fault must surface as itself. Reporting it as an
@@ -2557,7 +2649,16 @@ void main() {
           scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-a')],
         ),
         // Read after the export: the same part now needs re-signing.
-        _migrationStatus(phase: 'broadcast_scheduled', activeRunId: 'run-1'),
+        _migrationStatus(
+          phase: 'broadcast_scheduled',
+          activeRunId: 'run-1',
+          parts: [
+            _migrationPart(
+              txidHex: 'tx-a',
+              state: rust_sync.MigrationPartState.needsInput,
+            ),
+          ],
+        ),
       ];
       final store = _backgroundCredentialStore();
       await store.prepare(
@@ -2600,8 +2701,9 @@ void main() {
               required saltBase64,
             }) async {
               events.add('export');
-              // tx-a is absent because the export itself just re-marked it.
-              return _outboxBatch(runId: 'run-1', txids: const []);
+              // Rust returns null when this was the final scheduled part and
+              // there is no unpromoted proof waiting behind it.
+              return null;
             },
         hasMigrationOutboxBatch:
             ({
@@ -2645,16 +2747,7 @@ void main() {
         requestNotificationAuthorization: () async => true,
       );
 
-      await expectLater(
-        service.recoverSoftwarePrivateMigration(accountUuid: 'account-1'),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.message,
-            'message',
-            contains('still has a usable credential'),
-          ),
-        ),
-      );
+      await service.recoverSoftwarePrivateMigration(accountUuid: 'account-1');
       expect(events, ['export']);
       expect(
         (await store.read(network: 'test', accountUuid: 'account-1'))
@@ -4095,11 +4188,15 @@ rust_sync.MigrationScheduledBroadcast _scheduledBroadcast({
   );
 }
 
-rust_sync.MigrationPartStatus _migrationPart({required String txidHex}) {
+rust_sync.MigrationPartStatus _migrationPart({
+  required String txidHex,
+  rust_sync.MigrationPartState state =
+      rust_sync.MigrationPartState.scheduled,
+}) {
   return rust_sync.MigrationPartStatus(
     partIndex: 0,
     valueZatoshi: BigInt.from(100000),
-    state: rust_sync.MigrationPartState.scheduled,
+    state: state,
     txidHex: txidHex,
     confirmationCount: 0,
     confirmationTarget: 1,
