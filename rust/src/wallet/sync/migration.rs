@@ -1477,7 +1477,12 @@ pub(crate) fn stage_migration_anchor_retention_references(
     let mut owner_assigned = BTreeSet::new();
     for (run_id, checkpoint_height) in desired {
         let migration_owns = currently_owned.contains(checkpoint_height)
-            || !retained_before_maintenance.contains(checkpoint_height);
+            || !retained_before_maintenance.contains(checkpoint_height)
+            // Builds before the ownership table retained migration
+            // checkpoints directly. Adopt those legacy non-durable pins so
+            // they can be released when the run no longer needs them, while
+            // leaving librustzcash's independently durable anchors alone.
+            || !is_wallet_durable_anchor(*checkpoint_height, anchor_retention_floor);
         let owns_retention = migration_owns && owner_assigned.insert(*checkpoint_height);
         tx.execute(
             &format!(

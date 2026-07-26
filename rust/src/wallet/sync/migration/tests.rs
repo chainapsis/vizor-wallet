@@ -2861,6 +2861,7 @@ fn paused_unmaterialized_run_retains_all_prepared_notes() {
 
 #[test]
 fn migration_anchor_retention_ownership_transfers_and_releases() {
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -2868,31 +2869,41 @@ fn migration_anchor_retention_ownership_transfers_and_releases() {
     ensure_schema(&conn).unwrap();
     drop(conn);
 
-    let desired = BTreeSet::from([("run-1".to_string(), 100), ("run-1".to_string(), 101)]);
+    let durable_height = 144;
+    let desired = BTreeSet::from([
+        ("run-1".to_string(), 100),
+        ("run-1".to_string(), 101),
+        ("run-1".to_string(), durable_height),
+    ]);
     assert!(stage_migration_anchor_retention_references(
         &db_path,
         WalletNetwork::Regtest,
         &desired,
-        &BTreeSet::from([100]),
+        &BTreeSet::from([100, durable_height]),
     )
     .unwrap()
     .is_empty());
 
-    let desired = BTreeSet::from([("run-2".to_string(), 101)]);
-    assert!(stage_migration_anchor_retention_references(
+    let desired = BTreeSet::from([
+        ("run-2".to_string(), 101),
+        ("run-2".to_string(), durable_height),
+    ]);
+    let released = stage_migration_anchor_retention_references(
         &db_path,
         WalletNetwork::Regtest,
         &desired,
-        &BTreeSet::from([100, 101]),
+        &BTreeSet::from([100, 101, durable_height]),
     )
-    .unwrap()
-    .is_empty());
+    .unwrap();
+    assert_eq!(released, vec![100]);
+    finish_migration_anchor_retention_releases(&db_path, WalletNetwork::Regtest, &released)
+        .unwrap();
 
     let released = stage_migration_anchor_retention_references(
         &db_path,
         WalletNetwork::Regtest,
         &BTreeSet::new(),
-        &BTreeSet::from([100, 101]),
+        &BTreeSet::from([101, durable_height]),
     )
     .unwrap();
     assert_eq!(released, vec![101]);
