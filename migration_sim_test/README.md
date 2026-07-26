@@ -48,8 +48,8 @@ E2E_MIGRATION_SIM_MAX_BLOCKS=50 \
 migration_sim_test/run_prepare_note_split.sh
 ```
 
-The app window is hidden by default. Set
-`VIZOR_E2E_HIDDEN_WINDOW=false` when UI interaction needs to be visible.
+The app window is visible by default so the migration can be observed. Set
+`VIZOR_E2E_HIDDEN_WINDOW=true` for an unattended hidden-window run.
 
 If Rust migration sources changed after a macOS app was already built, run
 `fvm flutter clean` once before the scenario. This prevents Xcode from reusing
