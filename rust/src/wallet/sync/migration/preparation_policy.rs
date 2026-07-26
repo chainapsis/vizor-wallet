@@ -43,6 +43,10 @@ fn preparation_schedule_parameters(
     timing_policy: MigrationTimingPolicy,
 ) -> (u32, u32) {
     match network {
+        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => (
+            FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS,
+            FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS,
+        ),
         WalletNetwork::Regtest => (
             REGTEST_PREPARATION_MEAN_DELAY_BLOCKS,
             REGTEST_PREPARATION_MAX_DELAY_BLOCKS,

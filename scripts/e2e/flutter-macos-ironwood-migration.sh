@@ -165,12 +165,16 @@ raise SystemExit("Timed out waiting for Ironwood E2E driver")
 PY
 
 echo "running Flutter Ironwood migration integration test: $TEST_FILE"
-form_factor_args=()
+flutter_args=(
+  "$TEST_FILE"
+  -d "$FLUTTER_DEVICE"
+)
 if [[ "$VIZOR_FORM_FACTOR" == "mobile" ]]; then
-  form_factor_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
+  flutter_args+=(--dart-define=VIZOR_FORM_FACTOR=mobile)
 fi
 scenario_define_args=(
   --dart-define=ZCASH_E2E_ORCHARD_FUNDING_NOTE_COUNT="$FUNDING_NOTE_COUNT"
+  --dart-define=ZCASH_FAST_TESTNET_MIGRATION="${E2E_FAST_TESTNET_MIGRATION:-false}"
 )
 if [[ -n "${E2E_ORCHARD_FUNDING_ZATOSHI:-}" ]]; then
   scenario_define_args+=(
@@ -187,18 +191,27 @@ if [[ -n "${E2E_EXPECTED_MIGRATION_BATCH_COUNT:-}" ]]; then
     --dart-define=ZCASH_E2E_EXPECTED_MIGRATION_BATCH_COUNT="$E2E_EXPECTED_MIGRATION_BATCH_COUNT"
   )
 fi
-set +e
-fvm flutter test \
-  "$TEST_FILE" \
-  -d "$FLUTTER_DEVICE" \
-  "${form_factor_args[@]}" \
-  "${scenario_define_args[@]}" \
-  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
-  --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT" \
-  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
-  --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL" \
-  --dart-define=ZCASH_E2E_ORCHARD_FUNDING_TX_COUNT="$FUNDING_TX_COUNT" \
+if [[ -n "${E2E_MIGRATION_SIM_BLOCK_INTERVAL_MS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_MIGRATION_SIM_BLOCK_INTERVAL_MS="$E2E_MIGRATION_SIM_BLOCK_INTERVAL_MS"
+  )
+fi
+if [[ -n "${E2E_MIGRATION_SIM_MAX_BLOCKS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_MIGRATION_SIM_MAX_BLOCKS="$E2E_MIGRATION_SIM_MAX_BLOCKS"
+  )
+fi
+flutter_args+=(
+  "${scenario_define_args[@]}"
+  --dart-define=ZCASH_DEFAULT_NETWORK=regtest
+  --dart-define=ZCASH_REGTEST_IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT"
+  --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL"
+  --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL"
+  --dart-define=ZCASH_E2E_ORCHARD_FUNDING_TX_COUNT="$FUNDING_TX_COUNT"
   --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
+)
+set +e
+fvm flutter test "${flutter_args[@]}"
 status="$?"
 set -e
 

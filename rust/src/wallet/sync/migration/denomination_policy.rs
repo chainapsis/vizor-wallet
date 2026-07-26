@@ -109,6 +109,9 @@ fn largest_zip318_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
 
 fn anchor_bucket_modulus(network: WalletNetwork, timing_policy: MigrationTimingPolicy) -> u32 {
     match network {
+        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => {
+            FAST_TESTNET_ANCHOR_BUCKET_MODULUS
+        }
         WalletNetwork::Regtest => REGTEST_ANCHOR_BUCKET_MODULUS,
         WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => {
             FAST_TESTNET_ANCHOR_BUCKET_MODULUS
@@ -119,6 +122,7 @@ fn anchor_bucket_modulus(network: WalletNetwork, timing_policy: MigrationTimingP
 
 fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingPolicy) -> u32 {
     match network {
+        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => 1,
         // Empty regtest blocks do not add commitment-tree checkpoints. Allow
         // the checkpoint containing the denomination note so E2E can advance.
         WalletNetwork::Regtest => 0,

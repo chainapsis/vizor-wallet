@@ -51,7 +51,9 @@ pub(crate) fn configure_fast_testnet_migration(enabled: bool) {
 }
 
 fn configured_timing_policy(network: WalletNetwork) -> MigrationTimingPolicy {
-    if network == WalletNetwork::Test && FAST_TESTNET_MIGRATION_ENABLED.load(Ordering::Relaxed) {
+    if matches!(network, WalletNetwork::Test | WalletNetwork::Regtest)
+        && FAST_TESTNET_MIGRATION_ENABLED.load(Ordering::Relaxed)
+    {
         MigrationTimingPolicy::FastTestnet
     } else {
         MigrationTimingPolicy::Standard
@@ -67,6 +69,10 @@ fn schedule_parameters_with_policy(
     timing_policy: MigrationTimingPolicy,
 ) -> (u32, u32) {
     match network {
+        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => (
+            FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS,
+            FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS,
+        ),
         WalletNetwork::Regtest => (
             REGTEST_TRANSFER_MEAN_DELAY_BLOCKS,
             REGTEST_TRANSFER_MAX_DELAY_BLOCKS,

@@ -1869,6 +1869,15 @@ fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
         [],
     )
     .unwrap();
+    assert_eq!(
+        timing_policy_for_run_with_conn(
+            &conn,
+            "fast-testnet-preparation",
+            WalletNetwork::Regtest,
+        )
+        .unwrap(),
+        MigrationTimingPolicy::FastTestnet,
+    );
 
     let mut rng = StdRng::seed_from_u64(0x318);
     let after_existing = next_preparation_scheduled_height(
@@ -1894,6 +1903,17 @@ fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
 
 #[test]
 fn fast_testnet_uses_accelerated_preparation_delays() {
+    assert_eq!(
+        preparation_schedule_parameters(
+            WalletNetwork::Regtest,
+            MigrationTimingPolicy::FastTestnet,
+        ),
+        (
+            FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS,
+            FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS,
+        ),
+    );
+
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     insert_preparation_policy_test_run(
@@ -2102,6 +2122,16 @@ fn regtest_schedule_is_short_but_still_requires_blocks() {
 
 #[test]
 fn fast_testnet_uses_accelerated_schedule_and_anchor_timing() {
+    assert_eq!(
+        schedule_parameters_with_policy(
+            WalletNetwork::Regtest,
+            MigrationTimingPolicy::FastTestnet,
+        ),
+        (
+            FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS,
+            FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS,
+        ),
+    );
     assert_eq!(
         schedule_parameters_with_policy(WalletNetwork::Test, MigrationTimingPolicy::FastTestnet,),
         (

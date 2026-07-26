@@ -521,7 +521,7 @@ fn timing_policy_for_run_with_conn(
     run_id: &str,
     network: WalletNetwork,
 ) -> Result<MigrationTimingPolicy, String> {
-    if network != WalletNetwork::Test {
+    if !matches!(network, WalletNetwork::Test | WalletNetwork::Regtest) {
         return Ok(MigrationTimingPolicy::Standard);
     }
     let value = conn
@@ -553,7 +553,9 @@ fn adopt_timing_policy_for_active_run(
     network: WalletNetwork,
     desired_policy: MigrationTimingPolicy,
 ) -> Result<(), String> {
-    if network != WalletNetwork::Test || desired_policy != MigrationTimingPolicy::FastTestnet {
+    if !matches!(network, WalletNetwork::Test | WalletNetwork::Regtest)
+        || desired_policy != MigrationTimingPolicy::FastTestnet
+    {
         return Ok(());
     }
     let Some(run) = active_run(conn, account_uuid, network)? else {
