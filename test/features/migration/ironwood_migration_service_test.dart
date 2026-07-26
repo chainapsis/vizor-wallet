@@ -4143,12 +4143,74 @@ void main() {
       expect(cancelledCount, 1);
     },
   );
+
+  test(
+    'Android records only verified proof readiness from Rust status',
+    () async {
+      final store = await _boundBackgroundCredentialStore();
+      final records = <Map<String, Object?>>[];
+      var proofReady = true;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(
+            _migrationStatus(
+              activeRunId: 'run-1',
+              proofReady: proofReady,
+              nextActionHeight: 288,
+            ),
+          );
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        isMobile: () => true,
+        isIOS: () => false,
+        isAndroid: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        recordVerifiedProofReadiness:
+            ({
+              required network,
+              required accountUuid,
+              required runId,
+              required observedHeight,
+            }) async {
+              records.add({
+                'network': network,
+                'accountUuid': accountUuid,
+                'runId': runId,
+                'observedHeight': observedHeight,
+              });
+              return true;
+            },
+      );
+
+      await service.status(network: 'test', accountUuid: 'account-1');
+      proofReady = false;
+      await service.status(network: 'test', accountUuid: 'account-1');
+
+      expect(records, [
+        {
+          'network': 'test',
+          'accountUuid': 'account-1',
+          'runId': 'run-1',
+          'observedHeight': 288,
+        },
+      ]);
+    },
+  );
 }
 
 rust_sync.MigrationStatus _migrationStatus({
   String phase = 'ready_to_prepare',
   String? activeRunId,
   int broadcastedTxCount = 0,
+  bool? proofReady,
+  int? nextActionHeight,
   List<rust_sync.MigrationPartStatus> parts = const [],
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
@@ -4171,6 +4233,8 @@ rust_sync.MigrationStatus _migrationStatus({
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    nextActionHeight: nextActionHeight,
+    proofReady: proofReady,
     scheduledBroadcasts: scheduledBroadcasts,
     parts: parts,
   );

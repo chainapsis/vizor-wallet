@@ -273,6 +273,34 @@ internal class IronwoodMigrationSecureStoreChannel(
                     )
                 }
             }
+            "recordVerifiedProofReadiness" -> {
+                {
+                    val arguments = arguments(call)
+                    var shouldSchedule = false
+                    val recorded =
+                        IronwoodMigrationOutboxExecutionCoordinator.runExclusive {
+                            outboxRepository.update { snapshot ->
+                                val matched = IronwoodOutboxState.recordVerifiedProofReadiness(
+                                    snapshot = snapshot,
+                                    network = network(arguments),
+                                    accountUuid = string(arguments, "accountUuid"),
+                                    runId = string(arguments, "runId"),
+                                    observedHeight = nonNegativeLong(
+                                        arguments,
+                                        "observedHeight",
+                                    ),
+                                )
+                                shouldSchedule =
+                                    matched &&
+                                    IronwoodOutboxState
+                                        .pendingProofReadyBatchId(snapshot) != null
+                                matched
+                            }
+                        }
+                    if (shouldSchedule) scheduleOutbox()
+                    recorded
+                }
+            }
             "listOutboxReceipts" -> {
                 {
                     outboxRepository.read().receipts.map(::receiptMap)
@@ -690,6 +718,8 @@ internal class IronwoodMigrationSecureStoreChannel(
             existing.nextProofHeight = nextProofHeight
             existing.proofReadyObservedHeight = null
             existing.proofReadyNotificationAcknowledged = false
+            existing.proofReadyHeightNoticeObservedHeight = null
+            existing.proofReadyHeightNoticeAcknowledged = false
         }
         if (addedItem || proofHeightChanged) {
             existing.broadcastCompletePending = false

@@ -50,11 +50,19 @@ internal data class IronwoodOutboxBatch(
     var nextProofHeight: Long? = null,
     var proofReadyObservedHeight: Long? = null,
     var proofReadyNotificationAcknowledged: Boolean = false,
+    var proofReadyHeightNoticeObservedHeight: Long? = null,
+    var proofReadyHeightNoticeAcknowledged: Boolean = false,
     var needsUserActionNotificationPending: Boolean = false,
     var broadcastCompletePending: Boolean = false,
     val items: MutableList<IronwoodOutboxItem>,
 ) {
     val scopeKey: String get() = "$network:$accountUuid"
+
+    val awaitsProofReadyHeightNotice: Boolean
+        get() =
+            nextProofHeight != null &&
+                proofReadyObservedHeight == null &&
+                proofReadyHeightNoticeObservedHeight == null
 }
 
 internal data class IronwoodOutboxScheduleUpdate(
@@ -153,11 +161,8 @@ internal object IronwoodOutboxState {
                 batch.armedAtMs != null &&
                     (
                         batch.items.any { it.status == IronwoodOutboxItemStatus.ARMED } ||
-                            (
-                                batch.nextProofHeight != null &&
-                                    batch.proofReadyObservedHeight == null
-                                )
-                        )
+                            batch.awaitsProofReadyHeightNotice
+                    )
             }
             .map { it.lightwalletdUrl }
             .distinct()
@@ -217,7 +222,7 @@ internal object IronwoodOutboxState {
         return needsUserActionAccountUuid
     }
 
-    fun markProofReadyIfNeeded(
+    fun markUnverifiedProofReadyNoticeIfNeeded(
         snapshot: IronwoodOutboxSnapshot,
         endpoint: String,
         remoteHeight: Long,
@@ -226,12 +231,57 @@ internal object IronwoodOutboxState {
             it.lightwalletdUrl == endpoint &&
                 it.armedAtMs != null &&
                 it.proofReadyObservedHeight == null &&
+                it.proofReadyHeightNoticeObservedHeight == null &&
                 it.nextProofHeight != null &&
                 it.nextProofHeight!! <= remoteHeight
         }.minWithOrNull(compareBy<IronwoodOutboxBatch> { it.nextProofHeight }.thenBy { it.batchId })
             ?: return null
-        batch.proofReadyObservedHeight = remoteHeight
+        batch.proofReadyHeightNoticeObservedHeight = remoteHeight
         return batch.batchId
+    }
+
+    fun pendingUnverifiedProofReadyBatchId(snapshot: IronwoodOutboxSnapshot): String? =
+        snapshot.batches.filter {
+            it.proofReadyHeightNoticeObservedHeight != null &&
+                !it.proofReadyHeightNoticeAcknowledged &&
+                it.proofReadyObservedHeight == null
+        }.minByOrNull { it.batchId }?.batchId
+
+    fun acknowledgeUnverifiedProofReadyNotification(
+        snapshot: IronwoodOutboxSnapshot,
+        batchId: String,
+    ): Boolean {
+        val batch = snapshot.batches.firstOrNull { it.batchId == batchId }
+            ?: return false
+        if (batch.proofReadyHeightNoticeObservedHeight == null) return false
+        batch.proofReadyHeightNoticeAcknowledged = true
+        return true
+    }
+
+    fun recordVerifiedProofReadiness(
+        snapshot: IronwoodOutboxSnapshot,
+        network: String,
+        accountUuid: String,
+        runId: String,
+        observedHeight: Long? = null,
+    ): Boolean {
+        val batch = snapshot.batches.filter {
+            it.network == network &&
+                it.accountUuid == accountUuid &&
+                it.runId == runId &&
+                it.armedAtMs != null &&
+                it.nextProofHeight != null
+        }.minWithOrNull(compareBy<IronwoodOutboxBatch> { it.nextProofHeight }.thenBy { it.batchId })
+            ?: return false
+        if (batch.proofReadyObservedHeight == null) {
+            batch.proofReadyObservedHeight = max(
+                observedHeight ?: 0,
+                batch.nextProofHeight ?: 0,
+            )
+            batch.proofReadyNotificationAcknowledged = false
+        }
+        batch.proofReadyHeightNoticeAcknowledged = true
+        return true
     }
 
     fun pendingProofReadyBatchId(snapshot: IronwoodOutboxSnapshot): String? =
@@ -426,7 +476,7 @@ internal object IronwoodOutboxState {
                     )
                     if (
                         batch.armedAtMs != null &&
-                        batch.proofReadyObservedHeight == null
+                        batch.awaitsProofReadyHeightNotice
                     ) {
                         batch.nextProofHeight?.let(::add)
                     }
@@ -445,7 +495,7 @@ internal object IronwoodOutboxState {
                 it.scheduledHeight == height
         }
         val hasProof = batch.armedAtMs != null &&
-            batch.proofReadyObservedHeight == null &&
+            batch.awaitsProofReadyHeightNotice &&
             batch.nextProofHeight == height
         hasTransaction || hasProof
     }.minByOrNull { it.batchId }?.accountUuid
@@ -455,11 +505,8 @@ internal object IronwoodOutboxState {
             batch.armedAtMs != null &&
                 (
                     batch.items.any { it.status == IronwoodOutboxItemStatus.ARMED } ||
-                        (
-                            batch.nextProofHeight != null &&
-                                batch.proofReadyObservedHeight == null
-                            )
-                    )
+                        batch.awaitsProofReadyHeightNotice
+                )
         }
 
     fun hasDeliveryWorkForOtherEndpoint(
@@ -471,11 +518,8 @@ internal object IronwoodOutboxState {
                 batch.armedAtMs != null &&
                 (
                     batch.items.any { it.status == IronwoodOutboxItemStatus.ARMED } ||
-                        (
-                            batch.nextProofHeight != null &&
-                                batch.proofReadyObservedHeight == null
-                            )
-                    )
+                        batch.awaitsProofReadyHeightNotice
+                )
         }
 
     fun hasRunnableWork(snapshot: IronwoodOutboxSnapshot): Boolean =
@@ -489,6 +533,11 @@ internal object IronwoodOutboxState {
                 (
                     it.proofReadyObservedHeight != null &&
                         !it.proofReadyNotificationAcknowledged
+                    ) ||
+                (
+                    it.proofReadyHeightNoticeObservedHeight != null &&
+                        !it.proofReadyHeightNoticeAcknowledged &&
+                        it.proofReadyObservedHeight == null
                     )
         }
 
@@ -653,6 +702,10 @@ internal object IronwoodOutboxCodec {
         "proofReadyObservedHeight" to batch.proofReadyObservedHeight,
         "proofReadyNotificationAcknowledged" to
             batch.proofReadyNotificationAcknowledged,
+        "proofReadyHeightNoticeObservedHeight" to
+            batch.proofReadyHeightNoticeObservedHeight,
+        "proofReadyHeightNoticeAcknowledged" to
+            batch.proofReadyHeightNoticeAcknowledged,
         "needsUserActionNotificationPending" to
             batch.needsUserActionNotificationPending,
         "broadcastCompletePending" to batch.broadcastCompletePending,
@@ -714,6 +767,10 @@ internal object IronwoodOutboxCodec {
         proofReadyObservedHeight = optionalNumber(value, "proofReadyObservedHeight"),
         proofReadyNotificationAcknowledged =
             value["proofReadyNotificationAcknowledged"] as? Boolean ?: false,
+        proofReadyHeightNoticeObservedHeight =
+            optionalNumber(value, "proofReadyHeightNoticeObservedHeight"),
+        proofReadyHeightNoticeAcknowledged =
+            value["proofReadyHeightNoticeAcknowledged"] as? Boolean ?: false,
         needsUserActionNotificationPending =
             value["needsUserActionNotificationPending"] as? Boolean ?: false,
         broadcastCompletePending = value["broadcastCompletePending"] as? Boolean ?: false,

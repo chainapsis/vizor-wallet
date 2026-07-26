@@ -172,6 +172,7 @@ internal class IronwoodMigrationPreparationRunner(
     private val isStopped: () -> Boolean = { false },
     private val onOperationStarted: () -> Unit = {},
     private val onOperationEnded: () -> Unit = {},
+    private val onProofReady: (IronwoodMigrationPreparationManifest) -> Unit = {},
 ) {
     fun run(
         manifests: List<IronwoodMigrationPreparationManifest>,
@@ -231,7 +232,12 @@ internal class IronwoodMigrationPreparationRunner(
         } catch (error: IronwoodMigrationNativeException) {
             return error.toOutcome()
         }
-        if (!progress.state.needsSync) return progress.state.toOutcome()
+        if (!progress.state.needsSync) {
+            if (progress.state == IronwoodMigrationNativePreparationState.PROOF_READY) {
+                onProofReady(manifest)
+            }
+            return progress.state.toOutcome()
+        }
         if (isStopped()) return IronwoodMigrationPreparationOutcome.CANCELLED
 
         if (syncedContexts.add(manifest.syncContext)) {
@@ -280,6 +286,9 @@ internal class IronwoodMigrationPreparationRunner(
             } finally {
                 credential.fill(0)
             }
+        }
+        if (progress.state == IronwoodMigrationNativePreparationState.PROOF_READY) {
+            onProofReady(manifest)
         }
         return progress.state.toOutcome()
     }
@@ -416,8 +425,9 @@ class IronwoodMigrationPreparationWorker(
         val bridge = IronwoodMigrationNativeBridge()
         return try {
             setForegroundAsync(createForegroundInfo()).get()
-            val manifests = IronwoodMigrationSecureStore(applicationContext)
-                .readAllManifests()
+            val secureStore = IronwoodMigrationSecureStore(applicationContext)
+            val outboxRepository = IronwoodMigrationOutboxRepository(secureStore)
+            val manifests = secureStore.readAllManifests()
                 .map(IronwoodMigrationPreparationManifest::decode)
             IronwoodMigrationPreparationExecutionCoordinator.tryRun(
                 cancel = { bridge.cancelOperation() },
@@ -427,6 +437,27 @@ class IronwoodMigrationPreparationWorker(
                     isStopped = { isStopped || isCoordinatorCancelled() },
                     onOperationStarted = { native = bridge },
                     onOperationEnded = { native = null },
+                    onProofReady = { manifest ->
+                        var shouldSchedule = false
+                        outboxRepository.update { snapshot ->
+                            val matched = IronwoodOutboxState.recordVerifiedProofReadiness(
+                                snapshot = snapshot,
+                                network = manifest.network,
+                                accountUuid = manifest.accountUuid,
+                                runId = checkNotNull(manifest.expectedRunId),
+                            )
+                            shouldSchedule =
+                                matched &&
+                                IronwoodOutboxState
+                                    .pendingProofReadyBatchId(snapshot) != null
+                            matched
+                        }
+                        if (shouldSchedule) {
+                            IronwoodMigrationOutboxScheduler.enqueue(
+                                applicationContext,
+                            )
+                        }
+                    },
                 ).run(manifests)
                 outcome.toWorkerResult()
             } ?: Result.success()

@@ -297,6 +297,13 @@ typedef IronwoodMigrationOutboxReceiptAcknowledger =
     Future<void> Function(List<String> receiptIds);
 typedef IronwoodMigrationOutboxForegroundRunner =
     Future<IronwoodMigrationOutboxRunResult> Function();
+typedef IronwoodMigrationVerifiedProofReadinessRecorder =
+    Future<bool> Function({
+      required String network,
+      required String accountUuid,
+      required String runId,
+      required int observedHeight,
+    });
 typedef IronwoodMigrationDueOutboxRecoveryRunner =
     Future<IronwoodMigrationOutboxRunResult> Function({
       required String network,
@@ -528,6 +535,8 @@ class IronwoodMigrationService {
     IronwoodMigrationOutboxReceiptAcknowledger?
     acknowledgeMigrationOutboxReceipts,
     IronwoodMigrationOutboxForegroundRunner? runMigrationOutboxOnceNow,
+    IronwoodMigrationVerifiedProofReadinessRecorder?
+    recordVerifiedProofReadiness,
     IronwoodMigrationDueOutboxRecoveryRunner? recoverDueMigrationOutbox,
     IronwoodMigrationKeystoneDenominationPreparer?
     prepareKeystoneDenominationMigration,
@@ -617,6 +626,8 @@ class IronwoodMigrationService {
            _defaultAcknowledgeMigrationOutboxReceipts,
        runMigrationOutboxOnceNow =
            runMigrationOutboxOnceNow ?? _defaultRunMigrationOutboxOnceNow,
+       recordVerifiedProofReadiness =
+           recordVerifiedProofReadiness ?? _defaultRecordVerifiedProofReadiness,
        _recoverDueMigrationOutboxOverride = recoverDueMigrationOutbox,
        prepareKeystoneDenominationMigration =
            prepareKeystoneDenominationMigration ??
@@ -686,6 +697,8 @@ class IronwoodMigrationService {
   final IronwoodMigrationOutboxReceiptAcknowledger
   acknowledgeMigrationOutboxReceipts;
   final IronwoodMigrationOutboxForegroundRunner runMigrationOutboxOnceNow;
+  final IronwoodMigrationVerifiedProofReadinessRecorder
+  recordVerifiedProofReadiness;
   final IronwoodMigrationDueOutboxRecoveryRunner?
   _recoverDueMigrationOutboxOverride;
   final IronwoodMigrationKeystoneDenominationPreparer
@@ -817,6 +830,16 @@ class IronwoodMigrationService {
             context: context,
             status: status,
           );
+          if (isAndroid() &&
+              status.proofReady == true &&
+              status.activeRunId != null) {
+            await recordVerifiedProofReadiness(
+              network: context.network,
+              accountUuid: context.accountUuid,
+              runId: status.activeRunId!,
+              observedHeight: status.nextActionHeight ?? 0,
+            );
+          }
           return status;
         });
       },
@@ -2637,6 +2660,22 @@ _defaultRunMigrationOutboxOnceNow() async {
     );
   }
   return IronwoodMigrationOutboxRunResult.fromMap(result);
+}
+
+Future<bool> _defaultRecordVerifiedProofReadiness({
+  required String network,
+  required String accountUuid,
+  required String runId,
+  required int observedHeight,
+}) async {
+  return await _backgroundMigrationChannel
+          .invokeMethod<bool>('recordVerifiedProofReadiness', {
+            'network': network,
+            'accountUuid': accountUuid,
+            'runId': runId,
+            'observedHeight': observedHeight,
+          }) ??
+      false;
 }
 
 bool _isTerminalCredentialCleanupPhase(String phase) =>
