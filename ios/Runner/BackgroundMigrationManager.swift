@@ -409,6 +409,8 @@ enum IronwoodMigrationProofReadinessCheck {
     guard
       (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
         matched = snapshot.recordVerifiedProofReadiness(
+          network: scope.batch.network,
+          accountUuid: scope.batch.accountUuid,
           runId: scope.batch.runId,
           at: Date()
         )

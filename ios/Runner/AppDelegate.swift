@@ -184,6 +184,25 @@ import UIKit
         } catch {
           result(self.backgroundMigrationFlutterError(error))
         }
+      case "recordVerifiedProofReadiness":
+        do {
+          let shouldSchedule =
+            try BackgroundMigrationOutboxChannel.recordVerifiedProofReadiness(
+              arguments: call.arguments
+            )
+          guard shouldSchedule else {
+            result(false)
+            return
+          }
+          // Persist first, then request a wake. If submission fails, the
+          // pending marker survives and the next foreground status check
+          // retries scheduling without announcing readiness twice.
+          BackgroundMigrationManager.shared.schedule { _ in
+            DispatchQueue.main.async { result(true) }
+          }
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
       case "listOutboxReceipts":
         do {
           result(try BackgroundMigrationOutboxChannel.listReceipts())

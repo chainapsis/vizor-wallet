@@ -4145,11 +4145,13 @@ void main() {
   );
 
   test(
-    'Android records only verified proof readiness from Rust status',
+    'iOS and Android record only verified proof readiness from Rust status',
     () async {
       final store = await _boundBackgroundCredentialStore();
       final records = <Map<String, Object?>>[];
       var proofReady = true;
+      var ios = true;
+      var android = false;
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -4169,8 +4171,8 @@ void main() {
         ),
         backgroundCredentialStore: store,
         isMobile: () => true,
-        isIOS: () => false,
-        isAndroid: () => true,
+        isIOS: () => ios,
+        isAndroid: () => android,
         listMigrationOutboxReceipts: () async => const [],
         recordVerifiedProofReadiness:
             ({
@@ -4192,8 +4194,20 @@ void main() {
       await service.status(network: 'test', accountUuid: 'account-1');
       proofReady = false;
       await service.status(network: 'test', accountUuid: 'account-1');
+      ios = false;
+      android = true;
+      proofReady = true;
+      await service.status(network: 'test', accountUuid: 'account-1');
+      proofReady = false;
+      await service.status(network: 'test', accountUuid: 'account-1');
 
       expect(records, [
+        {
+          'network': 'test',
+          'accountUuid': 'account-1',
+          'runId': 'run-1',
+          'observedHeight': 288,
+        },
         {
           'network': 'test',
           'accountUuid': 'account-1',

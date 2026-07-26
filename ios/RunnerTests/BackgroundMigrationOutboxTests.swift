@@ -1059,6 +1059,8 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     _ = try harness.store.update { snapshot in
       XCTAssertTrue(
         snapshot.recordVerifiedProofReadiness(
+          network: batch.network,
+          accountUuid: batch.accountUuid,
           runId: batch.runId,
           at: now.addingTimeInterval(1)
         )
@@ -1104,6 +1106,37 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
 
     XCTAssertNil(
       try harness.store.read().batches.first?.proofReadyNotificationPendingAt
+    )
+  }
+
+  func testForegroundChannelRecordsVerifiedProofReadiness() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "watch-only",
+      account: "account-a",
+      heights: [],
+      nextProofHeight: 288
+    )
+    try stageAndArm(batch, in: harness.store)
+
+    XCTAssertTrue(
+      try BackgroundMigrationOutboxChannel.recordVerifiedProofReadiness(
+        arguments: [
+          "network": batch.network,
+          "accountUuid": batch.accountUuid,
+          "runId": batch.runId,
+          "observedHeight": 288,
+        ],
+        store: harness.store
+      )
+    )
+    XCTAssertEqual(
+      try harness.store.read().pendingProofReadyNotification(),
+      BackgroundMigrationProofReadyMetadata(
+        batchId: batch.batchId,
+        observedHeight: 288
+      )
     )
   }
 
@@ -1309,6 +1342,8 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     _ = try harness.store.update { snapshot in
       XCTAssertTrue(
         snapshot.recordVerifiedProofReadiness(
+          network: batch.network,
+          accountUuid: batch.accountUuid,
           runId: batch.runId,
           at: now.addingTimeInterval(3)
         )
@@ -1374,7 +1409,12 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     try stageAndArm(batch, in: harness.store)
     // What a build that verified readiness in the wake left behind.
     _ = try harness.store.update { snapshot in
-      _ = snapshot.recordVerifiedProofReadiness(runId: batch.runId, at: now)
+      _ = snapshot.recordVerifiedProofReadiness(
+        network: batch.network,
+        accountUuid: batch.accountUuid,
+        runId: batch.runId,
+        at: now
+      )
     }
 
     let snapshot = try harness.store.read()

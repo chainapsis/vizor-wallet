@@ -830,7 +830,7 @@ class IronwoodMigrationService {
             context: context,
             status: status,
           );
-          if (isAndroid() &&
+          if (_usesNativeMigrationOutbox &&
               status.proofReady == true &&
               status.activeRunId != null) {
             await recordVerifiedProofReadiness(

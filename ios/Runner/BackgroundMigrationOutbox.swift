@@ -509,10 +509,17 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       }
   }
 
-  mutating func recordVerifiedProofReadiness(runId: String, at date: Date) -> Bool {
+  mutating func recordVerifiedProofReadiness(
+    network: String,
+    accountUuid: String,
+    runId: String,
+    at date: Date
+  ) -> Bool {
     let candidates = batches.indices.filter { batchIndex in
       let batch = batches[batchIndex]
-      return batch.runId == runId
+      return batch.network == network
+        && batch.accountUuid == accountUuid
+        && batch.runId == runId
         && batch.armedAt != nil
         && batch.nextProofHeight != nil
     }

@@ -93,6 +93,29 @@ enum BackgroundMigrationOutboxChannel {
     )
   }
 
+  static func recordVerifiedProofReadiness(
+    arguments: Any?,
+    store: BackgroundMigrationOutboxStore = .shared
+  ) throws -> Bool {
+    let arguments = try dictionary(arguments)
+    let network = try string(arguments, "network")
+    let accountUuid = try string(arguments, "accountUuid")
+    let runId = try string(arguments, "runId")
+    _ = try uint64(arguments, "observedHeight")
+    var shouldSchedule = false
+    _ = try store.update { snapshot in
+      let matched = snapshot.recordVerifiedProofReadiness(
+        network: network,
+        accountUuid: accountUuid,
+        runId: runId,
+        at: Date()
+      )
+      shouldSchedule =
+        matched && snapshot.pendingProofReadyNotification() != nil
+    }
+    return shouldSchedule
+  }
+
   static func listReceipts(
     store: BackgroundMigrationOutboxStore = .shared
   ) throws -> [[String: Any]] {
