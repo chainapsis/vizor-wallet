@@ -2294,12 +2294,12 @@ class IronwoodMigrationService {
     var failedReceiptCount = 0;
 
     for (final rawReceipt in rawReceipts) {
+      if (rawReceipt['network'] != context.network ||
+          rawReceipt['accountUuid'] != context.accountUuid) {
+        continue;
+      }
       try {
         final receipt = _MigrationOutboxReceipt.fromMap(rawReceipt);
-        if (receipt.network != context.network ||
-            receipt.accountUuid != context.accountUuid) {
-          continue;
-        }
         await reconcileMigrationOutboxReceipt(
           dbPath: context.dbPath,
           network: context.network,
