@@ -2125,7 +2125,9 @@ void main() {
     final service = IronwoodMigrationService(
       getWalletDbPath: () async => '/tmp/wallet.db',
       getStatus: ({required dbPath, required network, required accountUuid}) {
-        return Future.value(_migrationStatus());
+        return Future.value(
+          _migrationStatus(phase: 'ready_to_migrate', activeRunId: 'run-1'),
+        );
       },
       getPrivatePlan:
           ({required dbPath, required network, required accountUuid}) {
@@ -2173,6 +2175,61 @@ void main() {
     expect(seenSchedule, isEmpty);
     expect(seenSalt, isNotEmpty);
   });
+
+  test(
+    'software continuation does not start another batch after completion',
+    () async {
+      var macosStartCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(phase: 'complete'),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://lwd.example:443',
+        ),
+        getSessionPassword: () => 'test-password',
+        isHardwareAccount: (_) => false,
+        isMacOS: () => true,
+        broadcastDueMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _migrationResult(status: 'ready_to_migrate'),
+        startMacosSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+              required approvedSchedule,
+            }) async {
+              macosStartCount++;
+              return _migrationResult();
+            },
+      );
+
+      final result = await service.continueSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+      );
+
+      expect(result.status, 'ready_to_migrate');
+      expect(macosStartCount, 0);
+    },
+  );
 
   test(
     'prepareKeystoneDenominationPrivateMigration prepares signing request',
@@ -2750,8 +2807,10 @@ void main() {
       await service.recoverSoftwarePrivateMigration(accountUuid: 'account-1');
       expect(events, ['export']);
       expect(
-        (await store.read(network: 'test', accountUuid: 'account-1'))
-            ?.expectedRunId,
+        (await store.read(
+          network: 'test',
+          accountUuid: 'account-1',
+        ))?.expectedRunId,
         'run-1',
       );
     },
@@ -4268,8 +4327,7 @@ rust_sync.MigrationScheduledBroadcast _scheduledBroadcast({
 
 rust_sync.MigrationPartStatus _migrationPart({
   required String txidHex,
-  rust_sync.MigrationPartState state =
-      rust_sync.MigrationPartState.scheduled,
+  rust_sync.MigrationPartState state = rust_sync.MigrationPartState.scheduled,
 }) {
   return rust_sync.MigrationPartStatus(
     partIndex: 0,
@@ -4415,17 +4473,17 @@ rust_sync.MigrationOutboxBatch _outboxBatch({
               ),
           ]
         : [
-      rust_sync.MigrationOutboxItem(
-        itemId: 'txid-1',
-        partIndex: 0,
-        txidHex: 'txid-1',
-        rawTransaction: Uint8List.fromList([1, 2, 3, 4]),
-        anchorBoundaryHeight: 144,
-        scheduledHeight: 288,
-        scheduleStartHeight: 288,
-        expiryHeight: 34_560,
-      ),
-    ],
+            rust_sync.MigrationOutboxItem(
+              itemId: 'txid-1',
+              partIndex: 0,
+              txidHex: 'txid-1',
+              rawTransaction: Uint8List.fromList([1, 2, 3, 4]),
+              anchorBoundaryHeight: 144,
+              scheduledHeight: 288,
+              scheduleStartHeight: 288,
+              expiryHeight: 34_560,
+            ),
+          ],
   );
 }
 

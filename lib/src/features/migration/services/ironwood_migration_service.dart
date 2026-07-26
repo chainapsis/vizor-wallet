@@ -1215,7 +1215,21 @@ class IronwoodMigrationService {
       );
     }
     final isHardware = isHardwareAccount(accountUuid);
-    if (isHardware || broadcastResult.status != 'ready_to_migrate') {
+    if (isHardware ||
+        broadcastResult.status != kIronwoodMigrationReadyToMigratePhase) {
+      return broadcastResult;
+    }
+
+    // The final child can become confirmed after the due-broadcast operation
+    // decides that another proof batch may be prepared but before it returns to
+    // Dart. Re-read the durable run state before creating that batch so a
+    // completed migration is not restarted with an already-drained wallet.
+    final currentStatus = await readOnlyStatus(
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
+    if (currentStatus.activeRunId == null ||
+        currentStatus.phase != kIronwoodMigrationReadyToMigratePhase) {
       return broadcastResult;
     }
 
