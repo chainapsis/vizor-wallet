@@ -652,6 +652,7 @@ Widget _productionApp({
   bool realKeystoneDenominationRoute = false,
   bool realKeystoneBatchRoute = false,
   bool disableAnimations = true,
+  VoidCallback? onKeystoneDenominationRouteBuilt,
   List<Override> extraOverrides = const [],
 }) {
   final cta = status == null
@@ -702,15 +703,24 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
-        builder: (_, state) => realKeystoneDenominationRoute
-            ? MobileIronwoodMigrationKeystoneDenominationSignScreen(
-                approvedSchedule: switch (state.extra) {
-                  List<rust_sync.MigrationScheduledTransfer> schedule =>
-                    schedule,
-                  _ => const [],
-                },
-              )
-            : const Text('keystone denomination sign route'),
+        builder: (_, state) {
+          onKeystoneDenominationRouteBuilt?.call();
+          final entry = switch (state.extra) {
+            MobileIronwoodMigrationKeystoneDenominationSignEntry value => value,
+            _ => null,
+          };
+          return realKeystoneDenominationRoute
+              ? MobileIronwoodMigrationKeystoneDenominationSignScreen(
+                  approvedSchedule: switch (state.extra) {
+                    List<rust_sync.MigrationScheduledTransfer> schedule =>
+                      schedule,
+                    _ => entry?.approvedSchedule ?? const [],
+                  },
+                  initialRequest: entry?.request,
+                  initialAccountUuid: entry?.accountUuid,
+                )
+              : const Text('keystone denomination sign route');
+        },
       ),
       GoRoute(
         path: '/migration/private/keystone/batch/sign',
@@ -891,6 +901,14 @@ IronwoodMigrationService _migrationService({
         }) =>
             onCreatePrivateDraft?.call(accountUuid, approvedSchedule) ??
             Future.value('private-draft-run'),
+    getKeystoneProofStatus: ({required requestId}) async =>
+        const rust_sync.KeystoneMigrationProofStatus(
+          readyCount: 1,
+          totalCount: 1,
+          isReady: true,
+          isFailed: false,
+        ),
+    discardKeystoneMigrationRequest: ({required requestId}) async {},
     broadcastDueMigration:
         ({
           required dbPath,
@@ -1474,6 +1492,7 @@ void main() {
       pendingSplitStageCount: 0,
     );
     var completionCount = 0;
+    var denominationRouteBuildCount = 0;
 
     await tester.pumpWidget(
       _productionApp(
@@ -1500,6 +1519,9 @@ void main() {
         privatePlan: directNotePlan,
         status: readyStatus,
         realKeystoneDenominationRoute: true,
+        onKeystoneDenominationRouteBuilt: () {
+          denominationRouteBuildCount += 1;
+        },
       ),
     );
     await tester.pumpAndSettle();
@@ -1510,8 +1532,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(completionCount, 1);
+    expect(denominationRouteBuildCount, 0);
     expect(find.byType(KeystoneQrScannerCard), findsNothing);
     expect(find.text('Migration in progress…'), findsOneWidget);
+  });
+
+  testWidgets('reuses the prepared Keystone split request on the QR route', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var prepareCount = 0;
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          onPrepareKeystoneDenominations: (_) async {
+            prepareCount += 1;
+            return _keystoneDenominationRequest();
+          },
+        ),
+        hardware: true,
+        privatePlan: _plan,
+        realKeystoneDenominationRoute: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(prepareCount, 1);
+    expect(find.text('Scan with Keystone'), findsOneWidget);
   });
 
   testWidgets(

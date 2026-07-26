@@ -239,12 +239,12 @@ class _MobileMigrationOptionsState
       if (!mounted) return;
       await _refreshPrivateMigrationDraftPresentation(ref);
       if (!mounted) return;
-      final destination = await _continuePrivateMigrationAfterNotificationGate(
+      final continuation = await _continuePrivateMigrationAfterNotificationGate(
         ref,
         plan,
       );
       if (!mounted) return;
-      _openPrivateMigrationDestination(context, destination, plan);
+      _openPrivateMigrationDestination(context, continuation, plan);
     } catch (error) {
       debugPrint('Failed to activate direct-note migration: $error');
       if (!mounted) return;
@@ -371,10 +371,14 @@ enum _PrivateMigrationContinuationDestination {
 
 void _openPrivateMigrationDestination(
   BuildContext context,
-  _PrivateMigrationContinuationDestination destination,
+  ({
+    _PrivateMigrationContinuationDestination destination,
+    MobileIronwoodMigrationKeystoneDenominationSignEntry? keystoneEntry,
+  })
+  continuation,
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) {
-  switch (destination) {
+  switch (continuation.destination) {
     case _PrivateMigrationContinuationDestination.status:
       context.go(
         '/migration/private/status',
@@ -382,15 +386,24 @@ void _openPrivateMigrationDestination(
       );
       return;
     case _PrivateMigrationContinuationDestination.keystoneDenominationSigning:
+      final entry = continuation.keystoneEntry;
+      if (entry == null) {
+        throw StateError('Keystone signing request is unavailable.');
+      }
       context.go(
         '/migration/private/keystone/denominations/sign',
-        extra: plan.scheduledTransfers,
+        extra: entry,
       );
       return;
   }
 }
 
-Future<_PrivateMigrationContinuationDestination>
+Future<
+  ({
+    _PrivateMigrationContinuationDestination destination,
+    MobileIronwoodMigrationKeystoneDenominationSignEntry? keystoneEntry,
+  })
+>
 _continuePrivateMigrationAfterNotificationGate(
   WidgetRef ref,
   rust_sync.OrchardMigrationPrivatePlan plan,
@@ -402,7 +415,32 @@ _continuePrivateMigrationAfterNotificationGate(
   }
 
   if (accountState.activeAccount?.isHardware ?? false) {
-    return _PrivateMigrationContinuationDestination.keystoneDenominationSigning;
+    final service = ref.read(ironwoodMigrationServiceProvider);
+    final request = await service.prepareKeystoneDenominationPrivateMigration(
+      accountUuid: accountUuid,
+    );
+    if (request.messages.isEmpty) {
+      await service.completeKeystoneDenominationPrivateMigration(
+        accountUuid: accountUuid,
+        requestId: request.requestId,
+        signedMessages: const [],
+        approvedSchedule: plan.scheduledTransfers,
+      );
+      _invalidateStartedPrivateMigration(ref);
+      return (
+        destination: _PrivateMigrationContinuationDestination.status,
+        keystoneEntry: null,
+      );
+    }
+    return (
+      destination:
+          _PrivateMigrationContinuationDestination.keystoneDenominationSigning,
+      keystoneEntry: MobileIronwoodMigrationKeystoneDenominationSignEntry(
+        approvedSchedule: plan.scheduledTransfers,
+        request: request,
+        accountUuid: accountUuid,
+      ),
+    );
   }
 
   await ref
@@ -412,9 +450,16 @@ _continuePrivateMigrationAfterNotificationGate(
         approvedSchedule: plan.scheduledTransfers,
       );
 
+  _invalidateStartedPrivateMigration(ref);
+  return (
+    destination: _PrivateMigrationContinuationDestination.status,
+    keystoneEntry: null,
+  );
+}
+
+void _invalidateStartedPrivateMigration(WidgetRef ref) {
   ref.invalidate(ironwoodMigrationRouteCtaProvider);
   ref.invalidate(ironwoodHomeMigrationCtaProvider);
   ref.invalidate(ironwoodMigrationFlowDataProvider);
   ref.invalidate(ironwoodMigrationPrivatePlanProvider);
-  return _PrivateMigrationContinuationDestination.status;
 }

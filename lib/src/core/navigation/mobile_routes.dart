@@ -12,6 +12,7 @@ import '../../features/migration/models/mobile_ironwood_migration_status_entry.d
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
     show
         MobileIronwoodMigrationKeystoneBatchSignScreen,
+        MobileIronwoodMigrationKeystoneDenominationSignEntry,
         MobileIronwoodMigrationKeystoneDenominationSignScreen;
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
@@ -339,14 +340,20 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     GoRoute(
       path: '/migration/private/keystone/denominations/sign',
       pageBuilder: (context, state) {
+        final entry = switch (state.extra) {
+          MobileIronwoodMigrationKeystoneDenominationSignEntry value => value,
+          _ => null,
+        };
         final approvedSchedule = switch (state.extra) {
           List<rust_sync.MigrationScheduledTransfer> schedule => schedule,
-          _ => const <rust_sync.MigrationScheduledTransfer>[],
+          _ => entry?.approvedSchedule ?? const [],
         };
         return CupertinoPage(
           key: state.pageKey,
           child: MobileIronwoodMigrationKeystoneDenominationSignScreen(
             approvedSchedule: approvedSchedule,
+            initialRequest: entry?.request,
+            initialAccountUuid: entry?.accountUuid,
           ),
         );
       },
