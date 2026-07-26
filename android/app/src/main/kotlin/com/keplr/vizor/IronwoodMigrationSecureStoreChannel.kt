@@ -216,7 +216,7 @@ internal class IronwoodMigrationSecureStoreChannel(
                                 batch.items.isEmpty() ||
                                 batch.items.any { it.txidHex !in expectedTxids }
                             ) {
-                                throw IllegalArgumentException("Conflicting outbox batch.")
+                                throw IronwoodOutboxConflictException()
                             }
                             batch.lightwalletdUrl = string(arguments, "lightwalletdUrl")
                             val now = System.currentTimeMillis()
@@ -247,6 +247,16 @@ internal class IronwoodMigrationSecureStoreChannel(
                     }
                     if (recovered) scheduleOutbox()
                     recovered
+                }
+            }
+            "discardOutboxBatch" -> {
+                {
+                    val batchId = string(arguments(call), "batchId")
+                    IronwoodMigrationOutboxExecutionCoordinator.runExclusive {
+                        outboxRepository.update { snapshot ->
+                            IronwoodOutboxState.discardBatch(snapshot, batchId)
+                        }
+                    }
                 }
             }
             "hasOutboxBatch" -> {
@@ -387,6 +397,14 @@ internal class IronwoodMigrationSecureStoreChannel(
             try {
                 val value = action()
                 mainHandler.post { result.success(value) }
+            } catch (error: IronwoodOutboxConflictException) {
+                mainHandler.post {
+                    result.error(
+                        "ironwood_outbox_conflicting_batch",
+                        error.message,
+                        null,
+                    )
+                }
             } catch (error: IllegalArgumentException) {
                 mainHandler.post {
                     result.error("invalid_arguments", error.message, null)
@@ -679,14 +697,14 @@ internal class IronwoodMigrationSecureStoreChannel(
             existing.timingMeanBlocks != positiveLong(payload, "timingMeanBlocks") ||
             existing.timingMaxBlocks != positiveLong(payload, "timingMaxBlocks")
         ) {
-            throw IllegalArgumentException("Conflicting outbox batch.")
+            throw IronwoodOutboxConflictException()
         }
         val endpoint = string(payload, "lightwalletdUrl")
         if (
             existing.lightwalletdUrl != endpoint &&
             existing.items.any { it.status == IronwoodOutboxItemStatus.SUBMITTING }
         ) {
-            throw IllegalArgumentException("Conflicting outbox batch.")
+            throw IronwoodOutboxConflictException()
         }
         existing.lightwalletdUrl = endpoint
         var addedItem = false
@@ -700,13 +718,15 @@ internal class IronwoodMigrationSecureStoreChannel(
                     sameId.anchorBoundaryHeight != item.anchorBoundaryHeight ||
                     sameId.expiryHeight != item.expiryHeight
                 ) {
-                    throw IllegalArgumentException("Conflicting outbox item.")
+                    throw IronwoodOutboxConflictException("Conflicting outbox item.")
                 }
             } else {
                 if (existing.items.any {
                         it.txidHex == item.txidHex || it.partIndex == item.partIndex
                     }) {
-                    throw IllegalArgumentException("Conflicting outbox item identity.")
+                    throw IronwoodOutboxConflictException(
+                        "Conflicting outbox item identity.",
+                    )
                 }
                 existing.items += item
                 addedItem = true

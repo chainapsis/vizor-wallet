@@ -118,7 +118,7 @@ class IronwoodMigrationOutboxTest {
                 requiredTxids = expectedTxids,
             ),
         )
-        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+        org.junit.Assert.assertThrows(IronwoodOutboxConflictException::class.java) {
             IronwoodOutboxState.hasBatch(
                 snapshot = snapshot,
                 batchId = batch.batchId,
@@ -128,6 +128,48 @@ class IronwoodMigrationOutboxTest {
                 expectedTxids = expectedTxids + "missing-txid",
                 requiredTxids = setOf("missing-txid"),
             )
+        }
+    }
+
+    @Test
+    fun discardBatchRemovesOnlyTheIdleRecord() {
+        val discarded = batch(
+            item(expiryHeight = 69_120),
+            batchId = "batch-1",
+        )
+        val preserved = batch(
+            item(expiryHeight = 69_120),
+            batchId = "batch-2",
+        )
+        val snapshot = IronwoodOutboxSnapshot(
+            batches = mutableListOf(discarded, preserved),
+        )
+
+        assertTrue(IronwoodOutboxState.discardBatch(snapshot, discarded.batchId))
+        assertEquals(listOf(preserved.batchId), snapshot.batches.map { it.batchId })
+        assertTrue(!IronwoodOutboxState.discardBatch(snapshot, discarded.batchId))
+    }
+
+    @Test
+    fun discardBatchRefusesDeliveryState() {
+        val submitting = item(
+            expiryHeight = 69_120,
+            status = IronwoodOutboxItemStatus.SUBMITTING,
+        )
+        val attempted = item(expiryHeight = 69_120).apply {
+            attemptCount = 1
+        }
+
+        listOf(submitting, attempted).forEach { item ->
+            val batch = batch(item)
+            val snapshot = IronwoodOutboxSnapshot(
+                batches = mutableListOf(batch),
+            )
+
+            org.junit.Assert.assertThrows(IronwoodOutboxConflictException::class.java) {
+                IronwoodOutboxState.discardBatch(snapshot, batch.batchId)
+            }
+            assertEquals(listOf(batch.batchId), snapshot.batches.map { it.batchId })
         }
     }
 

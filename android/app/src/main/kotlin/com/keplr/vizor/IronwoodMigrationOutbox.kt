@@ -9,6 +9,10 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
 
+internal class IronwoodOutboxConflictException(
+    message: String = "Conflicting outbox batch.",
+) : IllegalArgumentException(message)
+
 internal enum class IronwoodOutboxItemStatus {
     STAGED,
     ARMED,
@@ -127,18 +131,40 @@ internal object IronwoodOutboxState {
     ): Boolean {
         val batch = snapshot.batches.firstOrNull { it.batchId == batchId }
             ?: return false
-        require(
-            batch.network == network &&
-                batch.accountUuid == accountUuid &&
-                batch.runId == runId &&
-                expectedTxids.isNotEmpty() &&
-                requiredTxids.isNotEmpty() &&
-                batch.items.isNotEmpty() &&
-                batch.items.all { it.txidHex in expectedTxids } &&
-                requiredTxids.all { required ->
-                    batch.items.any { it.txidHex == required }
-                },
-        ) { "Conflicting outbox batch." }
+        if (
+            batch.network != network ||
+            batch.accountUuid != accountUuid ||
+            batch.runId != runId ||
+            expectedTxids.isEmpty() ||
+            requiredTxids.isEmpty() ||
+            batch.items.isEmpty() ||
+            batch.items.any { it.txidHex !in expectedTxids } ||
+            requiredTxids.any { required ->
+                batch.items.none { it.txidHex == required }
+            }
+        ) {
+            throw IronwoodOutboxConflictException()
+        }
+        return true
+    }
+
+    fun discardBatch(
+        snapshot: IronwoodOutboxSnapshot,
+        batchId: String,
+    ): Boolean {
+        val batchIndex = snapshot.batches.indexOfFirst { it.batchId == batchId }
+        if (batchIndex < 0) return false
+        val batch = snapshot.batches[batchIndex]
+        if (
+            batch.items.any {
+                it.status == IronwoodOutboxItemStatus.SUBMITTING ||
+                    it.attemptCount > 0
+            } ||
+            snapshot.receipts.any { it.batchId == batchId }
+        ) {
+            throw IronwoodOutboxConflictException()
+        }
+        snapshot.batches.removeAt(batchIndex)
         return true
     }
 
