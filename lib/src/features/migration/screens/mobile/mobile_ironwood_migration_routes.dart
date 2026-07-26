@@ -125,6 +125,14 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
     final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
     final data = ref.watch(ironwoodMigrationFlowDataProvider);
 
+    // A newly started run invalidates the route CTA before opening this
+    // screen. Do not let the previous `start` value redirect back to About
+    // while the durable run status is still loading.
+    if (ctaAsync.isLoading &&
+        ctaAsync.value?.mode == IronwoodHomeMigrationCtaMode.start) {
+      return const _MobileMigrationLoadingScreen();
+    }
+
     return ctaAsync.when(
       skipLoadingOnReload: true,
       loading: () => const _MobileMigrationLoadingScreen(),

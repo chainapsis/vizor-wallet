@@ -670,6 +670,10 @@ Widget _productionApp({
     routes: [
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(
+        path: '/migration/cta-prime',
+        builder: (_, _) => const _RouteCtaPrimeScreen(),
+      ),
+      GoRoute(
         path: '/migration/intro',
         builder: (_, _) => const Text('intro route'),
       ),
@@ -786,6 +790,24 @@ Widget _productionApp({
       ),
     ),
   );
+}
+
+class _RouteCtaPrimeScreen extends ConsumerWidget {
+  const _RouteCtaPrimeScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cta = ref.watch(ironwoodMigrationRouteCtaProvider);
+    return cta.when(
+      data: (_) => TextButton(
+        key: const ValueKey('open_migration_options'),
+        onPressed: () => context.go('/migration/options'),
+        child: const Text('Open migration options'),
+      ),
+      error: (_, _) => const Text('route CTA error'),
+      loading: () => const CircularProgressIndicator(),
+    );
+  }
 }
 
 IronwoodMigrationService _migrationService({
@@ -1536,6 +1558,89 @@ void main() {
     expect(find.byType(KeystoneQrScannerCard), findsNothing);
     expect(find.text('Migration in progress…'), findsOneWidget);
   });
+
+  testWidgets(
+    'does not return to About while the started Keystone status refreshes',
+    (tester) async {
+      _useMobileViewport(tester);
+      final directNotePlan = _planWith(denominationSplitStageCount: 0);
+      final readyStatus = _status(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        pendingSplitStageCount: 0,
+      );
+      final refreshedCta = Completer<IronwoodHomeMigrationCtaState>();
+      var ctaLoadCount = 0;
+      var completionCount = 0;
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/cta-prime',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            onPrepareKeystoneDenominations: (_) async =>
+                rust_sync.KeystoneMigrationSigningRequest(
+                  requestId: 'direct-note-request',
+                  messages: const [],
+                  signingBatchLimit: 50,
+                ),
+            onCompleteKeystoneDenominations:
+                (accountUuid, approvedSchedule) async {
+                  completionCount += 1;
+                  return _migrationResult();
+                },
+          ),
+          hardware: true,
+          privatePlan: directNotePlan,
+          ctaLoader: () {
+            ctaLoadCount += 1;
+            if (ctaLoadCount == 1) {
+              return Future.value(
+                const IronwoodHomeMigrationCtaState.start(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                ),
+              );
+            }
+            return refreshedCta.future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('open_migration_options')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+      );
+
+      for (
+        var pumpCount = 0;
+        completionCount == 0 && pumpCount < 20;
+        pumpCount++
+      ) {
+        await tester.pump();
+      }
+      expect(completionCount, 1);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('intro route'), findsNothing);
+
+      refreshedCta.complete(
+        IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: readyStatus,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('intro route'), findsNothing);
+      expect(find.text('Migration in progress…'), findsOneWidget);
+    },
+  );
 
   testWidgets('reuses the prepared Keystone split request on the QR route', (
     tester,
