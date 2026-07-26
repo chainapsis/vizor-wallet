@@ -250,6 +250,37 @@ class IronwoodMigrationCoordinator
     await refreshNow(forceAdvance: true);
   }
 
+  Future<void> resumeSoftwarePreparation({
+    required String accountUuid,
+    required rust_sync.MigrationStatus status,
+  }) async {
+    if (status.activeRunId == null ||
+        status.phase != kIronwoodMigrationAwaitingPreparationPhase) {
+      throw StateError(
+        'Only a saved private migration draft can resume preparation.',
+      );
+    }
+    final service = ref.read(ironwoodMigrationServiceProvider);
+    final currentStatus = await service.status(
+      network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+      accountUuid: accountUuid,
+    );
+    if (currentStatus.activeRunId != status.activeRunId) {
+      throw StateError('The saved private migration draft changed.');
+    }
+    if (currentStatus.phase != kIronwoodMigrationAwaitingPreparationPhase) {
+      await refreshNow();
+      return;
+    }
+    await startSoftwareMigration(
+      accountUuid: accountUuid,
+      // Rust reloads the approved schedule from the durable draft. Keeping this
+      // empty prevents stale route or plan data from becoming a second source
+      // of truth during recovery.
+      approvedSchedule: const [],
+    );
+  }
+
   Future<void> retry(
     String accountUuid, {
     rust_sync.MigrationStatus? status,

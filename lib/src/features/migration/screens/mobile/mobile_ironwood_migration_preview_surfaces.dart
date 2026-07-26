@@ -292,6 +292,7 @@ class _MobileMigrationNotificationPermissionScreenState
   Future<void> _continueAfterNotificationGate() async {
     final plan = widget.privatePlan;
     if (!_busy && mounted) setState(() => _busy = true);
+    var draftSaved = false;
     try {
       if (plan == null) {
         throw StateError('Migration plan is unavailable.');
@@ -308,20 +309,26 @@ class _MobileMigrationNotificationPermissionScreenState
             accountUuid: accountUuid,
             approvedSchedule: plan.scheduledTransfers,
           );
+      draftSaved = true;
       if (!mounted) return;
       await _refreshPrivateMigrationDraftPresentation(ref);
       if (!mounted) return;
-      if (plan.denominationSplitStageCount != 0) {
-        context.go('/migration/private/start', extra: plan);
-        return;
-      }
-      await _continuePrivateMigrationAfterNotificationGate(ref, plan);
+      final destination = await _continuePrivateMigrationAfterNotificationGate(
+        ref,
+        plan,
+      );
       if (!mounted) return;
-      context.go('/migration/private/status', extra: plan);
+      _openPrivateMigrationDestination(context, destination, plan);
     } catch (error) {
       debugPrint('Failed to activate direct-note migration: $error');
       if (!mounted) return;
-      context.go('/migration/private/start', extra: plan);
+      if (draftSaved || await _hasDurablePrivateMigrationRun(ref)) {
+        if (!mounted) return;
+        context.go(
+          '/migration/private/status',
+          extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

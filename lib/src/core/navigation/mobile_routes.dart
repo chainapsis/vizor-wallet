@@ -307,19 +307,6 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       ),
     ),
     GoRoute(
-      path: '/migration/private/start',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: MobileIronwoodMigrationFlowScreen(
-          step: MobileIronwoodMigrationStep.privateStart,
-          previewPrivatePlan: switch (state.extra) {
-            rust_sync.OrchardMigrationPrivatePlan plan => plan,
-            _ => null,
-          },
-        ),
-      ),
-    ),
-    GoRoute(
       path: '/migration/private/notifications',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,

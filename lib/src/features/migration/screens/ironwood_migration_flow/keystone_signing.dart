@@ -725,7 +725,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     final previousRoute =
         widget.mobileLayout &&
             widget.step == _KeystonePrivateSignStep.denominations
-        ? '/migration/private/start'
+        ? '/migration/private/status'
         : widget.step.previousRoute;
     context.go(previousRoute);
   }

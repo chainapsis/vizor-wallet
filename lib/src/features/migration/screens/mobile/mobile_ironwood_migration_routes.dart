@@ -91,9 +91,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         _MobileMigrationNotificationPermissionScreen(
           privatePlan: previewPrivatePlan,
         ),
-      MobileIronwoodMigrationStep.privateStart => _MobileMigrationPrivateStart(
-        privatePlan: previewPrivatePlan,
-      ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
         previewPlan: previewImmediatePlan,
@@ -151,10 +148,6 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         if (data == null) return const _MobileMigrationRedirectHome();
         if (!_hasRenderableMobileMigrationStatus(status)) {
           return const _MobileMigrationLoadingScreen();
-        }
-        if (status.phase == kIronwoodMigrationAwaitingPreparationPhase &&
-            !isHardware) {
-          return const _MobileMigrationRedirectTo('/migration/private/start');
         }
         return _MobileMigrationLiveStatus(
           data: data,

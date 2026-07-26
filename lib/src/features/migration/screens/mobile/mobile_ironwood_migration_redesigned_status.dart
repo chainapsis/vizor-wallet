@@ -60,6 +60,8 @@ class _MobileMigrationRedesignedStatusState
       IronwoodMigrationPreparationRuntimeState.idle;
   bool _showPreparationComplete = false;
   bool _actionRunning = false;
+  bool _softwarePreparationResumeAttempted = false;
+  String? _softwarePreparationResumeError;
   bool _completionSeenRecorded = false;
   String? _recordedAttentionFingerprint;
 
@@ -74,19 +76,73 @@ class _MobileMigrationRedesignedStatusState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _handleSyncActivity(ref.read(syncProvider).value?.isSyncing ?? false);
-      unawaited(_initializeCurrentSessionSurface());
+      unawaited(_initializeCurrentSession());
     });
+  }
+
+  Future<void> _initializeCurrentSession() async {
+    if (_shouldResumeSoftwarePreparation) {
+      await _resumeSoftwarePreparation();
+    }
+    if (mounted) await _initializeCurrentSessionSurface();
   }
 
   @override
   void didUpdateWidget(covariant _MobileMigrationRedesignedStatus oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final enteredAwaitingPreparation =
+        oldWidget.status.phase != kIronwoodMigrationAwaitingPreparationPhase &&
+        widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase;
+    if (oldWidget.status.activeRunId != widget.status.activeRunId ||
+        enteredAwaitingPreparation) {
+      _softwarePreparationResumeAttempted = false;
+      _softwarePreparationResumeError = null;
+    }
     final completedPreparation =
         oldWidget.status.phase ==
             kIronwoodMigrationWaitingDenomConfirmationsPhase &&
         widget.status.phase != kIronwoodMigrationWaitingDenomConfirmationsPhase;
     if (completedPreparation) {
       unawaited(_showPreparationCompleteIfNeeded());
+    }
+    if (enteredAwaitingPreparation && !widget.isHardware) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_resumeSoftwarePreparation());
+      });
+    }
+  }
+
+  bool get _shouldResumeSoftwarePreparation =>
+      !widget.isHardware &&
+      widget.status.activeRunId != null &&
+      widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase &&
+      !_softwarePreparationResumeAttempted;
+
+  Future<void> _resumeSoftwarePreparation() async {
+    if (!_shouldResumeSoftwarePreparation || _actionRunning) return;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    _softwarePreparationResumeAttempted = true;
+    setState(() {
+      _actionRunning = true;
+      _softwarePreparationResumeError = null;
+    });
+    try {
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .resumeSoftwarePreparation(
+            accountUuid: accountUuid,
+            status: widget.status,
+          );
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _softwarePreparationResumeError =
+              _mobilePrivateMigrationStartErrorMessage(error);
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _actionRunning = false);
     }
   }
 
@@ -381,18 +437,28 @@ class _MobileMigrationRedesignedStatusState
     if (widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase ||
         widget.status.phase ==
             kIronwoodMigrationAwaitingDenominationSignaturePhase) {
+      final softwareResumeFailed =
+          !widget.isHardware && _softwarePreparationResumeError != null;
       return _MigrationPreparationPreview(
-        state: _MigrationPreparationState.paused,
+        state: widget.isHardware || softwareResumeFailed
+            ? _MigrationPreparationState.paused
+            : _MigrationPreparationState.active,
         isKeystone: widget.isHardware,
         pausedMessage: widget.isHardware
             ? _keystonePreparationSignatureMessage
-            : null,
+            : _softwarePreparationResumeError,
         onBack: () => context.go('/home'),
-        onContinue: accountUuid == null || !widget.isHardware
+        onContinue: accountUuid == null
             ? null
-            : () => context.push(
-                '/migration/private/keystone/denominations/sign',
-              ),
+            : widget.isHardware
+            ? () =>
+                  context.push('/migration/private/keystone/denominations/sign')
+            : softwareResumeFailed
+            ? () {
+                _softwarePreparationResumeAttempted = false;
+                unawaited(_resumeSoftwarePreparation());
+              }
+            : null,
       );
     }
 
