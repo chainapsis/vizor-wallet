@@ -89,6 +89,7 @@ class IronwoodMigrationCoordinator
       final hasAccounts = next.value?.accounts.isNotEmpty ?? false;
       if (!_hasObservedInitialAccountList && hasAccounts) {
         _hasObservedInitialAccountList = true;
+        unawaited(resumeBackgroundPreparations());
         unawaited(refreshNow());
       } else {
         unawaited(refreshNow());
@@ -96,6 +97,7 @@ class IronwoodMigrationCoordinator
     });
     ref.listen(appSecurityProvider, (previous, next) {
       if (previous?.requiresUnlock == true && !next.requiresUnlock) {
+        unawaited(resumeBackgroundPreparations());
         unawaited(refreshNow());
       } else {
         unawaited(refreshNow());
@@ -108,6 +110,7 @@ class IronwoodMigrationCoordinator
   void setForeground(bool foreground) {
     _foreground = foreground;
     if (foreground) {
+      unawaited(resumeBackgroundPreparations());
       unawaited(
         refreshNow(forceAdvance: kAppFormFactor == AppFormFactor.desktop),
       );
@@ -889,6 +892,11 @@ class _IronwoodMigrationCoordinatorHostState
   void initState() {
     super.initState();
     unawaited(
+      ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .resumeBackgroundPreparations(),
+    );
+    unawaited(
       ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
     );
     _pollTimer = Timer.periodic(_migrationStatusPollInterval, (_) {
@@ -918,10 +926,21 @@ class _IronwoodMigrationCoordinatorHostState
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(syncProvider, (_, next) {
+    ref.listen(syncProvider, (previous, next) {
       unawaited(
         ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
       );
+      final previousState = previous?.asData?.value;
+      final nextState = next.asData?.value;
+      if (nextState?.lastSyncCompletedAt != null &&
+          nextState?.lastSyncCompletedAt !=
+              previousState?.lastSyncCompletedAt) {
+        unawaited(
+          ref
+              .read(ironwoodMigrationCoordinatorProvider.notifier)
+              .resumeBackgroundPreparations(),
+        );
+      }
     });
     ref.watch(ironwoodMigrationCoordinatorProvider);
     return widget.child;

@@ -4145,7 +4145,7 @@ void main() {
   );
 
   test(
-    'iOS and Android record only verified proof readiness from Rust status',
+    'status stays read-only and explicit recovery records proof readiness',
     () async {
       final store = await _boundBackgroundCredentialStore();
       final records = <Map<String, Object?>>[];
@@ -4192,14 +4192,32 @@ void main() {
       );
 
       await service.status(network: 'test', accountUuid: 'account-1');
+      expect(records, isEmpty);
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
       proofReady = false;
       await service.status(network: 'test', accountUuid: 'account-1');
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
       ios = false;
       android = true;
       proofReady = true;
       await service.status(network: 'test', accountUuid: 'account-1');
+      expect(records, hasLength(1));
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
       proofReady = false;
       await service.status(network: 'test', accountUuid: 'account-1');
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
 
       expect(records, [
         {

@@ -830,16 +830,6 @@ class IronwoodMigrationService {
             context: context,
             status: status,
           );
-          if (_usesNativeMigrationOutbox &&
-              status.proofReady == true &&
-              status.activeRunId != null) {
-            await recordVerifiedProofReadiness(
-              network: context.network,
-              accountUuid: context.accountUuid,
-              runId: status.activeRunId!,
-              observedHeight: status.nextActionHeight ?? 0,
-            );
-          }
           return status;
         });
       },
@@ -985,8 +975,8 @@ class IronwoodMigrationService {
     );
   }
 
-  /// Restores native denomination preparation for an already-bound migration
-  /// after an explicit lifecycle recovery point.
+  /// Restores native migration work after an explicit lifecycle or
+  /// sync-completion recovery point.
   ///
   /// Ordinary status reads intentionally do not schedule native work. Keeping
   /// this separate prevents account-list/status refreshes from unexpectedly
@@ -1009,6 +999,16 @@ class IronwoodMigrationService {
       operation: () => _serializeCredentialState(context, () async {
         final status = await _getStatusForContext(context);
         await _reconcileBackgroundCredential(context: context, status: status);
+        if (_usesNativeMigrationOutbox &&
+            status.proofReady == true &&
+            status.activeRunId != null) {
+          await recordVerifiedProofReadiness(
+            network: context.network,
+            accountUuid: context.accountUuid,
+            runId: status.activeRunId!,
+            observedHeight: status.nextActionHeight ?? 0,
+          );
+        }
         await _resumeBoundBackgroundPreparationIfNeeded(
           context: context,
           status: status,
