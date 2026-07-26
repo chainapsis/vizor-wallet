@@ -122,6 +122,33 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertEqual(snapshot.batches.count, 1)
   }
 
+  func testDiscardBatchRefusesAnUncertainSubmission() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let batch = makeBatch(batchId: "batch-a", account: "account-a", heights: [100])
+    try snapshot.stage(batch)
+    try snapshot.armBatch(
+      batchId: batch.batchId,
+      expectedDigests: digests(batch),
+      at: now
+    )
+    try snapshot.beginSubmission(
+      itemId: batch.items[0].itemId,
+      attemptId: "attempt",
+      at: now
+    )
+    try snapshot.recordUncertain(
+      itemId: batch.items[0].itemId,
+      error: "timeout",
+      at: now
+    )
+
+    XCTAssertThrowsError(try snapshot.discardBatch(batchId: batch.batchId)) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .conflictingBatch)
+    }
+    XCTAssertEqual(snapshot.batches[0].items[0].attemptCount, 1)
+    XCTAssertEqual(snapshot.batches[0].items[0].lastError, "timeout")
+  }
+
   func testStageAndArmAreIdempotentButConflictsFailClosed() throws {
     let batch = makeBatch(
       batchId: "batch-a",

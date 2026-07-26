@@ -970,7 +970,9 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     else {
       return false
     }
-    guard !batches[batchIndex].items.contains(where: { $0.status == .submitting }),
+    guard !batches[batchIndex].items.contains(where: {
+      $0.status == .submitting || $0.attemptCount > 0
+    }),
       !receipts.contains(where: { $0.batchId == batchId })
     else {
       throw BackgroundMigrationOutboxError.conflictingBatch
