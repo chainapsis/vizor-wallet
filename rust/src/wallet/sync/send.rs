@@ -2404,6 +2404,40 @@ fn migration_anchor_retention_boundary(
     .filter(|boundary| *boundary >= note_mined_height)
 }
 
+fn migration_anchor_checkpoints_to_retain(
+    network: WalletNetwork,
+    timing_policy: super::migration::MigrationTimingPolicy,
+    anchor_height: u32,
+    note_mined_height: u32,
+    nu6_3_activation_height: u32,
+    checkpoint_heights: &[u32],
+) -> BTreeSet<u32> {
+    let Some(latest_boundary) = migration_anchor_retention_boundary(
+        network,
+        timing_policy,
+        anchor_height,
+        note_mined_height,
+    ) else {
+        return BTreeSet::new();
+    };
+    let first_eligible_boundary = super::migration::zip318_anchor_candidate_boundaries_with_policy(
+        network,
+        timing_policy,
+        anchor_height,
+        note_mined_height,
+        nu6_3_activation_height,
+    )
+    .into_iter()
+    .next();
+
+    std::iter::once(latest_boundary)
+        .chain(first_eligible_boundary)
+        .filter_map(|boundary| {
+            representative_orchard_checkpoint(checkpoint_heights, boundary, note_mined_height)
+        })
+        .collect()
+}
+
 fn available_orchard_anchor_candidates(
     logical_boundaries: &[u32],
     checkpoint_heights: &[u32],
@@ -2475,9 +2509,10 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
     db: &mut WalletDatabase,
 ) -> Result<usize, String> {
     // This is deliberately a sync maintenance operation rather than part of a
-    // migration status read. Roll retention to the newest observed bucket so a
-    // long-lived signed child still has a checkpoint inside the ZIP 318 age
-    // window, while ordinary status reads remain side-effect free.
+    // migration status read. Keep both the newest observed bucket and the first
+    // bucket currently eligible for ZIP 318 selection. The newest bucket ages
+    // into eligibility on the next boundary; retaining only that bucket would
+    // release the non-boundary checkpoint the current proof path still needs.
     let candidates = super::migration::prepared_anchor_retention_candidates(db_path, network)?;
     let retained_before_maintenance = retained_orchard_checkpoint_heights(db)?;
     let mut desired_references = BTreeSet::new();
@@ -2502,6 +2537,7 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
     };
     let anchor_height = u32::from(anchor_height);
     let checkpoint_heights = orchard_checkpoint_heights(db)?;
+    let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
     let mut candidates_by_account = HashMap::<String, Vec<_>>::new();
     for candidate in candidates {
         candidates_by_account
@@ -2541,21 +2577,17 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
                 .mined_height()
                 .map(u32::from)
                 .ok_or("Prepared migration note mined height unavailable")?;
-            let Some(retention_boundary) = migration_anchor_retention_boundary(
+            let checkpoints = migration_anchor_checkpoints_to_retain(
                 network,
                 candidate.timing_policy,
                 anchor_height,
                 mined_height,
-            ) else {
-                continue;
-            };
-            if let Some(checkpoint_height) = representative_orchard_checkpoint(
+                nu6_3_activation_height,
                 &checkpoint_heights,
-                retention_boundary,
-                mined_height,
-            ) {
+            );
+            for checkpoint_height in checkpoints {
                 checkpoints_to_retain.insert(checkpoint_height);
-                desired_references.insert((candidate.run_id, checkpoint_height));
+                desired_references.insert((candidate.run_id.clone(), checkpoint_height));
             }
         }
     }

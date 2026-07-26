@@ -172,6 +172,20 @@ fn migration_anchor_retention_rolls_forward_with_the_trusted_anchor() {
 }
 
 #[test]
+fn migration_anchor_retention_keeps_the_latest_and_currently_eligible_buckets() {
+    let retained = migration_anchor_checkpoints_to_retain(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        5_616,
+        5_401,
+        0,
+        &[5_400, 5_460, 5_600],
+    );
+
+    assert_eq!(retained, BTreeSet::from([5_460, 5_600]));
+}
+
+#[test]
 fn proof_readiness_checks_later_candidates_after_an_unready_child() {
     let mut checked = Vec::new();
 
