@@ -322,6 +322,17 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testMigrationPreparationForegroundContinuationOnlyTracksConfirmationWork() {
+    XCTAssertTrue(
+      migrationPreparationStateNeedsForegroundContinuation(0)
+    )
+    for state in UInt8(1)...UInt8(5) {
+      XCTAssertFalse(
+        migrationPreparationStateNeedsForegroundContinuation(state)
+      )
+    }
+  }
+
   func testMigrationPreparationRetriesInspectionFailuresInBackground() {
     XCTAssertEqual(
       migrationPreparationResumeTarget(

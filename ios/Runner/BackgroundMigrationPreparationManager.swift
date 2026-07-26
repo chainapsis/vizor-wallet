@@ -185,6 +185,12 @@ func shouldMarkMigrationPreparationForegroundContinuation(
   hasPendingRequest && hasBoundPreparation && !notificationsDisabled
 }
 
+func migrationPreparationStateNeedsForegroundContinuation(
+  _ state: UInt8
+) -> Bool {
+  state == 0
+}
+
 func migrationPreparationRuntimeState(
   hasMatchingManifest: Bool,
   notificationsDisabled: Bool,
@@ -292,6 +298,7 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func handoffPendingRequestForForegroundLaunch() {
+    pruneForegroundContinuationScopes()
     BGTaskScheduler.shared.getPendingTaskRequests { [weak self] requests in
       guard let self else { return }
       let hasPendingRequest = requests.contains {
@@ -343,6 +350,7 @@ final class BackgroundMigrationPreparationManager {
     runId: String,
     completion: @escaping (BackgroundMigrationPreparationRuntimeState) -> Void
   ) {
+    pruneForegroundContinuationScopes()
     let scope = Self.foregroundContinuationScope(
       network: network,
       accountUuid: accountUuid,
@@ -470,6 +478,7 @@ final class BackgroundMigrationPreparationManager {
     authorizationEpoch: UInt64,
     completion: @escaping (Bool) -> Void
   ) {
+    pruneForegroundContinuationScopes()
     let shouldCheckScheduler = stateLock.withPreparationLock { () -> Bool in
       guard !mutationQuiesced
         && !submissionInFlight
@@ -722,6 +731,7 @@ final class BackgroundMigrationPreparationManager {
       expired = false
       mutationQuiesced = false
     }
+    pruneForegroundContinuationScopes()
     switch preparationResumeTarget() {
     case .idle, .terminal:
       BGTaskScheduler.shared.cancel(
@@ -1181,21 +1191,60 @@ final class BackgroundMigrationPreparationManager {
 
   @discardableResult
   private func markForegroundContinuationsReady() -> Bool {
+    guard let scopes = foregroundContinuationEligibleScopes() else {
+      return false
+    }
+    stateLock.withPreparationLock {
+      foregroundContinuationScopes = scopes
+      persistForegroundContinuationScopesLocked()
+    }
+    return !scopes.isEmpty
+  }
+
+  private func pruneForegroundContinuationScopes() {
+    guard let eligibleScopes = foregroundContinuationEligibleScopes() else {
+      return
+    }
+    stateLock.withPreparationLock {
+      foregroundContinuationScopes.formIntersection(eligibleScopes)
+      persistForegroundContinuationScopesLocked()
+    }
+  }
+
+  private func foregroundContinuationEligibleScopes() -> Set<String>? {
     guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
-    else { return false }
-    let scopes = manifests.compactMap { manifest -> String? in
-      guard let runId = manifest.expectedRunId else { return nil }
-      return Self.foregroundContinuationScope(
+    else { return nil }
+    var scopes = Set<String>()
+    for manifest in manifests {
+      guard let runId = manifest.expectedRunId else { continue }
+      let scope = Self.foregroundContinuationScope(
         network: manifest.network,
         accountUuid: manifest.accountUuid,
         runId: runId
       )
+      var preparation = CMigrationPreparationProgress(
+        state: 0,
+        confirmation_count: 0,
+        confirmation_target: 0,
+        completed_stage_count: 0,
+        total_stage_count: 0
+      )
+      let code = zcash_inspect_migration_preparation(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        &preparation
+      )
+      if code != 0
+        || migrationPreparationStateNeedsForegroundContinuation(
+          preparation.state
+        )
+      {
+        scopes.insert(scope)
+      }
     }
-    stateLock.withPreparationLock {
-      foregroundContinuationScopes.formUnion(scopes)
-      persistForegroundContinuationScopesLocked()
-    }
-    return !scopes.isEmpty
+    return scopes
   }
 
   private func persistForegroundContinuationScopesLocked() {
