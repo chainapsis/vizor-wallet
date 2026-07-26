@@ -201,6 +201,11 @@ if [[ -n "${E2E_MIGRATION_SIM_MAX_BLOCKS:-}" ]]; then
     --dart-define=ZCASH_MIGRATION_SIM_MAX_BLOCKS="$E2E_MIGRATION_SIM_MAX_BLOCKS"
   )
 fi
+if [[ -n "${E2E_MIGRATION_SIM_HOME_HOLD_MS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_MIGRATION_SIM_HOME_HOLD_MS="$E2E_MIGRATION_SIM_HOME_HOLD_MS"
+  )
+fi
 flutter_args+=(
   "${scenario_define_args[@]}"
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest

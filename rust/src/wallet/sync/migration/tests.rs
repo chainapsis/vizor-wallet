@@ -2451,6 +2451,72 @@ fn approved_schedule_controls_storage_and_overdue_catch_up() {
 }
 
 #[test]
+fn regtest_fast_policy_survives_pending_transaction_materialization() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, timing_policy)
+             VALUES ('run-fast', 'account-1', 'regtest', ?1, ?2, 1, 1,
+                     '[100]', 'fast_testnet')"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    drop(conn);
+
+    let schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100,
+        block_offset: 12,
+    }];
+    set_run_approved_schedule(
+        &db_path,
+        "run-fast",
+        WalletNetwork::Regtest,
+        &schedule,
+        &[100],
+    )
+    .unwrap();
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: None,
+    };
+    insert_pending_txs(
+        &db_path,
+        "run-fast",
+        vec![PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: "22".repeat(32),
+            raw_tx: vec![0xaa],
+            target_height: 501,
+            anchor_boundary_height: None,
+            expiry_height: 69_120,
+            scheduled_height: 512,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note,
+            },
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+}
+
+#[test]
 fn approved_schedule_part_index_disambiguates_equal_values() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");

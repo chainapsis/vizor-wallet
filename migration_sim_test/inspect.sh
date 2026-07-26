@@ -81,4 +81,19 @@ FROM vizor_migration_signed_child_pczts
 WHERE run_id = (
   SELECT run_id FROM vizor_migration_runs ORDER BY created_at_ms DESC LIMIT 1
 );
+
+SELECT
+  part_index,
+  status,
+  scheduled_height,
+  target_height,
+  expiry_height,
+  value_zatoshi,
+  fee_zatoshi,
+  txid_hex
+FROM vizor_migration_pending_txs
+WHERE run_id = (
+  SELECT run_id FROM vizor_migration_runs ORDER BY created_at_ms DESC LIMIT 1
+)
+ORDER BY part_index;
 SQL

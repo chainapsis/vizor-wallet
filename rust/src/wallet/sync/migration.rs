@@ -1768,7 +1768,7 @@ fn insert_pending_txs_with_tx(
         .map_err(|e| format!("Read migration run policy: {e}"))?;
     let network = WalletNetwork::from_str(&network)
         .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
-    let timing_policy = if network == WalletNetwork::Test {
+    let timing_policy = if matches!(network, WalletNetwork::Test | WalletNetwork::Regtest) {
         MigrationTimingPolicy::from_str(&timing_policy)?
     } else {
         MigrationTimingPolicy::Standard
