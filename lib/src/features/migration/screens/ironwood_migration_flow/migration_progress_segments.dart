@@ -346,58 +346,6 @@ class _MigrationProgressSegmentPainter extends CustomPainter {
   }
 }
 
-double _migrationSegmentProgress({
-  required List<BigInt> values,
-  required BigInt totalZatoshi,
-  required List<_MigrationBatchStatus> statuses,
-  required List<double> progresses,
-  required int index,
-}) {
-  if (index >= values.length) return 0;
-  if (statuses.isEmpty) return 0;
-  if (index >= statuses.length) return 0;
-
-  final status = statuses[index];
-  if (status == _MigrationBatchStatus.complete) return 1;
-
-  final rawProgress = index < progresses.length
-      ? progresses[index].clamp(0, 1).toDouble()
-      : 0.0;
-
-  final hasSharedPreparingProgress =
-      rawProgress > 0 &&
-      statuses.every((status) => status == _MigrationBatchStatus.preparing) &&
-      progresses.isNotEmpty;
-  if (!hasSharedPreparingProgress) return rawProgress;
-
-  return _distributedMigrationSegmentProgress(
-    values: values,
-    totalZatoshi: totalZatoshi,
-    progress: rawProgress,
-    index: index,
-  );
-}
-
-double _distributedMigrationSegmentProgress({
-  required List<BigInt> values,
-  required BigInt totalZatoshi,
-  required double progress,
-  required int index,
-}) {
-  if (totalZatoshi <= BigInt.zero) return progress;
-  var before = BigInt.zero;
-  for (var i = 0; i < index; i++) {
-    before += values[i];
-  }
-  final current = values[index];
-  if (current <= BigInt.zero) return 0;
-
-  final start = before / totalZatoshi;
-  final end = (before + current) / totalZatoshi;
-  if (end <= start) return progress;
-  return ((progress - start) / (end - start)).clamp(0, 1).toDouble();
-}
-
 double _migrationSegmentVisibleProgress(
   _MigrationBatchStatus status,
   double progress,

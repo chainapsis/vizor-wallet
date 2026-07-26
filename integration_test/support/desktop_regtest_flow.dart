@@ -151,9 +151,15 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
     tester,
     const ValueKey('ironwood_migration_intro_continue_button'),
   );
+  for (var step = 0; step < 3; step++) {
+    await tapAppButton(
+      tester,
+      const ValueKey('ironwood_migration_how_it_works_continue_button'),
+    );
+  }
   await tapAppButton(
     tester,
-    const ValueKey('ironwood_migration_how_it_works_continue_button'),
+    const ValueKey('ironwood_migration_what_to_expect_continue_button'),
   );
   await tapAppWidget(
     tester,

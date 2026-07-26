@@ -204,14 +204,14 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
         children: [
           Positioned(
             left: 0,
-            top: 16,
+            top: 26,
             width: 420,
             height: 200,
             child: _PoolMigrationHero(data: data),
           ),
           Positioned(
             left: 0,
-            top: 250,
+            top: 257,
             width: 420,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -257,7 +257,7 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
           ),
           Positioned(
             left: 95,
-            top: 540,
+            top: 548,
             width: 230,
             child: _FlowButtons(
               primaryKey: const ValueKey(
@@ -513,7 +513,7 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
       title: 'Keep Vizor running',
       body:
           'Vizor continues while minimized. Migration pauses while your Mac '
-          'is asleep or Vizor is locked, and resumes when you return.',
+          'sleeps or Vizor is locked, then resumes when you return.',
     ),
   ];
 
@@ -527,7 +527,7 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
         children: [
           Positioned(
             left: 12,
-            top: 34,
+            top: 68,
             width: 396,
             child: Text(
               'What to expect',
@@ -539,28 +539,31 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
           ),
           Positioned(
             left: 12,
-            top: 126,
+            top: 147,
             width: 396,
-            child: Column(
+            height: 371,
+            child: Stack(
               children: [
-                for (var index = 0; index < _items.length; index++) ...[
-                  SizedBox(
+                for (var index = 0; index < _items.length; index++)
+                  Positioned(
+                    left: 0,
+                    top: switch (index) {
+                      0 => 0,
+                      1 => 148,
+                      _ => 275,
+                    },
+                    width: 396,
                     height: switch (index) {
-                      0 => 96,
-                      1 => 80,
+                      0 => 116,
+                      1 => 95,
                       _ => 96,
                     },
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: Image.asset(
-                            _ironwoodMigrationExpectationAssets[index],
-                            width: 64,
-                            height: 64,
-                            fit: BoxFit.cover,
-                          ),
+                        _MigrationExpectationIllustration(
+                          index: index,
+                          asset: _ironwoodMigrationExpectationAssets[index],
                         ),
                         const SizedBox(width: 16),
                         Expanded(
@@ -586,16 +589,26 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (index < _items.length - 1)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 80, bottom: 20),
-                      child: Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: colors.border.subtle,
-                      ),
-                    ),
-                ],
+                Positioned(
+                  left: 80,
+                  top: 115,
+                  right: 0,
+                  child: Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: colors.border.subtle,
+                  ),
+                ),
+                Positioned(
+                  left: 80,
+                  top: 242,
+                  right: 0,
+                  child: Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: colors.border.subtle,
+                  ),
+                ),
               ],
             ),
           ),
@@ -616,6 +629,44 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MigrationExpectationIllustration extends StatelessWidget {
+  const _MigrationExpectationIllustration({
+    required this.index,
+    required this.asset,
+  });
+
+  final int index;
+  final String asset;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = switch (index) {
+      0 => const Color(0xFF8F4BE8),
+      1 => const Color(0xFFE6B800),
+      _ => const Color(0xFFD3155B),
+    };
+    final scale = switch (index) {
+      0 => 1.18,
+      1 => 1.2,
+      _ => 1.22,
+    };
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: ColoredBox(
+        color: background,
+        child: SizedBox.square(
+          dimension: 64,
+          child: Transform.scale(
+            scale: scale,
+            child: Image.asset(asset, fit: BoxFit.cover),
+          ),
+        ),
       ),
     );
   }

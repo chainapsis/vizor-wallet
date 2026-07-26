@@ -86,12 +86,12 @@ class _IronwoodMigrationImmediateReviewContentState
         children: [
           Positioned(
             left: 12,
-            top: 36,
+            top: 96,
             width: 396,
             child: Column(
               children: [
                 Text(
-                  'Review immediate migration',
+                  'Review Migration Plan',
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineSmall.copyWith(
                     color: colors.text.accent,
@@ -118,7 +118,7 @@ class _IronwoodMigrationImmediateReviewContentState
                         ),
                         const SizedBox(height: 8),
                         const _ImmediateReviewRow(
-                          label: 'Est. completion',
+                          label: 'Migration complete in',
                           value: '~5 mins',
                         ),
                       ],
@@ -133,7 +133,7 @@ class _IronwoodMigrationImmediateReviewContentState
                     border: Border.all(color: colors.border.subtle),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+                    padding: const EdgeInsets.fromLTRB(16, 22, 16, 22),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -142,7 +142,7 @@ class _IronwoodMigrationImmediateReviewContentState
                           size: 20,
                           color: colors.icon.accent,
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -154,11 +154,27 @@ class _IronwoodMigrationImmediateReviewContentState
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text(
-                                'Immediate migration crosses in one visible '
-                                'step. Your balance and timing are easier to '
-                                'associate with your wallet. Consider choosing '
-                                'Private instead.',
+                              Text.rich(
+                                TextSpan(
+                                  text:
+                                      'Crosses in one visible step — your '
+                                      '$amount and timing are ',
+                                  children: const [
+                                    TextSpan(
+                                      text:
+                                          'easier to associate with your '
+                                          'wallet.',
+                                      style: TextStyle(
+                                        color: Color(0xFFCA4ADC),
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text:
+                                          '\nConsider choosing a Private '
+                                          'Migration option.',
+                                    ),
+                                  ],
+                                ),
                                 style: AppTypography.bodyMedium.copyWith(
                                   color: colors.text.secondary,
                                 ),
@@ -193,10 +209,11 @@ class _IronwoodMigrationImmediateReviewContentState
                   onPressed: _isBroadcasting
                       ? null
                       : () => context.go('/migration/options'),
-                  variant: AppButtonVariant.secondary,
+                  variant: AppButtonVariant.ghost,
                   height: 44,
                   minWidth: 230,
                   expand: true,
+                  leading: const AppIcon(AppIcons.chevronBackward, size: 18),
                   child: const Text('Consider another option'),
                 ),
                 const SizedBox(height: 12),

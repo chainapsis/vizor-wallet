@@ -111,7 +111,7 @@ void main() {
     await tester.tap(find.text('Select & review'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Review immediate migration'), findsOneWidget);
+    expect(find.text('Review Migration Plan'), findsOneWidget);
     expect(find.text('Privacy trade-off'), findsOneWidget);
     expect(find.widgetWithText(AppButton, 'Authorise anyway'), findsOneWidget);
   });
@@ -499,13 +499,15 @@ void main() {
     );
     expect(
       find.text(
-        'We’re organizing your balance into common-sized\n'
-        'parts. This makes your migration harder to link.',
+        'We’re organizing your balance into common-sized parts. '
+        'This makes your migration harder to link.',
       ),
       findsOneWidget,
     );
     expect(
-      find.text('Once preparation finishes, your migration can begin.'),
+      find.text(
+        'Once preparation finishes, your migration can begin automatically.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Note split'), findsNothing);
@@ -1219,6 +1221,129 @@ void main() {
     await tester.pump();
 
     expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets(
+    'preparation ring morphs in place into processing-ordered note segments',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final harnessKey = GlobalKey<_MutablePrivateStatusHarnessState>();
+      await tester.pumpWidget(
+        _MutablePrivateStatusHarness(
+          key: harnessKey,
+          status: _status(),
+          syncState: _syncedSyncState,
+          disableAnimations: false,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 450));
+
+      final activeStatus = find.byKey(
+        const ValueKey('ironwood_migration_active_status'),
+      );
+      expect(activeStatus, findsOneWidget);
+      final activeStatusElement = tester.element(activeStatus);
+      final ringCenter = find.byKey(
+        const ValueKey('ironwood_migration_ring_center'),
+      );
+      final ringCenterElement = tester.element(ringCenter);
+      await _captureMigrationTransitionGolden(activeStatus, 0);
+      expect(
+        find.bySemanticsLabel('Preparing migration notes.'),
+        findsOneWidget,
+      );
+
+      harnessKey.currentState!.setStatus(
+        _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+          totalCount: 3,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduleOrder: 2,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.completed,
+              scheduleOrder: 0,
+            ),
+            _migrationPart(
+              2,
+              30_000_000,
+              rust_sync.MigrationPartState.confirming,
+              scheduleOrder: 1,
+            ),
+          ],
+        ),
+      );
+
+      var frameIndex = 1;
+      for (final frame in const [0, 230, 230, 230, 230]) {
+        await tester.pump(Duration(milliseconds: frame));
+        expect(activeStatus, findsOneWidget);
+        expect(tester.element(activeStatus), same(activeStatusElement));
+        expect(tester.element(ringCenter), same(ringCenterElement));
+        expect(tester.takeException(), isNull);
+        await _captureMigrationTransitionGolden(activeStatus, frameIndex++);
+      }
+
+      expect(
+        find.bySemanticsLabel(
+          'Migration notes in expected processing order. '
+          'Note 1: 0.2 ZEC, completed. '
+          'Note 2: 0.3 ZEC, confirming. '
+          'Note 3: 0.1 ZEC, scheduled.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('many tiny note segments render without overlap exceptions', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final values = List<int>.generate(
+      48,
+      (index) => index == 0 ? 1_000_000_000 : 1_000_000 + index,
+    );
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-many',
+          targetValuesZatoshi: values,
+          totalCount: values.length,
+          parts: [
+            for (var index = values.length - 1; index >= 0; index--)
+              _migrationPart(
+                index,
+                values[index],
+                rust_sync.MigrationPartState.scheduled,
+                scheduleOrder: index,
+              ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('private status routes Keystone ready state to batch signing', (
@@ -1950,17 +2075,36 @@ class _MutableSyncNotifier extends SyncNotifier {
   }
 }
 
+Future<void> _captureMigrationTransitionGolden(
+  Finder statusContent,
+  int frameIndex,
+) async {
+  const capture = bool.fromEnvironment(
+    'VIZOR_CAPTURE_MIGRATION_TRANSITION',
+    defaultValue: false,
+  );
+  if (!capture) return;
+  await expectLater(
+    statusContent,
+    matchesGoldenFile(
+      'migration_transition/frame-${frameIndex.toString().padLeft(2, '0')}.png',
+    ),
+  );
+}
+
 class _MutablePrivateStatusHarness extends StatefulWidget {
   const _MutablePrivateStatusHarness({
     super.key,
     required this.status,
     required this.syncState,
     this.coordinatorAdvancing = false,
+    this.disableAnimations = true,
   });
 
   final rust_sync.MigrationStatus status;
   final SyncState syncState;
   final bool coordinatorAdvancing;
+  final bool disableAnimations;
 
   @override
   State<_MutablePrivateStatusHarness> createState() =>
@@ -1970,41 +2114,23 @@ class _MutablePrivateStatusHarness extends StatefulWidget {
 class _MutablePrivateStatusHarnessState
     extends State<_MutablePrivateStatusHarness> {
   final _scopeKey = GlobalKey();
-  late rust_sync.MigrationStatus _status;
+  late final ValueNotifier<rust_sync.MigrationStatus> _statusNotifier;
+  late final GoRouter _router;
 
   @override
   void initState() {
     super.initState();
-    _status = widget.status;
-  }
-
-  ProviderContainer get _container =>
-      ProviderScope.containerOf(_scopeKey.currentContext!, listen: false);
-
-  void setStatus(rust_sync.MigrationStatus status) {
-    setState(() => _status = status);
-  }
-
-  void setSyncState(SyncState syncState) {
-    (_container.read(syncProvider.notifier) as _MutableSyncNotifier)
-        .setSyncState(syncState);
-  }
-
-  void setCoordinatorAdvancing(bool advancing) {
-    (_container.read(ironwoodMigrationCoordinatorProvider.notifier)
-            as _MutableScreenTestMigrationCoordinator)
-        .setAdvancing(advancing);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final router = GoRouter(
+    _statusNotifier = ValueNotifier(widget.status);
+    _router = GoRouter(
       initialLocation: '/migration/private/status',
       routes: [
         GoRoute(
           path: '/migration/private/status',
-          builder: (_, _) =>
-              IronwoodMigrationPrivateStatusScreen(previewStatus: _status),
+          builder: (_, _) => ValueListenableBuilder(
+            valueListenable: _statusNotifier,
+            builder: (_, status, _) =>
+                IronwoodMigrationPrivateStatusScreen(previewStatus: status),
+          ),
         ),
         GoRoute(path: '/home', builder: (_, _) => const Text('home')),
         GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
@@ -2019,7 +2145,35 @@ class _MutablePrivateStatusHarnessState
         GoRoute(path: '/unlock', builder: (_, _) => const Text('unlock')),
       ],
     );
+  }
 
+  ProviderContainer get _container =>
+      ProviderScope.containerOf(_scopeKey.currentContext!, listen: false);
+
+  void setStatus(rust_sync.MigrationStatus status) {
+    _statusNotifier.value = status;
+  }
+
+  void setSyncState(SyncState syncState) {
+    (_container.read(syncProvider.notifier) as _MutableSyncNotifier)
+        .setSyncState(syncState);
+  }
+
+  void setCoordinatorAdvancing(bool advancing) {
+    (_container.read(ironwoodMigrationCoordinatorProvider.notifier)
+            as _MutableScreenTestMigrationCoordinator)
+        .setAdvancing(advancing);
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    _statusNotifier.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return ProviderScope(
       overrides: [
         appBootstrapProvider.overrideWithValue(
@@ -2039,10 +2193,10 @@ class _MutablePrivateStatusHarnessState
       child: Builder(
         key: _scopeKey,
         builder: (context) => MaterialApp.router(
-          routerConfig: router,
+          routerConfig: _router,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(
-              disableAnimations: true,
+              disableAnimations: widget.disableAnimations,
               textScaler: TextScaler.noScaling,
             ),
             child: AppTheme(data: AppThemeData.light, child: child!),
@@ -2552,12 +2706,14 @@ rust_sync.MigrationPartStatus _migrationPart(
   int partIndex,
   int valueZatoshi,
   rust_sync.MigrationPartState state, {
+  int? scheduleOrder,
   int confirmationCount = 0,
   int confirmationTarget = 3,
   int? scheduleStartHeight,
   int? scheduledHeight,
 }) => rust_sync.MigrationPartStatus(
   partIndex: partIndex,
+  scheduleOrder: scheduleOrder,
   valueZatoshi: BigInt.from(valueZatoshi),
   state: state,
   scheduleStartHeight: scheduleStartHeight,
