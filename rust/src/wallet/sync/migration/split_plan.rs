@@ -531,4 +531,25 @@ mod tests {
             assert_eq!(input_total, output_total + PREP_FEE);
         }
     }
+
+    #[test]
+    fn fragmented_large_balance_does_not_leave_migratable_change() {
+        let inputs = [
+            vec![198_000_400; 5],
+            vec![396_000_800; 5],
+            vec![594_001_200; 5],
+            vec![792_001_600; 5],
+        ]
+        .concat();
+        let plan = plan_padded_denominations(&inputs, PREP_FEE, MIGRATION_FEE, 1)
+            .unwrap()
+            .unwrap();
+        let change = plan.denominations.orchard_change.unwrap_or_default();
+        let follow_up = plan_padded_denominations(&[change], PREP_FEE, MIGRATION_FEE, 1).unwrap();
+
+        assert!(
+            follow_up.is_none(),
+            "planner left {change} zatoshi that requires another migration run"
+        );
+    }
 }

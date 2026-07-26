@@ -1869,16 +1869,6 @@ fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
         [],
     )
     .unwrap();
-    assert_eq!(
-        timing_policy_for_run_with_conn(
-            &conn,
-            "fast-testnet-preparation",
-            WalletNetwork::Regtest,
-        )
-        .unwrap(),
-        MigrationTimingPolicy::FastTestnet,
-    );
-
     let mut rng = StdRng::seed_from_u64(0x318);
     let after_existing = next_preparation_scheduled_height(
         &conn,
@@ -1931,6 +1921,15 @@ fn fast_testnet_uses_accelerated_preparation_delays() {
         [],
     )
     .unwrap();
+    assert_eq!(
+        timing_policy_for_run_with_conn(
+            &conn,
+            "fast-testnet-preparation",
+            WalletNetwork::Regtest,
+        )
+        .unwrap(),
+        MigrationTimingPolicy::FastTestnet,
+    );
 
     let mut rng = StdRng::seed_from_u64(0x318);
     for _ in 0..32 {
