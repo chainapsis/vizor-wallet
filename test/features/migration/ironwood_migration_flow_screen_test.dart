@@ -480,7 +480,7 @@ void main() {
       find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
       findsOneWidget,
     );
-    expect(find.text('Preparation will\ntake 10-20 min'), findsOneWidget);
+    expect(find.text('About 30 min\nper split'), findsOneWidget);
     expect(
       find.text(
         'We’re organizing your balance into common-sized\n'
@@ -532,7 +532,7 @@ void main() {
       expect(find.text('Preparing your migration'), findsOneWidget);
       expect(
         find.bySemanticsLabel(
-          'Preparing migration. Estimated time: 10 to 20 minutes.',
+          'Preparing migration. This usually takes around 30 minutes per split.',
         ),
         findsOneWidget,
       );

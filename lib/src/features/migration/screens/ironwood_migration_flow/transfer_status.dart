@@ -844,7 +844,8 @@ class _MigrationPreparationRingState extends State<_MigrationPreparationRing>
     return Semantics(
       container: true,
       excludeSemantics: true,
-      label: 'Preparing migration. Estimated time: 10 to 20 minutes.',
+      label:
+          'Preparing migration. This usually takes around 30 minutes per split.',
       child: AnimatedBuilder(
         animation: Listenable.merge([_stepController, _spinController]),
         builder: (context, _) {
@@ -874,7 +875,7 @@ class _MigrationPreparationRingState extends State<_MigrationPreparationRing>
                   AppIcon(AppIcons.time, size: 24),
                   SizedBox(height: 8),
                   Text(
-                    'Preparation will\ntake 10-20 min',
+                    'About 30 min\nper split',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMediumStrong,
                   ),

@@ -375,7 +375,7 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase =>
       const _StatusPresentation(
         title: 'Preparing...',
-        body: 'This will take around 10-20m',
+        body: 'This usually takes around 30 minutes per split.',
         footer: 'You can leave this screen.\nBut keep Vizor open & running.',
         buttonLabel: '',
       ),
