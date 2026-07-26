@@ -456,6 +456,99 @@ String _formatMigrationBlockDurationEstimate(int blocks) {
   return days == 1 ? '~1 day' : '~$days days';
 }
 
+enum _MigrationStage { preparation, migration, finish }
+
+class _MigrationStageHeader extends StatelessWidget {
+  const _MigrationStageHeader({required this.stage});
+
+  final _MigrationStage stage;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    const stages = [
+      (_MigrationStage.preparation, 'Preparation'),
+      (_MigrationStage.migration, 'Migration'),
+      (_MigrationStage.finish, 'Finish'),
+    ];
+    return Row(
+      children: [
+        for (var index = 0; index < stages.length; index++) ...[
+          _MigrationStageLabel(
+            number: index + 1,
+            label: stages[index].$2,
+            active: stages[index].$1 == stage,
+            completed: stages[index].$1.index < stage.index,
+          ),
+          if (index < stages.length - 1) ...[
+            const Spacer(),
+            AppIcon(
+              AppIcons.chevronForward,
+              size: 16,
+              color: colors.icon.muted,
+            ),
+            const Spacer(),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _MigrationStageLabel extends StatelessWidget {
+  const _MigrationStageLabel({
+    required this.number,
+    required this.label,
+    required this.active,
+    required this.completed,
+  });
+
+  final int number;
+  final String label;
+  final bool active;
+  final bool completed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final foreground = active || completed
+        ? colors.text.accent
+        : colors.text.muted;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: active
+                ? colors.background.overlay
+                : colors.background.ground,
+            shape: BoxShape.circle,
+          ),
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: Center(
+              child: completed
+                  ? AppIcon(AppIcons.check, size: 14, color: colors.icon.accent)
+                  : Text(
+                      '$number',
+                      style: AppTypography.labelMedium.copyWith(
+                        color: foreground,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: AppTypography.labelLarge.copyWith(color: foreground),
+        ),
+      ],
+    );
+  }
+}
+
 class _FlowButtons extends StatelessWidget {
   const _FlowButtons({
     this.primaryKey,

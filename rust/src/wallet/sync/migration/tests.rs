@@ -4642,12 +4642,20 @@ fn migration_batch_signing_selector_reports_initial_and_resign_requests_exactly(
         vec![1, 10]
     );
     assert_eq!(
+        select_migration_batch_signing_part_indices(12, 0, 0, &[]).unwrap(),
+        vec![0, 1, 2, 3, 4, 5, 6, 7]
+    );
+    assert_eq!(
+        select_migration_batch_signing_part_indices(12, 8, 0, &[]).unwrap(),
+        vec![8, 9, 10, 11]
+    );
+    assert_eq!(
         select_migration_batch_signing_part_indices(0, 0, 0, &[]).unwrap_err(),
         "Migration run has no prepared denomination notes"
     );
     assert_eq!(
-        select_migration_batch_signing_part_indices(3, 1, 0, &[]).unwrap_err(),
-        "Migration transactions are already signed and scheduled"
+        select_migration_batch_signing_part_indices(3, 3, 0, &[]).unwrap_err(),
+        "All migration transactions are already signed and scheduled"
     );
 }
 
@@ -4945,7 +4953,7 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
 }
 
 #[test]
-fn status_waits_for_spend_metadata_before_presigned_child_finalization() {
+fn status_keeps_migration_stage_while_waiting_for_spend_metadata() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     conn.execute(
@@ -5034,7 +5042,7 @@ fn status_waits_for_spend_metadata_before_presigned_child_finalization() {
         last_error: None,
     };
     let status = status_for_run(&conn, run.clone()).unwrap();
-    assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+    assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 0);
     assert_eq!(status.pending_split_stage_count, 0);
 
@@ -5060,7 +5068,7 @@ fn status_waits_for_spend_metadata_before_presigned_child_finalization() {
     .unwrap();
 
     let status = status_for_run(&conn, run.clone()).unwrap();
-    assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+    assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 1);
     assert_eq!(status.pending_split_stage_count, 0);
 

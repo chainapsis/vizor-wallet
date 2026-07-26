@@ -141,12 +141,18 @@ int _migrationPlanCompletionBlocks(rust_sync.OrchardMigrationPrivatePlan plan) {
 
 int migrationPlanPreparationDelayBlocks(
   rust_sync.OrchardMigrationPrivatePlan plan,
-) =>
-    (plan.denominationSplitLayerCount <= 0
-        ? 0
-        : plan.denominationSplitLayerCount * _preparationConfirmationBlocks +
-              _preparationBroadcastBufferBlocks) +
-    plan.proofReadinessDelayBlocks;
+) => migrationPlanNoteSplitDelayBlocks(plan) + plan.proofReadinessDelayBlocks;
+
+int migrationPlanNoteSplitDelayBlocks(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) => plan.denominationSplitLayerCount <= 0
+    ? 0
+    : plan.denominationSplitLayerCount * _preparationConfirmationBlocks +
+          _preparationBroadcastBufferBlocks;
+
+String migrationPlanNoteSplitDurationLabel(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) => _formatMigrationDuration(migrationPlanNoteSplitDelayBlocks(plan));
 
 int migrationPlanPartDelayBlocks({
   required int preparationDelayBlocks,

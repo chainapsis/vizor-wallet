@@ -109,6 +109,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildIronwoodMigrationHowItWorksUseCase,
   ),
   FigmaCompareScenario(
+    id: 'ironwood-migration-what-to-expect',
+    description: 'Ironwood migration expectations screen',
+    builder: buildIronwoodMigrationWhatToExpectUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-options',
     description: 'Ironwood migration option selection screen',
     builder: buildIronwoodMigrationOptionsUseCase,
@@ -117,6 +122,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ironwood-migration-private-review',
     description: 'Ironwood private migration review screen',
     builder: buildIronwoodMigrationPrivateReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-immediate-review',
+    description: 'Ironwood immediate migration review screen',
+    builder: buildIronwoodMigrationImmediateReviewUseCase,
   ),
   FigmaCompareScenario(
     id: 'ironwood-migration-analyzing',
@@ -162,6 +172,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ironwood-migration-post-prepare-active',
     description: 'Ironwood migration with a later batch in progress',
     builder: buildIronwoodMigrationPostPrepareActiveUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-schedule',
+    description: 'Ironwood migration schedule',
+    builder: buildIronwoodMigrationScheduleUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-complete',
+    description: 'Ironwood migration completion',
+    builder: buildIronwoodMigrationCompleteUseCase,
   ),
   FigmaCompareScenario(
     id: 'mobile-ironwood-migration-intro',

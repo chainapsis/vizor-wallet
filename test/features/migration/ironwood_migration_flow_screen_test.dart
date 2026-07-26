@@ -56,8 +56,8 @@ void main() {
     await tester.pumpWidget(_migrationOptionsHarness());
     await tester.pumpAndSettle();
 
-    final privateTitle = find.text('Privacy optimized');
-    final fastTitle = find.text('Faster but less private');
+    final privateTitle = find.text('Private');
+    final fastTitle = find.text('Immediate');
     expect(privateTitle, findsOneWidget);
     expect(fastTitle, findsOneWidget);
     expect(find.text('Customize'), findsNothing);
@@ -88,12 +88,32 @@ void main() {
     await tester.pumpWidget(_migrationOptionsHarness());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Select & Review'));
+    await tester.tap(find.text('Select & review'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Review migration plan'), findsOneWidget);
-    expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
+    expect(find.text('Amount to migrate'), findsOneWidget);
     expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
+  });
+
+  testWidgets('immediate selection opens the explicit privacy warning', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_migrationOptionsHarness());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Immediate'));
+    await tester.tap(find.text('Select & review'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review immediate migration'), findsOneWidget);
+    expect(find.text('Privacy trade-off'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Authorise anyway'), findsOneWidget);
   });
 
   testWidgets('private review keeps analyzing visible for minimum duration', (
@@ -117,7 +137,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Analyzing your balance...'), findsOneWidget);
-    expect(find.text('Review migration plan'), findsNothing);
+    expect(find.text('Ironwood Migration'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 1919));
     expect(find.text('Analyzing your balance...'), findsOneWidget);
@@ -125,7 +145,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Finding private batches...'), findsOneWidget);
-    expect(find.text('Review migration plan'), findsNothing);
+    expect(find.text('Ironwood Migration'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 1590));
     expect(find.text('Finding private batches...'), findsOneWidget);
@@ -133,14 +153,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Preparing your migration plan...'), findsOneWidget);
-    expect(find.text('Review migration plan'), findsNothing);
+    expect(find.text('Ironwood Migration'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 1590));
     expect(
       find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
       findsOneWidget,
     );
-    expect(find.text('Review migration plan'), findsNothing);
+    expect(find.text('Ironwood Migration'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 81));
     await tester.pump();
@@ -149,7 +169,7 @@ void main() {
       find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
       findsNothing,
     );
-    expect(find.text('Review migration plan'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
   });
 
   testWidgets('private review shows plan without preparing a transaction', (
@@ -166,11 +186,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
-    expect(find.text('~7 hrs'), findsOneWidget);
-    expect(find.text('Fees (estimate)'), findsOneWidget);
-    expect(find.text('~0.0001 ZEC'), findsOneWidget);
-    expect(find.text('Part 1'), findsOneWidget);
+    expect(find.text('Amount to migrate'), findsOneWidget);
+    expect(find.text('Est. preparation completion'), findsOneWidget);
     expect(find.text('Review shuffle'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
   });
@@ -238,7 +255,7 @@ void main() {
 
     expect(startedAccountUuid, 'account-1');
     expect(startedSchedule, _privatePlan().scheduledTransfers);
-    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('Preparing your notes'), findsOneWidget);
   });
 
   testWidgets(
@@ -313,7 +330,7 @@ void main() {
     await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('Preparing your notes'), findsOneWidget);
     expect(
       find.text("Couldn't broadcast the migration transaction. Try again."),
       findsNothing,
@@ -460,8 +477,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Review migration plan'), findsOneWidget);
-    expect(find.textContaining('1 note', findRichText: true), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
+    expect(find.text('Amount to migrate'), findsOneWidget);
   });
 
   testWidgets('private status shows resume progress state', (tester) async {
@@ -475,12 +492,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('Preparing your notes'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
       findsOneWidget,
     );
-    expect(find.text('About 30 min\nper split'), findsOneWidget);
     expect(
       find.text(
         'We’re organizing your balance into common-sized\n'
@@ -529,11 +545,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('Preparing your migration'), findsOneWidget);
+      expect(find.text('Preparing your notes'), findsOneWidget);
       expect(
-        find.bySemanticsLabel(
-          'Preparing migration. This usually takes around 30 minutes per split.',
-        ),
+        find.bySemanticsLabel('Preparing migration notes.'),
         findsOneWidget,
       );
     },
@@ -600,6 +614,7 @@ void main() {
           status: _migrationStatus(
             phase: kIronwoodMigrationReadyToMigratePhase,
             activeRunId: 'run-1',
+            proofReady: false,
             targetValuesZatoshi: const [1_000_000_000, 200_000_000],
             totalCount: 2,
             denominationConfirmationCount: 3,
@@ -625,10 +640,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('Note split'), findsNothing);
-      expect(find.text('Migration in progress...'), findsOneWidget);
-      expect(find.text('Migrated:'), findsOneWidget);
+      expect(find.text('Ironwood Migration'), findsOneWidget);
+      expect(find.text('Amount to migrate'), findsOneWidget);
       expect(find.text('Available in Ironwood'), findsOneWidget);
       expect(find.text('0 ZEC'), findsOneWidget);
+      expect(find.text('Waiting for anchor block'), findsOneWidget);
       expect(find.text('~2 mins'), findsNothing);
     },
   );
@@ -663,8 +679,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Note split'), findsNothing);
-    expect(find.text('Migration in progress...'), findsOneWidget);
-    expect(find.text('Waiting for signing window'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
+    expect(find.text('Migration in progress'), findsOneWidget);
     expect(find.text('Available in Ironwood'), findsOneWidget);
   });
 
@@ -687,7 +703,7 @@ void main() {
       findsNothing,
     );
     expect(find.widgetWithText(AppButton, 'Go home'), findsNothing);
-    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('Preparing your notes'), findsOneWidget);
   });
 
   testWidgets('status does not return to intro for a stale pre-run response', (
@@ -707,7 +723,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('Preparing your notes'), findsOneWidget);
     expect(find.text('intro-route'), findsNothing);
   });
 
@@ -720,34 +736,34 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final cases = [
-      _StatusUiCase(status: _status(), title: 'Preparing your migration'),
+      _StatusUiCase(status: _status(), title: 'Preparing your notes'),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationReadyToMigratePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress...',
+        title: 'Ironwood Migration',
       ),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationBroadcastScheduledPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress...',
+        title: 'Ironwood Migration',
       ),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationBroadcastingPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress...',
+        title: 'Ironwood Migration',
       ),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationWaitingConfirmationsPhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress...',
+        title: 'Ironwood Migration',
       ),
       _StatusUiCase(
         status: _migrationStatus(
@@ -763,8 +779,8 @@ void main() {
           phase: kIronwoodMigrationCompletePhase,
           activeRunId: 'run-1',
         ),
-        title: 'Migration in progress...',
-        buttonLabel: 'Go home',
+        title: 'Your\n0 ZEC\nare on Ironwood!',
+        buttonLabel: 'Done',
         buttonEnabled: true,
       ),
     ];
@@ -852,15 +868,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migration in progress...'), findsOneWidget);
-    expect(find.text('Migration Complete'), findsNothing);
+    expect(find.text('Your\n0.6 ZEC\nare on Ironwood!'), findsOneWidget);
     expect(find.text('Back home'), findsNothing);
-    expect(find.text('Migrated:'), findsOneWidget);
-    expect(find.text('Available in Ironwood'), findsOneWidget);
-    expect(find.text('Migration complete'), findsOneWidget);
-    expect(find.text('Waiting for signing window'), findsNothing);
-    expect(find.text('0.6 ZEC'), findsOneWidget);
-    expect(find.widgetWithText(AppButton, 'Go home'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Done'), findsOneWidget);
   });
 
   testWidgets('private complete fallback without run details returns home', (
@@ -923,7 +933,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migrated:'), findsOneWidget);
+    expect(find.text('Migrated'), findsOneWidget);
     expect(find.text('Available in Ironwood'), findsOneWidget);
     expect(find.text('0.1 ZEC'), findsOneWidget);
   });
@@ -971,7 +981,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migrated:'), findsOneWidget);
+    expect(find.text('Migrated'), findsOneWidget);
     expect(find.text('Available in Ironwood'), findsOneWidget);
     expect(find.text('0.3 ZEC'), findsOneWidget);
     expect(find.text('~3 mins'), findsOneWidget);
@@ -1021,7 +1031,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migration in progress...'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
     expect(find.text('~8 mins'), findsOneWidget);
     expect(find.text('Available in Ironwood'), findsOneWidget);
   });
@@ -1374,7 +1384,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('intro-route'), findsNothing);
-    expect(find.text('Migration in progress...'), findsOneWidget);
+    expect(find.text('Ironwood Migration'), findsOneWidget);
   });
 
   testWidgets('migration entry routes every resume phase to private status', (
@@ -1755,6 +1765,23 @@ Widget _migrationOptionsHarness({
             profilePictureId: kDefaultProfilePictureId,
           ),
           previewPrivatePlan: _privatePlan(),
+        ),
+      ),
+      GoRoute(
+        path: '/migration/immediate/review',
+        builder: (_, _) => IronwoodMigrationFlowScreen(
+          step: IronwoodMigrationFlowStep.immediateReview,
+          previewData: IronwoodMigrationFlowData(
+            amountZatoshi: BigInt.from(10_000_000),
+            accountName: 'Account 1',
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+          previewImmediatePlan: rust_sync.OrchardMigrationImmediatePlan(
+            totalInputZatoshi: BigInt.from(10_000_000),
+            feeZatoshi: BigInt.from(10_000),
+            migratedZatoshi: BigInt.from(9_990_000),
+            inputNoteCount: 1,
+          ),
         ),
       ),
       GoRoute(
@@ -2492,6 +2519,7 @@ rust_sync.MigrationStatus _migrationStatus({
   int denominationConfirmationTarget = 0,
   int denominationSplitCompletedCount = 0,
   int denominationSplitTotalCount = 0,
+  bool? proofReady,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
   List<rust_sync.MigrationPartStatus> parts = const [],
 }) {
@@ -2514,6 +2542,7 @@ rust_sync.MigrationStatus _migrationStatus({
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    proofReady: proofReady,
     scheduledBroadcasts: scheduledBroadcasts,
     parts: parts,
   );

@@ -653,14 +653,6 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let recoveries = super::migration::pending_parts_needing_resign(db_path, &run.run_id)?;
     let initial_signing = recoveries.is_empty();
     let all_prepared_notes = super::migration::prepared_notes_for_run(db_path, &run.run_id)?;
-    let prepared_notes = if initial_signing {
-        all_prepared_notes
-    } else {
-        recoveries
-            .iter()
-            .map(|recovery| recovery.selected_note.clone())
-            .collect()
-    };
     let pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
     let signed_child_pczt_count =
         super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
@@ -669,12 +661,29 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
         .map(|recovery| recovery.part_index)
         .collect::<Vec<_>>();
     let signing_part_indices = super::migration::select_migration_batch_signing_part_indices(
-        u32::try_from(prepared_notes.len())
+        u32::try_from(all_prepared_notes.len())
             .map_err(|_| "Prepared migration note count exceeds u32".to_string())?,
         pending_totals.total_count,
         signed_child_pczt_count,
         &recovery_part_indices,
     )?;
+    let prepared_notes = if initial_signing {
+        signing_part_indices
+            .iter()
+            .map(|part_index| {
+                all_prepared_notes
+                    .get(*part_index as usize)
+                    .cloned()
+                    .ok_or("Migration signing part is outside prepared notes")
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        recoveries
+            .iter()
+            .take(signing_part_indices.len())
+            .map(|recovery| recovery.selected_note.clone())
+            .collect()
+    };
     if !initial_signing && !prepared_note_spend_metadata_is_available(db_path, &run.run_id)? {
         return Err(
             "Prepared denomination notes are not spendable yet. Sync and try again.".to_string(),
@@ -812,7 +821,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     Ok(KeystoneMigrationSigningRequest {
         request_id,
         messages,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: super::migration::MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
     })
 }
 
@@ -890,26 +899,15 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
         .iter()
         .map(|message| message.selected_note.clone())
         .collect::<Vec<_>>();
-    let prepared_notes_unchanged = if stored.recovery_old_txids.is_empty() {
-        current_prepared == request_prepared
-    } else {
-        request_prepared.iter().all(|requested| {
-            current_prepared
-                .iter()
-                .any(|current| same_prepared_note_without_nullifier(current, requested))
-        })
-    };
+    let prepared_notes_unchanged = request_prepared.iter().all(|requested| {
+        current_prepared
+            .iter()
+            .any(|current| same_prepared_note_without_nullifier(current, requested))
+    });
     if !prepared_notes_unchanged {
         reset_migration_request_after_failed_completion(request_id);
         return Err("Prepared migration notes changed before completion".to_string());
     }
-    if stored.recovery_old_txids.is_empty()
-        && super::migration::pending_totals_for_run(db_path, &run.run_id)?.total_count > 0
-    {
-        reset_migration_request_after_failed_completion(request_id);
-        return Err("Migration transactions are already signed and scheduled".to_string());
-    }
-
     if stored.recovery_old_txids.is_empty() {
         let completion_result = (|| -> Result<u64, String> {
             if stored

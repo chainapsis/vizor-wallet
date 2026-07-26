@@ -1144,12 +1144,6 @@ class IronwoodMigrationService {
         network: context.network,
         accountUuid: context.accountUuid,
         operation: () async {
-          if (isMacOS()) {
-            throw UnsupportedError(
-              'Immediate migration is not available on macOS.',
-            );
-          }
-
           final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
           if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
             throw Exception('Mnemonic not found for the migration account.');

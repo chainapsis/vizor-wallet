@@ -9,7 +9,6 @@ use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zeroize::Zeroizing;
 
 use crate::wallet::db::{open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout};
-use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::secret_payload;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
@@ -96,6 +95,7 @@ pub(crate) const PHASE_AWAITING_PREPARATION: &str = "awaiting_preparation";
 pub(crate) const PHASE_AWAITING_DENOMINATION_SIGNATURE: &str = "awaiting_denomination_signature";
 pub(crate) const PHASE_WAITING_DENOM_CONFIRMATIONS: &str = "waiting_denom_confirmations";
 pub(crate) const PHASE_READY_TO_MIGRATE: &str = "ready_to_migrate";
+pub(crate) const MIGRATION_KEYSTONE_BATCH_MAX_PARTS: u32 = 8;
 pub(crate) const PHASE_BROADCAST_SCHEDULED: &str = "broadcast_scheduled";
 pub(crate) const PHASE_BROADCASTING: &str = "broadcasting";
 pub(crate) const PHASE_WAITING_MIGRATION_CONFIRMATIONS: &str = "waiting_migration_confirmations";
@@ -420,7 +420,7 @@ pub(crate) fn migration_status(
         pending_split_stage_count: 0,
         message: None,
         can_abandon: false,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
         schedule_mean_delay_blocks: schedule_parameters_with_policy(
             network,
             configured_timing_policy(network),
@@ -4313,7 +4313,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
     // child transaction has reached trusted depth. Never infer it from the
     // per-transaction `confirmed` marker, which means only that the child is
     // currently mined and can still be reorged before the trust threshold.
-    let mut phase = conn
+    let phase = conn
         .query_row(
             &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
             params![run.run_id],
@@ -4322,13 +4322,6 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         .optional()
         .map_err(|e| format!("Read durable migration phase: {e}"))?
         .unwrap_or_else(|| run.phase.clone());
-    if phase == PHASE_READY_TO_MIGRATE
-        && pending_tx_count == 0
-        && prepared_note_count > 0
-        && !prepared_note_spend_metadata_available_for_run(conn, &run.run_id)?
-    {
-        phase = PHASE_WAITING_DENOM_CONFIRMATIONS.to_string();
-    }
     let denomination_confirmation_target = denomination_confirmations_required();
     // A private-migration draft is persisted before Keystone signs its
     // denomination PCZTs. It deliberately has no staged transactions yet;
@@ -4419,7 +4412,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         pending_split_stage_count,
         message: run.last_error,
         can_abandon,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
         schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
         next_action_height: timing_projection.next_action_height,
@@ -4438,15 +4431,24 @@ pub(crate) fn select_migration_batch_signing_part_indices(
     recovery_part_indices: &[u32],
 ) -> Result<Vec<u32>, String> {
     if !recovery_part_indices.is_empty() {
-        return Ok(recovery_part_indices.to_vec());
+        return Ok(recovery_part_indices
+            .iter()
+            .copied()
+            .take(MIGRATION_KEYSTONE_BATCH_MAX_PARTS as usize)
+            .collect());
     }
     if prepared_note_count == 0 {
         return Err("Migration run has no prepared denomination notes".to_string());
     }
-    if pending_tx_count > 0 || signed_child_pczt_count > 0 {
-        return Err("Migration transactions are already signed and scheduled".to_string());
+    let assigned_count = pending_tx_count
+        .checked_add(signed_child_pczt_count)
+        .ok_or("Migration signed transaction count overflow")?;
+    if assigned_count >= prepared_note_count {
+        return Err("All migration transactions are already signed and scheduled".to_string());
     }
-    Ok((0..prepared_note_count).collect())
+    Ok((assigned_count
+        ..prepared_note_count.min(assigned_count + MIGRATION_KEYSTONE_BATCH_MAX_PARTS))
+        .collect())
 }
 
 fn migration_parts_for_run(

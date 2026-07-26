@@ -743,6 +743,12 @@ List<RouteBase> _desktopRoutes() => [
     ),
   ),
   GoRoute(
+    path: '/migration/what-to-expect',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.whatToExpect,
+    ),
+  ),
+  GoRoute(
     path: '/migration/options',
     builder: (_, _) => const IronwoodMigrationFlowScreen(
       step: IronwoodMigrationFlowStep.options,
@@ -759,8 +765,22 @@ List<RouteBase> _desktopRoutes() => [
     ),
   ),
   GoRoute(
+    path: '/migration/immediate/review',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.immediateReview,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/fast/review',
+    redirect: (_, _) => '/migration/immediate/review',
+  ),
+  GoRoute(
     path: '/migration/private/status',
     builder: (_, _) => const IronwoodMigrationPrivateStatusScreen(),
+  ),
+  GoRoute(
+    path: '/migration/private/schedule',
+    builder: (_, _) => const IronwoodMigrationScheduleScreen(),
   ),
   GoRoute(
     path: '/migration/private/keystone/denominations/sign',

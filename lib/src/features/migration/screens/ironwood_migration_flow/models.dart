@@ -1,6 +1,14 @@
 part of '../ironwood_migration_flow_screen.dart';
 
-enum IronwoodMigrationFlowStep { prepare, intro, howItWorks, options, review }
+enum IronwoodMigrationFlowStep {
+  prepare,
+  intro,
+  howItWorks,
+  whatToExpect,
+  options,
+  review,
+  immediateReview,
+}
 
 enum IronwoodMigrationReviewPreviewStage { review, analyzing }
 
@@ -20,6 +28,16 @@ const _ironwoodMigrationIntroBannerLightAsset =
     'assets/illustrations/ironwood_migration_intro_banner_light.png';
 const _ironwoodMigrationIntroBannerDarkAsset =
     'assets/illustrations/ironwood_migration_intro_banner_dark.png';
+const _ironwoodMigrationHowStepAssets = [
+  'assets/illustrations/ironwood_migration_how_step_1.png',
+  'assets/illustrations/ironwood_migration_how_step_2.png',
+  'assets/illustrations/ironwood_migration_how_step_3.png',
+];
+const _ironwoodMigrationExpectationAssets = [
+  'assets/illustrations/ironwood_migration_expect_time.png',
+  'assets/illustrations/ironwood_migration_expect_spend.png',
+  'assets/illustrations/ironwood_migration_expect_running.png',
+];
 
 final ironwoodMigrationAnalyzingMinimumDurationProvider = Provider<Duration>(
   (_) => _defaultMigrationAnalyzingMinimumDuration,

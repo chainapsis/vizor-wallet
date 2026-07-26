@@ -53,6 +53,8 @@ part 'ironwood_migration_flow/keystone_signing.dart';
 part 'ironwood_migration_flow/shell_intro_options.dart';
 part 'ironwood_migration_flow/private_status.dart';
 part 'ironwood_migration_flow/private_review.dart';
+part 'ironwood_migration_flow/immediate_review.dart';
+part 'ironwood_migration_flow/schedule.dart';
 part 'ironwood_migration_flow/migration_progress_segments.dart';
 part 'ironwood_migration_flow/migration_batch_status.dart';
 part 'ironwood_migration_flow/transfer_status.dart';
