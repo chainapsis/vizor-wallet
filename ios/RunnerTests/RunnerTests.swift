@@ -547,6 +547,63 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testMigrationPreparationNeedsActionFingerprintCommitsOnlyAfterAcceptedSubmission() {
+    XCTAssertNil(
+      migrationPreparationNeedsActionFingerprintAfterSubmission(
+        previousFingerprint: nil,
+        fingerprint: "main:account-1:run-1:foreground",
+        submissionAccepted: false
+      )
+    )
+    XCTAssertEqual(
+      migrationPreparationNeedsActionFingerprintAfterSubmission(
+        previousFingerprint: nil,
+        fingerprint: "main:account-1:run-1:foreground",
+        submissionAccepted: true
+      ),
+      "main:account-1:run-1:foreground"
+    )
+  }
+
+  func testMigrationPreparationNeedsActionResetInvalidatesAnInFlightSubmission() throws {
+    var tracker = MigrationPreparationNeedsActionSubmissionTracker()
+    let token = try XCTUnwrap(
+      tracker.begin(
+        scope: "main:account-1:run-1",
+        fingerprint: "main:account-1:run-1:foreground"
+      )
+    )
+
+    XCTAssertEqual(tracker.scopes, ["main:account-1:run-1"])
+    tracker.reset()
+    XCTAssertEqual(
+      tracker.complete(
+        scope: "main:account-1:run-1",
+        token: token
+      ),
+      .invalidated
+    )
+  }
+
+  func testMigrationPreparationNeedsActionKeepsANewerSubmissionCurrent() throws {
+    var tracker = MigrationPreparationNeedsActionSubmissionTracker()
+    let firstToken = try XCTUnwrap(
+      tracker.begin(scope: "global", fingerprint: "global:first")
+    )
+    let secondToken = try XCTUnwrap(
+      tracker.begin(scope: "global", fingerprint: "global:second")
+    )
+
+    XCTAssertEqual(
+      tracker.complete(scope: "global", token: firstToken),
+      .superseded
+    )
+    XCTAssertEqual(
+      tracker.complete(scope: "global", token: secondToken),
+      .current
+    )
+  }
+
   func testFreshInstallCleanerMarksInstallWhenNoWalletKeychainExists() {
     let harness = FreshInstallCleanerHarness()
     harness.lookup = .missing

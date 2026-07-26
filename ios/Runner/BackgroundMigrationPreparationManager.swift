@@ -83,6 +83,61 @@ func shouldPostMigrationPreparationNeedsActionNotification(
   previousFingerprint != fingerprint
 }
 
+func migrationPreparationNeedsActionFingerprintAfterSubmission(
+  previousFingerprint: String?,
+  fingerprint: String,
+  submissionAccepted: Bool
+) -> String? {
+  submissionAccepted ? fingerprint : previousFingerprint
+}
+
+enum MigrationPreparationNeedsActionSubmissionCompletion: Equatable {
+  case current
+  case invalidated
+  case superseded
+}
+
+struct MigrationPreparationNeedsActionSubmissionTracker {
+  private var nextToken: UInt64 = 0
+  private var pendingFingerprints: [String: String] = [:]
+  private var requestTokens: [String: UInt64] = [:]
+
+  var scopes: Set<String> {
+    Set(pendingFingerprints.keys).union(requestTokens.keys)
+  }
+
+  mutating func begin(scope: String, fingerprint: String) -> UInt64? {
+    guard pendingFingerprints[scope] != fingerprint else { return nil }
+    nextToken &+= 1
+    pendingFingerprints[scope] = fingerprint
+    requestTokens[scope] = nextToken
+    return nextToken
+  }
+
+  mutating func complete(
+    scope: String,
+    token: UInt64
+  ) -> MigrationPreparationNeedsActionSubmissionCompletion {
+    guard requestTokens[scope] == token else {
+      return requestTokens[scope] == nil ? .invalidated : .superseded
+    }
+    pendingFingerprints.removeValue(forKey: scope)
+    return .current
+  }
+
+  mutating func clear(scopes: Set<String>) {
+    for scope in scopes {
+      pendingFingerprints.removeValue(forKey: scope)
+      requestTokens.removeValue(forKey: scope)
+    }
+  }
+
+  mutating func reset() {
+    pendingFingerprints.removeAll()
+    requestTokens.removeAll()
+  }
+}
+
 private enum BackgroundMigrationPreparationStepResult {
   case progress(CMigrationPreparationProgress)
   case retry(TimeInterval)
@@ -217,6 +272,8 @@ final class BackgroundMigrationPreparationManager {
   private var foregroundHandoffRequested = false
   private var foregroundContinuationScopes: Set<String>
   private var needsActionNotificationFingerprints: [String: String]
+  private var needsActionNotificationSubmissionTracker =
+    MigrationPreparationNeedsActionSubmissionTracker()
   private var taskProgress: Progress?
   private var lastCompletedUnitCount: Int64 = 0
   private var authorizationMonitor:
@@ -1565,30 +1622,59 @@ final class BackgroundMigrationPreparationManager {
     scope: String,
     fingerprint: String
   ) {
-    let shouldPost = stateLock.withPreparationLock { () -> Bool in
+    let submissionToken = stateLock.withPreparationLock { () -> UInt64? in
       guard shouldPostMigrationPreparationNeedsActionNotification(
         previousFingerprint: needsActionNotificationFingerprints[scope],
         fingerprint: fingerprint
-      ) else {
-        return false
-      }
-      needsActionNotificationFingerprints[scope] = fingerprint
-      persistNeedsActionNotificationFingerprintsLocked()
-      return true
+      ) else { return nil }
+      return needsActionNotificationSubmissionTracker.begin(
+        scope: scope,
+        fingerprint: fingerprint
+      )
     }
-    guard shouldPost else { return }
+    guard let submissionToken else { return }
 
     let content = UNMutableNotificationContent()
     content.title = "User action needed"
     content.body = "Open and unlock Vizor to continue."
     content.sound = .default
+    let requestIdentifier = Self.needsActionNotificationIdentifier(scope: scope)
     addNotificationIfEnabled(
       UNNotificationRequest(
-        identifier: Self.needsActionNotificationIdentifier(scope: scope),
+        identifier: requestIdentifier,
         content: content,
         trigger: nil
       )
-    )
+    ) { submissionAccepted in
+      self.stateLock.withPreparationLock {
+        switch self.needsActionNotificationSubmissionTracker.complete(
+          scope: scope,
+          token: submissionToken
+        ) {
+        case .current:
+          self.needsActionNotificationFingerprints[scope] =
+            migrationPreparationNeedsActionFingerprintAfterSubmission(
+              previousFingerprint:
+                self.needsActionNotificationFingerprints[scope],
+              fingerprint: fingerprint,
+              submissionAccepted: submissionAccepted
+            )
+          if submissionAccepted {
+            self.persistNeedsActionNotificationFingerprintsLocked()
+          }
+        case .invalidated:
+          let center = UNUserNotificationCenter.current()
+          center.removePendingNotificationRequests(
+            withIdentifiers: [requestIdentifier]
+          )
+          center.removeDeliveredNotifications(
+            withIdentifiers: [requestIdentifier]
+          )
+        case .superseded:
+          break
+        }
+      }
+    }
   }
 
   private func needsActionFingerprint(
@@ -1614,6 +1700,7 @@ final class BackgroundMigrationPreparationManager {
       for scope in scopes {
         needsActionNotificationFingerprints.removeValue(forKey: scope)
       }
+      needsActionNotificationSubmissionTracker.clear(scopes: scopes)
       persistNeedsActionNotificationFingerprintsLocked()
     }
     let identifiers = scopes.map {
@@ -1630,10 +1717,14 @@ final class BackgroundMigrationPreparationManager {
 
   private func resetNeedsActionNotifications() {
     let identifiers = stateLock.withPreparationLock { () -> [String] in
-      let identifiers = needsActionNotificationFingerprints.keys.map {
+      let scopes = Set(needsActionNotificationFingerprints.keys).union(
+        needsActionNotificationSubmissionTracker.scopes
+      )
+      let identifiers = scopes.map {
         Self.needsActionNotificationIdentifier(scope: $0)
       }
       needsActionNotificationFingerprints.removeAll()
+      needsActionNotificationSubmissionTracker.reset()
       persistNeedsActionNotificationFingerprintsLocked()
       return identifiers
     }
@@ -1672,24 +1763,30 @@ final class BackgroundMigrationPreparationManager {
     )
   }
 
-  private func addNotificationIfEnabled(_ request: UNNotificationRequest) {
+  private func addNotificationIfEnabled(
+    _ request: UNNotificationRequest,
+    completion: ((Bool) -> Void)? = nil
+  ) {
     guard !stateLock.withPreparationLock({
       notificationAuthorization.isDisabled
     }) else {
+      completion?(false)
       return
     }
     let center = UNUserNotificationCenter.current()
-    center.add(request) { _ in
+    center.add(request) { error in
       let disabled = self.stateLock.withPreparationLock {
         self.notificationAuthorization.isDisabled
       }
-      guard disabled else { return }
-      center.removePendingNotificationRequests(
-        withIdentifiers: [request.identifier]
-      )
-      center.removeDeliveredNotifications(
-        withIdentifiers: [request.identifier]
-      )
+      if disabled {
+        center.removePendingNotificationRequests(
+          withIdentifiers: [request.identifier]
+        )
+        center.removeDeliveredNotifications(
+          withIdentifiers: [request.identifier]
+        )
+      }
+      completion?(error == nil && !disabled)
     }
   }
 
