@@ -15,9 +15,9 @@ orchard = { version = "0.15", features = ["unstable-voting-circuits"] }
 voting-circuits = "=0.9.0-rc.3"
 
 # These published librustzcash versions include the Ironwood historical selector.
-pczt = { version = "0.8.0", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
-zcash_client_backend = { version = "0.24.0-rc.2", default-features = false, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
-zcash_client_sqlite = { version = "0.22.0-rc.2", default-features = false, features = ["orchard"] }
+pczt = { version = "0.9.0", features = ["orchard", "io-finalizer", "signer", "zcp-builder"] }
+zcash_client_backend = { version = "0.24.0-rc.3", default-features = false, features = ["orchard", "lightwalletd-tonic", "lightwalletd-tonic-tls-webpki-roots"] }
+zcash_client_sqlite = { version = "0.22.0-rc.3", default-features = false, features = ["orchard"] }
 zcash_keys = { version = "0.16.0", features = ["orchard"] }
 zcash_primitives = { version = "0.30.0" }
 zcash_protocol = { version = "0.10.1" }
