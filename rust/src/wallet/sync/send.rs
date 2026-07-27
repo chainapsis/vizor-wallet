@@ -854,7 +854,7 @@ pub(crate) fn get_shield_transparent_status(
     }
 }
 
-/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
+/// Create a height-appropriate transparent-shielding PCZT for hardware accounts.
 pub(crate) async fn create_shield_transparent_pczt(
     db_path: &str,
     lightwalletd_url: &str,
@@ -903,6 +903,10 @@ fn create_shield_transparent_pczt_with_expiry(
         // Ironwood pool (the fork derived this from the target height). Use
         // the proposal's own target height rather than the synced-wallet
         // probe: the shielding flow works from the chain tip alone.
+        let ironwood_active_at_target = network.is_nu_active(
+            consensus::NetworkUpgrade::Nu6_3,
+            BlockHeight::from(proposal.min_target_height()),
+        );
         let proposed_tx_version =
             proposed_tx_version_for_send(network, proposal.min_target_height());
         // The transaction version rides on the proposal. Expiry is raised to
@@ -926,7 +930,10 @@ fn create_shield_transparent_pczt_with_expiry(
         let pczt_bytes = pczt
             .serialize()
             .map_err(|e| format!("Serialize shielding PCZT: {e:?}"))?;
-        ensure_transparent_shielding_pczt_targets_ironwood(&pczt_bytes)?;
+        ensure_transparent_shielding_pczt_targets_expected_pool(
+            &pczt_bytes,
+            ironwood_active_at_target,
+        )?;
 
         Ok(ShieldTransparentPcztResult {
             pczt_bytes,
@@ -3461,19 +3468,43 @@ fn proposal_shielded_zatoshi(proposal: &Proposal<WalletFeeRule, Infallible>) -> 
         .sum()
 }
 
-fn ensure_transparent_shielding_pczt_targets_ironwood(pczt_bytes: &[u8]) -> Result<(), String> {
+fn ensure_transparent_shielding_pczt_targets_expected_pool(
+    pczt_bytes: &[u8],
+    ironwood_active_at_target: bool,
+) -> Result<(), String> {
     let pczt = pczt::Pczt::parse(pczt_bytes)
         .map_err(|e| format!("Parse transparent shielding PCZT: {e:?}"))?;
-    if *pczt.global().tx_version() != zcash_protocol::constants::V6_TX_VERSION {
-        return Err("Transparent shielding PCZT must use transaction v6 after NU6.3.".to_string());
-    }
-    if pczt.ironwood().actions().is_empty() {
-        return Err("Transparent shielding PCZT did not target Ironwood.".to_string());
-    }
-    if !pczt.orchard().actions().is_empty() {
-        return Err(
-            "Transparent shielding PCZT unexpectedly contains legacy Orchard actions.".to_string(),
-        );
+
+    if ironwood_active_at_target {
+        if *pczt.global().tx_version() != zcash_protocol::constants::V6_TX_VERSION {
+            return Err(
+                "Transparent shielding PCZT must use transaction v6 after NU6.3.".to_string(),
+            );
+        }
+        if pczt.ironwood().actions().is_empty() {
+            return Err("Transparent shielding PCZT did not target Ironwood.".to_string());
+        }
+        if !pczt.orchard().actions().is_empty() {
+            return Err(
+                "Transparent shielding PCZT unexpectedly contains legacy Orchard actions."
+                    .to_string(),
+            );
+        }
+    } else {
+        if *pczt.global().tx_version() != zcash_protocol::constants::V5_TX_VERSION {
+            return Err(
+                "Transparent shielding PCZT must use transaction v5 before NU6.3.".to_string(),
+            );
+        }
+        if pczt.orchard().actions().is_empty() {
+            return Err("Transparent shielding PCZT did not target Orchard.".to_string());
+        }
+        if !pczt.ironwood().actions().is_empty() {
+            return Err(
+                "Pre-NU6.3 transparent shielding PCZT unexpectedly contains Ironwood actions."
+                    .to_string(),
+            );
+        }
     }
 
     Ok(())

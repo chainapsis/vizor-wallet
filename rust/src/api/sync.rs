@@ -1894,7 +1894,7 @@ pub fn get_shield_transparent_status(
     })
 }
 
-/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
+/// Create a height-appropriate transparent-shielding PCZT for hardware accounts.
 pub fn create_shield_transparent_pczt(
     db_path: String,
     lightwalletd_url: String,

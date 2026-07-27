@@ -1187,7 +1187,77 @@ fn estimate_send_max_stays_at_v6_ceiling_for_v2_only_spends() {
 }
 
 #[test]
-fn keystone_transparent_shielding_pczt_targets_ironwood() {
+fn keystone_transparent_shielding_pczt_targets_orchard_before_nu6_3() {
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(200).unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let network = WalletNetwork::Regtest;
+    let mnemonic = crate::wallet::keys::generate_mnemonic();
+    let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+    let (account_uuid, _) =
+        crate::wallet::keys::init_db_and_create_account(db_path, network, &seed, Some(1), "shield")
+            .unwrap();
+    let account_id = parse_account_uuid(&account_uuid).unwrap();
+
+    let mut db = open_wallet_db(db_path, network).unwrap();
+    let tip = BlockHeight::from_u32(120);
+    db.update_chain_tip(tip).unwrap();
+    {
+        type CheckpointError = WalletError<
+            (),
+            commitment_tree::Error,
+            (),
+            <ConservativeZip317FeeRule as FeeRule>::Error,
+            (),
+            ReceivedNoteId,
+        >;
+        let result: Result<_, CheckpointError> =
+            db.with_sapling_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+        assert!(result.unwrap(), "checkpointing the empty Sapling tree");
+        let result: Result<_, CheckpointError> =
+            db.with_orchard_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+        assert!(result.unwrap(), "checkpointing the empty Orchard tree");
+        let result: Result<_, CheckpointError> =
+            db.with_ironwood_tree_mut(|tree| Ok(tree.checkpoint(tip)?));
+        result.unwrap();
+    }
+
+    let ua_request = zcash_keys::keys::UnifiedAddressRequest::custom(
+        ReceiverRequirement::Require,
+        ReceiverRequirement::Require,
+        ReceiverRequirement::Require,
+    )
+    .unwrap();
+    let ua = db
+        .get_last_generated_address_matching(account_id, ua_request)
+        .unwrap()
+        .unwrap();
+    let taddr = *ua.transparent().unwrap();
+    let outpoint = OutPoint::new([41u8; 32], 0);
+    let txout = TxOut::new(Zatoshis::const_from_u64(1_000_000), taddr.script().into());
+    let utxo =
+        WalletTransparentOutput::from_parts(outpoint, txout, Some(tip), None, None, None).unwrap();
+    db.put_received_transparent_utxo(&utxo).unwrap();
+    drop(db);
+
+    let result =
+        create_shield_transparent_pczt_with_expiry(db_path, network, &account_uuid, None).unwrap();
+    let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
+
+    assert_eq!(
+        *pczt.global().tx_version(),
+        zcash_protocol::constants::V5_TX_VERSION
+    );
+    assert!(!pczt.orchard().actions().is_empty());
+    assert!(pczt.ironwood().actions().is_empty());
+    assert_eq!(result.needs_sapling_params, false);
+    assert!(result.fee_zatoshi > 0);
+    assert!(result.shielded_zatoshi > 0);
+}
+
+#[test]
+fn keystone_transparent_shielding_pczt_targets_ironwood_after_nu6_3() {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");

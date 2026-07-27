@@ -678,7 +678,7 @@ Future<ShieldTransparentStatus> getShieldTransparentStatus({
   accountUuid: accountUuid,
 );
 
-/// Create an Ironwood transparent-shielding PCZT for hardware accounts.
+/// Create a height-appropriate transparent-shielding PCZT for hardware accounts.
 Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   required String dbPath,
   required String lightwalletdUrl,
