@@ -554,6 +554,57 @@ void main() {
     },
   );
 
+  testWidgets('home keeps completed Ironwood visible during migration sync', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(
+            kIronwoodMigrationBroadcastScheduledPhase,
+            activeRunId: 'run-1',
+          ),
+        ),
+        migrationCoordinatorStatus: _migrationStatus(
+          kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          orchardBalance: BigInt.zero,
+          displayOrchardBalance: BigInt.from(1_000_000_000),
+          ironwoodBalance: BigInt.zero,
+          displayIronwoodBalance: BigInt.from(4_011_000_000),
+          spendableBalance: BigInt.zero,
+          displaySpendableBalance: BigInt.from(4_011_000_000),
+          displaySpendableFreshness:
+              SpendableBalanceFreshness.lastCompletedSync,
+          totalBalance: BigInt.zero,
+          displayTotalBalance: BigInt.from(4_011_000_000),
+          displayShieldedBalance: BigInt.from(4_011_000_000),
+        ),
+      ),
+    );
+    await tester.pump();
+    await _pumpUntilPresent(
+      tester,
+      find.byKey(const ValueKey('home_desktop_send_button')),
+    );
+
+    expect(find.text('40.11'), findsOneWidget);
+    expect(find.text('10 ZEC still migrating'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home_desktop_send_button')),
+      findsOneWidget,
+    );
+    expect(find.text('0'), findsNothing);
+  });
+
   testWidgets('home desktop shielded balance includes Ironwood funds', (
     tester,
   ) async {

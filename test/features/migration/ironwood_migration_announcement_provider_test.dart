@@ -415,6 +415,44 @@ void main() {
   });
 
   test(
+    'active migration keeps the completed Ironwood display during sync',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationBroadcastScheduledPhase,
+        migrationActiveRunId: 'run-1',
+        migrationTargetValues: const [1_000_000, 2_000_000],
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncing: true,
+          isSyncComplete: false,
+          scannedHeight: 3_499_900,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(3_000_000),
+          ironwoodBalance: BigInt.zero,
+          displayIronwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.zero,
+          displaySpendableBalance: BigInt.from(4_000_000),
+          displaySpendableFreshness:
+              SpendableBalanceFreshness.lastCompletedSync,
+          totalBalance: BigInt.zero,
+          displayTotalBalance: BigInt.from(4_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodPostMigrationStateProvider.future);
+      final migrationSpendable = container.read(
+        ironwoodMigrationAwareDisplaySpendableProvider(_accountUuid),
+      );
+
+      expect(migrationSpendable, BigInt.from(1_000_000));
+    },
+  );
+
+  test(
     'post migration state waits for externally migrated pending Ironwood',
     () async {
       final container = _container(

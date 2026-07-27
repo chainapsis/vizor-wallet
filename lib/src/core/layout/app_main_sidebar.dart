@@ -334,7 +334,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         !accountSync.hasAccountScopedData &&
         accountSync.failure == null;
     final balanceText =
-        '${ZecAmount.fromZatoshi(accountSync.totalBalance).balance.amountText} '
+        '${ZecAmount.fromZatoshi(accountSync.displayTotalBalance).balance.amountText} '
         '$kZcashDefaultCurrencyTicker';
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final balanceLabel = hideAmountIfPrivacyMode(
@@ -415,11 +415,11 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         status: migrationStatus!,
                         isHardware: activeAccount?.isHardware ?? false,
                         orchardBalance:
-                            accountSync.orchardBalance +
-                            accountSync.orchardPendingBalance,
+                            accountSync.displayOrchardBalance +
+                            accountSync.displayOrchardPendingBalance,
                         ironwoodBalance:
-                            accountSync.ironwoodBalance +
-                            accountSync.ironwoodPendingBalance,
+                            accountSync.displayIronwoodBalance +
+                            accountSync.displayIronwoodPendingBalance,
                         privacyModeEnabled: privacyModeEnabled,
                         active: _homeShouldBeActive,
                         onHome: () => _navigateTo('/home'),

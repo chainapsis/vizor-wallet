@@ -188,12 +188,80 @@ void main() {
     expect(merged.chainTipHeight, 100);
     expect(merged.spendableBalance, BigInt.from(5));
     expect(merged.displaySpendableBalance, BigInt.from(50));
+    expect(merged.displayIronwoodBalance, BigInt.zero);
     expect(
       merged.displaySpendableFreshness,
       SpendableBalanceFreshness.lastCompletedSync,
     );
     expect(merged.recentTransactions, [tx]);
     expect(merged.canShieldTransparentBalance, isTrue);
+  });
+
+  test('incremental migration sync preserves pool and holdings displays', () {
+    final current = SyncState(
+      accountUuid: 'account-a',
+      hasAccountScopedData: true,
+      isSyncing: true,
+      spendableBalance: BigInt.zero,
+      displaySpendableBalance: BigInt.from(90),
+      ironwoodBalance: BigInt.zero,
+      displayIronwoodBalance: BigInt.from(40),
+      ironwoodPendingBalance: BigInt.zero,
+      displayIronwoodPendingBalance: BigInt.from(5),
+      orchardBalance: BigInt.zero,
+      displayOrchardBalance: BigInt.from(45),
+      orchardPendingBalance: BigInt.zero,
+      displayOrchardPendingBalance: BigInt.from(5),
+      totalBalance: BigInt.zero,
+      displayTotalBalance: BigInt.from(100),
+      displayShieldedBalance: BigInt.from(95),
+      displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    );
+    final transientZero = _balance(
+      orchard: BigInt.zero,
+      ironwood: BigInt.zero,
+      spendable: BigInt.zero,
+      total: BigInt.zero,
+    );
+
+    final syncing = current.withFetchedAccountData(
+      balance: transientZero,
+      syncComplete: false,
+    );
+    final completed = syncing.withFetchedAccountData(
+      balance: _balance(
+        orchard: BigInt.from(3),
+        ironwood: BigInt.from(42),
+        spendable: BigInt.from(45),
+        total: BigInt.from(45),
+      ),
+      syncComplete: true,
+    );
+
+    expect(syncing.ironwoodBalance, BigInt.zero);
+    expect(syncing.displayIronwoodBalance, BigInt.from(40));
+    expect(syncing.displayIronwoodPendingBalance, BigInt.from(5));
+    expect(syncing.displayOrchardBalance, BigInt.from(45));
+    expect(syncing.displayOrchardPendingBalance, BigInt.from(5));
+    expect(syncing.displaySpendableBalance, BigInt.from(90));
+    expect(syncing.displayShieldedBalance, BigInt.from(95));
+    expect(syncing.displayTotalBalance, BigInt.from(100));
+    expect(
+      syncing.displaySpendableFreshness,
+      SpendableBalanceFreshness.lastCompletedSync,
+    );
+
+    expect(completed.displayIronwoodBalance, BigInt.from(42));
+    expect(completed.displayIronwoodPendingBalance, BigInt.zero);
+    expect(completed.displayOrchardBalance, BigInt.from(3));
+    expect(completed.displayOrchardPendingBalance, BigInt.zero);
+    expect(completed.displaySpendableBalance, BigInt.from(45));
+    expect(completed.displayShieldedBalance, BigInt.from(45));
+    expect(completed.displayTotalBalance, BigInt.from(45));
+    expect(
+      completed.displaySpendableFreshness,
+      SpendableBalanceFreshness.authoritative,
+    );
   });
 
   test('fetched Ironwood-only balance feeds the spendable display', () {
@@ -480,6 +548,35 @@ void main() {
     expect(completed.totalBalance, BigInt.from(123));
     expect(completed.recentTransactions, hasLength(1));
   });
+}
+
+rust_sync.WalletBalance _balance({
+  required BigInt orchard,
+  required BigInt ironwood,
+  required BigInt spendable,
+  required BigInt total,
+}) {
+  return rust_sync.WalletBalance(
+    availability: rust_sync.WalletBalanceAvailability.available,
+    transparent: BigInt.zero,
+    sapling: BigInt.zero,
+    orchard: orchard,
+    ironwood: ironwood,
+    transparentLocked: BigInt.zero,
+    saplingLocked: BigInt.zero,
+    orchardLocked: BigInt.zero,
+    ironwoodLocked: BigInt.zero,
+    transparentPending: BigInt.zero,
+    saplingPending: BigInt.zero,
+    orchardPending: BigInt.zero,
+    ironwoodPending: BigInt.zero,
+    changePendingConfirmation: BigInt.zero,
+    valuePendingSpendability: BigInt.zero,
+    uneconomicValue: BigInt.zero,
+    spendable: spendable,
+    locked: BigInt.zero,
+    total: total,
+  );
 }
 
 rust_sync.TransactionInfo _tx(String txidHex) {

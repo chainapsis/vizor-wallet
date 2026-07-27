@@ -72,7 +72,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         ? sync.ironwoodBalance
         : sync.spendableBalance;
     final displaySpendableBalance = migrationInProgress
-        ? sync.ironwoodBalance
+        ? sync.displayIronwoodBalance
         : sync.displaySpendableBalance;
     final isUsingCompletedSpendableSnapshot =
         sync.isUsingCompletedSpendableSnapshot;

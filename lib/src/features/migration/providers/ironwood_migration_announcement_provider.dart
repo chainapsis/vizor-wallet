@@ -858,7 +858,7 @@ final ironwoodMigrationAwareDisplaySpendableProvider = Provider.autoDispose
       final migration = ref.watch(ironwoodHomeMigrationPresentationProvider);
       return migration.mode == IronwoodHomeMigrationCtaMode.resume &&
               migration.accountUuid == accountUuid
-          ? sync.ironwoodBalance
+          ? sync.displayIronwoodBalance
           : sync.displaySpendableBalance;
     });
 
