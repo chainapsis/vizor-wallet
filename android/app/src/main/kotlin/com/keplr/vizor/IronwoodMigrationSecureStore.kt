@@ -11,7 +11,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.KeyStore
 import java.security.MessageDigest
-import java.security.SecureRandom
 import java.util.concurrent.locks.ReentrantLock
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -67,16 +66,19 @@ internal class AndroidKeystoreIronwoodMigrationKeyProvider(
 
 internal class IronwoodMigrationAesGcm(
     private val keyProvider: IronwoodMigrationKeyProvider,
-    private val random: SecureRandom = SecureRandom(),
 ) {
     fun seal(plaintext: ByteArray, recordId: String): ByteArray {
-        val nonce = ByteArray(NONCE_SIZE).also(random::nextBytes)
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(
-            Cipher.ENCRYPT_MODE,
-            keyProvider.getOrCreate(),
-            GCMParameterSpec(TAG_SIZE_BITS, nonce),
-        )
+        // Keys with randomized encryption required reject caller-provided IVs.
+        // Let Android Keystore generate the GCM nonce, then persist it alongside
+        // the ciphertext for decryption.
+        cipher.init(Cipher.ENCRYPT_MODE, keyProvider.getOrCreate())
+        val nonce = cipher.iv
+        if (nonce == null || nonce.size != NONCE_SIZE) {
+            throw IronwoodMigrationSecureStoreException(
+                "Failed to generate an encrypted record nonce.",
+            )
+        }
         cipher.updateAAD(associatedData(recordId))
         val ciphertext = cipher.doFinal(plaintext)
 
