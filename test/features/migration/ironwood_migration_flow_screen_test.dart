@@ -47,6 +47,45 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
   });
 
+  testWidgets('what-to-expect screen shows the four migration expectations', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(initialLocation: '/migration/what-to-expect'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migrations can take a long time'), findsOneWidget);
+    expect(find.text('You can spend as funds arrive'), findsOneWidget);
+    expect(find.text('Use VPN for an extra privacy'), findsOneWidget);
+    expect(find.text('Keep Vizor running'), findsOneWidget);
+    expect(find.textContaining('VPN/network privacy layer'), findsOneWidget);
+    expect(
+      find.textContaining('send the next migration transaction'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('continues while minimized'), findsNothing);
+
+    final expectationImages = find.byWidgetPredicate((widget) {
+      if (widget is! Image || widget.image is! AssetImage) return false;
+      final assetName = (widget.image as AssetImage).assetName;
+      return assetName.startsWith(
+        'assets/illustrations/ironwood_migration_expect_',
+      );
+    });
+    expect(expectationImages, findsNWidgets(4));
+
+    await tester.tap(find.widgetWithText(AppButton, 'Next'));
+    await tester.pumpAndSettle();
+    expect(find.text('Private'), findsOneWidget);
+    expect(find.text('Immediate'), findsOneWidget);
+  });
+
   testWidgets('option selection does not move card content', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
@@ -2364,6 +2403,17 @@ Widget _migrationOptionsHarness({
   final router = GoRouter(
     initialLocation: initialLocation,
     routes: [
+      GoRoute(
+        path: '/migration/what-to-expect',
+        builder: (_, _) => IronwoodMigrationFlowScreen(
+          step: IronwoodMigrationFlowStep.whatToExpect,
+          previewData: IronwoodMigrationFlowData(
+            amountZatoshi: BigInt.from(10_000_000),
+            accountName: 'Account 1',
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+        ),
+      ),
       GoRoute(
         path: '/migration/options',
         builder: (_, _) => IronwoodMigrationFlowScreen(

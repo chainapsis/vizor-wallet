@@ -31,10 +31,13 @@ const _ironwoodMigrationHowStepAssets = [
   'assets/illustrations/ironwood_migration_how_step_2.png',
   'assets/illustrations/ironwood_migration_how_step_3.png',
 ];
+const _ironwoodMigrationExpectationRunningAsset =
+    'assets/illustrations/ironwood_migration_expect_running.png';
 const _ironwoodMigrationExpectationAssets = [
   'assets/illustrations/ironwood_migration_expect_time.png',
   'assets/illustrations/ironwood_migration_expect_spend.png',
-  'assets/illustrations/ironwood_migration_expect_running.png',
+  'assets/illustrations/ironwood_migration_expect_privacy.png',
+  _ironwoodMigrationExpectationRunningAsset,
 ];
 
 final ironwoodMigrationAnalyzingMinimumDurationProvider = Provider<Duration>(
