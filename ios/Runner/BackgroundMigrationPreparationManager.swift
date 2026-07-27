@@ -526,6 +526,18 @@ func migrationPreparationTrackingTaskSucceeded(
     && (!expired || handedOff || notificationsDisabled)
 }
 
+func migrationPreparationTrackingExpirationNotificationEvents(
+  scopes: Set<String>
+) -> [MigrationPreparationNotificationEvent] {
+  scopes.sorted().map {
+    MigrationPreparationNotificationEvent(
+      scope: $0,
+      kind: .needsForegroundRecovery,
+      fingerprint: "confirmation-tracking-expired"
+    )
+  }
+}
+
 func shouldMarkMigrationPreparationForegroundContinuation(
   hasPendingRequest: Bool,
   hasBoundPreparation: Bool,
@@ -1696,25 +1708,32 @@ final class BackgroundMigrationPreparationManager {
         notificationAuthorization.isDisabled
       })
     {
-      let submissionCompleted = DispatchSemaphore(value: 0)
-      let resultLock = NSLock()
-      var submitted = false
-      notificationCoordinator.enqueue(batch.notificationEvents) { success in
-        resultLock.withPreparationLock {
-          submitted = success
-        }
-        submissionCompleted.signal()
-      }
-      guard
-        submissionCompleted.wait(
-          timeout: .now() + Self.notificationSubmissionTimeout
-        ) == .success
-      else {
-        return false
-      }
-      return resultLock.withPreparationLock { submitted }
+      return submitNotificationEvents(batch.notificationEvents)
     }
     return true
+  }
+
+  private func submitNotificationEvents(
+    _ events: [MigrationPreparationNotificationEvent]
+  ) -> Bool {
+    guard !events.isEmpty else { return true }
+    let submissionCompleted = DispatchSemaphore(value: 0)
+    let resultLock = NSLock()
+    var submitted = false
+    notificationCoordinator.enqueue(events) { success in
+      resultLock.withPreparationLock {
+        submitted = success
+      }
+      submissionCompleted.signal()
+    }
+    guard
+      submissionCompleted.wait(
+        timeout: .now() + Self.notificationSubmissionTimeout
+      ) == .success
+    else {
+      return false
+    }
+    return resultLock.withPreparationLock { submitted }
   }
 
   private func updateTrackingProgress(
@@ -1769,10 +1788,25 @@ final class BackgroundMigrationPreparationManager {
     if (runtime.handedOff || runtime.expired) && !runtime.quiesced {
       markForegroundContinuationsReady()
     }
+    let expirationNotificationSubmitted: Bool
+    if runtime.expired && !runtime.quiesced && !runtime.disabled {
+      let scopes = stateLock.withPreparationLock {
+        foregroundContinuationScopes
+      }
+      expirationNotificationSubmitted = submitNotificationEvents(
+        migrationPreparationTrackingExpirationNotificationEvents(
+          scopes: scopes
+        )
+      )
+    } else {
+      expirationNotificationSubmitted = true
+    }
+    let completionFailed =
+      taskFailed || !expirationNotificationSubmitted
 
     let visibleCompletionPresentation =
       !runtime.handedOff && !runtime.expired && !runtime.quiesced
-        && !runtime.disabled && !taskFailed
+        && !runtime.disabled && !completionFailed
       ? completionPresentation
       : nil
     if let visibleCompletionPresentation {
@@ -1799,7 +1833,7 @@ final class BackgroundMigrationPreparationManager {
     }
 
     let success = migrationPreparationTrackingTaskSucceeded(
-      taskFailed: taskFailed,
+      taskFailed: completionFailed,
       quiesced: runtime.quiesced,
       expired: runtime.expired,
       handedOff: runtime.handedOff,
@@ -1818,7 +1852,7 @@ final class BackgroundMigrationPreparationManager {
       recordSchedulingState("disabled_for_notifications")
     } else if runtime.expired {
       recordSchedulingState("confirmation_tracking_expired")
-    } else if taskFailed {
+    } else if completionFailed {
       recordSchedulingState("confirmation_tracking_failed")
     } else if visibleCompletionPresentation != nil {
       recordSchedulingState("confirmation_step_ready_for_foreground")

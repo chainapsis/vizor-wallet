@@ -8,6 +8,9 @@ protocol MigrationPreparationNotificationCenter: AnyObject {
   )
   func removePendingNotificationRequests(withIdentifiers identifiers: [String])
   func removeDeliveredNotifications(withIdentifiers identifiers: [String])
+  func getPendingNotificationRequests(
+    completionHandler: @escaping @Sendable ([UNNotificationRequest]) -> Void
+  )
 }
 
 extension UNUserNotificationCenter: MigrationPreparationNotificationCenter {}
@@ -241,10 +244,13 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
   func resolve(scope: String) {
     queue.async {
       let now = Date()
+      let existingDeadline = self.state.batchDeadline
       self.state.resolve(scope: scope)
-      let expired = self.state.expireBatchIfNeeded(now: now)
+      if self.state.summary != nil {
+        self.state.batchDeadline = existingDeadline
+      }
       self.persistState()
-      if expired || self.state.summary == nil {
+      if self.state.summary == nil {
         self.submissionGeneration &+= 1
         self.center.removePendingNotificationRequests(
           withIdentifiers: [Self.summaryIdentifier]
@@ -252,9 +258,26 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
         self.removeDeliveredSummary()
         return
       }
-      // Keep the existing aggregate in place while another account still
-      // needs attention. Replacing a delivered A+B summary with B would create
-      // a second alert merely because A recovered.
+      self.center.getPendingNotificationRequests { requests in
+        let pendingIdentifiers = requests.map(\.identifier)
+        self.queue.async {
+          guard self.state.summary != nil else { return }
+          let summaryIsPending = pendingIdentifiers.contains(
+            Self.summaryIdentifier
+          )
+          guard summaryIsPending else {
+            // Preserve an already delivered aggregate. Reset the stale
+            // aggregation deadline so another event cannot expire the scopes
+            // that still need attention.
+            self.state.batchDeadline = nil
+            self.persistState()
+            return
+          }
+          // The alert has not fired yet, so replace its stale A+B content with
+          // the current unresolved summary while keeping the original deadline.
+          self.schedulePendingSummary(now: now) { _ in }
+        }
+      }
     }
   }
 

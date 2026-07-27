@@ -1151,7 +1151,7 @@ class RunnerTests: XCTestCase {
     )
     let requestAdded = expectation(description: "notification request added")
     let enqueueCompleted = expectation(description: "enqueue completed")
-    center.onAdd = {
+    center.onAdd = { _ in
       requestAdded.fulfill()
     }
     let event = MigrationPreparationNotificationEvent(
@@ -1171,6 +1171,82 @@ class RunnerTests: XCTestCase {
     center.completeAdd(error: nil)
     wait(for: [enqueueCompleted], timeout: 1)
     XCTAssertEqual(submissionResult, true)
+  }
+
+  func testTrackingExpirationRequestsForegroundRecoveryNotifications() {
+    XCTAssertEqual(
+      migrationPreparationTrackingExpirationNotificationEvents(
+        scopes: [
+          "test:account-b:run-2",
+          "test:account-a:run-1",
+        ]
+      ),
+      [
+        MigrationPreparationNotificationEvent(
+          scope: "test:account-a:run-1",
+          kind: .needsForegroundRecovery,
+          fingerprint: "confirmation-tracking-expired"
+        ),
+        MigrationPreparationNotificationEvent(
+          scope: "test:account-b:run-2",
+          kind: .needsForegroundRecovery,
+          fingerprint: "confirmation-tracking-expired"
+        ),
+      ]
+    )
+  }
+
+  func testResolvingScopeRefreshesAnUndeliveredNotificationSummary() {
+    let center = MigrationPreparationNotificationCenterHarness()
+    let suiteName = "MigrationNotificationCoordinator.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+    }
+    let coordinator = MigrationPreparationNotificationCoordinator(
+      center: center,
+      defaults: defaults
+    )
+    let initialRequestAdded = expectation(description: "initial request added")
+    let refreshedRequestAdded = expectation(
+      description: "pending request refreshed"
+    )
+    center.onAdd = { request in
+      if request.content.body.hasPrefix("2 accounts") {
+        initialRequestAdded.fulfill()
+      } else {
+        refreshedRequestAdded.fulfill()
+      }
+    }
+    let accountA = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "confirmed-wave-1-3"
+    )
+    let accountB = MigrationPreparationNotificationEvent(
+      scope: "test:account-b:run-2",
+      kind: .needsForegroundRecovery,
+      fingerprint: "confirmed-wave-1-3"
+    )
+    let initialSubmissionCompleted = expectation(
+      description: "initial submission completed"
+    )
+    coordinator.enqueue([accountA, accountB]) { success in
+      XCTAssertTrue(success)
+      initialSubmissionCompleted.fulfill()
+    }
+    wait(for: [initialRequestAdded], timeout: 1)
+    center.completeAdd(error: nil)
+    wait(for: [initialSubmissionCompleted], timeout: 1)
+
+    coordinator.resolve(scope: accountA.scope)
+
+    wait(for: [refreshedRequestAdded], timeout: 1)
+    XCTAssertEqual(
+      center.addedRequests.last?.content.body,
+      "Open Vizor to continue."
+    )
+    center.completeAdd(error: nil)
   }
 
   func testMigrationPreparationRetriesInspectionFailuresInBackground() {
@@ -1670,20 +1746,31 @@ final class NativeLightwalletdClientTests: XCTestCase {
 private final class MigrationPreparationNotificationCenterHarness:
   MigrationPreparationNotificationCenter
 {
-  var onAdd: (() -> Void)?
+  var onAdd: ((UNNotificationRequest) -> Void)?
+  private(set) var addedRequests: [UNNotificationRequest] = []
+  private var pendingRequests: [UNNotificationRequest] = []
   private var addCompletion: (@Sendable (Error?) -> Void)?
 
   func add(
-    _: UNNotificationRequest,
+    _ request: UNNotificationRequest,
     withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?
   ) {
+    addedRequests.append(request)
+    pendingRequests.removeAll { $0.identifier == request.identifier }
+    pendingRequests.append(request)
     addCompletion = completionHandler
-    onAdd?()
+    onAdd?(request)
   }
 
   func removePendingNotificationRequests(withIdentifiers _: [String]) {}
 
   func removeDeliveredNotifications(withIdentifiers _: [String]) {}
+
+  func getPendingNotificationRequests(
+    completionHandler: @escaping @Sendable ([UNNotificationRequest]) -> Void
+  ) {
+    completionHandler(pendingRequests)
+  }
 
   func completeAdd(error: Error?) {
     let completion = addCompletion
