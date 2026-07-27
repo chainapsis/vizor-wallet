@@ -85,7 +85,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
-        immediateEnabled: !isHardware,
+        immediateEnabled: true,
       ),
       MobileIronwoodMigrationStep.notifications =>
         _MobileMigrationNotificationPermissionScreen(
@@ -94,7 +94,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
         previewPlan: previewImmediatePlan,
-        isHardware: isHardware,
       ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
         data: data,

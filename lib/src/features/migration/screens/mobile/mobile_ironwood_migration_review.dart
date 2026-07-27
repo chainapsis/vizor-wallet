@@ -36,12 +36,10 @@ class _MobileMigrationFastReview extends ConsumerStatefulWidget {
   const _MobileMigrationFastReview({
     required this.data,
     required this.previewPlan,
-    required this.isHardware,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationImmediatePlan? previewPlan;
-  final bool isHardware;
 
   @override
   ConsumerState<_MobileMigrationFastReview> createState() =>
@@ -70,9 +68,9 @@ class _MobileMigrationFastReviewState
       }
 
       if (accountState.activeAccount?.isHardware ?? false) {
-        throw UnsupportedError(
-          'Immediate migration is not available with Keystone.',
-        );
+        if (!mounted) return;
+        context.go('/migration/immediate/keystone/sign', extra: plan);
+        return;
       }
 
       await ref
@@ -118,7 +116,7 @@ class _MobileMigrationFastReviewState
         : ref.watch(ironwoodMigrationImmediatePlanProvider);
     final plan = planAsync.asData?.value;
     final planUnavailable = planAsync.asData != null && plan == null;
-    final canBroadcast = !widget.isHardware && plan != null && !_isBroadcasting;
+    final canBroadcast = plan != null && !_isBroadcasting;
     final migratedText = plan == null
         ? (planUnavailable ? 'Unavailable' : 'Calculating…')
         : '${ZecAmount.fromZatoshi(plan.migratedZatoshi).pretty(minFractionDigits: 2, maxFractionDigits: 2).amountText} ZEC';

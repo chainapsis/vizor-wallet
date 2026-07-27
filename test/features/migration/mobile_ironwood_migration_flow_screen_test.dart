@@ -695,6 +695,13 @@ Widget _productionApp({
         ),
       ),
       GoRoute(
+        path: '/migration/immediate/keystone/sign',
+        builder: (_, state) {
+          final plan = state.extra! as rust_sync.OrchardMigrationImmediatePlan;
+          return Text('keystone immediate sign route:${plan.migratedZatoshi}');
+        },
+      ),
+      GoRoute(
         path: '/migration/private/status',
         builder: (_, _) => MobileIronwoodMigrationPrivateStatusScreen(
           approvedPlan: privatePlan,
@@ -1206,7 +1213,7 @@ void main() {
     expect(find.text('Privacy trade-off'), findsOneWidget);
   });
 
-  testWidgets('does not offer Immediate migration to Keystone accounts', (
+  testWidgets('routes Keystone Immediate migration through mobile signing', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -1225,7 +1232,7 @@ void main() {
       of: immediateOption,
       matching: find.byType(GestureDetector),
     );
-    expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNull);
+    expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNotNull);
     await tester.tap(immediateOption);
     await tester.pump();
     expect(
@@ -1233,7 +1240,24 @@ void main() {
         of: immediateOption,
         matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
       ),
-      findsNothing,
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_broadcast_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'keystone immediate sign route:${_immediatePlan.migratedZatoshi}',
+      ),
+      findsOneWidget,
     );
   });
 
@@ -2485,6 +2509,63 @@ void main() {
     expect(find.text('Step 2/2'), findsOneWidget);
     expect(find.text('Confirm with Keystone'), findsOneWidget);
     expect(find.textContaining('Scan the QR code'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('reuses the mobile Keystone flow for Immediate migration', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(393, 852));
+    final request = rust_sync.KeystoneMigrationSigningRequest(
+      requestId: 'immediate-preview-request',
+      messages: [
+        rust_sync.KeystoneMigrationMessage(
+          id: 'immediate-transaction',
+          redactedPczt: Uint8List.fromList([1]),
+        ),
+      ],
+      signingBatchLimit: 1,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
+        child: AppTheme(
+          data: AppThemeData.dark,
+          child: MaterialApp(
+            home: MobileIronwoodMigrationKeystoneImmediateSignScreen(
+              approvedPlan: _immediatePlan,
+              previewRequest: request,
+              previewUrParts: const ['UR:ZCASH-SIGN-BATCH/IMMEDIATE'],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Step 1/2'), findsOneWidget);
+    expect(find.text('Scan with Keystone'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+      findsOneWidget,
+    );
+
+    final nextButton = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_next'),
+    );
+    await tester.ensureVisible(nextButton);
+    await tester.tap(nextButton);
+    await tester.pump();
+
+    expect(find.text('Step 2/2'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('mobile_ironwood_keystone_signing_scan_target'),
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 

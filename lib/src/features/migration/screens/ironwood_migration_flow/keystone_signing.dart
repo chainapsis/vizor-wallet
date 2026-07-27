@@ -27,6 +27,35 @@ class IronwoodMigrationKeystoneImmediateSignScreen extends StatelessWidget {
   }
 }
 
+class MobileIronwoodMigrationKeystoneImmediateSignScreen
+    extends StatelessWidget {
+  const MobileIronwoodMigrationKeystoneImmediateSignScreen({
+    required this.approvedPlan,
+    this.previewRequest,
+    this.previewUrParts = const [],
+    this.previewStartScanning = false,
+    super.key,
+  });
+
+  final rust_sync.OrchardMigrationImmediatePlan approvedPlan;
+  final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
+  final List<String> previewUrParts;
+  final bool previewStartScanning;
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.immediate,
+      approvedSchedule: const [],
+      approvedImmediatePlan: approvedPlan,
+      mobileLayout: true,
+      previewRequest: previewRequest,
+      previewUrParts: previewUrParts,
+      previewStartScanning: previewStartScanning,
+    );
+  }
+}
+
 class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneDenominationSignScreen({
     this.approvedSchedule = const [],
@@ -837,11 +866,12 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       await _discardRequest(accountUuid, requestId);
     }
     if (!mounted) return;
-    final previousRoute =
-        widget.mobileLayout &&
-            widget.step == _KeystonePrivateSignStep.denominations
-        ? '/migration/private/status'
-        : widget.step.previousRoute;
+    final previousRoute = switch ((widget.mobileLayout, widget.step)) {
+      (true, _KeystonePrivateSignStep.immediate) => '/migration/fast/review',
+      (true, _KeystonePrivateSignStep.denominations) =>
+        '/migration/private/status',
+      _ => widget.step.previousRoute,
+    };
     context.go(previousRoute);
   }
 

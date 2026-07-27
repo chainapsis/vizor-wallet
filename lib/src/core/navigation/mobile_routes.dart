@@ -11,6 +11,7 @@ import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_s
 import '../../features/migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
     show
+        MobileIronwoodMigrationKeystoneImmediateSignScreen,
         MobileIronwoodMigrationKeystoneBatchSignScreen,
         MobileIronwoodMigrationKeystoneDenominationSignScreen;
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
@@ -356,6 +357,19 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationKeystoneBatchSignScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/immediate/keystone/sign',
+      redirect: (_, state) =>
+          state.extra is rust_sync.OrchardMigrationImmediatePlan
+          ? null
+          : '/migration/fast/review',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileIronwoodMigrationKeystoneImmediateSignScreen(
+          approvedPlan: state.extra! as rust_sync.OrchardMigrationImmediatePlan,
+        ),
       ),
     ),
     // Immediate migration skips notification setup and opens its review
