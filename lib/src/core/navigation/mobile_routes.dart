@@ -321,6 +321,16 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         ),
       ),
     ),
+    // Completion has its own destination so home does not have to route
+    // through the status screen, whose entry refresh renders a progress
+    // surface before the finished phase resolves.
+    GoRoute(
+      path: '/migration/complete',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationCompleteScreen(),
+      ),
+    ),
     GoRoute(
       path: '/migration/private/status',
       pageBuilder: (context, state) {

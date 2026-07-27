@@ -707,6 +707,10 @@ Widget _productionApp({
         },
       ),
       GoRoute(
+        path: '/migration/complete',
+        builder: (_, _) => const MobileIronwoodMigrationCompleteScreen(),
+      ),
+      GoRoute(
         path: '/migration/private/status',
         builder: (_, _) => MobileIronwoodMigrationPrivateStatusScreen(
           approvedPlan: privatePlan,
@@ -3906,6 +3910,79 @@ void main() {
 
     expect(seen, hasLength(1));
     expect(seen.single, startsWith('main:account-1:'));
+  });
+
+  testWidgets('completion route keeps the result after marking it seen', (
+    tester,
+  ) async {
+    // Marking a completion seen invalidates the provider that published it, so
+    // `visible` flips to false right after this screen appears. Reading the
+    // provider on every build would redirect home and flash the result past —
+    // the behaviour this dedicated route exists to remove.
+    _useMobileViewport(tester);
+    final seen = <String>[];
+    final completion = ValueNotifier<IronwoodMigrationCompletionState>(
+      IronwoodMigrationCompletionState.visible(
+        network: 'main',
+        accountUuid: 'account-1',
+        completionId: 'completion-1',
+        transferredZatoshi: BigInt.from(412_000_000),
+      ),
+    );
+    addTearDown(completion.dispose);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/complete',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationCompletePhase,
+          targetValues: const [412_000_000],
+        ),
+        extraOverrides: [
+          ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+            _RecordingCompletionStore(seen),
+          ),
+          ironwoodMigrationCompletionProvider.overrideWith(
+            (ref) => completion.value,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’re all set!'), findsOneWidget);
+    expect(seen, hasLength(1));
+
+    completion.value = const IronwoodMigrationCompletionState.hidden();
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’re all set!'), findsOneWidget);
+    expect(find.text('home route'), findsNothing);
+  });
+
+  testWidgets('completion route returns home when nothing completed', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/complete',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationCompletePhase,
+          targetValues: const [412_000_000],
+        ),
+        extraOverrides: [
+          ironwoodMigrationCompletionProvider.overrideWith(
+            (ref) => const IronwoodMigrationCompletionState.hidden(),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’re all set!'), findsNothing);
+    expect(find.text('home route'), findsOneWidget);
   });
 
   testWidgets('returns home from the full-screen completion state', (

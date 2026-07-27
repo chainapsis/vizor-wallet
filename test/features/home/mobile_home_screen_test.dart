@@ -278,6 +278,10 @@ Widget _app(
         builder: (_, _) => const Text('migration intro route'),
       ),
       GoRoute(
+        path: '/migration/complete',
+        builder: (_, _) => const Text('migration complete route'),
+      ),
+      GoRoute(
         path: '/migration/private/status',
         builder: (_, _) => const Text('migration status route'),
       ),
@@ -813,16 +817,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('migration status route'), findsOneWidget);
+    expect(find.text('migration complete route'), findsOneWidget);
 
     // Leaving the completion screen unmounts the host. Returning home must not
     // route back into a completion the user was already shown.
     GoRouter.of(
-      tester.element(find.text('migration status route')),
+      tester.element(find.text('migration complete route')),
     ).go('/home');
     await tester.pumpAndSettle();
 
-    expect(find.text('migration status route'), findsNothing);
+    expect(find.text('migration complete route'), findsNothing);
   });
 
   testWidgets('does not route away from the tab the user switched to', (
@@ -858,7 +862,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('migration status route'), findsNothing);
+    expect(find.text('migration complete route'), findsNothing);
     expect(find.text('shell activity route'), findsOneWidget);
   });
 
@@ -880,7 +884,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('migration status route'), findsNothing);
+    expect(find.text('migration complete route'), findsNothing);
   });
 
   testWidgets('does not route while the completion state is unsettled', (
@@ -894,7 +898,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('migration status route'), findsNothing);
+    expect(find.text('migration complete route'), findsNothing);
   });
 
   testWidgets('keeps the required migration lock while the raw CTA is hidden', (
