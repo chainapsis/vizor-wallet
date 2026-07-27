@@ -88,7 +88,7 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           ],
         ),
       MobileIronwoodMigrationPreviewSurface.migrationComplete =>
-        const _MigrationCompletePreview(),
+        const _MigrationCompletePreview(amountText: '142.992 ZEC'),
       MobileIronwoodMigrationPreviewSurface.homeAttention =>
         const _MigrationHomeAttentionPreview(),
       MobileIronwoodMigrationPreviewSurface.homeAttentionModal =>
@@ -1999,7 +1999,7 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
 /// otherwise disagree about what the user migrated.
 String migrationCompletedAmountText(
   rust_sync.MigrationStatus status, {
-  String? fallbackAmountText,
+  required String fallbackAmountText,
 }) {
   final total = status.parts.isNotEmpty
       ? status.parts.fold<BigInt>(
@@ -2013,7 +2013,7 @@ String migrationCompletedAmountText(
   final text = total > BigInt.zero
       ? ZecAmount.fromZatoshi(total).compactBalance.amountText
       : fallbackAmountText;
-  return text == null ? '' : '$text ZEC';
+  return '$text ZEC';
 }
 
 /// The finished-migration result, with the behaviour that has to accompany it.
@@ -2027,12 +2027,12 @@ class _MigrationCompleteSurface extends ConsumerStatefulWidget {
   const _MigrationCompleteSurface({
     required this.status,
     required this.onDone,
-    this.fallbackAmountText,
+    required this.fallbackAmountText,
   });
 
   final rust_sync.MigrationStatus status;
   final VoidCallback onDone;
-  final String? fallbackAmountText;
+  final String fallbackAmountText;
 
   @override
   ConsumerState<_MigrationCompleteSurface> createState() =>
@@ -2099,9 +2099,13 @@ class _MigrationCompleteSurfaceState
 }
 
 class _MigrationCompletePreview extends StatelessWidget {
-  const _MigrationCompletePreview({this.amountText, this.onDone});
+  const _MigrationCompletePreview({required this.amountText, this.onDone});
 
-  final String? amountText;
+  /// Required, and never empty. A placeholder default here would be a sample
+  /// amount rendered to a real user as their migration result; an empty one
+  /// leaves the headline with a blank line where the total belongs. Preview
+  /// call sites pass their own sample.
+  final String amountText;
   final VoidCallback? onDone;
 
   @override
@@ -2146,7 +2150,7 @@ class _MigrationCompletePreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(
-            'Your\n${amountText ?? '142.992 ZEC'}\nare on Ironwood!',
+            'Your\n$amountText\nare on Ironwood!',
             textAlign: TextAlign.center,
             style: AppTypography.displayLarge.copyWith(
               color: const Color(0xFFFFFFFF),

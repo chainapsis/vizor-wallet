@@ -174,12 +174,14 @@ class _MobileIronwoodMigrationCompleteScreenState
       _shownAccountUuid = accountUuid;
     }
 
-    if (completedStatus == null) {
+    // The result headline is built from a real amount or not shown at all, so
+    // wait for the flow data rather than rendering a blank total.
+    if (completedStatus == null || data == null) {
       return const _MobileMigrationLoadingScreen();
     }
     return _MigrationCompleteSurface(
       status: completedStatus,
-      fallbackAmountText: data?.amountText,
+      fallbackAmountText: data.amountText,
       onDone: () => context.go('/home'),
     );
   }

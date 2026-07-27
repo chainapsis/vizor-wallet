@@ -3960,6 +3960,42 @@ void main() {
     expect(find.text('home route'), findsNothing);
   });
 
+  testWidgets('completion headline never renders a placeholder amount', (
+    tester,
+  ) async {
+    // The preview gallery's sample total must not reach a real user as their
+    // migration result, and an absent amount must not leave the headline with
+    // a blank line where the total belongs.
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/complete',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationCompletePhase,
+          targetValues: const [412_000_000],
+        ),
+        extraOverrides: [
+          ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+            _RecordingCompletionStore(<String>[]),
+          ),
+          ironwoodMigrationCompletionProvider.overrideWith(
+            (ref) => IronwoodMigrationCompletionState.visible(
+              network: 'main',
+              accountUuid: 'account-1',
+              completionId: 'completion-1',
+              transferredZatoshi: BigInt.from(412_000_000),
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('142.992'), findsNothing);
+    expect(find.textContaining('4.12 ZEC'), findsOneWidget);
+  });
+
   testWidgets('completion route returns home when nothing completed', (
     tester,
   ) async {
