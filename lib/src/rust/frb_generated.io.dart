@@ -335,6 +335,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MigrationPartStatus> dco_decode_list_migration_part_status(dynamic raw);
 
   @protected
+  List<MigrationPreparationTransactionStatus>
+  dco_decode_list_migration_preparation_transaction_status(dynamic raw);
+
+  @protected
   List<MigrationScheduledBroadcast>
   dco_decode_list_migration_scheduled_broadcast(dynamic raw);
 
@@ -453,6 +457,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MigrationPartStatus dco_decode_migration_part_status(dynamic raw);
 
   @protected
+  MigrationPreparationTransactionState
+  dco_decode_migration_preparation_transaction_state(dynamic raw);
+
+  @protected
+  MigrationPreparationTransactionStatus
+  dco_decode_migration_preparation_transaction_status(dynamic raw);
+
+  @protected
   MigrationScheduledBroadcast dco_decode_migration_scheduled_broadcast(
     dynamic raw,
   );
@@ -512,6 +524,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
+
+  @protected
+  List<MigrationPreparationTransactionStatus>?
+  dco_decode_opt_list_migration_preparation_transaction_status(dynamic raw);
 
   @protected
   Uint32List? dco_decode_opt_list_prim_u_32_strict(dynamic raw);
@@ -1100,6 +1116,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MigrationPreparationTransactionStatus>
+  sse_decode_list_migration_preparation_transaction_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<MigrationScheduledBroadcast>
   sse_decode_list_migration_scheduled_broadcast(SseDeserializer deserializer);
 
@@ -1246,6 +1268,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MigrationPreparationTransactionState
+  sse_decode_migration_preparation_transaction_state(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationPreparationTransactionStatus
+  sse_decode_migration_preparation_transaction_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MigrationScheduledBroadcast sse_decode_migration_scheduled_broadcast(
     SseDeserializer deserializer,
   );
@@ -1315,6 +1349,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  List<MigrationPreparationTransactionStatus>?
+  sse_decode_opt_list_migration_preparation_transaction_status(
+    SseDeserializer deserializer,
+  );
 
   @protected
   Uint32List? sse_decode_opt_list_prim_u_32_strict(
@@ -2030,6 +2070,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_migration_preparation_transaction_status(
+    List<MigrationPreparationTransactionStatus> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_migration_scheduled_broadcast(
     List<MigrationScheduledBroadcast> self,
     SseSerializer serializer,
@@ -2219,6 +2265,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_migration_preparation_transaction_state(
+    MigrationPreparationTransactionState self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_preparation_transaction_status(
+    MigrationPreparationTransactionStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_migration_scheduled_broadcast(
     MigrationScheduledBroadcast self,
     SseSerializer serializer,
@@ -2295,6 +2353,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_list_migration_preparation_transaction_status(
+    List<MigrationPreparationTransactionStatus>? self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_list_prim_u_32_strict(

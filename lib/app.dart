@@ -793,6 +793,10 @@ List<RouteBase> _desktopRoutes() => [
     builder: (_, _) => const IronwoodMigrationScheduleScreen(),
   ),
   GoRoute(
+    path: '/migration/private/preparation-schedule',
+    builder: (_, _) => const IronwoodMigrationPreparationScheduleScreen(),
+  ),
+  GoRoute(
     path: '/migration/private/keystone/sign',
     redirect: (_, state) =>
         state.extra is List<rust_sync.MigrationScheduledTransfer>

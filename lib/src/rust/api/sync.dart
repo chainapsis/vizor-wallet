@@ -1450,6 +1450,57 @@ class MigrationPartStatus {
           confirmationTarget == other.confirmationTarget;
 }
 
+enum MigrationPreparationTransactionState {
+  awaitingInputs,
+  scheduled,
+  broadcasted,
+  confirming,
+  completed,
+}
+
+class MigrationPreparationTransactionStatus {
+  final int stageIndex;
+  final BigInt approximateValueZatoshi;
+  final MigrationPreparationTransactionState state;
+  final int? scheduledHeight;
+  final int? minedHeight;
+  final int confirmationCount;
+  final int confirmationTarget;
+
+  const MigrationPreparationTransactionStatus({
+    required this.stageIndex,
+    required this.approximateValueZatoshi,
+    required this.state,
+    this.scheduledHeight,
+    this.minedHeight,
+    required this.confirmationCount,
+    required this.confirmationTarget,
+  });
+
+  @override
+  int get hashCode =>
+      stageIndex.hashCode ^
+      approximateValueZatoshi.hashCode ^
+      state.hashCode ^
+      scheduledHeight.hashCode ^
+      minedHeight.hashCode ^
+      confirmationCount.hashCode ^
+      confirmationTarget.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationPreparationTransactionStatus &&
+          runtimeType == other.runtimeType &&
+          stageIndex == other.stageIndex &&
+          approximateValueZatoshi == other.approximateValueZatoshi &&
+          state == other.state &&
+          scheduledHeight == other.scheduledHeight &&
+          minedHeight == other.minedHeight &&
+          confirmationCount == other.confirmationCount &&
+          confirmationTarget == other.confirmationTarget;
+}
+
 class MigrationScheduledBroadcast {
   final String txidHex;
   final BigInt valueZatoshi;
@@ -1542,6 +1593,7 @@ class MigrationStatus {
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
+  final int? preparationMeanDelayBlocks;
   final int? nextActionHeight;
 
   /// Exact foreground proof preflight. `None` means no signed proof action
@@ -1552,6 +1604,7 @@ class MigrationStatus {
   final int? nextActionPartIndex;
   final Uint32List? currentSigningPartIndices;
   final List<MigrationScheduledBroadcast> scheduledBroadcasts;
+  final List<MigrationPreparationTransactionStatus>? preparationTransactions;
   final List<MigrationPartStatus> parts;
 
   const MigrationStatus({
@@ -1574,12 +1627,14 @@ class MigrationStatus {
     required this.signingBatchLimit,
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
+    this.preparationMeanDelayBlocks,
     this.nextActionHeight,
     this.proofReady,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
     this.currentSigningPartIndices,
     required this.scheduledBroadcasts,
+    this.preparationTransactions,
     required this.parts,
   });
 
@@ -1604,12 +1659,14 @@ class MigrationStatus {
       signingBatchLimit.hashCode ^
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
+      preparationMeanDelayBlocks.hashCode ^
       nextActionHeight.hashCode ^
       proofReady.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
       currentSigningPartIndices.hashCode ^
       scheduledBroadcasts.hashCode ^
+      preparationTransactions.hashCode ^
       parts.hashCode;
 
   @override
@@ -1639,12 +1696,14 @@ class MigrationStatus {
           signingBatchLimit == other.signingBatchLimit &&
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
+          preparationMeanDelayBlocks == other.preparationMeanDelayBlocks &&
           nextActionHeight == other.nextActionHeight &&
           proofReady == other.proofReady &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&
           currentSigningPartIndices == other.currentSigningPartIndices &&
           scheduledBroadcasts == other.scheduledBroadcasts &&
+          preparationTransactions == other.preparationTransactions &&
           parts == other.parts;
 }
 

@@ -318,6 +318,45 @@ String _transferEstimatedCompletion(
   return _formatMigrationBlockDurationEstimate(math.max(1, remainingBlocks));
 }
 
+String _migrationCompletionEstimateDisplay(
+  rust_sync.MigrationStatus status, {
+  required int currentHeight,
+  required bool needsInput,
+  required List<rust_sync.MigrationPartStatus> parts,
+}) {
+  final estimate = _transferEstimatedCompletion(
+    status,
+    currentHeight: currentHeight,
+    needsInput: needsInput,
+    parts: parts,
+  );
+  if (!estimate.startsWith('~')) return estimate;
+
+  final estimatedCompletionHeight = status.estimatedCompletionHeight;
+  if (currentHeight <= 0 || estimatedCompletionHeight == null) {
+    return 'in $estimate';
+  }
+  if (estimatedCompletionHeight <= currentHeight) return 'in $estimate';
+  final remainingBlocks = estimatedCompletionHeight - currentHeight;
+  final seconds = remainingBlocks * _migrationEstimatedSecondsPerBlock;
+  final minutes = (seconds / Duration.secondsPerMinute).ceil();
+  if (minutes < 60) {
+    return 'in ~$minutes ${minutes == 1 ? 'minute' : 'minutes'}';
+  }
+
+  final hours = seconds / Duration.secondsPerHour;
+  if (hours < 48) {
+    final roundedHalfHours = (hours * 2).ceil() / 2;
+    final text = roundedHalfHours == roundedHalfHours.roundToDouble()
+        ? roundedHalfHours.toInt().toString()
+        : roundedHalfHours.toStringAsFixed(1);
+    return 'in ~$text ${roundedHalfHours == 1 ? 'hour' : 'hours'}';
+  }
+
+  final days = (seconds / Duration.secondsPerDay).ceil();
+  return 'in ~$days ${days == 1 ? 'day' : 'days'}';
+}
+
 bool _migrationNeedsUserInput(
   rust_sync.MigrationStatus status, {
   List<rust_sync.MigrationPartStatus>? parts,

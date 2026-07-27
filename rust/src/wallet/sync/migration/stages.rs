@@ -162,6 +162,7 @@ pub(crate) struct DenominationStageStatusCounts {
 /// reconciliation from the normal wallet status path.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct DenominationStageChainRecord {
+    pub stage_index: u32,
     pub expected_txid_hex: String,
     pub status: DenominationStageStatus,
     pub confirmed_mined_height: Option<u32>,
@@ -1088,6 +1089,7 @@ pub(crate) fn denomination_stage_chain_records(
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Read migration denomination parents: {e}"))?;
         records.push(DenominationStageChainRecord {
+            stage_index,
             expected_txid_hex,
             status: DenominationStageStatus::parse(&status)?,
             confirmed_mined_height,

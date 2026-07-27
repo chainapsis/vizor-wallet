@@ -510,7 +510,7 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
       title: 'Migrations can take a long time',
       body:
           'Ironwood migrations can take anywhere from several hours up to a '
-          'couple of days depending on your migration amount.',
+          'couple days depending on your migration amount.',
     ),
     (
       title: 'You can spend as funds arrive',
@@ -519,10 +519,16 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
           'rest of the migration continues.',
     ),
     (
+      title: 'Use VPN for an extra privacy',
+      body:
+          'It’s recommended to run the migration behind a trustable '
+          'VPN/network privacy layer',
+    ),
+    (
       title: 'Keep Vizor running',
       body:
-          'Vizor continues while minimized. Migration pauses while your Mac '
-          'sleeps or Vizor is locked, then resumes when you return.',
+          'Your computer needs to be unlocked with Vizor running so we can '
+          'send the next migration transaction',
     ),
   ];
 
@@ -536,7 +542,7 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
         children: [
           Positioned(
             left: 12,
-            top: 68,
+            top: 60,
             width: 396,
             child: Text(
               'What to expect',
@@ -548,76 +554,45 @@ class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
           ),
           Positioned(
             left: 12,
-            top: 147,
+            top: 140,
             width: 396,
-            height: 371,
-            child: Stack(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var index = 0; index < _items.length; index++)
-                  Positioned(
-                    left: 0,
-                    top: switch (index) {
-                      0 => 0,
-                      1 => 148,
-                      _ => 275,
-                    },
-                    width: 396,
-                    height: switch (index) {
-                      0 => 116,
-                      1 => 95,
-                      _ => 96,
-                    },
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _MigrationExpectationIllustration(
-                          index: index,
-                          asset: _ironwoodMigrationExpectationAssets[index],
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _items[index].title,
-                                style: AppTypography.bodyMediumStrong.copyWith(
-                                  color: colors.text.accent,
-                                ),
+                for (var index = 0; index < _items.length; index++) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _MigrationExpectationIllustration(
+                        index: index,
+                        asset: _ironwoodMigrationExpectationAssets[index],
+                      ),
+                      const SizedBox(width: 16),
+                      SizedBox(
+                        width: 320,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _items[index].title,
+                              style: AppTypography.bodyMediumStrong.copyWith(
+                                color: colors.text.accent,
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _items[index].body,
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: colors.text.secondary,
-                                ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _items[index].body,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: colors.text.secondary,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                Positioned(
-                  left: 80,
-                  top: 115,
-                  right: 0,
-                  child: Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: colors.border.subtle,
-                  ),
-                ),
-                Positioned(
-                  left: 80,
-                  top: 242,
-                  right: 0,
-                  child: Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: colors.border.subtle,
-                  ),
-                ),
+                  if (index < _items.length - 1) const SizedBox(height: 24),
+                ],
               ],
             ),
           ),
@@ -655,25 +630,32 @@ class _MigrationExpectationIllustration extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = switch (index) {
-      0 => const Color(0xFF8F4BE8),
-      1 => const Color(0xFFE6B800),
-      _ => const Color(0xFFD3155B),
+      0 => const Color(0xFF9667E2),
+      1 => const Color(0xFFDBB013),
+      2 => const Color(0xFF00A460),
+      _ => const Color(0xFFB90A4A),
     };
-    final scale = switch (index) {
-      0 => 1.18,
-      1 => 1.2,
-      _ => 1.22,
+    final imageRect = switch (index) {
+      0 => const Rect.fromLTWH(-27.12, -8.70, 102.39, 68.70),
+      1 => const Rect.fromLTWH(-9.75, -11.43, 69.19, 69.13),
+      2 => const Rect.fromLTWH(-18.11, -12.50, 84, 84),
+      _ => const Rect.fromLTWH(0, 0, 48, 48),
     };
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(AppRadii.small),
       child: ColoredBox(
         color: background,
         child: SizedBox.square(
-          dimension: 64,
-          child: Transform.scale(
-            scale: scale,
-            child: Image.asset(asset, fit: BoxFit.cover),
+          dimension: 48,
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned.fromRect(
+                rect: imageRect,
+                child: Image.asset(asset, fit: BoxFit.fill),
+              ),
+            ],
           ),
         ),
       ),

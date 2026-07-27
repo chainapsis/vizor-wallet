@@ -8586,6 +8586,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<MigrationPreparationTransactionStatus>
+  dco_decode_list_migration_preparation_transaction_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>)
+        .map(dco_decode_migration_preparation_transaction_status)
+        .toList();
+  }
+
+  @protected
   List<MigrationScheduledBroadcast>
   dco_decode_list_migration_scheduled_broadcast(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -8867,6 +8876,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MigrationPreparationTransactionState
+  dco_decode_migration_preparation_transaction_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return MigrationPreparationTransactionState.values[raw as int];
+  }
+
+  @protected
+  MigrationPreparationTransactionStatus
+  dco_decode_migration_preparation_transaction_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return MigrationPreparationTransactionStatus(
+      stageIndex: dco_decode_u_32(arr[0]),
+      approximateValueZatoshi: dco_decode_u_64(arr[1]),
+      state: dco_decode_migration_preparation_transaction_state(arr[2]),
+      scheduledHeight: dco_decode_opt_box_autoadd_u_32(arr[3]),
+      minedHeight: dco_decode_opt_box_autoadd_u_32(arr[4]),
+      confirmationCount: dco_decode_u_32(arr[5]),
+      confirmationTarget: dco_decode_u_32(arr[6]),
+    );
+  }
+
+  @protected
   MigrationScheduledBroadcast dco_decode_migration_scheduled_broadcast(
     dynamic raw,
   ) {
@@ -8903,8 +8937,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationStatus dco_decode_migration_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 26)
-      throw Exception('unexpected arr length: expect 26 but see ${arr.length}');
+    if (arr.length != 28)
+      throw Exception('unexpected arr length: expect 28 but see ${arr.length}');
     return MigrationStatus(
       phase: dco_decode_String(arr[0]),
       activeRunId: dco_decode_opt_String(arr[1]),
@@ -8925,15 +8959,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       signingBatchLimit: dco_decode_u_32(arr[16]),
       scheduleMeanDelayBlocks: dco_decode_u_32(arr[17]),
       scheduleMaxDelayBlocks: dco_decode_u_32(arr[18]),
-      nextActionHeight: dco_decode_opt_box_autoadd_u_32(arr[19]),
-      proofReady: dco_decode_opt_box_autoadd_bool(arr[20]),
-      estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[21]),
-      nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[22]),
-      currentSigningPartIndices: dco_decode_opt_list_prim_u_32_strict(arr[23]),
+      preparationMeanDelayBlocks: dco_decode_opt_box_autoadd_u_32(arr[19]),
+      nextActionHeight: dco_decode_opt_box_autoadd_u_32(arr[20]),
+      proofReady: dco_decode_opt_box_autoadd_bool(arr[21]),
+      estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[22]),
+      nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[23]),
+      currentSigningPartIndices: dco_decode_opt_list_prim_u_32_strict(arr[24]),
       scheduledBroadcasts: dco_decode_list_migration_scheduled_broadcast(
-        arr[24],
+        arr[25],
       ),
-      parts: dco_decode_list_migration_part_status(arr[25]),
+      preparationTransactions:
+          dco_decode_opt_list_migration_preparation_transaction_status(arr[26]),
+      parts: dco_decode_list_migration_part_status(arr[27]),
     );
   }
 
@@ -9045,6 +9082,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
+  }
+
+  @protected
+  List<MigrationPreparationTransactionStatus>?
+  dco_decode_opt_list_migration_preparation_transaction_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_list_migration_preparation_transaction_status(raw);
   }
 
   @protected
@@ -10991,6 +11037,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<MigrationPreparationTransactionStatus>
+  sse_decode_list_migration_preparation_transaction_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MigrationPreparationTransactionStatus>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(
+        sse_decode_migration_preparation_transaction_status(deserializer),
+      );
+    }
+    return ans_;
+  }
+
+  @protected
   List<MigrationScheduledBroadcast>
   sse_decode_list_migration_scheduled_broadcast(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -11425,6 +11488,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MigrationPreparationTransactionState
+  sse_decode_migration_preparation_transaction_state(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return MigrationPreparationTransactionState.values[inner];
+  }
+
+  @protected
+  MigrationPreparationTransactionStatus
+  sse_decode_migration_preparation_transaction_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_stageIndex = sse_decode_u_32(deserializer);
+    var var_approximateValueZatoshi = sse_decode_u_64(deserializer);
+    var var_state = sse_decode_migration_preparation_transaction_state(
+      deserializer,
+    );
+    var var_scheduledHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_minedHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_confirmationCount = sse_decode_u_32(deserializer);
+    var var_confirmationTarget = sse_decode_u_32(deserializer);
+    return MigrationPreparationTransactionStatus(
+      stageIndex: var_stageIndex,
+      approximateValueZatoshi: var_approximateValueZatoshi,
+      state: var_state,
+      scheduledHeight: var_scheduledHeight,
+      minedHeight: var_minedHeight,
+      confirmationCount: var_confirmationCount,
+      confirmationTarget: var_confirmationTarget,
+    );
+  }
+
+  @protected
   MigrationScheduledBroadcast sse_decode_migration_scheduled_broadcast(
     SseDeserializer deserializer,
   ) {
@@ -11484,6 +11583,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_signingBatchLimit = sse_decode_u_32(deserializer);
     var var_scheduleMeanDelayBlocks = sse_decode_u_32(deserializer);
     var var_scheduleMaxDelayBlocks = sse_decode_u_32(deserializer);
+    var var_preparationMeanDelayBlocks = sse_decode_opt_box_autoadd_u_32(
+      deserializer,
+    );
     var var_nextActionHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_proofReady = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_estimatedCompletionHeight = sse_decode_opt_box_autoadd_u_32(
@@ -11496,6 +11598,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_scheduledBroadcasts = sse_decode_list_migration_scheduled_broadcast(
       deserializer,
     );
+    var var_preparationTransactions =
+        sse_decode_opt_list_migration_preparation_transaction_status(
+          deserializer,
+        );
     var var_parts = sse_decode_list_migration_part_status(deserializer);
     return MigrationStatus(
       phase: var_phase,
@@ -11517,12 +11623,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       signingBatchLimit: var_signingBatchLimit,
       scheduleMeanDelayBlocks: var_scheduleMeanDelayBlocks,
       scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
+      preparationMeanDelayBlocks: var_preparationMeanDelayBlocks,
       nextActionHeight: var_nextActionHeight,
       proofReady: var_proofReady,
       estimatedCompletionHeight: var_estimatedCompletionHeight,
       nextActionPartIndex: var_nextActionPartIndex,
       currentSigningPartIndices: var_currentSigningPartIndices,
       scheduledBroadcasts: var_scheduledBroadcasts,
+      preparationTransactions: var_preparationTransactions,
       parts: var_parts,
     );
   }
@@ -11698,6 +11806,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_u_64(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  List<MigrationPreparationTransactionStatus>?
+  sse_decode_opt_list_migration_preparation_transaction_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_list_migration_preparation_transaction_status(
+        deserializer,
+      ));
     } else {
       return null;
     }
@@ -13656,6 +13780,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_migration_preparation_transaction_status(
+    List<MigrationPreparationTransactionStatus> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_migration_preparation_transaction_status(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_migration_scheduled_broadcast(
     List<MigrationScheduledBroadcast> self,
     SseSerializer serializer,
@@ -14040,6 +14176,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_migration_preparation_transaction_state(
+    MigrationPreparationTransactionState self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_migration_preparation_transaction_status(
+    MigrationPreparationTransactionStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.stageIndex, serializer);
+    sse_encode_u_64(self.approximateValueZatoshi, serializer);
+    sse_encode_migration_preparation_transaction_state(self.state, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.scheduledHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.minedHeight, serializer);
+    sse_encode_u_32(self.confirmationCount, serializer);
+    sse_encode_u_32(self.confirmationTarget, serializer);
+  }
+
+  @protected
   void sse_encode_migration_scheduled_broadcast(
     MigrationScheduledBroadcast self,
     SseSerializer serializer,
@@ -14089,6 +14249,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.signingBatchLimit, serializer);
     sse_encode_u_32(self.scheduleMeanDelayBlocks, serializer);
     sse_encode_u_32(self.scheduleMaxDelayBlocks, serializer);
+    sse_encode_opt_box_autoadd_u_32(
+      self.preparationMeanDelayBlocks,
+      serializer,
+    );
     sse_encode_opt_box_autoadd_u_32(self.nextActionHeight, serializer);
     sse_encode_opt_box_autoadd_bool(self.proofReady, serializer);
     sse_encode_opt_box_autoadd_u_32(self.estimatedCompletionHeight, serializer);
@@ -14099,6 +14263,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     );
     sse_encode_list_migration_scheduled_broadcast(
       self.scheduledBroadcasts,
+      serializer,
+    );
+    sse_encode_opt_list_migration_preparation_transaction_status(
+      self.preparationTransactions,
       serializer,
     );
     sse_encode_list_migration_part_status(self.parts, serializer);
@@ -14252,6 +14420,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_64(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_list_migration_preparation_transaction_status(
+    List<MigrationPreparationTransactionStatus>? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_list_migration_preparation_transaction_status(
+        self,
+        serializer,
+      );
     }
   }
 
