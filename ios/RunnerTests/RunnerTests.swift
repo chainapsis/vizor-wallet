@@ -249,6 +249,487 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testPendingPreparationRequestIsNotClaimedWhileBackgroundCanTrack() {
+    // Regression: the status screen polls `runtimeState` while the app is
+    // still in the foreground. Claiming the request it just submitted
+    // cancelled the continued task before the system started it, so the
+    // Dynamic Island activity never appeared and no confirmation was tracked.
+    XCTAssertFalse(
+      shouldClaimPendingMigrationPreparationRequest(
+        hasPendingRequest: true,
+        canTrackInBackground: true,
+        taskRunning: false,
+        deferredPassRunning: false,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testPendingPreparationRequestIsClaimedWhenBackgroundCannotTrack() {
+    // State 5 and needs-action runs cannot progress from a read-only query
+    // pass, so handing the pending request to the foreground is still right.
+    XCTAssertTrue(
+      shouldClaimPendingMigrationPreparationRequest(
+        hasPendingRequest: true,
+        canTrackInBackground: false,
+        taskRunning: false,
+        deferredPassRunning: false,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testForegroundContinuationClaimsTrackablePendingRequest() {
+    XCTAssertTrue(
+      shouldClaimPendingMigrationPreparationRequest(
+        hasPendingRequest: true,
+        canTrackInBackground: true,
+        foregroundContinuationPending: true,
+        taskRunning: false,
+        deferredPassRunning: false,
+        mutationQuiesced: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testUnacknowledgedConfirmationRunArmsTheTrackingTask() {
+    let scope = "test:account-a:run-1"
+    XCTAssertEqual(
+      migrationPreparationPendingTrackableScopes(
+        continuationScopes: [],
+        confirmationTrackableScopes: [scope]
+      ),
+      [scope]
+    )
+  }
+
+  func testAcknowledgedConfirmationRunDoesNotRearmTheTrackingTask() {
+    // Once tracking has completed and marked its continuation ready, the run
+    // must stop arming the task or it would re-observe the same confirmed
+    // transactions and re-post the same notification until the foreground
+    // reconciles the DB.
+    let scope = "test:account-a:run-1"
+    XCTAssertTrue(
+      migrationPreparationPendingTrackableScopes(
+        continuationScopes: [scope],
+        confirmationTrackableScopes: [scope]
+      ).isEmpty
+    )
+  }
+
+  func testForegroundOnlyAccountDoesNotVetoAnotherAccountsTracking() {
+    // Observed on device: account 4ddd0343 sat in state 5 with a recorded
+    // continuation while account 660176b0 was waiting for its preparation
+    // confirmations. The old predicate let the state-5 scope block submission
+    // app-wide, so `blocked_foreground_continuation` was recorded and the
+    // continued task stopped registering entirely.
+    let foregroundOnly = "test:account-4ddd:run-4ddd"
+    let waitingForConfirmations = "test:account-6601:run-6601"
+    XCTAssertEqual(
+      migrationPreparationPendingTrackableScopes(
+        continuationScopes: [foregroundOnly],
+        confirmationTrackableScopes: [waitingForConfirmations]
+      ),
+      [waitingForConfirmations]
+    )
+  }
+
+  func testPendingTrackableScopesAreAccountScoped() {
+    // Acknowledging one account must not silence another account's tracking.
+    let acknowledged = "test:account-a:run-1"
+    let stillPending = "test:account-b:run-2"
+    XCTAssertEqual(
+      migrationPreparationPendingTrackableScopes(
+        continuationScopes: [acknowledged],
+        confirmationTrackableScopes: [acknowledged, stillPending]
+      ),
+      [stillPending]
+    )
+  }
+
+  func testTrackingBatchKeepsAccountResultsIndependent() {
+    let completedProgress = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 3,
+      totalUnitCount: 3,
+      completedTransactionCount: 1,
+      totalTransactionCount: 1,
+      isComplete: true
+    )
+    let waitingProgress = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 1,
+      totalUnitCount: 3,
+      completedTransactionCount: 0,
+      totalTransactionCount: 1,
+      isComplete: false
+    )
+    let batch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-a:run-1",
+          disposition: .completed(completedProgress)
+        ),
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-b:run-2",
+          disposition: .needsForegroundRecovery(
+            fingerprint: "missing-transactions",
+            taskFailed: true
+          )
+        ),
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-c:run-3",
+          disposition: .progress(waitingProgress)
+        ),
+      ]
+    )
+
+    XCTAssertTrue(batch.shouldContinue)
+    XCTAssertTrue(batch.hasTaskFailure)
+    XCTAssertEqual(
+      batch.continuationReadyScopes,
+      ["test:account-b:run-2"]
+    )
+    XCTAssertEqual(
+      batch.progress,
+      MigrationPreparationConfirmationProgress(
+        confirmedUnitCount: 4,
+        totalUnitCount: 6,
+        completedTransactionCount: 1,
+        totalTransactionCount: 2,
+        isComplete: false
+      )
+    )
+    XCTAssertEqual(
+      batch.notificationEvents.map(\.scope),
+      ["test:account-b:run-2"]
+    )
+    XCTAssertNil(
+      migrationPreparationTrackingCompletionPresentation(batch)
+    )
+  }
+
+  func testCompletedTrackingScopeDoesNotCreateLocalNotification() {
+    let completedProgress = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 3,
+      totalUnitCount: 3,
+      completedTransactionCount: 1,
+      totalTransactionCount: 1,
+      isComplete: true
+    )
+    let batch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-a:run-1",
+          disposition: .completed(completedProgress)
+        )
+      ]
+    )
+
+    XCTAssertTrue(batch.continuationReadyScopes.isEmpty)
+    XCTAssertEqual(
+      batch.confirmedPreparationScopes,
+      ["test:account-a:run-1"]
+    )
+    XCTAssertTrue(
+      migrationPreparationTrackingBatchRequiresAdvancement(batch)
+    )
+    XCTAssertNil(migrationPreparationTrackingCompletionPresentation(batch))
+    XCTAssertTrue(batch.notificationEvents.isEmpty)
+  }
+
+  func testCompletedAndRetryScopesKeepTheirProgressAcrossPasses() {
+    var progressByScope: [String: MigrationPreparationConfirmationProgress] =
+      [:]
+    let accountAComplete = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 3,
+      totalUnitCount: 3,
+      completedTransactionCount: 1,
+      totalTransactionCount: 1,
+      isComplete: true
+    )
+    let accountBFirstPass = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 1,
+      totalUnitCount: 3,
+      completedTransactionCount: 0,
+      totalTransactionCount: 1,
+      isComplete: false
+    )
+    let firstBatch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-a:run-1",
+          disposition: .completed(accountAComplete)
+        ),
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-b:run-2",
+          disposition: .progress(accountBFirstPass)
+        ),
+      ],
+      progressByScope: &progressByScope
+    )
+    XCTAssertEqual(firstBatch.progress?.confirmedUnitCount, 4)
+    XCTAssertEqual(firstBatch.progress?.totalUnitCount, 6)
+
+    let retryBatch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-b:run-2",
+          disposition: .retry
+        )
+      ],
+      progressByScope: &progressByScope
+    )
+    XCTAssertEqual(retryBatch.progress?.confirmedUnitCount, 4)
+    XCTAssertEqual(retryBatch.progress?.totalUnitCount, 6)
+  }
+
+  func testFirstRetryScopeKeepsCompletedAccountBelowOneHundredPercent() throws {
+    var progressByScope: [String: MigrationPreparationConfirmationProgress] =
+      [:]
+    let completed = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 3,
+      totalUnitCount: 3,
+      completedTransactionCount: 1,
+      totalTransactionCount: 1,
+      isComplete: true
+    )
+    let batch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-a:run-1",
+          disposition: .completed(completed)
+        ),
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-b:run-2",
+          disposition: .retry
+        ),
+      ],
+      progressByScope: &progressByScope
+    )
+
+    XCTAssertEqual(batch.progress?.confirmedUnitCount, 3)
+    XCTAssertEqual(batch.progress?.totalUnitCount, 4)
+    XCTAssertFalse(try XCTUnwrap(batch.progress).isComplete)
+    XCTAssertLessThan(
+      migrationPreparationDisplayedProgressUnits(
+        previousUnits: 0,
+        progress: try XCTUnwrap(batch.progress),
+        displayUnitCount: 1000
+      ),
+      1000
+    )
+  }
+
+  func testDisplayedProgressDoesNotMoveBackward() {
+    let regressedAggregate = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 1,
+      totalUnitCount: 9,
+      completedTransactionCount: 0,
+      totalTransactionCount: 3,
+      isComplete: false
+    )
+
+    XCTAssertEqual(
+      migrationPreparationDisplayedProgressUnits(
+        previousUnits: 560,
+        progress: regressedAggregate,
+        displayUnitCount: 1000
+      ),
+      560
+    )
+  }
+
+  func testDisplayedProgressTicksForwardWhileConfirmationCountIsUnchanged() {
+    let waiting = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 4,
+      totalUnitCount: 12,
+      completedTransactionCount: 0,
+      totalTransactionCount: 4,
+      isComplete: false
+    )
+
+    XCTAssertEqual(
+      migrationPreparationDisplayedProgressUnits(
+        previousUnits: 333,
+        progress: waiting,
+        displayUnitCount: 1000
+      ),
+      334
+    )
+    XCTAssertEqual(
+      migrationPreparationDisplayedProgressUnits(
+        previousUnits: 415,
+        progress: waiting,
+        displayUnitCount: 1000
+      ),
+      415
+    )
+  }
+
+  func testForkedTransactionRequiresForegroundRecoveryAndFailsTheTask() {
+    let disposition = migrationPreparationConfirmationDisposition(
+      observations: [.forked, .mined(height: 100)],
+      chainTipHeight: 102,
+      confirmationTarget: 3
+    )
+
+    XCTAssertEqual(
+      disposition,
+      .needsForegroundRecovery(
+        fingerprint: "forked-transaction",
+        taskFailed: true
+      )
+    )
+  }
+
+  func testPreparationStateOutcomesSeparateRecoveryFromTaskFailure() {
+    XCTAssertEqual(
+      migrationPreparationScopeTrackingDisposition(
+        state: 1,
+        completedStageCount: 2,
+        totalStageCount: 2,
+        confirmationTarget: 3
+      ),
+      .completed(
+        MigrationPreparationConfirmationProgress(
+          confirmedUnitCount: 6,
+          totalUnitCount: 6,
+          completedTransactionCount: 2,
+          totalTransactionCount: 2,
+          isComplete: true
+        )
+      )
+    )
+    XCTAssertEqual(
+      migrationPreparationScopeTrackingDisposition(state: 2),
+      .needsForegroundRecovery(
+        fingerprint: "state-2",
+        taskFailed: true
+      )
+    )
+    XCTAssertEqual(
+      migrationPreparationScopeTrackingDisposition(state: 3),
+      .needsForegroundRecovery(
+        fingerprint: "state-3",
+        taskFailed: true
+      )
+    )
+    XCTAssertEqual(
+      migrationPreparationScopeTrackingDisposition(state: 5),
+      .needsForegroundRecovery(
+        fingerprint: "state-5",
+        taskFailed: false
+      )
+    )
+  }
+
+  func testStalledRunNeedingRebroadcastFailsTheBackgroundTask() {
+    XCTAssertFalse(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: true,
+        quiesced: false,
+        expired: false,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testNeedsActionFailsTheBackgroundTask() {
+    XCTAssertFalse(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: true,
+        quiesced: false,
+        expired: false,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testRunningOutOfTimeWhileCountingDoesNotReportCompletion() {
+    XCTAssertFalse(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: false,
+        quiesced: false,
+        expired: true,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testForegroundHandoffAndRevokedNotificationsAreNotFailures() {
+    XCTAssertTrue(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: false,
+        quiesced: false,
+        expired: true,
+        handedOff: true,
+        notificationsDisabled: false
+      )
+    )
+    XCTAssertTrue(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: false,
+        quiesced: false,
+        expired: true,
+        handedOff: false,
+        notificationsDisabled: true
+      )
+    )
+  }
+
+  func testForegroundHandoffDoesNotMaskAnObservedFailure() {
+    XCTAssertFalse(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: true,
+        quiesced: false,
+        expired: true,
+        handedOff: true,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testDeletingAnAccountStopsTheTaskWithoutShowingSuccess() {
+    XCTAssertFalse(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: false,
+        quiesced: true,
+        expired: true,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testWalletMutationAfterObservedConfirmationsIsNotSuccess() {
+    XCTAssertFalse(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: false,
+        quiesced: true,
+        expired: true,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testTerminalMigrationFailureReportsTaskFailure() {
+    XCTAssertFalse(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: true,
+        quiesced: false,
+        expired: false,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
   func testMigrationPreparationForegroundLaunchHandsPendingWorkToForeground() {
     XCTAssertTrue(
       shouldMarkMigrationPreparationForegroundContinuation(
@@ -363,27 +844,49 @@ class RunnerTests: XCTestCase {
       ),
       .continuedProcessing
     )
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [2],
+        inspectionFailed: false
+      ),
+      .backgroundProcessing
+    )
+    XCTAssertEqual(
+      migrationPreparationResumeTarget(
+        states: [0, 2],
+        inspectionFailed: false
+      ),
+      .continuedProcessing
+    )
   }
 
-  func testMigrationPreparationForegroundContinuationOnlyTracksConfirmationWork() {
-    XCTAssertTrue(
-      migrationPreparationStateNeedsForegroundContinuation(0)
-    )
-    for state in UInt8(1)...UInt8(5) {
-      XCTAssertFalse(
+  func testMigrationPreparationForegroundContinuationTracksEverySyncWait() {
+    for state in [UInt8(0), 2, 3, 5] {
+      XCTAssertTrue(
         migrationPreparationStateNeedsForegroundContinuation(state)
       )
     }
+    XCTAssertFalse(migrationPreparationStateNeedsForegroundContinuation(1))
+    XCTAssertFalse(migrationPreparationStateNeedsForegroundContinuation(4))
   }
 
-  func testMigrationPreparationContinuedTaskOnlyRunsConfirmationWork() {
+  func testCompletedConfirmationWaitDoesNotCreateForegroundNotification() {
+    XCTAssertFalse(migrationPreparationStateNeedsForegroundNotification(0))
+    for state in [UInt8(2), 3, 5] {
+      XCTAssertTrue(migrationPreparationStateNeedsForegroundNotification(state))
+    }
+    XCTAssertFalse(migrationPreparationStateNeedsForegroundNotification(1))
+    XCTAssertFalse(migrationPreparationStateNeedsForegroundNotification(4))
+  }
+
+  func testMigrationPreparationContinuedTaskTracksOnlyDenominationConfirmations() {
     XCTAssertEqual(
       migrationPreparationContinuedTaskDisposition(.continuedProcessing),
-      .run
+      .trackConfirmations
     )
     XCTAssertEqual(
       migrationPreparationContinuedTaskDisposition(.backgroundProcessing),
-      .handoffToBackground
+      .foregroundOnly
     )
     XCTAssertEqual(
       migrationPreparationContinuedTaskDisposition(.idle),
@@ -393,6 +896,176 @@ class RunnerTests: XCTestCase {
       migrationPreparationContinuedTaskDisposition(.terminal),
       .complete
     )
+  }
+
+  func testMigrationPreparationConfirmationProgressRequiresEveryTransactionAtThreeConfirmations() {
+    let progress = migrationPreparationConfirmationProgress(
+      observations: [
+        .notFound,
+        .mempool,
+        .mined(height: 100),
+      ],
+      chainTipHeight: 101,
+      confirmationTarget: 3
+    )
+
+    XCTAssertEqual(progress.confirmedUnitCount, 2)
+    XCTAssertEqual(progress.totalUnitCount, 9)
+    XCTAssertEqual(progress.completedTransactionCount, 0)
+    XCTAssertEqual(progress.totalTransactionCount, 3)
+    XCTAssertFalse(progress.isComplete)
+  }
+
+  func testMigrationPreparationConfirmationProgressCompletesOnlyWhenAllReachTarget() {
+    let progress = migrationPreparationConfirmationProgress(
+      observations: [
+        .mined(height: 100),
+        .mined(height: 99),
+      ],
+      chainTipHeight: 102,
+      confirmationTarget: 3
+    )
+
+    XCTAssertEqual(progress.confirmedUnitCount, 6)
+    XCTAssertEqual(progress.totalUnitCount, 6)
+    XCTAssertEqual(progress.completedTransactionCount, 2)
+    XCTAssertEqual(progress.totalTransactionCount, 2)
+    XCTAssertTrue(progress.isComplete)
+  }
+
+  func testMigrationPreparationConfirmationProgressDoesNotCountForkedTransaction() {
+    let progress = migrationPreparationConfirmationProgress(
+      observations: [
+        .forked,
+        .mined(height: 100),
+      ],
+      chainTipHeight: 102,
+      confirmationTarget: 3
+    )
+
+    XCTAssertEqual(progress.confirmedUnitCount, 3)
+    XCTAssertEqual(progress.completedTransactionCount, 1)
+    XCTAssertFalse(progress.isComplete)
+  }
+
+  func testMigrationNotificationBatchAggregatesAccountsAndPrioritizesRecovery() {
+    var state = MigrationPreparationNotificationBatchState()
+    let recovery = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "reorg-recovery"
+    )
+    let terminalFailure = MigrationPreparationNotificationEvent(
+      scope: "test:account-b:run-2",
+      kind: .terminalFailure,
+      fingerprint: "invalid-state"
+    )
+
+    XCTAssertTrue(state.enqueue(recovery))
+    XCTAssertTrue(state.enqueue(terminalFailure))
+
+    let summary = state.summary
+    XCTAssertEqual(summary?.accountCount, 2)
+    XCTAssertEqual(summary?.highestPriority, .terminalFailure)
+    XCTAssertEqual(summary?.title, "Migration updates")
+    XCTAssertEqual(
+      summary?.body,
+      "2 accounts need attention. Open Vizor to continue."
+    )
+  }
+
+  func testMigrationNotificationBatchDeduplicatesAcceptedFingerprint() {
+    var state = MigrationPreparationNotificationBatchState()
+    let event = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "reorg-recovery"
+    )
+
+    XCTAssertTrue(state.enqueue(event))
+    state.markAccepted([event])
+    state.beginNewBatch()
+
+    XCTAssertFalse(state.enqueue(event))
+    XCTAssertNil(state.summary)
+  }
+
+  func testResolvingOneMigrationNotificationScopePreservesAnotherAccount() {
+    var state = MigrationPreparationNotificationBatchState()
+    let accountA = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .terminalFailure,
+      fingerprint: "invalid-state"
+    )
+    let accountB = MigrationPreparationNotificationEvent(
+      scope: "test:account-b:run-2",
+      kind: .needsForegroundRecovery,
+      fingerprint: "reorg-recovery"
+    )
+    _ = state.enqueue(accountA)
+    _ = state.enqueue(accountB)
+
+    state.resolve(scope: accountA.scope)
+
+    XCTAssertEqual(state.summary?.accountCount, 1)
+    XCTAssertEqual(state.summary?.events, [accountB])
+  }
+
+  func testResolvingMigrationNotificationScopeAllowsARealRecurrence() {
+    var state = MigrationPreparationNotificationBatchState()
+    let event = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "reorg-recovery"
+    )
+    _ = state.enqueue(event)
+    state.markAccepted([event])
+
+    state.resolve(scope: event.scope)
+
+    XCTAssertTrue(state.enqueue(event))
+  }
+
+  func testRetainingMigrationNotificationScopesDoesNotSilenceAnotherAccount() {
+    var state = MigrationPreparationNotificationBatchState()
+    let accountA = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .terminalFailure,
+      fingerprint: "invalid-state"
+    )
+    let accountB = MigrationPreparationNotificationEvent(
+      scope: "test:account-b:run-2",
+      kind: .needsForegroundRecovery,
+      fingerprint: "reorg-recovery"
+    )
+    _ = state.enqueue(accountA)
+    _ = state.enqueue(accountB)
+    state.markAccepted([accountA, accountB])
+
+    state.retain(scopes: [accountB.scope])
+
+    XCTAssertEqual(state.summary?.events, [accountB])
+    XCTAssertFalse(state.enqueue(accountB))
+    XCTAssertTrue(state.enqueue(accountA))
+  }
+
+  func testExpiredMigrationNotificationBatchDoesNotRearmOldEvents() {
+    var state = MigrationPreparationNotificationBatchState()
+    let event = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "reorg-recovery"
+    )
+    _ = state.enqueue(event)
+    state.batchDeadline = Date(timeIntervalSince1970: 1)
+
+    XCTAssertTrue(
+      state.expireBatchIfNeeded(
+        now: Date(timeIntervalSince1970: 2)
+      )
+    )
+    XCTAssertNil(state.summary)
+    XCTAssertNil(state.batchDeadline)
   }
 
   func testMigrationPreparationRetriesInspectionFailuresInBackground() {
@@ -569,21 +1242,6 @@ class RunnerTests: XCTestCase {
     )
   }
 
-  func testGlobalPreparationFailureUsesSingleNotificationScope() {
-    XCTAssertEqual(
-      migrationPreparationNeedsActionNotificationScope(
-        manifestScope: nil
-      ),
-      "global"
-    )
-    XCTAssertEqual(
-      migrationPreparationNeedsActionNotificationScope(
-        manifestScope: "main:account-1:run-1"
-      ),
-      "main:account-1:run-1"
-    )
-  }
-
   func testTerminalPreparationCancellationCompletesExpiredTask() {
     XCTAssertTrue(
       migrationPreparationPassCompleted(
@@ -596,84 +1254,6 @@ class RunnerTests: XCTestCase {
         .cancelled,
         terminalAfterExpiration: false
       )
-    )
-  }
-
-  func testMigrationPreparationNeedsActionNotificationDeduplicatesFingerprint() {
-    XCTAssertTrue(
-      shouldPostMigrationPreparationNeedsActionNotification(
-        previousFingerprint: nil,
-        fingerprint: "main:account-1:run-1:sign:0"
-      )
-    )
-    XCTAssertFalse(
-      shouldPostMigrationPreparationNeedsActionNotification(
-        previousFingerprint: "main:account-1:run-1:sign:0",
-        fingerprint: "main:account-1:run-1:sign:0"
-      )
-    )
-    XCTAssertTrue(
-      shouldPostMigrationPreparationNeedsActionNotification(
-        previousFingerprint: "main:account-1:run-1:sign:0",
-        fingerprint: "main:account-1:run-1:sign:1"
-      )
-    )
-  }
-
-  func testMigrationPreparationNeedsActionFingerprintCommitsOnlyAfterAcceptedSubmission() {
-    XCTAssertNil(
-      migrationPreparationNeedsActionFingerprintAfterSubmission(
-        previousFingerprint: nil,
-        fingerprint: "main:account-1:run-1:foreground",
-        submissionAccepted: false
-      )
-    )
-    XCTAssertEqual(
-      migrationPreparationNeedsActionFingerprintAfterSubmission(
-        previousFingerprint: nil,
-        fingerprint: "main:account-1:run-1:foreground",
-        submissionAccepted: true
-      ),
-      "main:account-1:run-1:foreground"
-    )
-  }
-
-  func testMigrationPreparationNeedsActionResetInvalidatesAnInFlightSubmission() throws {
-    var tracker = MigrationPreparationNeedsActionSubmissionTracker()
-    let token = try XCTUnwrap(
-      tracker.begin(
-        scope: "main:account-1:run-1",
-        fingerprint: "main:account-1:run-1:foreground"
-      )
-    )
-
-    XCTAssertEqual(tracker.scopes, ["main:account-1:run-1"])
-    tracker.reset()
-    XCTAssertEqual(
-      tracker.complete(
-        scope: "main:account-1:run-1",
-        token: token
-      ),
-      .invalidated
-    )
-  }
-
-  func testMigrationPreparationNeedsActionKeepsANewerSubmissionCurrent() throws {
-    var tracker = MigrationPreparationNeedsActionSubmissionTracker()
-    let firstToken = try XCTUnwrap(
-      tracker.begin(scope: "global", fingerprint: "global:first")
-    )
-    let secondToken = try XCTUnwrap(
-      tracker.begin(scope: "global", fingerprint: "global:second")
-    )
-
-    XCTAssertEqual(
-      tracker.complete(scope: "global", token: firstToken),
-      .superseded
-    )
-    XCTAssertEqual(
-      tracker.complete(scope: "global", token: secondToken),
-      .current
     )
   }
 
@@ -902,6 +1482,68 @@ final class NativeLightwalletdClientTests: XCTestCase {
       try NativeLightwalletdClient.parseSendTransactionResponse(response),
       NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
     )
+  }
+
+  func testNativeLightwalletdParserReadsMinedTransactionHeight() throws {
+    let response = Data([
+      0x00, 0x00, 0x00, 0x00, 0x07,
+      0x0A, 0x02, 0xAA, 0xBB,
+      0x10, 0xAC, 0x02,
+    ])
+
+    XCTAssertEqual(
+      try NativeLightwalletdClient.parseTransactionResponse(response),
+      .mined(height: 300)
+    )
+  }
+
+  func testNativeLightwalletdParserReadsMempoolTransaction() throws {
+    let response = Data([
+      0x00, 0x00, 0x00, 0x00, 0x02,
+      0x0A, 0x00,
+    ])
+
+    XCTAssertEqual(
+      try NativeLightwalletdClient.parseTransactionResponse(response),
+      .mempool
+    )
+  }
+
+  func testNativeLightwalletdParserReadsForkedTransactionSentinel() throws {
+    let response = Data([
+      0x00, 0x00, 0x00, 0x00, 0x0B,
+      0x10, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+      0xFF, 0xFF, 0xFF, 0xFF, 0x01,
+    ])
+
+    XCTAssertEqual(
+      try NativeLightwalletdClient.parseTransactionResponse(response),
+      .forked
+    )
+  }
+
+  func testUnavailableGrpcTrailerRetriesStoredTransactionByteOrder() {
+    XCTAssertTrue(
+      shouldTryStoredTransactionIdByteOrder(
+        after: .failure(.grpcStatusUnavailable)
+      )
+    )
+    XCTAssertTrue(
+      shouldTryStoredTransactionIdByteOrder(after: .success(.notFound))
+    )
+    XCTAssertFalse(
+      shouldTryStoredTransactionIdByteOrder(
+        after: .failure(.timedOut)
+      )
+    )
+    let resolved = transactionObservationAfterStoredByteOrderFallback(
+      first: .failure(.grpcStatusUnavailable),
+      second: .failure(.grpcStatusUnavailable)
+    )
+    guard case .success(.notFound) = resolved else {
+      XCTFail("Expected unavailable trailers in both byte orders to be NotFound")
+      return
+    }
   }
 }
 

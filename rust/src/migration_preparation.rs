@@ -2,8 +2,9 @@
 //!
 //! Platform adapters are responsible only for converting their native inputs
 //! and outputs. Operation ownership, foreground-sync exclusion, state
-//! interpretation, sync execution, and denomination advancement live here so
-//! iOS and Android use the same state machine.
+//! interpretation, sync execution, and denomination advancement live here.
+//! Android runs the full worker flow; iOS uses read-only confirmation polling
+//! and calls the sync / advance path only between confirmed transaction waves.
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -228,6 +229,16 @@ pub fn inspect(
         return Ok(MigrationPreparationProgress::inactive());
     }
     progress_for_status(db_path, network, account_uuid, &status)
+}
+
+pub fn observable_transaction_ids(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<Vec<String>, MigrationPreparationError> {
+    sync::observable_denomination_transaction_ids(db_path, account_uuid, network, expected_run_id)
+        .map_err(MigrationPreparationError::Execution)
 }
 
 pub fn inspect_proof_readiness(

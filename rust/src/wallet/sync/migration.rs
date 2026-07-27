@@ -620,6 +620,39 @@ pub(crate) fn active_migration_run(
     active_run(&conn, account_uuid, network)
 }
 
+/// Lists denomination transactions that have been materialized and can
+/// therefore be observed through lightwalletd without decrypting wallet data.
+pub(crate) fn observable_denomination_transaction_ids(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<Vec<String>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    let Some(run) = active_run(&conn, account_uuid, network)? else {
+        return Ok(Vec::new());
+    };
+    if run.run_id != expected_run_id {
+        return Ok(Vec::new());
+    }
+    // This is the iOS background tracker's read-only boundary. Do not call the
+    // normal stage helpers here: they run `ensure_schema`, which may ALTER or
+    // rebuild legacy tables. Foreground migration setup owns schema upgrades.
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT expected_txid_hex
+             FROM {STAGES_TABLE}
+             WHERE run_id = ?1 AND status != 'awaiting_inputs'
+             ORDER BY stage_index ASC"
+        ))
+        .map_err(|e| format!("Prepare observable migration txid query: {e}"))?;
+    let rows = stmt
+        .query_map(params![expected_run_id], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("Query observable migration txids: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read observable migration txids: {e}"))
+}
+
 /// Returns whether Orchard inputs remain reserved by either an active
 /// migration or a false-terminal run awaiting explicit post-sync recovery.
 ///

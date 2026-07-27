@@ -616,6 +616,114 @@ fn insert_test_stage(
     }
 }
 
+#[test]
+fn observable_denomination_transaction_ids_are_scoped_to_the_active_run() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES ('run-1', 'account-1', 'test', 'db', ?1, 1, 1, '[]')"
+        ),
+        params![PHASE_WAITING_DENOM_CONFIRMATIONS],
+    )
+    .unwrap();
+    let expected_txid = "11".repeat(32);
+    insert_test_stage(
+        &conn,
+        "run-1",
+        &expected_txid,
+        DenominationStageStatus::Pending,
+        None,
+    );
+    drop(conn);
+
+    assert_eq!(
+        observable_denomination_transaction_ids(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            "run-1",
+        )
+        .unwrap(),
+        vec![expected_txid],
+    );
+    assert!(observable_denomination_transaction_ids(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        "other-run",
+    )
+    .unwrap()
+    .is_empty());
+}
+
+#[test]
+fn observable_denomination_transaction_ids_do_not_upgrade_legacy_schema() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute_batch(&format!(
+        "CREATE TABLE {RUNS_TABLE} (
+           run_id TEXT NOT NULL,
+           account_uuid TEXT NOT NULL,
+           network TEXT NOT NULL,
+           phase TEXT NOT NULL,
+           target_values_json TEXT NOT NULL,
+           last_error TEXT,
+           created_at_ms INTEGER NOT NULL
+         );
+         CREATE TABLE {STAGES_TABLE} (
+           run_id TEXT NOT NULL,
+           stage_index INTEGER NOT NULL,
+           expected_txid_hex TEXT NOT NULL,
+           status TEXT NOT NULL
+         );
+         INSERT INTO {RUNS_TABLE}
+           (run_id, account_uuid, network, phase, target_values_json,
+            last_error, created_at_ms)
+         VALUES
+           ('run-1', 'account-1', 'test', '{PHASE_WAITING_DENOM_CONFIRMATIONS}',
+            '[]', NULL, 1);
+         INSERT INTO {STAGES_TABLE}
+           (run_id, stage_index, expected_txid_hex, status)
+         VALUES
+           ('run-1', 0, '{}', 'broadcasted');",
+        "11".repeat(32),
+    ))
+    .unwrap();
+    drop(conn);
+
+    assert_eq!(
+        observable_denomination_transaction_ids(
+            db_path.to_str().unwrap(),
+            "account-1",
+            WalletNetwork::Test,
+            "run-1",
+        )
+        .unwrap(),
+        vec!["11".repeat(32)],
+    );
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let columns = conn
+        .prepare(&format!("PRAGMA table_info({STAGES_TABLE})"))
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        columns,
+        vec!["run_id", "stage_index", "expected_txid_hex", "status"]
+    );
+}
+
 fn insert_preparation_policy_test_run(
     conn: &rusqlite::Connection,
     run_id: &str,

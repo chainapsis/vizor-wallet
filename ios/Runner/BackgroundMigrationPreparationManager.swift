@@ -70,72 +70,152 @@ func migrationPreparationPassResultAfterHandoff(
   return .needsAction
 }
 
-func migrationPreparationNeedsActionNotificationScope(
-  manifestScope: String?
-) -> String {
-  manifestScope ?? "global"
+enum MigrationPreparationScopeTrackingDisposition: Equatable {
+  case progress(MigrationPreparationConfirmationProgress)
+  case completed(MigrationPreparationConfirmationProgress)
+  case retry
+  case needsForegroundRecovery(fingerprint: String, taskFailed: Bool)
+  case terminalFailure(fingerprint: String)
+  case inactive
 }
 
-func shouldPostMigrationPreparationNeedsActionNotification(
-  previousFingerprint: String?,
-  fingerprint: String
+struct MigrationPreparationScopeTrackingResult: Equatable {
+  let scope: String
+  let disposition: MigrationPreparationScopeTrackingDisposition
+}
+
+struct MigrationPreparationTrackingBatch: Equatable {
+  let progress: MigrationPreparationConfirmationProgress?
+  let continuationReadyScopes: Set<String>
+  let confirmedPreparationScopes: Set<String>
+  let notificationEvents: [MigrationPreparationNotificationEvent]
+  let shouldContinue: Bool
+  let hasTaskFailure: Bool
+}
+
+struct MigrationPreparationTrackingCompletionPresentation: Equatable {
+  let title: String
+  let subtitle: String
+}
+
+func migrationPreparationTrackingCompletionPresentation(
+  _: MigrationPreparationTrackingBatch
+) -> MigrationPreparationTrackingCompletionPresentation? {
+  // Confirmation completion is only a wave boundary. The continued task owns
+  // the following sync / advance and supplies a completion presentation only
+  // after the whole preparation becomes proof-ready.
+  return nil
+}
+
+func migrationPreparationTrackingBatchRequiresAdvancement(
+  _ batch: MigrationPreparationTrackingBatch
 ) -> Bool {
-  previousFingerprint != fingerprint
+  !batch.confirmedPreparationScopes.isEmpty && !batch.hasTaskFailure
 }
 
-func migrationPreparationNeedsActionFingerprintAfterSubmission(
-  previousFingerprint: String?,
-  fingerprint: String,
-  submissionAccepted: Bool
-) -> String? {
-  submissionAccepted ? fingerprint : previousFingerprint
-}
+func migrationPreparationTrackingBatch(
+  results: [MigrationPreparationScopeTrackingResult],
+  progressByScope: inout [
+    String: MigrationPreparationConfirmationProgress
+  ]
+) -> MigrationPreparationTrackingBatch {
+  var continuationReadyScopes = Set<String>()
+  var confirmedPreparationScopes = Set<String>()
+  var notificationEvents: [MigrationPreparationNotificationEvent] = []
+  var shouldContinue = false
+  var hasTaskFailure = false
+  var retryScopesWithoutProgress = 0
 
-enum MigrationPreparationNeedsActionSubmissionCompletion: Equatable {
-  case current
-  case invalidated
-  case superseded
-}
-
-struct MigrationPreparationNeedsActionSubmissionTracker {
-  private var nextToken: UInt64 = 0
-  private var pendingFingerprints: [String: String] = [:]
-  private var requestTokens: [String: UInt64] = [:]
-
-  var scopes: Set<String> {
-    Set(pendingFingerprints.keys).union(requestTokens.keys)
-  }
-
-  mutating func begin(scope: String, fingerprint: String) -> UInt64? {
-    guard pendingFingerprints[scope] != fingerprint else { return nil }
-    nextToken &+= 1
-    pendingFingerprints[scope] = fingerprint
-    requestTokens[scope] = nextToken
-    return nextToken
-  }
-
-  mutating func complete(
-    scope: String,
-    token: UInt64
-  ) -> MigrationPreparationNeedsActionSubmissionCompletion {
-    guard requestTokens[scope] == token else {
-      return requestTokens[scope] == nil ? .invalidated : .superseded
+  for result in results {
+    switch result.disposition {
+    case .progress(let progress):
+      progressByScope[result.scope] = progress
+      shouldContinue = true
+    case .retry:
+      shouldContinue = true
+      if progressByScope[result.scope] == nil {
+        retryScopesWithoutProgress += 1
+      }
+    case .completed(let progress):
+      progressByScope[result.scope] = progress
+      confirmedPreparationScopes.insert(result.scope)
+    case .needsForegroundRecovery(let fingerprint, let taskFailed):
+      continuationReadyScopes.insert(result.scope)
+      hasTaskFailure = hasTaskFailure || taskFailed
+      notificationEvents.append(
+        MigrationPreparationNotificationEvent(
+          scope: result.scope,
+          kind: .needsForegroundRecovery,
+          fingerprint: fingerprint
+        )
+      )
+    case .terminalFailure(let fingerprint):
+      continuationReadyScopes.insert(result.scope)
+      hasTaskFailure = true
+      notificationEvents.append(
+        MigrationPreparationNotificationEvent(
+          scope: result.scope,
+          kind: .terminalFailure,
+          fingerprint: fingerprint
+        )
+      )
+    case .inactive:
+      break
     }
-    pendingFingerprints.removeValue(forKey: scope)
-    return .current
   }
 
-  mutating func clear(scopes: Set<String>) {
-    for scope in scopes {
-      pendingFingerprints.removeValue(forKey: scope)
-      requestTokens.removeValue(forKey: scope)
-    }
+  let progressValues = progressByScope.values
+  let confirmedUnits = progressValues.reduce(Int64(0)) {
+    $0 + $1.confirmedUnitCount
   }
+  let representedTotalUnits = progressValues.reduce(Int64(0)) {
+    $0 + $1.totalUnitCount
+  }
+  let retryUnits = Int64(retryScopesWithoutProgress)
+  let (totalUnits, totalOverflow) =
+    representedTotalUnits.addingReportingOverflow(retryUnits)
+  let boundedTotalUnits = totalOverflow ? Int64.max : totalUnits
+  let completedTransactions = progressValues.reduce(0) {
+    $0 + $1.completedTransactionCount
+  }
+  let totalTransactions = progressValues.reduce(0) {
+    $0 + $1.totalTransactionCount
+  }
+  let progress =
+    boundedTotalUnits > 0
+    ? MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: confirmedUnits,
+      totalUnitCount: boundedTotalUnits,
+      completedTransactionCount: completedTransactions,
+      totalTransactionCount: totalTransactions,
+      isComplete:
+        !shouldContinue && progressValues.allSatisfy(\.isComplete)
+    )
+    : nil
+  return MigrationPreparationTrackingBatch(
+    progress: progress,
+    continuationReadyScopes: continuationReadyScopes,
+    confirmedPreparationScopes: confirmedPreparationScopes,
+    notificationEvents: notificationEvents,
+    shouldContinue: shouldContinue,
+    hasTaskFailure: hasTaskFailure
+  )
+}
 
-  mutating func reset() {
-    pendingFingerprints.removeAll()
-    requestTokens.removeAll()
-  }
+func migrationPreparationTrackingBatch(
+  results: [MigrationPreparationScopeTrackingResult]
+) -> MigrationPreparationTrackingBatch {
+  var progressByScope:
+    [String: MigrationPreparationConfirmationProgress] = [:]
+  return migrationPreparationTrackingBatch(
+    results: results,
+    progressByScope: &progressByScope
+  )
+}
+
+private enum BackgroundMigrationPreparationTrackingPass {
+  case batch(MigrationPreparationTrackingBatch)
+  case cancelled
 }
 
 private enum BackgroundMigrationPreparationStepResult {
@@ -162,9 +242,161 @@ enum BackgroundMigrationPreparationResumeTarget: Equatable {
 }
 
 enum BackgroundMigrationPreparationContinuedTaskDisposition: Equatable {
-  case run
-  case handoffToBackground
+  case trackConfirmations
+  case foregroundOnly
   case complete
+}
+
+struct MigrationPreparationConfirmationProgress: Equatable {
+  let confirmedUnitCount: Int64
+  let totalUnitCount: Int64
+  let completedTransactionCount: Int
+  let totalTransactionCount: Int
+  let isComplete: Bool
+}
+
+func migrationPreparationConfirmationProgress(
+  observations: [NativeLightwalletdTransactionObservation],
+  chainTipHeight: UInt64,
+  confirmationTarget: UInt64
+) -> MigrationPreparationConfirmationProgress {
+  let target = max(1, confirmationTarget)
+  let confirmations = observations.map { observation -> UInt64 in
+    guard case .mined(let minedHeight) = observation,
+      chainTipHeight >= minedHeight
+    else {
+      return 0
+    }
+    return min(target, chainTipHeight - minedHeight + 1)
+  }
+  let completed = confirmations.filter { $0 >= target }.count
+  let totalUnits = UInt64(observations.count) * target
+  return MigrationPreparationConfirmationProgress(
+    confirmedUnitCount: Int64(confirmations.reduce(0, +)),
+    totalUnitCount: Int64(totalUnits),
+    completedTransactionCount: completed,
+    totalTransactionCount: observations.count,
+    isComplete: !observations.isEmpty && completed == observations.count
+  )
+}
+
+func migrationPreparationConfirmationDisposition(
+  observations: [NativeLightwalletdTransactionObservation],
+  chainTipHeight: UInt64,
+  confirmationTarget: UInt64
+) -> MigrationPreparationScopeTrackingDisposition {
+  if observations.contains(where: {
+    if case .forked = $0 { return true }
+    return false
+  }) {
+    return .needsForegroundRecovery(
+      fingerprint: "forked-transaction",
+      taskFailed: true
+    )
+  }
+  let progress = migrationPreparationConfirmationProgress(
+    observations: observations,
+    chainTipHeight: chainTipHeight,
+    confirmationTarget: confirmationTarget
+  )
+  return progress.isComplete ? .completed(progress) : .progress(progress)
+}
+
+func migrationPreparationScopeTrackingDisposition(
+  state: UInt8,
+  completedStageCount: UInt32 = 0,
+  totalStageCount: UInt32 = 0,
+  confirmationTarget: UInt32 = 0
+) -> MigrationPreparationScopeTrackingDisposition? {
+  switch state {
+  case 0:
+    return nil
+  case 1:
+    let transactionCount = max(completedStageCount, totalStageCount)
+    let target = max(1, confirmationTarget)
+    let (unitCount, overflow) = Int64(transactionCount)
+      .multipliedReportingOverflow(by: Int64(target))
+    let boundedUnitCount = overflow ? Int64.max : unitCount
+    return .completed(
+      MigrationPreparationConfirmationProgress(
+        confirmedUnitCount: boundedUnitCount,
+        totalUnitCount: boundedUnitCount,
+        completedTransactionCount: Int(transactionCount),
+        totalTransactionCount: Int(transactionCount),
+        isComplete: true
+      )
+    )
+  case 2, 3:
+    return .needsForegroundRecovery(
+      fingerprint: "state-\(state)",
+      taskFailed: true
+    )
+  case 4:
+    return .inactive
+  case 5:
+    return .needsForegroundRecovery(
+      fingerprint: "state-5",
+      taskFailed: false
+    )
+  default:
+    return .terminalFailure(
+      fingerprint: "unexpected-state-\(state)"
+    )
+  }
+}
+
+func migrationPreparationDisplayedProgressUnits(
+  previousUnits: Int64,
+  progress: MigrationPreparationConfirmationProgress,
+  displayUnitCount: Int64
+) -> Int64 {
+  let boundedTotal = max(1, displayUnitCount)
+  let aggregateTotal = max(1, progress.totalUnitCount)
+  let fraction = min(
+    1,
+    max(
+      0,
+      Double(progress.confirmedUnitCount) / Double(aggregateTotal)
+    )
+  )
+  let requestedUnits = Int64(
+    (fraction * Double(boundedTotal)).rounded()
+  )
+  let completionBound =
+    progress.isComplete ? boundedTotal : max(0, boundedTotal - 1)
+  let boundedPrevious = min(completionBound, max(0, previousUnits))
+  let boundedRequested = min(completionBound, max(0, requestedUnits))
+  guard !progress.isComplete else {
+    return max(boundedPrevious, boundedRequested)
+  }
+
+  // Keep the system Progress moving while the chain is between blocks, but
+  // never cross the display boundary for the next real confirmation.
+  let boundedConfirmed = min(
+    aggregateTotal,
+    max(0, progress.confirmedUnitCount)
+  )
+  let nextConfirmedUnit =
+    boundedConfirmed < aggregateTotal
+    ? boundedConfirmed + 1
+    : aggregateTotal
+  let nextConfirmationBoundary = Int64(
+    (
+      Double(nextConfirmedUnit) / Double(aggregateTotal)
+        * Double(boundedTotal)
+    ).rounded(.down)
+  )
+  let heartbeatBound = min(
+    completionBound,
+    max(boundedRequested, nextConfirmationBoundary - 1)
+  )
+  return max(
+    boundedPrevious,
+    max(
+      boundedRequested,
+      min(heartbeatBound, boundedPrevious + 1)
+    )
+  )
 }
 
 func migrationPreparationResumeTarget(
@@ -174,7 +406,9 @@ func migrationPreparationResumeTarget(
   if states.contains(0) {
     return .continuedProcessing
   }
-  if inspectionFailed || states.contains(5) {
+  if inspectionFailed || states.contains(2) || states.contains(3)
+    || states.contains(5)
+  {
     return .backgroundProcessing
   }
   if states.isEmpty || states.allSatisfy({ $0 == 4 }) {
@@ -188,12 +422,77 @@ func migrationPreparationContinuedTaskDisposition(
 ) -> BackgroundMigrationPreparationContinuedTaskDisposition {
   switch resumeTarget {
   case .continuedProcessing:
-    return .run
+    return .trackConfirmations
   case .backgroundProcessing:
-    return .handoffToBackground
+    return .foregroundOnly
   case .idle, .terminal:
     return .complete
   }
+}
+
+/// Whether the foreground app should take over a pending continued-processing
+/// request instead of leaving it for the system to start.
+///
+/// A request stays pending between submission and the moment the system starts
+/// it. Claiming it in that window cancels the task the foreground just armed,
+/// so the Dynamic Island activity never appears and the confirmations are
+/// never tracked. Only take a request over when background tracking cannot
+/// make progress on it anyway.
+func shouldClaimPendingMigrationPreparationRequest(
+  hasPendingRequest: Bool,
+  canTrackInBackground: Bool,
+  foregroundContinuationPending: Bool = false,
+  taskRunning: Bool,
+  deferredPassRunning: Bool,
+  mutationQuiesced: Bool,
+  notificationsDisabled: Bool
+) -> Bool {
+  hasPendingRequest
+    && (foregroundContinuationPending || !canTrackInBackground) && !taskRunning
+    && !deferredPassRunning && !mutationQuiesced && !notificationsDisabled
+}
+
+/// The runs a new tracking task would actually do work for: those still
+/// waiting for denomination confirmations whose foreground continuation has
+/// not been acknowledged yet.
+///
+/// The subtraction runs in this direction on purpose. The continued task is a
+/// single app-wide request that sweeps every account's manifest, skipping any
+/// run that is not waiting for confirmations. So a run that needs the
+/// foreground app (state `5`, needs-action, unreadable) never contributes work
+/// — and must never veto a *different* account's tracking either. Asking
+/// "which recorded scopes are not trackable" gave exactly that veto: one
+/// account parked in state `5` blocked confirmation tracking for every other
+/// account, permanently, because its scope is only cleared by the migration
+/// status screen.
+///
+/// Subtracting the other way keeps the property that guard was there for. Once
+/// a run's tracking has completed and marked its continuation ready, it drops
+/// out of this set, so the task is not re-armed to re-observe the same
+/// confirmed transactions and re-post the same notification while the DB waits
+/// for a foreground reconcile.
+func migrationPreparationPendingTrackableScopes(
+  continuationScopes: Set<String>,
+  confirmationTrackableScopes: Set<String>
+) -> Set<String> {
+  confirmationTrackableScopes.subtracting(continuationScopes)
+}
+
+/// Report whether the continued-processing task ended without an observed
+/// migration failure.
+///
+/// Expiration interrupts this one execution opportunity; it does not prove
+/// that the migration failed and BGContinuedProcessingTask does not retry work
+/// after `success: false`.
+func migrationPreparationTrackingTaskSucceeded(
+  taskFailed: Bool,
+  quiesced: Bool,
+  expired: Bool,
+  handedOff: Bool,
+  notificationsDisabled: Bool
+) -> Bool {
+  !taskFailed && !quiesced
+    && (!expired || handedOff || notificationsDisabled)
 }
 
 func shouldMarkMigrationPreparationForegroundContinuation(
@@ -217,7 +516,52 @@ func shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
 func migrationPreparationStateNeedsForegroundContinuation(
   _ state: UInt8
 ) -> Bool {
-  state == 0
+  state == 0 || state == 2 || state == 3 || state == 5
+}
+
+func migrationPreparationStateNeedsForegroundNotification(
+  _ state: UInt8
+) -> Bool {
+  state == 2 || state == 3 || state == 5
+}
+
+func shouldTryStoredTransactionIdByteOrder(
+  after result: Result<
+    NativeLightwalletdTransactionObservation,
+    NativeLightwalletdError
+  >
+) -> Bool {
+  switch result {
+  case .success(.notFound), .failure(.grpcStatusUnavailable):
+    return true
+  default:
+    return false
+  }
+}
+
+func transactionObservationAfterStoredByteOrderFallback(
+  first: Result<
+    NativeLightwalletdTransactionObservation,
+    NativeLightwalletdError
+  >,
+  second: Result<
+    NativeLightwalletdTransactionObservation,
+    NativeLightwalletdError
+  >
+) -> Result<
+  NativeLightwalletdTransactionObservation,
+  NativeLightwalletdError
+> {
+  if case .failure(.grpcStatusUnavailable) = first,
+    case .failure(.grpcStatusUnavailable) = second
+  {
+    // A successful unary GetTransaction always has a framed body. Foundation
+    // hides the non-OK trailers, so two empty responses for both byte orders
+    // are the observable equivalent of NotFound. NotFound remains an
+    // unconfirmed observation and is polled again; it is never success.
+    return .success(.notFound)
+  }
+  return second
 }
 
 func migrationPreparationRuntimeState(
@@ -270,17 +614,27 @@ final class BackgroundMigrationPreparationManager {
   static let shared = BackgroundMigrationPreparationManager()
   static let taskIdentifier = "com.keplr.vizor.ironwood-preparation"
 
+  /// How many consecutive passes may observe a confirmation-waiting run with
+  /// no listable transaction before it is treated as stalled rather than as a
+  /// foreground commit still in flight.
+  private static let emptyObservationPassLimit = 2
+  private var emptyObservationPassesByScope: [String: Int] = [:]
+
+  private static let schedulingTraceFileName =
+    "ironwood-preparation-scheduling-trace.jsonl"
+  private static let schedulingTraceMaxBytes: UInt64 = 256 * 1024
+  private let traceLock = NSLock()
+
   private static let watchdogIdentifier =
     "com.keplr.vizor.ironwood-preparation.watchdog"
-  private static let needsActionIdentifier =
-    "com.keplr.vizor.ironwood-preparation.needs-action"
-  private static let proofReadyIdentifier =
-    "com.keplr.vizor.ironwood-preparation.proof-ready"
   private static let watchdogDelay: TimeInterval = 15 * 60
+  private static let confirmationQueryInterval: TimeInterval = 60
+  private static let progressHeartbeatInterval: TimeInterval = 15
   private static let busyRetryDelay: TimeInterval = 60
-  private static let transientRetryDelay: TimeInterval = 10 * 60
-  private static let waitingHeartbeatInterval: TimeInterval = 15
-  private static let waitingHeartbeatUnitLimit: Int64 = 949
+  private static let transientRetryDelay: TimeInterval = 60
+  private static let confirmationTarget: UInt64 = 3
+  private static let progressDisplayUnitCount: Int64 = 1000
+  private static let preparationProgressUnitLimit: Int64 = 949
   private static let schedulingStateKey =
     "ironwoodMigrationPreparationSchedulingState"
   private static let schedulingStateUpdatedAtKey =
@@ -289,8 +643,6 @@ final class BackgroundMigrationPreparationManager {
     "ironwoodMigrationPreparationSchedulingError"
   private static let foregroundContinuationScopesKey =
     "ironwoodMigrationPreparationForegroundContinuationScopes"
-  private static let needsActionNotificationFingerprintsKey =
-    "ironwoodMigrationPreparationNeedsActionNotificationFingerprints"
 
   private let queue = DispatchQueue(
     label: "com.keplr.vizor.ironwood-preparation",
@@ -306,27 +658,28 @@ final class BackgroundMigrationPreparationManager {
     IronwoodMigrationNotificationAuthorizationEpochState()
   private var foregroundHandoffRequested = false
   private var foregroundContinuationScopes: Set<String>
-  private var needsActionNotificationFingerprints: [String: String]
-  private var needsActionNotificationSubmissionTracker =
-    MigrationPreparationNeedsActionSubmissionTracker()
+  private let notificationCoordinator =
+    MigrationPreparationNotificationCoordinator.shared
   private var taskProgress: Progress?
-  private var lastCompletedUnitCount: Int64 = 0
+  private var trackingCancellation: BackgroundMigrationCancellation?
+  private var trackingProgressByScope:
+    [String: MigrationPreparationConfirmationProgress] = [:]
+  private var completedPreparationScopes = Set<String>()
+  private var latestTrackingProgress:
+    MigrationPreparationConfirmationProgress?
+  private var displayedProgressUnits: Int64 = 0
   private var authorizationMonitor:
     IronwoodMigrationNotificationAuthorizationMonitor?
-
   private init() {
     foregroundContinuationScopes = Set(
       UserDefaults.standard.stringArray(
         forKey: Self.foregroundContinuationScopesKey
       ) ?? []
     )
-    needsActionNotificationFingerprints =
-      UserDefaults.standard.dictionary(
-        forKey: Self.needsActionNotificationFingerprintsKey
-      ) as? [String: String] ?? [:]
   }
 
   func handoffPendingRequestForForegroundLaunch() {
+    notificationCoordinator.clearDeliveredSummary()
     pruneForegroundContinuationScopes()
     BGTaskScheduler.shared.getPendingTaskRequests { [weak self] requests in
       guard let self else { return }
@@ -393,12 +746,13 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func handoffToForeground() {
-    let shouldCancelPreparationSync = stateLock.withPreparationLock {
+    let cancellation = stateLock.withPreparationLock {
       foregroundHandoffRequested = taskRunning
-      return taskRunning
+      return trackingCancellation
     }
-    guard shouldCancelPreparationSync else { return }
+    guard let cancellation else { return }
     recordSchedulingState("handoff_to_foreground")
+    cancellation.cancel()
     _ = zcash_cancel_migration_preparation_sync()
   }
 
@@ -414,22 +768,35 @@ final class BackgroundMigrationPreparationManager {
       accountUuid: accountUuid,
       runId: runId
     )
-    clearNeedsActionNotification(scope: scope)
     let evaluate = { [weak self] in
       guard let self else {
         completion(.idle)
         return
       }
+      // A submitted continued-processing request is pending until the system
+      // starts it. Claiming it in that window cancels the very task the
+      // foreground just armed, so the Dynamic Island activity never appears.
+      // Only take over a pending request when background tracking cannot make
+      // progress on it anyway.
+      let canTrackInBackground = migrationPreparationContinuedTaskDisposition(
+        self.preparationResumeTarget()
+      ) == .trackConfirmations
       BGTaskScheduler.shared.getPendingTaskRequests { requests in
         let hasPendingRequest = requests.contains {
           $0.identifier == Self.taskIdentifier
         }
         let shouldClaimPendingRequest = self.stateLock.withPreparationLock {
-          hasPendingRequest
-            && !self.taskRunning
-            && !self.deferredPassRunning
-            && !self.mutationQuiesced
-            && !self.notificationAuthorization.isDisabled
+          let continuationPending =
+            self.foregroundContinuationScopes.contains(scope)
+          return shouldClaimPendingMigrationPreparationRequest(
+            hasPendingRequest: hasPendingRequest,
+            canTrackInBackground: canTrackInBackground,
+            foregroundContinuationPending: continuationPending,
+            taskRunning: self.taskRunning,
+            deferredPassRunning: self.deferredPassRunning,
+            mutationQuiesced: self.mutationQuiesced,
+            notificationsDisabled: self.notificationAuthorization.isDisabled
+          )
         }
         if shouldClaimPendingRequest {
           self.markForegroundContinuationsReady()
@@ -540,23 +907,15 @@ final class BackgroundMigrationPreparationManager {
     switch migrationPreparationContinuedTaskDisposition(
       preparationResumeTarget()
     ) {
-    case .run:
+    case .trackConfirmations:
       break
-    case .handoffToBackground:
-      recordSchedulingState("processing_redirected_before_submit")
-      BackgroundMigrationManager.shared.schedulePreparationHandoff(
-        after: 60
-      ) { scheduled in
-        if scheduled {
-          BGTaskScheduler.shared.cancel(
-            taskRequestWithIdentifier: Self.taskIdentifier
-          )
-          self.cancelWatchdog()
-        } else {
-          self.recordDeferredSchedulingFailure()
-        }
-        completion(scheduled)
-      }
+    case .foregroundOnly:
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      recordSchedulingState("foreground_only")
+      cancelWatchdog()
+      completion(false)
       return
     case .complete:
       BGTaskScheduler.shared.cancel(
@@ -567,39 +926,39 @@ final class BackgroundMigrationPreparationManager {
       completion(false)
       return
     }
-    let shouldCheckScheduler = stateLock.withPreparationLock { () -> Bool in
-      guard !mutationQuiesced
-        && !submissionInFlight
-        && !taskRunning
-        && foregroundContinuationScopes.isEmpty
-      else {
-        return false
+    // Arm whenever some run still needs confirmation tracking. The old
+    // `foregroundContinuationScopes.isEmpty` guard vetoed submission whenever
+    // ANY account had a recorded continuation, so one account parked in state
+    // `5` silently stopped confirmation tracking for every other account.
+    let pendingScopes = pendingTrackableScopes()
+    // Record which guard refused the submission. Without this the "did not
+    // submit" paths leave the previous breadcrumb in place, which reads as a
+    // successful submission that never ran.
+    let submissionBlockedReason = stateLock.withPreparationLock {
+      () -> String? in
+      if mutationQuiesced { return "blocked_mutation_quiesced" }
+      if submissionInFlight { return "blocked_submission_in_flight" }
+      if taskRunning { return "blocked_task_running" }
+      if pendingScopes.isEmpty {
+        // Not "blocked": nothing is waiting for denomination confirmations
+        // that has not already been handed to the foreground.
+        return "no_trackable_run"
       }
-      guard !notificationAuthorization.isDisabled else { return false }
+      if notificationAuthorization.isDisabled {
+        return "blocked_notifications_disabled"
+      }
       submissionInFlight = true
-      return true
+      return nil
     }
-    guard shouldCheckScheduler else {
-      let (
-        blockedByMutation,
-        disabledForNotifications,
-        foregroundContinuationPending,
-        workActive
-      ) =
-        stateLock.withPreparationLock {
-          (
-            mutationQuiesced,
-            notificationAuthorization.isDisabled,
-            !foregroundContinuationScopes.isEmpty,
-            submissionInFlight || taskRunning
-          )
-        }
-      completion(
-        !blockedByMutation
-          && !disabledForNotifications
-          && (foregroundContinuationPending
-            || workActive)
-      )
+    if let submissionBlockedReason {
+      recordSchedulingState(submissionBlockedReason)
+      let canContinue = stateLock.withPreparationLock {
+        !mutationQuiesced
+          && !notificationAuthorization.isDisabled
+          && (submissionInFlight || taskRunning
+            || !foregroundContinuationScopes.isEmpty)
+      }
+      completion(canContinue)
       return
     }
     guard stateLock.withPreparationLock({
@@ -612,121 +971,61 @@ final class BackgroundMigrationPreparationManager {
       completion(false)
       return
     }
+
     recordSchedulingState("checking")
     BGTaskScheduler.shared.getPendingTaskRequests { [weak self] requests in
       guard let self else {
         completion(false)
         return
       }
-      let maySubmit = self.stateLock.withPreparationLock { () -> Bool in
-        guard !self.mutationQuiesced else {
-          self.submissionInFlight = false
-          return false
-        }
-        return true
-      }
-      guard maySubmit else {
-        completion(false)
-        return
-      }
       if requests.contains(where: { $0.identifier == Self.taskIdentifier }) {
-        IronwoodMigrationNotificationGate.shared.status { status in
-          self.stateLock.withPreparationLock {
-            self.submissionInFlight = false
-          }
-          guard status.allowsBackgroundMigration else {
-            IronwoodMigrationNotificationGate.shared.hardDisable()
-            completion(false)
-            return
-          }
-          guard self.enableNotificationWork(
-            ifCurrent: authorizationEpoch
-          ) else {
-            self.stateLock.withPreparationLock {
-              self.submissionInFlight = false
-            }
-            completion(false)
-            return
-          }
-          self.recordSchedulingState("pending")
-          completion(true)
+        self.stateLock.withPreparationLock {
+          self.submissionInFlight = false
         }
+        self.recordSchedulingState("pending")
+        completion(true)
         return
       }
 
-      IronwoodMigrationNotificationGate.shared.status { status in
-        guard status.allowsBackgroundMigration else {
-          self.stateLock.withPreparationLock {
-            self.submissionInFlight = false
-          }
-          IronwoodMigrationNotificationGate.shared.hardDisable()
-          completion(false)
-          return
+      self.scheduleWatchdog()
+      let request = BGContinuedProcessingTaskRequest(
+        identifier: Self.taskIdentifier,
+        title: "Checking preparation transactions",
+        subtitle: "Waiting for confirmations"
+      )
+      request.strategy = .fail
+      let submission = self.stateLock.withPreparationLock {
+        () -> (submitted: Bool, error: Error?) in
+        guard !self.mutationQuiesced,
+          !self.notificationAuthorization.isDisabled,
+          self.notificationAuthorization.generation == authorizationEpoch,
+          self.submissionInFlight
+        else {
+          self.submissionInFlight = false
+          return (false, nil)
         }
-        guard self.enableNotificationWork(
-          ifCurrent: authorizationEpoch
-        ) else {
-          self.stateLock.withPreparationLock {
-            self.submissionInFlight = false
-          }
-          completion(false)
-          return
-        }
-        self.scheduleWatchdog()
-        let request = BGContinuedProcessingTaskRequest(
-          identifier: Self.taskIdentifier,
-          title: "Preparing migration",
-          subtitle: "You can continue using your device"
-        )
-        request.strategy = .fail
-        let submission = self.stateLock.withPreparationLock {
-          () -> (submitted: Bool, error: Error?) in
-          guard !self.mutationQuiesced,
-            !self.notificationAuthorization.isDisabled,
-            self.notificationAuthorization.generation == authorizationEpoch,
-            self.submissionInFlight
-          else {
-            self.submissionInFlight = false
-            return (false, nil)
-          }
-          do {
-            try BGTaskScheduler.shared.submit(request)
-            self.submissionInFlight = false
-            return (true, nil)
-          } catch {
-            self.submissionInFlight = false
-            return (false, error)
-          }
-        }
-        if submission.submitted {
-          self.recordSchedulingState("submitted")
-          print("[BGPreparation] submitted")
-          completion(true)
-          return
-        }
-        guard let error = submission.error else {
-          self.cancelWatchdog()
-          completion(false)
-          return
-        }
-        print("[BGPreparation] submit failed: \(error)")
-        BackgroundMigrationManager.shared.schedulePreparationHandoff(
-          after: 60
-        ) { deferred in
-          if deferred {
-            self.recordSchedulingState(
-              "deferred_after_submit_failure",
-              error: error
-            )
-            self.cancelWatchdog()
-            completion(true)
-            return
-          }
-          self.recordSchedulingState("failed", error: error)
-          self.postNeedsActionNotification(reason: "submission-failed")
-          completion(false)
+        do {
+          try BGTaskScheduler.shared.submit(request)
+          self.submissionInFlight = false
+          return (true, nil)
+        } catch {
+          self.submissionInFlight = false
+          return (false, error)
         }
       }
+      if submission.submitted {
+        self.recordSchedulingState("submitted")
+        print("[BGPreparation] confirmation tracker submitted")
+        completion(true)
+        return
+      }
+      self.cancelWatchdog()
+      if let error = submission.error {
+        self.recordSchedulingState("failed", error: error)
+        self.postNeedsActionNotification(reason: "submission-failed")
+        print("[BGPreparation] submit failed: \(error)")
+      }
+      completion(false)
     }
   }
 
@@ -736,16 +1035,17 @@ final class BackgroundMigrationPreparationManager {
       expired = true
       submissionInFlight = false
       notificationAuthorization.disable()
+      trackingCancellation?.cancel()
       foregroundContinuationScopes.removeAll()
       persistForegroundContinuationScopesLocked()
       defer { authorizationMonitor = nil }
       return authorizationMonitor
     }
     monitor?.cancel()
+    _ = zcash_cancel_migration_preparation_sync()
     BGTaskScheduler.shared.cancel(
       taskRequestWithIdentifier: Self.taskIdentifier
     )
-    _ = zcash_cancel_migration_preparation_sync()
     cancelWatchdog()
     resetNeedsActionNotifications()
   }
@@ -804,11 +1104,11 @@ final class BackgroundMigrationPreparationManager {
       expired = true
       submissionInFlight = false
       mutationQuiesced = true
+      trackingCancellation?.cancel()
       foregroundContinuationScopes.removeAll()
       persistForegroundContinuationScopesLocked()
     }
     _ = zcash_cancel_migration_preparation_sync()
-    resetNeedsActionNotifications()
     queue.async {
       DispatchQueue.main.async { completion(true) }
     }
@@ -820,6 +1120,13 @@ final class BackgroundMigrationPreparationManager {
       mutationQuiesced = false
     }
     pruneForegroundContinuationScopes()
+    if let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll() {
+      var retainedScopes = Set(["global"])
+      retainedScopes.formUnion(
+        manifests.compactMap { Self.preparationScope(for: $0) }
+      )
+      notificationCoordinator.retain(scopes: retainedScopes)
+    }
     switch preparationResumeTarget() {
     case .idle, .terminal:
       BGTaskScheduler.shared.cancel(
@@ -833,60 +1140,31 @@ final class BackgroundMigrationPreparationManager {
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
-      recordSchedulingState("processing_resume_after_mutation")
+      markForegroundContinuationsReady()
+      recordSchedulingState("waiting_for_foreground_after_mutation")
       cancelWatchdog()
-      BackgroundMigrationManager.shared.schedulePreparationHandoff(
-        after: 60
-      ) { scheduled in
-        if scheduled {
-          self.recordSchedulingState(
-            "processing_resumed_after_mutation"
-          )
-        } else {
-          self.recordSchedulingState(
-            "processing_resume_after_mutation_failed"
-          )
-          self.scheduleWatchdog()
-          self.postNeedsActionNotification(
-            reason: "processing-resume-after-mutation-failed"
-          )
-        }
+      notifyPreparationNeedsForeground()
+    }
+  }
+
+  func expireDeferredPass() {
+    stateLock.withPreparationLock {
+      if deferredPassRunning {
+        expired = true
       }
     }
   }
 
-  fileprivate func recordSyncProgress(_ progress: CSyncProgress) {
-    guard progress.percentage.isFinite else { return }
-    let fraction = min(max(progress.percentage, 0), 1)
-    let syncUnits = Int64((25 + fraction * 25).rounded())
-    updateProgress(syncUnits)
-  }
-
-  func expireDeferredPass() {
-    let shouldCancel = stateLock.withPreparationLock { () -> Bool in
-      guard deferredPassRunning else { return false }
-      expired = true
-      return true
-    }
-    if shouldCancel {
-      _ = zcash_cancel_migration_preparation_sync()
-    }
-  }
-
   func cancelDeferredPass() {
-    let shouldCancel = stateLock.withPreparationLock { () -> Bool in
-      guard deferredPassRunning else { return false }
-      expired = true
-      return true
-    }
-    if shouldCancel {
-      _ = zcash_cancel_migration_preparation_sync()
+    stateLock.withPreparationLock {
+      if deferredPassRunning {
+        expired = true
+      }
     }
   }
 
   func recordDeferredSchedulingFailure() {
     recordSchedulingState("processing_reschedule_failed")
-    scheduleWatchdog()
     postNeedsActionNotification(reason: "processing-reschedule-failed")
   }
 
@@ -917,23 +1195,17 @@ final class BackgroundMigrationPreparationManager {
     switch migrationPreparationContinuedTaskDisposition(
       preparationResumeTarget()
     ) {
-    case .run:
+    case .trackConfirmations:
       break
-    case .handoffToBackground:
-      recordSchedulingState("processing_redirected_on_launch")
-      BackgroundMigrationManager.shared.schedulePreparationHandoff(
-        after: 60
-      ) { scheduled in
-        if scheduled {
-          BGTaskScheduler.shared.cancel(
-            taskRequestWithIdentifier: Self.taskIdentifier
-          )
-          self.cancelWatchdog()
-        } else {
-          self.recordDeferredSchedulingFailure()
-        }
-        task.setTaskCompleted(success: true)
-      }
+    case .foregroundOnly:
+      markForegroundContinuationsReady()
+      notifyPreparationNeedsForeground()
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      recordSchedulingState("waiting_for_foreground")
+      cancelWatchdog()
+      task.setTaskCompleted(success: true)
       return
     case .complete:
       BGTaskScheduler.shared.cancel(
@@ -944,32 +1216,43 @@ final class BackgroundMigrationPreparationManager {
       task.setTaskCompleted(success: true)
       return
     }
+    let cancellation = BackgroundMigrationCancellation()
     let mayRun = stateLock.withPreparationLock { () -> Bool in
-        guard !mutationQuiesced
-          && !notificationAuthorization.isDisabled
-          && !taskRunning
-        else { return false }
-        taskRunning = true
-        expired = false
-        foregroundHandoffRequested = false
-        taskProgress = task.progress
-        taskProgress?.totalUnitCount = 1000
-        lastCompletedUnitCount = 0
-        return true
+      guard !mutationQuiesced
+        && !notificationAuthorization.isDisabled
+        && !taskRunning
+      else {
+        return false
       }
+      taskRunning = true
+      expired = false
+      emptyObservationPassesByScope.removeAll()
+      trackingProgressByScope.removeAll()
+      completedPreparationScopes.removeAll()
+      latestTrackingProgress = nil
+      displayedProgressUnits = 0
+      foregroundHandoffRequested = false
+      taskProgress = task.progress
+      taskProgress?.totalUnitCount = Self.progressDisplayUnitCount
+      taskProgress?.completedUnitCount = 0
+      trackingCancellation = cancellation
+      return true
+    }
     guard mayRun else {
       task.setTaskCompleted(success: true)
       return
     }
-    startAuthorizationMonitoring()
-    recordSchedulingState("running")
-    updateProgress(25)
 
+    cancelWatchdog()
+    startAuthorizationMonitoring()
+    recordSchedulingState("tracking_confirmations")
     task.expirationHandler = { [weak self] in
       guard let self else { return }
-      self.stateLock.withPreparationLock { self.expired = true }
+      self.stateLock.withPreparationLock {
+        self.expired = true
+        self.trackingCancellation?.cancel()
+      }
       _ = zcash_cancel_migration_preparation_sync()
-      self.scheduleWatchdog()
     }
 
     queue.async { [weak self] in
@@ -977,208 +1260,849 @@ final class BackgroundMigrationPreparationManager {
         task.setTaskCompleted(success: false)
         return
       }
-      var passResult = self.runPreparationPass()
-      while passResult == .waitingForConfirmations
-        && !self.isStopRequested
-      {
-        guard self.waitForNextSyncPass() else {
-          passResult = .cancelled
-          break
-        }
-        passResult = self.runPreparationPass()
-      }
-      if case .deferred(let retryDelay) = passResult {
-        BackgroundMigrationManager.shared.schedulePreparationHandoff(
-          after: retryDelay
-        ) { deferredToProcessing in
-          let interruptionRequested =
-            self.preparationHandoffInterruptionRequested
-          if !deferredToProcessing && !interruptionRequested {
-            self.postNeedsActionNotification(
-              reason: "processing-handoff-failed"
-            )
-          }
-          let completionResult = migrationPreparationPassResultAfterHandoff(
-            passResult,
-            handoffScheduled: deferredToProcessing,
-            interruptionRequested: interruptionRequested
-          )
-          self.finishAuthorizedTask(
-            task,
-            passResult: completionResult,
-            deferredToProcessing: deferredToProcessing
-          )
-        }
-        return
-      }
-      self.finishAuthorizedTask(
-        task,
-        passResult: passResult,
-        deferredToProcessing: false
+      var pass = self.runConfirmationTrackingPass(
+        cancellation: cancellation
       )
+      var taskFailureObserved = false
+      while true {
+        switch pass {
+        case .batch(let batch):
+          taskFailureObserved =
+            taskFailureObserved || batch.hasTaskFailure
+          self.applyTrackingBatch(batch)
+          if migrationPreparationTrackingBatchRequiresAdvancement(batch) {
+            task.updateTitle(
+              "Advancing migration preparation",
+              subtitle: "Preparing the next transactions"
+            )
+            let advancement = self.advanceConfirmedPreparations(
+              scopes: batch.confirmedPreparationScopes,
+              cancellation: cancellation
+            )
+            switch advancement {
+            case .waitingForConfirmations:
+              self.resetTrackingProgress(
+                scopes: batch.confirmedPreparationScopes
+              )
+              task.updateTitle(
+                "Checking preparation transactions",
+                subtitle: "Waiting for confirmations"
+              )
+              pass = self.runConfirmationTrackingPass(
+                cancellation: cancellation
+              )
+              continue
+            case .deferred:
+              guard self.waitForNextConfirmationQuery(
+                cancellation: cancellation
+              ) else {
+                self.finishConfirmationTrackingTask(
+                  task,
+                  taskFailed: taskFailureObserved,
+                  completionPresentation: nil
+                )
+                return
+              }
+              pass = self.runConfirmationTrackingPass(
+                cancellation: cancellation
+              )
+              continue
+            case .completed:
+              self.completedPreparationScopes.formUnion(
+                batch.confirmedPreparationScopes
+              )
+              self.resetTrackingProgress(
+                scopes: batch.confirmedPreparationScopes
+              )
+              if batch.shouldContinue {
+                task.updateTitle(
+                  "Checking preparation transactions",
+                  subtitle: "Waiting for confirmations"
+                )
+                pass = self.runConfirmationTrackingPass(
+                  cancellation: cancellation
+                )
+                continue
+              }
+              self.completeTrackingProgress()
+              self.finishConfirmationTrackingTask(
+                task,
+                taskFailed: taskFailureObserved,
+                completionPresentation:
+                  MigrationPreparationTrackingCompletionPresentation(
+                    title: "Migration preparation ready",
+                    subtitle: "Open Vizor to continue migration"
+                  )
+              )
+              return
+            case .needsAction:
+              self.markForegroundContinuationsReady()
+              self.notifyPreparationNeedsForeground()
+              self.finishConfirmationTrackingTask(
+                task,
+                taskFailed: true,
+                completionPresentation: nil
+              )
+              return
+            case .cancelled:
+              self.finishConfirmationTrackingTask(
+                task,
+                taskFailed: taskFailureObserved,
+                completionPresentation: nil
+              )
+              return
+            }
+          }
+          guard batch.shouldContinue, !self.isTrackingStopRequested else {
+            self.finishConfirmationTrackingTask(
+              task,
+              taskFailed: taskFailureObserved,
+              completionPresentation:
+                migrationPreparationTrackingCompletionPresentation(batch)
+            )
+            return
+          }
+          guard self.waitForNextConfirmationQuery(
+            cancellation: cancellation
+          ) else {
+            self.finishConfirmationTrackingTask(
+              task,
+              taskFailed: taskFailureObserved,
+              completionPresentation: nil
+            )
+            return
+          }
+          pass = self.runConfirmationTrackingPass(
+            cancellation: cancellation
+          )
+        case .cancelled:
+          self.finishConfirmationTrackingTask(
+            task,
+            taskFailed: taskFailureObserved,
+            completionPresentation: nil
+          )
+          return
+        }
+      }
     }
   }
 
-  private func finishAuthorizedTask(
+  private func runConfirmationTrackingPass(
+    cancellation: BackgroundMigrationCancellation
+  ) -> BackgroundMigrationPreparationTrackingPass {
+    if cancellation.isCancelled { return .cancelled }
+    guard UIApplication.shared.isProtectedDataAvailable else {
+      return .batch(
+        migrationPreparationTrackingBatch(
+          results: [
+            MigrationPreparationScopeTrackingResult(
+              scope: "global",
+              disposition: .retry
+            )
+          ],
+          progressByScope: &trackingProgressByScope
+        )
+      )
+    }
+    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    else {
+      return .batch(
+        migrationPreparationTrackingBatch(
+          results: [
+            MigrationPreparationScopeTrackingResult(
+              scope: "global",
+              disposition: .retry
+            )
+          ],
+          progressByScope: &trackingProgressByScope
+        )
+      )
+    }
+    if manifests.isEmpty {
+      return .batch(
+        migrationPreparationTrackingBatch(
+          results: [],
+          progressByScope: &trackingProgressByScope
+        )
+      )
+    }
+
+    var results: [MigrationPreparationScopeTrackingResult] = []
+    for manifest in manifests {
+      guard let runId = manifest.expectedRunId else { continue }
+      let scope = Self.foregroundContinuationScope(
+        network: manifest.network,
+        accountUuid: manifest.accountUuid,
+        runId: runId
+      )
+      let alreadyHandedOff = stateLock.withPreparationLock {
+        foregroundContinuationScopes.contains(scope)
+      }
+      if alreadyHandedOff || completedPreparationScopes.contains(scope) {
+        continue
+      }
+      print(
+        "[BGPreparation] tracking \(manifest.network):\(manifest.accountUuid) run=\(runId)"
+      )
+      var preparation = CMigrationPreparationProgress(
+        state: 0,
+        confirmation_count: 0,
+        confirmation_target: 0,
+        completed_stage_count: 0,
+        total_stage_count: 0
+      )
+      let inspectionCode = zcash_inspect_migration_preparation(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        &preparation
+      )
+      if inspectionCode != 0 {
+        print(
+          "[BGPreparation] inspect failed code=\(inspectionCode) account=\(manifest.accountUuid)"
+        )
+        results.append(
+          MigrationPreparationScopeTrackingResult(
+            scope: scope,
+            disposition: .retry
+          )
+        )
+        continue
+      }
+      print(
+        "[BGPreparation] inspect state=\(preparation.state) account=\(manifest.accountUuid)"
+      )
+      if let disposition = migrationPreparationScopeTrackingDisposition(
+        state: preparation.state,
+        completedStageCount: preparation.completed_stage_count,
+        totalStageCount: preparation.total_stage_count,
+        confirmationTarget: preparation.confirmation_target
+      ) {
+        results.append(
+          MigrationPreparationScopeTrackingResult(
+            scope: scope,
+            disposition: disposition
+          )
+        )
+        continue
+      }
+
+      guard let transactionIds = observableTransactionIds(
+        manifest: manifest,
+        runId: runId
+      ) else {
+        print(
+          "[BGPreparation] txid listing failed account=\(manifest.accountUuid)"
+        )
+        results.append(
+          MigrationPreparationScopeTrackingResult(
+            scope: scope,
+            disposition: .retry
+          )
+        )
+        continue
+      }
+      guard !transactionIds.isEmpty else {
+        // A run waiting for confirmations with nothing listable is stalled: a
+        // reorg reset its stages to `awaiting_inputs` and cleared the signed
+        // transactions, so there is nothing to observe until the foreground
+        // rebuilds and rebroadcasts them. Never report completion without a
+        // txid — but do not sit on `.retry` until the system expires the task
+        // either. The foreground may still be committing its first stage, so
+        // allow a couple of passes for that race and then stall out with the
+        // notification instead of a silent spin.
+        print(
+          "[BGPreparation] no observable txids account=\(manifest.accountUuid)"
+        )
+        let passCount = (emptyObservationPassesByScope[scope] ?? 0) + 1
+        emptyObservationPassesByScope[scope] = passCount
+        results.append(
+          MigrationPreparationScopeTrackingResult(
+            scope: scope,
+            disposition:
+              passCount >= Self.emptyObservationPassLimit
+              ? .needsForegroundRecovery(
+                fingerprint: "missing-transactions",
+                taskFailed: true
+              )
+              : .retry
+          )
+        )
+        continue
+      }
+      emptyObservationPassesByScope.removeValue(forKey: scope)
+      print(
+        "[BGPreparation] observing \(transactionIds.count) tx(s) account=\(manifest.accountUuid)"
+      )
+      let tip: UInt64
+      switch NativeLightwalletdClient.latestBlockHeight(
+        endpoint: manifest.lightwalletdUrl,
+        cancellation: cancellation
+      ) {
+      case .success(let height):
+        tip = height
+      case .failure(.cancelled):
+        return .cancelled
+      case .failure(let error):
+        print(
+          "[BGPreparation] latest block failed account=\(manifest.accountUuid) error=\(error)"
+        )
+        results.append(
+          MigrationPreparationScopeTrackingResult(
+            scope: scope,
+            disposition: .retry
+          )
+        )
+        continue
+      }
+
+      var observations: [NativeLightwalletdTransactionObservation] = []
+      var queryFailed = false
+      for transactionId in transactionIds {
+        switch transactionObservation(
+          endpoint: manifest.lightwalletdUrl,
+          transactionIdHex: transactionId,
+          cancellation: cancellation
+        ) {
+        case .success(let observation):
+          observations.append(observation)
+        case .failure(.cancelled):
+          return .cancelled
+        case .failure(let error):
+          print(
+            "[BGPreparation] tx query failed txid=\(transactionId) error=\(error)"
+          )
+          queryFailed = true
+        }
+        if queryFailed { break }
+      }
+      if queryFailed {
+        results.append(
+          MigrationPreparationScopeTrackingResult(
+            scope: scope,
+            disposition: .retry
+          )
+        )
+        continue
+      }
+      let disposition = migrationPreparationConfirmationDisposition(
+        observations: observations,
+        chainTipHeight: tip,
+        confirmationTarget: Self.confirmationTarget
+      )
+      results.append(
+        MigrationPreparationScopeTrackingResult(
+          scope: scope,
+          disposition: disposition
+        )
+      )
+    }
+
+    return .batch(
+      migrationPreparationTrackingBatch(
+        results: results,
+        progressByScope: &trackingProgressByScope
+      )
+    )
+  }
+
+  /// Reconcile a confirmed denomination wave exactly once, then return to
+  /// read-only confirmation tracking. This avoids the old repeated full-sync
+  /// loop while keeping one continued task alive until the entire preparation
+  /// is proof-ready.
+  private func advanceConfirmedPreparations(
+    scopes: Set<String>,
+    cancellation: BackgroundMigrationCancellation
+  ) -> BackgroundMigrationPreparationPassResult {
+    guard !scopes.isEmpty else { return .completed }
+    guard zcash_begin_migration_preparation_operation() else {
+      print("[BGPreparation] another preparation operation is active")
+      return .deferred(Self.busyRetryDelay)
+    }
+    defer { zcash_end_migration_preparation_operation() }
+    guard !isTrackingStopRequested, !cancellation.isCancelled else {
+      return .cancelled
+    }
+    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    else {
+      postNeedsActionNotification(reason: "credential-store-unavailable")
+      return .needsAction
+    }
+    let preparations = manifests.filter { manifest in
+      guard let scope = Self.preparationScope(for: manifest) else {
+        return false
+      }
+      return scopes.contains(scope)
+    }
+    guard !preparations.isEmpty else { return .completed }
+
+    var states: [UInt8] = []
+    var syncedContexts = Set<String>()
+    for manifest in preparations {
+      let syncContext = [
+        manifest.dbPath,
+        manifest.lightwalletdUrl,
+        manifest.network,
+      ].joined(separator: "|")
+      switch runPreparationStep(
+        manifest,
+        syncContext: syncContext,
+        syncedContexts: &syncedContexts
+      ) {
+      case .progress(let progress):
+        states.append(progress.state)
+      case .retry(let delay):
+        return .deferred(delay)
+      case .needsAction:
+        postNeedsActionNotification(
+          reason: "advance-needs-action",
+          manifest: manifest
+        )
+        return .needsAction
+      case .cancelled:
+        return .cancelled
+      }
+    }
+    return migrationPreparationPassResult(states: states)
+  }
+
+  private func runPreparationStep(
+    _ manifest: IronwoodMigrationBackgroundManifest,
+    syncContext: String,
+    syncedContexts: inout Set<String>
+  ) -> BackgroundMigrationPreparationStepResult {
+    guard let runId = manifest.expectedRunId,
+      manifest.credentialHex.count == 64
+    else {
+      return .needsAction
+    }
+    guard !isTrackingStopRequested else { return .cancelled }
+
+    var preparation = CMigrationPreparationProgress(
+      state: 0,
+      confirmation_count: 0,
+      confirmation_target: 0,
+      completed_stage_count: 0,
+      total_stage_count: 0
+    )
+    let inspectCode = zcash_inspect_migration_preparation(
+      manifest.dbPath,
+      manifest.network,
+      manifest.accountUuid,
+      runId,
+      &preparation
+    )
+    guard inspectCode == 0 else {
+      print("[BGPreparation] inspection failed: \(inspectCode)")
+      return .retry(Self.transientRetryDelay)
+    }
+    let waitingForProofAnchor = preparation.state == 5
+    guard preparation.state == 0 || waitingForProofAnchor else {
+      return .progress(preparation)
+    }
+    guard UIApplication.shared.isProtectedDataAvailable else {
+      return .retry(Self.transientRetryDelay)
+    }
+
+    if syncedContexts.insert(syncContext).inserted {
+      guard waitForRunningSync() else {
+        return isTrackingStopRequested
+          ? .cancelled
+          : .retry(Self.busyRetryDelay)
+      }
+      guard !isTrackingStopRequested else { return .cancelled }
+      var syncCode = runPreparationSync(manifest)
+      if syncCode == 3 {
+        guard waitForRunningSync() else {
+          return isTrackingStopRequested
+            ? .cancelled
+            : .retry(Self.busyRetryDelay)
+        }
+        guard !isTrackingStopRequested else { return .cancelled }
+        syncCode = runPreparationSync(manifest)
+      }
+      guard syncCode == 0 else {
+        print("[BGPreparation] bounded sync failed: \(syncCode)")
+        return isTrackingStopRequested
+          ? .cancelled
+          : .retry(Self.transientRetryDelay)
+      }
+    }
+
+    guard !isTrackingStopRequested else { return .cancelled }
+    if waitingForProofAnchor {
+      let refreshedCode = zcash_inspect_migration_preparation(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        &preparation
+      )
+      guard refreshedCode == 0 else {
+        return .retry(Self.transientRetryDelay)
+      }
+      return .progress(preparation)
+    }
+
+    let credential = Data(manifest.credentialHex.utf8)
+    let advanceCode = credential.withUnsafeBytes { bytes in
+      zcash_advance_migration_preparation(
+        manifest.dbPath,
+        manifest.lightwalletdUrl,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        bytes.bindMemory(to: UInt8.self).baseAddress,
+        UInt(bytes.count),
+        manifest.saltBase64,
+        &preparation
+      )
+    }
+    guard advanceCode == 0 else {
+      print("[BGPreparation] advance failed: \(advanceCode)")
+      if isTrackingStopRequested { return .cancelled }
+      return advanceCode == 2
+        ? .needsAction
+        : .retry(Self.transientRetryDelay)
+    }
+    return .progress(preparation)
+  }
+
+  private func runPreparationSync(
+    _ manifest: IronwoodMigrationBackgroundManifest
+  ) -> Int32 {
+    zcash_run_full_sync_for_migration_preparation(
+      manifest.dbPath,
+      manifest.lightwalletdUrl,
+      manifest.network,
+      migrationPreparationSyncProgressCallback
+    )
+  }
+
+  private func waitForRunningSync() -> Bool {
+    while !isTrackingStopRequested {
+      if !zcash_is_sync_running() {
+        return true
+      }
+      Thread.sleep(forTimeInterval: 0.25)
+    }
+    return false
+  }
+
+  private func observableTransactionIds(
+    manifest: IronwoodMigrationBackgroundManifest,
+    runId: String
+  ) -> [String]? {
+    var requiredLength: UInt = 0
+    guard
+      zcash_list_migration_preparation_txids(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        nil,
+        0,
+        &requiredLength
+      ) == 0,
+      requiredLength > 0
+    else {
+      return nil
+    }
+    var buffer = [CChar](
+      repeating: 0,
+      count: Int(requiredLength)
+    )
+    let code = buffer.withUnsafeMutableBufferPointer { pointer in
+      zcash_list_migration_preparation_txids(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        pointer.baseAddress,
+        requiredLength,
+        &requiredLength
+      )
+    }
+    guard code == 0 else { return nil }
+    let payload = buffer.withUnsafeBufferPointer { pointer in
+      String(cString: pointer.baseAddress!)
+    }
+    if payload.isEmpty { return [] }
+    return payload.split(separator: "\n").map(String.init)
+  }
+
+  private func transactionObservation(
+    endpoint: String,
+    transactionIdHex: String,
+    cancellation: BackgroundMigrationCancellation
+  ) -> Result<
+    NativeLightwalletdTransactionObservation,
+    NativeLightwalletdError
+  > {
+    guard let storedOrder = Self.transactionIdData(transactionIdHex) else {
+      return .failure(.malformedResponse)
+    }
+    let protocolOrder = Data(storedOrder.reversed())
+    let first = NativeLightwalletdClient.transaction(
+      endpoint: endpoint,
+      transactionId: protocolOrder,
+      cancellation: cancellation
+    )
+    guard protocolOrder != storedOrder,
+      shouldTryStoredTransactionIdByteOrder(after: first)
+    else {
+      return first
+    }
+    let second = NativeLightwalletdClient.transaction(
+      endpoint: endpoint,
+      transactionId: storedOrder,
+      cancellation: cancellation
+    )
+    return transactionObservationAfterStoredByteOrderFallback(
+      first: first,
+      second: second
+    )
+  }
+
+  private static func transactionIdData(_ hex: String) -> Data? {
+    guard hex.count == 64 else { return nil }
+    var bytes = [UInt8]()
+    bytes.reserveCapacity(32)
+    var index = hex.startIndex
+    while index < hex.endIndex {
+      let next = hex.index(index, offsetBy: 2)
+      guard let byte = UInt8(hex[index..<next], radix: 16) else {
+        return nil
+      }
+      bytes.append(byte)
+      index = next
+    }
+    return Data(bytes)
+  }
+
+  private func waitForNextConfirmationQuery(
+    cancellation: BackgroundMigrationCancellation
+  ) -> Bool {
+    let tick: TimeInterval = 0.25
+    let tickCount = Int(Self.confirmationQueryInterval / tick)
+    let heartbeatTickCount = max(
+      1,
+      Int(Self.progressHeartbeatInterval / tick)
+    )
+    for tickIndex in 1...tickCount {
+      if isTrackingStopRequested || cancellation.isCancelled {
+        return false
+      }
+      Thread.sleep(forTimeInterval: tick)
+      if tickIndex.isMultiple(of: heartbeatTickCount) {
+        advanceTrackingHeartbeat()
+      }
+    }
+    return !isTrackingStopRequested && !cancellation.isCancelled
+  }
+
+  private func applyTrackingBatch(
+    _ batch: MigrationPreparationTrackingBatch
+  ) {
+    guard !stateLock.withPreparationLock({ mutationQuiesced }) else {
+      return
+    }
+    if !batch.continuationReadyScopes.isEmpty {
+      stateLock.withPreparationLock {
+        foregroundContinuationScopes.formUnion(
+          batch.continuationReadyScopes
+        )
+        persistForegroundContinuationScopesLocked()
+      }
+    }
+    if let progress = batch.progress {
+      updateTrackingProgress(progress)
+    }
+    if !batch.notificationEvents.isEmpty,
+      !stateLock.withPreparationLock({
+        notificationAuthorization.isDisabled
+      })
+    {
+      notificationCoordinator.enqueue(batch.notificationEvents)
+    }
+  }
+
+  private func updateTrackingProgress(
+    _ progress: MigrationPreparationConfirmationProgress
+  ) {
+    stateLock.withPreparationLock {
+      guard let taskProgress else { return }
+      latestTrackingProgress = progress
+      displayedProgressUnits = migrationPreparationDisplayedProgressUnits(
+        previousUnits: displayedProgressUnits,
+        progress: progress,
+        displayUnitCount: Self.preparationProgressUnitLimit
+      )
+      taskProgress.totalUnitCount = Self.progressDisplayUnitCount
+      taskProgress.completedUnitCount = displayedProgressUnits
+    }
+  }
+
+  private func resetTrackingProgress(scopes: Set<String>) {
+    for scope in scopes {
+      trackingProgressByScope.removeValue(forKey: scope)
+      emptyObservationPassesByScope.removeValue(forKey: scope)
+    }
+    latestTrackingProgress = nil
+  }
+
+  fileprivate func recordSyncProgress(_ progress: CSyncProgress) {
+    guard progress.percentage.isFinite else { return }
+    stateLock.withPreparationLock {
+      guard let taskProgress else { return }
+      let fraction = min(1, max(0, progress.percentage))
+      let requestedUnits = Int64(
+        (
+          fraction * Double(Self.preparationProgressUnitLimit)
+        ).rounded()
+      )
+      displayedProgressUnits = min(
+        Self.preparationProgressUnitLimit,
+        max(displayedProgressUnits, requestedUnits)
+      )
+      taskProgress.totalUnitCount = Self.progressDisplayUnitCount
+      taskProgress.completedUnitCount = displayedProgressUnits
+    }
+  }
+
+  private func completeTrackingProgress() {
+    stateLock.withPreparationLock {
+      guard let taskProgress else { return }
+      displayedProgressUnits = Self.progressDisplayUnitCount
+      taskProgress.totalUnitCount = Self.progressDisplayUnitCount
+      taskProgress.completedUnitCount = Self.progressDisplayUnitCount
+    }
+  }
+
+  private func advanceTrackingHeartbeat() {
+    stateLock.withPreparationLock {
+      guard let taskProgress else { return }
+      if let latestTrackingProgress {
+        displayedProgressUnits = migrationPreparationDisplayedProgressUnits(
+          previousUnits: displayedProgressUnits,
+          progress: latestTrackingProgress,
+          displayUnitCount: Self.preparationProgressUnitLimit
+        )
+      } else {
+        // A transient first-query failure still reports liveness without
+        // implying meaningful migration completion.
+        displayedProgressUnits = min(50, displayedProgressUnits + 1)
+      }
+      taskProgress.totalUnitCount = Self.progressDisplayUnitCount
+      taskProgress.completedUnitCount = displayedProgressUnits
+    }
+  }
+
+  private func finishConfirmationTrackingTask(
     _ task: BGContinuedProcessingTask,
-    passResult: BackgroundMigrationPreparationPassResult,
-    deferredToProcessing: Bool
+    taskFailed: Bool,
+    completionPresentation: MigrationPreparationTrackingCompletionPresentation?
   ) {
     stopAuthorizationMonitoring()
-    let (
-      handedOff,
-      didExpire,
-      quiescedForMutation,
-      disabledForNotifications
-    ) =
-      stateLock.withPreparationLock {
-        (
-          foregroundHandoffRequested,
-          expired,
-          mutationQuiesced,
-          notificationAuthorization.isDisabled
-        )
-      }
-    let resumeTarget = preparationResumeTarget()
-    // BGContinuedProcessingTask uses the same expiration handler for a
-    // system expiration and a person stopping the task in system UI, without
-    // exposing the cause. Never turn expiration into a needs-action alert.
-    // Preserve terminal completion and hand resumable work to the existing
-    // discretionary BGProcessingTask lane so resource expiration does not
-    // strand preparation until the next foreground visit.
-    let terminalAfterExpiration =
-      passResult == .cancelled && didExpire
-      && resumeTarget == .terminal
-    let passCompleted = migrationPreparationPassCompleted(
-      passResult,
-      terminalAfterExpiration: terminalAfterExpiration
-    )
-    let expirationRequiresBackgroundRecovery =
-      passResult == .cancelled && !handedOff && !quiescedForMutation
-      && !disabledForNotifications
-      && migrationPreparationExpirationRequiresBackgroundRecovery(
-        taskExpired: didExpire,
-        resumeTarget: resumeTarget
+    let runtime = stateLock.withPreparationLock {
+      (
+        handedOff: foregroundHandoffRequested,
+        expired: expired,
+        quiesced: mutationQuiesced,
+        disabled: notificationAuthorization.isDisabled
       )
-    let expirationRequiresForegroundContinuation =
-      passResult == .cancelled && !handedOff && !quiescedForMutation
-      && !disabledForNotifications
-      && migrationPreparationExpirationRequiresForegroundContinuation(
-        taskExpired: didExpire,
-        resumeTarget: resumeTarget
-      )
-    let needsForegroundAction =
-      migrationPreparationPassNeedsForegroundAction(passResult)
-    if passCompleted || needsForegroundAction || deferredToProcessing
-      || expirationRequiresBackgroundRecovery
-      || expirationRequiresForegroundContinuation
-    {
-      updateProgress(1000)
     }
-    if handedOff {
-      // Publish the continuation before clearing the running flag so a
-      // foreground state read cannot observe an idle gap between the two.
-      markForegroundContinuationsReady()
-    } else if needsForegroundAction {
-      markForegroundContinuationsReady()
-    } else if expirationRequiresForegroundContinuation {
+    if (runtime.handedOff || runtime.expired) && !runtime.quiesced {
       markForegroundContinuationsReady()
     }
+
+    let visibleCompletionPresentation =
+      !runtime.handedOff && !runtime.expired && !runtime.quiesced
+        && !runtime.disabled && !taskFailed
+      ? completionPresentation
+      : nil
+    if let visibleCompletionPresentation {
+      task.updateTitle(
+        visibleCompletionPresentation.title,
+        subtitle: visibleCompletionPresentation.subtitle
+      )
+    } else if runtime.quiesced {
+      // The activity is still captioned "Checking transaction confirmations".
+      // Leaving that text on a wallet the user just changed reads as a verdict
+      // on their migration; say what actually happened instead.
+      task.updateTitle(
+        "Migration preparation stopped",
+        subtitle: "Wallet accounts changed"
+      )
+    }
+
     stateLock.withPreparationLock {
       taskRunning = false
       taskProgress = nil
+      trackingCancellation = nil
+      latestTrackingProgress = nil
       foregroundHandoffRequested = false
     }
-    if expirationRequiresBackgroundRecovery {
-      BackgroundMigrationManager.shared.schedulePreparationHandoff(after: 60) {
-        recoveredInProcessing in
-        if !recoveredInProcessing {
-          self.markForegroundContinuationsReady()
-        }
-        self.completeAuthorizedTask(
-          task,
-          passCompleted: passCompleted,
-          needsForegroundAction: needsForegroundAction,
-          deferredToProcessing: deferredToProcessing,
-          recoveredInProcessing: recoveredInProcessing,
-          expirationFallbackToForeground: !recoveredInProcessing,
-          handedOff: handedOff,
-          quiescedForMutation: quiescedForMutation,
-          disabledForNotifications: disabledForNotifications
-        )
-      }
-      return
-    }
-    completeAuthorizedTask(
-      task,
-      passCompleted: passCompleted,
-      needsForegroundAction: needsForegroundAction,
-      deferredToProcessing: deferredToProcessing,
-      recoveredInProcessing: false,
-      expirationFallbackToForeground:
-        expirationRequiresForegroundContinuation,
-      handedOff: handedOff,
-      quiescedForMutation: quiescedForMutation,
-      disabledForNotifications: disabledForNotifications
-    )
-  }
 
-  private func completeAuthorizedTask(
-    _ task: BGContinuedProcessingTask,
-    passCompleted: Bool,
-    needsForegroundAction: Bool,
-    deferredToProcessing: Bool,
-    recoveredInProcessing: Bool,
-    expirationFallbackToForeground: Bool,
-    handedOff: Bool,
-    quiescedForMutation: Bool,
-    disabledForNotifications: Bool
-  ) {
-    if passCompleted {
-      stateLock.withPreparationLock {
-        foregroundContinuationScopes.removeAll()
-        persistForegroundContinuationScopesLocked()
-      }
-      resetNeedsActionNotifications()
-    }
-    let success =
-      passCompleted || needsForegroundAction
-      || deferredToProcessing
-      || recoveredInProcessing || expirationFallbackToForeground
-      || handedOff || quiescedForMutation || disabledForNotifications
+    let success = migrationPreparationTrackingTaskSucceeded(
+      taskFailed: taskFailed,
+      quiesced: runtime.quiesced,
+      expired: runtime.expired,
+      handedOff: runtime.handedOff,
+      notificationsDisabled: runtime.disabled
+    )
     if success {
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
     }
-    if disabledForNotifications {
-      recordSchedulingState("disabled_for_notifications")
-      cancelWatchdog()
-    } else if quiescedForMutation {
-      recordSchedulingState("quiesced_for_mutation")
-      cancelWatchdog()
-    } else if handedOff {
+    if runtime.handedOff {
       recordSchedulingState("handed_off_to_foreground")
-      scheduleWatchdog()
-    } else if needsForegroundAction {
-      recordSchedulingState("needs_action")
-      cancelWatchdog()
-    } else if recoveredInProcessing {
-      recordSchedulingState("expired_handed_off_to_processing")
-      cancelWatchdog()
-    } else if expirationFallbackToForeground {
-      recordSchedulingState("expired_waiting_for_foreground")
-      cancelWatchdog()
-    } else if deferredToProcessing {
-      recordSchedulingState("handed_off_to_processing")
-      cancelWatchdog()
+    } else if runtime.quiesced {
+      recordSchedulingState("quiesced_for_mutation")
+    } else if runtime.disabled {
+      recordSchedulingState("disabled_for_notifications")
+    } else if runtime.expired {
+      recordSchedulingState("confirmation_tracking_expired")
+    } else if taskFailed {
+      recordSchedulingState("confirmation_tracking_failed")
+    } else if visibleCompletionPresentation != nil {
+      recordSchedulingState("confirmation_step_ready_for_foreground")
     } else {
-      recordSchedulingState(success ? "completed" : "failed")
-      if success {
-        cancelWatchdog()
-      }
+      recordSchedulingState("confirmation_tracking_finished")
     }
+    cancelWatchdog()
     task.setTaskCompleted(success: success)
+  }
+
+  private func startAuthorizationMonitoring() {
+    let monitor = IronwoodMigrationNotificationAuthorizationMonitor()
+    let previous = stateLock.withPreparationLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
+      defer { authorizationMonitor = monitor }
+      return authorizationMonitor
+    }
+    previous?.cancel()
+    monitor.start {
+      IronwoodMigrationNotificationGate.shared.hardDisable()
+    }
+  }
+
+  private func stopAuthorizationMonitoring() {
+    let monitor = stateLock.withPreparationLock {
+      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
+      defer { authorizationMonitor = nil }
+      return authorizationMonitor
+    }
+    monitor?.cancel()
+  }
+
+  private var isTrackingStopRequested: Bool {
+    stateLock.withPreparationLock {
+      expired || foregroundHandoffRequested || mutationQuiesced
+        || notificationAuthorization.isDisabled
+    }
   }
 
   func hasResumablePreparation() -> Bool {
@@ -1188,9 +2112,10 @@ final class BackgroundMigrationPreparationManager {
 
   /// Tells the user a bound preparation can only continue in the foreground.
   ///
-  /// The silent wake broadcasts and queries but never scans, and preparation
-  /// needs a scan to see its denomination confirmations. Without this the run
-  /// simply stalls until the user happens to reopen the app.
+  /// The silent wake cannot recover cancelled, stalled, or explicitly
+  /// foreground-only preparation states. Normal state-0 confirmation tracking
+  /// is deliberately excluded: the continued task and Dynamic Island already
+  /// represent that work, so a later wake must not produce a second alert.
   ///
   /// Frequency is governed by the existing needs-action fingerprint: it carries
   /// the inspected preparation state, and that state cannot move while nothing
@@ -1217,8 +2142,11 @@ final class BackgroundMigrationPreparationManager {
           &preparation
         ) == 0
       else { continue }
-      // 0 is "still preparing": the phase that needs a scan we will not do here.
-      guard preparation.state == 0 else { continue }
+      // Recovery states are surfaced if no active continued task can run the
+      // bounded scan / advance path.
+      guard migrationPreparationStateNeedsForegroundNotification(
+        preparation.state
+      ) else { continue }
       postNeedsActionNotification(
         reason: "foreground-preparation-required",
         manifest: manifest,
@@ -1233,9 +2161,7 @@ final class BackgroundMigrationPreparationManager {
     guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
     else {
       // A transient protected-data or Keychain failure is not proof that no
-      // preparation exists. Defer once to BGProcessing, whose preparation pass
-      // surfaces the existing credential-store-unavailable recovery instead of
-      // silently completing the task.
+      // preparation exists. Retry instead of silently completing the task.
       return migrationPreparationResumeTarget(
         states: [],
         inspectionFailed: true
@@ -1259,8 +2185,8 @@ final class BackgroundMigrationPreparationManager {
         runId,
         &preparation
       )
-      // An inspection error is not proof that the run is inactive. Schedule a
-      // retry so a transient DB lock cannot strand a bound preparation.
+      // An inspection error is not proof that the run is inactive. A later
+      // foreground read or read-only background wake may inspect it again.
       if code != 0 {
         inspectionFailed = true
       } else {
@@ -1273,7 +2199,76 @@ final class BackgroundMigrationPreparationManager {
     )
   }
 
+  /// Read-only snapshot of the scheduling breadcrumb, for on-device
+  /// diagnosis. `flutter run` cannot attach to a release build on device and
+  /// `os_log` is not reachable through `devicectl --console` here, so the
+  /// submission outcome has to be readable from Dart to be visible at all.
+  func schedulingDiagnostics() -> [String: Any] {
+    let defaults = UserDefaults.standard
+    var snapshot: [String: Any] = [
+      "state": defaults.string(forKey: Self.schedulingStateKey) ?? "none",
+      "updatedAt": defaults.double(forKey: Self.schedulingStateUpdatedAtKey),
+    ]
+    if let error = defaults.string(forKey: Self.schedulingErrorKey) {
+      snapshot["error"] = error
+    }
+    let runtime = stateLock.withPreparationLock {
+      (
+        scopes: foregroundContinuationScopes.count,
+        running: taskRunning,
+        inFlight: submissionInFlight,
+        quiesced: mutationQuiesced,
+        disabled: notificationAuthorization.isDisabled
+      )
+    }
+    snapshot["continuationScopes"] = runtime.scopes
+    snapshot["taskRunning"] = runtime.running
+    snapshot["submissionInFlight"] = runtime.inFlight
+    snapshot["mutationQuiesced"] = runtime.quiesced
+    snapshot["notificationsDisabled"] = runtime.disabled
+    return snapshot
+  }
+
+  /// Append-only companion to the single-slot breadcrumb below.
+  ///
+  /// `UserDefaults` keeps only the latest value, so any pass that runs after
+  /// the one being diagnosed erases it — repeatedly the case here, where a
+  /// failure is followed by a `start()` that overwrites the reason. This keeps
+  /// the ordered history that actually answers "what did the task do".
+  private func appendSchedulingTrace(_ state: String, error: Error?) {
+    guard
+      let directory = FileManager.default.urls(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask
+      ).first
+    else { return }
+    let url = directory.appendingPathComponent(Self.schedulingTraceFileName)
+    var line = "{\"at\":\(Date().timeIntervalSince1970),\"state\":\"\(state)\""
+    if let error {
+      let escaped = String(describing: error)
+        .replacingOccurrences(of: "\\", with: "\\\\")
+        .replacingOccurrences(of: "\"", with: "\\\"")
+        .replacingOccurrences(of: "\n", with: " ")
+      line += ",\"error\":\"\(escaped)\""
+    }
+    line += "}\n"
+    guard let payload = line.data(using: .utf8) else { return }
+    traceLock.lock()
+    defer { traceLock.unlock() }
+    if let handle = try? FileHandle(forWritingTo: url) {
+      defer { try? handle.close() }
+      // Bound the file so a long-running wallet cannot grow it without limit.
+      if let size = try? handle.seekToEnd(), size > Self.schedulingTraceMaxBytes {
+        try? handle.truncate(atOffset: 0)
+      }
+      try? handle.write(contentsOf: payload)
+    } else {
+      try? payload.write(to: url, options: .atomic)
+    }
+  }
+
   private func recordSchedulingState(_ state: String, error: Error? = nil) {
+    appendSchedulingTrace(state, error: error)
     let defaults = UserDefaults.standard
     defaults.set(state, forKey: Self.schedulingStateKey)
     defaults.set(
@@ -1340,6 +2335,69 @@ final class BackgroundMigrationPreparationManager {
     }
   }
 
+  /// Scopes whose run is still waiting for denomination confirmations
+  /// (state `0`). These are exactly the runs the continued task can advance
+  /// with read-only lightwalletd queries, which makes them different from the
+  /// other continuation-eligible states: states `2`, `3`, `5`, and an
+  /// unreadable inspection genuinely need the foreground app.
+  private func confirmationTrackableScopes() -> Set<String>? {
+    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    else { return nil }
+    var scopes = Set<String>()
+    for manifest in manifests {
+      guard let runId = manifest.expectedRunId else { continue }
+      var preparation = CMigrationPreparationProgress(
+        state: 0,
+        confirmation_count: 0,
+        confirmation_target: 0,
+        completed_stage_count: 0,
+        total_stage_count: 0
+      )
+      let code = zcash_inspect_migration_preparation(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        &preparation
+      )
+      // An unreadable run is deliberately not trackable: it keeps whatever
+      // continuation was recorded for it rather than being released here.
+      guard code == 0, preparation.state == 0 else { continue }
+      scopes.insert(
+        Self.foregroundContinuationScope(
+          network: manifest.network,
+          accountUuid: manifest.accountUuid,
+          runId: runId
+        )
+      )
+    }
+    return scopes
+  }
+
+  /// Whether a recorded foreground continuation should stop a new submission.
+  ///
+  /// Deliberately non-destructive. Clearing the scope here would submit the
+  /// task but also swallow the "come back to the app" signal: the migration
+  /// status screen reads that same scope through `runtimeState` to decide
+  /// whether to run its foreground `retry()`, and `startPreparation` can reach
+  /// this code before the screen ever reads it. So a run that is merely
+  /// waiting for confirmations stops blocking submission while its scope stays
+  /// recorded, and only the screen's explicit acknowledgement removes it.
+  ///
+  /// Account-scoped by construction: only the `network:account:run` keys that
+  /// inspect as state `0` right now are treated as non-blocking. States `2`,
+  /// `3`, `5`, and unreadable runs keep blocking, because those genuinely need
+  /// the foreground app rather than a read-only query pass.
+  private func pendingTrackableScopes() -> Set<String> {
+    let trackable = confirmationTrackableScopes() ?? []
+    return stateLock.withPreparationLock {
+      migrationPreparationPendingTrackableScopes(
+        continuationScopes: foregroundContinuationScopes,
+        confirmationTrackableScopes: trackable
+      )
+    }
+  }
+
   private func foregroundContinuationEligibleScopes() -> Set<String>? {
     guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
     else { return nil }
@@ -1381,345 +2439,6 @@ final class BackgroundMigrationPreparationManager {
       foregroundContinuationScopes.sorted(),
       forKey: Self.foregroundContinuationScopesKey
     )
-  }
-
-  private func runPreparationPass()
-    -> BackgroundMigrationPreparationPassResult
-  {
-    guard zcash_begin_migration_preparation_operation() else {
-      print("[BGPreparation] another preparation operation is active")
-      return .deferred(60)
-    }
-    defer { zcash_end_migration_preparation_operation() }
-    guard !isStopRequested else { return .cancelled }
-
-    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
-    else {
-      postNeedsActionNotification(reason: "credential-store-unavailable")
-      return .needsAction
-    }
-    let preparations = manifests.filter { $0.expectedRunId != nil }
-    guard !preparations.isEmpty else { return .completed }
-
-    var accountProgress = Array(repeating: 0.0, count: preparations.count)
-    var states: [UInt8] = []
-    var syncedContexts = Set<String>()
-    for entry in preparations.enumerated() {
-      let manifest = entry.element
-      let syncContext = [
-        manifest.dbPath,
-        manifest.lightwalletdUrl,
-        manifest.network,
-      ].joined(separator: "|")
-      let preparation: CMigrationPreparationProgress
-      switch runPreparationStep(
-        manifest,
-        syncContext: syncContext,
-        syncedContexts: &syncedContexts
-      ) {
-      case .progress(let progress):
-        preparation = progress
-      case .retry(let retryDelay):
-        return .deferred(retryDelay)
-      case .needsAction:
-        postNeedsActionNotification(
-          reason: "advance-needs-action",
-          manifest: manifest
-        )
-        return .needsAction
-      case .cancelled:
-        return .cancelled
-      }
-      states.append(preparation.state)
-      accountProgress[entry.offset] = preparationFraction(preparation)
-      updateProgress(aggregatePreparationUnits(accountProgress))
-
-      switch preparation.state {
-      case 1:
-        postProofReadyNotification()
-        accountProgress[entry.offset] = 1
-        updateProgress(aggregatePreparationUnits(accountProgress))
-      case 4:
-        accountProgress[entry.offset] = 1
-        updateProgress(aggregatePreparationUnits(accountProgress))
-      case 2:
-        postNeedsActionNotification(
-          reason: "signing-required",
-          manifest: manifest,
-          progress: preparation
-        )
-        return .needsAction
-      case 3:
-        let result = preparationCancellationResult
-        if result == .needsAction {
-          postNeedsActionNotification(
-            reason: "preparation-cancelled",
-            manifest: manifest,
-            progress: preparation
-          )
-        }
-        return result
-      case 0, 5:
-        break
-      default:
-        postNeedsActionNotification(
-          reason: "unknown-state",
-          manifest: manifest,
-          progress: preparation
-        )
-        return .needsAction
-      }
-    }
-
-    return migrationPreparationPassResult(states: states)
-  }
-
-  private func runPreparationStep(
-    _ manifest: IronwoodMigrationBackgroundManifest,
-    syncContext: String,
-    syncedContexts: inout Set<String>
-  ) -> BackgroundMigrationPreparationStepResult {
-    guard let runId = manifest.expectedRunId,
-      manifest.credentialHex.count == 64
-    else {
-      return .needsAction
-    }
-    guard !isStopRequested else { return .cancelled }
-
-    var preparation = CMigrationPreparationProgress(
-      state: 0,
-      confirmation_count: 0,
-      confirmation_target: 0,
-      completed_stage_count: 0,
-      total_stage_count: 0
-    )
-    let inspectCode = zcash_inspect_migration_preparation(
-      manifest.dbPath,
-      manifest.network,
-      manifest.accountUuid,
-      runId,
-      &preparation
-    )
-    guard inspectCode == 0 else {
-      print("[BGPreparation] inspection failed: \(inspectCode)")
-      return .retry(Self.transientRetryDelay)
-    }
-    let waitingForProofAnchor = preparation.state == 5
-    guard preparation.state == 0 || waitingForProofAnchor else {
-      return .progress(preparation)
-    }
-
-    guard UIApplication.shared.isProtectedDataAvailable else {
-      print("[BGPreparation] protected data unavailable")
-      return .retry(Self.transientRetryDelay)
-    }
-
-    if syncedContexts.insert(syncContext).inserted {
-      guard waitForRunningSync() else {
-        return isStopRequested
-          ? .cancelled
-          : .retry(Self.busyRetryDelay)
-      }
-      guard !isStopRequested else { return .cancelled }
-      var syncCode = runSync(manifest)
-      if syncCode == 3 {
-        guard waitForRunningSync() else {
-          return isStopRequested
-            ? .cancelled
-            : .retry(Self.busyRetryDelay)
-        }
-        guard !isStopRequested else { return .cancelled }
-        syncCode = runSync(manifest)
-      }
-      if syncCode != 0 {
-        print("[BGPreparation] sync failed: \(syncCode)")
-        return isStopRequested
-          ? .cancelled
-          : .retry(Self.transientRetryDelay)
-      }
-    }
-
-    guard !isStopRequested else { return .cancelled }
-
-    if waitingForProofAnchor {
-      let inspectCode = zcash_inspect_migration_preparation(
-        manifest.dbPath,
-        manifest.network,
-        manifest.accountUuid,
-        runId,
-        &preparation
-      )
-      guard inspectCode == 0 else {
-        print("[BGPreparation] proof readiness inspection failed: \(inspectCode)")
-        return .retry(Self.transientRetryDelay)
-      }
-      return .progress(preparation)
-    }
-
-    guard UIApplication.shared.isProtectedDataAvailable else {
-      print("[BGPreparation] protected data unavailable")
-      return .retry(Self.transientRetryDelay)
-    }
-    guard !isStopRequested else { return .cancelled }
-
-    let credential = Data(manifest.credentialHex.utf8)
-    let advanceCode = credential.withUnsafeBytes { bytes in
-      zcash_advance_migration_preparation(
-        manifest.dbPath,
-        manifest.lightwalletdUrl,
-        manifest.network,
-        manifest.accountUuid,
-        runId,
-        bytes.bindMemory(to: UInt8.self).baseAddress,
-        UInt(bytes.count),
-        manifest.saltBase64,
-        &preparation
-      )
-    }
-    guard advanceCode == 0 else {
-      print("[BGPreparation] advance failed: \(advanceCode)")
-      if isStopRequested { return .cancelled }
-      return advanceCode == 2
-        ? .needsAction
-        : .retry(Self.transientRetryDelay)
-    }
-    return .progress(preparation)
-  }
-
-  private func runSync(_ manifest: IronwoodMigrationBackgroundManifest) -> Int32 {
-    zcash_run_full_sync_for_migration_preparation(
-      manifest.dbPath,
-      manifest.lightwalletdUrl,
-      manifest.network,
-      migrationPreparationSyncProgressCallback
-    )
-  }
-
-  private func waitForRunningSync() -> Bool {
-    while !isStopRequested {
-      if !zcash_is_sync_running() {
-        return true
-      }
-      Thread.sleep(forTimeInterval: 0.25)
-    }
-    return false
-  }
-
-  private func waitForNextSyncPass() -> Bool {
-    let sleepInterval: TimeInterval = 0.25
-    let heartbeatTicks = Int(
-      Self.waitingHeartbeatInterval / sleepInterval
-    )
-    let syncTicks = Int(
-      BackgroundMigrationOutboxCadence.secondsPerBlock / sleepInterval
-    )
-    for tick in 1...syncTicks where !isStopRequested {
-      Thread.sleep(forTimeInterval: sleepInterval)
-      if tick.isMultiple(of: heartbeatTicks) {
-        advanceWaitingHeartbeat()
-      }
-    }
-    return !isStopRequested
-  }
-
-  private func startAuthorizationMonitoring() {
-    let monitor = IronwoodMigrationNotificationAuthorizationMonitor()
-    let previous = stateLock.withPreparationLock {
-      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
-      defer { authorizationMonitor = monitor }
-      return authorizationMonitor
-    }
-    previous?.cancel()
-    monitor.start {
-      IronwoodMigrationNotificationGate.shared.hardDisable()
-    }
-  }
-
-  private func stopAuthorizationMonitoring() {
-    let monitor = stateLock.withPreparationLock {
-      () -> IronwoodMigrationNotificationAuthorizationMonitor? in
-      defer { authorizationMonitor = nil }
-      return authorizationMonitor
-    }
-    monitor?.cancel()
-  }
-
-  private func advanceWaitingHeartbeat() {
-    let didAdvance = stateLock.withPreparationLock { () -> Bool in
-      guard let taskProgress,
-        lastCompletedUnitCount < Self.waitingHeartbeatUnitLimit
-      else {
-        return false
-      }
-      lastCompletedUnitCount += 1
-      taskProgress.completedUnitCount = lastCompletedUnitCount
-      return true
-    }
-    if didAdvance {
-      scheduleWatchdog()
-    }
-  }
-
-  private var preparationCancellationResult: BackgroundMigrationPreparationPassResult {
-    stateLock.withPreparationLock {
-      migrationPreparationCancellationResult(
-        taskExpired: expired,
-        foregroundHandoffRequested: foregroundHandoffRequested,
-        mutationQuiesced: mutationQuiesced,
-        notificationsDisabled: notificationAuthorization.isDisabled
-      )
-    }
-  }
-
-  private var preparationHandoffInterruptionRequested: Bool {
-    stateLock.withPreparationLock {
-      expired || foregroundHandoffRequested || mutationQuiesced
-        || notificationAuthorization.isDisabled
-    }
-  }
-
-  private var isStopRequested: Bool {
-    stateLock.withPreparationLock {
-      expired || foregroundHandoffRequested
-        || notificationAuthorization.isDisabled
-    }
-  }
-
-  private func preparationFraction(
-    _ progress: CMigrationPreparationProgress
-  ) -> Double {
-    if progress.state == 1 { return 1 }
-    let stageTotal = max(1, Int(progress.total_stage_count))
-    let confirmationTarget = max(1, Int(progress.confirmation_target))
-    let currentConfirmation = min(
-      Int(progress.confirmation_count),
-      confirmationTarget
-    )
-    return min(
-      1,
-      (Double(progress.completed_stage_count)
-        + Double(currentConfirmation) / Double(confirmationTarget))
-        / Double(stageTotal)
-    )
-  }
-
-  private func aggregatePreparationUnits(_ progress: [Double]) -> Int64 {
-    let aggregate = progress.reduce(0, +) / Double(max(1, progress.count))
-    return Int64((50 + aggregate * 900).rounded())
-  }
-
-  private func updateProgress(_ requestedUnits: Int64) {
-    let didAdvance = stateLock.withPreparationLock { () -> Bool in
-      guard let taskProgress else { return false }
-      let units = min(max(requestedUnits, lastCompletedUnitCount), 1000)
-      guard units > lastCompletedUnitCount else { return false }
-      lastCompletedUnitCount = units
-      taskProgress.completedUnitCount = units
-      return true
-    }
-    if didAdvance {
-      scheduleWatchdog()
-    }
   }
 
   private func scheduleWatchdog() {
@@ -1767,178 +2486,28 @@ final class BackgroundMigrationPreparationManager {
     }) else {
       return
     }
-    if let manifest {
-      guard let scope = Self.preparationScope(for: manifest) else { return }
-      let notificationScope =
-        migrationPreparationNeedsActionNotificationScope(
-          manifestScope: scope
-        )
-      postNeedsActionNotification(
-        scope: notificationScope,
-        fingerprint: needsActionFingerprint(
-          scope: notificationScope,
-          reason: reason,
-          progress: progress
-        )
-      )
-      return
+    let scope: String
+    if let manifest, let manifestScope = Self.preparationScope(for: manifest) {
+      scope = manifestScope
+    } else {
+      scope = "global"
     }
-
-    let notificationScope =
-      migrationPreparationNeedsActionNotificationScope(manifestScope: nil)
-    postNeedsActionNotification(
-      scope: notificationScope,
-      fingerprint: needsActionFingerprint(
-        scope: notificationScope,
-        reason: reason,
-        progress: nil
+    let stateSuffix = progress.map { ":state-\($0.state)" } ?? ""
+    notificationCoordinator.enqueue(
+      MigrationPreparationNotificationEvent(
+        scope: scope,
+        kind: .needsForegroundRecovery,
+        fingerprint: "\(reason)\(stateSuffix)"
       )
     )
-  }
-
-  private func postNeedsActionNotification(
-    scope: String,
-    fingerprint: String
-  ) {
-    let submissionToken = stateLock.withPreparationLock { () -> UInt64? in
-      guard shouldPostMigrationPreparationNeedsActionNotification(
-        previousFingerprint: needsActionNotificationFingerprints[scope],
-        fingerprint: fingerprint
-      ) else { return nil }
-      return needsActionNotificationSubmissionTracker.begin(
-        scope: scope,
-        fingerprint: fingerprint
-      )
-    }
-    guard let submissionToken else { return }
-
-    let content = UNMutableNotificationContent()
-    content.title = "User action needed"
-    content.body = "Open and unlock Vizor to continue."
-    content.sound = .default
-    let requestIdentifier = Self.needsActionNotificationIdentifier(scope: scope)
-    addNotificationIfEnabled(
-      UNNotificationRequest(
-        identifier: requestIdentifier,
-        content: content,
-        trigger: nil
-      )
-    ) { submissionAccepted in
-      self.stateLock.withPreparationLock {
-        switch self.needsActionNotificationSubmissionTracker.complete(
-          scope: scope,
-          token: submissionToken
-        ) {
-        case .current:
-          self.needsActionNotificationFingerprints[scope] =
-            migrationPreparationNeedsActionFingerprintAfterSubmission(
-              previousFingerprint:
-                self.needsActionNotificationFingerprints[scope],
-              fingerprint: fingerprint,
-              submissionAccepted: submissionAccepted
-            )
-          if submissionAccepted {
-            self.persistNeedsActionNotificationFingerprintsLocked()
-          }
-        case .invalidated:
-          let center = UNUserNotificationCenter.current()
-          center.removePendingNotificationRequests(
-            withIdentifiers: [requestIdentifier]
-          )
-          center.removeDeliveredNotifications(
-            withIdentifiers: [requestIdentifier]
-          )
-        case .superseded:
-          break
-        }
-      }
-    }
-  }
-
-  private func needsActionFingerprint(
-    scope: String,
-    reason: String,
-    progress: CMigrationPreparationProgress?
-  ) -> String {
-    guard let progress else { return "\(scope):\(reason)" }
-    return [
-      scope,
-      reason,
-      String(progress.state),
-      String(progress.confirmation_count),
-      String(progress.confirmation_target),
-      String(progress.completed_stage_count),
-      String(progress.total_stage_count),
-    ].joined(separator: ":")
   }
 
   private func clearNeedsActionNotification(scope: String) {
-    let scopes = Set([scope, "global"])
-    stateLock.withPreparationLock {
-      for scope in scopes {
-        needsActionNotificationFingerprints.removeValue(forKey: scope)
-      }
-      needsActionNotificationSubmissionTracker.clear(scopes: scopes)
-      persistNeedsActionNotificationFingerprintsLocked()
-    }
-    let identifiers = scopes.map {
-      Self.needsActionNotificationIdentifier(scope: $0)
-    }
-    let center = UNUserNotificationCenter.current()
-    center.removePendingNotificationRequests(
-      withIdentifiers: identifiers + [Self.needsActionIdentifier]
-    )
-    center.removeDeliveredNotifications(
-      withIdentifiers: identifiers + [Self.needsActionIdentifier]
-    )
+    notificationCoordinator.resolve(scope: scope)
   }
 
   private func resetNeedsActionNotifications() {
-    let identifiers = stateLock.withPreparationLock { () -> [String] in
-      let scopes = Set(needsActionNotificationFingerprints.keys).union(
-        needsActionNotificationSubmissionTracker.scopes
-      )
-      let identifiers = scopes.map {
-        Self.needsActionNotificationIdentifier(scope: $0)
-      }
-      needsActionNotificationFingerprints.removeAll()
-      needsActionNotificationSubmissionTracker.reset()
-      persistNeedsActionNotificationFingerprintsLocked()
-      return identifiers
-    }
-    let center = UNUserNotificationCenter.current()
-    center.removePendingNotificationRequests(
-      withIdentifiers: identifiers + [Self.needsActionIdentifier]
-    )
-    center.removeDeliveredNotifications(
-      withIdentifiers: identifiers + [Self.needsActionIdentifier]
-    )
-  }
-
-  private func persistNeedsActionNotificationFingerprintsLocked() {
-    UserDefaults.standard.set(
-      needsActionNotificationFingerprints,
-      forKey: Self.needsActionNotificationFingerprintsKey
-    )
-  }
-
-  private func postProofReadyNotification() {
-    guard !stateLock.withPreparationLock({
-      notificationAuthorization.isDisabled
-    }) else {
-      return
-    }
-    let content = UNMutableNotificationContent()
-    content.title = "Continue your Ironwood migration"
-    content.body = "Open Vizor to continue your migration."
-    content.sound = .default
-    addNotificationIfEnabled(
-      UNNotificationRequest(
-        identifier: Self.proofReadyIdentifier,
-        content: content,
-        trigger: nil
-      )
-    )
+    notificationCoordinator.clearAll()
   }
 
   private func addNotificationIfEnabled(
@@ -1977,12 +2546,6 @@ final class BackgroundMigrationPreparationManager {
       accountUuid: manifest.accountUuid,
       runId: runId
     )
-  }
-
-  private static func needsActionNotificationIdentifier(
-    scope: String
-  ) -> String {
-    "\(needsActionIdentifier).\(scope)"
   }
 
 }
