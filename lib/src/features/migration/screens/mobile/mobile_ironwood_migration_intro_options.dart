@@ -298,7 +298,7 @@ class _MobileMigrationOptionsState
             ? 'Choose between more privacy over time or a faster migration. '
                   'You can review the details before anything moves.'
             : 'Private migration is temporarily unavailable on Android. '
-                  'Choose Immediate to continue.',
+                  'Choose immediate to continue.',
         bottom: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

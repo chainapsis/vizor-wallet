@@ -107,6 +107,21 @@ void main() {
     expect(paths, isNot(contains('/migration/private/review')));
   });
 
+  test('shows migration options while guarding private-only routes', () {
+    final routes = buildMobileRoutes(
+      entryRoutes: const [],
+    ).whereType<GoRoute>();
+    final options = routes.singleWhere(
+      (route) => route.path == '/migration/options',
+    );
+    final notifications = routes.singleWhere(
+      (route) => route.path == '/migration/private/notifications',
+    );
+
+    expect(options.redirect, isNull);
+    expect(notifications.redirect, isNotNull);
+  });
+
   testWidgets('tab shell renders all four tabs and switches branches', (
     tester,
   ) async {

@@ -2169,6 +2169,13 @@ void main() {
     expect(find.text('Choose How to Migrate'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Immediate'), findsOneWidget);
+    expect(
+      find.text(
+        'Private migration is temporarily unavailable on Android. '
+        'Choose immediate to continue.',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Not available on Android.'), findsOneWidget);
     expect(find.text('Recommended'), findsNothing);
     expect(
