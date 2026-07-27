@@ -50,6 +50,7 @@ pub(crate) struct SplitStageOutput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SplitStagePlan {
+    pub layer_index: usize,
     pub inputs: Vec<SplitStageInput>,
     pub outputs: Vec<SplitStageOutput>,
     pub fee_zatoshi: u64,
@@ -364,6 +365,7 @@ fn translate_preparation_plan(
             let stage_index = stages.len();
             coordinates.insert((layer_index, transaction_index), stage_index);
             stages.push(SplitStagePlan {
+                layer_index,
                 inputs,
                 outputs,
                 fee_zatoshi: fee_per_stage_zatoshi,

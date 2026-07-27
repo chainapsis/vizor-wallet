@@ -515,15 +515,19 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
       saltBase64: saltBase64,
     );
 
+/// Prepares denomination PCZTs with expiry heights derived from their planned
+/// broadcast heights.
 Future<KeystoneMigrationSigningRequest>
 prepareOrchardMigrationDenominationsPczt({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationDenominationsPczt(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 Future<String> createOrResumePrivateMigrationDraft({
@@ -550,7 +554,6 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required String password,
   required String saltBase64,
   required List<MigrationScheduledTransfer> approvedSchedule,
-  required bool spacePreparationBroadcasts,
 }) =>
     RustLib.instance.api.crateApiSyncCompleteOrchardMigrationDenominationsPczt(
       dbPath: dbPath,
@@ -562,7 +565,6 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
       password: password,
       saltBase64: saltBase64,
       approvedSchedule: approvedSchedule,
-      spacePreparationBroadcasts: spacePreparationBroadcasts,
     );
 
 /// Prepares the split and migration PCZTs for one Keystone signing session.
@@ -574,11 +576,13 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
   required String network,
   required String accountUuid,
   required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
@@ -590,7 +594,6 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   required List<KeystoneSignedMigrationMessage> signedMessages,
   required String password,
   required String saltBase64,
-  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -600,7 +603,6 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   signedMessages: signedMessages,
   password: password,
   saltBase64: saltBase64,
-  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationBatchPczt({

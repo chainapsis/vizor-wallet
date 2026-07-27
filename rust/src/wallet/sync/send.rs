@@ -465,7 +465,6 @@ pub(crate) struct KeystoneMigrationProofStatus {
 }
 
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
-const MIGRATION_NO_EXPIRY_HEIGHT: u32 = 0;
 const MIGRATION_ORCHARD_ACTION_COUNT: usize = 2;
 const MIGRATION_IRONWOOD_ACTION_COUNT: usize = 1;
 static ACTIVE_IRONWOOD_MIGRATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -1396,8 +1395,26 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         Some(run) => super::migration::approved_schedule_for_run(db_path, &run.run_id)?,
         None => approved_schedule.clone(),
     };
+    let (preparation_policy_for_build, migration_policy_for_build) = match &draft_run {
+        Some(run) => (
+            super::migration::preparation_timing_policy_for_run(db_path, &run.run_id)?,
+            super::migration::timing_policy_for_run(db_path, &run.run_id, network)?,
+        ),
+        None => (
+            preparation_timing_policy,
+            super::migration::configured_timing_policy(network),
+        ),
+    };
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
-        prepare_software_migration_run(db_path, network, account_uuid, seed, &signing_schedule)
+        prepare_software_migration_run(
+            db_path,
+            network,
+            account_uuid,
+            seed,
+            &signing_schedule,
+            preparation_policy_for_build,
+            migration_policy_for_build,
+        )
     })?;
 
     let Some(prepared) = prepared else {
@@ -2657,6 +2674,7 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
 fn make_orchard_split_builder_with_type(
     network: WalletNetwork,
     target_height: u32,
+    expiry_height: u32,
     orchard_anchor: orchard::Anchor,
     orchard_inputs: &[(orchard::Note, orchard::tree::MerklePath)],
     orchard_fvk: &orchard::keys::FullViewingKey,
@@ -2679,7 +2697,7 @@ fn make_orchard_split_builder_with_type(
             ironwood_bundle_type: orchard::builder::BundleType::DEFAULT,
         },
     )
-    .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+    .with_expiry_height(BlockHeight::from(expiry_height));
 
     if network.is_nu_active(
         zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
@@ -4191,20 +4209,12 @@ fn finalize_ready_denomination_stages(
         }
 
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        let scheduled_height = super::migration::next_preparation_scheduled_height(
-            &conn,
-            run_id,
-            network,
-            current_migration_scanned_height(db_path, network)?,
-            &mut OsRng,
-        )?;
         super::migration::promote_awaiting_denomination_stage(
             &conn,
             run_id,
             stage.stage_index,
             &stage.expected_txid_hex,
             extracted.raw_tx,
-            scheduled_height,
             pending_password,
             pending_salt_base64,
         )?;
@@ -4341,19 +4351,6 @@ async fn broadcast_pending_denomination_stages(
             stage.expected_txid_hex
         );
     }
-    if broadcasted_count > 0
-        && preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
-    {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        super::migration::reschedule_remaining_preparation_stages(
-            &conn,
-            run_id,
-            network,
-            observed_height,
-            &mut OsRng,
-        )?;
-    }
-
     Ok(Some(CreatedBroadcastResult {
         txids,
         status: if broadcasted_count == 0 {
