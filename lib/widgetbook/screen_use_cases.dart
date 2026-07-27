@@ -982,6 +982,13 @@ Widget buildMobileIronwoodMigrationOptionsUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileIronwoodMigrationAndroidOptionsUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationUseCase(
+    step: MobileIronwoodMigrationStep.options,
+    privateMigrationSupported: false,
+  );
+}
+
 Widget buildMobileIronwoodMigrationFastReviewUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationUseCase(
     step: MobileIronwoodMigrationStep.fastReview,
@@ -1200,6 +1207,7 @@ Widget _buildMobileIronwoodMigrationUseCase({
   required MobileIronwoodMigrationStep step,
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
   MobileIronwoodMigrationPreviewSurface? previewSurface,
+  bool? privateMigrationSupported,
 }) {
   final zatoshi = switch (step) {
     MobileIronwoodMigrationStep.intro => BigInt.from(14_223_000_000),
@@ -1226,6 +1234,7 @@ Widget _buildMobileIronwoodMigrationUseCase({
         previewPrivatePlan: _previewMobilePrivateMigrationPlan(),
         previewImmediatePlan: previewImmediatePlan,
         previewSurface: previewSurface,
+        privateMigrationSupported: privateMigrationSupported,
       ),
     ),
   );

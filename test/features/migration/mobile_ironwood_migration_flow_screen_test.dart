@@ -2200,6 +2200,26 @@ void main() {
       matching: find.byType(GestureDetector),
     );
     expect(tester.widget<GestureDetector>(privateGesture).onTap, isNull);
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(
+              const ValueKey('mobile_ironwood_private_option_opacity'),
+            ),
+          )
+          .opacity,
+      0.5,
+    );
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(
+              const ValueKey('mobile_ironwood_immediate_option_opacity'),
+            ),
+          )
+          .opacity,
+      1,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
