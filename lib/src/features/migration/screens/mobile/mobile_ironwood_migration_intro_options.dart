@@ -125,7 +125,11 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
       bottom: _MobileMigrationPrimaryButton(
         key: const ValueKey('mobile_ironwood_steps_continue_button'),
         label: 'Continue',
-        onPressed: () => context.go('/migration/options'),
+        onPressed: () => context.go(
+          supportsPrivateMobileIronwoodMigration()
+              ? '/migration/options'
+              : '/migration/fast/review',
+        ),
       ),
       child: const _MobileMigrationProcessCard(),
     );

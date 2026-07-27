@@ -301,6 +301,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/options',
+      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationFlowScreen(
@@ -310,6 +311,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/notifications',
+      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: MobileIronwoodMigrationFlowScreen(
@@ -407,6 +409,11 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
   ];
 }
+
+String? _redirectUnsupportedPrivateMigration(
+  BuildContext context,
+  GoRouterState state,
+) => supportsPrivateMobileIronwoodMigration() ? null : '/migration/fast/review';
 
 class _MobileTab {
   const _MobileTab({
