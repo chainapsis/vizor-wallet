@@ -62,7 +62,6 @@ class _MobileMigrationRedesignedStatusState
   bool _actionRunning = false;
   bool _softwarePreparationResumeAttempted = false;
   String? _softwarePreparationResumeError;
-  bool _completionSeenRecorded = false;
   String? _recordedAttentionFingerprint;
 
   @override
@@ -595,9 +594,9 @@ class _MobileMigrationRedesignedStatusState
     }
 
     if (widget.status.phase == kIronwoodMigrationCompletePhase) {
-      _recordCompletionSeen();
-      return _MigrationCompletePreview(
-        amountText: _totalAmountText(widget.status),
+      return _MigrationCompleteSurface(
+        status: widget.status,
+        fallbackAmountText: widget.data.amountText,
         onDone: () => context.go('/home'),
       );
     }
@@ -901,49 +900,6 @@ class _MobileMigrationRedesignedStatusState
   /// back here. Deliberately keyed to the screen actually rendering rather than
   /// to the navigation that brought the user here: a launch that dies before
   /// the frame is drawn should still owe the user its result.
-  void _recordCompletionSeen() {
-    if (_completionSeenRecorded) return;
-    _completionSeenRecorded = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_markCompletionSeen());
-    });
-  }
-
-  Future<void> _markCompletionSeen() async {
-    if (!mounted) return;
-    // Record the identity the completion provider itself published. Recomputing
-    // it here from this screen's status can disagree with the status the
-    // provider read, and a key that never matches leaves the run forever
-    // unseen, so home would route back to this screen on every return.
-    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
-    if (accountUuid == null) return;
-    // Only when it is for the account on screen. A refresh keeps serving the
-    // previous value, so right after an account switch the published identity
-    // can still be the account the user left — marking that one seen while the
-    // account they are looking at stays unseen and keeps being routed back to.
-    final publishedValue = ref.read(ironwoodMigrationCompletionProvider).value;
-    final published = publishedValue?.accountUuid == accountUuid
-        ? publishedValue
-        : null;
-    final network =
-        published?.network ?? ref.read(ironwoodMigrationInputsProvider).network;
-    final completionId =
-        published?.completionId ?? ironwoodMigrationCompletionId(widget.status);
-    try {
-      await ref
-          .read(ironwoodMigrationCompletionStoreProvider)
-          .markSeen(
-            network: network,
-            accountUuid: accountUuid,
-            completionId: completionId,
-          );
-    } catch (_) {
-      return;
-    }
-    if (!mounted) return;
-    ref.invalidate(ironwoodMigrationCompletionProvider);
-  }
-
   void _recordVisibleAttention(String? accountUuid) {
     final runId = widget.status.activeRunId;
     if (accountUuid == null || runId == null) return;
@@ -1295,19 +1251,10 @@ class _MobileMigrationRedesignedStatusState
   }
 
   String _totalAmountText(rust_sync.MigrationStatus status) {
-    final total = status.parts.isNotEmpty
-        ? status.parts.fold<BigInt>(
-            BigInt.zero,
-            (sum, part) => sum + part.valueZatoshi,
-          )
-        : status.targetValuesZatoshi.fold<BigInt>(
-            BigInt.zero,
-            (sum, value) => sum + value,
-          );
-    final fallback = total > BigInt.zero
-        ? ZecAmount.fromZatoshi(total).compactBalance.amountText
-        : widget.data.amountText;
-    return '$fallback ZEC';
+    return migrationCompletedAmountText(
+      status,
+      fallbackAmountText: widget.data.amountText,
+    );
   }
 
   String _availableAmountText(String? accountUuid) {

@@ -236,7 +236,7 @@ class _IronwoodMigrationCompletionHostState
       }
       if (!_isOnHome()) return;
       routed.add(key);
-      context.go('/migration/private/status');
+      context.go('/migration/complete');
     });
   }
 
@@ -248,9 +248,7 @@ class _IronwoodMigrationCompletionHostState
   /// `/home` no matter where the user navigated, which made the guard vacuous.
   /// The router's current configuration is the actual location.
   bool _isOnHome() {
-    return GoRouter.of(
-          context,
-        ).routerDelegate.currentConfiguration.uri.path ==
+    return GoRouter.of(context).routerDelegate.currentConfiguration.uri.path ==
         '/home';
   }
 

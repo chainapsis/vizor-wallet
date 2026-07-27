@@ -88,7 +88,7 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           ],
         ),
       MobileIronwoodMigrationPreviewSurface.migrationComplete =>
-        const _MigrationCompletePreview(),
+        const _MigrationCompletePreview(amountText: '142.992 ZEC'),
       MobileIronwoodMigrationPreviewSurface.homeAttention =>
         const _MigrationHomeAttentionPreview(),
       MobileIronwoodMigrationPreviewSurface.homeAttentionModal =>
@@ -1991,10 +1991,121 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
   }
 }
 
-class _MigrationCompletePreview extends StatelessWidget {
-  const _MigrationCompletePreview({this.amountText, this.onDone});
+/// The amount shown on a finished migration.
+///
+/// Single rule on purpose. The dedicated completion route and the status
+/// screen's completion branch both render the same result, and the completion
+/// provider publishes its own total for routing — three places that could
+/// otherwise disagree about what the user migrated.
+String migrationCompletedAmountText(
+  rust_sync.MigrationStatus status, {
+  required String fallbackAmountText,
+}) {
+  final total = status.parts.isNotEmpty
+      ? status.parts.fold<BigInt>(
+          BigInt.zero,
+          (sum, part) => sum + part.valueZatoshi,
+        )
+      : status.targetValuesZatoshi.fold<BigInt>(
+          BigInt.zero,
+          (sum, value) => sum + value,
+        );
+  final text = total > BigInt.zero
+      ? ZecAmount.fromZatoshi(total).compactBalance.amountText
+      : fallbackAmountText;
+  return '$text ZEC';
+}
 
-  final String? amountText;
+/// The finished-migration result, with the behaviour that has to accompany it.
+///
+/// Owns marking the completion seen so the dedicated route and the status
+/// screen cannot drift apart on when a result stops being re-shown. The two
+/// reach this surface under different conditions — the route because home
+/// found an unseen completion, the status screen because the run it is already
+/// showing finished — but once here they must behave identically.
+class _MigrationCompleteSurface extends ConsumerStatefulWidget {
+  const _MigrationCompleteSurface({
+    required this.status,
+    required this.onDone,
+    required this.fallbackAmountText,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final VoidCallback onDone;
+  final String fallbackAmountText;
+
+  @override
+  ConsumerState<_MigrationCompleteSurface> createState() =>
+      _MigrationCompleteSurfaceState();
+}
+
+class _MigrationCompleteSurfaceState
+    extends ConsumerState<_MigrationCompleteSurface> {
+  bool _seenRecorded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_markCompletionSeen());
+    });
+  }
+
+  Future<void> _markCompletionSeen() async {
+    if (_seenRecorded || !mounted) return;
+    _seenRecorded = true;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    // Prefer the identity the completion provider itself published. Recomputing
+    // it from this status can disagree with the status the provider read, and a
+    // key that never matches leaves the run forever unseen, so home would route
+    // back to the result on every return. Only trust it for the account on
+    // screen: a reloading provider keeps serving its previous value, so right
+    // after an account switch the published identity can still be the account
+    // the user left.
+    final publishedValue = ref.read(ironwoodMigrationCompletionProvider).value;
+    final published = publishedValue?.accountUuid == accountUuid
+        ? publishedValue
+        : null;
+    final network =
+        published?.network ?? ref.read(ironwoodMigrationInputsProvider).network;
+    final completionId =
+        published?.completionId ?? ironwoodMigrationCompletionId(widget.status);
+    try {
+      await ref
+          .read(ironwoodMigrationCompletionStoreProvider)
+          .markSeen(
+            network: network,
+            accountUuid: accountUuid,
+            completionId: completionId,
+          );
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(ironwoodMigrationCompletionProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _MigrationCompletePreview(
+      amountText: migrationCompletedAmountText(
+        widget.status,
+        fallbackAmountText: widget.fallbackAmountText,
+      ),
+      onDone: widget.onDone,
+    );
+  }
+}
+
+class _MigrationCompletePreview extends StatelessWidget {
+  const _MigrationCompletePreview({required this.amountText, this.onDone});
+
+  /// Required, and never empty. A placeholder default here would be a sample
+  /// amount rendered to a real user as their migration result; an empty one
+  /// leaves the headline with a blank line where the total belongs. Preview
+  /// call sites pass their own sample.
+  final String amountText;
   final VoidCallback? onDone;
 
   @override
@@ -2039,7 +2150,7 @@ class _MigrationCompletePreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(
-            'Your\n${amountText ?? '142.992 ZEC'}\nare on Ironwood!',
+            'Your\n$amountText\nare on Ironwood!',
             textAlign: TextAlign.center,
             style: AppTypography.displayLarge.copyWith(
               color: const Color(0xFFFFFFFF),
