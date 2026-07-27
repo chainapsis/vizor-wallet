@@ -1,5 +1,9 @@
 part of '../ironwood_migration_flow_screen.dart';
 
+// Keystone reliably scans the denser 300-byte migration frames at 5 fps.
+const _keystoneMigrationQrMaxFragmentLen = 300;
+const _keystoneMigrationQrFrameInterval = Duration(milliseconds: 200);
+
 class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneCombinedSignScreen({
     required this.approvedSchedule,
@@ -500,7 +504,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                   ),
                 )
                 .toList(),
-            maxFragmentLen: BigInt.from(140),
+            maxFragmentLen: BigInt.from(_keystoneMigrationQrMaxFragmentLen),
           ),
         );
       }
@@ -1118,6 +1122,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         error: _error,
         size: 305,
         scanOptimized: true,
+        frameInterval: _keystoneMigrationQrFrameInterval,
       ),
       onNext: _urParts.isEmpty || proofFailed
           ? null
@@ -1298,6 +1303,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             urParts: _urParts,
             error: _error,
             size: 264,
+            frameInterval: _keystoneMigrationQrFrameInterval,
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
