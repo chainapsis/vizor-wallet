@@ -187,7 +187,12 @@ void main() {
             'migration-sim FULL_MIGRATION_COMPLETE '
             'height=${chain['zcashdHeight']} run=$runId',
           );
-          e2eLog('migration-sim holding Home for ${_homeHoldMs}ms');
+          await _openActivityAndVerifyMigration(tester);
+          e2eLog(
+            'migration-sim ACTIVITY_MIGRATION_VISIBLE '
+            'title="Migrated to Ironwood" pool="Orchard → Ironwood"',
+          );
+          e2eLog('migration-sim holding Activity for ${_homeHoldMs}ms');
           await Future<void>.delayed(
             const Duration(milliseconds: _homeHoldMs),
           );
@@ -243,6 +248,18 @@ void main() {
       );
     },
     timeout: const Timeout(Duration(minutes: 40)),
+  );
+}
+
+Future<void> _openActivityAndVerifyMigration(WidgetTester tester) async {
+  await tapAppWidget(tester, const ValueKey('sidebar_activity_button'));
+  await pumpUntil(
+    tester,
+    () =>
+        tester.any(find.text('Migrated to Ironwood')) &&
+        tester.any(find.text('Orchard → Ironwood')),
+    description: 'private migration entries in Activity',
+    timeout: const Duration(minutes: 2),
   );
 }
 

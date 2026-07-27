@@ -84,6 +84,37 @@ void main() {
     expect(received.leadingIconName, AppIcons.arrowDownCircle);
   });
 
+  testWidgets('confirmed migration renders as an Ironwood activity row', (
+    tester,
+  ) async {
+    final row = await mapRow(
+      tester,
+      _transaction(txKind: 'migration', displayPool: 'ironwood'),
+    );
+
+    expect(row.title, 'Migrated to Ironwood');
+    expect(row.subtitle, 'Orchard → Ironwood');
+    expect(row.leadingIconName, AppIcons.migrationFast);
+    expect(row.amountText, '120 ZEC');
+  });
+
+  testWidgets('unconfirmed migration renders as an in-flight activity row', (
+    tester,
+  ) async {
+    final row = await mapRow(
+      tester,
+      _transaction(
+        txKind: 'migration',
+        minedHeight: BigInt.zero,
+        displayPool: 'ironwood',
+      ),
+    );
+
+    expect(row.title, 'Migrating to Ironwood ...');
+    expect(row.leadingIconName, AppIcons.loader);
+    expect(row.statusText, 'In progress');
+  });
+
   testWidgets('expired send stays a failed row, not an in-flight one', (
     tester,
   ) async {

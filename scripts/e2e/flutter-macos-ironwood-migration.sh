@@ -206,6 +206,11 @@ if [[ -n "${E2E_MIGRATION_SIM_HOME_HOLD_MS:-}" ]]; then
     --dart-define=ZCASH_MIGRATION_SIM_HOME_HOLD_MS="$E2E_MIGRATION_SIM_HOME_HOLD_MS"
   )
 fi
+if [[ -n "${E2E_MIGRATION_SIM_REVIEW_HOLD_MS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_MIGRATION_SIM_REVIEW_HOLD_MS="$E2E_MIGRATION_SIM_REVIEW_HOLD_MS"
+  )
+fi
 flutter_args+=(
   "${scenario_define_args[@]}"
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest
