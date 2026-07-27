@@ -2748,8 +2748,11 @@ SyncState _homeSyncedState({
   return SyncState(
     accountUuid: accountUuid ?? _accountsDesignState.activeAccountUuid,
     hasAccountScopedData: true,
+    isSyncComplete: true,
     percentage: 1,
     displayPercentage: 1,
+    scannedHeight: 3_428_143,
+    chainTipHeight: 3_428_143,
     orchardBalance: resolvedOrchardBalance,
     ironwoodBalance: resolvedIronwoodBalance,
     transparentBalance: resolvedTransparentBalance,
