@@ -996,6 +996,11 @@ void _useMobileViewport(
 }
 
 void main() {
+  test('private migration remains available outside Android', () {
+    expect(supportsPrivateMobileIronwoodMigration(isAndroid: false), isTrue);
+    expect(supportsPrivateMobileIronwoodMigration(isAndroid: true), isFalse);
+  });
+
   setUpAll(() {
     RustLib.initMock(api: _rustApiFake);
   });

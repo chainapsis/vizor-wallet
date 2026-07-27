@@ -68,7 +68,7 @@ void main() {
   });
 
   test(
-    'Android reads preparation runtime state from the native worker',
+    'Android does not read preparation runtime state from a native worker',
     () async {
       var getterCalls = 0;
       final service = IronwoodMigrationService(
@@ -100,8 +100,8 @@ void main() {
         runId: 'run-1',
       );
 
-      expect(state, IronwoodMigrationPreparationRuntimeState.scheduled);
-      expect(getterCalls, 1);
+      expect(state, IronwoodMigrationPreparationRuntimeState.idle);
+      expect(getterCalls, 0);
     },
   );
 
@@ -1419,7 +1419,7 @@ void main() {
   );
 
   test(
-    'Android software start hands confirmation waiting to background preparation',
+    'Android software start does not hand work to background preparation',
     () async {
       var preparationStartCount = 0;
       final service = _notificationAuthorizationService(
@@ -1443,7 +1443,7 @@ void main() {
         approvedSchedule: const [],
       );
 
-      expect(preparationStartCount, 1);
+      expect(preparationStartCount, 0);
     },
   );
 
@@ -1716,47 +1716,67 @@ void main() {
     },
   );
 
-  test(
-    'iOS and Android notification APIs are invoked by explicit service calls',
-    () async {
-      var requestCount = 0;
-      var statusCount = 0;
-      var openSettingsCount = 0;
-      for (final isAndroid in [false, true]) {
-        final service = _notificationAuthorizationService(
-          isIOS: !isAndroid,
-          isAndroid: isAndroid,
-          statuses: const [],
-          requestNotificationAuthorization: () async {
-            requestCount++;
-            return true;
-          },
-          getNotificationAuthorizationStatus: () async {
-            statusCount++;
-            return IronwoodMigrationNotificationAuthorizationStatus.authorized;
-          },
-          openNotificationSettings: () async {
-            openSettingsCount++;
-            return true;
-          },
-        );
+  test('notification APIs are available only on iOS', () async {
+    var requestCount = 0;
+    var statusCount = 0;
+    var openSettingsCount = 0;
+    final iosService = _notificationAuthorizationService(
+      isIOS: true,
+      statuses: const [],
+      requestNotificationAuthorization: () async {
+        requestCount++;
+        return true;
+      },
+      getNotificationAuthorizationStatus: () async {
+        statusCount++;
+        return IronwoodMigrationNotificationAuthorizationStatus.authorized;
+      },
+      openNotificationSettings: () async {
+        openSettingsCount++;
+        return true;
+      },
+    );
+    final androidService = _notificationAuthorizationService(
+      isIOS: false,
+      isAndroid: true,
+      statuses: const [],
+      requestNotificationAuthorization: () async {
+        requestCount++;
+        return true;
+      },
+      getNotificationAuthorizationStatus: () async {
+        statusCount++;
+        return IronwoodMigrationNotificationAuthorizationStatus.authorized;
+      },
+      openNotificationSettings: () async {
+        openSettingsCount++;
+        return true;
+      },
+    );
 
-        expect(
-          await service.notificationAuthorizationStatus(),
-          IronwoodMigrationNotificationAuthorizationStatus.authorized,
-        );
-        expect(
-          await service.requestNotificationPermission(),
-          IronwoodMigrationNotificationAuthorizationStatus.authorized,
-        );
-        expect(await service.openNotificationSystemSettings(), isTrue);
-      }
+    expect(
+      await iosService.notificationAuthorizationStatus(),
+      IronwoodMigrationNotificationAuthorizationStatus.authorized,
+    );
+    expect(
+      await iosService.requestNotificationPermission(),
+      IronwoodMigrationNotificationAuthorizationStatus.authorized,
+    );
+    expect(await iosService.openNotificationSystemSettings(), isTrue);
+    expect(
+      await androidService.notificationAuthorizationStatus(),
+      IronwoodMigrationNotificationAuthorizationStatus.denied,
+    );
+    expect(
+      await androidService.requestNotificationPermission(),
+      IronwoodMigrationNotificationAuthorizationStatus.denied,
+    );
+    expect(await androidService.openNotificationSystemSettings(), isFalse);
 
-      expect(requestCount, 2);
-      expect(statusCount, 4);
-      expect(openSettingsCount, 2);
-    },
-  );
+    expect(requestCount, 1);
+    expect(statusCount, 2);
+    expect(openSettingsCount, 1);
+  });
 
   test('non-iOS software migration does not request authorization', () async {
     var requestCount = 0;
@@ -1872,42 +1892,45 @@ void main() {
     },
   );
 
-  test('Android lifecycle recovery restores bound preparation', () async {
-    final store = await _boundBackgroundCredentialStore();
-    var preparationStartCount = 0;
-    final service = IronwoodMigrationService(
-      getWalletDbPath: () async => '/tmp/wallet.db',
-      getStatus:
-          ({required dbPath, required network, required accountUuid}) async =>
-              _migrationStatus(
-                phase: 'waiting_denom_confirmations',
-                activeRunId: 'run-1',
-              ),
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) async =>
-              null,
-      secureStore: AppSecureStore.testing(
-        storage: const FlutterSecureStorage(),
-      ),
-      backgroundCredentialStore: store,
-      isMobile: () => true,
-      isIOS: () => false,
-      isAndroid: () => true,
-      startBackgroundPreparation: () async {
-        preparationStartCount++;
-        return true;
-      },
-      getNotificationAuthorizationStatus: () async =>
-          IronwoodMigrationNotificationAuthorizationStatus.authorized,
-    );
+  test(
+    'Android lifecycle recovery leaves background preparation disabled',
+    () async {
+      final store = await _boundBackgroundCredentialStore();
+      var preparationStartCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'waiting_denom_confirmations',
+                  activeRunId: 'run-1',
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        isMobile: () => true,
+        isIOS: () => false,
+        isAndroid: () => true,
+        startBackgroundPreparation: () async {
+          preparationStartCount++;
+          return true;
+        },
+        getNotificationAuthorizationStatus: () async =>
+            IronwoodMigrationNotificationAuthorizationStatus.authorized,
+      );
 
-    await service.resumeBackgroundPreparationIfNeeded(
-      network: 'test',
-      accountUuid: 'account-1',
-    );
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
 
-    expect(preparationStartCount, 1);
-  });
+      expect(preparationStartCount, 0);
+    },
+  );
 
   test('explicit recovery binds a provisional preparation manifest', () async {
     final store = _backgroundCredentialStore();
@@ -4084,7 +4107,7 @@ void main() {
   );
 
   test(
-    'iOS and Android stage and arm typed outbox payload after foreground preparation',
+    'only iOS stages and arms native outbox payload after foreground preparation',
     () async {
       for (final isAndroid in [false, true]) {
         FlutterSecureStorage.setMockInitialValues({});
@@ -4188,6 +4211,12 @@ void main() {
           approvedSchedule: const [],
         );
 
+        if (isAndroid) {
+          expect(events, ['credentialOperation']);
+          expect(stagedPayload, isNull);
+          expect(armedPayload, isNull);
+          continue;
+        }
         expect(events, [
           'listOutboxReceipts',
           'credentialOperation',
@@ -4542,12 +4571,6 @@ void main() {
       );
 
       expect(records, [
-        {
-          'network': 'test',
-          'accountUuid': 'account-1',
-          'runId': 'run-1',
-          'observedHeight': 288,
-        },
         {
           'network': 'test',
           'accountUuid': 'account-1',

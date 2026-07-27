@@ -217,7 +217,7 @@ class IronwoodMigrationBackgroundCredentialStore {
        _channel =
            channel ??
            const MethodChannel('com.zcash.wallet/background_migration'),
-       _isAndroid = isAndroid ?? Platform.isAndroid;
+       _isAndroid = isAndroid ?? false;
 
   IronwoodMigrationBackgroundCredentialStore.testing({
     required FlutterSecureStorage storage,
@@ -468,7 +468,7 @@ class IronwoodMigrationBackgroundLifecycle {
            channel ??
            const MethodChannel('com.zcash.wallet/background_migration'),
        _isIOS = isIOS ?? Platform.isIOS,
-       _isAndroid = isAndroid ?? Platform.isAndroid,
+       _isAndroid = isAndroid ?? false,
        _resumeRetryDelays =
            resumeRetryDelays ??
            const [

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
@@ -52,3 +53,6 @@ part 'mobile_ironwood_migration_step_hero_process.dart';
 part 'mobile_ironwood_migration_step_options.dart';
 part 'mobile_ironwood_migration_step_progress_parts.dart';
 part 'mobile_ironwood_migration_step_review_card.dart';
+
+bool supportsPrivateMobileIronwoodMigration({bool? isAndroid}) =>
+    !(isAndroid ?? Platform.isAndroid);

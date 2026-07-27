@@ -301,6 +301,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/options',
+      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationFlowScreen(
@@ -310,6 +311,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/notifications',
+      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: MobileIronwoodMigrationFlowScreen(
@@ -333,6 +335,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/status',
+      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) {
         final entry = switch (state.extra) {
           MobileIronwoodMigrationStatusEntry value => value,
@@ -350,6 +353,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/keystone/denominations/sign',
+      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) {
         final entry = switch (state.extra) {
           MobileIronwoodMigrationKeystoneDenominationSignEntry value => value,
@@ -371,6 +375,7 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/keystone/batch/sign',
+      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationKeystoneBatchSignScreen(),
@@ -407,6 +412,11 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
   ];
 }
+
+String? _redirectUnsupportedPrivateMigration(
+  BuildContext context,
+  GoRouterState state,
+) => supportsPrivateMobileIronwoodMigration() ? null : '/migration/fast/review';
 
 class _MobileTab {
   const _MobileTab({

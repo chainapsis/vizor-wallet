@@ -77,6 +77,18 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final privateMigrationEnabled =
+        previewMode || supportsPrivateMobileIronwoodMigration();
+    if (!privateMigrationEnabled &&
+        switch (step) {
+          MobileIronwoodMigrationStep.options ||
+          MobileIronwoodMigrationStep.notifications ||
+          MobileIronwoodMigrationStep.preparing ||
+          MobileIronwoodMigrationStep.migrating => true,
+          _ => false,
+        }) {
+      return const _MobileMigrationRedirectTo('/migration/fast/review');
+    }
     final isHardware =
         !previewMode &&
         (ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false);

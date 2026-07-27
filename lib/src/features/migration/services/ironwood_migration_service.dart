@@ -803,10 +803,10 @@ class IronwoodMigrationService {
   final Set<String> _scheduledBackgroundMigrations = {};
 
   bool get supportsBackgroundMigrationRetry =>
-      isMobile() && supportsBackgroundMigration();
+      isMobile() && isIOS() && !isAndroid() && supportsBackgroundMigration();
 
-  bool get _usesNativeMigrationOutbox => isIOS() || isAndroid();
-  bool get _usesNativePreparation => isIOS() || isAndroid();
+  bool get _usesNativeMigrationOutbox => isIOS() && !isAndroid();
+  bool get _usesNativePreparation => isIOS() && !isAndroid();
 
   /// Reads durable migration state without credential or outbox reconciliation.
   ///
@@ -2667,8 +2667,7 @@ bool _defaultIsMacOS() => Platform.isMacOS;
 bool _defaultIsMobile() => Platform.isIOS || Platform.isAndroid;
 bool _defaultIsIOS() => Platform.isIOS;
 bool _defaultIsAndroid() => Platform.isAndroid;
-bool _defaultSupportsNativeMigrationOutbox() =>
-    Platform.isIOS || Platform.isAndroid;
+bool _defaultSupportsNativeMigrationOutbox() => Platform.isIOS;
 bool _alwaysTrue() => true;
 bool _defaultIsHardwareAccount(String _) => false;
 
@@ -2683,7 +2682,7 @@ Future<bool> _defaultScheduleBackgroundMigration() async {
 }
 
 Future<bool> _defaultStartBackgroundPreparation() async {
-  if (!Platform.isIOS && !Platform.isAndroid) return false;
+  if (!Platform.isIOS) return false;
   return await _backgroundMigrationChannel.invokeMethod<bool>(
         'startPreparation',
       ) ??
@@ -2691,7 +2690,7 @@ Future<bool> _defaultStartBackgroundPreparation() async {
 }
 
 Future<void> _defaultCancelBackgroundMigration() async {
-  if (!Platform.isIOS && !Platform.isAndroid) return;
+  if (!Platform.isIOS) return;
   await _backgroundMigrationChannel.invokeMethod<void>('cancel');
 }
 
@@ -2701,7 +2700,7 @@ _defaultGetPreparationRuntimeState({
   required String accountUuid,
   required String runId,
 }) async {
-  if (!Platform.isIOS && !Platform.isAndroid) {
+  if (!Platform.isIOS) {
     return IronwoodMigrationPreparationRuntimeState.idle;
   }
   final value = await _backgroundMigrationChannel.invokeMethod<String>(
@@ -2724,7 +2723,7 @@ Future<void> _defaultAcknowledgePreparationForegroundContinuation({
 }
 
 Future<bool> _defaultRequestNotificationAuthorization() async {
-  if (!Platform.isIOS && !Platform.isAndroid) return false;
+  if (!Platform.isIOS) return false;
   final status = await _backgroundMigrationChannel.invokeMethod<String>(
     'requestNotificationAuthorization',
   );
@@ -2735,7 +2734,7 @@ Future<bool> _defaultRequestNotificationAuthorization() async {
 
 Future<IronwoodMigrationNotificationAuthorizationStatus>
 _defaultGetNotificationAuthorizationStatus() async {
-  if (!Platform.isIOS && !Platform.isAndroid) {
+  if (!Platform.isIOS) {
     return IronwoodMigrationNotificationAuthorizationStatus.denied;
   }
   final status = await _backgroundMigrationChannel.invokeMethod<String>(
@@ -2745,7 +2744,7 @@ _defaultGetNotificationAuthorizationStatus() async {
 }
 
 Future<bool> _defaultOpenNotificationSettings() async {
-  if (!Platform.isIOS && !Platform.isAndroid) return false;
+  if (!Platform.isIOS) return false;
   return await _backgroundMigrationChannel.invokeMethod<bool>(
         'openNotificationSettings',
       ) ??
