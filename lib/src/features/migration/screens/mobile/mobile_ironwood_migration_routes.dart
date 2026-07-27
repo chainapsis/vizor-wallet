@@ -88,7 +88,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         (previewMode || supportsPrivateMobileIronwoodMigration());
     if (!privateMigrationEnabled &&
         switch (step) {
-          MobileIronwoodMigrationStep.options ||
           MobileIronwoodMigrationStep.notifications => true,
           _ => false,
         }) {
@@ -102,6 +101,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
+        privateEnabled: privateMigrationEnabled,
         immediateEnabled: true,
       ),
       MobileIronwoodMigrationStep.notifications =>
@@ -111,7 +111,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
         previewPlan: previewImmediatePlan,
-        privateMigrationEnabled: privateMigrationEnabled,
       ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
         data: data,
