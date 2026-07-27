@@ -537,67 +537,63 @@ void main() {
     );
   });
 
-  testWidgets(
-    'private review routes Keystone accounts to combined signing',
-    (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(1440, 900);
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('private review routes Keystone accounts to combined signing', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-      var softwareStarted = false;
-      final service = IronwoodMigrationService(
-        getWalletDbPath: () async => '/tmp/wallet.db',
-        getStatus: ({required dbPath, required network, required accountUuid}) {
-          return Future.value(_status());
-        },
-        getPrivatePlan:
-            ({required dbPath, required network, required accountUuid}) {
-              return Future.value(_privatePlan());
-            },
-        secureStore: AppSecureStore.testing(
-          storage: const FlutterSecureStorage(),
-        ),
-        getEndpoint: () => defaultRpcEndpointConfig('main'),
-        getSessionPassword: () => 'test-password',
-        getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
-        isMacOS: () => false,
-        startSoftwareMigration:
-            ({
-              required dbPath,
-              required lightwalletdUrl,
-              required network,
-              required accountUuid,
-              required approvedSchedule,
-              required mnemonicBytes,
-              required password,
-              required saltBase64,
-            }) {
-              softwareStarted = true;
-              return Future.value(_migrationResult());
-            },
-      );
+    var softwareStarted = false;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_status());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(_privatePlan());
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => defaultRpcEndpointConfig('main'),
+      getSessionPassword: () => 'test-password',
+      getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
+      isMacOS: () => false,
+      startSoftwareMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required approvedSchedule,
+            required mnemonicBytes,
+            required password,
+            required saltBase64,
+          }) {
+            softwareStarted = true;
+            return Future.value(_migrationResult());
+          },
+    );
 
-      await tester.pumpWidget(
-        _migrationOptionsHarness(
-          initialLocation: '/migration/private/review',
-          migrationService: service,
-          activeAccountIsHardware: true,
-        ),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/private/review',
+        migrationService: service,
+        activeAccountIsHardware: true,
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await _openShuffleReview(tester);
-      await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
-      await tester.pumpAndSettle();
+    await _openShuffleReview(tester);
+    await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
+    await tester.pumpAndSettle();
 
-      expect(softwareStarted, isFalse);
-      expect(
-        find.text('keystone-combined-sign-route:1:144'),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(softwareStarted, isFalse);
+    expect(find.text('keystone-combined-sign-route:1:144'), findsOneWidget);
+  });
 
   testWidgets('legacy review route redirects to private review', (
     tester,
@@ -849,10 +845,11 @@ void main() {
 
       expect(find.text('Note split'), findsNothing);
       expect(find.text('Ironwood Migration'), findsOneWidget);
-      expect(find.text('Amount to migrate'), findsOneWidget);
-      expect(find.text('Available in Ironwood'), findsOneWidget);
-      expect(find.text('0 ZEC'), findsOneWidget);
-      expect(find.text('Waiting for anchor block'), findsOneWidget);
+      expect(find.text('Next migration'), findsOneWidget);
+      expect(find.text('10 ZEC'), findsOneWidget);
+      expect(find.text('12 ZEC'), findsOneWidget);
+      expect(find.text('Left to migrate'), findsOneWidget);
+      expect(find.text('Schedule pending'), findsNWidgets(2));
       expect(find.text('~2 mins'), findsNothing);
     },
   );
@@ -892,10 +889,10 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('Migrated'), findsOneWidget);
-      expect(find.text('10/12 ZEC'), findsOneWidget);
-      expect(find.text('1/2 notes'), findsOneWidget);
-      expect(find.text('10 ZEC'), findsOneWidget);
+      expect(find.text('Next migration'), findsOneWidget);
+      expect(find.text('2 ZEC'), findsNWidgets(2));
+      expect(find.text('Left to migrate'), findsOneWidget);
+      expect(find.text('Schedule pending'), findsNWidgets(2));
     },
   );
 
@@ -930,8 +927,71 @@ void main() {
 
     expect(find.text('Note split'), findsNothing);
     expect(find.text('Ironwood Migration'), findsOneWidget);
-    expect(find.text('Migration in progress'), findsOneWidget);
-    expect(find.text('Available in Ironwood'), findsOneWidget);
+    expect(find.text('Next migration'), findsOneWidget);
+    expect(find.text('0.1 ZEC'), findsNWidgets(2));
+    expect(find.text('800'), findsOneWidget);
+    expect(find.text('Left to migrate'), findsOneWidget);
+  });
+
+  testWidgets('ring center shows the next scheduled note, not batch totals', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [
+            3_000_000_000,
+            1_000_000_000,
+            2_000_000_000,
+          ],
+          totalCount: 3,
+          estimatedCompletionHeight: 1016,
+          parts: [
+            _migrationPart(
+              0,
+              3_000_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduleOrder: 2,
+              scheduledHeight: 1010,
+            ),
+            _migrationPart(
+              1,
+              1_000_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduleOrder: 0,
+              scheduledHeight: 1002,
+            ),
+            _migrationPart(
+              2,
+              2_000_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduleOrder: 1,
+              scheduledHeight: 1006,
+            ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 1000,
+          chainTipHeight: 1000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Next migration'), findsOneWidget);
+    expect(find.text('10 ZEC'), findsOneWidget);
+    expect(find.text('1,002'), findsOneWidget);
+    expect(find.text('60 ZEC'), findsOneWidget);
+    expect(find.text('in ~20 minutes'), findsOneWidget);
   });
 
   testWidgets('preparing status has no in-content navigation action', (
@@ -1208,9 +1268,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migrated'), findsOneWidget);
-    expect(find.text('Available in Ironwood'), findsOneWidget);
-    expect(find.text('0.1 ZEC'), findsOneWidget);
+    expect(find.text('Next migration'), findsOneWidget);
+    expect(find.text('0.3 ZEC'), findsOneWidget);
+    expect(find.text('Left to migrate'), findsOneWidget);
+    expect(find.text('0.5 ZEC'), findsOneWidget);
   });
 
   testWidgets('private transfer status distinguishes mined from completed', (
@@ -1256,14 +1317,59 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Migrated'), findsOneWidget);
-    expect(find.text('Available in Ironwood'), findsOneWidget);
-    expect(find.text('0.3 ZEC'), findsOneWidget);
+    expect(find.text('Confirming'), findsOneWidget);
+    expect(find.text('2 notes awaiting confirmation'), findsOneWidget);
+    expect(find.text('Left to migrate'), findsOneWidget);
+    expect(find.text('0.3 ZEC'), findsNWidgets(2));
     expect(find.text('~3 mins'), findsNothing);
     expect(
       find.textContaining('The next signing window will open'),
       findsNothing,
     );
+  });
+
+  testWidgets('ring center summarizes notes after every note is broadcast', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+          broadcastedTxCount: 3,
+          totalCount: 3,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.completed,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+            _migrationPart(
+              2,
+              30_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Next migration'), findsNothing);
+    expect(find.text('Awaiting mining'), findsOneWidget);
+    expect(find.text('2 notes broadcast'), findsOneWidget);
+    expect(find.text('0.5 ZEC'), findsNWidgets(2));
   });
 
   testWidgets('private transfer status omits completion estimate footer', (
@@ -1316,7 +1422,10 @@ void main() {
       find.textContaining('The next signing window will open'),
       findsNothing,
     );
-    expect(find.text('Available in Ironwood'), findsOneWidget);
+    expect(find.text('Next migration'), findsOneWidget);
+    expect(find.text('0.2 ZEC'), findsOneWidget);
+    expect(find.text('900'), findsOneWidget);
+    expect(find.text('Left to migrate'), findsOneWidget);
   });
 
   testWidgets('scheduled note progress follows remaining block height', (
@@ -1756,7 +1865,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('Waiting for anchor block'), findsOneWidget);
+      expect(find.text('Next migration'), findsOneWidget);
+      expect(find.text('Schedule pending'), findsNWidgets(2));
       expect(find.textContaining('Sign Batch #'), findsNothing);
       expect(
         find.byKey(const ValueKey('ironwood_migration_status_action_button')),
@@ -2457,9 +2567,7 @@ Widget _migrationOptionsHarness({
         path: '/migration/immediate/keystone/sign',
         builder: (_, state) {
           final plan = state.extra! as rust_sync.OrchardMigrationImmediatePlan;
-          return Text(
-            'keystone-immediate-sign-route:${plan.migratedZatoshi}',
-          );
+          return Text('keystone-immediate-sign-route:${plan.migratedZatoshi}');
         },
       ),
       GoRoute(

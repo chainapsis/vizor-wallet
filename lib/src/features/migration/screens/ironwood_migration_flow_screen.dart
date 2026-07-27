@@ -17,6 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../core/formatting/number_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';

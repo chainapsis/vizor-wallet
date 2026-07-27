@@ -1408,6 +1408,8 @@ Widget _buildIronwoodMigrationUseCase({
             percentage: 0.34,
             displayPercentage: 0.34,
             displayTargetPercentage: 0.34,
+            scannedHeight: 3_000_000,
+            chainTipHeight: 3_000_000,
             orchardBalance: data.amountZatoshi,
             spendableBalance: data.amountZatoshi,
             totalBalance: data.amountZatoshi,
@@ -3098,6 +3100,7 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    estimatedCompletionHeight: 3_000_216,
     scheduledBroadcasts: [
       rust_sync.MigrationScheduledBroadcast(
         txidHex: 'preview-txid',
