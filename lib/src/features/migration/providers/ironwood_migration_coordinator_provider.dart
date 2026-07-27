@@ -926,22 +926,29 @@ class _IronwoodMigrationCoordinatorHostState
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(syncProvider, (previous, next) {
-      unawaited(
-        ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
-      );
-      final previousState = previous?.asData?.value;
-      final nextState = next.asData?.value;
-      if (nextState?.lastSyncCompletedAt != null &&
-          nextState?.lastSyncCompletedAt !=
-              previousState?.lastSyncCompletedAt) {
-        unawaited(
-          ref
-              .read(ironwoodMigrationCoordinatorProvider.notifier)
-              .resumeBackgroundPreparations(),
+    // Narrowed to the completion timestamp on purpose. `SyncState` has no
+    // `operator ==` and a 20ms timer rewrites it for the whole of a sync
+    // (`sync_provider.dart` `_displayProgressTimer`), so an unnarrowed listen
+    // fires up to 50x/second. Every fire set `_refreshPending`, which kept
+    // `_drainRefreshes()` from ever draining: `_refreshOnce()` then ran
+    // back-to-back for the entire sync, and it is not cheap — a full
+    // `get_wallet_summary`, a migration-status read on its own connection, and
+    // a Keychain read, per account, while the scanner was writing to the same
+    // SQLite. The 5s `_pollTimer` above already covers periodic refresh, so
+    // the unconditional `refreshNow()` here was redundant as well as hot.
+    ref.listen(
+      syncProvider.select((sync) => sync.asData?.value.lastSyncCompletedAt),
+      (previousCompletedAt, nextCompletedAt) {
+        if (nextCompletedAt == null || nextCompletedAt == previousCompletedAt) {
+          return;
+        }
+        final coordinator = ref.read(
+          ironwoodMigrationCoordinatorProvider.notifier,
         );
-      }
-    });
+        unawaited(coordinator.refreshNow());
+        unawaited(coordinator.resumeBackgroundPreparations());
+      },
+    );
     ref.watch(ironwoodMigrationCoordinatorProvider);
     return widget.child;
   }
