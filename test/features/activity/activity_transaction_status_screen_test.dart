@@ -448,6 +448,35 @@ void main() {
     expect(find.text('0.00203209 ZEC'), findsOneWidget);
   });
 
+  testWidgets('renders the Orchard to Ironwood migration receipt', (
+    tester,
+  ) async {
+    await _pumpScreen(
+      tester,
+      args: ActivityTransactionStatusArgs(
+        txidHex: _txidHex,
+        txKind: 'migration',
+        initialTransaction: _transaction(
+          txKind: 'migration',
+          fee: BigInt.from(105000),
+        ),
+        initialDetail: _detail(txKind: 'migration'),
+      ),
+    );
+
+    expect(find.byType(ReceivedReceiptView), findsNothing);
+    expect(find.byType(SendStatusContentView), findsNothing);
+    expect(find.byType(ShieldedReceiptView), findsNothing);
+    expect(find.text('Migrated to Ironwood'), findsOneWidget);
+    expect(find.text('Amount migrated'), findsOneWidget);
+    expect(find.text('From'), findsOneWidget);
+    expect(find.text('Orchard balance'), findsOneWidget);
+    expect(find.text('To'), findsOneWidget);
+    expect(find.text('Ironwood balance'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text('0.00105 ZEC'), findsOneWidget);
+  });
+
   testWidgets('renders a minimal fallback receipt for an unknown tx kind', (
     tester,
   ) async {

@@ -1435,6 +1435,38 @@ void main() {
     },
   );
 
+  testWidgets('startup recovery records verified proof readiness explicitly', (
+    tester,
+  ) async {
+    final proofReadinessRecords = <String>[];
+    final container = _container(
+      statuses: {
+        _softwareUuid: _status(
+          'ready_to_migrate',
+          nextActionHeight: 1_000,
+          proofReady: true,
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      },
+      softwareStarts: [],
+      broadcasts: [],
+      syncState: SyncState(),
+      isIOS: true,
+      proofReadinessRecords: proofReadinessRecords,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const IronwoodMigrationCoordinatorHost(child: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(proofReadinessRecords, [_softwareUuid]);
+  });
+
   testWidgets('initial status refresh does not restart Keystone preparation', (
     tester,
   ) async {
@@ -1566,6 +1598,7 @@ ProviderContainer _container({
   bool isIOS = false,
   IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
   List<String>? backgroundPreparationStarts,
+  List<String>? proofReadinessRecords,
   bool mutableAccounts = false,
   AppSecurityState? initialSecurityState,
 }) {
@@ -1592,6 +1625,17 @@ ProviderContainer _container({
         ? null
         : () async {
             backgroundPreparationStarts.add(_softwareUuid);
+            return true;
+          },
+    recordVerifiedProofReadiness: proofReadinessRecords == null
+        ? null
+        : ({
+            required network,
+            required accountUuid,
+            required runId,
+            required observedHeight,
+          }) async {
+            proofReadinessRecords.add(accountUuid);
             return true;
           },
     scheduleBackgroundMigration: () async => true,

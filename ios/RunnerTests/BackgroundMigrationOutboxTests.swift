@@ -1478,6 +1478,60 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testRunnerDeliversVerifiedReadinessAfterAcknowledgedHeightNotice() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "watch-only",
+      account: "account-a",
+      heights: [],
+      nextProofHeight: 288
+    )
+    try stageAndArm(batch, in: harness.store)
+    _ = try harness.store.update { snapshot in
+      _ = snapshot.markUnverifiedProofReadyNoticeIfNeeded(
+        batchId: batch.batchId,
+        at: now
+      )
+      try snapshot.acknowledgeUnverifiedProofReadyNotice(
+        batchId: batch.batchId,
+        at: now.addingTimeInterval(1)
+      )
+      XCTAssertTrue(
+        snapshot.recordVerifiedProofReadiness(
+          network: batch.network,
+          accountUuid: batch.accountUuid,
+          runId: batch.runId,
+          at: now.addingTimeInterval(2)
+        )
+      )
+    }
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now.addingTimeInterval(3),
+      requiresPreparationProofVerification: true,
+      dependencies: BackgroundMigrationOutboxRunnerDependencies(
+        latestBlockHeight: { _, _ in .success(288) },
+        sendTransaction: { _, _, _ in
+          XCTFail("a proof watch must not submit a transaction")
+          return .success(
+            NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+          )
+        }
+      )
+    )
+
+    XCTAssertEqual(
+      outcome.proofReady,
+      BackgroundMigrationProofReadyMetadata(
+        batchId: batch.batchId,
+        observedHeight: 288
+      )
+    )
+  }
+
   private func makeBatch(
     batchId: String,
     account: String,

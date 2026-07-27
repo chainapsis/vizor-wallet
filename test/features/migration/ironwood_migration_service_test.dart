@@ -479,6 +479,68 @@ void main() {
   );
 
   test(
+    'a malformed receipt from another account does not mask missing recovery',
+    () async {
+      final otherAccountReceipt =
+          _outboxReceipt(receiptId: 'receipt-2', txidHex: 'tx-2')
+            ..['accountUuid'] = 'account-2'
+            ..['scheduleUpdates'] = 'invalid';
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => [otherAccountReceipt],
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async => true,
+        runMigrationOutboxOnceNow: () async =>
+            const IronwoodMigrationOutboxRunResult(
+              outcome: IronwoodMigrationOutboxRunOutcome.noWork,
+              observedHeight: 1_000,
+            ),
+      );
+
+      await expectLater(
+        service.recoverDueMigrationOutbox(
+          network: 'test',
+          accountUuid: 'account-1',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('credential is missing for the active run'),
+              isNot(contains('already submitted')),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'foreground recovery requests credential recovery without a manifest',
     () async {
       var foregroundRuns = 0;
@@ -4405,7 +4467,7 @@ void main() {
   );
 
   test(
-    'iOS and Android record only verified proof readiness from Rust status',
+    'status stays read-only and explicit recovery records proof readiness',
     () async {
       final store = await _boundBackgroundCredentialStore();
       final records = <Map<String, Object?>>[];
@@ -4452,14 +4514,32 @@ void main() {
       );
 
       await service.status(network: 'test', accountUuid: 'account-1');
+      expect(records, isEmpty);
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
       proofReady = false;
       await service.status(network: 'test', accountUuid: 'account-1');
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
       ios = false;
       android = true;
       proofReady = true;
       await service.status(network: 'test', accountUuid: 'account-1');
+      expect(records, hasLength(1));
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
       proofReady = false;
       await service.status(network: 'test', accountUuid: 'account-1');
+      await service.resumeBackgroundPreparationIfNeeded(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
 
       expect(records, [
         {

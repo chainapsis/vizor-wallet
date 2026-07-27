@@ -253,10 +253,10 @@ class _IronwoodMigrationImmediateReviewContentState
                   minWidth: 230,
                   expand: true,
                   leading: _isBroadcasting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                      ? const AppIcon(
+                          AppIcons.loader,
+                          size: 18,
+                          semanticLabel: 'Authorising migration',
                         )
                       : const AppIcon(AppIcons.warning, size: 18),
                   child: Text(

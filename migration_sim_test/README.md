@@ -31,8 +31,8 @@ The scenario:
    transfer;
 8. succeeds only after every transfer reaches the wallet's trusted
    confirmation depth and the final Orchard/Ironwood balances match the plan;
-9. returns to Home and leaves the normal, fully-live app window visible for
-   15 seconds.
+9. opens Activity, verifies the private migration transfers are visible, and
+   leaves the normal, fully-live app window visible for 15 seconds.
 
 The fast flag deliberately maps regtest to the fast-testnet timing policy for
 this opt-in build: preparation delay mean/max `4/16` blocks, transfer delay
@@ -67,7 +67,7 @@ The app window is visible by default so the migration can be observed. Set
 Unlike deterministic integration tests, this observable scenario uses
 Flutter's fully-live frame policy so animations and app-requested frames render
 at the normal application cadence.
-After completion, the scenario returns to Home and keeps the window open for
+After completion, the scenario opens Activity and keeps the window open for
 15 seconds. Override this with
 `E2E_MIGRATION_SIM_HOME_HOLD_MS=30000`, for example.
 
@@ -133,4 +133,42 @@ The success marker in the console log is:
 
 ```text
 migration-sim FULL_MIGRATION_COMPLETE
+```
+
+## Immediate migration scenario
+
+```bash
+migration_sim_test/run_immediate_migration.sh
+```
+
+This uses the same visible macOS app, local Ironwood chain, `99.0002 TAZ`
+balance, and 20-note/four-funding-transaction shape as the full scenario.
+Instead of preparing denominations and following a private schedule, it:
+
+1. selects **Immediate** in the desktop migration UI;
+2. validates that the reviewed plan consumes all 20 Orchard notes in one
+   transaction and that `input - fee = migrated`;
+3. leaves the review screen visible for five seconds;
+4. authorizes the software-wallet transaction and verifies exactly one
+   transaction reaches the local mempool;
+5. mines ten confirmations at a three-second visible cadence;
+6. verifies Orchard is empty and the exact planned amount is available in
+   Ironwood;
+7. opens Activity, verifies the migration entry is visible, and leaves that
+   screen visible for 15 seconds.
+
+Useful timing overrides:
+
+```bash
+E2E_MIGRATION_SIM_REVIEW_HOLD_MS=10000 \
+E2E_MIGRATION_SIM_BLOCK_INTERVAL_MS=5000 \
+E2E_MIGRATION_SIM_HOME_HOLD_MS=30000 \
+migration_sim_test/run_immediate_migration.sh
+```
+
+Artifacts use the `migration_sim_test/artifacts/immediate-<timestamp>*`
+prefix. The success marker is:
+
+```text
+migration-sim-immediate IMMEDIATE_MIGRATION_COMPLETE
 ```

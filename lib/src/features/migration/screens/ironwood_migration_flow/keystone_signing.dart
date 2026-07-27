@@ -110,12 +110,16 @@ class MobileIronwoodMigrationKeystoneDenominationSignScreen
     extends StatelessWidget {
   const MobileIronwoodMigrationKeystoneDenominationSignScreen({
     this.approvedSchedule = const [],
+    this.initialRequest,
+    this.initialAccountUuid,
     this.previewRequest,
     this.previewUrParts = const [],
     super.key,
   });
 
   final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final rust_sync.KeystoneMigrationSigningRequest? initialRequest;
+  final String? initialAccountUuid;
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
 
@@ -125,10 +129,24 @@ class MobileIronwoodMigrationKeystoneDenominationSignScreen
       step: _KeystonePrivateSignStep.denominations,
       approvedSchedule: approvedSchedule,
       mobileLayout: true,
+      initialRequest: initialRequest,
+      initialAccountUuid: initialAccountUuid,
       previewRequest: previewRequest,
       previewUrParts: previewUrParts,
     );
   }
+}
+
+class MobileIronwoodMigrationKeystoneDenominationSignEntry {
+  const MobileIronwoodMigrationKeystoneDenominationSignEntry({
+    required this.approvedSchedule,
+    required this.request,
+    required this.accountUuid,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final rust_sync.KeystoneMigrationSigningRequest request;
+  final String accountUuid;
 }
 
 class MobileIronwoodMigrationKeystoneBatchSignScreen extends StatelessWidget {
@@ -160,6 +178,8 @@ class _IronwoodMigrationKeystonePrivateSignScreen
     required this.approvedSchedule,
     this.approvedImmediatePlan,
     this.mobileLayout = false,
+    this.initialRequest,
+    this.initialAccountUuid,
     this.previewRequest,
     this.previewUrParts = const [],
     this.previewStartScanning = false,
@@ -169,6 +189,8 @@ class _IronwoodMigrationKeystonePrivateSignScreen
   final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
   final rust_sync.OrchardMigrationImmediatePlan? approvedImmediatePlan;
   final bool mobileLayout;
+  final rust_sync.KeystoneMigrationSigningRequest? initialRequest;
+  final String? initialAccountUuid;
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
   final bool previewStartScanning;
@@ -412,7 +434,12 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _requestCompleted = true;
       return;
     }
-    unawaited(_prepareRequest());
+    unawaited(
+      _prepareRequest(
+        preparedRequest: widget.initialRequest,
+        preparedAccountUuid: widget.initialAccountUuid,
+      ),
+    );
   }
 
   @override
@@ -428,7 +455,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     super.dispose();
   }
 
-  Future<void> _prepareRequest() async {
+  Future<void> _prepareRequest({
+    rust_sync.KeystoneMigrationSigningRequest? preparedRequest,
+    String? preparedAccountUuid,
+  }) async {
     _stopProofPolling();
     setState(() {
       _stage = _KeystoneDenominationSignStage.preparing;
@@ -446,8 +476,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _decoding = false;
     });
 
-    String? requestIdToDiscard;
-    String? requestAccountUuid;
+    String? requestIdToDiscard = preparedRequest?.requestId;
+    String? requestAccountUuid = preparedAccountUuid;
     try {
       final accountState = await ref.read(accountProvider.future);
       final accountUuid = accountState.activeAccountUuid;
@@ -458,14 +488,20 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       if (activeAccount == null || !activeAccount.isHardware) {
         throw StateError('Active account is not a Keystone account.');
       }
+      if (preparedRequest != null && preparedAccountUuid != accountUuid) {
+        throw StateError(
+          'Prepared Keystone request does not match the active account.',
+        );
+      }
       requestAccountUuid = accountUuid;
-
-      final request = await widget.step.prepare(
-        _migrationService,
-        accountUuid: accountUuid,
-        approvedSchedule: widget.approvedSchedule,
-        approvedImmediatePlan: widget.approvedImmediatePlan,
-      );
+      final request =
+          preparedRequest ??
+          await widget.step.prepare(
+            _migrationService,
+            accountUuid: accountUuid,
+            approvedSchedule: widget.approvedSchedule,
+            approvedImmediatePlan: widget.approvedImmediatePlan,
+          );
       requestIdToDiscard = request.requestId;
       if (!mounted) {
         await _discardRequest(accountUuid, request.requestId);

@@ -232,8 +232,18 @@ class _MobileTransactionStatusScreenState
   bool get _isShielding =>
       (_transaction?.txKind ?? widget.args.txKind) == 'shielded';
 
+  bool get _isMigration =>
+      (_transaction?.txKind ?? widget.args.txKind) == 'migration';
+
   String get _title {
     if (_isShielding) return 'Shielded';
+    if (_isMigration) {
+      return switch (_phase) {
+        _TxPhase.pending => 'Migrating to Ironwood...',
+        _TxPhase.succeeded => 'Migrated to Ironwood',
+        _TxPhase.failed => 'Migration failed',
+      };
+    }
     if (_isIncoming) {
       return _phase == _TxPhase.pending ? 'Receiving...' : 'Received';
     }
@@ -322,8 +332,13 @@ class _MobileTransactionStatusScreenState
           };
 
     final hasAddress = address != null && address.isNotEmpty;
-    final amountBottom =
-        _isIncoming && receivingAddress != null && receivingAddress.isNotEmpty
+    final amountBottom = _isMigration
+        ? _BottomInfoRow(
+            iconName: AppIcons.migrationSplit,
+            iconColor: colors.icon.regular,
+            text: 'From Orchard balance',
+          )
+        : _isIncoming && receivingAddress != null && receivingAddress.isNotEmpty
         ? _BottomInfoRow(
             iconName: _poolIconNameFor(
               receivingPoolLabel,
@@ -425,7 +440,28 @@ class _MobileTransactionStatusScreenState
     // "From transparent balance" -> "Shielded balance". No Figma frame for
     // this state yet; mobile is aligned to the (more informative) desktop
     // shape pending one.
-    final reviewChildren = _isShielding
+    final reviewChildren = _isMigration
+        ? <Widget>[
+            amountRow,
+            const MobileReviewFlowArrow(),
+            MobileReviewInfoRow(
+              label: 'To',
+              value: 'Ironwood balance',
+              leading: MobileReviewIconBadge(
+                child: AppIcon(
+                  AppIcons.shieldKeyholeOutline,
+                  size: 18,
+                  color: colors.icon.regular,
+                ),
+              ),
+              bottom: _BottomInfoRow(
+                iconName: AppIcons.shieldKeyhole,
+                iconColor: colors.icon.success,
+                text: 'Ironwood',
+              ),
+            ),
+          ]
+        : _isShielding
         ? <Widget>[
             MobileReviewInfoRow(
               label: 'Amount',
@@ -574,6 +610,7 @@ class _MobileTransactionStatusScreenState
     return switch (pool) {
       'transparent' => 'Transparent',
       'shielded' => 'Shielded',
+      'ironwood' => 'Ironwood',
       'mixed' => 'Mixed',
       _ => null,
     };

@@ -37,23 +37,34 @@ ActivityRowData buildTransactionActivityRow({
   final isReceiving = kind == 'receiving';
   final isSent = kind == 'sent';
   final isShielded = kind == 'shielded';
+  final isMigration = kind == 'migration';
   final isInbound = isReceived || isReceiving;
   final signedAmount = isSent ? -amount : amount;
-  final subtitle = isInbound || isSent
+  final subtitle = isMigration
+      ? 'Orchard → Ironwood'
+      : isInbound || isSent
       ? _poolLabel(transaction.displayPool)
       : null;
 
   // Unconfirmed sends/receives render as in-flight rows: a pulsing loader
   // in the leading slot and a progressive title, per the Content Line
   // pending variant in the design.
-  final isInFlight = isPending && (isInbound || isSent);
+  final isInFlight = isPending && (isInbound || isSent || isMigration);
 
   return ActivityRowData(
     stableId: 'tx:${transaction.txidHex}:${_stableTransactionRole(kind)}',
-    title: isFailed && isSent
-        ? 'Send failed'
+    title: isFailed && (isSent || isMigration)
+        ? isMigration
+              ? 'Migration failed'
+              : 'Send failed'
         : isInFlight
-        ? _pendingTxTitle(isSent ? 'Sending' : 'Receiving')
+        ? _pendingTxTitle(
+            isMigration
+                ? 'Migrating to Ironwood'
+                : isSent
+                ? 'Sending'
+                : 'Receiving',
+          )
         : _txTitle(kind),
     leadingIconName: _txIcon(kind, isPending: isPending),
     leadingBackgroundColor: colors.background.neutralSubtleOpacity,
@@ -65,7 +76,7 @@ ActivityRowData buildTransactionActivityRow({
         amount: amount,
         signedAmount: signedAmount,
         isFailed: isFailed,
-        isUnsignedAmount: isShielded,
+        isUnsignedAmount: isShielded || isMigration,
         kind: kind,
         privacyModeEnabled: privacyModeEnabled,
       ),
@@ -157,6 +168,7 @@ String _txTitle(String kind) {
     'received' => 'Received',
     'sent' => 'Sent',
     'shielded' => 'Shielded',
+    'migration' => 'Migrated to Ironwood',
     _ => 'Transaction',
   };
 }
@@ -164,7 +176,7 @@ String _txTitle(String kind) {
 String _txIcon(String kind, {required bool isPending}) {
   if (isPending) {
     return switch (kind) {
-      'receiving' || 'received' || 'sent' => AppIcons.loader,
+      'receiving' || 'received' || 'sent' || 'migration' => AppIcons.loader,
       _ => AppIcons.history,
     };
   }
@@ -173,6 +185,7 @@ String _txIcon(String kind, {required bool isPending}) {
     'received' => AppIcons.arrowDownCircle,
     'sent' => AppIcons.plane,
     'shielded' => AppIcons.shieldKeyholeOutline,
+    'migration' => AppIcons.migrationFast,
     _ => AppIcons.history,
   };
 }
