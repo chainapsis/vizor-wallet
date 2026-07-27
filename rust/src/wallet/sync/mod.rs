@@ -43,7 +43,8 @@ mod transactions;
 pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
     proof_retry_height, reconcile_wallet_locks_after_sync, MigrationPartState,
-    MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
+    MigrationPreparationTransactionState, MigrationScheduleEntry, MigrationStatus,
+    PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{

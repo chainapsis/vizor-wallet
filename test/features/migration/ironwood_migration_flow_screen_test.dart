@@ -389,7 +389,7 @@ void main() {
 
     expect(startedAccountUuid, 'account-1');
     expect(startedSchedule, _privatePlan().scheduledTransfers);
-    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Next split'), findsOneWidget);
   });
 
   testWidgets(
@@ -465,7 +465,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 700));
 
-    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Next split'), findsOneWidget);
     expect(
       find.text("Couldn't broadcast the migration transaction. Try again."),
       findsNothing,
@@ -624,24 +624,15 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 700));
 
-    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Next split'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
       findsOneWidget,
     );
-    expect(
-      find.text(
-        'We’re organizing your balance into common-sized parts. '
-        'This makes your migration harder to link.',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.text(
-        'Once preparation finishes, your migration can begin automatically.',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Splits remaining'), findsOneWidget);
+    expect(find.text('Est. completion'), findsOneWidget);
+    expect(find.text('Current block'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'View Schedule'), findsOneWidget);
     expect(find.text('Note split'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Go home'), findsNothing);
   });
@@ -679,11 +670,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('Preparing your notes'), findsOneWidget);
-      final loader = tester.widget<CircularProgressIndicator>(
-        find.byKey(const ValueKey('ironwood_migration_preparation_loader')),
-      );
-      expect(loader.value, isNull);
+      expect(find.text('Next split'), findsOneWidget);
       expect(find.text('Split 1 of 6'), findsOneWidget);
       expect(find.textContaining('confirmations'), findsNothing);
       expect(
@@ -735,11 +722,13 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Split 3 of 8'), findsNothing);
-    expect(find.text('1 of 3 confirmations'), findsOneWidget);
+    expect(find.text('Split 3 of 8'), findsOneWidget);
+    expect(find.text('Schedule pending'), findsOneWidget);
   });
 
-  testWidgets('preparation loader respects reduced motion', (tester) async {
+  testWidgets('preparation ring remains available with reduced motion', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.resetPhysicalSize);
@@ -751,10 +740,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    final loader = tester.widget<CircularProgressIndicator>(
-      find.byKey(const ValueKey('ironwood_migration_preparation_loader')),
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
+      findsOneWidget,
     );
-    expect(loader.value, 0.72);
+    expect(find.text('Next split'), findsOneWidget);
   });
 
   testWidgets('private preparing status does not expose note progress', (
@@ -994,9 +984,7 @@ void main() {
     expect(find.text('in ~20 minutes'), findsOneWidget);
   });
 
-  testWidgets('preparing status has no in-content navigation action', (
-    tester,
-  ) async {
+  testWidgets('preparing status opens its separate schedule', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
     addTearDown(tester.view.resetPhysicalSize);
@@ -1013,7 +1001,8 @@ void main() {
       findsNothing,
     );
     expect(find.widgetWithText(AppButton, 'Go home'), findsNothing);
-    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Next split'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'View Schedule'), findsOneWidget);
   });
 
   testWidgets('status does not return to intro for a stale pre-run response', (
@@ -1033,7 +1022,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Next split'), findsOneWidget);
     expect(find.text('intro-route'), findsNothing);
   });
 
@@ -1058,7 +1047,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Next split'), findsOneWidget);
     expect(find.text('Migration status unavailable'), findsNothing);
   });
 
@@ -1071,7 +1060,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final cases = [
-      _StatusUiCase(status: _status(), title: 'Preparing your notes'),
+      _StatusUiCase(status: _status(), title: 'Next split'),
       _StatusUiCase(
         status: _migrationStatus(
           phase: kIronwoodMigrationReadyToMigratePhase,
@@ -1874,6 +1863,161 @@ void main() {
       );
     },
   );
+
+  testWidgets('preparation schedule shows split transaction details', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final status = _migrationStatus(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      activeRunId: 'run-1',
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 5,
+      preparationMeanDelayBlocks: 24,
+      preparationTransactions: [
+        _preparationTransaction(
+          0,
+          500_000_000,
+          rust_sync.MigrationPreparationTransactionState.completed,
+          scheduledHeight: 980,
+          minedHeight: 984,
+          confirmationCount: 3,
+        ),
+        _preparationTransaction(
+          1,
+          400_000_000,
+          rust_sync.MigrationPreparationTransactionState.confirming,
+          scheduledHeight: 990,
+          minedHeight: 999,
+          confirmationCount: 2,
+        ),
+        _preparationTransaction(
+          2,
+          300_000_000,
+          rust_sync.MigrationPreparationTransactionState.broadcasted,
+          scheduledHeight: 1_144,
+        ),
+        _preparationTransaction(
+          3,
+          200_000_000,
+          rust_sync.MigrationPreparationTransactionState.scheduled,
+          scheduledHeight: 1_010,
+        ),
+        _preparationTransaction(
+          4,
+          100_000_000,
+          rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'test',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+        initialLocation: '/migration/private/preparation-schedule',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 1_000,
+          chainTipHeight: 1_000,
+        ),
+        disableAnimations: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Preparation Schedule'), findsOneWidget);
+    expect(find.text('Splits remaining'), findsOneWidget);
+    expect(find.text('4 of 5'), findsOneWidget);
+    expect(find.text('Current block'), findsOneWidget);
+    expect(find.text('1,000'), findsOneWidget);
+    expect(find.text('1,010'), findsOneWidget);
+    expect(find.text('1,144'), findsOneWidget);
+    expect(find.text('Pending'), findsOneWidget);
+    expect(find.text('3. ~2 ZEC'), findsOneWidget);
+    expect(find.text('4. ~3 ZEC'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(
+        'Split 2, approximately 4 ZEC, confirming, '
+        '2 of 3 confirmations.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: status,
+        coordinatorStatus: status,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 1_000,
+          chainTipHeight: 1_000,
+        ),
+        disableAnimations: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Split 3 of 5'), findsOneWidget);
+  });
+
+  testWidgets('preparation ETA starts unscheduled delays at current height', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final status = _migrationStatus(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      activeRunId: 'run-1',
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 2,
+      preparationMeanDelayBlocks: 24,
+      preparationTransactions: [
+        _preparationTransaction(
+          0,
+          500_000_000,
+          rust_sync.MigrationPreparationTransactionState.completed,
+          scheduledHeight: 900,
+          minedHeight: 904,
+          confirmationCount: 3,
+        ),
+        _preparationTransaction(
+          1,
+          400_000_000,
+          rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: status,
+        coordinatorStatus: status,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 1_000,
+          chainTipHeight: 1_000,
+        ),
+        disableAnimations: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('~34 mins'), findsOneWidget);
+    expect(find.text('~2 mins'), findsNothing);
+  });
 
   testWidgets('migration schedule retries after status lookup fails', (
     tester,
@@ -3151,6 +3295,10 @@ Widget _migrationEntryHarness({
         builder: (_, _) => const IronwoodMigrationScheduleScreen(),
       ),
       GoRoute(
+        path: '/migration/private/preparation-schedule',
+        builder: (_, _) => const IronwoodMigrationPreparationScheduleScreen(),
+      ),
+      GoRoute(
         path: '/migration/private/keystone/batch/sign',
         builder: (_, _) => const Text('keystone-batch-sign-route'),
       ),
@@ -3468,9 +3616,13 @@ rust_sync.MigrationStatus _migrationStatus({
   int signedChildPcztCount = 0,
   int? nextActionHeight,
   int? estimatedCompletionHeight,
+  int? preparationMeanDelayBlocks,
   bool? proofReady,
   List<int>? currentSigningPartIndices,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
+  List<rust_sync.MigrationPreparationTransactionStatus>
+      preparationTransactions =
+      const [],
   List<rust_sync.MigrationPartStatus> parts = const [],
 }) {
   return rust_sync.MigrationStatus(
@@ -3494,11 +3646,13 @@ rust_sync.MigrationStatus _migrationStatus({
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
     estimatedCompletionHeight: estimatedCompletionHeight,
+    preparationMeanDelayBlocks: preparationMeanDelayBlocks,
     proofReady: proofReady,
     currentSigningPartIndices: currentSigningPartIndices == null
         ? null
         : frb.Uint32List.fromList(currentSigningPartIndices),
     scheduledBroadcasts: scheduledBroadcasts,
+    preparationTransactions: preparationTransactions,
     parts: parts,
   );
 }
@@ -3519,6 +3673,24 @@ rust_sync.MigrationPartStatus _migrationPart(
   state: state,
   scheduleStartHeight: scheduleStartHeight,
   scheduledHeight: scheduledHeight,
+  confirmationCount: confirmationCount,
+  confirmationTarget: confirmationTarget,
+);
+
+rust_sync.MigrationPreparationTransactionStatus _preparationTransaction(
+  int stageIndex,
+  int approximateValueZatoshi,
+  rust_sync.MigrationPreparationTransactionState state, {
+  int? scheduledHeight,
+  int? minedHeight,
+  int confirmationCount = 0,
+  int confirmationTarget = 3,
+}) => rust_sync.MigrationPreparationTransactionStatus(
+  stageIndex: stageIndex,
+  approximateValueZatoshi: BigInt.from(approximateValueZatoshi),
+  state: state,
+  scheduledHeight: scheduledHeight,
+  minedHeight: minedHeight,
   confirmationCount: confirmationCount,
   confirmationTarget: confirmationTarget,
 );

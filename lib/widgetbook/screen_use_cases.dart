@@ -922,6 +922,15 @@ Widget buildIronwoodMigrationScheduleUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationPreparationScheduleUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/preparation-schedule',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPrivateMigrationStatus(),
+  );
+}
+
 Widget buildIronwoodMigrationCompleteUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/private/status',
@@ -2227,6 +2236,13 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
           ),
         ),
         GoRoute(
+          path: '/migration/private/preparation-schedule',
+          builder: (_, _) => IronwoodMigrationPreparationScheduleScreen(
+            previewStatus:
+                widget.previewStatus ?? _previewPrivateMigrationStatus(),
+          ),
+        ),
+        GoRoute(
           path: '/migration/immediate/review',
           builder: (_, _) => IronwoodMigrationFlowScreen(
             step: IronwoodMigrationFlowStep.immediateReview,
@@ -3068,7 +3084,58 @@ rust_sync.MigrationStatus _previewPrivateMigrationStatus() {
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    preparationMeanDelayBlocks: 24,
     scheduledBroadcasts: const [],
+    preparationTransactions: [
+      rust_sync.MigrationPreparationTransactionStatus(
+        stageIndex: 0,
+        approximateValueZatoshi: BigInt.from(14_220_000_000),
+        state: rust_sync.MigrationPreparationTransactionState.completed,
+        scheduledHeight: 2_999_712,
+        minedHeight: 2_999_716,
+        confirmationCount: 3,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPreparationTransactionStatus(
+        stageIndex: 1,
+        approximateValueZatoshi: BigInt.from(8_000_000_000),
+        state: rust_sync.MigrationPreparationTransactionState.confirming,
+        scheduledHeight: 2_999_856,
+        minedHeight: 2_999_998,
+        confirmationCount: 2,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPreparationTransactionStatus(
+        stageIndex: 2,
+        approximateValueZatoshi: BigInt.from(4_000_000_000),
+        state: rust_sync.MigrationPreparationTransactionState.broadcasted,
+        scheduledHeight: 3_000_000,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPreparationTransactionStatus(
+        stageIndex: 3,
+        approximateValueZatoshi: BigInt.from(2_000_000_000),
+        state: rust_sync.MigrationPreparationTransactionState.scheduled,
+        scheduledHeight: 3_000_144,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPreparationTransactionStatus(
+        stageIndex: 4,
+        approximateValueZatoshi: BigInt.from(1_000_000_000),
+        state: rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+      rust_sync.MigrationPreparationTransactionStatus(
+        stageIndex: 5,
+        approximateValueZatoshi: BigInt.from(500_000_000),
+        state: rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+        confirmationCount: 0,
+        confirmationTarget: 3,
+      ),
+    ],
     parts: const [],
   );
 }

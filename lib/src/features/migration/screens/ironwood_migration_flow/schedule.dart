@@ -1,5 +1,88 @@
 part of '../ironwood_migration_flow_screen.dart';
 
+class IronwoodMigrationPreparationScheduleScreen extends ConsumerWidget {
+  const IronwoodMigrationPreparationScheduleScreen({
+    this.previewStatus,
+    super.key,
+  });
+
+  final rust_sync.MigrationStatus? previewStatus;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preview = previewStatus;
+    if (preview != null) {
+      return _frame(context, preview, ref.watch(syncProvider).asData?.value);
+    }
+
+    final request = ref.watch(ironwoodMigrationInputsProvider).statusRequest;
+    if (request == null) {
+      return _frame(
+        context,
+        null,
+        ref.watch(syncProvider).asData?.value,
+        statusUnavailable: true,
+      );
+    }
+    final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
+    return ref
+        .watch(ironwoodMigrationStatusProvider(request))
+        .when(
+          skipLoadingOnReload: true,
+          loading: () => _frame(context, null, null),
+          error: (_, _) {
+            final cachedStatus = coordinator.statuses[request.accountUuid];
+            return cachedStatus == null
+                ? _frame(
+                    context,
+                    null,
+                    null,
+                    statusUnavailable: true,
+                    onRetry: () => ref.invalidate(
+                      ironwoodMigrationStatusProvider(request),
+                    ),
+                  )
+                : _frame(
+                    context,
+                    cachedStatus,
+                    ref.watch(syncProvider).asData?.value,
+                  );
+          },
+          data: (status) =>
+              _frame(context, status, ref.watch(syncProvider).asData?.value),
+        );
+  }
+
+  Widget _frame(
+    BuildContext context,
+    rust_sync.MigrationStatus? status,
+    SyncState? syncState, {
+    bool statusUnavailable = false,
+    VoidCallback? onRetry,
+  }) {
+    return _IronwoodMigrationFrame(
+      toolbar: AppPaneToolbar(
+        leading: AppBackLink(
+          key: const ValueKey(
+            'ironwood_migration_preparation_schedule_back_button',
+          ),
+          label: 'Ironwood Migration',
+          onTap: () => context.go('/migration/private/status'),
+        ),
+      ),
+      disableSidebarActions: true,
+      child: statusUnavailable
+          ? _MigrationScheduleErrorContent(onRetry: onRetry)
+          : status == null
+          ? const Center(child: CircularProgressIndicator())
+          : _MigrationPreparationScheduleContent(
+              status: status,
+              currentHeight: _currentMigrationHeight(syncState),
+            ),
+    );
+  }
+}
+
 class IronwoodMigrationScheduleScreen extends ConsumerWidget {
   const IronwoodMigrationScheduleScreen({this.previewStatus, super.key});
 
@@ -76,6 +159,241 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
             ),
     );
   }
+}
+
+class _MigrationPreparationScheduleContent extends StatelessWidget {
+  const _MigrationPreparationScheduleContent({
+    required this.status,
+    required this.currentHeight,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final int currentHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final transactions = _orderedPreparationTransactions(status);
+    final remaining = _preparationRemainingCount(status);
+    final total = _preparationTotalCount(status);
+
+    return SizedBox(
+      width: 420,
+      height: 656,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 18),
+          Text(
+            'Preparation Schedule',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineSmall.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: 35),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              children: [
+                _MigrationSummaryMetric(
+                  label: 'Splits remaining',
+                  value: '$remaining of $total',
+                ),
+                const SizedBox(height: 16),
+                _MigrationSummaryMetric(
+                  label: 'Est. completion',
+                  value: _preparationCompletionEstimateDisplay(
+                    status,
+                    currentHeight,
+                  ),
+                  secondary: true,
+                ),
+                const SizedBox(height: 16),
+                _MigrationSummaryMetric(
+                  label: 'Current block',
+                  value: formatGroupedInteger(currentHeight),
+                  valueIcon: AppIcons.block,
+                  secondary: true,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: transactions.isEmpty
+                ? Center(
+                    child: Text(
+                      'Preparing schedule',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: ListView.separated(
+                      key: const ValueKey(
+                        'ironwood_migration_preparation_schedule_list',
+                      ),
+                      padding: const EdgeInsets.only(top: 8, bottom: 8),
+                      itemCount: transactions.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) =>
+                          _MigrationPreparationScheduleRow(
+                            key: ValueKey(
+                              'ironwood_migration_preparation_schedule_stage_${transactions[index].stageIndex}',
+                            ),
+                            number: index + 1,
+                            transaction: transactions[index],
+                          ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MigrationPreparationScheduleRow extends StatelessWidget {
+  const _MigrationPreparationScheduleRow({
+    required this.number,
+    required this.transaction,
+    super.key,
+  });
+
+  final int number;
+  final rust_sync.MigrationPreparationTransactionStatus transaction;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      label: _preparationScheduleRowSemantics(number, transaction),
+      excludeSemantics: true,
+      child: SizedBox(
+        height: 56,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.large),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$number. ~${_formatZecAmountCompact(transaction.approximateValueZatoshi)} ZEC',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: colors.text.accent,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _MigrationPreparationScheduleStatus(transaction: transaction),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MigrationPreparationScheduleStatus extends StatelessWidget {
+  const _MigrationPreparationScheduleStatus({required this.transaction});
+
+  final rust_sync.MigrationPreparationTransactionStatus transaction;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final state = transaction.state;
+    final active =
+        state == rust_sync.MigrationPreparationTransactionState.broadcasted ||
+        state == rust_sync.MigrationPreparationTransactionState.confirming;
+    final completed =
+        state == rust_sync.MigrationPreparationTransactionState.completed;
+    final awaiting =
+        state == rust_sync.MigrationPreparationTransactionState.awaitingInputs;
+    final height =
+        completed ||
+            state == rust_sync.MigrationPreparationTransactionState.confirming
+        ? transaction.minedHeight
+        : transaction.scheduledHeight;
+    final label = height == null
+        ? awaiting
+              ? 'Pending'
+              : 'Due now'
+        : formatGroupedInteger(height);
+    final style = AppTypography.labelLarge.copyWith(
+      color: completed
+          ? colors.text.positiveStrong
+          : awaiting
+          ? const Color(0xFFB83AD9)
+          : colors.text.secondary,
+      fontWeight: FontWeight.w400,
+    );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (active)
+          IronwoodMigrationShimmerText(
+            text: label,
+            style: style,
+            baseColor: colors.text.secondary,
+            highlightColor: colors.text.accent,
+            textAlign: TextAlign.right,
+          )
+        else
+          Text(label, textAlign: TextAlign.right, style: style),
+        const SizedBox(width: 4),
+        AppIcon(
+          completed
+              ? AppIcons.checkCircle
+              : active
+              ? AppIcons.loader
+              : awaiting
+              ? AppIcons.migrationSplit
+              : AppIcons.block,
+          size: 16,
+          color: completed
+              ? colors.icon.success
+              : awaiting
+              ? const Color(0xFFB83AD9)
+              : active
+              ? colors.icon.accent
+              : colors.icon.regular,
+        ),
+      ],
+    );
+  }
+}
+
+String _preparationScheduleRowSemantics(
+  int number,
+  rust_sync.MigrationPreparationTransactionStatus transaction,
+) {
+  final state = switch (transaction.state) {
+    rust_sync.MigrationPreparationTransactionState.awaitingInputs =>
+      'waiting for previous split',
+    rust_sync.MigrationPreparationTransactionState.scheduled => 'scheduled',
+    rust_sync.MigrationPreparationTransactionState.broadcasted =>
+      'broadcast, waiting to be mined',
+    rust_sync.MigrationPreparationTransactionState.confirming =>
+      'confirming, ${transaction.confirmationCount} of '
+          '${transaction.confirmationTarget} confirmations',
+    rust_sync.MigrationPreparationTransactionState.completed => 'completed',
+  };
+  return 'Split $number, approximately '
+      '${_formatZecAmountCompact(transaction.approximateValueZatoshi)} ZEC, '
+      '$state.';
 }
 
 class _MigrationScheduleErrorContent extends StatelessWidget {
@@ -183,10 +501,17 @@ class _MigrationScheduleContent extends StatelessWidget {
                   ),
                   secondary: true,
                 ),
+                const SizedBox(height: 16),
+                _MigrationSummaryMetric(
+                  label: 'Current block',
+                  value: formatGroupedInteger(currentHeight),
+                  valueIcon: AppIcons.block,
+                  secondary: true,
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 20),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),

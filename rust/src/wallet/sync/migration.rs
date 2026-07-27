@@ -301,6 +301,26 @@ pub(crate) struct MigrationPartStatus {
     pub confirmation_target: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationPreparationTransactionState {
+    AwaitingInputs,
+    Scheduled,
+    Broadcasted,
+    Confirming,
+    Completed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MigrationPreparationTransactionStatus {
+    pub stage_index: u32,
+    pub approximate_value_zatoshi: u64,
+    pub state: MigrationPreparationTransactionState,
+    pub scheduled_height: Option<u32>,
+    pub mined_height: Option<u32>,
+    pub confirmation_count: u32,
+    pub confirmation_target: u32,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct MigrationStatus {
     pub phase: String,
@@ -325,6 +345,7 @@ pub(crate) struct MigrationStatus {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
+    pub preparation_mean_delay_blocks: u32,
     /// Earliest block height at which the wallet can make more progress.
     pub next_action_height: Option<u32>,
     /// Projected height at which every migration part reaches trusted depth.
@@ -334,6 +355,7 @@ pub(crate) struct MigrationStatus {
     /// Exact migration parts the next signing operation will include.
     pub current_signing_part_indices: Vec<u32>,
     pub scheduled_broadcasts: Vec<ScheduledMigrationBroadcast>,
+    pub preparation_transactions: Vec<MigrationPreparationTransactionStatus>,
     pub parts: Vec<MigrationPartStatus>,
 }
 
@@ -434,11 +456,13 @@ pub(crate) fn migration_status(
             configured_timing_policy(network),
         )
         .1,
+        preparation_mean_delay_blocks: 0,
         next_action_height: None,
         estimated_completion_height: None,
         next_action_part_index: None,
         current_signing_part_indices: Vec::new(),
         scheduled_broadcasts: Vec::new(),
+        preparation_transactions: Vec::new(),
         parts: Vec::new(),
     })
 }
@@ -4329,6 +4353,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
     let network = WalletNetwork::from_str(&network)
         .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
     let timing_policy = timing_policy_for_run_with_conn(conn, &run.run_id, network)?;
+    let preparation_timing_policy = preparation_timing_policy_for_run_with_conn(conn, &run.run_id)?;
     let prepared_note_count = count_for_run(conn, PREPARED_NOTES_TABLE, &run.run_id)?;
     let pending_split_stage_count = pending_split_stage_count_for_run(conn, &run.run_id)?;
     let pending_tx_count = count_for_run(conn, PENDING_TXS_TABLE, &run.run_id)?;
@@ -4351,6 +4376,11 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         .map_err(|e| format!("Read durable migration phase: {e}"))?
         .unwrap_or_else(|| run.phase.clone());
     let denomination_confirmation_target = denomination_confirmations_required();
+    let preparation_transactions = migration_preparation_transactions_for_run(
+        conn,
+        &run.run_id,
+        denomination_confirmation_target,
+    )?;
     // A private-migration draft is persisted before Keystone signs its
     // denomination PCZTs. It deliberately has no staged transactions yet;
     // stage progress is only meaningful after draft finalization.
@@ -4443,13 +4473,102 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
         schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
+        preparation_mean_delay_blocks: if preparation_timing_policy
+            == PreparationTimingPolicy::Immediate
+        {
+            0
+        } else {
+            preparation_schedule_parameters(network, timing_policy).0
+        },
         next_action_height: timing_projection.next_action_height,
         estimated_completion_height: timing_projection.estimated_completion_height,
         next_action_part_index: timing_projection.next_action_part_index,
         current_signing_part_indices,
         scheduled_broadcasts,
+        preparation_transactions,
         parts,
     })
+}
+
+fn migration_preparation_transactions_for_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    confirmation_target: u32,
+) -> Result<Vec<MigrationPreparationTransactionStatus>, String> {
+    if !table_exists(conn, STAGES_TABLE)? {
+        return Ok(Vec::new());
+    }
+
+    let chain_records = denomination_stage_chain_records(conn, run_id)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT s.stage_index, s.scheduled_height,
+                    COALESCE(SUM(i.value_zatoshi), 0)
+             FROM {STAGES_TABLE} s
+             LEFT JOIN {STAGE_INPUTS_TABLE} i
+               ON i.run_id = s.run_id AND i.stage_index = s.stage_index
+             WHERE s.run_id = ?1
+             GROUP BY s.stage_index, s.scheduled_height
+             ORDER BY s.stage_index ASC"
+        ))
+        .map_err(|e| format!("Prepare migration preparation schedule query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, u32>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u64>(2)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration preparation schedule: {e}"))?;
+
+    let mut transactions = Vec::new();
+    for row in rows {
+        let (stage_index, scheduled_height, approximate_value_zatoshi) =
+            row.map_err(|e| format!("Read migration preparation schedule: {e}"))?;
+        let chain = chain_records
+            .iter()
+            .find(|record| record.stage_index == stage_index)
+            .ok_or_else(|| {
+                format!("Migration preparation stage {stage_index} has no chain-state record")
+            })?;
+        let (part_state, confirmation_count) =
+            denomination_stage_part_state(conn, chain, confirmation_target)?;
+        let state = match chain.status {
+            DenominationStageStatus::AwaitingInputs => {
+                MigrationPreparationTransactionState::AwaitingInputs
+            }
+            DenominationStageStatus::Pending => MigrationPreparationTransactionState::Scheduled,
+            DenominationStageStatus::Broadcasted if confirmation_count == 0 => {
+                MigrationPreparationTransactionState::Broadcasted
+            }
+            DenominationStageStatus::Broadcasted | DenominationStageStatus::Confirmed => {
+                match part_state {
+                    MigrationPartState::Completed => {
+                        MigrationPreparationTransactionState::Completed
+                    }
+                    _ => MigrationPreparationTransactionState::Confirming,
+                }
+            }
+        };
+        let mined_height = match chain.confirmed_mined_height {
+            Some(height) => Some(height),
+            None => local_denomination_chain_identity(conn, &chain.expected_txid_hex)?
+                .map(|identity| identity.mined_height),
+        };
+        transactions.push(MigrationPreparationTransactionStatus {
+            stage_index,
+            approximate_value_zatoshi,
+            state,
+            scheduled_height: (state != MigrationPreparationTransactionState::AwaitingInputs
+                && scheduled_height > 0)
+                .then_some(scheduled_height),
+            mined_height,
+            confirmation_count,
+            confirmation_target,
+        });
+    }
+    Ok(transactions)
 }
 
 pub(crate) fn select_migration_batch_signing_part_indices(

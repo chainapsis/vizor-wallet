@@ -5902,6 +5902,13 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
             .unwrap();
         }
     }
+    conn.execute(
+        "UPDATE vizor_migration_denomination_stages
+         SET scheduled_height = 19
+         WHERE run_id = ?1 AND stage_index = 2",
+        params![run_id],
+    )
+    .unwrap();
 
     let run = ActiveRun {
         run_id: run_id.to_string(),
@@ -5913,6 +5920,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
     assert_eq!(status.denomination_confirmation_count, 0);
     assert_eq!(status.denomination_split_completed_count, 0);
     assert_eq!(status.denomination_split_total_count, 3);
+    assert_eq!(status.preparation_transactions[2].scheduled_height, None);
 
     let mut stage_0_txid = hex::decode(&stage_txids[0]).unwrap();
     stage_0_txid.reverse();
@@ -5929,6 +5937,11 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
     let status = status_for_run(&conn, run.clone()).unwrap();
     assert_eq!(status.denomination_confirmation_count, 1);
     assert_eq!(status.denomination_split_completed_count, 0);
+    assert_eq!(
+        status.preparation_transactions[0].state,
+        MigrationPreparationTransactionState::Confirming,
+    );
+    assert_eq!(status.preparation_transactions[0].mined_height, Some(20));
 
     conn.execute(
         "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (21)",
@@ -5971,6 +5984,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
     let status = status_for_run(&conn, run.clone()).unwrap();
     assert_eq!(status.denomination_confirmation_count, 1);
     assert_eq!(status.denomination_split_completed_count, 1);
+    assert_eq!(status.preparation_transactions[1].mined_height, Some(23));
 
     conn.execute_batch(
         "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (24);
