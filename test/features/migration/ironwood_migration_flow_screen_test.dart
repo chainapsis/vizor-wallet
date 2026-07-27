@@ -345,7 +345,7 @@ void main() {
     await tester.tap(prepareButton);
     await tester.pump();
     await tester.pump(const Duration(seconds: 3));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 700));
 
     expect(startedAccountUuid, 'account-1');
     expect(startedSchedule, _privatePlan().scheduledTransfers);
@@ -422,7 +422,8 @@ void main() {
 
     await _openShuffleReview(tester);
     await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
 
     expect(find.text('Preparing your notes'), findsOneWidget);
     expect(
@@ -584,7 +585,8 @@ void main() {
     await tester.pumpWidget(
       _migrationOptionsHarness(initialLocation: '/migration/private/status'),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
 
     expect(find.text('Preparing your notes'), findsOneWidget);
     expect(
@@ -642,12 +644,82 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('Preparing your notes'), findsOneWidget);
+      final loader = tester.widget<CircularProgressIndicator>(
+        find.byKey(const ValueKey('ironwood_migration_preparation_loader')),
+      );
+      expect(loader.value, isNull);
+      expect(find.text('Split 1 of 6'), findsOneWidget);
+      expect(find.textContaining('confirmations'), findsNothing);
       expect(
         find.bySemanticsLabel('Preparing migration notes.'),
         findsOneWidget,
       );
     },
   );
+
+  testWidgets('preparation status shows only the active substep', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final harnessKey = GlobalKey<_MutablePrivateStatusHarnessState>();
+    await tester.pumpWidget(
+      _MutablePrivateStatusHarness(
+        key: harnessKey,
+        status: _migrationStatus(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          activeRunId: 'run-1',
+          denominationConfirmationCount: 0,
+          denominationConfirmationTarget: 3,
+          denominationSplitCompletedCount: 2,
+          denominationSplitTotalCount: 8,
+          totalCount: 8,
+        ),
+        syncState: _syncedSyncState,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Split 3 of 8'), findsOneWidget);
+    expect(find.textContaining('confirmations'), findsNothing);
+
+    harnessKey.currentState!.setStatus(
+      _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        denominationConfirmationCount: 1,
+        denominationConfirmationTarget: 3,
+        denominationSplitCompletedCount: 2,
+        denominationSplitTotalCount: 8,
+        totalCount: 8,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Split 3 of 8'), findsNothing);
+    expect(find.text('1 of 3 confirmations'), findsOneWidget);
+  });
+
+  testWidgets('preparation loader respects reduced motion', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(status: _status(), disableAnimations: true),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final loader = tester.widget<CircularProgressIndicator>(
+      find.byKey(const ValueKey('ironwood_migration_preparation_loader')),
+    );
+    expect(loader.value, 0.72);
+  });
 
   testWidgets('private preparing status does not expose note progress', (
     tester,
@@ -1478,7 +1550,30 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.byType(CustomPaint), findsAtLeastNWidgets(1));
+    final ringPaint = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+    );
+    final dynamic ringPainter = ringPaint.painter;
+    final segments = (ringPainter.segments as List<dynamic>);
+    final weights = [
+      for (final dynamic segment in segments) segment.weight as double,
+    ];
+    expect(weights, hasLength(values.length));
+    expect(
+      weights.fold<double>(0, (sum, weight) => sum + weight),
+      closeTo(1, 1e-12),
+    );
+    expect(weights.skip(1), everyElement(greaterThanOrEqualTo(0.0025 - 1e-12)));
+    final scheduleButton = find.byKey(
+      const ValueKey('ironwood_migration_view_schedule_button'),
+    );
+    final scheduleLabel = find.text('View Schedule');
+    final dynamic scheduleParagraph = tester.renderObject(scheduleLabel);
+    final buttonRect = tester.getRect(scheduleButton);
+    final labelRect = tester.getRect(scheduleLabel);
+    expect(scheduleParagraph.didExceedMaxLines, isFalse);
+    expect(buttonRect.contains(labelRect.topLeft), isTrue);
+    expect(buttonRect.contains(labelRect.bottomRight), isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -2444,6 +2539,7 @@ Widget _privateStatusHarness({
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
+  bool disableAnimations = false,
 }) {
   return _migrationEntryHarness(
     ctaState: IronwoodHomeMigrationCtaState.resume(
@@ -2459,6 +2555,7 @@ Widget _privateStatusHarness({
     coordinatorAdvancing: coordinatorAdvancing,
     coordinatorStatus: coordinatorStatus,
     syncState: syncState,
+    disableAnimations: disableAnimations,
   );
 }
 
@@ -2594,6 +2691,7 @@ Widget _migrationEntryHarness({
   bool coordinatorAdvancing = false,
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
+  bool disableAnimations = false,
 }) {
   final network = ctaState.network ?? 'test';
   final accountUuid = ctaState.accountUuid ?? 'account-1';
@@ -2697,8 +2795,13 @@ Widget _migrationEntryHarness({
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder: (context, child) =>
-          AppTheme(data: AppThemeData.light, child: child!),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          disableAnimations: disableAnimations,
+          textScaler: TextScaler.noScaling,
+        ),
+        child: AppTheme(data: AppThemeData.light, child: child!),
+      ),
     ),
   );
 }

@@ -305,6 +305,8 @@ class _MigrationLiveStatusContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final disableAnimations =
+        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final isSigning = action == _StatusAction.needsInput;
     final isComplete = action == _StatusAction.backHome;
     final completedAmount = _migrationCompletedAmount(values, statuses);
@@ -410,7 +412,10 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
-                                  value: 0.72,
+                                  key: const ValueKey(
+                                    'ironwood_migration_preparation_loader',
+                                  ),
+                                  value: disableAnimations ? 0.72 : null,
                                   strokeWidth: 2,
                                   color: colors.text.accent,
                                 ),
@@ -456,18 +461,23 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                               if (!isComplete) ...[
                                 const SizedBox(height: 6),
                                 AppButton(
+                                  key: const ValueKey(
+                                    'ironwood_migration_view_schedule_button',
+                                  ),
                                   onPressed: () =>
                                       context.go('/migration/private/schedule'),
                                   variant: AppButtonVariant.ghost,
                                   height: 28,
-                                  minWidth: 124,
                                   expand: false,
-                                  constrainContent: true,
                                   trailing: const AppIcon(
                                     AppIcons.chevronForward,
                                     size: 14,
                                   ),
-                                  child: const Text('View Schedule'),
+                                  child: const Text(
+                                    'View Schedule',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                  ),
                                 ),
                               ],
                             ],
@@ -1115,6 +1125,7 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
                   key: ValueKey('ironwood_migration_preparation_ring'),
                 ),
               CustomPaint(
+                key: const ValueKey('ironwood_migration_ring_paint'),
                 size: const Size.square(256),
                 painter: _MigrationRingVisualPainter(
                   segments: visualSegments,
@@ -1146,11 +1157,18 @@ class _MigrationRingVisualSegment {
   const _MigrationRingVisualSegment({
     required this.weight,
     required this.color,
+    this.presence = 1,
   });
 
   final double weight;
   final Color color;
+  final double presence;
 }
+
+// At the ring's 104 px radius this produces roughly one logical pixel of
+// center-line arc. With rounded 12 px caps it reads as a single dot instead of
+// disappearing, while remaining small enough not to distort normal notes.
+const _migrationRingMinimumSegmentWeight = 0.0025;
 
 List<_MigrationRingVisualSegment> _liveSegments({
   required List<BigInt> values,
@@ -1158,10 +1176,11 @@ List<_MigrationRingVisualSegment> _liveSegments({
   required List<_MigrationBatchStatus> statuses,
 }) {
   if (values.isEmpty || totalZatoshi <= BigInt.zero) return const [];
+  final weights = _normalizedMigrationRingWeights(values);
   return [
     for (var index = 0; index < values.length; index++)
       _MigrationRingVisualSegment(
-        weight: (values[index] / totalZatoshi).toDouble(),
+        weight: weights[index],
         color: _migrationRingStatusColor(
           index < statuses.length
               ? statuses[index]
@@ -1169,6 +1188,65 @@ List<_MigrationRingVisualSegment> _liveSegments({
         ),
       ),
   ];
+}
+
+List<double> _normalizedMigrationRingWeights(List<BigInt> values) {
+  final positiveIndices = [
+    for (var index = 0; index < values.length; index++)
+      if (values[index] > BigInt.zero) index,
+  ];
+  if (positiveIndices.isEmpty) {
+    return List<double>.filled(values.length, 0);
+  }
+
+  final positiveTotal = positiveIndices.fold<BigInt>(
+    BigInt.zero,
+    (sum, index) => sum + values[index],
+  );
+  final minimumWeight = math.min(
+    _migrationRingMinimumSegmentWeight,
+    1 / positiveIndices.length,
+  );
+  final weights = List<double>.filled(values.length, 0);
+  var remainingIndices = List<int>.of(positiveIndices);
+  var remainingWeight = 1.0;
+  var remainingValue = positiveTotal;
+
+  // Water-fill the smallest notes to the visual floor, then distribute the
+  // remaining ring among larger notes in their original value proportions.
+  // Unlike max(weight, floor) followed by normalization, this guarantees both
+  // the floor and an exact total weight of one.
+  while (remainingIndices.isNotEmpty) {
+    final belowFloor = [
+      for (final index in remainingIndices)
+        if ((values[index] / remainingValue).toDouble() * remainingWeight <
+            minimumWeight)
+          index,
+    ];
+    if (belowFloor.isEmpty) {
+      for (final index in remainingIndices) {
+        weights[index] =
+            (values[index] / remainingValue).toDouble() * remainingWeight;
+      }
+      break;
+    }
+
+    for (final index in belowFloor) {
+      weights[index] = minimumWeight;
+      remainingValue -= values[index];
+    }
+    remainingWeight -= minimumWeight * belowFloor.length;
+    remainingIndices.removeWhere(belowFloor.contains);
+  }
+
+  // Absorb floating-point residue into the largest note so callers can rely
+  // on the invariant that the represented proportions sum to exactly one.
+  final largestIndex = positiveIndices.reduce(
+    (left, right) => values[left] >= values[right] ? left : right,
+  );
+  final sum = weights.fold<double>(0, (total, weight) => total + weight);
+  weights[largestIndex] += 1 - sum;
+  return weights;
 }
 
 Color _migrationRingStatusColor(_MigrationBatchStatus status) =>
@@ -1203,6 +1281,7 @@ List<_MigrationRingVisualSegment> _interpolateVisualSegments(
   const transparent = _MigrationRingVisualSegment(
     weight: 0,
     color: Color(0x003F4040),
+    presence: 0,
   );
   return [
     for (var index = 0; index < count; index++)
@@ -1219,6 +1298,15 @@ List<_MigrationRingVisualSegment> _interpolateVisualSegments(
           index < to.length ? to[index].color : transparent.color,
           t,
         )!,
+        presence:
+            (index < from.length
+                ? from[index].presence
+                : transparent.presence) +
+            ((index < to.length ? to[index].presence : transparent.presence) -
+                    (index < from.length
+                        ? from[index].presence
+                        : transparent.presence)) *
+                t,
       ),
   ];
 }
@@ -1230,7 +1318,8 @@ bool _sameVisualSegments(
   if (left.length != right.length) return false;
   for (var index = 0; index < left.length; index++) {
     if (left[index].weight != right[index].weight ||
-        left[index].color != right[index].color) {
+        left[index].color != right[index].color ||
+        left[index].presence != right[index].presence) {
       return false;
     }
   }
@@ -1249,7 +1338,6 @@ class _MigrationRingVisualPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (segments.isEmpty) return;
-    const strokeWidth = 12.0;
     final positiveWeight = segments.fold<double>(
       0,
       (sum, segment) => sum + math.max(0, segment.weight),
@@ -1261,24 +1349,30 @@ class _MigrationRingVisualPainter extends CustomPainter {
       width: 208,
       height: 208,
     );
-    // A disappearing morph segment must also surrender its gap gradually.
-    // Otherwise the final live ring keeps the preparation ring's gap count,
-    // and the remaining notes visibly jump when zero-sized segments vanish.
+    // Presence is animated separately from value. A tiny live note must keep
+    // its full gap, while a segment that is actually entering or leaving the
+    // morph gradually acquires or surrenders that gap.
     final presences = [
-      for (final segment in segments)
-        (math.max(0, segment.weight) / 0.02).clamp(0.0, 1.0) * segment.color.a,
+      for (final segment in segments) segment.presence.clamp(0.0, 1.0),
     ];
     final effectiveCount = presences.fold<double>(
       0,
       (sum, value) => sum + value,
     );
     if (effectiveCount <= 0) return;
-    final gap = math.min(0.17, math.pi * 2 / effectiveCount * 0.32).toDouble();
-    final drawableSweep = math.pi * 2 - effectiveCount * gap;
+    final radius = rect.width / 2;
+    final availablePerSegment = math.pi * 2 * radius / effectiveCount;
+    final strokeWidth = math.min(12.0, math.max(1.0, availablePerSegment - 1));
+    final dotCenterLineSweep = 1 / radius;
+    final gap = math.min(
+      0.17,
+      math.max(0, math.pi * 2 / effectiveCount - dotCenterLineSweep),
+    );
+    final drawableSweep = math.max(0, math.pi * 2 - effectiveCount * gap);
     final paint = Paint()
       ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-    final roundedCapAngularWidth = strokeWidth / (rect.width / 2);
 
     canvas.save();
     canvas.translate(size.width / 2, size.height / 2);
@@ -1292,11 +1386,6 @@ class _MigrationRingVisualPainter extends CustomPainter {
           math.max(0, segment.weight) / positiveWeight * drawableSweep;
       paint.color = segment.color;
       if (sweep > 0.001 && paint.color.a > 0) {
-        // Very small/many notes use flat caps. Rounded caps are wider than
-        // their arc in that case and would overlap adjacent note segments.
-        paint.strokeCap = sweep > roundedCapAngularWidth
-            ? StrokeCap.round
-            : StrokeCap.butt;
         canvas.drawArc(rect, angle + gap * presence / 2, sweep, false, paint);
       }
       angle += sweep + gap * presence;
