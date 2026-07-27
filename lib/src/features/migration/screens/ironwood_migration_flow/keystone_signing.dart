@@ -1,5 +1,26 @@
 part of '../ironwood_migration_flow_screen.dart';
 
+// Keystone reliably scans the denser 300-byte migration frames at 5 fps.
+const _keystoneMigrationQrMaxFragmentLen = 300;
+const _keystoneMigrationQrFrameInterval = Duration(milliseconds: 200);
+
+class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
+  const IronwoodMigrationKeystoneCombinedSignScreen({
+    required this.approvedSchedule,
+    super.key,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.combined,
+      approvedSchedule: approvedSchedule,
+    );
+  }
+}
+
 class IronwoodMigrationKeystoneImmediateSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneImmediateSignScreen({
     required this.approvedPlan,
@@ -179,7 +200,7 @@ class _IronwoodMigrationKeystonePrivateSignScreen
       _IronwoodMigrationKeystonePrivateSignScreenState();
 }
 
-enum _KeystonePrivateSignStep { immediate, denominations, batch }
+enum _KeystonePrivateSignStep { immediate, combined, denominations, batch }
 
 class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
   const MobileIronwoodKeystoneScanHelpBody({
@@ -243,30 +264,35 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
 extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   String get logName => switch (this) {
     _KeystonePrivateSignStep.immediate => 'immediate',
+    _KeystonePrivateSignStep.combined => 'combined',
     _KeystonePrivateSignStep.denominations => 'denominations',
     _KeystonePrivateSignStep.batch => 'batch',
   };
 
   String get toolbarLabel => switch (this) {
     _KeystonePrivateSignStep.immediate => 'Migration Options',
+    _KeystonePrivateSignStep.combined => 'Review migration',
     _KeystonePrivateSignStep.denominations => 'Review migration',
     _KeystonePrivateSignStep.batch => 'Migration status',
   };
 
   String get previousRoute => switch (this) {
     _KeystonePrivateSignStep.immediate => '/migration/immediate/review',
+    _KeystonePrivateSignStep.combined => '/migration/private/review',
     _KeystonePrivateSignStep.denominations => '/migration/private/review',
     _KeystonePrivateSignStep.batch => '/migration/private/status',
   };
 
   String get previousButtonLabel => switch (this) {
     _KeystonePrivateSignStep.immediate => 'Back to review',
+    _KeystonePrivateSignStep.combined => 'Back to review',
     _KeystonePrivateSignStep.denominations => 'Back to review',
     _KeystonePrivateSignStep.batch => 'Back to status',
   };
 
   String get qrTitle => switch (this) {
     _KeystonePrivateSignStep.immediate => 'Confirm Migration with Keystone',
+    _KeystonePrivateSignStep.combined => 'Sign migration',
     _KeystonePrivateSignStep.denominations => 'Sign private split',
     _KeystonePrivateSignStep.batch => 'Sign Ironwood batch',
   };
@@ -274,6 +300,8 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   String get qrBody => switch (this) {
     _KeystonePrivateSignStep.immediate =>
       'Scan the QR code with your Keystone wallet to confirm migration.',
+    _KeystonePrivateSignStep.combined =>
+      'Scan this QR code with Keystone to sign the split and migration transactions together.',
     _KeystonePrivateSignStep.denominations =>
       'Scan this QR code with Keystone to sign the private split transactions.',
     _KeystonePrivateSignStep.batch =>
@@ -282,6 +310,7 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
 
   String get messageUnit => switch (this) {
     _KeystonePrivateSignStep.immediate => 'migration transaction',
+    _KeystonePrivateSignStep.combined => 'transaction',
     _KeystonePrivateSignStep.denominations => 'split transaction',
     _KeystonePrivateSignStep.batch => 'migration transaction',
   };
@@ -289,6 +318,7 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   Future<rust_sync.KeystoneMigrationSigningRequest> prepare(
     IronwoodMigrationService service, {
     required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     rust_sync.OrchardMigrationImmediatePlan? approvedImmediatePlan,
   }) {
     return switch (this) {
@@ -298,6 +328,11 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
           approvedPlan:
               approvedImmediatePlan ??
               (throw StateError('Immediate migration plan is missing.')),
+        ),
+      _KeystonePrivateSignStep.combined =>
+        service.prepareKeystoneSingleQrPrivateMigration(
+          accountUuid: accountUuid,
+          approvedSchedule: approvedSchedule,
         ),
       _KeystonePrivateSignStep.denominations =>
         service.prepareKeystoneDenominationPrivateMigration(
@@ -318,6 +353,12 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     return switch (this) {
       _KeystonePrivateSignStep.immediate =>
         service.completeKeystoneImmediateMigrationRequest(
+          accountUuid: accountUuid,
+          requestId: requestId,
+          signedMessages: signedMessages,
+        ),
+      _KeystonePrivateSignStep.combined =>
+        service.completeKeystoneSingleQrPrivateMigration(
           accountUuid: accountUuid,
           requestId: requestId,
           signedMessages: signedMessages,
@@ -458,6 +499,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           await widget.step.prepare(
             _migrationService,
             accountUuid: accountUuid,
+            approvedSchedule: widget.approvedSchedule,
             approvedImmediatePlan: widget.approvedImmediatePlan,
           );
       requestIdToDiscard = request.requestId;
@@ -498,7 +540,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                   ),
                 )
                 .toList(),
-            maxFragmentLen: BigInt.from(140),
+            maxFragmentLen: BigInt.from(_keystoneMigrationQrMaxFragmentLen),
           ),
         );
       }
@@ -815,6 +857,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   bool _isKeystoneRequestCommitted(rust_sync.MigrationStatus status) {
     return switch (widget.step) {
       _KeystonePrivateSignStep.immediate => false,
+      _KeystonePrivateSignStep.combined => status.activeRunId != null,
       _KeystonePrivateSignStep.denominations => status.activeRunId != null,
       _KeystonePrivateSignStep.batch =>
         !status.parts.any(
@@ -841,7 +884,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     }
     final coordinator = ref.read(ironwoodMigrationCoordinatorProvider.notifier);
     coordinator.clearChildProofBatchPermit(accountUuid);
-    if (widget.step == _KeystonePrivateSignStep.denominations) {
+    if (widget.step == _KeystonePrivateSignStep.combined ||
+        widget.step == _KeystonePrivateSignStep.denominations) {
       coordinator.grantForegroundProgressPermit(accountUuid);
     }
     await coordinator.refreshNow();
@@ -1114,6 +1158,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         error: _error,
         size: 305,
         scanOptimized: true,
+        frameInterval: _keystoneMigrationQrFrameInterval,
       ),
       onNext: _urParts.isEmpty || proofFailed
           ? null
@@ -1294,6 +1339,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             urParts: _urParts,
             error: _error,
             size: 264,
+            frameInterval: _keystoneMigrationQrFrameInterval,
           ),
           const SizedBox(height: AppSpacing.base),
           Text(

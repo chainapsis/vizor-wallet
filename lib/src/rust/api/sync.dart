@@ -565,14 +565,20 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
       spacePreparationBroadcasts: spacePreparationBroadcasts,
     );
 
+/// Prepares the split and migration PCZTs for one Keystone signing session.
+///
+/// The approved schedule must still match the denomination plan when the
+/// signing request is created.
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required List<MigrationScheduledTransfer> approvedSchedule,
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
 );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({

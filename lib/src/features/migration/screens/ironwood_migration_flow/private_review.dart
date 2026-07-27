@@ -63,7 +63,7 @@ class _IronwoodMigrationPrivateReviewContentState
       );
       if (accountState.activeAccount?.isHardware ?? false) {
         context.go(
-          '/migration/private/keystone/denominations/sign',
+          '/migration/private/keystone/sign',
           extra: plan.scheduledTransfers,
         );
         return;
