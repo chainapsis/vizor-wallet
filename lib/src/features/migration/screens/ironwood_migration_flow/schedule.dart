@@ -146,6 +146,7 @@ class _MigrationScheduleContent extends StatelessWidget {
     final completed = parts
         .where((part) => part.state == rust_sync.MigrationPartState.completed)
         .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi);
+    final leftToMigrate = total - completed;
 
     return SizedBox(
       width: 420,
@@ -161,44 +162,53 @@ class _MigrationScheduleContent extends StatelessWidget {
               color: colors.text.accent,
             ),
           ),
-          const SizedBox(height: 30),
-          _MigrationLiveMetric(
-            icon: AppIcons.shieldKeyhole,
-            label: 'Ironwood spendable',
-            value: '${_formatZecAmountCompact(completed)} ZEC',
-            accent: true,
-          ),
-          const SizedBox(height: 14),
-          _MigrationLiveMetric(
-            icon: AppIcons.time,
-            label: 'Est. completion',
-            value: _transferEstimatedCompletion(
-              status,
-              currentHeight: currentHeight,
-              needsInput: false,
-              parts: parts,
+          const SizedBox(height: 35),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              children: [
+                _MigrationSummaryMetric(
+                  label: 'Left to migrate',
+                  value:
+                      '${_formatZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero)} ZEC',
+                ),
+                const SizedBox(height: 16),
+                _MigrationSummaryMetric(
+                  label: 'Est. completion',
+                  value: _migrationCompletionEstimateDisplay(
+                    status,
+                    currentHeight: currentHeight,
+                    needsInput: false,
+                    parts: parts,
+                  ),
+                  secondary: true,
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 28),
           Expanded(
-            child: ListView.separated(
-              key: const ValueKey('ironwood_migration_schedule_list'),
-              itemCount: parts.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final part = parts[index];
-                return KeyedSubtree(
-                  key: ValueKey(
-                    'ironwood_migration_schedule_part_${part.partIndex}',
-                  ),
-                  child: _MigrationScheduleRow(
-                    number: index + 1,
-                    value: part.valueZatoshi,
-                    total: total,
-                    state: part.state,
-                  ),
-                );
-              },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: ListView.separated(
+                key: const ValueKey('ironwood_migration_schedule_list'),
+                padding: const EdgeInsets.only(top: 8, bottom: 8),
+                itemCount: parts.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final part = parts[index];
+                  return KeyedSubtree(
+                    key: ValueKey(
+                      'ironwood_migration_schedule_part_${part.partIndex}',
+                    ),
+                    child: _MigrationScheduleRow(
+                      number: index + 1,
+                      part: part,
+                      total: total,
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ],
@@ -210,64 +220,146 @@ class _MigrationScheduleContent extends StatelessWidget {
 class _MigrationScheduleRow extends StatelessWidget {
   const _MigrationScheduleRow({
     required this.number,
-    required this.value,
+    required this.part,
     required this.total,
-    required this.state,
   });
 
   final int number;
-  final BigInt value;
+  final rust_sync.MigrationPartStatus part;
   final BigInt total;
-  final rust_sync.MigrationPartState state;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final status = switch (state) {
-      rust_sync.MigrationPartState.completed => 'Completed',
-      rust_sync.MigrationPartState.migrating => 'Migrating...',
-      rust_sync.MigrationPartState.confirming => 'Confirming...',
-      rust_sync.MigrationPartState.needsInput => 'Needs approval',
-      _ => 'Scheduled',
-    };
-    final completed = state == rust_sync.MigrationPartState.completed;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '$number. ${_formatZecAmountCompact(value)} ZEC '
-                '${_migrationPercentage(value, total)}',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.accent,
+    final value = part.valueZatoshi;
+    return Semantics(
+      label: _migrationScheduleRowSemantics(number, part),
+      excludeSemantics: true,
+      child: SizedBox(
+        height: 56,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.background.ground,
+            borderRadius: BorderRadius.circular(AppRadii.large),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      text: '$number. ${_formatZecAmountCompact(value)} ZEC ',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: _migrationPercentage(value, total),
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.secondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                _MigrationSchedulePartStatus(part: part),
+              ],
             ),
-            if (completed) ...[
-              const AppIcon(
-                AppIcons.checkCircle,
-                size: 14,
-                color: Color(0xFF00C875),
-              ),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              status,
-              style: AppTypography.bodySmall.copyWith(
-                color: completed
-                    ? const Color(0xFF00C875)
-                    : colors.text.secondary,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _MigrationSchedulePartStatus extends StatelessWidget {
+  const _MigrationSchedulePartStatus({required this.part});
+
+  final rust_sync.MigrationPartStatus part;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final state = part.state;
+    final active =
+        state == rust_sync.MigrationPartState.migrating ||
+        state == rust_sync.MigrationPartState.confirming;
+    final completed = state == rust_sync.MigrationPartState.completed;
+    final needsInput = state == rust_sync.MigrationPartState.needsInput;
+    final height = part.scheduledHeight;
+    final label = height == null
+        ? needsInput
+              ? 'Ready to sign'
+              : 'Schedule pending'
+        : formatGroupedInteger(height);
+    final textStyle = AppTypography.labelLarge.copyWith(
+      color: completed
+          ? colors.text.positiveStrong
+          : needsInput
+          ? const Color(0xFFB83AD9)
+          : colors.text.secondary,
+      fontWeight: FontWeight.w400,
+    );
+    final icon = completed
+        ? AppIcons.checkCircle
+        : active
+        ? AppIcons.loader
+        : needsInput
+        ? AppIcons.migrationSign
+        : AppIcons.block;
+    final iconColor = completed
+        ? colors.icon.success
+        : needsInput
+        ? const Color(0xFFB83AD9)
+        : active
+        ? colors.icon.accent
+        : colors.icon.regular;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (active)
+          IronwoodMigrationShimmerText(
+            text: label,
+            style: textStyle,
+            baseColor: colors.text.secondary,
+            highlightColor: colors.text.accent,
+            textAlign: TextAlign.right,
+          )
+        else
+          Text(label, textAlign: TextAlign.right, style: textStyle),
+        const SizedBox(width: 4),
+        AppIcon(icon, size: 16, color: iconColor),
+      ],
+    );
+  }
+}
+
+String _migrationScheduleRowSemantics(
+  int number,
+  rust_sync.MigrationPartStatus part,
+) {
+  final height = part.scheduledHeight;
+  final heightLabel = height == null
+      ? 'schedule pending'
+      : 'block ${formatGroupedInteger(height)}';
+  final stateLabel = switch (part.state) {
+    rust_sync.MigrationPartState.preparing => 'preparing',
+    rust_sync.MigrationPartState.scheduled => 'scheduled',
+    rust_sync.MigrationPartState.migrating => 'broadcast, waiting to be mined',
+    rust_sync.MigrationPartState.confirming =>
+      'confirming, ${part.confirmationCount} of '
+          '${part.confirmationTarget} confirmations',
+    rust_sync.MigrationPartState.completed => 'completed',
+    rust_sync.MigrationPartState.needsInput => 'ready to sign',
+  };
+  return 'Note $number, ${_formatZecAmountCompact(part.valueZatoshi)} ZEC, '
+      '$heightLabel, $stateLabel.';
 }

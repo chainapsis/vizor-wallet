@@ -918,7 +918,7 @@ Widget buildIronwoodMigrationScheduleUseCase(BuildContext context) {
     initialLocation: '/migration/private/schedule',
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
-    previewStatus: _previewPostPrepareProgressedStatus(),
+    previewStatus: _previewMigrationScheduleStatus(),
   );
 }
 
@@ -3252,6 +3252,61 @@ rust_sync.MigrationStatus _previewPostPrepareActiveStatus() =>
       ),
     );
 
+const _migrationSchedulePreviewValues = <int>[
+  4_000_000_000,
+  1_000_000_000,
+  215_000_000,
+  3_500_000_000,
+  400_000_000,
+  100_000_000,
+  100_000_000,
+  100_000_000,
+  585_000_000,
+];
+
+rust_sync.MigrationStatus _previewMigrationScheduleStatus() {
+  final parts = [
+    for (var index = 0; index < _migrationSchedulePreviewValues.length; index++)
+      _previewMigrationPart(
+        index,
+        _migrationSchedulePreviewValues[index],
+        index < 4
+            ? rust_sync.MigrationPartState.completed
+            : index == 4
+            ? rust_sync.MigrationPartState.confirming
+            : rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: index,
+        scheduledHeight: 3_000_030 + index * 18,
+        confirmationCount: index == 4 ? 1 : null,
+      ),
+  ];
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationWaitingConfirmationsPhase,
+    activeRunId: 'migration-schedule-preview-run',
+    targetValuesZatoshi: frb.Uint64List.fromList(
+      _migrationSchedulePreviewValues,
+    ),
+    preparedNoteCount: parts.length,
+    denominationConfirmationCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 1,
+    pendingTxCount: parts.length,
+    broadcastedTxCount: 5,
+    confirmedTxCount: 4,
+    totalCount: parts.length,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 8,
+    scheduleMeanDelayBlocks: 108,
+    scheduleMaxDelayBlocks: 432,
+    estimatedCompletionHeight: 3_000_216,
+    scheduledBroadcasts: const [],
+    parts: parts,
+  );
+}
+
 const _postPrepareNoteValues = <int>[
   4_000_000_000,
   3_500_000_000,
@@ -3318,6 +3373,7 @@ rust_sync.MigrationPartStatus _previewMigrationPart(
   rust_sync.MigrationPartState state, {
   int? scheduleOrder,
   int? scheduledHeight,
+  int? confirmationCount,
 }) {
   return rust_sync.MigrationPartStatus(
     partIndex: partIndex,
@@ -3325,7 +3381,9 @@ rust_sync.MigrationPartStatus _previewMigrationPart(
     valueZatoshi: BigInt.from(valueZatoshi),
     state: state,
     scheduledHeight: scheduledHeight,
-    confirmationCount: state == rust_sync.MigrationPartState.completed ? 3 : 0,
+    confirmationCount:
+        confirmationCount ??
+        (state == rust_sync.MigrationPartState.completed ? 3 : 0),
     confirmationTarget: 3,
   );
 }

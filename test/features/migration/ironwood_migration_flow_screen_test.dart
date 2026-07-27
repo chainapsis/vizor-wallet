@@ -2012,10 +2012,91 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('~3 hrs'), findsOneWidget);
+      expect(find.text('in ~2.5 hours'), findsOneWidget);
       expect(find.text('~4 mins'), findsNothing);
     },
   );
+
+  testWidgets('migration schedule shows block heights and per-note states', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final status = _migrationStatus(
+      phase: kIronwoodMigrationWaitingConfirmationsPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
+      totalCount: 3,
+      estimatedCompletionHeight: 1_040,
+      parts: [
+        _migrationPart(
+          0,
+          10_000_000,
+          rust_sync.MigrationPartState.completed,
+          scheduledHeight: 1_010,
+          confirmationCount: 3,
+        ),
+        _migrationPart(
+          1,
+          20_000_000,
+          rust_sync.MigrationPartState.confirming,
+          scheduledHeight: 1_020,
+          confirmationCount: 1,
+        ),
+        _migrationPart(
+          2,
+          30_000_000,
+          rust_sync.MigrationPartState.scheduled,
+          scheduledHeight: 1_030,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'test',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+        initialLocation: '/migration/private/schedule',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 1_000,
+          chainTipHeight: 1_000,
+        ),
+        disableAnimations: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Left to migrate'), findsOneWidget);
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+    expect(find.text('in ~50 minutes'), findsOneWidget);
+    expect(find.text('1,010'), findsOneWidget);
+    expect(find.text('1,020'), findsOneWidget);
+    expect(find.text('1,030'), findsOneWidget);
+    expect(find.text('Completed'), findsNothing);
+    expect(find.text('Scheduled'), findsNothing);
+    expect(
+      find.bySemanticsLabel('Note 1, 0.1 ZEC, block 1,010, completed.'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel(
+        'Note 2, 0.2 ZEC, block 1,020, confirming, '
+        '1 of 3 confirmations.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel('Note 3, 0.3 ZEC, block 1,030, scheduled.'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets(
     'migration schedule does not invent a short ETA without a projection',
