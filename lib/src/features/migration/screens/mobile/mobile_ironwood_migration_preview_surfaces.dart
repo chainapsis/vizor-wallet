@@ -106,7 +106,6 @@ class _MigrationPreviewPage extends StatelessWidget {
     this.bottom,
     this.contentGap = AppSpacing.sm,
     this.backgroundColor,
-    this.backgroundDecoration,
     this.navForegroundColor,
     this.onBack,
     this.scrollableContent = false,
@@ -117,7 +116,6 @@ class _MigrationPreviewPage extends StatelessWidget {
   final Widget? bottom;
   final double contentGap;
   final Color? backgroundColor;
-  final Decoration? backgroundDecoration;
   final Color? navForegroundColor;
   final VoidCallback? onBack;
   final bool scrollableContent;
@@ -127,7 +125,7 @@ class _MigrationPreviewPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: backgroundColor ?? context.colors.background.window,
       body: DecoratedBox(
-        decoration: backgroundDecoration ?? const BoxDecoration(),
+        decoration: const BoxDecoration(),
         child: SafeArea(
           child: Column(
             children: [
@@ -1143,29 +1141,6 @@ class _MigrationProgressPreview extends StatelessWidget {
       onBack: onBack,
       contentGap: AppSpacing.md,
       scrollableContent: state != _MigrationProgressState.syncing,
-      backgroundDecoration: switch (state) {
-        _MigrationProgressState.waitingNotificationsOn ||
-        _MigrationProgressState.waitingNotificationsOff ||
-        _MigrationProgressState.readyToSubmit ||
-        _MigrationProgressState.broadcasting ||
-        _MigrationProgressState.confirming => const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0x00007F49), Color(0x00007F49), Color(0x99005D37)],
-            stops: [0, 0.65, 1],
-          ),
-        ),
-        _MigrationProgressState.syncing => const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0x00000000), Color(0x00232323), Color(0xCC292929)],
-            stops: [0, 0.58, 1],
-          ),
-        ),
-        _ => null,
-      },
       child: state == _MigrationProgressState.syncing
           ? _MigrationSyncingContent(
               compact: compact,

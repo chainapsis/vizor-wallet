@@ -274,6 +274,37 @@ String _transferEstimatedCompletion(
     return 'After signing';
   }
 
+  final waitingForAnchor =
+      status.phase == kIronwoodMigrationReadyToMigratePhase &&
+      status.proofReady == false;
+  if (waitingForAnchor && status.nextActionHeight == null) {
+    // Before Rust publishes the proof retry height, a projection based only
+    // on the transaction construction height does not include anchor aging.
+    return 'Schedule pending';
+  }
+
+  final estimatedCompletionHeight = status.estimatedCompletionHeight;
+  if (currentHeight > 0 && estimatedCompletionHeight != null) {
+    var remainingBlocks = math.max(
+      0,
+      estimatedCompletionHeight - currentHeight,
+    );
+    if (remainingBlocks == 0) {
+      // A non-complete run whose projected height is due still needs the
+      // current transaction to be mined and reach trusted depth.
+      remainingBlocks = math.max(1, status.denominationConfirmationTarget);
+    }
+    return _formatMigrationBlockDurationEstimate(remainingBlocks);
+  }
+
+  // Active runs publish an authoritative completion projection from Rust.
+  // If it is temporarily unavailable (for example while overdue broadcasts
+  // are being rescheduled), a short generic fallback would be misleading,
+  // especially while the run is waiting for an aged anchor.
+  if (status.activeRunId != null) {
+    return 'Schedule pending';
+  }
+
   final remainingBlocks = _remainingMigrationCompletionBlocks(
     status,
     currentHeight: currentHeight,

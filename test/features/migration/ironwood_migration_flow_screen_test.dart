@@ -1220,10 +1220,14 @@ void main() {
     expect(find.text('Migrated'), findsOneWidget);
     expect(find.text('Available in Ironwood'), findsOneWidget);
     expect(find.text('0.3 ZEC'), findsOneWidget);
-    expect(find.text('~3 mins'), findsOneWidget);
+    expect(find.text('~3 mins'), findsNothing);
+    expect(
+      find.textContaining('The next signing window will open'),
+      findsNothing,
+    );
   });
 
-  testWidgets('private transfer ETA estimates total completion time', (
+  testWidgets('private transfer status omits completion estimate footer', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -1268,7 +1272,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Ironwood Migration'), findsOneWidget);
-    expect(find.text('~8 mins'), findsOneWidget);
+    expect(find.text('~8 mins'), findsNothing);
+    expect(
+      find.textContaining('The next signing window will open'),
+      findsNothing,
+    );
     expect(find.text('Available in Ironwood'), findsOneWidget);
   });
 
@@ -1810,6 +1818,98 @@ void main() {
     expect(find.text('Migration Schedule'), findsOneWidget);
     expect(find.text('Migration schedule unavailable'), findsNothing);
   });
+
+  testWidgets(
+    'migration schedule uses the authoritative anchor-aware completion height',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        activeRunId: 'run-1',
+        targetValuesZatoshi: const [10_000_000],
+        totalCount: 1,
+        denominationConfirmationTarget: 3,
+        nextActionHeight: 1_015,
+        estimatedCompletionHeight: 1_120,
+        proofReady: false,
+        parts: [
+          _migrationPart(
+            0,
+            10_000_000,
+            rust_sync.MigrationPartState.preparing,
+            scheduledHeight: 1_117,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          initialLocation: '/migration/private/schedule',
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 1_000,
+            chainTipHeight: 1_000,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('~3 hrs'), findsOneWidget);
+      expect(find.text('~4 mins'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'migration schedule does not invent a short ETA without a projection',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        activeRunId: 'run-1',
+        targetValuesZatoshi: const [10_000_000],
+        totalCount: 1,
+        denominationConfirmationTarget: 3,
+        estimatedCompletionHeight: 1_120,
+        proofReady: false,
+        parts: [
+          _migrationPart(0, 10_000_000, rust_sync.MigrationPartState.preparing),
+        ],
+      );
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          initialLocation: '/migration/private/schedule',
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 1_000,
+            chainTipHeight: 1_000,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Schedule pending'), findsOneWidget);
+      expect(find.text('~4 mins'), findsNothing);
+    },
+  );
 
   testWidgets('private status retries a recoverable error on request', (
     tester,
@@ -3127,6 +3227,8 @@ rust_sync.MigrationStatus _migrationStatus({
   int denominationSplitCompletedCount = 0,
   int denominationSplitTotalCount = 0,
   int signedChildPcztCount = 0,
+  int? nextActionHeight,
+  int? estimatedCompletionHeight,
   bool? proofReady,
   List<int>? currentSigningPartIndices,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
@@ -3151,6 +3253,8 @@ rust_sync.MigrationStatus _migrationStatus({
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
+    nextActionHeight: nextActionHeight,
+    estimatedCompletionHeight: estimatedCompletionHeight,
     proofReady: proofReady,
     currentSigningPartIndices: currentSigningPartIndices == null
         ? null

@@ -26,50 +26,22 @@ int _compareMigrationPartsByExpectedProcessingOrder(
   return left.partIndex.compareTo(right.partIndex);
 }
 
-class _MigrationStatusContent extends StatefulWidget {
+class _MigrationStatusContent extends StatelessWidget {
   const _MigrationStatusContent({
     required this.status,
     required this.action,
     required this.isAdvancing,
-    required this.currentHeight,
     required this.onAction,
   });
 
   final rust_sync.MigrationStatus status;
   final _StatusAction action;
   final bool isAdvancing;
-  final int currentHeight;
   final VoidCallback? onAction;
 
   @override
-  State<_MigrationStatusContent> createState() =>
-      _MigrationStatusContentState();
-}
-
-class _MigrationStatusContentState extends State<_MigrationStatusContent> {
-  String? _progressRunId;
-  int _maxSeenCurrentHeight = 0;
-
-  void _syncProgressRun(String runId) {
-    if (_progressRunId == runId) return;
-    _progressRunId = runId;
-    _maxSeenCurrentHeight = 0;
-  }
-
-  int _displayCurrentHeight(int currentHeight) {
-    if (currentHeight > _maxSeenCurrentHeight) {
-      _maxSeenCurrentHeight = currentHeight;
-    }
-    if (_maxSeenCurrentHeight > 0) return _maxSeenCurrentHeight;
-    return currentHeight;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final status = widget.status;
-    final runId = status.activeRunId ?? 'inactive';
-    _syncProgressRun(runId);
-
+    final status = this.status;
     final parts = [..._displayMigrationParts(status)]
       ..sort(_compareMigrationPartsByExpectedProcessingOrder);
     var values = parts.isNotEmpty
@@ -103,7 +75,7 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
     final signingPartIndices =
         status.currentSigningPartIndices?.toSet() ?? const <int>{};
     final signingSegmentIndices = <int>[];
-    if (widget.action == _StatusAction.needsInput) {
+    if (action == _StatusAction.needsInput) {
       for (var index = 0; index < statuses.length; index++) {
         final partIndex = parts.isNotEmpty && index < parts.length
             ? parts[index].partIndex
@@ -124,13 +96,12 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
       }
     }
     final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
-    final displayCurrentHeight = _displayCurrentHeight(widget.currentHeight);
     final isPreparing = _shouldShowPreparingStatusContent(status, statuses);
     final content = status.phase == kIronwoodMigrationCompletePhase
         ? _MigrationCompleteStatusContent(
             key: const ValueKey('ironwood_migration_status_complete'),
             totalZatoshi: total,
-            onDone: widget.onAction,
+            onDone: onAction,
           )
         : _MigrationLiveStatusContent(
             key: const ValueKey('ironwood_migration_active_status'),
@@ -140,18 +111,12 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
             totalZatoshi: total,
             statuses: statuses,
             signingSegmentIndices: signingSegmentIndices,
-            action: widget.action,
-            isAdvancing: widget.isAdvancing,
-            onAction: widget.onAction,
+            action: action,
+            isAdvancing: isAdvancing,
+            onAction: onAction,
             waitingForAnchor:
                 status.phase == kIronwoodMigrationReadyToMigratePhase &&
                 status.proofReady == false,
-            estimatedTime: _transferEstimatedCompletion(
-              status,
-              currentHeight: displayCurrentHeight,
-              needsInput: widget.action == _StatusAction.needsInput,
-              parts: parts,
-            ),
           );
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 680),
@@ -290,7 +255,6 @@ class _MigrationLiveStatusContent extends StatelessWidget {
     required this.action,
     required this.isAdvancing,
     required this.onAction,
-    required this.estimatedTime,
     required this.waitingForAnchor,
   });
 
@@ -303,7 +267,6 @@ class _MigrationLiveStatusContent extends StatelessWidget {
   final _StatusAction action;
   final bool isAdvancing;
   final VoidCallback? onAction;
-  final String estimatedTime;
   final bool waitingForAnchor;
 
   @override
@@ -334,38 +297,6 @@ class _MigrationLiveStatusContent extends StatelessWidget {
       height: 656,
       child: Stack(
         children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            width: 420,
-            bottom: 0,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 360),
-              opacity: !isSigning && !isPreparing ? 1 : 0,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(32),
-                  ),
-                  // Figma's wide radial gradient is effectively vertical at
-                  // this 420 px width. Keep its exact stop colors/opacity so
-                  // the bottom panel, including its two rounded corners,
-                  // reads as one surface instead of a separate glow.
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: [0.69843, 0.84922, 0.92461, 1],
-                    colors: [
-                      Color(0x05141818),
-                      Color(0x350A5E3C),
-                      Color(0x4E05814E),
-                      Color(0x6600A460),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
           Stack(
             children: [
               Positioned(
@@ -582,39 +513,6 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                       expand: false,
                       child: const Text('Go home'),
                     ),
-                  ),
-                )
-              else
-                Positioned(
-                  left: 12,
-                  top: 502,
-                  width: 396,
-                  height: 150,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AppIcon(
-                        AppIcons.bell,
-                        size: 20,
-                        color: const Color(0xFF00D084),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        estimatedTime,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'The next signing window will open around this time.\n'
-                        'Keep Vizor open to continue your migration.',
-                        textAlign: TextAlign.center,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: colors.text.accent,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
             ],

@@ -45,8 +45,6 @@ class _IronwoodMigrationPrivateStatusContentState
     final status = widget.status;
     final presentation = _statusPresentation(status);
     final progress = _statusProgress(status);
-    final syncState = ref.watch(syncProvider).asData?.value;
-    final currentHeight = _currentMigrationHeight(syncState);
     final accountState = ref.watch(accountProvider).value;
     final isHardware =
         accountState?.accounts
@@ -93,7 +91,6 @@ class _IronwoodMigrationPrivateStatusContentState
         status: status,
         action: action,
         isAdvancing: isAdvancing,
-        currentHeight: currentHeight,
         onAction: actionCallback,
       );
     }
