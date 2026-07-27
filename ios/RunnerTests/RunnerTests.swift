@@ -1066,11 +1066,19 @@ class RunnerTests: XCTestCase {
     )
     _ = state.enqueue(accountA)
     _ = state.enqueue(accountB)
+    state.markAccepted([accountA, accountB])
+    state.batchDeadline = Date(timeIntervalSince1970: 1)
 
     state.resolve(scope: accountA.scope)
 
+    XCTAssertFalse(
+      state.expireBatchIfNeeded(
+        now: Date(timeIntervalSince1970: 2)
+      )
+    )
     XCTAssertEqual(state.summary?.accountCount, 1)
     XCTAssertEqual(state.summary?.events, [accountB])
+    XCTAssertFalse(state.enqueue(accountB))
   }
 
   func testResolvingMigrationNotificationScopeAllowsARealRecurrence() {

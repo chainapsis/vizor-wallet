@@ -34,8 +34,7 @@ struct MigrationPreparationNotificationSummary: Equatable {
 }
 
 struct MigrationPreparationNotificationBatchState: Codable, Equatable {
-  private(set) var pendingEvents: [String: MigrationPreparationNotificationEvent]
-    = [:]
+  private(set) var pendingEvents: [String: MigrationPreparationNotificationEvent] = [:]
   private(set) var acceptedFingerprints: [String: String] = [:]
   var batchDeadline: Date?
 
@@ -66,9 +65,10 @@ struct MigrationPreparationNotificationBatchState: Codable, Equatable {
     acceptedFingerprints = acceptedFingerprints.filter {
       $0.key != scope && !$0.key.hasPrefix("\(scope)|")
     }
-    if pendingEvents.isEmpty {
-      batchDeadline = nil
-    }
+    // Resolving one scope starts a new boundary for any scopes that remain.
+    // Do not let an expired aggregation deadline clear those other accounts
+    // when the coordinator immediately checks for batch expiry.
+    batchDeadline = nil
   }
 
   mutating func retain(scopes: Set<String>) {
