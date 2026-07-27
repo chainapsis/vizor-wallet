@@ -389,7 +389,7 @@ class RunnerTests: XCTestCase {
     XCTAssertTrue(batch.hasTaskFailure)
     XCTAssertEqual(
       batch.continuationReadyScopes,
-      ["test:account-b:run-2"]
+      ["test:account-a:run-1", "test:account-b:run-2"]
     )
     XCTAssertEqual(
       batch.progress,
@@ -403,14 +403,14 @@ class RunnerTests: XCTestCase {
     )
     XCTAssertEqual(
       batch.notificationEvents.map(\.scope),
-      ["test:account-b:run-2"]
+      ["test:account-a:run-1", "test:account-b:run-2"]
     )
     XCTAssertNil(
       migrationPreparationTrackingCompletionPresentation(batch)
     )
   }
 
-  func testCompletedTrackingScopeDoesNotCreateLocalNotification() {
+  func testCompletedTrackingScopeHandsOffWithoutBackgroundWalletWork() {
     let completedProgress = MigrationPreparationConfirmationProgress(
       confirmedUnitCount: 3,
       totalUnitCount: 3,
@@ -427,16 +427,27 @@ class RunnerTests: XCTestCase {
       ]
     )
 
-    XCTAssertTrue(batch.continuationReadyScopes.isEmpty)
     XCTAssertEqual(
-      batch.confirmedPreparationScopes,
+      batch.continuationReadyScopes,
       ["test:account-a:run-1"]
     )
-    XCTAssertTrue(
-      migrationPreparationTrackingBatchRequiresAdvancement(batch)
+    XCTAssertEqual(
+      migrationPreparationTrackingCompletionPresentation(batch),
+      MigrationPreparationTrackingCompletionPresentation(
+        title: "Preparation transactions confirmed",
+        subtitle: "Open Vizor to continue migration"
+      )
     )
-    XCTAssertNil(migrationPreparationTrackingCompletionPresentation(batch))
-    XCTAssertTrue(batch.notificationEvents.isEmpty)
+    XCTAssertEqual(
+      batch.notificationEvents,
+      [
+        MigrationPreparationNotificationEvent(
+          scope: "test:account-a:run-1",
+          kind: .needsForegroundRecovery,
+          fingerprint: "confirmed-wave-1-3"
+        )
+      ]
+    )
   }
 
   func testCompletedAndRetryScopesKeepTheirProgressAcrossPasses() {

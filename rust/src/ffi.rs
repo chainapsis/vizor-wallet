@@ -2,13 +2,13 @@
 //!
 //! The platform-neutral state mapping lives in `crate::migration_preparation`;
 //! this module validates C inputs and converts native values. Confirmation
-//! polling stays read-only; sync and denomination advancement are exposed only
-//! for the bounded transition between confirmed transaction waves.
+//! polling stays read-only; sync and denomination advancement remain owned by
+//! the foreground FRB path.
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use crate::migration_preparation::{self, MigrationPreparationError, MigrationPreparationProgress};
+use crate::migration_preparation::{self, MigrationPreparationProgress};
 use crate::wallet::keys;
 use tonic::Code;
 
@@ -35,22 +35,6 @@ impl From<MigrationPreparationProgress> for CMigrationPreparationProgress {
         }
     }
 }
-
-/// Progress data passed to the C callback while the continued task performs
-/// the bounded sync needed between denomination waves.
-#[repr(C)]
-pub struct CSyncProgress {
-    pub scanned_height: u64,
-    pub chain_tip_height: u64,
-    pub percentage: f64,
-    pub display_target_percentage: f64,
-    pub display_target_blocks: u64,
-    pub is_syncing: bool,
-    pub is_complete: bool,
-    pub has_new_tx: bool,
-}
-
-pub type SyncProgressCallback = extern "C" fn(CSyncProgress);
 
 /// Read-only lightwalletd transaction state returned to Swift.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,13 +83,6 @@ unsafe fn c_str_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
     }
 }
 
-unsafe fn credential_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
-    if ptr.is_null() || len == 0 {
-        return None;
-    }
-    Some(std::slice::from_raw_parts(ptr, len))
-}
-
 fn log_panic(context: &str, panic: Box<dyn std::any::Any + Send>) {
     let message = if let Some(message) = panic.downcast_ref::<&str>() {
         (*message).to_string()
@@ -115,64 +92,6 @@ fn log_panic(context: &str, panic: Box<dyn std::any::Any + Send>) {
         "Unknown".to_string()
     };
     log::error!("ffi: panic during {context}: {message}");
-}
-
-/// Run the single wallet scan needed after a denomination wave reaches its
-/// confirmation target. Confirmation polling itself remains read-only.
-#[no_mangle]
-pub extern "C" fn zcash_run_full_sync_for_migration_preparation(
-    db_path: *const c_char,
-    lightwalletd_url: *const c_char,
-    network: *const c_char,
-    progress_callback: SyncProgressCallback,
-) -> i32 {
-    let result = std::panic::catch_unwind(|| {
-        let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
-            return 1;
-        };
-        let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
-            return 1;
-        };
-        let Some(network_str) = (unsafe { c_str_to_str(network) }) else {
-            return 1;
-        };
-        let network = match keys::parse_network(network_str) {
-            Ok(network) => network,
-            Err(error) => {
-                log::error!("ffi: parse migration preparation network: {error}");
-                return 1;
-            }
-        };
-
-        match migration_preparation::run_sync(db_path, lightwalletd_url, network, |progress| {
-            progress_callback(CSyncProgress {
-                scanned_height: progress.scanned_height,
-                chain_tip_height: progress.chain_tip_height,
-                percentage: progress.percentage,
-                display_target_percentage: progress.display_target_percentage,
-                display_target_blocks: progress.display_target_blocks,
-                is_syncing: progress.is_syncing,
-                is_complete: progress.is_complete,
-                has_new_tx: progress.has_new_tx,
-            });
-        }) {
-            Ok(()) => 0,
-            Err(MigrationPreparationError::NoActiveOperation) => 4,
-            Err(MigrationPreparationError::SyncAlreadyRunning) => 3,
-            Err(error) => {
-                log::error!("ffi: migration preparation sync failed: {error}");
-                1
-            }
-        }
-    });
-
-    match result {
-        Ok(code) => code,
-        Err(panic) => {
-            log_panic("migration preparation sync", panic);
-            2
-        }
-    }
 }
 
 fn lightwalletd_runtime() -> Result<tokio::runtime::Runtime, String> {
@@ -543,102 +462,6 @@ pub extern "C" fn zcash_inspect_migration_proof_readiness(
             2
         }
     }
-}
-
-/// Advance denomination preparation once after the just-observed transaction
-/// wave has been scanned. Child proof creation remains foreground-only.
-#[no_mangle]
-pub extern "C" fn zcash_advance_migration_preparation(
-    db_path: *const c_char,
-    lightwalletd_url: *const c_char,
-    network: *const c_char,
-    account_uuid: *const c_char,
-    expected_run_id: *const c_char,
-    credential: *const u8,
-    credential_len: usize,
-    salt_base64: *const c_char,
-    output: *mut CMigrationPreparationProgress,
-) -> i32 {
-    let result = std::panic::catch_unwind(|| {
-        let Some(db_path) = (unsafe { c_str_to_str(db_path) }) else {
-            return 1;
-        };
-        let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
-            return 1;
-        };
-        let Some(network_str) = (unsafe { c_str_to_str(network) }) else {
-            return 1;
-        };
-        let Some(account_uuid) = (unsafe { c_str_to_str(account_uuid) }) else {
-            return 1;
-        };
-        let Some(expected_run_id) = (unsafe { c_str_to_str(expected_run_id) }) else {
-            return 1;
-        };
-        let Some(salt_base64) = (unsafe { c_str_to_str(salt_base64) }) else {
-            return 1;
-        };
-        let Some(credential) = (unsafe { credential_bytes(credential, credential_len) }) else {
-            return 1;
-        };
-        let Some(output) = (unsafe { output.as_mut() }) else {
-            return 1;
-        };
-        let network = match keys::parse_network(network_str) {
-            Ok(network) => network,
-            Err(error) => {
-                log::error!("ffi: parse migration preparation network: {error}");
-                return 1;
-            }
-        };
-
-        match migration_preparation::advance(
-            db_path,
-            lightwalletd_url,
-            network,
-            account_uuid,
-            expected_run_id,
-            zeroize::Zeroizing::new(credential.to_vec()),
-            salt_base64,
-        ) {
-            Ok(progress) => {
-                *output = progress.into();
-                0
-            }
-            Err(error) => {
-                log::error!("ffi: advance migration preparation: {error}");
-                1
-            }
-        }
-    });
-
-    match result {
-        Ok(code) => code,
-        Err(panic) => {
-            log_panic("migration preparation advancement", panic);
-            2
-        }
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn zcash_begin_migration_preparation_operation() -> bool {
-    migration_preparation::begin_operation()
-}
-
-#[no_mangle]
-pub extern "C" fn zcash_end_migration_preparation_operation() {
-    migration_preparation::end_operation();
-}
-
-#[no_mangle]
-pub extern "C" fn zcash_cancel_migration_preparation_sync() -> bool {
-    migration_preparation::cancel_operation()
-}
-
-#[no_mangle]
-pub extern "C" fn zcash_is_sync_running() -> bool {
-    migration_preparation::is_sync_running()
 }
 
 #[cfg(test)]

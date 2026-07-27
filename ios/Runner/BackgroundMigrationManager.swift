@@ -716,7 +716,7 @@ final class BackgroundMigrationManager {
       // This wake is a silent BGProcessingTask. It queries the chain tip,
       // broadcasts transactions that are already signed, and notifies — it does
       // not scan. The separate continued-processing task owns denomination
-      // confirmation tracking and the bounded sync / advance between waves.
+      // confirmation tracking and hands confirmed waves back to the foreground.
       self.runOutbox(
         task: task,
         cancellation: cancellation,

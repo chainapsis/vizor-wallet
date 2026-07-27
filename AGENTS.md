@@ -434,14 +434,14 @@ rust/src/
 │                        # decode_accounts_ur. Keystone UX is QR-only.
 │                        # Re-exports KeystoneAccountInfo, UrDecodeResult from
 │                        # crate::wallet::keystone via `pub use`.
-├── ffi.rs              # Thin C adapter for iOS Ironwood migration work.
-│                        # Exposes read-only inspection / lightwalletd queries
-│                        # plus bounded sync / advance between confirmed waves.
+├── ffi.rs              # Thin, read-only C adapter for iOS Ironwood migration
+│                        # inspection and observable preparation-txid listing.
 ├── migration_preparation.rs
-│                       # Platform-neutral mobile preparation core used by both
-│                       # Android JNI and iOS C FFI: operation lifecycle,
-│                       # preparation-only sync, inspect/advance, cancellation,
-│                       # and foreground-sync exclusion.
+│                       # Platform-neutral mobile preparation core. Android JNI
+│                       # uses its operation lifecycle, preparation-only sync,
+│                       # inspect/advance, cancellation, and foreground-sync
+│                       # exclusion. iOS C FFI exposes only read-only inspect,
+│                       # proof-readiness, and observable txid reads.
 │                       # Located outside api/ to avoid FRB codegen picking it up.
 ├── wallet/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
@@ -504,22 +504,22 @@ Swift BackgroundMigrationPreparationManager
     → submit user-visible BGContinuedProcessingTask
     → read-only C FFI inspect / observable preparation txids
     → native lightwalletd GetLatestBlock + GetTransaction queries
-    → when the current tx wave reaches 3 confirmations:
-      bounded preparation-only Rust sync / inspect / advance once
-    → resume read-only tracking for the next wave
-    → complete only when the whole preparation is proof-ready
+    → update system task progress until every executed preparation tx has
+      3 confirmations
+    → persist a foreground-continuation token and notify the user
+    → complete the task and leave sync / migration advance to foreground
 ```
 
 - iOS submits `BGContinuedProcessingTaskRequest` only while denomination
   preparation is active. Its normal polling loop only queries the lightwalletd
-  tip and each materialized preparation tx. It does not run a wallet sync on
-  every poll.
+  tip and each materialized preparation tx. It never runs a wallet sync or
+  advances migration state.
 - The iOS task treats `NotFound` and mempool as zero confirmations, derives
   mined confirmation depth from the queried chain tip, and waits until every
-  observable tx in the current wave reaches 3 confirmations. Only then does it
-  enter the shared preparation operation, run one bounded mode-2 sync, advance
-  the denomination state, and return to read-only tracking. It reports task
-  success only after the complete preparation becomes proof-ready.
+  observable tx in the current wave reaches 3 confirmations. It then persists
+  the foreground handoff, notifies the user to open Vizor, and ends the system
+  task. Foreground reentry owns the wallet sync, denomination advance, and
+  submission of a fresh read-only task for the next wave.
 - Android keeps its WorkManager foreground worker and native preparation path.
   The worker may run the existing mode-2 full sync, inspect proof readiness,
   advance denomination preparation, and enqueue a continuation.
@@ -539,10 +539,10 @@ Swift BackgroundMigrationPreparationManager
 Key files:
 - `rust/src/migration_preparation.rs` — shared mobile preparation core
 - `rust/src/android_jni.rs` — Android preparation execution adapter
-- `rust/src/ffi.rs` — iOS inspection, query, bounded sync, and advance adapter
+- `rust/src/ffi.rs` — iOS read-only inspection and query adapter
 - `ios/Runner/zcash_sync.h` — matching C header
 - `ios/Runner/BackgroundMigrationPreparationManager.swift` — continued-task
-  confirmation tracker and between-wave advancement owner
+  confirmation tracker and foreground-handoff owner
 - `lib/src/providers/wallet_mutation_guard.dart` — mutation ordering fence
 - `lib/src/features/migration/services/ironwood_migration_service.dart` —
   foreground preparation recovery
@@ -561,11 +561,15 @@ while an executed denomination preparation waits for confirmations.
 - `NotFound`, mempool height `0`, and fork height `UInt64.max` contribute zero
   confirmations. A normal mined height contributes
   `tip - minedHeight + 1`, capped at 3.
-- Reaching 3 confirmations finishes only the current wave. Progress remains
-  below 100%, the task runs one bounded preparation sync / advance, and tracking
-  continues with the newly materialized transaction wave.
-- The task calls `setTaskCompleted(success: true)` only when the complete
-  preparation is proof-ready. OS expiration is not reported as success.
+- Reaching 3 confirmations finishes only the current observation wave. The
+  manager stores a foreground-continuation token, posts an “Open Vizor”
+  notification, and completes that system task without opening the wallet DB
+  for sync or advance.
+- Foreground reentry acknowledges the token before syncing and advancing the
+  durable run. If another transaction wave is materialized, it submits a fresh
+  read-only continued-processing task.
+- OS expiration is not reported as success and also hands the run back to the
+  foreground recovery path.
 
 ### Send Flow
 
