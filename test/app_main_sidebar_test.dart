@@ -37,7 +37,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('99% Syncing...'), findsOneWidget);
-    expect(find.text('Vizor is synced'), findsNothing);
+    expect(find.text('Synced'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
 
   testWidgets('sidebar shows primary navigation', (tester) async {
@@ -664,10 +665,25 @@ void main() {
   testWidgets('sidebar shows synced state after sync completes', (
     tester,
   ) async {
-    await tester.pumpWidget(_sidebarHarness(SyncState()));
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          isSyncComplete: true,
+          percentage: 1,
+          displayPercentage: 1,
+          scannedHeight: 3_428_143,
+          chainTipHeight: 3_428_143,
+        ),
+      ),
+    );
     await tester.pump();
 
-    expect(find.text('Vizor is synced'), findsOneWidget);
+    expect(find.text('Synced'), findsOneWidget);
+    expect(find.text('3,428,143'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sidebar_sync_block_icon')),
+      findsOneWidget,
+    );
     expect(find.textContaining('Syncing'), findsNothing);
     final text = tester.widget<Text>(
       find.byKey(const ValueKey('sidebar_sync_text')),
@@ -678,6 +694,26 @@ void main() {
       AppThemeData.light.colors.sync.lightSuccess,
     );
     _expectSyncIndicatorGlow(tester, blurRadius: 12);
+  });
+
+  testWidgets('sidebar omits block height until sync completion is confirmed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          percentage: 1,
+          displayPercentage: 1,
+          scannedHeight: 3_428_143,
+          chainTipHeight: 3_428_143,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Synced'), findsOneWidget);
+    expect(find.text('3,428,143'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_sync_block_icon')), findsNothing);
   });
 
   testWidgets('sidebar treats complete background progress as synced', (
@@ -696,8 +732,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Vizor is synced'), findsOneWidget);
+    expect(find.text('Synced'), findsOneWidget);
     expect(find.text('99% Syncing...'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
 
   testWidgets('sidebar keeps network sync failures visible', (tester) async {
@@ -716,7 +753,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Syncing failed. Network error...'), findsOneWidget);
-    expect(find.text('Vizor is synced'), findsNothing);
+    expect(find.text('Synced'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
     final text = tester.widget<Text>(
       find.byKey(const ValueKey('sidebar_sync_text')),
     );
@@ -841,6 +879,11 @@ double _opacityForText(WidgetTester tester, String text) {
 final _syncedSyncState = SyncState(
   accountUuid: 'account-1',
   hasAccountScopedData: true,
+  isSyncComplete: true,
+  percentage: 1,
+  displayPercentage: 1,
+  scannedHeight: 3_428_143,
+  chainTipHeight: 3_428_143,
 );
 
 Widget _sidebarHarness(

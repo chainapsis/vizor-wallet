@@ -39,6 +39,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -83,4 +84,5 @@ dependencies {
     implementation("com.google.guava:guava:33.4.8-android")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20180813")
+    androidTestImplementation("androidx.test:runner:1.2.0")
 }
