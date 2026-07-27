@@ -822,6 +822,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String network,
     required String accountUuid,
+    required List<MigrationScheduledTransfer> approvedSchedule,
   });
 
   Future<BigInt> crateApiWalletPreviewSoftwareAccountTransparentBalance({
@@ -5802,6 +5803,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String network,
     required String accountUuid,
+    required List<MigrationScheduledTransfer> approvedSchedule,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5810,6 +5812,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
+          sse_encode_list_migration_scheduled_transfer(
+            approvedSchedule,
+            serializer,
+          );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5822,7 +5828,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncPrepareOrchardMigrationSingleQrPcztConstMeta,
-        argValues: [dbPath, network, accountUuid],
+        argValues: [dbPath, network, accountUuid, approvedSchedule],
         apiImpl: this,
       ),
     );
@@ -5831,7 +5837,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncPrepareOrchardMigrationSingleQrPcztConstMeta =>
       const TaskConstMeta(
         debugName: "prepare_orchard_migration_single_qr_pczt",
-        argNames: ["dbPath", "network", "accountUuid"],
+        argNames: ["dbPath", "network", "accountUuid", "approvedSchedule"],
       );
 
   @override

@@ -1614,10 +1614,15 @@ pub async fn complete_orchard_migration_denominations_pczt(
     })
 }
 
+/// Prepares the split and migration PCZTs for one Keystone signing session.
+///
+/// The approved schedule must still match the denomination plan when the
+/// signing request is created.
 pub fn prepare_orchard_migration_single_qr_pczt(
     db_path: String,
     network: String,
     account_uuid: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1625,6 +1630,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
             &db_path,
             network,
             &account_uuid,
+            to_wallet_migration_schedule(approved_schedule),
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,

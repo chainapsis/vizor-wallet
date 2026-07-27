@@ -498,7 +498,7 @@ void main() {
   });
 
   testWidgets(
-    'private review routes Keystone accounts to denomination signing',
+    'private review routes Keystone accounts to combined signing',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(1440, 900);
@@ -553,7 +553,7 @@ void main() {
 
       expect(softwareStarted, isFalse);
       expect(
-        find.text('keystone-denomination-sign-route:1:144'),
+        find.text('keystone-combined-sign-route:1:144'),
         findsOneWidget,
       );
     },
@@ -2244,6 +2244,17 @@ Widget _migrationOptionsHarness({
         builder: (_, _) => realStatusRoute
             ? const IronwoodMigrationPrivateStatusScreen()
             : IronwoodMigrationPrivateStatusScreen(previewStatus: _status()),
+      ),
+      GoRoute(
+        path: '/migration/private/keystone/sign',
+        builder: (_, state) {
+          final schedule =
+              state.extra! as List<rust_sync.MigrationScheduledTransfer>;
+          return Text(
+            'keystone-combined-sign-route:${schedule.length}:'
+            '${schedule.first.blockOffset}',
+          );
+        },
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',

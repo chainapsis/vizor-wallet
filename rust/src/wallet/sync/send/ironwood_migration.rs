@@ -298,6 +298,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     if super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)? {
@@ -331,11 +332,11 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         .len()
         .checked_add(split.stages.len())
         .ok_or("Keystone migration message count overflow")?;
-    let approved_schedule = super::migration::planned_transfer_schedule(
-        split.plan.migration_outputs.iter().copied(),
+    super::migration::validate_schedule(
+        &approved_schedule,
+        &split.plan.migration_outputs,
         network,
-        &mut OsRng,
-    );
+    )?;
     let mut child_messages = Vec::with_capacity(split.predicted_notes.len());
     for (index, predicted) in split.predicted_notes.iter().enumerate() {
         let part_index = index as u32;

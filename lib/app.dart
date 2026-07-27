@@ -783,6 +783,17 @@ List<RouteBase> _desktopRoutes() => [
     builder: (_, _) => const IronwoodMigrationScheduleScreen(),
   ),
   GoRoute(
+    path: '/migration/private/keystone/sign',
+    redirect: (_, state) =>
+        state.extra is List<rust_sync.MigrationScheduledTransfer>
+        ? null
+        : '/migration/private/review',
+    builder: (_, state) => IronwoodMigrationKeystoneCombinedSignScreen(
+      approvedSchedule:
+          state.extra! as List<rust_sync.MigrationScheduledTransfer>,
+    ),
+  ),
+  GoRoute(
     path: '/migration/private/keystone/denominations/sign',
     redirect: (_, state) =>
         state.extra is List<rust_sync.MigrationScheduledTransfer>

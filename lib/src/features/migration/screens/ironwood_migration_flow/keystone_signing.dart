@@ -1,5 +1,22 @@
 part of '../ironwood_migration_flow_screen.dart';
 
+class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
+  const IronwoodMigrationKeystoneCombinedSignScreen({
+    required this.approvedSchedule,
+    super.key,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.combined,
+      approvedSchedule: approvedSchedule,
+    );
+  }
+}
+
 class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneDenominationSignScreen({
     this.approvedSchedule = const [],
@@ -97,7 +114,7 @@ class _IronwoodMigrationKeystonePrivateSignScreen
       _IronwoodMigrationKeystonePrivateSignScreenState();
 }
 
-enum _KeystonePrivateSignStep { denominations, batch }
+enum _KeystonePrivateSignStep { combined, denominations, batch }
 
 class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
   const MobileIronwoodKeystoneScanHelpBody({
@@ -160,31 +177,38 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
 
 extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   String get logName => switch (this) {
+    _KeystonePrivateSignStep.combined => 'combined',
     _KeystonePrivateSignStep.denominations => 'denominations',
     _KeystonePrivateSignStep.batch => 'batch',
   };
 
   String get toolbarLabel => switch (this) {
+    _KeystonePrivateSignStep.combined => 'Review migration',
     _KeystonePrivateSignStep.denominations => 'Review migration',
     _KeystonePrivateSignStep.batch => 'Migration status',
   };
 
   String get previousRoute => switch (this) {
+    _KeystonePrivateSignStep.combined => '/migration/private/review',
     _KeystonePrivateSignStep.denominations => '/migration/private/review',
     _KeystonePrivateSignStep.batch => '/migration/private/status',
   };
 
   String get previousButtonLabel => switch (this) {
+    _KeystonePrivateSignStep.combined => 'Back to review',
     _KeystonePrivateSignStep.denominations => 'Back to review',
     _KeystonePrivateSignStep.batch => 'Back to status',
   };
 
   String get qrTitle => switch (this) {
+    _KeystonePrivateSignStep.combined => 'Sign migration',
     _KeystonePrivateSignStep.denominations => 'Sign private split',
     _KeystonePrivateSignStep.batch => 'Sign Ironwood batch',
   };
 
   String get qrBody => switch (this) {
+    _KeystonePrivateSignStep.combined =>
+      'Scan this QR code with Keystone to sign the split and migration transactions together.',
     _KeystonePrivateSignStep.denominations =>
       'Scan this QR code with Keystone to sign the private split transactions.',
     _KeystonePrivateSignStep.batch =>
@@ -192,6 +216,7 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   };
 
   String get messageUnit => switch (this) {
+    _KeystonePrivateSignStep.combined => 'transaction',
     _KeystonePrivateSignStep.denominations => 'split transaction',
     _KeystonePrivateSignStep.batch => 'migration transaction',
   };
@@ -199,8 +224,14 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   Future<rust_sync.KeystoneMigrationSigningRequest> prepare(
     IronwoodMigrationService service, {
     required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) {
     return switch (this) {
+      _KeystonePrivateSignStep.combined =>
+        service.prepareKeystoneSingleQrPrivateMigration(
+          accountUuid: accountUuid,
+          approvedSchedule: approvedSchedule,
+        ),
       _KeystonePrivateSignStep.denominations =>
         service.prepareKeystoneDenominationPrivateMigration(
           accountUuid: accountUuid,
@@ -218,6 +249,12 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) {
     return switch (this) {
+      _KeystonePrivateSignStep.combined =>
+        service.completeKeystoneSingleQrPrivateMigration(
+          accountUuid: accountUuid,
+          requestId: requestId,
+          signedMessages: signedMessages,
+        ),
       _KeystonePrivateSignStep.denominations =>
         service.completeKeystoneDenominationPrivateMigration(
           accountUuid: accountUuid,
@@ -337,6 +374,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       final request = await widget.step.prepare(
         _migrationService,
         accountUuid: accountUuid,
+        approvedSchedule: widget.approvedSchedule,
       );
       requestIdToDiscard = request.requestId;
       if (!mounted) {
@@ -664,6 +702,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   bool _isKeystoneRequestCommitted(rust_sync.MigrationStatus status) {
     return switch (widget.step) {
+      _KeystonePrivateSignStep.combined => status.activeRunId != null,
       _KeystonePrivateSignStep.denominations => status.activeRunId != null,
       _KeystonePrivateSignStep.batch =>
         !status.parts.any(
@@ -677,7 +716,8 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   Future<void> _finishCommittedRequest(String accountUuid) async {
     final coordinator = ref.read(ironwoodMigrationCoordinatorProvider.notifier);
     coordinator.clearChildProofBatchPermit(accountUuid);
-    if (widget.step == _KeystonePrivateSignStep.denominations) {
+    if (widget.step == _KeystonePrivateSignStep.combined ||
+        widget.step == _KeystonePrivateSignStep.denominations) {
       coordinator.grantForegroundProgressPermit(accountUuid);
     }
     await coordinator.refreshNow();

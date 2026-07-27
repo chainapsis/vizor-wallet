@@ -2232,6 +2232,128 @@ void main() {
   );
 
   test(
+    'prepareKeystoneSingleQrPrivateMigration forwards the approved schedule',
+    () async {
+      String? seenDbPath;
+      String? seenNetwork;
+      String? seenAccountUuid;
+      List<rust_sync.MigrationScheduledTransfer>? seenSchedule;
+      final expected = _keystoneSigningRequest();
+      final approvedSchedule = [
+        rust_sync.MigrationScheduledTransfer(
+          partIndex: 0,
+          valueZatoshi: BigInt.from(10_000_000),
+          blockOffset: 144,
+        ),
+      ];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://lwd.example:443',
+        ),
+        prepareKeystoneSingleQrMigration:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+            }) {
+              seenDbPath = dbPath;
+              seenNetwork = network;
+              seenAccountUuid = accountUuid;
+              seenSchedule = approvedSchedule;
+              return Future.value(expected);
+            },
+      );
+
+      final request = await service.prepareKeystoneSingleQrPrivateMigration(
+        accountUuid: 'account-1',
+        approvedSchedule: approvedSchedule,
+      );
+
+      expect(request, expected);
+      expect(seenDbPath, '/tmp/wallet.db');
+      expect(seenNetwork, 'test');
+      expect(seenAccountUuid, 'account-1');
+      expect(seenSchedule, approvedSchedule);
+    },
+  );
+
+  test(
+    'completeKeystoneSingleQrPrivateMigration reuses pending tx salt',
+    () async {
+      final seenSalts = <String>[];
+      final seenMessages = <List<rust_sync.KeystoneSignedMigrationMessage>>[];
+      String? seenRequestId;
+      String? seenPassword;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus: ({required dbPath, required network, required accountUuid}) {
+          return Future.value(_migrationStatus());
+        },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) {
+              return Future.value(null);
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => const RpcEndpointConfig(
+          networkName: 'test',
+          lightwalletdUrl: 'https://lwd.example:443',
+        ),
+        getSessionPassword: () => 'test-password',
+        completeKeystoneSingleQrMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required requestId,
+              required signedMessages,
+              required password,
+              required saltBase64,
+            }) {
+              seenRequestId = requestId;
+              seenPassword = password;
+              seenSalts.add(saltBase64);
+              seenMessages.add(signedMessages);
+              return Future.value(_migrationResult());
+            },
+      );
+      final signedMessages = [_signedMigrationMessage()];
+
+      await service.completeKeystoneSingleQrPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: signedMessages,
+      );
+      await service.completeKeystoneSingleQrPrivateMigration(
+        accountUuid: 'account-1',
+        requestId: 'request-1',
+        signedMessages: signedMessages,
+      );
+
+      expect(seenRequestId, 'request-1');
+      expect(seenPassword, 'test-password');
+      expect(seenMessages, [signedMessages, signedMessages]);
+      expect(seenSalts, hasLength(2));
+      expect(seenSalts[1], seenSalts[0]);
+    },
+  );
+
+  test(
     'prepareKeystoneDenominationPrivateMigration prepares signing request',
     () async {
       String? seenDbPath;
