@@ -417,7 +417,67 @@ fn on_open_migration_policy_sends_at_most_one_due_transaction() {
         500
     );
     assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.should_defer_broadcast(500));
+    assert!(MigrationBroadcastPolicy::ONE_FOREGROUND.reschedule_wallet_overdue);
     assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.is_cancelled());
+}
+
+#[test]
+fn one_due_result_reports_only_transactions_accepted_by_this_call() {
+    let result = one_due_migration_result(MigrationBroadcastAdvance {
+        result: IronwoodMigrationResult {
+            txids: "aggregate-a,aggregate-b".to_string(),
+            status: migration::PHASE_BROADCAST_SCHEDULED.to_string(),
+            broadcasted_count: 7,
+            total_count: 8,
+            message: None,
+            fee_zatoshi: 10_000,
+            migrated_zatoshi: 100_000,
+        },
+        accepted_txids: vec!["accepted-now".to_string()],
+    });
+
+    assert_eq!(result.txids, "accepted-now");
+    assert_eq!(result.broadcasted_count, 7);
+}
+
+#[test]
+fn one_due_result_does_not_report_aggregate_txids_when_nothing_was_accepted() {
+    let result = one_due_migration_result(MigrationBroadcastAdvance::without_acceptance(
+        IronwoodMigrationResult {
+            txids: "previously-accepted".to_string(),
+            status: migration::PHASE_BROADCAST_SCHEDULED.to_string(),
+            broadcasted_count: 1,
+            total_count: 2,
+            message: None,
+            fee_zatoshi: 10_000,
+            migrated_zatoshi: 100_000,
+        },
+    ));
+
+    assert!(result.txids.is_empty());
+    assert_eq!(result.broadcasted_count, 1);
+}
+
+#[test]
+fn one_due_result_preserves_acceptance_when_local_bookkeeping_fails() {
+    let totals_before = migration::PendingMigrationTotals {
+        txids: vec!["older-pending".to_string()],
+        broadcasted_count: 2,
+        total_count: 4,
+        fee_zatoshi: 10_000,
+        value_zatoshi: 100_000,
+    };
+    let result = one_due_migration_result(accepted_migration_processing_failure_result(
+        &totals_before,
+        vec!["accepted-now".to_string()],
+        "db busy".to_string(),
+        4,
+        100_000,
+    ));
+
+    assert_eq!(result.txids, "accepted-now");
+    assert_eq!(result.broadcasted_count, 3);
+    assert!(result.message.as_deref().unwrap().contains("db busy"));
 }
 
 fn taddr(seed: u8) -> TransparentAddress {
@@ -1429,7 +1489,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
 
     assert_eq!(result.txids, pending_txid);
     assert_eq!(result.status, migration::PHASE_BROADCAST_SCHEDULED);
-    assert_eq!(result.broadcasted_count, 0);
+    assert_eq!(result.broadcasted_count, 1);
     assert_eq!(result.total_count, 1);
     assert_eq!(result.fee_zatoshi, 10_000);
     assert_eq!(result.migrated_zatoshi, 100_000);

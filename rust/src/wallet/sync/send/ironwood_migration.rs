@@ -599,7 +599,8 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             stored.total_migratable_zatoshi,
             MigrationBroadcastPolicy::FOREGROUND,
         )
-        .await;
+        .await
+        .map(|advance| advance.result);
     }
 
     let Some(broadcast) = broadcast_pending_denomination_stages(

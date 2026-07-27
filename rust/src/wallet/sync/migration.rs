@@ -3477,6 +3477,17 @@ pub(crate) fn reschedule_overdue_pending_txs(
     network: WalletNetwork,
     chain_tip_height: u32,
 ) -> Result<(), String> {
+    reschedule_overdue_pending_txs_with_options(db_path, run_id, network, chain_tip_height, 0, None)
+}
+
+fn reschedule_overdue_pending_txs_with_options(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    minimum_delay_blocks: u32,
+    excluded_txid: Option<&str>,
+) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
@@ -3494,6 +3505,9 @@ pub(crate) fn reschedule_overdue_pending_txs(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read overdue migration transaction: {e}"))?;
     drop(stmt);
+    if let Some(excluded_txid) = excluded_txid {
+        txids.retain(|(txid, _)| txid != excluded_txid);
+    }
     if txids.is_empty() {
         return Ok(());
     }
@@ -3514,7 +3528,7 @@ pub(crate) fn reschedule_overdue_pending_txs(
     let mut needs_resign = false;
     for ((txid, expiry_height), offset) in txids.into_iter().zip(offsets) {
         let scheduled_height = chain_tip_height
-            .checked_add(offset)
+            .checked_add(offset.max(minimum_delay_blocks))
             .ok_or("Migration rescheduled height overflow")?;
         if zip318_canonical_migration_expiry_height(scheduled_height)? != expiry_height {
             tx.execute(
@@ -3553,6 +3567,89 @@ pub(crate) fn reschedule_overdue_pending_txs(
     }
     tx.commit()
         .map_err(|e| format!("Commit overdue migration reschedule: {e}"))
+}
+
+/// Redraws every still-overdue scheduled transfer in this wallet after the
+/// single ZIP 318 on-open fallback transfer has been submitted.
+///
+/// Runs are collected first and then rescheduled independently because each
+/// run owns its timing policy and may cross a different canonical expiry
+/// boundary. This function intentionally spans accounts: the on-open limit is
+/// a wallet privacy invariant, not a per-account allowance.
+pub(crate) fn reschedule_wallet_overdue_pending_txs(
+    db_path: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+) -> Result<(), String> {
+    reschedule_wallet_overdue_pending_txs_with_exclusion(db_path, network, chain_tip_height, None)
+}
+
+/// Reschedules every other overdue transfer after lightwalletd accepted a
+/// transaction whose local storage update failed. The accepted transaction is
+/// left in place for storage recovery; it must not be redrawn into a new
+/// expiry bucket or treated as needing a new signature.
+pub(crate) fn reschedule_wallet_overdue_pending_txs_after_accepted(
+    db_path: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    accepted_run_id: &str,
+    accepted_txid: &str,
+) -> Result<(), String> {
+    reschedule_wallet_overdue_pending_txs_with_exclusion(
+        db_path,
+        network,
+        chain_tip_height,
+        Some((accepted_run_id, accepted_txid)),
+    )
+}
+
+fn reschedule_wallet_overdue_pending_txs_with_exclusion(
+    db_path: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    excluded: Option<(&str, &str)>,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let run_ids = {
+        let mut stmt = conn
+            .prepare_cached(&format!(
+                "SELECT DISTINCT pending.run_id
+                 FROM {PENDING_TXS_TABLE} AS pending
+                 JOIN {RUNS_TABLE} AS runs ON runs.run_id = pending.run_id
+                 WHERE pending.status = 'scheduled'
+                   AND pending.scheduled_height <= ?1
+                   AND runs.network = ?2
+                 ORDER BY pending.run_id ASC"
+            ))
+            .map_err(|e| format!("Prepare wallet overdue migration query: {e}"))?;
+        let rows = stmt
+            .query_map(params![chain_tip_height, network_name(network)], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| format!("Query wallet overdue migration runs: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read wallet overdue migration run: {e}"))?
+    };
+    drop(conn);
+
+    for run_id in run_ids {
+        let excluded_txid = excluded.and_then(|(excluded_run_id, excluded_txid)| {
+            (run_id == excluded_run_id).then_some(excluded_txid)
+        });
+        // A zero-block redraw would still be due during the same wallet-open
+        // pass and could allow a second fallback submission. ZIP 318's
+        // one-transfer on-open rule therefore requires at least one new block.
+        reschedule_overdue_pending_txs_with_options(
+            db_path,
+            &run_id,
+            network,
+            chain_tip_height,
+            1,
+            excluded_txid,
+        )?;
+    }
+    Ok(())
 }
 
 pub(crate) fn mark_pending_broadcasted(

@@ -236,6 +236,7 @@ struct MigrationBroadcastPolicy<'a> {
     max_per_step: Option<usize>,
     max_proofs_per_step: Option<usize>,
     defer_broadcast_after_proving: bool,
+    reschedule_wallet_overdue: bool,
     cancel: Option<&'a AtomicBool>,
 }
 
@@ -244,6 +245,7 @@ impl MigrationBroadcastPolicy<'_> {
         max_per_step: None,
         max_proofs_per_step: None,
         defer_broadcast_after_proving: false,
+        reschedule_wallet_overdue: false,
         cancel: None,
     };
 
@@ -251,6 +253,7 @@ impl MigrationBroadcastPolicy<'_> {
         max_per_step: Some(1),
         max_proofs_per_step: None,
         defer_broadcast_after_proving: false,
+        reschedule_wallet_overdue: true,
         cancel: None,
     };
 
@@ -259,6 +262,7 @@ impl MigrationBroadcastPolicy<'_> {
             max_per_step: None,
             max_proofs_per_step: None,
             defer_broadcast_after_proving: false,
+            reschedule_wallet_overdue: false,
             cancel: Some(cancel),
         }
     }
@@ -309,6 +313,60 @@ pub struct IronwoodMigrationResult {
     pub message: Option<String>,
     pub fee_zatoshi: u64,
     pub migrated_zatoshi: u64,
+}
+
+struct MigrationBroadcastAdvance {
+    result: IronwoodMigrationResult,
+    accepted_txids: Vec<String>,
+}
+
+impl MigrationBroadcastAdvance {
+    fn without_acceptance(result: IronwoodMigrationResult) -> Self {
+        Self {
+            result,
+            accepted_txids: Vec::new(),
+        }
+    }
+}
+
+fn one_due_migration_result(advance: MigrationBroadcastAdvance) -> IronwoodMigrationResult {
+    let mut result = advance.result;
+    // Unlike the general migration result, the one-due endpoint reports only
+    // transactions accepted by this invocation. The desktop on-open fallback
+    // can therefore commit its wallet-wide allowance without interpreting
+    // aggregate run totals as the current operation's outcome.
+    result.txids = advance.accepted_txids.join(",");
+    result
+}
+
+fn accepted_migration_processing_failure_result(
+    totals_before: &super::migration::PendingMigrationTotals,
+    accepted_txids: Vec<String>,
+    error: String,
+    fallback_total_count: u32,
+    fallback_migrated_zatoshi: u64,
+) -> MigrationBroadcastAdvance {
+    let accepted_txid_list = accepted_txids.join(",");
+    let message = format!(
+        "Migration transaction {accepted_txid_list} was accepted by lightwalletd, but local migration bookkeeping failed: {error}. Vizor will reconcile it on the next advance."
+    );
+    log::warn!("migration: {message}");
+    MigrationBroadcastAdvance {
+        result: IronwoodMigrationResult {
+            txids: totals_before.txids.join(","),
+            status: super::migration::PHASE_BROADCAST_SCHEDULED.to_string(),
+            // This operation result represents network acceptance even when
+            // the durable row could not yet be updated.
+            broadcasted_count: totals_before
+                .broadcasted_count
+                .saturating_add(u32::try_from(accepted_txids.len()).unwrap_or(u32::MAX)),
+            total_count: totals_before.total_count.max(fallback_total_count),
+            message: Some(message),
+            fee_zatoshi: totals_before.fee_zatoshi,
+            migrated_zatoshi: totals_before.value_zatoshi.max(fallback_migrated_zatoshi),
+        },
+        accepted_txids,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1384,7 +1442,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                     )
                     .await;
                     drop(migration_guard);
-                    return result;
+                    return result.map(|advance| advance.result);
                 }
             }
         }
@@ -1478,7 +1536,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         )
         .await;
         drop(migration_guard);
-        return result;
+        return result.map(|advance| advance.result);
     }
 
     let Some(broadcast) = broadcast_pending_denomination_stages(
@@ -2140,6 +2198,7 @@ pub async fn broadcast_due_orchard_migration_transactions(
         MigrationBroadcastPolicy::FOREGROUND,
     )
     .await
+    .map(|advance| advance.result)
 }
 
 pub async fn broadcast_one_due_orchard_migration_transaction(
@@ -2150,7 +2209,7 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
     pending_password: zeroize::Zeroizing<Vec<u8>>,
     pending_salt_base64: &str,
 ) -> Result<IronwoodMigrationResult, String> {
-    broadcast_due_orchard_migration_transactions_inner(
+    let advance = broadcast_due_orchard_migration_transactions_inner(
         db_path,
         lightwalletd_url,
         network,
@@ -2159,7 +2218,8 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
         pending_salt_base64,
         MigrationBroadcastPolicy::ONE_FOREGROUND,
     )
-    .await
+    .await?;
+    Ok(one_due_migration_result(advance))
 }
 
 async fn broadcast_due_orchard_migration_transactions_inner(
@@ -2170,21 +2230,25 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     pending_password: zeroize::Zeroizing<Vec<u8>>,
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
-) -> Result<IronwoodMigrationResult, String> {
+) -> Result<MigrationBroadcastAdvance, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
-        return Ok(IronwoodMigrationResult {
-            txids: String::new(),
-            status: super::migration::PHASE_COMPLETE.to_string(),
-            broadcasted_count: 0,
-            total_count: 0,
-            message: None,
-            fee_zatoshi: 0,
-            migrated_zatoshi: 0,
-        });
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            IronwoodMigrationResult {
+                txids: String::new(),
+                status: super::migration::PHASE_COMPLETE.to_string(),
+                broadcasted_count: 0,
+                total_count: 0,
+                message: None,
+                fee_zatoshi: 0,
+                migrated_zatoshi: 0,
+            },
+        ));
     };
     if policy.is_cancelled() {
-        return Ok(cancelled_migration_result(&run));
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            cancelled_migration_result(&run),
+        ));
     }
 
     // Reconcile chain changes before deciding whether an already-scheduled
@@ -2221,16 +2285,20 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     )
     .await?
     {
-        StagedDenominationAdvance::Waiting(result) => return Ok(result),
+        StagedDenominationAdvance::Waiting(result) => {
+            return Ok(MigrationBroadcastAdvance::without_acceptance(result));
+        }
         StagedDenominationAdvance::Ready => {}
     }
 
     let signed_child_count = super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
     if signed_child_count > 0 {
         if !run_may_finalize_presigned_migration_children(&run) {
-            return Ok(prepared_notes_not_spendable_result(
-                run.target_values_zatoshi.len() as u32,
-                run.target_values_zatoshi.iter().sum(),
+            return Ok(MigrationBroadcastAdvance::without_acceptance(
+                prepared_notes_not_spendable_result(
+                    run.target_values_zatoshi.len() as u32,
+                    run.target_values_zatoshi.iter().sum(),
+                ),
             ));
         }
         let finalized = finalize_presigned_migration_children(
@@ -2243,9 +2311,11 @@ async fn broadcast_due_orchard_migration_transactions_inner(
             policy,
         )?;
         if finalized == 0 || policy.should_defer_broadcast(finalized) {
-            return Ok(prepared_notes_not_spendable_result(
-                run.target_values_zatoshi.len() as u32,
-                run.target_values_zatoshi.iter().sum(),
+            return Ok(MigrationBroadcastAdvance::without_acceptance(
+                prepared_notes_not_spendable_result(
+                    run.target_values_zatoshi.len() as u32,
+                    run.target_values_zatoshi.iter().sum(),
+                ),
             ));
         }
     }
@@ -4393,15 +4463,17 @@ async fn broadcast_due_scheduled_migration_txs(
     fallback_total_count: u32,
     fallback_migrated_zatoshi: u64,
     policy: MigrationBroadcastPolicy<'_>,
-) -> Result<IronwoodMigrationResult, String> {
+) -> Result<MigrationBroadcastAdvance, String> {
     let totals_before = super::migration::pending_totals_for_run(db_path, run_id)?;
     if totals_before.total_count == 0 {
-        return Ok(migration_result_from_pending_totals(
-            totals_before,
-            super::migration::PHASE_READY_TO_MIGRATE,
-            Some("No signed migration transactions are scheduled yet.".to_string()),
-            fallback_total_count,
-            fallback_migrated_zatoshi,
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals_before,
+                super::migration::PHASE_READY_TO_MIGRATE,
+                Some("No signed migration transactions are scheduled yet.".to_string()),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
         ));
     }
 
@@ -4412,12 +4484,14 @@ async fn broadcast_due_scheduled_migration_txs(
         pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)?
     {
         super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
-        return Ok(migration_result_from_pending_totals(
-            totals_before,
-            super::migration::PHASE_FAILED_TERMINAL,
-            Some(message),
-            fallback_total_count,
-            fallback_migrated_zatoshi,
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals_before,
+                super::migration::PHASE_FAILED_TERMINAL,
+                Some(message),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
         ));
     }
 
@@ -4428,12 +4502,14 @@ async fn broadcast_due_scheduled_migration_txs(
             "{expired_count} migration transaction(s) expired before confirmation. Re-sign the affected denomination(s) with fresh anchors and expiry heights."
         );
         super::migration::mark_expired_pending_parts_for_resign(db_path, run_id, chain_tip_height)?;
-        return Ok(migration_result_from_pending_totals(
-            totals_before,
-            super::migration::PHASE_READY_TO_MIGRATE,
-            Some(message),
-            fallback_total_count,
-            fallback_migrated_zatoshi,
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals_before,
+                super::migration::PHASE_READY_TO_MIGRATE,
+                Some(message),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
         ));
     }
     let noncanonical_due_count =
@@ -4444,14 +4520,16 @@ async fn broadcast_due_scheduled_migration_txs(
         )?;
     if noncanonical_due_count > 0 {
         let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-        return Ok(migration_result_from_pending_totals(
-            totals,
-            super::migration::PHASE_READY_TO_MIGRATE,
-            Some(format!(
-                "{noncanonical_due_count} migration transaction(s) crossed a ZIP 318 expiry boundary and need fresh signatures."
-            )),
-            fallback_total_count,
-            fallback_migrated_zatoshi,
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals,
+                super::migration::PHASE_READY_TO_MIGRATE,
+                Some(format!(
+                    "{noncanonical_due_count} migration transaction(s) crossed a ZIP 318 expiry boundary and need fresh signatures."
+                )),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
         ));
     }
     let due = super::migration::due_pending_txs(
@@ -4470,21 +4548,25 @@ async fn broadcast_due_scheduled_migration_txs(
         } else {
             "Migration transactions are scheduled for delayed broadcast."
         };
-        return Ok(migration_result_from_pending_totals(
-            totals_before,
-            &status,
-            Some(message.to_string()),
-            fallback_total_count,
-            fallback_migrated_zatoshi,
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals_before,
+                &status,
+                Some(message.to_string()),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
         ));
     }
     if policy.is_cancelled() {
-        return Ok(migration_result_from_pending_totals(
-            totals_before,
-            super::migration::PHASE_BROADCAST_SCHEDULED,
-            Some("Background migration stopped before the next broadcast.".to_string()),
-            fallback_total_count,
-            fallback_migrated_zatoshi,
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals_before,
+                super::migration::PHASE_BROADCAST_SCHEDULED,
+                Some("Background migration stopped before the next broadcast.".to_string()),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
         ));
     }
 
@@ -4498,19 +4580,22 @@ async fn broadcast_due_scheduled_migration_txs(
                 super::migration::PHASE_FAILED_RECOVERABLE,
                 Some(&message),
             )?;
-            return Ok(IronwoodMigrationResult {
-                txids: String::new(),
-                status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
-                broadcasted_count: 0,
-                total_count: fallback_total_count,
-                message: Some(message),
-                fee_zatoshi: 0,
-                migrated_zatoshi: fallback_migrated_zatoshi,
-            });
+            return Ok(MigrationBroadcastAdvance::without_acceptance(
+                IronwoodMigrationResult {
+                    txids: String::new(),
+                    status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
+                    broadcasted_count: 0,
+                    total_count: fallback_total_count,
+                    message: Some(message),
+                    fee_zatoshi: 0,
+                    migrated_zatoshi: fallback_migrated_zatoshi,
+                },
+            ));
         }
     };
 
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
+    let mut accepted_txids = Vec::new();
     for pending in due.into_iter().take(policy.limit(usize::MAX)) {
         if policy.is_cancelled() {
             super::migration::mark_run_phase(
@@ -4543,12 +4628,14 @@ async fn broadcast_due_scheduled_migration_txs(
                     &rebuild_message,
                 )?;
                 let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-                return Ok(migration_result_from_pending_totals(
-                    totals,
-                    super::migration::PHASE_FAILED_TERMINAL,
-                    Some(rebuild_message),
-                    fallback_total_count,
-                    fallback_migrated_zatoshi,
+                return Ok(MigrationBroadcastAdvance::without_acceptance(
+                    migration_result_from_pending_totals(
+                        totals,
+                        super::migration::PHASE_FAILED_TERMINAL,
+                        Some(rebuild_message),
+                        fallback_total_count,
+                        fallback_migrated_zatoshi,
+                    ),
                 ));
             }
             super::migration::mark_run_phase(
@@ -4558,16 +4645,18 @@ async fn broadcast_due_scheduled_migration_txs(
                 Some(&message),
             )?;
             let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-            return Ok(migration_result_from_pending_totals(
-                totals,
-                super::migration::PHASE_FAILED_RECOVERABLE,
-                Some(message),
-                fallback_total_count,
-                fallback_migrated_zatoshi,
+            return Ok(MigrationBroadcastAdvance::without_acceptance(
+                migration_result_from_pending_totals(
+                    totals,
+                    super::migration::PHASE_FAILED_RECOVERABLE,
+                    Some(message),
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
+                ),
             ));
         }
 
-        if let Some(result) = record_accepted_scheduled_migration_tx(
+        let recorded = match record_accepted_scheduled_migration_tx(
             db_path,
             network,
             run_id,
@@ -4575,21 +4664,89 @@ async fn broadcast_due_scheduled_migration_txs(
             fallback_total_count,
             fallback_migrated_zatoshi,
             decrypt_and_store_migration_tx,
-        )? {
-            return Ok(result);
+        ) {
+            Ok(recorded) => recorded,
+            Err(error) => {
+                return Ok(accepted_migration_processing_failure_result(
+                    &totals_before,
+                    vec![pending.txid_hex.clone()],
+                    error,
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
+                ));
+            }
+        };
+        if let Some(mut result) = recorded {
+            if policy.reschedule_wallet_overdue {
+                if let Err(error) =
+                    super::migration::reschedule_wallet_overdue_pending_txs_after_accepted(
+                        db_path,
+                        network,
+                        chain_tip_height,
+                        run_id,
+                        &pending.txid_hex,
+                    )
+                {
+                    let message = format!(
+                        "{} Additionally failed to reschedule other overdue transfers: {error}",
+                        result.message.take().unwrap_or_default()
+                    );
+                    log::warn!("migration: {message}");
+                    result.message = Some(message);
+                }
+            }
+            return Ok(MigrationBroadcastAdvance {
+                result,
+                accepted_txids: vec![pending.txid_hex.clone()],
+            });
         }
-        super::migration::reschedule_overdue_pending_txs(
-            db_path,
-            run_id,
-            network,
-            chain_tip_height,
-        )?;
+        let reschedule_result = if policy.reschedule_wallet_overdue {
+            super::migration::reschedule_wallet_overdue_pending_txs(
+                db_path,
+                network,
+                chain_tip_height,
+            )
+        } else {
+            super::migration::reschedule_overdue_pending_txs(
+                db_path,
+                run_id,
+                network,
+                chain_tip_height,
+            )
+        };
+        if let Err(error) = reschedule_result {
+            return Ok(accepted_migration_processing_failure_result(
+                &totals_before,
+                vec![pending.txid_hex.clone()],
+                error,
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ));
+        }
+        accepted_txids.push(pending.txid_hex.clone());
         log::info!("migration: broadcast scheduled tx {}", pending.txid_hex);
     }
 
-    let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-    let scheduled_remaining = super::migration::scheduled_pending_count(db_path, run_id)?;
-    let status = super::migration::run_phase(db_path, run_id)?;
+    let post_broadcast_state = (|| {
+        Ok::<_, String>((
+            super::migration::pending_totals_for_run(db_path, run_id)?,
+            super::migration::scheduled_pending_count(db_path, run_id)?,
+            super::migration::run_phase(db_path, run_id)?,
+        ))
+    })();
+    let (totals, scheduled_remaining, status) = match post_broadcast_state {
+        Ok(state) => state,
+        Err(error) if !accepted_txids.is_empty() => {
+            return Ok(accepted_migration_processing_failure_result(
+                &totals_before,
+                accepted_txids,
+                error,
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ));
+        }
+        Err(error) => return Err(error),
+    };
     let message = if scheduled_remaining > 0 {
         "Due migration transactions were submitted. More are scheduled.".to_string()
     } else if status == super::migration::PHASE_BROADCAST_SCHEDULED {
@@ -4597,13 +4754,16 @@ async fn broadcast_due_scheduled_migration_txs(
     } else {
         "Migration transactions were broadcast on the saved schedule.".to_string()
     };
-    Ok(migration_result_from_pending_totals(
-        totals,
-        &status,
-        Some(message),
-        fallback_total_count,
-        fallback_migrated_zatoshi,
-    ))
+    Ok(MigrationBroadcastAdvance {
+        result: migration_result_from_pending_totals(
+            totals,
+            &status,
+            Some(message),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ),
+        accepted_txids,
+    })
 }
 
 fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {
@@ -4804,13 +4964,22 @@ where
             Some(&message),
         )?;
         let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-        return Ok(Some(migration_result_from_pending_totals(
+        let mut result = migration_result_from_pending_totals(
             totals,
             super::migration::PHASE_BROADCAST_SCHEDULED,
             Some(message),
             fallback_total_count,
             fallback_migrated_zatoshi,
-        )));
+        );
+        // The operation result reports network acceptance even though the
+        // durable pending row remains scheduled for local storage recovery.
+        // Callers can therefore enforce one accepted transfer per wallet-open
+        // epoch without parsing the human-readable recovery message.
+        result.broadcasted_count = result
+            .broadcasted_count
+            .checked_add(1)
+            .ok_or("Accepted migration transaction count overflow")?;
+        return Ok(Some(result));
     }
 
     super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)?;

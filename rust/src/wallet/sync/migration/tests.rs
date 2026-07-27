@@ -947,6 +947,173 @@ fn overdue_reschedule_crossing_expiry_bucket_requires_resigning() {
 }
 
 #[test]
+fn on_open_reschedule_redraws_overdue_transfers_across_wallet_runs() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-1", &[100, 200], &[Some(90), Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET txid_hex = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+             WHERE run_id = 'run-1' AND part_index = 0"
+        ),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET txid_hex = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+             WHERE run_id = 'run-1' AND part_index = 1"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    create_outbox_test_run(&db_path, "run-2", &[300], &[Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET account_uuid = 'account-2' WHERE run_id = 'run-2'"),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 503, schedule_start_height = 502
+             WHERE status = 'scheduled'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    mark_pending_broadcasted(
+        &db_path,
+        "run-1",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap();
+    reschedule_wallet_overdue_pending_txs(&db_path, WalletNetwork::Regtest, 503).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let remaining = conn
+        .prepare(
+            "SELECT run_id, scheduled_height
+             FROM vizor_migration_pending_txs
+             WHERE status = 'scheduled'
+             ORDER BY run_id, part_index",
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(remaining.len(), 2);
+    assert_eq!(
+        remaining
+            .iter()
+            .map(|entry| entry.0.as_str())
+            .collect::<Vec<_>>(),
+        vec!["run-1", "run-2"]
+    );
+    assert!(remaining.iter().all(|entry| entry.1 > 503));
+}
+
+#[test]
+fn on_open_storage_recovery_keeps_accepted_tx_and_redraws_every_other_run() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-1", &[100, 200], &[Some(90), Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET txid_hex = CASE part_index
+                 WHEN 0 THEN 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+                 ELSE 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+             END
+             WHERE run_id = 'run-1'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let accepted_txid = "a".repeat(64);
+    create_outbox_test_run(&db_path, "run-2", &[300], &[Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET account_uuid = 'account-2' WHERE run_id = 'run-2'"),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 503, schedule_start_height = 502
+             WHERE status = 'scheduled'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    reschedule_wallet_overdue_pending_txs_after_accepted(
+        &db_path,
+        WalletNetwork::Regtest,
+        503,
+        "run-1",
+        &accepted_txid,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let schedules = conn
+        .prepare(
+            "SELECT run_id, txid_hex, scheduled_height
+             FROM vizor_migration_pending_txs
+             WHERE status = 'scheduled'
+             ORDER BY run_id, part_index",
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(schedules.len(), 3);
+    assert_eq!(
+        schedules
+            .iter()
+            .find(|(_, txid, _)| txid == &accepted_txid)
+            .unwrap()
+            .2,
+        503
+    );
+    assert!(schedules
+        .iter()
+        .filter(|(_, txid, _)| txid != &accepted_txid)
+        .all(|(_, _, height)| *height > 503));
+}
+
+#[test]
 fn overdue_broadcast_crossing_expiry_bucket_requires_resigning_before_send() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
@@ -1894,10 +2061,7 @@ fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
 #[test]
 fn fast_testnet_uses_accelerated_preparation_delays() {
     assert_eq!(
-        preparation_schedule_parameters(
-            WalletNetwork::Regtest,
-            MigrationTimingPolicy::FastTestnet,
-        ),
+        preparation_schedule_parameters(WalletNetwork::Regtest, MigrationTimingPolicy::FastTestnet,),
         (
             FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS,
             FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS,
@@ -1922,12 +2086,8 @@ fn fast_testnet_uses_accelerated_preparation_delays() {
     )
     .unwrap();
     assert_eq!(
-        timing_policy_for_run_with_conn(
-            &conn,
-            "fast-testnet-preparation",
-            WalletNetwork::Regtest,
-        )
-        .unwrap(),
+        timing_policy_for_run_with_conn(&conn, "fast-testnet-preparation", WalletNetwork::Regtest,)
+            .unwrap(),
         MigrationTimingPolicy::FastTestnet,
     );
 
@@ -2122,10 +2282,7 @@ fn regtest_schedule_is_short_but_still_requires_blocks() {
 #[test]
 fn fast_testnet_uses_accelerated_schedule_and_anchor_timing() {
     assert_eq!(
-        schedule_parameters_with_policy(
-            WalletNetwork::Regtest,
-            MigrationTimingPolicy::FastTestnet,
-        ),
+        schedule_parameters_with_policy(WalletNetwork::Regtest, MigrationTimingPolicy::FastTestnet,),
         (
             FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS,
             FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS,

@@ -669,7 +669,7 @@ class IronwoodMigrationService {
            startMacosSoftwareMigration ?? _defaultStartMacosSoftwareMigration,
        broadcastDueMigration =
            broadcastDueMigration ??
-           rust_sync.broadcastDueOrchardMigrationTransactions,
+           rust_sync.broadcastOneDueOrchardMigrationTransaction,
        prepareMigrationOutbox =
            prepareMigrationOutbox ?? rust_sync.prepareOrchardMigrationOutbox,
        exportMigrationOutbox =
