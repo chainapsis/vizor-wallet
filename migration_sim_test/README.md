@@ -135,6 +135,32 @@ The success marker in the console log is:
 migration-sim FULL_MIGRATION_COMPLETE
 ```
 
+## Full migration with the live schedule open
+
+```bash
+migration_sim_test/run_schedule_migration.sh
+```
+
+This separate visible scenario uses the same funded wallet, private migration
+plan, block cadence, final balance checks, and Activity verification as the
+full migration scenario. After denomination preparation finishes, it opens
+**View Schedule** and keeps that screen open while every scheduled transfer is
+broadcast and confirmed. It verifies that:
+
+- the schedule contains one keyed row for every real migration part;
+- every persisted part remains represented while its state changes;
+- no schedule loading/error surface replaces the live run;
+- all rows reach `Completed`;
+- the schedule back action returns to the migration completion screen.
+
+Artifacts use the `migration_sim_test/artifacts/schedule-<timestamp>*` prefix.
+The schedule-specific success markers are:
+
+```text
+migration-sim-schedule SCHEDULE_OPENED
+migration-sim-schedule SCHEDULE_COMPLETED_AND_RETURNED
+```
+
 ## Immediate migration scenario
 
 ```bash

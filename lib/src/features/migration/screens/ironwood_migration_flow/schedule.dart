@@ -49,6 +49,7 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
     return _IronwoodMigrationFrame(
       toolbar: AppPaneToolbar(
         leading: AppBackLink(
+          key: const ValueKey('ironwood_migration_schedule_back_button'),
           label: 'Ironwood Migration',
           onTap: () => context.go('/migration/private/status'),
         ),
@@ -170,15 +171,21 @@ class _MigrationScheduleContent extends StatelessWidget {
           const SizedBox(height: 22),
           Expanded(
             child: ListView.separated(
+              key: const ValueKey('ironwood_migration_schedule_list'),
               itemCount: parts.length,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final part = parts[index];
-                return _MigrationScheduleRow(
-                  number: index + 1,
-                  value: part.valueZatoshi,
-                  total: total,
-                  state: part.state,
+                return KeyedSubtree(
+                  key: ValueKey(
+                    'ironwood_migration_schedule_part_${part.partIndex}',
+                  ),
+                  child: _MigrationScheduleRow(
+                    number: index + 1,
+                    value: part.valueZatoshi,
+                    total: total,
+                    state: part.state,
+                  ),
                 );
               },
             ),

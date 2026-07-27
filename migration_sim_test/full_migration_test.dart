@@ -38,7 +38,7 @@ const _homeHoldMs = int.fromEnvironment(
   defaultValue: 15000,
 );
 
-void main() {
+void main({bool visitScheduleAfterPreparation = false}) {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   // The default integration-test frame policy renders primarily when the
   // driver pumps. This simulation is intentionally watched by a person, so
@@ -48,7 +48,9 @@ void main() {
   setUpAll(initializeZcashWalletRuntime);
 
   testWidgets(
-    'migrates a large many-note wallet at a controlled block cadence',
+    visitScheduleAfterPreparation
+        ? 'migrates while the live schedule screen remains open'
+        : 'migrates a large many-note wallet at a controlled block cadence',
     (tester) async {
       expect(kZcashFastTestnetMigration, isTrue);
       expect(_fundedZatoshi, greaterThanOrEqualTo(1000000000));
@@ -114,10 +116,7 @@ void main() {
       );
       expect(plan, isNotNull);
       final approvedPlan = plan!;
-      expect(
-        approvedPlan.totalInputZatoshi,
-        BigInt.from(_fundedZatoshi),
-      );
+      expect(approvedPlan.totalInputZatoshi, BigInt.from(_fundedZatoshi));
       expect(approvedPlan.denominationSplitStageCount, greaterThanOrEqualTo(2));
       expect(approvedPlan.scheduledTransfers.length, greaterThan(6));
       e2eLog(
@@ -145,6 +144,7 @@ void main() {
       expect(started.scheduleMeanDelayBlocks, 12);
       expect(started.scheduleMaxDelayBlocks, 48);
 
+      var scheduleOpened = false;
       for (var mined = 0; mined <= _maxBlocks; mined++) {
         final status = await desktopRegtestMigrationStatus(accountUuid);
         final chain = await ironwoodDriverGet(_driverUrl, '/status');
@@ -163,7 +163,32 @@ void main() {
           'mempool=${mempool['size']}',
         );
 
+        if (visitScheduleAfterPreparation &&
+            !scheduleOpened &&
+            _isPostPreparationSchedulePhase(status.phase)) {
+          await _openScheduleAfterPreparation(
+            tester,
+            providerContainer,
+            status,
+            approvedPlan.scheduledTransfers.length,
+          );
+          scheduleOpened = true;
+        }
+        if (scheduleOpened) {
+          await _expectScheduleReflectsStatus(
+            tester,
+            providerContainer,
+            status,
+            approvedPlan.scheduledTransfers.length,
+          );
+        }
+
         if (status.phase == kIronwoodMigrationCompletePhase) {
+          if (visitScheduleAfterPreparation) {
+            expect(scheduleOpened, isTrue);
+            await _expectAllScheduleRowsCompleted(tester, status.parts.length);
+            await _returnToMigrationStatusFromSchedule(tester);
+          }
           expect(status.activeRunId, isNull);
           expect(status.confirmedTxCount, status.totalCount);
           expect(status.totalCount, approvedPlan.scheduledTransfers.length);
@@ -173,11 +198,7 @@ void main() {
             ),
             isTrue,
           );
-          await _expectFinalBalance(
-            dbPath,
-            accountUuid,
-            approvedPlan,
-          );
+          await _expectFinalBalance(dbPath, accountUuid, approvedPlan);
           await _returnHomeAfterCompletion(
             tester,
             providerContainer,
@@ -193,9 +214,7 @@ void main() {
             'title="Migrated to Ironwood" pool="Orchard → Ironwood"',
           );
           e2eLog('migration-sim holding Activity for ${_homeHoldMs}ms');
-          await Future<void>.delayed(
-            const Duration(milliseconds: _homeHoldMs),
-          );
+          await Future<void>.delayed(const Duration(milliseconds: _homeHoldMs));
           await tester.pump();
           return;
         }
@@ -208,8 +227,7 @@ void main() {
         final currentHeight = (chain['zcashdHeight'] as num).toInt();
         final nextActionHeight = status.nextActionHeight;
         var blocksToMine = 1;
-        if (nextActionHeight != null &&
-            nextActionHeight > currentHeight + 1) {
+        if (nextActionHeight != null && nextActionHeight > currentHeight + 1) {
           final gap = nextActionHeight - currentHeight;
           // Keep a mined transaction's confirmation transition observable,
           // then skip any remaining empty range on the following tick.
@@ -249,6 +267,256 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 40)),
   );
+}
+
+Future<void> _openScheduleAfterPreparation(
+  WidgetTester tester,
+  ProviderContainer providerContainer,
+  rust_sync.MigrationStatus status,
+  int expectedPartCount,
+) async {
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('ironwood_migration_view_schedule_button')),
+    ),
+    description: 'View Schedule action after preparation',
+    timeout: const Duration(minutes: 2),
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_view_schedule_button'),
+  );
+  await pumpUntil(
+    tester,
+    () =>
+        tester.any(find.text('Migration Schedule')) &&
+        !tester.any(
+          find.byKey(const ValueKey('ironwood_migration_schedule_error')),
+        ) &&
+        tester.any(
+          find.byKey(const ValueKey('ironwood_migration_schedule_list')),
+        ),
+    description: 'live migration schedule',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(status.parts, hasLength(expectedPartCount));
+  await _expectScheduleReflectsStatus(
+    tester,
+    providerContainer,
+    status,
+    expectedPartCount,
+  );
+  e2eLog(
+    'migration-sim-schedule SCHEDULE_OPENED '
+    'phase=${status.phase} parts=$expectedPartCount',
+  );
+}
+
+bool _isPostPreparationSchedulePhase(String phase) {
+  return switch (phase) {
+    kIronwoodMigrationReadyToMigratePhase ||
+    kIronwoodMigrationBroadcastScheduledPhase ||
+    kIronwoodMigrationBroadcastingPhase ||
+    kIronwoodMigrationWaitingConfirmationsPhase ||
+    kIronwoodMigrationCompletePhase => true,
+    _ => false,
+  };
+}
+
+Future<void> _expectScheduleReflectsStatus(
+  WidgetTester tester,
+  ProviderContainer providerContainer,
+  rust_sync.MigrationStatus minimumStatus,
+  int expectedPartCount,
+) async {
+  expect(find.text('Migration Schedule'), findsOneWidget);
+  await pumpUntil(
+    tester,
+    () {
+      final request = providerContainer
+          .read(ironwoodMigrationInputsProvider)
+          .statusRequest;
+      if (request == null) return false;
+      final displayedStatus = providerContainer
+          .read(ironwoodMigrationStatusProvider(request))
+          .asData
+          ?.value;
+      if (displayedStatus == null ||
+          displayedStatus.parts.length != expectedPartCount ||
+          !_migrationStatusIsAtOrAfter(displayedStatus, minimumStatus)) {
+        return false;
+      }
+      return _scheduleListChildCount(tester) == expectedPartCount &&
+          _renderedScheduleRowsMatchStatus(tester, displayedStatus);
+    },
+    description: 'schedule rows matching persisted migration state',
+    timeout: const Duration(seconds: 30),
+  );
+}
+
+bool _migrationStatusIsAtOrAfter(
+  rust_sync.MigrationStatus displayed,
+  rust_sync.MigrationStatus minimum,
+) {
+  final displayedParts = {
+    for (final part in displayed.parts) part.partIndex: part,
+  };
+  for (final minimumPart in minimum.parts) {
+    final displayedPart = displayedParts[minimumPart.partIndex];
+    if (displayedPart == null ||
+        !_migrationPartStateIsAtOrAfter(
+          displayedPart.state,
+          minimumPart.state,
+        )) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _migrationPartStateIsAtOrAfter(
+  rust_sync.MigrationPartState displayed,
+  rust_sync.MigrationPartState minimum,
+) {
+  if (displayed == minimum) return true;
+  if (displayed == rust_sync.MigrationPartState.needsInput ||
+      minimum == rust_sync.MigrationPartState.needsInput) {
+    return false;
+  }
+  return _migrationPartStateRank(displayed) >= _migrationPartStateRank(minimum);
+}
+
+int _migrationPartStateRank(rust_sync.MigrationPartState state) {
+  return switch (state) {
+    rust_sync.MigrationPartState.preparing ||
+    rust_sync.MigrationPartState.scheduled => 0,
+    rust_sync.MigrationPartState.migrating => 1,
+    rust_sync.MigrationPartState.confirming => 2,
+    rust_sync.MigrationPartState.completed => 3,
+    rust_sync.MigrationPartState.needsInput => -1,
+  };
+}
+
+bool _renderedScheduleRowsMatchStatus(
+  WidgetTester tester,
+  rust_sync.MigrationStatus status,
+) {
+  final partsByIndex = {for (final part in status.parts) part.partIndex: part};
+  final renderedParts = _schedulePartFinder().evaluate().toList();
+  if (renderedParts.isEmpty) return false;
+
+  for (final element in renderedParts) {
+    final key = (element.widget.key! as ValueKey<String>).value;
+    final partIndex = int.tryParse(
+      key.substring('ironwood_migration_schedule_part_'.length),
+    );
+    final part = partsByIndex[partIndex];
+    if (part == null) return false;
+    final expectedState = _scheduleStateLabel(part.state);
+    final row = find.byKey(ValueKey(key));
+    if (find
+            .descendant(of: row, matching: find.text(expectedState))
+            .evaluate()
+            .length !=
+        1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+String _scheduleStateLabel(rust_sync.MigrationPartState state) {
+  return switch (state) {
+    rust_sync.MigrationPartState.completed => 'Completed',
+    rust_sync.MigrationPartState.migrating => 'Migrating...',
+    rust_sync.MigrationPartState.confirming => 'Confirming...',
+    rust_sync.MigrationPartState.needsInput => 'Needs approval',
+    _ => 'Scheduled',
+  };
+}
+
+Finder _schedulePartFinder() => find.byWidgetPredicate(
+  (widget) =>
+      widget.key is ValueKey<String> &&
+      (widget.key! as ValueKey<String>).value.startsWith(
+        'ironwood_migration_schedule_part_',
+      ),
+);
+
+int? _scheduleListChildCount(WidgetTester tester) {
+  final list = tester.widget<ListView>(
+    find.byKey(const ValueKey('ironwood_migration_schedule_list')),
+  );
+  // ListView.separated's delegate count includes the separators. The semantic
+  // count is the number of migration rows exposed by the screen.
+  return list.semanticChildCount;
+}
+
+Future<void> _expectAllScheduleRowsCompleted(
+  WidgetTester tester,
+  int expectedPartCount,
+) async {
+  final listFinder = find.byKey(
+    const ValueKey('ironwood_migration_schedule_list'),
+  );
+  expect(_scheduleListChildCount(tester), expectedPartCount);
+  await pumpUntil(
+    tester,
+    () {
+      final renderedCount = _schedulePartFinder().evaluate().length;
+      final completedRowCount = find
+          .descendant(of: listFinder, matching: find.text('Completed'))
+          .evaluate()
+          .length;
+      return renderedCount > 0 && completedRowCount == renderedCount;
+    },
+    description: 'completed schedule rows',
+    timeout: const Duration(minutes: 2),
+  );
+
+  final seenParts = <String>{};
+  while (true) {
+    final renderedParts = _schedulePartFinder().evaluate().toList();
+    final renderedKeys = renderedParts
+        .map((element) => (element.widget.key! as ValueKey<String>).value)
+        .toSet();
+    seenParts.addAll(renderedKeys);
+    expect(
+      find.descendant(of: listFinder, matching: find.text('Completed')),
+      findsNWidgets(renderedParts.length),
+    );
+
+    final scrollable = tester.state<ScrollableState>(
+      find.descendant(of: listFinder, matching: find.byType(Scrollable)),
+    );
+    if (scrollable.position.pixels >= scrollable.position.maxScrollExtent) {
+      break;
+    }
+    await tester.drag(listFinder, const Offset(0, -220));
+    await tester.pumpAndSettle();
+  }
+  expect(seenParts, hasLength(expectedPartCount));
+  e2eLog(
+    'migration-sim-schedule ALL_SCHEDULE_ROWS_COMPLETED '
+    'parts=$expectedPartCount',
+  );
+}
+
+Future<void> _returnToMigrationStatusFromSchedule(WidgetTester tester) async {
+  await tapAppWidget(
+    tester,
+    const ValueKey('ironwood_migration_schedule_back_button'),
+  );
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('ironwood_migration_status_complete')),
+    ),
+    description: 'completed migration after leaving schedule',
+    timeout: const Duration(minutes: 2),
+  );
+  e2eLog('migration-sim-schedule SCHEDULE_COMPLETED_AND_RETURNED');
 }
 
 Future<void> _openActivityAndVerifyMigration(WidgetTester tester) async {
@@ -330,10 +598,7 @@ Future<void> _expectFinalBalance(
   );
   final retainedOrchard = balance.orchard + balance.uneconomicValue;
   expect(balance.ironwood, plan.totalMigratableZatoshi);
-  expect(
-    retainedOrchard,
-    plan.orchardChangeZatoshi ?? BigInt.zero,
-  );
+  expect(retainedOrchard, plan.orchardChangeZatoshi ?? BigInt.zero);
   expect(
     BigInt.from(_fundedZatoshi) - balance.ironwood - retainedOrchard,
     plan.estimatedTotalFeeZatoshi,
