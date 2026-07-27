@@ -223,6 +223,14 @@ impl Drop for ImmediateMigrationInputLock {
     }
 }
 
+struct BuiltImmediateMigration {
+    base_pczt: Vec<u8>,
+    orchard_spend_action_indices: Vec<usize>,
+    fee_zatoshi: u64,
+    migrated_zatoshi: u64,
+    input_lock: ImmediateMigrationInputLock,
+}
+
 #[derive(Clone, Copy)]
 struct MigrationBroadcastPolicy<'a> {
     max_per_step: Option<usize>,
@@ -467,6 +475,9 @@ static KEYSTONE_MIGRATION_REQUESTS: OnceLock<Mutex<HashMap<String, StoredMigrati
     OnceLock::new();
 static KEYSTONE_SINGLE_QR_MIGRATION_REQUESTS: OnceLock<
     Mutex<HashMap<String, StoredSingleQrMigrationPczt>>,
+> = OnceLock::new();
+static KEYSTONE_IMMEDIATE_MIGRATION_REQUESTS: OnceLock<
+    Mutex<HashMap<String, StoredImmediateMigrationPczt>>,
 > = OnceLock::new();
 
 struct RetainAllNotes;
@@ -1488,22 +1499,12 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     ))
 }
 
-/// Performs the user-selected Immediate migration as one foreground
-/// Orchard-to-Ironwood transaction. Unlike the privacy migration this does
-/// not create denomination stages, a migration run, or scheduled children.
-pub(crate) async fn migrate_orchard_to_ironwood_immediately(
+fn build_orchard_migration_immediate_pczt(
     db_path: &str,
-    lightwalletd_url: &str,
     network: WalletNetwork,
     account_uuid: &str,
-    seed: SecretVec<u8>,
     approved_plan: OrchardMigrationImmediatePlan,
-) -> Result<IronwoodMigrationResult, String> {
-    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    if super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)? {
-        return Err("An Ironwood migration is already in progress for this account".to_string());
-    }
-
+) -> Result<BuiltImmediateMigration, String> {
     let (
         base_pczt,
         orchard_spend_action_indices,
@@ -1658,8 +1659,42 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
             locked_outputs,
         ))
     })?;
-    let mut input_lock =
-        ImmediateMigrationInputLock::new(db_path, network, input_lock_owner, locked_outputs);
+    Ok(BuiltImmediateMigration {
+        base_pczt,
+        orchard_spend_action_indices,
+        fee_zatoshi,
+        migrated_zatoshi,
+        input_lock: ImmediateMigrationInputLock::new(
+            db_path,
+            network,
+            input_lock_owner,
+            locked_outputs,
+        ),
+    })
+}
+
+/// Performs the user-selected Immediate migration as one foreground
+/// Orchard-to-Ironwood transaction. Unlike the privacy migration this does
+/// not create denomination stages, a migration run, or scheduled children.
+pub(crate) async fn migrate_orchard_to_ironwood_immediately(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    seed: SecretVec<u8>,
+    approved_plan: OrchardMigrationImmediatePlan,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    if super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)? {
+        return Err("An Ironwood migration is already in progress for this account".to_string());
+    }
+    let BuiltImmediateMigration {
+        base_pczt,
+        orchard_spend_action_indices,
+        fee_zatoshi,
+        migrated_zatoshi,
+        mut input_lock,
+    } = build_orchard_migration_immediate_pczt(db_path, network, account_uuid, approved_plan)?;
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
     let signed =
         sign_orchard_migration_pczt_with_usk(&base_pczt, &orchard_spend_action_indices, &usk)?;
