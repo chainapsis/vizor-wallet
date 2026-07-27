@@ -738,26 +738,45 @@ String _preparationCompletionEstimateDisplay(
   final remaining = _preparationRemainingCount(status);
   if (remaining == 0) return 'Complete';
   final transactions = _preparationTransactions(status);
-  final scheduledHeights = transactions
-      .map((item) => item.scheduledHeight)
-      .whereType<int>();
-  final furthestScheduledHeight = scheduledHeights.isEmpty
-      ? currentHeight
-      : math.max(currentHeight, scheduledHeights.reduce(math.max));
-  final unscheduled = transactions
+  final confirmationTarget = status.denominationConfirmationTarget;
+  final meanDelay =
+      status.preparationMeanDelayBlocks ?? status.scheduleMeanDelayBlocks;
+  if (transactions.isEmpty) {
+    final remainingBlocks = math.max(
+      1,
+      remaining * meanDelay + confirmationTarget,
+    );
+    return _formatMigrationBlockDurationEstimate(remainingBlocks);
+  }
+
+  var projectedHeight = currentHeight;
+  for (final transaction in transactions) {
+    final int transactionCompletionHeight = switch (transaction.state) {
+      rust_sync.MigrationPreparationTransactionState.awaitingInputs ||
+      rust_sync.MigrationPreparationTransactionState.completed => currentHeight,
+      rust_sync.MigrationPreparationTransactionState.scheduled =>
+        math.max(currentHeight, transaction.scheduledHeight ?? currentHeight) +
+            confirmationTarget,
+      rust_sync.MigrationPreparationTransactionState.broadcasted =>
+        currentHeight + confirmationTarget,
+      rust_sync.MigrationPreparationTransactionState.confirming =>
+        currentHeight +
+            math.max(
+              0,
+              transaction.confirmationTarget - transaction.confirmationCount,
+            ),
+    };
+    projectedHeight = math.max(projectedHeight, transactionCompletionHeight);
+  }
+
+  final awaitingInputCount = transactions
       .where(
         (item) =>
-            item.state !=
-                rust_sync.MigrationPreparationTransactionState.completed &&
-            item.scheduledHeight == null,
+            item.state ==
+            rust_sync.MigrationPreparationTransactionState.awaitingInputs,
       )
       .length;
-  final projectedHeight =
-      furthestScheduledHeight +
-      (unscheduled *
-          (status.preparationMeanDelayBlocks ??
-              status.scheduleMeanDelayBlocks)) +
-      status.denominationConfirmationTarget;
+  projectedHeight += awaitingInputCount * (meanDelay + confirmationTarget);
   final remainingBlocks = math.max(1, projectedHeight - currentHeight);
   return _formatMigrationBlockDurationEstimate(remainingBlocks);
 }

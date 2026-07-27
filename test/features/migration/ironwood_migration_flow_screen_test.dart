@@ -2019,6 +2019,62 @@ void main() {
     expect(find.text('~2 mins'), findsNothing);
   });
 
+  testWidgets(
+    'preparation ETA includes confirmation depth between dependent splits',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        denominationConfirmationTarget: 3,
+        denominationSplitCompletedCount: 1,
+        denominationSplitTotalCount: 3,
+        preparationMeanDelayBlocks: 4,
+        preparationTransactions: [
+          _preparationTransaction(
+            0,
+            500_000_000,
+            rust_sync.MigrationPreparationTransactionState.completed,
+            scheduledHeight: 900,
+            minedHeight: 904,
+            confirmationCount: 3,
+          ),
+          _preparationTransaction(
+            1,
+            400_000_000,
+            rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+          ),
+          _preparationTransaction(
+            2,
+            300_000_000,
+            rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: status,
+          coordinatorStatus: status,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 1_000,
+            chainTipHeight: 1_000,
+          ),
+          disableAnimations: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('~18 mins'), findsOneWidget);
+      expect(find.text('~14 mins'), findsNothing);
+    },
+  );
+
   testWidgets('migration schedule retries after status lookup fails', (
     tester,
   ) async {
