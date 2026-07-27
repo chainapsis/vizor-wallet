@@ -1353,7 +1353,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Next migration'), findsNothing);
     expect(find.text('Awaiting mining'), findsOneWidget);
@@ -1669,15 +1670,26 @@ void main() {
       );
 
       var frameIndex = 1;
+      final confirmingMotionStrengths = <double>[];
       for (final frame in const [0, 230, 230, 230, 230]) {
         await tester.pump(Duration(milliseconds: frame));
         expect(activeStatus, findsOneWidget);
         expect(tester.element(activeStatus), same(activeStatusElement));
         expect(tester.element(ringCenter), same(ringCenterElement));
         expect(tester.takeException(), isNull);
+        final dynamic painter = tester
+            .widget<CustomPaint>(
+              find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+            )
+            .painter;
+        final segments = painter.segments as List<dynamic>;
+        confirmingMotionStrengths.add(segments[1].motionStrength as double);
         await _captureMigrationTransitionGolden(activeStatus, frameIndex++);
       }
 
+      expect(confirmingMotionStrengths.first, 0);
+      expect(confirmingMotionStrengths[1], allOf(greaterThan(0), lessThan(1)));
+      expect(confirmingMotionStrengths.last, 1);
       expect(
         find.bySemanticsLabel(
           'Migration notes in expected processing order. '
@@ -1752,6 +1764,195 @@ void main() {
     expect(buttonRect.contains(labelRect.topLeft), isTrue);
     expect(buttonRect.contains(labelRect.bottomRight), isTrue);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('scheduled ring segments use the theme positive token at 20%', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final status = _migrationStatus(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      activeRunId: 'run-themed-ring',
+      targetValuesZatoshi: const [10_000_000],
+      totalCount: 1,
+      parts: [
+        _migrationPart(0, 10_000_000, rust_sync.MigrationPartState.scheduled),
+      ],
+    );
+
+    for (final theme in [AppThemeData.light, AppThemeData.dark]) {
+      await tester.pumpWidget(
+        _MutablePrivateStatusHarness(
+          status: status,
+          syncState: _syncedSyncState,
+          disableAnimations: false,
+          themeData: theme,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ringPaint = tester.widget<CustomPaint>(
+        find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+      );
+      final dynamic ringPainter = ringPaint.painter;
+      final dynamic segment = (ringPainter.segments as List<dynamic>).single;
+      expect(
+        segment.color,
+        theme.colors.text.positiveStrong.withValues(alpha: 0.20),
+      );
+      expect(segment.motion.toString(), contains('none'));
+      expect(ringPainter.motionPhase, 0);
+    }
+  });
+
+  testWidgets('in-flight ring uses one running shimmer clock', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          activeRunId: 'run-shimmer',
+          targetValuesZatoshi: const [10_000_000, 20_000_000],
+          totalCount: 2,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+            _migrationPart(
+              1,
+              20_000_000,
+              rust_sync.MigrationPartState.confirming,
+            ),
+          ],
+        ),
+        disableAnimations: false,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    dynamic painter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+        )
+        .painter;
+    final initialPhase = painter.motionPhase as double;
+    final segments = painter.segments as List<dynamic>;
+    expect(segments, hasLength(2));
+    expect(
+      segments,
+      everyElement(
+        predicate<dynamic>((segment) {
+          return segment.motion.toString().contains('shimmer') &&
+              segment.motionStrength == 1;
+        }),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 200));
+    painter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+        )
+        .painter;
+    expect(painter.motionPhase as double, greaterThan(initialPhase));
+  });
+
+  testWidgets('reduced motion freezes in-flight ring at a static fallback', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          activeRunId: 'run-reduced-motion',
+          targetValuesZatoshi: const [10_000_000],
+          totalCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.migrating,
+            ),
+          ],
+        ),
+        disableAnimations: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    dynamic painter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+        )
+        .painter;
+    final initialPhase = painter.motionPhase as double;
+    expect(painter.reduceMotion, isTrue);
+    await tester.pump(const Duration(milliseconds: 400));
+    painter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+        )
+        .painter;
+    expect(painter.motionPhase, initialPhase);
+  });
+
+  testWidgets('Keystone input segment uses inverse token and blink motion', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          activeRunId: 'run-keystone-blink',
+          targetValuesZatoshi: const [10_000_000],
+          totalCount: 1,
+          currentSigningPartIndices: const [0],
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.scheduled,
+            ),
+          ],
+        ),
+        activeAccountIsHardware: true,
+        disableAnimations: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final ringPaint = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+    );
+    final dynamic ringPainter = ringPaint.painter;
+    final dynamic segment = (ringPainter.segments as List<dynamic>).single;
+    expect(segment.color, AppThemeData.light.colors.background.inverse);
+    expect(segment.motion.toString(), contains('blink'));
+    expect(segment.motionStrength, 1);
+    expect(ringPainter.reduceMotion, isTrue);
   });
 
   testWidgets('private status routes Keystone ready state to batch signing', (
@@ -3052,12 +3253,14 @@ class _MutablePrivateStatusHarness extends StatefulWidget {
     required this.syncState,
     this.coordinatorAdvancing = false,
     this.disableAnimations = true,
+    this.themeData = AppThemeData.light,
   });
 
   final rust_sync.MigrationStatus status;
   final SyncState syncState;
   final bool coordinatorAdvancing;
   final bool disableAnimations;
+  final AppThemeData themeData;
 
   @override
   State<_MutablePrivateStatusHarness> createState() =>
@@ -3152,7 +3355,7 @@ class _MutablePrivateStatusHarnessState
               disableAnimations: widget.disableAnimations,
               textScaler: TextScaler.noScaling,
             ),
-            child: AppTheme(data: AppThemeData.light, child: child!),
+            child: AppTheme(data: widget.themeData, child: child!),
           ),
         ),
       ),

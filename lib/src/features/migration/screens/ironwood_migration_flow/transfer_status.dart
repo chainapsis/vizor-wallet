@@ -344,6 +344,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                   key: const ValueKey('ironwood_migration_morphing_ring'),
                   preparing: isPreparing,
                   preparationColor: colors.text.accent.withValues(alpha: 0.20),
+                  palette: _migrationRingPalette(colors),
                   values: values,
                   totalZatoshi: totalZatoshi,
                   statuses: statuses,
@@ -1166,6 +1167,7 @@ class _MigrationMorphingRing extends StatefulWidget {
     super.key,
     required this.preparing,
     required this.preparationColor,
+    required this.palette,
     required this.values,
     required this.totalZatoshi,
     required this.statuses,
@@ -1174,6 +1176,7 @@ class _MigrationMorphingRing extends StatefulWidget {
 
   final bool preparing;
   final Color preparationColor;
+  final _MigrationRingPalette palette;
   final List<BigInt> values;
   final BigInt totalZatoshi;
   final List<_MigrationBatchStatus> statuses;
@@ -1191,6 +1194,7 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
   static const _stepBreather = Duration(milliseconds: 105);
   static const _spinDuration = Duration(milliseconds: 1800);
   static const _restBetweenBlocks = Duration(milliseconds: 900);
+  static const _motionDuration = Duration(milliseconds: 1600);
 
   final math.Random _random = math.Random(704075305);
   late final AnimationController _stepController = AnimationController(
@@ -1205,6 +1209,10 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
     vsync: this,
     duration: const Duration(milliseconds: 920),
   );
+  late final AnimationController _motionController = AnimationController(
+    vsync: this,
+    duration: _motionDuration,
+  );
   late List<double> _weights;
   late List<double> _fromWeights;
   late List<double> _toWeights;
@@ -1217,6 +1225,7 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
   @override
   void initState() {
     super.initState();
+    _morphController.addStatusListener(_handleMorphStatus);
     _weights = List.of(_MigrationPreparationRingPainter.initialSegmentRatios);
     _fromWeights = List.of(_weights);
     _toWeights = List.of(_weights);
@@ -1230,6 +1239,7 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
         values: widget.values,
         totalZatoshi: widget.totalZatoshi,
         statuses: widget.statuses,
+        palette: widget.palette,
       );
       _morphTo = _morphFrom;
       _morphController.value = 1;
@@ -1239,14 +1249,21 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
   @override
   void didUpdateWidget(covariant _MigrationMorphingRing oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.preparing) return;
+    if (widget.preparing) {
+      _syncMotionController();
+      return;
+    }
 
     final next = _liveSegments(
       values: widget.values,
       totalZatoshi: widget.totalZatoshi,
       statuses: widget.statuses,
+      palette: widget.palette,
     );
-    if (_sameVisualSegments(_morphTo, next)) return;
+    if (_sameVisualSegments(_morphTo, next)) {
+      _syncMotionController();
+      return;
+    }
 
     final current = oldWidget.preparing
         ? _lastPreparationSegments
@@ -1265,12 +1282,34 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
     } else {
       _morphController.forward(from: 0);
     }
+    _syncMotionController();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    _syncMotionController();
+  }
+
+  void _handleMorphStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    _morphFrom = _morphTo;
+    _syncMotionController();
+  }
+
+  void _syncMotionController() {
+    final shouldRun =
+        !_reduceMotion &&
+        !widget.preparing &&
+        (_segmentsNeedMotion(_morphFrom) || _segmentsNeedMotion(_morphTo));
+    if (shouldRun) {
+      if (!_motionController.isAnimating) {
+        _motionController.repeat();
+      }
+    } else {
+      _motionController.stop();
+    }
   }
 
   Future<void> _runIdleLoop() async {
@@ -1341,6 +1380,7 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
     _stepController.dispose();
     _spinController.dispose();
     _morphController.dispose();
+    _motionController.dispose();
     super.dispose();
   }
 
@@ -1364,6 +1404,7 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
           _stepController,
           _spinController,
           _morphController,
+          _motionController,
         ]),
         builder: (context, _) {
           final eased = Curves.easeOutBack.transform(_stepController.value);
@@ -1397,6 +1438,8 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
                   rotation: widget.preparing
                       ? Curves.easeInOutCubic.transform(_spinController.value)
                       : 0,
+                  motionPhase: _motionController.value,
+                  reduceMotion: _reduceMotion,
                 ),
               ),
               widget.child,
@@ -1414,19 +1457,40 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
       _MigrationRingVisualSegment(
         weight: weight,
         color: widget.preparationColor,
+        highlightColor: widget.preparationColor,
       ),
   ];
 }
+
+typedef _MigrationRingPalette = ({
+  Color scheduled,
+  Color needsInput,
+  Color complete,
+});
+
+_MigrationRingPalette _migrationRingPalette(AppColors colors) => (
+  scheduled: colors.text.positiveStrong.withValues(alpha: 0.20),
+  needsInput: colors.background.inverse,
+  complete: const Color(0xFF00C875),
+);
+
+enum _MigrationRingMotion { none, shimmer, blink }
 
 class _MigrationRingVisualSegment {
   const _MigrationRingVisualSegment({
     required this.weight,
     required this.color,
+    required this.highlightColor,
+    this.motion = _MigrationRingMotion.none,
+    this.motionStrength = 0,
     this.presence = 1,
   });
 
   final double weight;
   final Color color;
+  final Color highlightColor;
+  final _MigrationRingMotion motion;
+  final double motionStrength;
   final double presence;
 }
 
@@ -1439,18 +1503,18 @@ List<_MigrationRingVisualSegment> _liveSegments({
   required List<BigInt> values,
   required BigInt totalZatoshi,
   required List<_MigrationBatchStatus> statuses,
+  required _MigrationRingPalette palette,
 }) {
   if (values.isEmpty || totalZatoshi <= BigInt.zero) return const [];
   final weights = _normalizedMigrationRingWeights(values);
   return [
     for (var index = 0; index < values.length; index++)
-      _MigrationRingVisualSegment(
+      _migrationRingStatusSegment(
         weight: weights[index],
-        color: _migrationRingStatusColor(
-          index < statuses.length
-              ? statuses[index]
-              : _MigrationBatchStatus.scheduled,
-        ),
+        status: index < statuses.length
+            ? statuses[index]
+            : _MigrationBatchStatus.scheduled,
+        palette: palette,
       ),
   ];
 }
@@ -1514,16 +1578,51 @@ List<double> _normalizedMigrationRingWeights(List<BigInt> values) {
   return weights;
 }
 
-Color _migrationRingStatusColor(_MigrationBatchStatus status) =>
-    switch (status) {
-      _MigrationBatchStatus.none => const Color(0xFF3F4040),
-      _MigrationBatchStatus.preparing => const Color(0xFF00D084),
-      _MigrationBatchStatus.scheduled => const Color(0xFF0B4631),
-      _MigrationBatchStatus.migrating => const Color(0xFF00D084),
-      _MigrationBatchStatus.confirming => const Color(0xFF0EA76C),
-      _MigrationBatchStatus.complete => const Color(0xFF00C875),
-      _MigrationBatchStatus.needsInput => const Color(0xFFF7F7F7),
-    };
+_MigrationRingVisualSegment _migrationRingStatusSegment({
+  required double weight,
+  required _MigrationBatchStatus status,
+  required _MigrationRingPalette palette,
+}) {
+  final (color, highlightColor, motion) = switch (status) {
+    _MigrationBatchStatus.none => (
+      const Color(0xFF3F4040),
+      const Color(0xFF3F4040),
+      _MigrationRingMotion.none,
+    ),
+    _MigrationBatchStatus.preparing => (
+      const Color(0xFF00D084),
+      const Color(0xFF00D084),
+      _MigrationRingMotion.none,
+    ),
+    _MigrationBatchStatus.scheduled => (
+      palette.scheduled,
+      palette.scheduled,
+      _MigrationRingMotion.none,
+    ),
+    _MigrationBatchStatus.migrating || _MigrationBatchStatus.confirming => (
+      palette.scheduled,
+      palette.complete,
+      _MigrationRingMotion.shimmer,
+    ),
+    _MigrationBatchStatus.complete => (
+      palette.complete,
+      palette.complete,
+      _MigrationRingMotion.none,
+    ),
+    _MigrationBatchStatus.needsInput => (
+      palette.needsInput,
+      palette.needsInput,
+      _MigrationRingMotion.blink,
+    ),
+  };
+  return _MigrationRingVisualSegment(
+    weight: weight,
+    color: color,
+    highlightColor: highlightColor,
+    motion: motion,
+    motionStrength: motion == _MigrationRingMotion.none ? 0 : 1,
+  );
+}
 
 String _migrationRingStatusSemantics(_MigrationBatchStatus status) =>
     switch (status) {
@@ -1546,35 +1645,46 @@ List<_MigrationRingVisualSegment> _interpolateVisualSegments(
   const transparent = _MigrationRingVisualSegment(
     weight: 0,
     color: Color(0x003F4040),
+    highlightColor: Color(0x003F4040),
     presence: 0,
   );
   return [
     for (var index = 0; index < count; index++)
-      _MigrationRingVisualSegment(
-        weight:
-            (index < from.length ? from[index].weight : transparent.weight) +
-            ((index < to.length ? to[index].weight : transparent.weight) -
-                    (index < from.length
-                        ? from[index].weight
-                        : transparent.weight)) *
-                t,
-        color: Color.lerp(
-          index < from.length ? from[index].color : transparent.color,
-          index < to.length ? to[index].color : transparent.color,
-          t,
-        )!,
-        presence:
-            (index < from.length
-                ? from[index].presence
-                : transparent.presence) +
-            ((index < to.length ? to[index].presence : transparent.presence) -
-                    (index < from.length
-                        ? from[index].presence
-                        : transparent.presence)) *
-                t,
+      _interpolateVisualSegment(
+        index < from.length ? from[index] : transparent,
+        index < to.length ? to[index] : transparent,
+        t,
       ),
   ];
 }
+
+_MigrationRingVisualSegment _interpolateVisualSegment(
+  _MigrationRingVisualSegment from,
+  _MigrationRingVisualSegment to,
+  double t,
+) {
+  final motion = from.motion == to.motion
+      ? from.motion
+      : to.motion != _MigrationRingMotion.none
+      ? to.motion
+      : from.motion;
+  return _MigrationRingVisualSegment(
+    weight: from.weight + (to.weight - from.weight) * t,
+    color: Color.lerp(from.color, to.color, t)!,
+    highlightColor: Color.lerp(from.highlightColor, to.highlightColor, t)!,
+    motion: motion,
+    motionStrength:
+        from.motionStrength + (to.motionStrength - from.motionStrength) * t,
+    presence: from.presence + (to.presence - from.presence) * t,
+  );
+}
+
+bool _segmentsNeedMotion(List<_MigrationRingVisualSegment> segments) =>
+    segments.any(
+      (segment) =>
+          segment.motion != _MigrationRingMotion.none &&
+          segment.motionStrength > 0.0001,
+    );
 
 bool _sameVisualSegments(
   List<_MigrationRingVisualSegment> left,
@@ -1584,6 +1694,9 @@ bool _sameVisualSegments(
   for (var index = 0; index < left.length; index++) {
     if (left[index].weight != right[index].weight ||
         left[index].color != right[index].color ||
+        left[index].highlightColor != right[index].highlightColor ||
+        left[index].motion != right[index].motion ||
+        left[index].motionStrength != right[index].motionStrength ||
         left[index].presence != right[index].presence) {
       return false;
     }
@@ -1595,10 +1708,14 @@ class _MigrationRingVisualPainter extends CustomPainter {
   const _MigrationRingVisualPainter({
     required this.segments,
     required this.rotation,
+    required this.motionPhase,
+    required this.reduceMotion,
   });
 
   final List<_MigrationRingVisualSegment> segments;
   final double rotation;
+  final double motionPhase;
+  final bool reduceMotion;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1649,7 +1766,40 @@ class _MigrationRingVisualPainter extends CustomPainter {
       final presence = presences[index];
       final sweep =
           math.max(0, segment.weight) / positiveWeight * drawableSweep;
-      paint.color = segment.color;
+      paint.shader = null;
+      paint.color = _migrationRingAnimatedColor(
+        segment,
+        motionPhase: motionPhase,
+        reduceMotion: reduceMotion,
+      );
+      if (segment.motion == _MigrationRingMotion.shimmer &&
+          segment.motionStrength > 0) {
+        final highlight = Color.lerp(
+          segment.color,
+          segment.highlightColor,
+          segment.motionStrength,
+        )!;
+        if (reduceMotion) {
+          paint.color = Color.lerp(segment.color, highlight, 0.5)!;
+        } else {
+          paint.shader = SweepGradient(
+            colors: [
+              segment.color,
+              segment.color,
+              highlight,
+              segment.color,
+              segment.color,
+            ],
+            stops: const [0, 0.35, 0.5, 0.65, 1],
+            transform: GradientRotation(
+              motionPhase * math.pi * 2 - math.pi / 2,
+            ),
+          ).createShader(rect);
+          // A shader supplies its own alpha. Keep Paint fully opaque so its
+          // color does not attenuate the completed-color highlight.
+          paint.color = const Color(0xFFFFFFFF);
+        }
+      }
       if (sweep > 0.001 && paint.color.a > 0) {
         canvas.drawArc(rect, angle + gap * presence / 2, sweep, false, paint);
       }
@@ -1661,8 +1811,27 @@ class _MigrationRingVisualPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MigrationRingVisualPainter oldDelegate) =>
       oldDelegate.rotation != rotation ||
+      oldDelegate.motionPhase != motionPhase ||
+      oldDelegate.reduceMotion != reduceMotion ||
       !_sameVisualSegments(oldDelegate.segments, segments);
 }
+
+Color _migrationRingAnimatedColor(
+  _MigrationRingVisualSegment segment, {
+  required double motionPhase,
+  required bool reduceMotion,
+}) {
+  if (segment.motion != _MigrationRingMotion.blink ||
+      segment.motionStrength <= 0) {
+    return segment.color;
+  }
+  final blink = reduceMotion ? 0.5 : _triangleWave((motionPhase * 2) % 1);
+  final targetAlpha = segment.color.a * (0.2 + 0.8 * blink);
+  final blinkColor = segment.color.withValues(alpha: targetAlpha);
+  return Color.lerp(segment.color, blinkColor, segment.motionStrength)!;
+}
+
+double _triangleWave(double value) => value < 0.5 ? value * 2 : (1 - value) * 2;
 
 class _MigrationPreparationRingPainter extends CustomPainter {
   const _MigrationPreparationRingPainter({
