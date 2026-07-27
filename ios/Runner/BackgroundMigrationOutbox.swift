@@ -107,13 +107,15 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
 
   /// Whether this batch still owes the user a proof-ready announcement.
   ///
-  /// A delivered height-only nudge counts as answered even though it leaves
-  /// `proofReadyNotifiedAt` nil. Without this the batch stays an outstanding
-  /// wake reason forever, which pins the reschedule delay at its floor and
-  /// re-runs a chain sync every minute on versions that verify readiness.
+  /// A delivered height-only nudge normally counts as answered even though it
+  /// leaves `proofReadyNotifiedAt` nil. A subsequently verified notification
+  /// remains outstanding until delivery so endpoint selection can drain it.
+  /// Otherwise an acknowledged nudge would strand the verified notification.
   var awaitsProofReadyAnnouncement: Bool {
     proofReadyNotifiedAt == nil
-      && (proofReadyHeightNoticedAt == nil || proofReadyHeightNoticePendingAt != nil)
+      && (proofReadyNotificationPendingAt != nil
+        || proofReadyHeightNoticedAt == nil
+        || proofReadyHeightNoticePendingAt != nil)
   }
 }
 
