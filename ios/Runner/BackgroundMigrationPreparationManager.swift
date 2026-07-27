@@ -661,6 +661,7 @@ final class BackgroundMigrationPreparationManager {
   private static let watchdogDelay: TimeInterval = 15 * 60
   private static let confirmationQueryInterval: TimeInterval = 60
   private static let progressHeartbeatInterval: TimeInterval = 15
+  private static let notificationSubmissionTimeout: TimeInterval = 5
   private static let busyRetryDelay: TimeInterval = 60
   private static let transientRetryDelay: TimeInterval = 60
   private static let confirmationTarget: UInt64 = 3
@@ -1294,7 +1295,9 @@ final class BackgroundMigrationPreparationManager {
         case .batch(let batch):
           taskFailureObserved =
             taskFailureObserved || batch.hasTaskFailure
-          self.applyTrackingBatch(batch)
+          let notificationSubmitted = self.applyTrackingBatch(batch)
+          taskFailureObserved =
+            taskFailureObserved || !notificationSubmitted
           if let handoffPresentation =
             migrationPreparationTrackingCompletionPresentation(batch),
             !taskFailureObserved
@@ -1673,9 +1676,9 @@ final class BackgroundMigrationPreparationManager {
 
   private func applyTrackingBatch(
     _ batch: MigrationPreparationTrackingBatch
-  ) {
+  ) -> Bool {
     guard !stateLock.withPreparationLock({ mutationQuiesced }) else {
-      return
+      return true
     }
     if !batch.continuationReadyScopes.isEmpty {
       stateLock.withPreparationLock {
@@ -1693,8 +1696,25 @@ final class BackgroundMigrationPreparationManager {
         notificationAuthorization.isDisabled
       })
     {
-      notificationCoordinator.enqueue(batch.notificationEvents)
+      let submissionCompleted = DispatchSemaphore(value: 0)
+      let resultLock = NSLock()
+      var submitted = false
+      notificationCoordinator.enqueue(batch.notificationEvents) { success in
+        resultLock.withPreparationLock {
+          submitted = success
+        }
+        submissionCompleted.signal()
+      }
+      guard
+        submissionCompleted.wait(
+          timeout: .now() + Self.notificationSubmissionTimeout
+        ) == .success
+      else {
+        return false
+      }
+      return resultLock.withPreparationLock { submitted }
     }
+    return true
   }
 
   private func updateTrackingProgress(

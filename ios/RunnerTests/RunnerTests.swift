@@ -1138,6 +1138,41 @@ class RunnerTests: XCTestCase {
     XCTAssertNil(state.batchDeadline)
   }
 
+  func testMigrationNotificationEnqueueWaitsForRequestSubmission() {
+    let center = MigrationPreparationNotificationCenterHarness()
+    let suiteName = "MigrationNotificationCoordinator.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+    }
+    let coordinator = MigrationPreparationNotificationCoordinator(
+      center: center,
+      defaults: defaults
+    )
+    let requestAdded = expectation(description: "notification request added")
+    let enqueueCompleted = expectation(description: "enqueue completed")
+    center.onAdd = {
+      requestAdded.fulfill()
+    }
+    let event = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "confirmed-wave-1-3"
+    )
+    var submissionResult: Bool?
+
+    coordinator.enqueue([event]) { success in
+      submissionResult = success
+      enqueueCompleted.fulfill()
+    }
+
+    wait(for: [requestAdded], timeout: 1)
+    XCTAssertNil(submissionResult)
+    center.completeAdd(error: nil)
+    wait(for: [enqueueCompleted], timeout: 1)
+    XCTAssertEqual(submissionResult, true)
+  }
+
   func testMigrationPreparationRetriesInspectionFailuresInBackground() {
     XCTAssertEqual(
       migrationPreparationResumeTarget(
@@ -1629,6 +1664,31 @@ final class NativeLightwalletdClientTests: XCTestCase {
       XCTFail("Expected unavailable trailers in both byte orders to be NotFound")
       return
     }
+  }
+}
+
+private final class MigrationPreparationNotificationCenterHarness:
+  MigrationPreparationNotificationCenter
+{
+  var onAdd: (() -> Void)?
+  private var addCompletion: (@Sendable (Error?) -> Void)?
+
+  func add(
+    _: UNNotificationRequest,
+    withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?
+  ) {
+    addCompletion = completionHandler
+    onAdd?()
+  }
+
+  func removePendingNotificationRequests(withIdentifiers _: [String]) {}
+
+  func removeDeliveredNotifications(withIdentifiers _: [String]) {}
+
+  func completeAdd(error: Error?) {
+    let completion = addCompletion
+    addCompletion = nil
+    completion?(error)
   }
 }
 

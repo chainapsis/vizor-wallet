@@ -1,6 +1,17 @@
 import Foundation
 import UserNotifications
 
+protocol MigrationPreparationNotificationCenter: AnyObject {
+  func add(
+    _ request: UNNotificationRequest,
+    withCompletionHandler completionHandler: (@Sendable (Error?) -> Void)?
+  )
+  func removePendingNotificationRequests(withIdentifiers identifiers: [String])
+  func removeDeliveredNotifications(withIdentifiers identifiers: [String])
+}
+
+extension UNUserNotificationCenter: MigrationPreparationNotificationCenter {}
+
 enum MigrationPreparationNotificationKind: String, Codable, Equatable {
   case needsForegroundRecovery
   case terminalFailure
@@ -141,7 +152,7 @@ struct MigrationPreparationNotificationBatchState: Codable, Equatable {
   }
 }
 
-final class MigrationPreparationNotificationCoordinator {
+final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
   static let shared = MigrationPreparationNotificationCoordinator()
 
   static let summaryIdentifier =
@@ -153,13 +164,14 @@ final class MigrationPreparationNotificationCoordinator {
   private let queue = DispatchQueue(
     label: "com.keplr.vizor.ironwood-preparation.notifications"
   )
-  private let center: UNUserNotificationCenter
+  private let center: MigrationPreparationNotificationCenter
   private let defaults: UserDefaults
   private var state: MigrationPreparationNotificationBatchState
   private var submissionGeneration: UInt64 = 0
 
-  private init(
-    center: UNUserNotificationCenter = .current(),
+  init(
+    center: MigrationPreparationNotificationCenter =
+      UNUserNotificationCenter.current(),
     defaults: UserDefaults = .standard
   ) {
     self.center = center
@@ -185,7 +197,17 @@ final class MigrationPreparationNotificationCoordinator {
   func enqueue(
     _ events: [MigrationPreparationNotificationEvent]
   ) {
-    guard !events.isEmpty else { return }
+    enqueue(events) { _ in }
+  }
+
+  func enqueue(
+    _ events: [MigrationPreparationNotificationEvent],
+    completion: @escaping (Bool) -> Void
+  ) {
+    guard !events.isEmpty else {
+      completion(true)
+      return
+    }
     queue.async {
       let now = Date()
       self.state.expireBatchIfNeeded(now: now)
@@ -193,13 +215,26 @@ final class MigrationPreparationNotificationCoordinator {
       for event in events {
         changed = self.state.enqueue(event) || changed
       }
-      guard changed else { return }
+      guard changed else {
+        let alreadySubmitted = events.allSatisfy {
+          self.state.acceptedFingerprints[$0.key] == $0.fingerprint
+        }
+        if alreadySubmitted {
+          completion(true)
+        } else {
+          // A previous submission may have failed or been superseded before
+          // its callback persisted acceptance. Register the pending summary
+          // again and make this caller wait for the new result.
+          self.schedulePendingSummary(now: now, completion: completion)
+        }
+        return
+      }
       if self.state.batchDeadline == nil {
         self.state.batchDeadline =
           now.addingTimeInterval(Self.aggregationWindow)
       }
       self.persistState()
-      self.schedulePendingSummary(now: now)
+      self.schedulePendingSummary(now: now, completion: completion)
     }
   }
 
@@ -269,8 +304,14 @@ final class MigrationPreparationNotificationCoordinator {
     }
   }
 
-  private func schedulePendingSummary(now: Date) {
-    guard let summary = state.summary else { return }
+  private func schedulePendingSummary(
+    now: Date,
+    completion: @escaping (Bool) -> Void
+  ) {
+    guard let summary = state.summary else {
+      completion(true)
+      return
+    }
     let deadline =
       state.batchDeadline
       ?? now.addingTimeInterval(Self.aggregationWindow)
@@ -295,11 +336,15 @@ final class MigrationPreparationNotificationCoordinator {
     )
     center.add(request) { error in
       self.queue.async {
-        guard generation == self.submissionGeneration else { return }
+        guard generation == self.submissionGeneration else {
+          completion(false)
+          return
+        }
         if error == nil {
           self.state.markAccepted(summary.events)
           self.persistState()
         }
+        completion(error == nil)
       }
     }
   }
