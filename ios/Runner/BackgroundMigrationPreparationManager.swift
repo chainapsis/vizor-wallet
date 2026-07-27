@@ -79,6 +79,15 @@ enum MigrationPreparationScopeTrackingDisposition: Equatable {
   case inactive
 }
 
+func migrationPreparationTxidInspectionFailureDisposition()
+  -> MigrationPreparationScopeTrackingDisposition
+{
+  .needsForegroundRecovery(
+    fingerprint: "txid-inspection-failed",
+    taskFailed: true
+  )
+}
+
 struct MigrationPreparationScopeTrackingResult: Equatable {
   let scope: String
   let disposition: MigrationPreparationScopeTrackingDisposition
@@ -1407,7 +1416,7 @@ final class BackgroundMigrationPreparationManager {
         results.append(
           MigrationPreparationScopeTrackingResult(
             scope: scope,
-            disposition: .retry
+            disposition: migrationPreparationTxidInspectionFailureDisposition()
           )
         )
         continue

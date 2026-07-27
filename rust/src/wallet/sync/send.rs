@@ -2037,6 +2037,57 @@ pub(crate) fn orchard_migration_proof_readiness_at_scanned_height(
     .map(Some)
 }
 
+pub(crate) fn orchard_migration_proof_readiness_read_only(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<bool, String> {
+    let Some(snapshot) = super::migration::migration_proof_snapshot_read_only(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+    )?
+    else {
+        return Ok(false);
+    };
+    let Some(next_proof_height) = snapshot.next_proof_height else {
+        return Ok(false);
+    };
+    let candidates =
+        super::migration::signed_child_proof_candidates_for_run(db_path, expected_run_id)?;
+    if candidates.is_empty() {
+        return Ok(false);
+    }
+    let scanned_height = migration_scanned_height_read_only(db_path, network)?;
+    if next_proof_height > scanned_height {
+        return Ok(false);
+    }
+    any_migration_proof_candidate_ready(&candidates, |candidate| {
+        orchard_witness_is_available_for_prepared_note(
+            db_path,
+            network,
+            account_uuid,
+            &candidate.selected_note,
+            candidate.anchor_boundary_height,
+            snapshot.timing_policy,
+        )
+    })
+}
+
+fn migration_scanned_height_read_only(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<u32, String> {
+    let db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
+    Ok(db
+        .get_wallet_summary(ConfirmationsPolicy::default())
+        .map_err(|e| format!("{e}"))?
+        .map(|summary| u32::from(summary.fully_scanned_height()))
+        .unwrap_or(0))
+}
+
 fn any_migration_proof_candidate_ready<T>(
     candidates: &[T],
     mut readiness: impl FnMut(&T) -> Result<bool, String>,

@@ -595,6 +595,16 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testTxidInspectionFailureRequiresForegroundRecoveryAndFailsTheTask() {
+    XCTAssertEqual(
+      migrationPreparationTxidInspectionFailureDisposition(),
+      .needsForegroundRecovery(
+        fingerprint: "txid-inspection-failed",
+        taskFailed: true
+      )
+    )
+  }
+
   func testPreparationStateOutcomesSeparateRecoveryFromTaskFailure() {
     XCTAssertEqual(
       migrationPreparationScopeTrackingDisposition(

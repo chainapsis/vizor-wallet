@@ -660,6 +660,12 @@ pub(crate) struct ReadOnlyMigrationPreparationSnapshot {
     pub total_stage_count: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ReadOnlyMigrationProofSnapshot {
+    pub next_proof_height: Option<u32>,
+    pub timing_policy: MigrationTimingPolicy,
+}
+
 /// Reads only the state required by the iOS confirmation tracker.
 ///
 /// This deliberately bypasses `migration_status` and the denomination stage
@@ -725,6 +731,52 @@ pub(crate) fn migration_preparation_snapshot_read_only(
         phase,
         completed_stage_count,
         total_stage_count,
+    }))
+}
+
+/// Reads the run fields required by the iOS proof-readiness check.
+///
+/// This is intentionally separate from `migration_status`: that foreground
+/// status path can repair migration schemas, while a background notification
+/// wake must hand an incompatible database back to the foreground unchanged.
+pub(crate) fn migration_proof_snapshot_read_only(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<Option<ReadOnlyMigrationProofSnapshot>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    if !table_exists(&conn, RUNS_TABLE)? {
+        return Ok(None);
+    }
+    let snapshot = conn
+        .query_row(
+            &format!(
+                "SELECT phase, proof_retry_height, timing_policy
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1 AND account_uuid = ?2 AND network = ?3"
+            ),
+            params![expected_run_id, account_uuid, network_name(network)],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<u32>>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read migration proof snapshot: {e}"))?;
+    let Some((phase, next_proof_height, timing_policy)) = snapshot else {
+        return Ok(None);
+    };
+    match phase.as_str() {
+        PHASE_READY_TO_MIGRATE | PHASE_BROADCAST_SCHEDULED => {}
+        _ => return Ok(None),
+    };
+    Ok(Some(ReadOnlyMigrationProofSnapshot {
+        next_proof_height,
+        timing_policy: MigrationTimingPolicy::from_str(&timing_policy)?,
     }))
 }
 

@@ -281,25 +281,12 @@ pub fn inspect_proof_readiness(
     account_uuid: &str,
     expected_run_id: &str,
 ) -> Result<bool, MigrationPreparationError> {
-    let status = sync::migration_status(db_path, network, account_uuid, 0, 0, 0, 0)
-        .map_err(MigrationPreparationError::Execution)?;
-    if status.active_run_id.as_deref() != Some(expected_run_id) {
-        return Ok(false);
-    }
-    let scanned_height = sync::get_sync_progress(db_path, network)
-        .and_then(|progress| {
-            u32::try_from(progress.scanned_height)
-                .map_err(|_| "Migration scanned height exceeds u32".to_string())
-        })
-        .map_err(MigrationPreparationError::Execution)?;
-    sync::orchard_migration_proof_readiness_at_scanned_height(
+    sync::orchard_migration_proof_readiness_read_only(
         db_path,
         network,
         account_uuid,
-        &status,
-        scanned_height,
+        expected_run_id,
     )
-    .map(|readiness| readiness == Some(true))
     .map_err(MigrationPreparationError::Execution)
 }
 
@@ -575,6 +562,70 @@ mod tests {
             )
             .unwrap();
         assert_eq!(stage_table_count, 0);
+    }
+
+    #[test]
+    fn proof_readiness_inspection_does_not_upgrade_legacy_stage_schema() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE vizor_migration_runs (
+                 run_id TEXT PRIMARY KEY,
+                 account_uuid TEXT NOT NULL,
+                 network TEXT NOT NULL,
+                 phase TEXT NOT NULL,
+                 proof_retry_height INTEGER,
+                 timing_policy TEXT NOT NULL
+             );
+             CREATE TABLE vizor_migration_signed_child_pczts (
+                 run_id TEXT NOT NULL,
+                 message_id TEXT NOT NULL,
+                 child_index INTEGER NOT NULL,
+                 selected_note_json TEXT NOT NULL,
+                 anchor_boundary_height INTEGER
+             );
+             CREATE TABLE vizor_migration_pending_txs (
+                 run_id TEXT NOT NULL,
+                 part_index INTEGER NOT NULL
+             );
+             CREATE TABLE vizor_migration_denomination_stages (
+                 run_id TEXT NOT NULL,
+                 status TEXT NOT NULL
+             );
+             INSERT INTO vizor_migration_runs
+                 (run_id, account_uuid, network, phase, proof_retry_height,
+                  timing_policy)
+             VALUES
+                 ('run-1', 'account-1', 'test', 'ready_to_migrate',
+                  100, 'standard');",
+        )
+        .unwrap();
+        let schema_version_before: i64 = conn
+            .pragma_query_value(None, "schema_version", |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        assert!(!inspect_proof_readiness(
+            file.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            "account-1",
+            "run-1",
+        )
+        .unwrap());
+
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        let schema_version_after: i64 = conn
+            .pragma_query_value(None, "schema_version", |row| row.get(0))
+            .unwrap();
+        let columns = conn
+            .prepare("PRAGMA table_info(vizor_migration_denomination_stages)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(schema_version_after, schema_version_before);
+        assert_eq!(columns, vec!["run_id", "status"]);
     }
 
     #[test]
