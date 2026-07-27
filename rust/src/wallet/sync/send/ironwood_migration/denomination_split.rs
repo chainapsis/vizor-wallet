@@ -68,6 +68,7 @@ fn signed_denomination_stage_inserts(
                 raw_tx,
                 expected_txid_hex: stage.expected_txid_hex.clone(),
                 target_height: stage.target_height,
+                scheduled_height: stage.scheduled_height,
                 expiry_height: stage.expiry_height,
                 fee_zatoshi: stage.fee_zatoshi,
                 status: if stage.deferred {
@@ -242,6 +243,8 @@ fn create_padded_orchard_denomination_pczts(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<Option<CreatedPaddedDenominationPczts>, String> {
     let mut db = open_wallet_db(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
@@ -325,6 +328,19 @@ fn create_padded_orchard_denomination_pczts(
         MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
     )?
     .ok_or("Insufficient spendable Orchard funds for denomination split")?;
+    let stage_layers = padded_plan
+        .stages
+        .iter()
+        .map(|stage| stage.layer_index)
+        .collect::<Vec<_>>();
+    let scheduled_heights = super::migration::planned_preparation_scheduled_heights(
+        network,
+        preparation_timing_policy,
+        migration_timing_policy,
+        target_height.into(),
+        &stage_layers,
+        &mut OsRng,
+    )?;
 
     let padded_bundle_type = orchard::builder::BundleType::Transactional {
         bundle_required: false,
@@ -374,6 +390,11 @@ fn create_padded_orchard_denomination_pczts(
     }
 
     for (stage_index, stage_plan) in padded_plan.stages.iter().enumerate() {
+        let scheduled_height = *scheduled_heights
+            .get(stage_index)
+            .ok_or("Migration preparation schedule is missing a stage")?;
+        let expiry_height =
+            super::migration::zip318_canonical_migration_expiry_height(scheduled_height)?;
         let mut stage_notes = Vec::new();
         let mut stage_input_refs = Vec::new();
         let mut root_inputs = Vec::new();
@@ -452,6 +473,7 @@ fn create_padded_orchard_denomination_pczts(
         let builder = make_orchard_split_builder_with_type(
             network,
             target_height.into(),
+            expiry_height,
             stage_anchor,
             &stage_inputs,
             &orchard_fvk,
@@ -470,7 +492,9 @@ fn create_padded_orchard_denomination_pczts(
         let build_result = builder
             .build_for_pczt(rand_core::OsRng, &fee_rule)
             .map_err(|e| format!("Build padded denomination PCZT failed: {e}"))?;
-        let expiry_height = u32::from(build_result.pczt_parts.expiry_height);
+        if u32::from(build_result.pczt_parts.expiry_height) != expiry_height {
+            return Err("Padded denomination expiry changed during PCZT construction".to_string());
+        }
         let orchard_bundle = build_result
             .pczt_parts
             .orchard
@@ -577,6 +601,7 @@ fn create_padded_orchard_denomination_pczts(
             pczt_with_proofs: None,
             expected_txid_hex,
             target_height: target_height.into(),
+            scheduled_height,
             expiry_height,
             fee_zatoshi: u64::from(split_fee),
             deferred,

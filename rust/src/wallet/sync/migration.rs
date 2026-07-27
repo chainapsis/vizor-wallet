@@ -599,8 +599,8 @@ fn adopt_timing_policy_for_active_run(
     }
 
     // This opt-in exists only for local Testnet validation. Before any child
-    // transaction is constructed, preserve the prepared notes and signatures
-    // while replacing the long standard schedule with the fast policy.
+    // transaction is constructed, preserve signed preparation transactions
+    // while replacing the long child schedule with the fast policy.
     let schedule = planned_transfer_schedule_with_policy(
         run.target_values_zatoshi.iter().copied(),
         network,
@@ -610,10 +610,7 @@ fn adopt_timing_policy_for_active_run(
     let schedule_json = serde_json::to_string(&schedule)
         .map_err(|e| format!("Encode fast Testnet migration schedule: {e}"))?;
     let now = now_ms()?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin fast Testnet migration timing adoption: {e}"))?;
-    tx.execute(
+    conn.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
              SET timing_policy = ?1, schedule_json = ?2, updated_at_ms = ?3
@@ -627,9 +624,7 @@ fn adopt_timing_policy_for_active_run(
         ],
     )
     .map_err(|e| format!("Adopt fast Testnet migration timing: {e}"))?;
-    reschedule_pending_preparation_stages_with_tx(&tx, &run.run_id, network, &mut OsRng)?;
-    tx.commit()
-        .map_err(|e| format!("Commit fast Testnet migration timing adoption: {e}"))
+    Ok(())
 }
 
 pub(crate) fn active_migration_run(
@@ -1036,15 +1031,6 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     .map_err(|e| format!("Create staged migration run: {e}"))?;
     insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
     insert_denomination_stages_with_tx(&tx, &run_id, denomination_stages, password, salt_base64)?;
-    if initial_phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
-        initialize_preparation_schedule_with_tx(
-            &tx,
-            &run_id,
-            network,
-            preparation_timing_policy,
-            &mut OsRng,
-        )?;
-    }
     insert_signed_child_pczts_with_tx(
         &tx,
         &run_id,
@@ -1185,21 +1171,11 @@ pub(crate) fn finalize_private_migration_draft(
     } else {
         PHASE_WAITING_DENOM_CONFIRMATIONS
     };
-    let preparation_timing_policy = preparation_timing_policy_for_run_with_conn(&conn, run_id)?;
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin private migration draft finalization: {e}"))?;
     insert_prepared_notes_with_tx(&tx, run_id, prepared_notes, true)?;
     insert_denomination_stages_with_tx(&tx, run_id, denomination_stages, password, salt_base64)?;
-    if initial_phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
-        initialize_preparation_schedule_with_tx(
-            &tx,
-            run_id,
-            network,
-            preparation_timing_policy,
-            &mut OsRng,
-        )?;
-    }
     insert_signed_child_pczts_with_tx(
         &tx,
         run_id,

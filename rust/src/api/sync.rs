@@ -1593,10 +1593,13 @@ pub fn broadcast_one_due_orchard_migration_transaction(
     })
 }
 
+/// Prepares denomination PCZTs with expiry heights derived from their planned
+/// broadcast heights.
 pub fn prepare_orchard_migration_denominations_pczt(
     db_path: String,
     network: String,
     account_uuid: String,
+    space_preparation_broadcasts: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1604,6 +1607,9 @@ pub fn prepare_orchard_migration_denominations_pczt(
             &db_path,
             network,
             &account_uuid,
+            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
+                space_preparation_broadcasts,
+            ),
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,
@@ -1703,7 +1709,6 @@ pub async fn complete_orchard_migration_denominations_pczt(
     password: String,
     salt_base64: String,
     approved_schedule: Vec<MigrationScheduledTransfer>,
-    space_preparation_broadcasts: bool,
 ) -> Result<IronwoodMigrationResult, String> {
     let network = parse_network_and_migrate(&db_path, &network)?;
     let password = Zeroizing::new(password.into_bytes());
@@ -1718,7 +1723,6 @@ pub async fn complete_orchard_migration_denominations_pczt(
         password.as_slice(),
         &salt_base64,
         to_wallet_migration_schedule(approved_schedule),
-        wallet_sync::PreparationTimingPolicy::from_spacing_enabled(space_preparation_broadcasts),
     )
     .await?;
     Ok(IronwoodMigrationResult {
@@ -1741,6 +1745,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
     network: String,
     account_uuid: String,
     approved_schedule: Vec<MigrationScheduledTransfer>,
+    space_preparation_broadcasts: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1749,6 +1754,9 @@ pub fn prepare_orchard_migration_single_qr_pczt(
             network,
             &account_uuid,
             to_wallet_migration_schedule(approved_schedule),
+            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
+                space_preparation_broadcasts,
+            ),
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,
@@ -1774,7 +1782,6 @@ pub async fn complete_orchard_migration_single_qr_pczt(
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
     password: String,
     salt_base64: String,
-    space_preparation_broadcasts: bool,
 ) -> Result<IronwoodMigrationResult, String> {
     let network = parse_network_and_migrate(&db_path, &network)?;
     let password = Zeroizing::new(password.into_bytes());
@@ -1788,7 +1795,6 @@ pub async fn complete_orchard_migration_single_qr_pczt(
         signed_messages,
         password.as_slice(),
         &salt_base64,
-        wallet_sync::PreparationTimingPolicy::from_spacing_enabled(space_preparation_broadcasts),
     )
     .await?;
     Ok(IronwoodMigrationResult {

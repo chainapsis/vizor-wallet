@@ -236,6 +236,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
             StoredDenominationPczt {
                 account_uuid: account_uuid.to_string(),
                 network: WalletNetwork::Test,
+                preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
                 state: KeystoneMigrationRequestState::ProofReady,
                 proof_error: None,
                 draft_run_id: None,
@@ -277,6 +278,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 StoredSingleQrMigrationPczt {
                     account_uuid: account_uuid.to_string(),
                     network: WalletNetwork::Test,
+                    preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
                     state: KeystoneMigrationRequestState::ProofReady,
                     proof_error: None,
                     split_stages: vec![],
@@ -560,6 +562,7 @@ fn migration_test_stage(
         raw_tx: Some(vec![1, 2, 3, 4]),
         expected_txid_hex: output_txid_hex.to_string(),
         target_height: 90,
+        scheduled_height: 91,
         expiry_height: 120,
         fee_zatoshi: 10_000,
         status: migration::DenominationStageStatus::Pending,
@@ -1647,6 +1650,7 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
     let network = WalletNetwork::Regtest;
     let target_height = 120;
+    let expiry_height = 69_120;
     let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
     let fvk = orchard::keys::FullViewingKey::from(&sk);
     let recipient_scope = orchard::keys::Scope::Internal;
@@ -1676,6 +1680,7 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         make_orchard_split_builder_with_type(
             network,
             target_height,
+            expiry_height,
             orchard_anchor,
             &[(note, merkle_path)],
             &fvk,
@@ -1695,6 +1700,10 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
     let build_result = builder.build_for_pczt(rand_core::OsRng, &fee_rule).unwrap();
 
     assert_eq!(build_result.pczt_parts.version, TxVersion::V6);
+    assert_eq!(
+        u32::from(build_result.pczt_parts.expiry_height),
+        expiry_height
+    );
     let built_pczt = pczt_from_build_result(build_result, network, None, 1, 1).unwrap();
     (built_pczt, sk)
 }
@@ -1710,6 +1719,7 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
     let network = WalletNetwork::Regtest;
     let target_height = 120;
+    let expiry_height = 69_120;
     let usk = UnifiedSpendingKey::from_seed(&network, &[9; 32], zip32::AccountId::ZERO).unwrap();
     let fvk = orchard::keys::FullViewingKey::from(usk.orchard());
     let recipient_scope = orchard::keys::Scope::Internal;
@@ -1742,6 +1752,7 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
         make_orchard_split_builder_with_type(
             network,
             target_height,
+            expiry_height,
             anchor,
             &[(note, merkle_path)],
             &fvk,
@@ -1763,6 +1774,10 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
         .unwrap()
         .build_for_pczt(rand_core::OsRng, &fee_rule)
         .unwrap();
+    assert_eq!(
+        u32::from(build_result.pczt_parts.expiry_height),
+        expiry_height
+    );
     assert_eq!(
         build_result
             .pczt_parts

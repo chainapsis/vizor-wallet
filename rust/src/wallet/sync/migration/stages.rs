@@ -107,6 +107,7 @@ pub(crate) struct DenominationStageInsert {
     pub raw_tx: Option<Vec<u8>>,
     pub expected_txid_hex: String,
     pub target_height: u32,
+    pub scheduled_height: u32,
     pub expiry_height: u32,
     pub fee_zatoshi: u64,
     pub status: DenominationStageStatus,
@@ -451,7 +452,7 @@ fn insert_stage(
              (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
               encrypted_raw_tx, expected_txid_hex, target_height, expiry_height,
               fee_zatoshi, status, scheduled_height)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0)"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"
         ),
         params![
             run_id,
@@ -464,6 +465,7 @@ fn insert_stage(
             stage.expiry_height,
             stage.fee_zatoshi,
             stage.status.as_str(),
+            stage.scheduled_height,
         ],
     )
     .map_err(|e| format!("Insert migration denomination stage: {e}"))?;
@@ -747,7 +749,6 @@ pub(crate) fn promote_awaiting_denomination_stage(
     stage_index: u32,
     expected_txid_hex: &str,
     raw_tx: Vec<u8>,
-    scheduled_height: u32,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<(), String> {
@@ -764,15 +765,13 @@ pub(crate) fn promote_awaiting_denomination_stage(
         .execute(
             &format!(
                 "UPDATE {STAGES_TABLE}
-                 SET encrypted_raw_tx = ?1, status = 'pending',
-                     scheduled_height = ?2
-                 WHERE run_id = ?3 AND stage_index = ?4
-                   AND expected_txid_hex = ?5 AND status = 'awaiting_inputs'
+                 SET encrypted_raw_tx = ?1, status = 'pending'
+                 WHERE run_id = ?2 AND stage_index = ?3
+                   AND expected_txid_hex = ?4 AND status = 'awaiting_inputs'
                    AND encrypted_raw_tx IS NULL"
             ),
             params![
                 encrypted_raw_tx,
-                scheduled_height,
                 run_id,
                 stage_index,
                 expected_txid_hex.to_ascii_lowercase(),
@@ -1445,6 +1444,7 @@ mod tests {
             raw_tx: None,
             expected_txid_hex: txid(txid_byte),
             target_height: 3_000_000 + stage_index,
+            scheduled_height: 0,
             expiry_height: 0,
             fee_zatoshi: 80_000,
             status: DenominationStageStatus::AwaitingInputs,
@@ -1552,6 +1552,8 @@ mod tests {
         let mut stage_zero = awaiting_stage(0, 0x10);
         stage_zero.raw_tx = Some(vec![0xde, 0xad, 0xbe, 0xef]);
         stage_zero.status = DenominationStageStatus::Pending;
+        stage_zero.scheduled_height = 3_000_123;
+        stage_zero.expiry_height = 3_041_280;
         stage_zero.outputs = vec![output(7, 420_000, DenominationStageOutputKind::Change)];
 
         let tx = conn.unchecked_transaction().unwrap();
@@ -1585,6 +1587,8 @@ mod tests {
         assert_eq!(stages[0].base_pczt, stage_zero.base_pczt);
         assert_eq!(stages[0].sigs, stage_zero.sigs);
         assert_eq!(stages[0].raw_tx, stage_zero.raw_tx);
+        assert_eq!(stages[0].scheduled_height, stage_zero.scheduled_height);
+        assert_eq!(stages[0].expiry_height, stage_zero.expiry_height);
         assert_eq!(stages[0].outputs, stage_zero.outputs);
         assert_eq!(stages[1].stage_index, 1);
         assert_eq!(stages[1].inputs, stage_one.inputs);
@@ -1679,7 +1683,9 @@ mod tests {
     #[test]
     fn promotion_and_state_updates_keep_recovery_material_and_locks() {
         let conn = setup();
-        let stage = awaiting_stage(0, 0x10);
+        let mut stage = awaiting_stage(0, 0x10);
+        stage.scheduled_height = 3_000_123;
+        stage.expiry_height = 3_041_280;
         let expected_txid = stage.expected_txid_hex.clone();
         let expected_input = (
             stage.inputs[0].txid_hex.clone(),
@@ -1708,7 +1714,6 @@ mod tests {
             0,
             &expected_txid,
             vec![1, 2, 3, 4],
-            0,
             PASSWORD,
             SALT_BASE64,
         )
@@ -1717,6 +1722,8 @@ mod tests {
             pending_raw_denomination_stages(&conn, "run-1", PASSWORD, SALT_BASE64).unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].raw_tx, vec![1, 2, 3, 4]);
+        assert_eq!(pending[0].scheduled_height, 3_000_123);
+        assert_eq!(pending[0].expiry_height, 3_041_280);
 
         mark_denomination_stage_broadcasted(&conn, "run-1", &expected_txid).unwrap();
         assert_eq!(
@@ -1766,7 +1773,6 @@ mod tests {
             0,
             &expected_txid,
             vec![5, 6, 7, 8],
-            0,
             PASSWORD,
             SALT_BASE64,
         )

@@ -50,7 +50,7 @@ pub(crate) fn configure_fast_testnet_migration(enabled: bool) {
     FAST_TESTNET_MIGRATION_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
-fn configured_timing_policy(network: WalletNetwork) -> MigrationTimingPolicy {
+pub(crate) fn configured_timing_policy(network: WalletNetwork) -> MigrationTimingPolicy {
     if matches!(network, WalletNetwork::Test | WalletNetwork::Regtest)
         && FAST_TESTNET_MIGRATION_ENABLED.load(Ordering::Relaxed)
     {
