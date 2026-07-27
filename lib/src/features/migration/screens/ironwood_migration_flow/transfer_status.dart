@@ -4,19 +4,23 @@ int _compareMigrationPartsByExpectedProcessingOrder(
   rust_sync.MigrationPartStatus left,
   rust_sync.MigrationPartStatus right,
 ) {
-  final leftOrder = left.scheduleOrder;
-  final rightOrder = right.scheduleOrder;
-  if (leftOrder != null || rightOrder != null) {
-    final comparison = (leftOrder ?? 1 << 30).compareTo(rightOrder ?? 1 << 30);
-    if (comparison != 0) return comparison;
-  }
-
+  // The approved schedule order is immutable, but an overdue transaction can
+  // be assigned a new height while migration is running. The ring and schedule
+  // must follow that current expected chronology rather than leaving completed
+  // colors scattered according to the stale original order.
   final leftHeight = left.scheduledHeight;
   final rightHeight = right.scheduledHeight;
   if (leftHeight != null || rightHeight != null) {
     final comparison = (leftHeight ?? 1 << 30).compareTo(
       rightHeight ?? 1 << 30,
     );
+    if (comparison != 0) return comparison;
+  }
+
+  final leftOrder = left.scheduleOrder;
+  final rightOrder = right.scheduleOrder;
+  if (leftOrder != null || rightOrder != null) {
+    final comparison = (leftOrder ?? 1 << 30).compareTo(rightOrder ?? 1 << 30);
     if (comparison != 0) return comparison;
   }
   return left.partIndex.compareTo(right.partIndex);
@@ -468,6 +472,9 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                                       context.go('/migration/private/schedule'),
                                   variant: AppButtonVariant.ghost,
                                   height: 28,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.xxs,
+                                  ),
                                   expand: false,
                                   trailing: const AppIcon(
                                     AppIcons.chevronForward,

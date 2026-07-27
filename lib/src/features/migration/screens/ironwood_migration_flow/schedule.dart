@@ -129,11 +129,7 @@ class _MigrationScheduleContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final parts = [..._displayMigrationParts(status)]
-      ..sort((a, b) {
-        final aOrder = a.scheduleOrder ?? a.partIndex;
-        final bOrder = b.scheduleOrder ?? b.partIndex;
-        return aOrder.compareTo(bOrder);
-      });
+      ..sort(_compareMigrationPartsByExpectedProcessingOrder);
     final total = _sumTargetValues(status);
     final completed = parts
         .where((part) => part.state == rust_sync.MigrationPartState.completed)

@@ -1476,19 +1476,22 @@ void main() {
               0,
               10_000_000,
               rust_sync.MigrationPartState.scheduled,
-              scheduleOrder: 2,
+              scheduleOrder: 1,
+              scheduledHeight: 300,
             ),
             _migrationPart(
               1,
               20_000_000,
               rust_sync.MigrationPartState.completed,
-              scheduleOrder: 0,
+              scheduleOrder: 2,
+              scheduledHeight: 100,
             ),
             _migrationPart(
               2,
               30_000_000,
               rust_sync.MigrationPartState.confirming,
-              scheduleOrder: 1,
+              scheduleOrder: 0,
+              scheduledHeight: 200,
             ),
           ],
         ),
@@ -1571,7 +1574,10 @@ void main() {
     final dynamic scheduleParagraph = tester.renderObject(scheduleLabel);
     final buttonRect = tester.getRect(scheduleButton);
     final labelRect = tester.getRect(scheduleLabel);
+    final expectedLabelHeight =
+        AppTypography.labelLarge.fontSize! * AppTypography.labelLarge.height!;
     expect(scheduleParagraph.didExceedMaxLines, isFalse);
+    expect(labelRect.height, greaterThanOrEqualTo(expectedLabelHeight));
     expect(buttonRect.contains(labelRect.topLeft), isTrue);
     expect(buttonRect.contains(labelRect.bottomRight), isTrue);
     expect(tester.takeException(), isNull);

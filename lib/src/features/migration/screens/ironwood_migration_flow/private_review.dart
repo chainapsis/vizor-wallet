@@ -613,6 +613,7 @@ class _MigrationStartRingPainter extends CustomPainter {
   final Color color;
 
   static const _weights = [0.14, 0.08, 0.09, 0.12, 0.08, 0.15, 0.1, 0.12, 0.12];
+  static const _visibleGap = 0.055;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -626,12 +627,17 @@ class _MigrationStartRingPainter extends CustomPainter {
       radius: math.min(size.width, size.height) / 2 - paint.strokeWidth,
     );
     const fullSweep = math.pi * 2;
-    const gap = 0.075;
+    final radius = rect.width / 2;
+    // A round cap extends half a stroke beyond both ends of an arc. Include
+    // that full stroke in the center-line gap before adding visible spacing,
+    // otherwise the static frame shown while "Starting…" is active overlaps
+    // before the animated preparation ring replaces it.
+    final gap = (paint.strokeWidth / radius) + _visibleGap;
     final drawable = fullSweep - gap * _weights.length;
     var angle = -math.pi / 2;
     for (final weight in _weights) {
       final sweep = drawable * weight;
-      canvas.drawArc(rect, angle, sweep, false, paint);
+      canvas.drawArc(rect, angle + gap / 2, sweep, false, paint);
       angle += sweep + gap;
     }
   }

@@ -3059,31 +3059,43 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
         1,
         4_000_000_000,
         rust_sync.MigrationPartState.completed,
+        scheduleOrder: 3,
+        scheduledHeight: 3_000_100,
       ),
       _previewMigrationPart(
         4,
         500_000_000,
         rust_sync.MigrationPartState.migrating,
+        scheduleOrder: 0,
+        scheduledHeight: 3_000_200,
       ),
       _previewMigrationPart(
         0,
         8_000_000_000,
         rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: 1,
+        scheduledHeight: 3_000_300,
       ),
       _previewMigrationPart(
         5,
         220_000_000,
         rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: 2,
+        scheduledHeight: 3_000_400,
       ),
       _previewMigrationPart(
         3,
         500_000_000,
         rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: 4,
+        scheduledHeight: 3_000_500,
       ),
       _previewMigrationPart(
         2,
         1_000_000_000,
         rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: 5,
+        scheduledHeight: 3_000_600,
       ),
     ],
   );
@@ -3247,12 +3259,16 @@ rust_sync.MigrationStatus _previewPostPrepareStatus({
 rust_sync.MigrationPartStatus _previewMigrationPart(
   int partIndex,
   int valueZatoshi,
-  rust_sync.MigrationPartState state,
-) {
+  rust_sync.MigrationPartState state, {
+  int? scheduleOrder,
+  int? scheduledHeight,
+}) {
   return rust_sync.MigrationPartStatus(
     partIndex: partIndex,
+    scheduleOrder: scheduleOrder,
     valueZatoshi: BigInt.from(valueZatoshi),
     state: state,
+    scheduledHeight: scheduledHeight,
     confirmationCount: state == rust_sync.MigrationPartState.completed ? 3 : 0,
     confirmationTarget: 3,
   );
