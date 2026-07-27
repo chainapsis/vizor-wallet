@@ -439,8 +439,12 @@ class RunnerTests: XCTestCase {
       batch.confirmedWaveScopes,
       ["test:account-a:run-1"]
     )
-    XCTAssertNil(
-      migrationPreparationTrackingCompletionPresentation(batch)
+    XCTAssertEqual(
+      migrationPreparationTrackingCompletionPresentation(batch),
+      MigrationPreparationTrackingCompletionPresentation(
+        title: "Open Vizor to continue preparation",
+        subtitle: "Confirmed transactions are ready"
+      )
     )
     XCTAssertEqual(
       batch.notificationEvents,
@@ -961,6 +965,34 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(progress.completedTransactionCount, 2)
     XCTAssertEqual(progress.totalTransactionCount, 2)
     XCTAssertTrue(progress.isComplete)
+  }
+
+  func testConfirmedWaveUsesTheWholePreparationAsItsProgressDenominator() {
+    let progress = migrationPreparationConfirmationProgress(
+      observations: [
+        .mined(height: 100),
+        .mined(height: 100),
+        .mined(height: 100),
+        .mined(height: 100),
+      ],
+      chainTipHeight: 102,
+      confirmationTarget: 3,
+      totalStageCount: 8
+    )
+
+    XCTAssertEqual(progress.confirmedUnitCount, 12)
+    XCTAssertEqual(progress.totalUnitCount, 24)
+    XCTAssertEqual(progress.completedTransactionCount, 4)
+    XCTAssertEqual(progress.totalTransactionCount, 8)
+    XCTAssertTrue(progress.isComplete)
+    XCTAssertEqual(
+      migrationPreparationDisplayedProgressUnits(
+        previousUnits: 0,
+        progress: progress,
+        displayUnitCount: 949
+      ),
+      475
+    )
   }
 
   func testMigrationPreparationConfirmationProgressDoesNotCountForkedTransaction() {

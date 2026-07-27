@@ -117,12 +117,18 @@ struct MigrationPreparationTrackingCompletionPresentation: Equatable {
 }
 
 func migrationPreparationTrackingCompletionPresentation(
-  _: MigrationPreparationTrackingBatch
+  _ batch: MigrationPreparationTrackingBatch
 ) -> MigrationPreparationTrackingCompletionPresentation? {
-  // A confirmed transaction wave can still leave later denomination stages
-  // in `awaiting_inputs`. Keep the continued task visible at the foreground
-  // handoff boundary instead of presenting the whole preparation as complete.
-  nil
+  guard !batch.hasTaskFailure,
+    !batch.confirmedWaveScopes.isEmpty,
+    !batch.shouldContinue
+  else {
+    return nil
+  }
+  return MigrationPreparationTrackingCompletionPresentation(
+    title: "Open Vizor to continue preparation",
+    subtitle: "Confirmed transactions are ready"
+  )
 }
 
 func migrationPreparationTrackingBatch(
@@ -273,13 +279,17 @@ struct MigrationPreparationConfirmationProgress: Equatable {
   let totalUnitCount: Int64
   let completedTransactionCount: Int
   let totalTransactionCount: Int
+  // This means every transaction currently materialized in the observed wave
+  // reached the confirmation target. It does not mean every preparation stage
+  // has been materialized or that the whole preparation is complete.
   let isComplete: Bool
 }
 
 func migrationPreparationConfirmationProgress(
   observations: [NativeLightwalletdTransactionObservation],
   chainTipHeight: UInt64,
-  confirmationTarget: UInt64
+  confirmationTarget: UInt64,
+  totalStageCount: UInt32 = 0
 ) -> MigrationPreparationConfirmationProgress {
   let target = max(1, confirmationTarget)
   let confirmations = observations.map { observation -> UInt64 in
@@ -291,12 +301,17 @@ func migrationPreparationConfirmationProgress(
     return min(target, chainTipHeight - minedHeight + 1)
   }
   let completed = confirmations.filter { $0 >= target }.count
-  let totalUnits = UInt64(observations.count) * target
+  // `observations` contains every materialized stage, including stages already
+  // confirmed in an earlier wave. Stages still waiting for inputs have no txid
+  // to query, so the read-only snapshot's fixed stage count supplies the full
+  // denominator without double-counting prior waves.
+  let totalTransactions = max(observations.count, Int(totalStageCount))
+  let totalUnits = UInt64(totalTransactions) * target
   return MigrationPreparationConfirmationProgress(
     confirmedUnitCount: Int64(confirmations.reduce(0, +)),
     totalUnitCount: Int64(totalUnits),
     completedTransactionCount: completed,
-    totalTransactionCount: observations.count,
+    totalTransactionCount: totalTransactions,
     isComplete: !observations.isEmpty && completed == observations.count
   )
 }
@@ -304,7 +319,8 @@ func migrationPreparationConfirmationProgress(
 func migrationPreparationConfirmationDisposition(
   observations: [NativeLightwalletdTransactionObservation],
   chainTipHeight: UInt64,
-  confirmationTarget: UInt64
+  confirmationTarget: UInt64,
+  totalStageCount: UInt32 = 0
 ) -> MigrationPreparationScopeTrackingDisposition {
   if observations.contains(where: {
     if case .forked = $0 { return true }
@@ -318,7 +334,8 @@ func migrationPreparationConfirmationDisposition(
   let progress = migrationPreparationConfirmationProgress(
     observations: observations,
     chainTipHeight: chainTipHeight,
-    confirmationTarget: confirmationTarget
+    confirmationTarget: confirmationTarget,
+    totalStageCount: totalStageCount
   )
   return progress.isComplete ? .completed(progress) : .progress(progress)
 }
@@ -1278,22 +1295,14 @@ final class BackgroundMigrationPreparationManager {
           taskFailureObserved =
             taskFailureObserved || batch.hasTaskFailure
           self.applyTrackingBatch(batch)
-          if !batch.confirmedWaveScopes.isEmpty,
-            !batch.shouldContinue,
+          if let handoffPresentation =
+            migrationPreparationTrackingCompletionPresentation(batch),
             !taskFailureObserved
           {
-            task.updateTitle(
-              "Open Vizor to continue preparation",
-              subtitle: "Confirmed transactions are ready"
-            )
-            self.recordSchedulingState("waiting_for_foreground_continuation")
-            self.waitForForegroundContinuation(
-              cancellation: cancellation
-            )
             self.finishConfirmationTrackingTask(
               task,
               taskFailed: false,
-              completionPresentation: nil
+              completionPresentation: handoffPresentation
             )
             return
           }
@@ -1534,7 +1543,8 @@ final class BackgroundMigrationPreparationManager {
       let disposition = migrationPreparationConfirmationDisposition(
         observations: observations,
         chainTipHeight: tip,
-        confirmationTarget: Self.confirmationTarget
+        confirmationTarget: Self.confirmationTarget,
+        totalStageCount: preparation.total_stage_count
       )
       results.append(
         MigrationPreparationScopeTrackingResult(
@@ -1659,19 +1669,6 @@ final class BackgroundMigrationPreparationManager {
       advanceTrackingHeartbeat()
     }
     return !isTrackingStopRequested && !cancellation.isCancelled
-  }
-
-  private func waitForForegroundContinuation(
-    cancellation: BackgroundMigrationCancellation
-  ) {
-    while !isTrackingStopRequested && !cancellation.isCancelled {
-      if cancellation.waitUntilCancelled(
-        timeout: Self.progressHeartbeatInterval
-      ) {
-        return
-      }
-      advanceTrackingHeartbeat()
-    }
   }
 
   private func applyTrackingBatch(
