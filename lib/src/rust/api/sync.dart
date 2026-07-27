@@ -345,6 +345,40 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
   approvedInputNoteCount: approvedInputNoteCount,
 );
 
+Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationImmediatePczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required BigInt approvedTotalInputZatoshi,
+  required BigInt approvedFeeZatoshi,
+  required BigInt approvedMigratedZatoshi,
+  required int approvedInputNoteCount,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationImmediatePczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedTotalInputZatoshi: approvedTotalInputZatoshi,
+  approvedFeeZatoshi: approvedFeeZatoshi,
+  approvedMigratedZatoshi: approvedMigratedZatoshi,
+  approvedInputNoteCount: approvedInputNoteCount,
+);
+
+Future<IronwoodMigrationResult> completeOrchardMigrationImmediatePczt({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<KeystoneSignedMigrationMessage> signedMessages,
+}) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationImmediatePczt(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  requestId: requestId,
+  signedMessages: signedMessages,
+);
+
 Future<OrchardMigrationImmediatePlan?> getOrchardMigrationImmediatePlan({
   required String dbPath,
   required String network,

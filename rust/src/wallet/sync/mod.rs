@@ -54,13 +54,14 @@ pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::{
     advance_orchard_migration_preparation_for_run, complete_orchard_migration_batch_pczt,
-    complete_orchard_migration_denominations_pczt, complete_orchard_migration_single_qr_pczt,
-    create_or_resume_private_migration_draft, discard_all_keystone_migration_requests,
-    discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
-    keystone_migration_proof_status, migrate_orchard_to_ironwood,
-    migrate_orchard_to_ironwood_immediately, orchard_migration_proof_readiness,
-    orchard_migration_proof_readiness_at_scanned_height, prepare_orchard_migration_batch_pczt,
-    prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_single_qr_pczt,
+    complete_orchard_migration_denominations_pczt, complete_orchard_migration_immediate_pczt,
+    complete_orchard_migration_single_qr_pczt, create_or_resume_private_migration_draft,
+    discard_all_keystone_migration_requests, discard_keystone_migration_request,
+    discard_keystone_migration_requests_for_account, keystone_migration_proof_status,
+    migrate_orchard_to_ironwood, migrate_orchard_to_ironwood_immediately,
+    orchard_migration_proof_readiness, orchard_migration_proof_readiness_at_scanned_height,
+    prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
+    prepare_orchard_migration_immediate_pczt, prepare_orchard_migration_single_qr_pczt,
     retain_prepared_note_anchor_checkpoints_after_scan, retire_unbroadcast_orchard_migration,
     KeystoneSignedMigrationMessage, OrchardMigrationImmediatePlan,
 };

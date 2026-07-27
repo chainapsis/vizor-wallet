@@ -2396,6 +2396,85 @@ void main() {
     },
   );
 
+  test('Keystone Immediate migration forwards plan and completion', () async {
+    final expectedRequest = _keystoneSigningRequest();
+    final expectedResult = _migrationResult();
+    BigInt? seenAmount;
+    BigInt? seenFee;
+    BigInt? seenMigrated;
+    int? seenNoteCount;
+    String? completedRequestId;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: ({required dbPath, required network, required accountUuid}) {
+        return Future.value(_migrationStatus());
+      },
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) {
+            return Future.value(null);
+          },
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => const RpcEndpointConfig(
+        networkName: 'test',
+        lightwalletdUrl: 'https://lwd.example:443',
+      ),
+      prepareKeystoneImmediateMigration:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required approvedTotalInputZatoshi,
+            required approvedFeeZatoshi,
+            required approvedMigratedZatoshi,
+            required approvedInputNoteCount,
+          }) async {
+            seenAmount = approvedTotalInputZatoshi;
+            seenFee = approvedFeeZatoshi;
+            seenMigrated = approvedMigratedZatoshi;
+            seenNoteCount = approvedInputNoteCount;
+            return expectedRequest;
+          },
+      completeKeystoneImmediateMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required requestId,
+            required signedMessages,
+          }) async {
+            completedRequestId = requestId;
+            return expectedResult;
+          },
+    );
+    final plan = rust_sync.OrchardMigrationImmediatePlan(
+      totalInputZatoshi: BigInt.from(10_000_000),
+      feeZatoshi: BigInt.from(10_000),
+      migratedZatoshi: BigInt.from(9_990_000),
+      inputNoteCount: 2,
+    );
+
+    final request = await service.prepareKeystoneImmediateMigrationRequest(
+      accountUuid: 'account-1',
+      approvedPlan: plan,
+    );
+    final result = await service.completeKeystoneImmediateMigrationRequest(
+      accountUuid: 'account-1',
+      requestId: request.requestId,
+      signedMessages: const [],
+    );
+
+    expect(request, expectedRequest);
+    expect(result, expectedResult);
+    expect(seenAmount, plan.totalInputZatoshi);
+    expect(seenFee, plan.feeZatoshi);
+    expect(seenMigrated, plan.migratedZatoshi);
+    expect(seenNoteCount, 2);
+    expect(completedRequestId, expectedRequest.requestId);
+  });
+
   test(
     'saved unstarted private draft recreates a missing mobile credential',
     () async {

@@ -2,6 +2,7 @@
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
@@ -830,6 +831,29 @@ Widget buildIronwoodMigrationImmediateReviewUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationImmediateKeystoneRequestUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/immediate/keystone/sign',
+    step: IronwoodMigrationFlowStep.immediateReview,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+  );
+}
+
+Widget buildIronwoodMigrationImmediateKeystoneScannerUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/immediate/keystone/sign',
+    step: IronwoodMigrationFlowStep.immediateReview,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+    previewImmediateKeystoneScanner: true,
+  );
+}
+
 Widget buildIronwoodMigrationAnalyzingUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/private/review',
@@ -1367,6 +1391,7 @@ Widget _buildIronwoodMigrationUseCase({
       IronwoodMigrationReviewPreviewStage.review,
   bool isHardware = false,
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
+  bool previewImmediateKeystoneScanner = false,
 }) {
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
   return ProviderScope(
@@ -1408,6 +1433,7 @@ Widget _buildIronwoodMigrationUseCase({
       previewStatus: previewStatus,
       reviewPreviewStage: reviewPreviewStage,
       previewImmediatePlan: previewImmediatePlan,
+      previewImmediateKeystoneScanner: previewImmediateKeystoneScanner,
     ),
   );
 }
@@ -2088,6 +2114,7 @@ class _IronwoodMigrationHarness extends StatefulWidget {
     this.previewStatus,
     this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.previewImmediatePlan,
+    this.previewImmediateKeystoneScanner = false,
   });
 
   final String initialLocation;
@@ -2096,6 +2123,7 @@ class _IronwoodMigrationHarness extends StatefulWidget {
   final rust_sync.MigrationStatus? previewStatus;
   final IronwoodMigrationReviewPreviewStage reviewPreviewStage;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
+  final bool previewImmediateKeystoneScanner;
 
   @override
   State<_IronwoodMigrationHarness> createState() =>
@@ -2211,6 +2239,31 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                 _previewMobileImmediateMigrationPlan(),
             onOpenReleaseNotesOverride: () {},
           ),
+        ),
+        GoRoute(
+          path: '/migration/immediate/keystone/sign',
+          builder: (_, _) {
+            final plan =
+                widget.previewImmediatePlan ??
+                _previewMobileImmediateMigrationPlan();
+            return IronwoodMigrationKeystoneImmediateSignScreen(
+              approvedPlan: plan,
+              previewRequest: rust_sync.KeystoneMigrationSigningRequest(
+                requestId: 'preview-immediate',
+                messages: [
+                  rust_sync.KeystoneMigrationMessage(
+                    id: 'preview-immediate-transaction',
+                    redactedPczt: Uint8List.fromList(const [1, 2, 3]),
+                  ),
+                ],
+                signingBatchLimit: 1,
+              ),
+              previewUrParts: const [
+                'ur:zcash-sign-request/preview-immediate-transaction',
+              ],
+              previewStartScanning: widget.previewImmediateKeystoneScanner,
+            );
+          },
         ),
         GoRoute(
           path: '/home',

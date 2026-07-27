@@ -55,9 +55,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
   final VoidCallback? onOpenReleaseNotesOverride;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isHardware =
-        ref.watch(accountProvider).value?.activeAccount?.isHardware ?? false;
+  Widget build(BuildContext context, WidgetRef _) {
     final content = switch (step) {
       IronwoodMigrationFlowStep.prepare => const Center(
         child: CircularProgressIndicator(),
@@ -73,7 +71,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
         const _IronwoodMigrationWhatToExpectContent(),
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
-        immediateEnabled: !isHardware,
+        immediateEnabled: true,
       ),
       IronwoodMigrationFlowStep.review =>
         _IronwoodMigrationPrivateReviewContent(
@@ -162,11 +160,13 @@ class _IronwoodMigrationFrame extends StatelessWidget {
     required this.toolbar,
     required this.child,
     required this.disableSidebarActions,
+    this.overlay,
   });
 
   final Widget toolbar;
   final Widget child;
   final bool disableSidebarActions;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -177,9 +177,15 @@ class _IronwoodMigrationFrame extends StatelessWidget {
             ? const {'/swap', '/voting'}
             : const {},
       ),
-      pane: AppPaneScrollScaffold(
-        toolbar: toolbar,
-        child: Align(alignment: Alignment.topCenter, child: child),
+      pane: Stack(
+        fit: StackFit.expand,
+        children: [
+          AppPaneScrollScaffold(
+            toolbar: toolbar,
+            child: Align(alignment: Alignment.topCenter, child: child),
+          ),
+          ?overlay,
+        ],
       ),
     );
   }

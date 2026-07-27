@@ -37,9 +37,9 @@ class _IronwoodMigrationImmediateReviewContentState
         throw StateError('No active account is selected.');
       }
       if (accountState.activeAccount?.isHardware ?? false) {
-        throw UnsupportedError(
-          'Immediate migration is not available with Keystone.',
-        );
+        if (!mounted) return;
+        context.go('/migration/immediate/keystone/sign', extra: plan);
+        return;
       }
       await ref
           .read(ironwoodMigrationServiceProvider)
@@ -319,9 +319,7 @@ String _immediateMigrationStartErrorMessage(Object error) {
   if (message.contains('mnemonic')) {
     return "Secret Passphrase isn't available for this account.";
   }
-  if (message.contains('keystone')) {
-    return 'Immediate migration is not available with Keystone.';
-  }
+  if (message.contains('keystone')) return "Couldn't prepare Keystone signing.";
   if (message.contains('sync')) {
     return 'Wait for sync to finish, then try again.';
   }

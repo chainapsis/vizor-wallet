@@ -377,6 +377,25 @@ typedef IronwoodMigrationKeystoneSingleQrPreparer =
       required String accountUuid,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
+typedef IronwoodMigrationKeystoneImmediatePreparer =
+    Future<rust_sync.KeystoneMigrationSigningRequest> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required BigInt approvedTotalInputZatoshi,
+      required BigInt approvedFeeZatoshi,
+      required BigInt approvedMigratedZatoshi,
+      required int approvedInputNoteCount,
+    });
+typedef IronwoodMigrationKeystoneImmediateCompleter =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required String requestId,
+      required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+    });
 typedef IronwoodMigrationPrivateDraftCreator =
     Future<String> Function({
       required String dbPath,
@@ -581,6 +600,10 @@ class IronwoodMigrationService {
     IronwoodMigrationKeystoneDenominationPreparer?
     prepareKeystoneDenominationMigration,
     IronwoodMigrationKeystoneSingleQrPreparer? prepareKeystoneSingleQrMigration,
+    IronwoodMigrationKeystoneImmediatePreparer?
+    prepareKeystoneImmediateMigration,
+    IronwoodMigrationKeystoneImmediateCompleter?
+    completeKeystoneImmediateMigration,
     IronwoodMigrationPrivateDraftCreator? createPrivateMigrationDraft,
     IronwoodMigrationKeystoneDenominationCompleter?
     completeKeystoneDenominationMigration,
@@ -678,6 +701,12 @@ class IronwoodMigrationService {
        prepareKeystoneSingleQrMigration =
            prepareKeystoneSingleQrMigration ??
            rust_sync.prepareOrchardMigrationSingleQrPczt,
+       prepareKeystoneImmediateMigration =
+           prepareKeystoneImmediateMigration ??
+           rust_sync.prepareOrchardMigrationImmediatePczt,
+       completeKeystoneImmediateMigration =
+           completeKeystoneImmediateMigration ??
+           rust_sync.completeOrchardMigrationImmediatePczt,
        createPrivateMigrationDraft =
            createPrivateMigrationDraft ?? _defaultCreatePrivateMigrationDraft,
        completeKeystoneDenominationMigration =
@@ -754,6 +783,10 @@ class IronwoodMigrationService {
   prepareKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneSingleQrPreparer
   prepareKeystoneSingleQrMigration;
+  final IronwoodMigrationKeystoneImmediatePreparer
+  prepareKeystoneImmediateMigration;
+  final IronwoodMigrationKeystoneImmediateCompleter
+  completeKeystoneImmediateMigration;
   final IronwoodMigrationPrivateDraftCreator createPrivateMigrationDraft;
   final IronwoodMigrationKeystoneDenominationCompleter
   completeKeystoneDenominationMigration;
@@ -1635,6 +1668,50 @@ class IronwoodMigrationService {
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
+      ),
+    );
+  }
+
+  Future<rust_sync.KeystoneMigrationSigningRequest>
+  prepareKeystoneImmediateMigrationRequest({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    return operationRegistry.run(
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      operation: () => prepareKeystoneImmediateMigration(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        approvedTotalInputZatoshi: approvedPlan.totalInputZatoshi,
+        approvedFeeZatoshi: approvedPlan.feeZatoshi,
+        approvedMigratedZatoshi: approvedPlan.migratedZatoshi,
+        approvedInputNoteCount: approvedPlan.inputNoteCount,
+      ),
+    );
+  }
+
+  Future<rust_sync.IronwoodMigrationResult>
+  completeKeystoneImmediateMigrationRequest({
+    required String accountUuid,
+    required String requestId,
+    required List<rust_sync.KeystoneSignedMigrationMessage> signedMessages,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    return operationRegistry.run(
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      operation: () => completeKeystoneImmediateMigration(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        requestId: requestId,
+        signedMessages: signedMessages,
       ),
     );
   }
