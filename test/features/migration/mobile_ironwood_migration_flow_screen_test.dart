@@ -4731,6 +4731,7 @@ void main() {
                   required accountUuid,
                   required runId,
                 }) async {
+                  expect(coordinator.retryCount, 0);
                   acknowledgementCount++;
                 },
           ),
@@ -4749,9 +4750,7 @@ void main() {
     },
   );
 
-  testWidgets('keeps the handoff token when automatic continuation fails', (
-    tester,
-  ) async {
+  testWidgets('releases handoff before failed continuation', (tester) async {
     _useMobileViewport(tester);
     final coordinator = _PreparationHandoffTestMigrationCoordinator(
       failRetry: true,
@@ -4785,7 +4784,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(coordinator.retryCount, 1);
-    expect(acknowledgementCount, 0);
+    expect(acknowledgementCount, 1);
     expect(find.text('Continue preparation'), findsOneWidget);
   });
 

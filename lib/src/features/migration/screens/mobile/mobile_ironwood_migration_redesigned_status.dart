@@ -325,6 +325,25 @@ class _MobileMigrationRedesignedStatusState
       return;
     }
 
+    // Claim the foreground handoff before advancing. The advance path re-arms
+    // background confirmation tracking after it updates the durable run. If
+    // this token remains until after the advance, native startPreparation()
+    // sees no trackable scope and reports success without submitting a task.
+    try {
+      await service.acknowledgePreparationContinuation(
+        accountUuid: accountUuid,
+        runId: runId,
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _preparationRuntimeState =
+              IronwoodMigrationPreparationRuntimeState.idle,
+        );
+      }
+      return;
+    }
+
     try {
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
@@ -337,26 +356,6 @@ class _MobileMigrationRedesignedStatusState
         );
       }
       return;
-    }
-    if (!mounted) return;
-    final retryError = ref
-        .read(ironwoodMigrationCoordinatorProvider)
-        .errors[accountUuid];
-    if (retryError != null) {
-      setState(
-        () => _preparationRuntimeState =
-            IronwoodMigrationPreparationRuntimeState.idle,
-      );
-      return;
-    }
-    try {
-      await service.acknowledgePreparationContinuation(
-        accountUuid: accountUuid,
-        runId: runId,
-      );
-    } catch (_) {
-      // The foreground permit already owns this session. A later entry can
-      // safely retry acknowledgement if the native handoff token remains.
     }
     if (mounted) {
       setState(
