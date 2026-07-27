@@ -9,6 +9,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewStatus,
     this.previewParts,
     this.previewSurface,
+    this.privateMigrationSupported,
     super.key,
   });
 
@@ -19,6 +20,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final rust_sync.MigrationStatus? previewStatus;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final MobileIronwoodMigrationPreviewSurface? previewSurface;
+  final bool? privateMigrationSupported;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -38,6 +40,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewPrivatePlan: previewPrivatePlan,
         previewImmediatePlan: previewImmediatePlan,
         previewParts: previewParts,
+        privateMigrationSupported: privateMigrationSupported,
         status: previewStatus,
       );
     }
@@ -51,6 +54,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       previewPrivatePlan: previewPrivatePlan,
       previewImmediatePlan: previewImmediatePlan,
       previewParts: previewParts,
+      privateMigrationSupported: privateMigrationSupported,
       status: null,
     );
   }
@@ -64,6 +68,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.previewPrivatePlan,
     required this.previewImmediatePlan,
     required this.previewParts,
+    required this.privateMigrationSupported,
     this.status,
   });
 
@@ -73,18 +78,18 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
+  final bool? privateMigrationSupported;
   final rust_sync.MigrationStatus? status;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final privateMigrationEnabled =
-        previewMode || supportsPrivateMobileIronwoodMigration();
+        privateMigrationSupported ??
+        (previewMode || supportsPrivateMobileIronwoodMigration());
     if (!privateMigrationEnabled &&
         switch (step) {
           MobileIronwoodMigrationStep.options ||
-          MobileIronwoodMigrationStep.notifications ||
-          MobileIronwoodMigrationStep.preparing ||
-          MobileIronwoodMigrationStep.migrating => true,
+          MobileIronwoodMigrationStep.notifications => true,
           _ => false,
         }) {
       return const _MobileMigrationRedirectTo('/migration/fast/review');
@@ -106,6 +111,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
         previewPlan: previewImmediatePlan,
+        privateMigrationEnabled: privateMigrationEnabled,
       ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
         data: data,

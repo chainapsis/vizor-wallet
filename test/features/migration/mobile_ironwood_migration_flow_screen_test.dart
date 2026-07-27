@@ -564,6 +564,7 @@ Widget _app({
   rust_sync.OrchardMigrationPrivatePlan? previewPlan,
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
   MobileIronwoodMigrationPreviewSurface? previewSurface,
+  bool? privateMigrationSupported,
   bool disableAnimations = true,
 }) {
   late final GoRouter router;
@@ -575,6 +576,7 @@ Widget _app({
       previewImmediatePlan: previewImmediatePlan ?? _immediatePlan,
       previewStatus: previewStatus,
       previewSurface: previewSurface,
+      privateMigrationSupported: privateMigrationSupported,
     );
   }
 
@@ -2148,6 +2150,28 @@ void main() {
   });
 
   testWidgets(
+    'Android options force Immediate review with a viable back exit',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          step: MobileIronwoodMigrationStep.options,
+          privateMigrationSupported: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Fast Migration'), findsOneWidget);
+      expect(find.text('Consider another option'), findsNothing);
+
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('How Migration Works'), findsOneWidget);
+      expect(find.text('Fast Migration'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'shows the computed immediate completion estimate in production',
     (tester) async {
       await tester.pumpWidget(
@@ -2476,6 +2500,23 @@ void main() {
     await tester.ensureVisible(find.text('Go home'));
     await tester.pumpAndSettle();
     expect(find.text('Go home').hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('Android keeps an active Private migration status visible', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.migrating,
+        previewStatus: _visualMigrationStatus(),
+        privateMigrationSupported: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Fast Migration'), findsNothing);
   });
 
   testWidgets('retries an overdue migration when Needs input is tapped', (

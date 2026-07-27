@@ -335,7 +335,6 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/status',
-      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) {
         final entry = switch (state.extra) {
           MobileIronwoodMigrationStatusEntry value => value,
@@ -353,7 +352,6 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/keystone/denominations/sign',
-      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) {
         final entry = switch (state.extra) {
           MobileIronwoodMigrationKeystoneDenominationSignEntry value => value,
@@ -375,7 +373,6 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/keystone/batch/sign',
-      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationKeystoneBatchSignScreen(),
