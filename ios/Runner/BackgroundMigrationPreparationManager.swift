@@ -88,6 +88,15 @@ func migrationPreparationTxidInspectionFailureDisposition()
   )
 }
 
+func migrationPreparationStatusInspectionFailureDisposition()
+  -> MigrationPreparationScopeTrackingDisposition
+{
+  .needsForegroundRecovery(
+    fingerprint: "status-inspection-failed",
+    taskFailed: true
+  )
+}
+
 struct MigrationPreparationScopeTrackingResult: Equatable {
   let scope: String
   let disposition: MigrationPreparationScopeTrackingDisposition
@@ -96,6 +105,7 @@ struct MigrationPreparationScopeTrackingResult: Equatable {
 struct MigrationPreparationTrackingBatch: Equatable {
   let progress: MigrationPreparationConfirmationProgress?
   let continuationReadyScopes: Set<String>
+  let confirmedWaveScopes: Set<String>
   let notificationEvents: [MigrationPreparationNotificationEvent]
   let shouldContinue: Bool
   let hasTaskFailure: Bool
@@ -107,18 +117,12 @@ struct MigrationPreparationTrackingCompletionPresentation: Equatable {
 }
 
 func migrationPreparationTrackingCompletionPresentation(
-  _ batch: MigrationPreparationTrackingBatch
+  _: MigrationPreparationTrackingBatch
 ) -> MigrationPreparationTrackingCompletionPresentation? {
-  guard !batch.hasTaskFailure,
-    !batch.continuationReadyScopes.isEmpty,
-    batch.progress?.isComplete == true
-  else {
-    return nil
-  }
-  return MigrationPreparationTrackingCompletionPresentation(
-    title: "Preparation transactions confirmed",
-    subtitle: "Open Vizor to continue migration"
-  )
+  // A confirmed transaction wave can still leave later denomination stages
+  // in `awaiting_inputs`. Keep the continued task visible at the foreground
+  // handoff boundary instead of presenting the whole preparation as complete.
+  nil
 }
 
 func migrationPreparationTrackingBatch(
@@ -128,6 +132,7 @@ func migrationPreparationTrackingBatch(
   ]
 ) -> MigrationPreparationTrackingBatch {
   var continuationReadyScopes = Set<String>()
+  var confirmedWaveScopes = Set<String>()
   var notificationEvents: [MigrationPreparationNotificationEvent] = []
   var shouldContinue = false
   var hasTaskFailure = false
@@ -146,6 +151,7 @@ func migrationPreparationTrackingBatch(
     case .completed(let progress):
       progressByScope[result.scope] = progress
       continuationReadyScopes.insert(result.scope)
+      confirmedWaveScopes.insert(result.scope)
       notificationEvents.append(
         MigrationPreparationNotificationEvent(
           scope: result.scope,
@@ -210,6 +216,7 @@ func migrationPreparationTrackingBatch(
   return MigrationPreparationTrackingBatch(
     progress: progress,
     continuationReadyScopes: continuationReadyScopes,
+    confirmedWaveScopes: confirmedWaveScopes,
     notificationEvents: notificationEvents,
     shouldContinue: shouldContinue,
     hasTaskFailure: hasTaskFailure
@@ -1271,6 +1278,25 @@ final class BackgroundMigrationPreparationManager {
           taskFailureObserved =
             taskFailureObserved || batch.hasTaskFailure
           self.applyTrackingBatch(batch)
+          if !batch.confirmedWaveScopes.isEmpty,
+            !batch.shouldContinue,
+            !taskFailureObserved
+          {
+            task.updateTitle(
+              "Open Vizor to continue preparation",
+              subtitle: "Confirmed transactions are ready"
+            )
+            self.recordSchedulingState("waiting_for_foreground_continuation")
+            self.waitForForegroundContinuation(
+              cancellation: cancellation
+            )
+            self.finishConfirmationTrackingTask(
+              task,
+              taskFailed: false,
+              completionPresentation: nil
+            )
+            return
+          }
           guard batch.shouldContinue, !self.isTrackingStopRequested else {
             self.finishConfirmationTrackingTask(
               task,
@@ -1383,7 +1409,8 @@ final class BackgroundMigrationPreparationManager {
         results.append(
           MigrationPreparationScopeTrackingResult(
             scope: scope,
-            disposition: .retry
+            disposition:
+              migrationPreparationStatusInspectionFailureDisposition()
           )
         )
         continue
@@ -1619,22 +1646,32 @@ final class BackgroundMigrationPreparationManager {
   private func waitForNextConfirmationQuery(
     cancellation: BackgroundMigrationCancellation
   ) -> Bool {
-    let tick: TimeInterval = 0.25
-    let tickCount = Int(Self.confirmationQueryInterval / tick)
-    let heartbeatTickCount = max(
-      1,
-      Int(Self.progressHeartbeatInterval / tick)
-    )
-    for tickIndex in 1...tickCount {
+    var remaining = Self.confirmationQueryInterval
+    while remaining > 0 {
       if isTrackingStopRequested || cancellation.isCancelled {
         return false
       }
-      Thread.sleep(forTimeInterval: tick)
-      if tickIndex.isMultiple(of: heartbeatTickCount) {
-        advanceTrackingHeartbeat()
+      let interval = min(Self.progressHeartbeatInterval, remaining)
+      if cancellation.waitUntilCancelled(timeout: interval) {
+        return false
       }
+      remaining -= interval
+      advanceTrackingHeartbeat()
     }
     return !isTrackingStopRequested && !cancellation.isCancelled
+  }
+
+  private func waitForForegroundContinuation(
+    cancellation: BackgroundMigrationCancellation
+  ) {
+    while !isTrackingStopRequested && !cancellation.isCancelled {
+      if cancellation.waitUntilCancelled(
+        timeout: Self.progressHeartbeatInterval
+      ) {
+        return
+      }
+      advanceTrackingHeartbeat()
+    }
   }
 
   private func applyTrackingBatch(

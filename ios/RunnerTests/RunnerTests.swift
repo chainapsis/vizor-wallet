@@ -392,6 +392,10 @@ class RunnerTests: XCTestCase {
       ["test:account-a:run-1", "test:account-b:run-2"]
     )
     XCTAssertEqual(
+      batch.confirmedWaveScopes,
+      ["test:account-a:run-1"]
+    )
+    XCTAssertEqual(
       batch.progress,
       MigrationPreparationConfirmationProgress(
         confirmedUnitCount: 4,
@@ -432,11 +436,11 @@ class RunnerTests: XCTestCase {
       ["test:account-a:run-1"]
     )
     XCTAssertEqual(
-      migrationPreparationTrackingCompletionPresentation(batch),
-      MigrationPreparationTrackingCompletionPresentation(
-        title: "Preparation transactions confirmed",
-        subtitle: "Open Vizor to continue migration"
-      )
+      batch.confirmedWaveScopes,
+      ["test:account-a:run-1"]
+    )
+    XCTAssertNil(
+      migrationPreparationTrackingCompletionPresentation(batch)
     )
     XCTAssertEqual(
       batch.notificationEvents,
@@ -600,6 +604,16 @@ class RunnerTests: XCTestCase {
       migrationPreparationTxidInspectionFailureDisposition(),
       .needsForegroundRecovery(
         fingerprint: "txid-inspection-failed",
+        taskFailed: true
+      )
+    )
+  }
+
+  func testStatusInspectionFailureRequiresForegroundRecoveryAndFailsTheTask() {
+    XCTAssertEqual(
+      migrationPreparationStatusInspectionFailureDisposition(),
+      .needsForegroundRecovery(
+        fingerprint: "status-inspection-failed",
         taskFailed: true
       )
     )
@@ -1447,6 +1461,21 @@ class RunnerTests: XCTestCase {
 }
 
 final class NativeLightwalletdClientTests: XCTestCase {
+  func testBackgroundMigrationCancellationSignalsWaitingWork() {
+    let cancellation = BackgroundMigrationCancellation()
+    let cancelled = expectation(description: "cancelled")
+    DispatchQueue.global(qos: .utility).async {
+      if cancellation.waitUntilCancelled(timeout: 1) {
+        cancelled.fulfill()
+      }
+    }
+
+    cancellation.cancel()
+
+    wait(for: [cancelled], timeout: 1)
+    XCTAssertTrue(cancellation.isCancelled)
+  }
+
   func testNativeLightwalletdParserReadsHeightAfterUnknownField() throws {
     let response = Data([
       0x00, 0x00, 0x00, 0x00, 0x06,

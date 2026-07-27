@@ -6,7 +6,10 @@
 //! the foreground FRB path.
 
 use std::ffi::CStr;
+use std::future::Future;
 use std::os::raw::c_char;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use crate::migration_preparation::{self, MigrationPreparationProgress};
 use crate::wallet::keys;
@@ -101,12 +104,79 @@ fn lightwalletd_runtime() -> Result<tokio::runtime::Runtime, String> {
         .map_err(|error| format!("Create lightwalletd runtime: {error}"))
 }
 
+const LIGHTWALLETD_RESULT_CANCELLED: i32 = 3;
+const LIGHTWALLETD_CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+#[repr(C)]
+pub struct CLightwalletdCancellation {
+    cancelled: AtomicBool,
+}
+
+#[no_mangle]
+pub extern "C" fn zcash_lightwalletd_cancellation_create() -> *mut CLightwalletdCancellation {
+    Box::into_raw(Box::new(CLightwalletdCancellation {
+        cancelled: AtomicBool::new(false),
+    }))
+}
+
+#[no_mangle]
+pub extern "C" fn zcash_lightwalletd_cancellation_cancel(
+    cancellation: *mut CLightwalletdCancellation,
+) {
+    if let Some(cancellation) = unsafe { cancellation.as_ref() } {
+        cancellation.cancelled.store(true, Ordering::Release);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn zcash_lightwalletd_cancellation_destroy(
+    cancellation: *mut CLightwalletdCancellation,
+) {
+    if !cancellation.is_null() {
+        drop(unsafe { Box::from_raw(cancellation) });
+    }
+}
+
+async fn await_lightwalletd_request_or_cancellation<F>(
+    cancellation: Option<&CLightwalletdCancellation>,
+    future: F,
+) -> Result<F::Output, ()>
+where
+    F: Future,
+{
+    let Some(cancellation) = cancellation else {
+        return Ok(future.await);
+    };
+    if cancellation.cancelled.load(Ordering::Acquire) {
+        return Err(());
+    }
+
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            output = &mut future => {
+                return if cancellation.cancelled.load(Ordering::Acquire) {
+                    Err(())
+                } else {
+                    Ok(output)
+                };
+            }
+            _ = tokio::time::sleep(LIGHTWALLETD_CANCELLATION_POLL_INTERVAL) => {
+                if cancellation.cancelled.load(Ordering::Acquire) {
+                    return Err(());
+                }
+            }
+        }
+    }
+}
+
 /// Fetch the lightwalletd chain tip through tonic. Unlike URLSession, this
 /// supports both production HTTPS and plaintext HTTP/2 (h2c) regtest servers.
 #[no_mangle]
 pub extern "C" fn zcash_lightwalletd_latest_block_height(
     lightwalletd_url: *const c_char,
     output: *mut u64,
+    cancellation: *const CLightwalletdCancellation,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
         let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
@@ -122,15 +192,21 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
                 return 1;
             }
         };
-        match runtime.block_on(async {
-            let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await?;
-            crate::wallet::sync_engine::get_latest_block(&mut client).await
-        }) {
-            Ok(block) => {
+        let cancellation = unsafe { cancellation.as_ref() };
+        match runtime.block_on(await_lightwalletd_request_or_cancellation(
+            cancellation,
+            async {
+                let mut client =
+                    crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await?;
+                crate::wallet::sync_engine::get_latest_block(&mut client).await
+            },
+        )) {
+            Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
+            Ok(Ok(block)) => {
                 *output = block.height;
                 0
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 log::error!("ffi: get lightwalletd latest block: {error}");
                 1
             }
@@ -154,6 +230,7 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
     transaction_id: *const u8,
     transaction_id_len: usize,
     output: *mut CLightwalletdTransactionObservation,
+    cancellation: *const CLightwalletdCancellation,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
         let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
@@ -174,21 +251,26 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
                 return 1;
             }
         };
-        match runtime.block_on(async {
-            let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-                .await
-                .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
-            crate::wallet::sync_engine::get_transaction(&mut client, transaction_id).await
-        }) {
-            Ok(transaction) => {
+        let cancellation = unsafe { cancellation.as_ref() };
+        match runtime.block_on(await_lightwalletd_request_or_cancellation(
+            cancellation,
+            async {
+                let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+                    .await
+                    .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+                crate::wallet::sync_engine::get_transaction(&mut client, transaction_id).await
+            },
+        )) {
+            Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
+            Ok(Ok(transaction)) => {
                 *output = transaction_observation_from_height(transaction.height);
                 0
             }
-            Err(error) if error.code() == Code::NotFound => {
+            Ok(Err(error)) if error.code() == Code::NotFound => {
                 *output = CLightwalletdTransactionObservation::not_found();
                 0
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 log::error!("ffi: observe lightwalletd transaction: {error}");
                 1
             }
@@ -214,6 +296,7 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
     response_error_code: *mut i32,
     response_error_message: *mut c_char,
     response_error_message_capacity: usize,
+    cancellation: *const CLightwalletdCancellation,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
         let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
@@ -237,15 +320,23 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
                 return 1;
             }
         };
-        match runtime.block_on(async {
-            let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-                .await
-                .map_err(|error| error.to_string())?;
-            crate::wallet::sync_engine::send_transaction_with_status(&mut client, &raw_transaction)
+        let cancellation = unsafe { cancellation.as_ref() };
+        match runtime.block_on(await_lightwalletd_request_or_cancellation(
+            cancellation,
+            async {
+                let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                crate::wallet::sync_engine::send_transaction_with_status(
+                    &mut client,
+                    &raw_transaction,
+                )
                 .await
                 .map_err(|error| error.to_string())
-        }) {
-            Ok(response) => {
+            },
+        )) {
+            Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
+            Ok(Ok(response)) => {
                 *response_error_code = response.error_code;
                 let bytes = response.error_message.as_bytes();
                 let copied_len = bytes
@@ -261,7 +352,7 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
                 }
                 0
             }
-            Err(error) => {
+            Ok(Err(error)) => {
                 log::error!("ffi: send lightwalletd transaction: {error}");
                 1
             }
@@ -507,5 +598,39 @@ mod tests {
                 mined_height: 0,
             }
         );
+    }
+
+    #[test]
+    fn lightwalletd_cancellation_interrupts_an_in_flight_request() {
+        let cancellation = CLightwalletdCancellation {
+            cancelled: AtomicBool::new(false),
+        };
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(10));
+                cancellation.cancelled.store(true, Ordering::Release);
+            });
+
+            let runtime = lightwalletd_runtime().unwrap();
+            let started = std::time::Instant::now();
+            let result = runtime.block_on(await_lightwalletd_request_or_cancellation(
+                Some(&cancellation),
+                std::future::pending::<()>(),
+            ));
+            assert_eq!(result, Err(()));
+            assert!(started.elapsed() < Duration::from_secs(1));
+        });
+    }
+
+    #[test]
+    fn lightwalletd_cancellation_handle_lifecycle_sets_the_flag() {
+        let cancellation = zcash_lightwalletd_cancellation_create();
+        assert!(!cancellation.is_null());
+        assert!(!unsafe { &*cancellation }.cancelled.load(Ordering::Acquire));
+
+        zcash_lightwalletd_cancellation_cancel(cancellation);
+        assert!(unsafe { &*cancellation }.cancelled.load(Ordering::Acquire));
+
+        zcash_lightwalletd_cancellation_destroy(cancellation);
     }
 }

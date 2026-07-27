@@ -18,16 +18,24 @@ typedef struct {
     uint64_t mined_height;
 } CLightwalletdTransactionObservation;
 
+#define ZCASH_LIGHTWALLETD_RESULT_CANCELLED 3
+
+void* zcash_lightwalletd_cancellation_create(void);
+void zcash_lightwalletd_cancellation_cancel(void* cancellation);
+void zcash_lightwalletd_cancellation_destroy(void* cancellation);
+
 int32_t zcash_lightwalletd_latest_block_height(
     const char* lightwalletd_url,
-    uint64_t* output
+    uint64_t* output,
+    void* cancellation
 );
 
 int32_t zcash_lightwalletd_observe_transaction(
     const char* lightwalletd_url,
     const uint8_t* transaction_id,
     uintptr_t transaction_id_len,
-    CLightwalletdTransactionObservation* output
+    CLightwalletdTransactionObservation* output,
+    void* cancellation
 );
 
 int32_t zcash_lightwalletd_send_transaction(
@@ -36,7 +44,8 @@ int32_t zcash_lightwalletd_send_transaction(
     uintptr_t raw_transaction_len,
     int32_t* response_error_code,
     char* response_error_message,
-    uintptr_t response_error_message_capacity
+    uintptr_t response_error_message_capacity,
+    void* cancellation
 );
 
 int32_t zcash_inspect_migration_preparation(

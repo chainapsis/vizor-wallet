@@ -1,19 +1,41 @@
 import Foundation
 
 final class BackgroundMigrationCancellation: @unchecked Sendable {
-  private let lock = NSLock()
+  private let condition = NSCondition()
   private var cancelled = false
+  private let nativeHandle = zcash_lightwalletd_cancellation_create()
 
   func cancel() {
-    lock.lock()
+    condition.lock()
     cancelled = true
-    lock.unlock()
+    condition.broadcast()
+    let handle = nativeHandle
+    condition.unlock()
+    zcash_lightwalletd_cancellation_cancel(handle)
   }
 
   var isCancelled: Bool {
-    lock.lock()
-    defer { lock.unlock() }
+    condition.lock()
+    defer { condition.unlock() }
     return cancelled
+  }
+
+  func waitUntilCancelled(timeout: TimeInterval) -> Bool {
+    condition.lock()
+    defer { condition.unlock() }
+    if cancelled { return true }
+    _ = condition.wait(
+      until: Date().addingTimeInterval(max(0, timeout))
+    )
+    return cancelled
+  }
+
+  fileprivate var lightwalletdCancellationHandle: UnsafeMutableRawPointer? {
+    nativeHandle
+  }
+
+  deinit {
+    zcash_lightwalletd_cancellation_destroy(nativeHandle)
   }
 }
 
@@ -123,9 +145,15 @@ enum NativeLightwalletdClient {
     }
     var height: UInt64 = 0
     let code = endpoint.withCString {
-      zcash_lightwalletd_latest_block_height($0, &height)
+      zcash_lightwalletd_latest_block_height(
+        $0,
+        &height,
+        cancellation.lightwalletdCancellationHandle
+      )
     }
-    guard !cancellation.isCancelled else {
+    guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
+      !cancellation.isCancelled
+    else {
       return .failure(.cancelled)
     }
     guard code == 0 else {
@@ -185,11 +213,14 @@ enum NativeLightwalletdClient {
           endpointPointer,
           transactionPointer.bindMemory(to: UInt8.self).baseAddress,
           UInt(transactionId.count),
-          &nativeObservation
+          &nativeObservation,
+          cancellation.lightwalletdCancellationHandle
         )
       }
     }
-    guard !cancellation.isCancelled else {
+    guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
+      !cancellation.isCancelled
+    else {
       return .failure(.cancelled)
     }
     guard code == 0 else {
@@ -254,12 +285,15 @@ enum NativeLightwalletdClient {
             UInt(rawTransaction.count),
             &responseErrorCode,
             messagePointer.baseAddress,
-            UInt(messagePointer.count)
+            UInt(messagePointer.count),
+            cancellation.lightwalletdCancellationHandle
           )
         }
       }
     }
-    guard !cancellation.isCancelled else {
+    guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
+      !cancellation.isCancelled
+    else {
       return .failure(.cancelled)
     }
     guard code == 0 else {
