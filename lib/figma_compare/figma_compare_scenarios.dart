@@ -129,6 +129,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildIronwoodMigrationImmediateReviewUseCase,
   ),
   FigmaCompareScenario(
+    id: 'ironwood-migration-immediate-keystone-request',
+    description: 'Immediate migration Keystone request modal',
+    builder: buildIronwoodMigrationImmediateKeystoneRequestUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-immediate-keystone-scanner',
+    description: 'Immediate migration Keystone signature scanner',
+    builder: buildIronwoodMigrationImmediateKeystoneScannerUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-analyzing',
     description: 'Ironwood migration balance analysis loader',
     builder: buildIronwoodMigrationAnalyzingUseCase,

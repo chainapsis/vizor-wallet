@@ -116,7 +116,7 @@ void main() {
     expect(find.widgetWithText(AppButton, 'Authorise anyway'), findsOneWidget);
   });
 
-  testWidgets('does not offer Immediate migration to Keystone accounts', (
+  testWidgets('offers Immediate migration to Keystone accounts', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -136,16 +136,17 @@ void main() {
       of: immediateOption,
       matching: find.byType(GestureDetector),
     );
-    expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNull);
-    expect(
-      find.text('Immediate migration is not available with Keystone.'),
-      findsOneWidget,
-    );
+    expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNotNull);
 
+    await tester.tap(find.text('Immediate'));
     await tester.tap(find.text('Select & review'));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
-    expect(find.text('Privacy trade-off'), findsNothing);
+    expect(find.widgetWithText(AppButton, 'Authorise anyway'), findsOneWidget);
+    expect(find.text('Privacy trade-off'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(AppButton, 'Authorise anyway'));
+    await tester.pumpAndSettle();
+    expect(find.text('keystone-immediate-sign-route:9990000'), findsOneWidget);
   });
 
   testWidgets('Immediate review reports an unavailable plan', (tester) async {
@@ -2232,6 +2233,15 @@ Widget _migrationOptionsHarness({
           ),
           previewImmediatePlan: useImmediatePreview ? _immediatePlan() : null,
         ),
+      ),
+      GoRoute(
+        path: '/migration/immediate/keystone/sign',
+        builder: (_, state) {
+          final plan = state.extra! as rust_sync.OrchardMigrationImmediatePlan;
+          return Text(
+            'keystone-immediate-sign-route:${plan.migratedZatoshi}',
+          );
+        },
       ),
       GoRoute(
         path: '/migration/private/status',

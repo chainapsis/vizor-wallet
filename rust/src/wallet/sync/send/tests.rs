@@ -288,6 +288,29 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 },
             );
     }
+    for (request_id, account_uuid) in [
+        ("delete-immediate-request", DELETED_ACCOUNT),
+        ("keep-immediate-request", KEPT_ACCOUNT),
+    ] {
+        keystone_immediate_migration_requests()
+            .lock()
+            .unwrap()
+            .insert(
+                request_id.to_string(),
+                StoredImmediateMigrationPczt {
+                    account_uuid: account_uuid.to_string(),
+                    network: WalletNetwork::Test,
+                    message_id: format!("{request_id}-transaction"),
+                    state: KeystoneMigrationRequestState::ProofReady,
+                    proof_error: None,
+                    base_pczt: vec![],
+                    pczt_with_proofs: Some(vec![]),
+                    fee_zatoshi: 10_000,
+                    migrated_zatoshi: 90_000,
+                    input_lock: None,
+                },
+            );
+    }
 
     discard_keystone_migration_requests_for_account(DELETED_ACCOUNT, WalletNetwork::Test).unwrap();
 
@@ -295,6 +318,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
         "delete-denomination-request",
         "delete-batch-request",
         "delete-single-request",
+        "delete-immediate-request",
     ] {
         assert!(keystone_migration_proof_status(request_id).is_err());
     }
@@ -302,6 +326,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
         "keep-denomination-request",
         "keep-batch-request",
         "keep-single-request",
+        "keep-immediate-request",
     ] {
         assert!(keystone_migration_proof_status(request_id).is_ok());
         discard_keystone_migration_request(request_id).unwrap();

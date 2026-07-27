@@ -771,6 +771,16 @@ List<RouteBase> _desktopRoutes() => [
     ),
   ),
   GoRoute(
+    path: '/migration/immediate/keystone/sign',
+    redirect: (_, state) =>
+        state.extra is rust_sync.OrchardMigrationImmediatePlan
+        ? null
+        : '/migration/immediate/review',
+    builder: (_, state) => IronwoodMigrationKeystoneImmediateSignScreen(
+      approvedPlan: state.extra! as rust_sync.OrchardMigrationImmediatePlan,
+    ),
+  ),
+  GoRoute(
     path: '/migration/fast/review',
     redirect: (_, _) => '/migration/immediate/review',
   ),

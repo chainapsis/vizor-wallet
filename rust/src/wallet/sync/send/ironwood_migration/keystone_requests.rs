@@ -132,6 +132,19 @@ struct StoredSingleQrMigrationCompletion {
     approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
 }
 
+struct StoredImmediateMigrationPczt {
+    account_uuid: String,
+    network: WalletNetwork,
+    message_id: String,
+    state: KeystoneMigrationRequestState,
+    proof_error: Option<String>,
+    base_pczt: Vec<u8>,
+    pczt_with_proofs: Option<Vec<u8>>,
+    fee_zatoshi: u64,
+    migrated_zatoshi: u64,
+    input_lock: Option<ImmediateMigrationInputLock>,
+}
+
 fn new_keystone_migration_request_id(label: &str) -> String {
     let nonce: u64 = OsRng.gen();
     format!("ironwood-migration-{label}-{nonce:016x}")
@@ -148,6 +161,41 @@ fn keystone_migration_requests() -> &'static Mutex<HashMap<String, StoredMigrati
 fn keystone_single_qr_migration_requests(
 ) -> &'static Mutex<HashMap<String, StoredSingleQrMigrationPczt>> {
     KEYSTONE_SINGLE_QR_MIGRATION_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn keystone_immediate_migration_requests(
+) -> &'static Mutex<HashMap<String, StoredImmediateMigrationPczt>> {
+    KEYSTONE_IMMEDIATE_MIGRATION_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn prune_failed_immediate_migration_requests(
+    store: &mut HashMap<String, StoredImmediateMigrationPczt>,
+    account_uuid: &str,
+    network: WalletNetwork,
+) {
+    store.retain(|_, stored| {
+        !(stored.account_uuid == account_uuid
+            && stored.network == network
+            && stored.state == KeystoneMigrationRequestState::ProofFailed)
+    });
+}
+
+fn ensure_no_live_immediate_migration_request(
+    store: &mut HashMap<String, StoredImmediateMigrationPczt>,
+    account_uuid: &str,
+    network: WalletNetwork,
+) -> Result<(), String> {
+    prune_failed_immediate_migration_requests(store, account_uuid, network);
+    if store
+        .values()
+        .any(|stored| stored.account_uuid == account_uuid && stored.network == network)
+    {
+        return Err(
+            "A Keystone Immediate migration request is already in progress. Reject it before preparing a new one."
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn prune_failed_denomination_requests(
@@ -276,6 +324,22 @@ fn validate_keystone_migration_messages(
 pub(crate) fn keystone_migration_proof_status(
     request_id: &str,
 ) -> Result<KeystoneMigrationProofStatus, String> {
+    if let Some(status) = keystone_immediate_migration_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone Immediate migration request store: {e}"))?
+        .get(request_id)
+        .map(|stored| {
+            proof_status_from_counts(
+                usize::from(stored.pczt_with_proofs.is_some()),
+                1,
+                stored.state,
+                stored.proof_error.clone(),
+            )
+        })
+    {
+        return Ok(status);
+    }
+
     if let Some(status) = keystone_single_qr_migration_requests()
         .lock()
         .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?
@@ -346,6 +410,21 @@ pub(crate) fn keystone_migration_proof_status(
 
 pub(crate) fn discard_keystone_migration_request(request_id: &str) -> Result<(), String> {
     {
+        let mut store = keystone_immediate_migration_requests()
+            .lock()
+            .map_err(|e| format!("Lock Keystone Immediate migration request store: {e}"))?;
+        if store
+            .get(request_id)
+            .is_some_and(|stored| stored.state == KeystoneMigrationRequestState::Completing)
+        {
+            return Ok(());
+        }
+        if store.remove(request_id).is_some() {
+            return Ok(());
+        }
+    }
+
+    {
         let mut store = keystone_single_qr_migration_requests()
             .lock()
             .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?;
@@ -392,6 +471,10 @@ pub(crate) fn discard_keystone_migration_requests_for_account(
     account_uuid: &str,
     network: WalletNetwork,
 ) -> Result<(), String> {
+    keystone_immediate_migration_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone Immediate migration request store: {e}"))?
+        .retain(|_, stored| stored.account_uuid != account_uuid || stored.network != network);
     keystone_single_qr_migration_requests()
         .lock()
         .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?
@@ -408,6 +491,10 @@ pub(crate) fn discard_keystone_migration_requests_for_account(
 }
 
 pub(crate) fn discard_all_keystone_migration_requests() -> Result<(), String> {
+    keystone_immediate_migration_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone Immediate migration request store: {e}"))?
+        .clear();
     keystone_single_qr_migration_requests()
         .lock()
         .map_err(|e| format!("Lock Keystone single QR request store: {e}"))?
@@ -595,6 +682,59 @@ fn spawn_single_qr_split_proof_worker(request_id: String, roots: Vec<(String, Ve
             if let Some(stored) = store.get_mut(&request_id) {
                 stored.state = KeystoneMigrationRequestState::ProofFailed;
                 stored.proof_error = Some(format!("Start proof worker: {e}"));
+            }
+        }
+    }
+}
+
+fn spawn_immediate_migration_proof_worker(request_id: String, base_pczt: Vec<u8>) {
+    let worker_request_id = request_id.clone();
+    let spawn_result = thread::Builder::new()
+        .name("ironwood-immediate-proof".to_string())
+        .spawn(move || {
+            log::info!("migration proofs: Immediate Keystone request started");
+            let proof_result = super::pczt::add_proofs_to_pczt(&base_pczt, None, None);
+            let mut store = match keystone_immediate_migration_requests().lock() {
+                Ok(store) => store,
+                Err(e) => {
+                    log::error!(
+                        "migration proofs: Immediate Keystone request store lock failed: {e}"
+                    );
+                    return;
+                }
+            };
+            let Some(stored) = store.get_mut(&worker_request_id) else {
+                log::info!("migration proofs: Immediate Keystone request was discarded");
+                return;
+            };
+            if stored.state == KeystoneMigrationRequestState::Completing {
+                return;
+            }
+            match proof_result {
+                Ok(proofed) => {
+                    stored.pczt_with_proofs = Some(proofed);
+                    stored.proof_error = None;
+                    stored.state = KeystoneMigrationRequestState::ProofReady;
+                    log::info!("migration proofs: Immediate Keystone request ready");
+                }
+                Err(error) => {
+                    stored.pczt_with_proofs = None;
+                    stored.proof_error = Some(error.clone());
+                    stored.state = KeystoneMigrationRequestState::ProofFailed;
+                    log::error!(
+                        "migration proofs: Immediate Keystone request failed: {error}"
+                    );
+                }
+            }
+        });
+    if let Err(error) = spawn_result {
+        log::error!("migration proofs: failed to start Immediate Keystone proof worker: {error}");
+        if let Ok(mut store) = keystone_immediate_migration_requests().lock() {
+            if let Some(stored) = store.get_mut(&request_id) {
+                stored.state = KeystoneMigrationRequestState::ProofFailed;
+                stored.proof_error = Some(format!(
+                    "Failed to start Immediate migration proof worker: {error}"
+                ));
             }
         }
     }

@@ -1,5 +1,32 @@
 part of '../ironwood_migration_flow_screen.dart';
 
+class IronwoodMigrationKeystoneImmediateSignScreen extends StatelessWidget {
+  const IronwoodMigrationKeystoneImmediateSignScreen({
+    required this.approvedPlan,
+    this.previewRequest,
+    this.previewUrParts = const [],
+    this.previewStartScanning = false,
+    super.key,
+  });
+
+  final rust_sync.OrchardMigrationImmediatePlan approvedPlan;
+  final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
+  final List<String> previewUrParts;
+  final bool previewStartScanning;
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.immediate,
+      approvedSchedule: const [],
+      approvedImmediatePlan: approvedPlan,
+      previewRequest: previewRequest,
+      previewUrParts: previewUrParts,
+      previewStartScanning: previewStartScanning,
+    );
+  }
+}
+
 class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneDenominationSignScreen({
     this.approvedSchedule = const [],
@@ -81,23 +108,27 @@ class _IronwoodMigrationKeystonePrivateSignScreen
   const _IronwoodMigrationKeystonePrivateSignScreen({
     required this.step,
     required this.approvedSchedule,
+    this.approvedImmediatePlan,
     this.mobileLayout = false,
     this.previewRequest,
     this.previewUrParts = const [],
+    this.previewStartScanning = false,
   });
 
   final _KeystonePrivateSignStep step;
   final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final rust_sync.OrchardMigrationImmediatePlan? approvedImmediatePlan;
   final bool mobileLayout;
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
+  final bool previewStartScanning;
 
   @override
   ConsumerState<_IronwoodMigrationKeystonePrivateSignScreen> createState() =>
       _IronwoodMigrationKeystonePrivateSignScreenState();
 }
 
-enum _KeystonePrivateSignStep { denominations, batch }
+enum _KeystonePrivateSignStep { immediate, denominations, batch }
 
 class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
   const MobileIronwoodKeystoneScanHelpBody({
@@ -160,31 +191,38 @@ class MobileIronwoodKeystoneScanHelpBody extends StatelessWidget {
 
 extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   String get logName => switch (this) {
+    _KeystonePrivateSignStep.immediate => 'immediate',
     _KeystonePrivateSignStep.denominations => 'denominations',
     _KeystonePrivateSignStep.batch => 'batch',
   };
 
   String get toolbarLabel => switch (this) {
+    _KeystonePrivateSignStep.immediate => 'Migration Options',
     _KeystonePrivateSignStep.denominations => 'Review migration',
     _KeystonePrivateSignStep.batch => 'Migration status',
   };
 
   String get previousRoute => switch (this) {
+    _KeystonePrivateSignStep.immediate => '/migration/immediate/review',
     _KeystonePrivateSignStep.denominations => '/migration/private/review',
     _KeystonePrivateSignStep.batch => '/migration/private/status',
   };
 
   String get previousButtonLabel => switch (this) {
+    _KeystonePrivateSignStep.immediate => 'Back to review',
     _KeystonePrivateSignStep.denominations => 'Back to review',
     _KeystonePrivateSignStep.batch => 'Back to status',
   };
 
   String get qrTitle => switch (this) {
+    _KeystonePrivateSignStep.immediate => 'Confirm Migration with Keystone',
     _KeystonePrivateSignStep.denominations => 'Sign private split',
     _KeystonePrivateSignStep.batch => 'Sign Ironwood batch',
   };
 
   String get qrBody => switch (this) {
+    _KeystonePrivateSignStep.immediate =>
+      'Scan the QR code with your Keystone wallet to confirm migration.',
     _KeystonePrivateSignStep.denominations =>
       'Scan this QR code with Keystone to sign the private split transactions.',
     _KeystonePrivateSignStep.batch =>
@@ -192,6 +230,7 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   };
 
   String get messageUnit => switch (this) {
+    _KeystonePrivateSignStep.immediate => 'migration transaction',
     _KeystonePrivateSignStep.denominations => 'split transaction',
     _KeystonePrivateSignStep.batch => 'migration transaction',
   };
@@ -199,8 +238,16 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
   Future<rust_sync.KeystoneMigrationSigningRequest> prepare(
     IronwoodMigrationService service, {
     required String accountUuid,
+    rust_sync.OrchardMigrationImmediatePlan? approvedImmediatePlan,
   }) {
     return switch (this) {
+      _KeystonePrivateSignStep.immediate =>
+        service.prepareKeystoneImmediateMigrationRequest(
+          accountUuid: accountUuid,
+          approvedPlan:
+              approvedImmediatePlan ??
+              (throw StateError('Immediate migration plan is missing.')),
+        ),
       _KeystonePrivateSignStep.denominations =>
         service.prepareKeystoneDenominationPrivateMigration(
           accountUuid: accountUuid,
@@ -218,6 +265,12 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) {
     return switch (this) {
+      _KeystonePrivateSignStep.immediate =>
+        service.completeKeystoneImmediateMigrationRequest(
+          accountUuid: accountUuid,
+          requestId: requestId,
+          signedMessages: signedMessages,
+        ),
       _KeystonePrivateSignStep.denominations =>
         service.completeKeystoneDenominationPrivateMigration(
           accountUuid: accountUuid,
@@ -263,6 +316,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   KeystoneQrScannerControls? _scannerControls;
   bool _decoding = false;
   bool _requestCompleted = false;
+  bool _showImmediateScanHelp = true;
   Future<void>? _completionOperation;
 
   @override
@@ -282,7 +336,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           index == 0 ? widget.previewUrParts : const <String>[],
       ];
       _urParts = widget.previewUrParts;
-      _stage = _KeystoneDenominationSignStage.showQr;
+      _stage = widget.previewStartScanning
+          ? _KeystoneDenominationSignStage.scanning
+          : _KeystoneDenominationSignStage.showQr;
       _requestCompleted = true;
       return;
     }
@@ -337,6 +393,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       final request = await widget.step.prepare(
         _migrationService,
         accountUuid: accountUuid,
+        approvedImmediatePlan: widget.approvedImmediatePlan,
       );
       requestIdToDiscard = request.requestId;
       if (!mounted) {
@@ -623,6 +680,20 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         });
         return;
       }
+      if (widget.step == _KeystonePrivateSignStep.immediate &&
+          await _immediateRequestWasConsumed(request.requestId)) {
+        if (!mounted) return;
+        setState(() {
+          _stage = _KeystoneDenominationSignStage.failed;
+          _request = null;
+          _pendingSignedMessages = null;
+          _decoding = false;
+          _error =
+              'This Keystone signing request can no longer be used. Prepare it again.';
+        });
+        return;
+      }
+      if (!mounted) return;
       setState(() {
         _stage = request.messages.isEmpty
             ? _KeystoneDenominationSignStage.failed
@@ -631,6 +702,20 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         _decoding = false;
         _error = _keystoneMigrationSigningErrorMessage(e);
       });
+    }
+  }
+
+  Future<bool> _immediateRequestWasConsumed(String requestId) async {
+    try {
+      await _migrationService.keystoneProofStatus(requestId: requestId);
+      return false;
+    } catch (e, st) {
+      if (_keystoneMigrationRequestMissingError(e)) return true;
+      log(
+        'IronwoodMigrationKeystoneSign(${widget.step.logName}): '
+        'failed to determine whether completion consumed the request: $e\n$st',
+      );
+      return false;
     }
   }
 
@@ -664,6 +749,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   bool _isKeystoneRequestCommitted(rust_sync.MigrationStatus status) {
     return switch (widget.step) {
+      _KeystonePrivateSignStep.immediate => false,
       _KeystonePrivateSignStep.denominations => status.activeRunId != null,
       _KeystonePrivateSignStep.batch =>
         !status.parts.any(
@@ -675,6 +761,19 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   }
 
   Future<void> _finishCommittedRequest(String accountUuid) async {
+    if (widget.step == _KeystonePrivateSignStep.immediate) {
+      try {
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (_) {
+        // The normal sync loop will reconcile an accepted transaction.
+      }
+      if (!mounted) return;
+      _stopProofPolling();
+      _requestCompleted = true;
+      _pendingSignedMessages = null;
+      context.go('/home');
+      return;
+    }
     final coordinator = ref.read(ironwoodMigrationCoordinatorProvider.notifier);
     coordinator.clearChildProofBatchPermit(accountUuid);
     if (widget.step == _KeystonePrivateSignStep.denominations) {
@@ -710,6 +809,22 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
         'discard error: $e\n$st',
       );
     }
+  }
+
+  Future<void> _retryRequest() async {
+    final requestId = _request?.requestId;
+    final accountUuid = _accountUuid;
+    setState(() {
+      _stage = _KeystoneDenominationSignStage.preparing;
+      _error = null;
+      _proofStatus = null;
+      _pendingSignedMessages = null;
+    });
+    if (requestId != null && accountUuid != null) {
+      await _discardRequest(accountUuid, requestId);
+    }
+    if (!mounted) return;
+    await _prepareRequest();
   }
 
   Future<void> _returnToReview() async {
@@ -760,6 +875,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   @override
   Widget build(BuildContext context) {
     if (widget.mobileLayout) return _buildMobileScreen(context);
+    if (widget.step == _KeystonePrivateSignStep.immediate) {
+      return _buildImmediateDesktopScreen(context);
+    }
 
     return _IronwoodMigrationFrame(
       toolbar: _keystoneDenominationToolbar(
@@ -785,6 +903,86 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
         },
       ),
+    );
+  }
+
+  Widget _buildImmediateDesktopScreen(BuildContext context) {
+    final showingScanner =
+        _stage == _KeystoneDenominationSignStage.scanning ||
+        _stage == _KeystoneDenominationSignStage.waitingForProofs ||
+        _stage == _KeystoneDenominationSignStage.completing;
+    final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
+    final modalPhase = switch (_stage) {
+      _KeystoneDenominationSignStage.preparing =>
+        KeystoneSigningModalPhase.preparing,
+      _KeystoneDenominationSignStage.showQr when proofFailed =>
+        KeystoneSigningModalPhase.failed,
+      _KeystoneDenominationSignStage.showQr => KeystoneSigningModalPhase.ready,
+      _KeystoneDenominationSignStage.failed => KeystoneSigningModalPhase.failed,
+      _ => null,
+    };
+    final ready =
+        _stage == _KeystoneDenominationSignStage.showQr && !proofFailed;
+    final failed =
+        _stage == _KeystoneDenominationSignStage.failed || proofFailed;
+
+    return _IronwoodMigrationFrame(
+      toolbar: _keystoneDenominationToolbar(
+        label: 'Ironwood Migration',
+        onBack: () => unawaited(_returnToReview()),
+      ),
+      disableSidebarActions: true,
+      overlay: modalPhase == null
+          ? null
+          : AppPaneModalOverlay(
+              onDismiss: () => unawaited(_returnToReview()),
+              child: _ImmediateKeystoneRequestModal(
+                showScanHelp: ready && _showImmediateScanHelp,
+                onDismissScanHelp: () {
+                  setState(() => _showImmediateScanHelp = false);
+                },
+                modal: KeystoneSigningModal(
+                  key: const ValueKey(
+                    'ironwood_immediate_keystone_signing_modal',
+                  ),
+                  phase: modalPhase,
+                  urParts: _urParts,
+                  error: _error,
+                  title: 'Confirm Migration with Keystone',
+                  subtitle: 'Scan with your Keystone',
+                  instruction: failed
+                      ? null
+                      : 'After you scanned, click Get signature.',
+                  primaryLabel: failed
+                      ? 'Try again'
+                      : ready
+                      ? 'Get signature'
+                      : 'Preparing',
+                  onPrimary: failed
+                      ? () => unawaited(_retryRequest())
+                      : ready && _urParts.isNotEmpty
+                      ? () {
+                          setState(() {
+                            _stage = _KeystoneDenominationSignStage.scanning;
+                            _error = null;
+                            _decoding = false;
+                          });
+                        }
+                      : null,
+                  secondaryLabel: 'Cancel',
+                  onSecondary: () => unawaited(_returnToReview()),
+                  qrSize: 200,
+                ),
+              ),
+            ),
+      child: showingScanner
+          ? SizedBox(width: 520, child: _buildScannerContent(context))
+          : IgnorePointer(
+              child: _IronwoodMigrationImmediateReviewContent(
+                data: _fallbackMigrationFlowData(),
+                previewPlan: widget.approvedImmediatePlan,
+              ),
+            ),
     );
   }
 
@@ -1102,12 +1300,18 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     final waitingForProofs =
         _stage == _KeystoneDenominationSignStage.waitingForProofs;
     return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      padding: EdgeInsets.only(
+        top: widget.step == _KeystonePrivateSignStep.immediate
+            ? 80
+            : AppSpacing.xl,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Scan Keystone signature',
+            widget.step == _KeystonePrivateSignStep.immediate
+                ? 'Scan QR Code'
+                : 'Scan Keystone signature',
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -1117,7 +1321,11 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           SizedBox(
             width: 360,
             child: Text(
-              completing
+              widget.step == _KeystonePrivateSignStep.immediate &&
+                      !completing &&
+                      !waitingForProofs
+                  ? 'Prepare your Keystone wallet'
+                  : completing
                   ? 'Applying the Keystone signature to your migration plan.'
                   : waitingForProofs
                   ? 'Signature captured. Vizor will continue when local proofs are ready.'
@@ -1125,46 +1333,53 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                   ? '$_signingRoundLabel. Show the signed QR on Keystone and scan it here.'
                   : 'Show the signed migration QR on Keystone and scan it here.',
               textAlign: TextAlign.center,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.accent,
-              ),
+              style:
+                  (widget.step == _KeystonePrivateSignStep.immediate
+                          ? AppTypography.bodyMedium
+                          : AppTypography.bodyMediumStrong)
+                      .copyWith(color: colors.text.accent),
             ),
           ),
           const SizedBox(height: AppSpacing.base),
-          KeystoneQrScannerCard(
-            expectedUrType: _keystoneMigrationSignBatchResultUrType,
-            decoding: _decoding,
-            error: _error,
-            onProgress: (_) {
-              if (_pendingSignedMessages != null) return;
-              if (_error == null || !mounted) return;
-              setState(() {
-                _error = null;
-              });
-            },
-            onDecodeError: _handleDecodeError,
-            onComplete: (result) => unawaited(_handleScanComplete(result)),
-            decodingLabel: 'Reading signature...',
-            unavailableMessage:
-                'Keystone migration signing uses camera QR scanning only. '
-                'Connect a camera and try again.',
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          AppButton(
-            onPressed: completing || waitingForProofs
-                ? null
-                : () {
-                    setState(() {
-                      _stage = _KeystoneDenominationSignStage.showQr;
-                      _error = null;
-                      _decoding = false;
-                    });
-                  },
-            variant: AppButtonVariant.ghost,
-            height: 36,
-            minWidth: 230,
-            child: const Text('Back to QR'),
-          ),
+          if (widget.previewRequest != null && widget.previewStartScanning)
+            const _ImmediateKeystoneScannerPreviewCard()
+          else
+            KeystoneQrScannerCard(
+              expectedUrType: _keystoneMigrationSignBatchResultUrType,
+              decoding: _decoding,
+              error: _error,
+              onProgress: (_) {
+                if (_pendingSignedMessages != null) return;
+                if (_error == null || !mounted) return;
+                setState(() {
+                  _error = null;
+                });
+              },
+              onDecodeError: _handleDecodeError,
+              onComplete: (result) => unawaited(_handleScanComplete(result)),
+              decodingLabel: 'Reading signature...',
+              unavailableMessage:
+                  'Keystone migration signing uses camera QR scanning only. '
+                  'Connect a camera and try again.',
+            ),
+          if (widget.step != _KeystonePrivateSignStep.immediate) ...[
+            const SizedBox(height: AppSpacing.sm),
+            AppButton(
+              onPressed: completing || waitingForProofs
+                  ? null
+                  : () {
+                      setState(() {
+                        _stage = _KeystoneDenominationSignStage.showQr;
+                        _error = null;
+                        _decoding = false;
+                      });
+                    },
+              variant: AppButtonVariant.ghost,
+              height: 36,
+              minWidth: 230,
+              child: const Text('Back to QR'),
+            ),
+          ],
         ],
       ),
     );
@@ -1212,6 +1427,171 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ImmediateKeystoneRequestModal extends StatelessWidget {
+  const _ImmediateKeystoneRequestModal({
+    required this.modal,
+    required this.showScanHelp,
+    required this.onDismissScanHelp,
+  });
+
+  final Widget modal;
+  final bool showScanHelp;
+  final VoidCallback onDismissScanHelp;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 560,
+      height: 430,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          modal,
+          if (showScanHelp)
+            Positioned(
+              right: -64,
+              top: 150,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: -6,
+                    top: 40,
+                    child: Transform.rotate(
+                      angle: math.pi / 4,
+                      child: const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: ColoredBox(color: Color(0xFFFFFFFF)),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 224,
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFFFF),
+                      borderRadius: BorderRadius.circular(AppRadii.medium),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Scanning issues?',
+                                style: AppTypography.bodyMediumStrong.copyWith(
+                                  color: const Color(0xFF161819),
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: onDismissScanHelp,
+                              child: const Padding(
+                                padding: EdgeInsets.all(AppSpacing.xxs),
+                                child: AppIcon(
+                                  AppIcons.cross,
+                                  size: 12,
+                                  color: Color(0xFF161819),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          'Check Keystone firmware\nversion at keyst.one/firmware',
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: const Color(0xFF717678),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImmediateKeystoneScannerPreviewCard extends StatelessWidget {
+  const _ImmediateKeystoneScannerPreviewCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 396,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 396,
+            height: 310,
+            decoration: BoxDecoration(
+              color: const Color(0xFF171918),
+              borderRadius: BorderRadius.circular(28),
+            ),
+            child: Center(
+              child: Container(
+                width: 210,
+                height: 210,
+                decoration: BoxDecoration(
+                  border: Border.all(color: const Color(0xFFFFFFFF), width: 4),
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                child: Center(
+                  child: Container(
+                    width: 110,
+                    height: 110,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF343737),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.base),
+          Row(
+            children: [
+              AppIcon(AppIcons.camera, size: 18, color: colors.icon.regular),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                'Camera',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Face Time HD Camera (Default)',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              AppIcon(
+                AppIcons.doubleArrowVertical,
+                size: 14,
+                color: colors.icon.regular,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1329,6 +1709,12 @@ bool _keystoneMigrationProofStillPendingError(Object error) {
       (lower.contains('pending') ||
           lower.contains('not ready') ||
           lower.contains('still'));
+}
+
+bool _keystoneMigrationRequestMissingError(Object error) {
+  final lower = error.toString().toLowerCase();
+  return lower.contains('request') &&
+      (lower.contains('not found') || lower.contains('already used'));
 }
 
 String _keystoneMigrationSigningErrorMessage(Object error) {
