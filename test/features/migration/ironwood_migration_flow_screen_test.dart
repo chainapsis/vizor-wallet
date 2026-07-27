@@ -938,6 +938,31 @@ void main() {
     expect(find.text('intro-route'), findsNothing);
   });
 
+  testWidgets('private status keeps cached state when status refresh fails', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final cachedStatus = _status();
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: cachedStatus,
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) =>
+                Future.error(Exception('database is locked')),
+        coordinatorStatus: cachedStatus,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Preparing your notes'), findsOneWidget);
+    expect(find.text('Migration status unavailable'), findsNothing);
+  });
+
   testWidgets('private status maps migration phases to actions', (
     tester,
   ) async {
@@ -1744,6 +1769,44 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(callCount, greaterThanOrEqualTo(2));
+    expect(find.text('Migration Schedule'), findsOneWidget);
+    expect(find.text('Migration schedule unavailable'), findsNothing);
+  });
+
+  testWidgets('migration schedule keeps cached state when refresh fails', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final cachedStatus = _migrationStatus(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: const [10_000_000],
+      totalCount: 1,
+      parts: [
+        _migrationPart(0, 10_000_000, rust_sync.MigrationPartState.scheduled),
+      ],
+    );
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: cachedStatus,
+        ),
+        initialLocation: '/migration/private/schedule',
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) =>
+                Future.error(Exception('database is locked')),
+        coordinatorStatus: cachedStatus,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
     expect(find.text('Migration Schedule'), findsOneWidget);
     expect(find.text('Migration schedule unavailable'), findsNothing);
   });

@@ -21,19 +21,30 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
         statusUnavailable: true,
       );
     }
+    final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     return ref
         .watch(ironwoodMigrationStatusProvider(request))
         .when(
           skipLoadingOnReload: true,
           loading: () => _frame(context, null, null),
-          error: (_, _) => _frame(
-            context,
-            null,
-            null,
-            statusUnavailable: true,
-            onRetry: () =>
-                ref.invalidate(ironwoodMigrationStatusProvider(request)),
-          ),
+          error: (_, _) {
+            final cachedStatus = coordinator.statuses[request.accountUuid];
+            return cachedStatus == null
+                ? _frame(
+                    context,
+                    null,
+                    null,
+                    statusUnavailable: true,
+                    onRetry: () => ref.invalidate(
+                      ironwoodMigrationStatusProvider(request),
+                    ),
+                  )
+                : _frame(
+                    context,
+                    cachedStatus,
+                    ref.watch(syncProvider).asData?.value,
+                  );
+          },
           data: (status) =>
               _frame(context, status, ref.watch(syncProvider).asData?.value),
         );

@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zeroize::Zeroizing;
 
-use crate::wallet::db::{open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout};
+use crate::wallet::db::{
+    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
+    WALLET_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::secret_payload;
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
@@ -1589,15 +1592,17 @@ pub(crate) fn insert_pending_txs(
         return Ok(());
     }
 
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin migration pending insert: {e}"))?;
-    insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
-    tx.commit()
-        .map_err(|e| format!("Commit migration pending insert: {e}"))?;
-    Ok(())
+    with_wallet_db_write_lock("migration.insert_pending_txs", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin migration pending insert: {e}"))?;
+        insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+        tx.commit()
+            .map_err(|e| format!("Commit migration pending insert: {e}"))?;
+        Ok(())
+    })
 }
 
 pub(crate) fn promote_signed_child_pczts_to_pending_txs(
@@ -1612,15 +1617,18 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
         return Ok(());
     }
 
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
-    insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
+    with_wallet_db_write_lock(
+        "migration.promote_signed_child_pczts_to_pending_txs",
+        || {
+            let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+            ensure_schema(&conn)?;
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
+            insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+            tx.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
              SET proof_retry_height = CASE
                      WHEN EXISTS (
                          SELECT 1
@@ -1638,19 +1646,21 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
                  END,
                  updated_at_ms = ?1
              WHERE run_id = ?2"
-        ),
-        params![now_ms()?, run_id, remaining_child_retry_height],
+                ),
+                params![now_ms()?, run_id, remaining_child_retry_height],
+            )
+            .map_err(|e| format!("Update migration proof retry height after promotion: {e}"))?;
+            // Retain the compact signatures and base PCZTs until the run completes.
+            // If a trusted denomination transaction is later reorged, the affected
+            // children can be re-anchored and proved again without another Keystone
+            // scan. `signed_child_pczt_count` reports only children that do not
+            // currently have a pending transaction, so retaining these rows does not
+            // make an already-promoted batch look unfinished.
+            tx.commit()
+                .map_err(|e| format!("Commit signed migration PCZT promotion: {e}"))?;
+            Ok(())
+        },
     )
-    .map_err(|e| format!("Update migration proof retry height after promotion: {e}"))?;
-    // Retain the compact signatures and base PCZTs until the run completes.
-    // If a trusted denomination transaction is later reorged, the affected
-    // children can be re-anchored and proved again without another Keystone
-    // scan. `signed_child_pczt_count` reports only children that do not
-    // currently have a pending transaction, so retaining these rows does not
-    // make an already-promoted batch look unfinished.
-    tx.commit()
-        .map_err(|e| format!("Commit signed migration PCZT promotion: {e}"))?;
-    Ok(())
 }
 
 pub(crate) fn set_run_approved_schedule(
