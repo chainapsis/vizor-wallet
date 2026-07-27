@@ -363,7 +363,11 @@ _StatusAction _statusAction(
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusAction.none,
     kIronwoodMigrationReadyToMigratePhase =>
-      isHardware ? _StatusAction.needsInput : _StatusAction.none,
+      isHardware &&
+              (status.currentSigningPartIndices == null ||
+                  status.currentSigningPartIndices!.isNotEmpty)
+          ? _StatusAction.needsInput
+          : _StatusAction.none,
     kIronwoodMigrationFailedRecoverablePhase => _StatusAction.retry,
     kIronwoodMigrationCompletePhase => _StatusAction.backHome,
     _ => _StatusAction.none,
@@ -375,7 +379,7 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase =>
       const _StatusPresentation(
         title: 'Preparing...',
-        body: 'This will take around 10-20m',
+        body: 'This usually takes around 30 minutes per split.',
         footer: 'You can leave this screen.\nBut keep Vizor open & running.',
         buttonLabel: '',
       ),

@@ -63,7 +63,7 @@ class _IronwoodMigrationPrivateReviewContentState
       );
       if (accountState.activeAccount?.isHardware ?? false) {
         context.go(
-          '/migration/private/keystone/denominations/sign',
+          '/migration/private/keystone/sign',
           extra: plan.scheduledTransfers,
         );
         return;
@@ -472,10 +472,8 @@ class _MigrationReviewContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final values = [for (final value in plan.targetValuesZatoshi) value];
-    final rows = values.isEmpty
-        ? <BigInt>[plan.totalMigratableZatoshi]
-        : values;
+    final colors = context.colors;
+    final preparationEstimate = migrationPlanNoteSplitDurationLabel(plan);
     return SizedBox(
       key: const ValueKey('ironwood_migration_review_screen'),
       width: 420,
@@ -483,36 +481,98 @@ class _MigrationReviewContent extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            top: 46,
+            top: 12,
             left: 12,
             width: 396,
-            child: Column(
+            child: Text(
+              'Ironwood Migration',
+              style: AppTypography.bodyLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 58,
+            width: 396,
+            child: const _MigrationStageHeader(
+              stage: _MigrationStage.preparation,
+            ),
+          ),
+          Positioned(
+            left: 82,
+            top: 108,
+            width: 256,
+            height: 256,
+            child: CustomPaint(
+              painter: _MigrationStartRingPainter(
+                color: colors.text.muted.withValues(alpha: 0.32),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Amount to migrate',
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: colors.text.secondary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${_formatZecAmountCompact(plan.totalMigratableZatoshi)}\nZEC',
+                      textAlign: TextAlign.center,
+                      style: AppTypography.headlineLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 386,
+            width: 396,
+            child: _ImmediateReviewRow(
+              label: 'Est. preparation completion',
+              value: preparationEstimate,
+            ),
+          ),
+          Positioned(
+            left: 44,
+            top: 442,
+            width: 332,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Review migration plan',
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: context.colors.text.accent,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.asset(
+                    _ironwoodMigrationExpectationAssets[2],
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Keep Vizor running. Preparation continues while the app '
+                    'is minimized, then migration starts automatically.',
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          Positioned(
-            left: 12,
-            top: 160,
-            width: 396,
-            height: 378,
-            child: _MigrationBatchOverview(
-              values: rows,
-              totalZatoshi: plan.totalMigratableZatoshi,
-              feeZatoshi: plan.estimatedTotalFeeZatoshi,
-              completionLabel: _estimatedMigrationArrivalLabel(plan),
-            ),
-          ),
           if (error != null)
             Positioned(
               left: 45,
-              top: 545,
+              top: 516,
               width: 330,
               child: Text(
                 error!,
@@ -526,7 +586,7 @@ class _MigrationReviewContent extends StatelessWidget {
             ),
           Positioned(
             left: 95,
-            top: 596,
+            top: 584,
             width: 230,
             child: Center(
               child: AppButton(
@@ -534,16 +594,10 @@ class _MigrationReviewContent extends StatelessWidget {
                   'ironwood_migration_authorize_start_button',
                 ),
                 onPressed: isStarting ? null : onContinue,
-                height: 36,
-                minWidth: 130,
-                expand: false,
-                child: SizedBox(
-                  width: 98,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(isStarting ? 'Starting...' : 'Start migration'),
-                  ),
-                ),
+                height: 44,
+                minWidth: 230,
+                expand: true,
+                child: Text(isStarting ? 'Starting…' : 'Start migration'),
               ),
             ),
           ),
@@ -551,6 +605,46 @@ class _MigrationReviewContent extends StatelessWidget {
       ),
     );
   }
+}
+
+class _MigrationStartRingPainter extends CustomPainter {
+  const _MigrationStartRingPainter({required this.color});
+
+  final Color color;
+
+  static const _weights = [0.14, 0.08, 0.09, 0.12, 0.08, 0.15, 0.1, 0.12, 0.12];
+  static const _visibleGap = 0.055;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final rect = Rect.fromCircle(
+      center: size.center(Offset.zero),
+      radius: math.min(size.width, size.height) / 2 - paint.strokeWidth,
+    );
+    const fullSweep = math.pi * 2;
+    final radius = rect.width / 2;
+    // A round cap extends half a stroke beyond both ends of an arc. Include
+    // that full stroke in the center-line gap before adding visible spacing,
+    // otherwise the static frame shown while "Starting…" is active overlaps
+    // before the animated preparation ring replaces it.
+    final gap = (paint.strokeWidth / radius) + _visibleGap;
+    final drawable = fullSweep - gap * _weights.length;
+    var angle = -math.pi / 2;
+    for (final weight in _weights) {
+      final sweep = drawable * weight;
+      canvas.drawArc(rect, angle + gap / 2, sweep, false, paint);
+      angle += sweep + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MigrationStartRingPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _MigrationBatchOverview extends StatelessWidget {

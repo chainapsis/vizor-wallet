@@ -1,15 +1,21 @@
 part of '../ironwood_migration_flow_screen.dart';
 
-enum IronwoodMigrationFlowStep { prepare, intro, howItWorks, options, review }
+enum IronwoodMigrationFlowStep {
+  prepare,
+  intro,
+  howItWorks,
+  whatToExpect,
+  options,
+  review,
+  immediateReview,
+}
 
 enum IronwoodMigrationReviewPreviewStage { review, analyzing }
 
 const _privateStatusStartVerificationTimeout = Duration(seconds: 2);
 const _defaultMigrationAnalyzingMinimumDuration = Duration(seconds: 6);
 const _keystoneMigrationProofPollInterval = Duration(seconds: 1);
-const _prepareBroadcastCommitProgress = 0.30;
 const _scheduledBlockProgressCap = 0.70;
-const _broadcastCommitProgressCap = 0.92;
 const _migrationEstimatedSecondsPerBlock = 75;
 const _migrationPrepareConfirmationBlocks = 3;
 const _keystoneMigrationSignBatchResultUrType = 'zcash-batch-sig-result';
@@ -20,6 +26,16 @@ const _ironwoodMigrationIntroBannerLightAsset =
     'assets/illustrations/ironwood_migration_intro_banner_light.png';
 const _ironwoodMigrationIntroBannerDarkAsset =
     'assets/illustrations/ironwood_migration_intro_banner_dark.png';
+const _ironwoodMigrationHowStepAssets = [
+  'assets/illustrations/ironwood_migration_how_step_1.png',
+  'assets/illustrations/ironwood_migration_how_step_2.png',
+  'assets/illustrations/ironwood_migration_how_step_3.png',
+];
+const _ironwoodMigrationExpectationAssets = [
+  'assets/illustrations/ironwood_migration_expect_time.png',
+  'assets/illustrations/ironwood_migration_expect_spend.png',
+  'assets/illustrations/ironwood_migration_expect_running.png',
+];
 
 final ironwoodMigrationAnalyzingMinimumDurationProvider = Provider<Duration>(
   (_) => _defaultMigrationAnalyzingMinimumDuration,

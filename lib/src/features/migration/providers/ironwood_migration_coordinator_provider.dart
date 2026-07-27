@@ -89,6 +89,7 @@ class IronwoodMigrationCoordinator
       final hasAccounts = next.value?.accounts.isNotEmpty ?? false;
       if (!_hasObservedInitialAccountList && hasAccounts) {
         _hasObservedInitialAccountList = true;
+        unawaited(resumeBackgroundPreparations());
         unawaited(refreshNow());
       } else {
         unawaited(refreshNow());
@@ -96,6 +97,7 @@ class IronwoodMigrationCoordinator
     });
     ref.listen(appSecurityProvider, (previous, next) {
       if (previous?.requiresUnlock == true && !next.requiresUnlock) {
+        unawaited(resumeBackgroundPreparations());
         unawaited(refreshNow());
       } else {
         unawaited(refreshNow());
@@ -108,6 +110,7 @@ class IronwoodMigrationCoordinator
   void setForeground(bool foreground) {
     _foreground = foreground;
     if (foreground) {
+      unawaited(resumeBackgroundPreparations());
       unawaited(
         refreshNow(forceAdvance: kAppFormFactor == AppFormFactor.desktop),
       );
@@ -250,6 +253,37 @@ class IronwoodMigrationCoordinator
     await refreshNow(forceAdvance: true);
   }
 
+  Future<void> resumeSoftwarePreparation({
+    required String accountUuid,
+    required rust_sync.MigrationStatus status,
+  }) async {
+    if (status.activeRunId == null ||
+        status.phase != kIronwoodMigrationAwaitingPreparationPhase) {
+      throw StateError(
+        'Only a saved private migration draft can resume preparation.',
+      );
+    }
+    final service = ref.read(ironwoodMigrationServiceProvider);
+    final currentStatus = await service.status(
+      network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+      accountUuid: accountUuid,
+    );
+    if (currentStatus.activeRunId != status.activeRunId) {
+      throw StateError('The saved private migration draft changed.');
+    }
+    if (currentStatus.phase != kIronwoodMigrationAwaitingPreparationPhase) {
+      await refreshNow();
+      return;
+    }
+    await startSoftwareMigration(
+      accountUuid: accountUuid,
+      // Rust reloads the approved schedule from the durable draft. Keeping this
+      // empty prevents stale route or plan data from becoming a second source
+      // of truth during recovery.
+      approvedSchedule: const [],
+    );
+  }
+
   Future<void> retry(
     String accountUuid, {
     rust_sync.MigrationStatus? status,
@@ -273,6 +307,28 @@ class IronwoodMigrationCoordinator
         } catch (_) {
           // A manual retry must still run after the automatic attempt fails.
         }
+      }
+      final service = ref.read(ironwoodMigrationServiceProvider);
+      if (statusForAdvance != null &&
+          service.supportsBackgroundMigrationRetry &&
+          _manualRetryNeedsOutboxRecovery(statusForAdvance)) {
+        final recovery = await service.recoverDueMigrationOutbox(
+          network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+          accountUuid: accountUuid,
+        );
+        final refreshedStatus = await service.status(
+          network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+          accountUuid: accountUuid,
+        );
+        if (_manualRetryNeedsOutboxRecovery(refreshedStatus)) {
+          _validateDueOutboxRecovery(recovery, accountUuid: accountUuid);
+        }
+        if (!ref.mounted) return;
+        state = state.copyWith(
+          errors: Map<String, String>.from(state.errors)..remove(accountUuid),
+        );
+        await refreshNow();
+        return;
       }
       await _advance(accountUuid, status: statusForAdvance);
       if (!ref.mounted) return;
@@ -530,6 +586,32 @@ class IronwoodMigrationCoordinator
     return !DateTime.now().isBefore(window.retryAt);
   }
 
+  /// Whether an explicit retry must go through native outbox recovery instead of
+  /// the ordinary advance.
+  ///
+  /// A manual retry can run before sync reports a height: a migration status
+  /// screen may be the first surface after a cold launch, and
+  /// [_safelyObservedProofHeight] stays 0 until the first sync snapshot arrives.
+  /// Reading that unknown height as "not due" is what sent an explicit retry
+  /// back into [_advance], which cannot restore a missing native outbox batch.
+  /// Recovery neither creates proofs nor signs anything, and the native runner
+  /// applies its own height gate before it submits, so an unknown height resolves
+  /// to recovery whenever a scheduled broadcast exists.
+  bool _manualRetryNeedsOutboxRecovery(rust_sync.MigrationStatus status) {
+    final currentHeight = _safelyObservedProofHeight();
+    if (currentHeight > 0) {
+      return migrationHasDueScheduledBroadcast(
+        status,
+        currentHeight: currentHeight,
+      );
+    }
+    return status.scheduledBroadcasts.any(
+      (broadcast) =>
+          broadcast.status.toLowerCase() == 'scheduled' &&
+          broadcast.txidHex.isNotEmpty,
+    );
+  }
+
   void _validateDueOutboxRecovery(
     IronwoodMigrationOutboxRunResult result, {
     required String accountUuid,
@@ -664,7 +746,9 @@ class IronwoodMigrationCoordinator
 
   bool _canPrepareNextProof(rust_sync.MigrationStatus status) {
     final nextActionHeight = status.nextActionHeight;
-    if (status.signedChildPcztCount <= 0 || nextActionHeight == null) {
+    if (status.signedChildPcztCount <= 0 ||
+        status.proofReady != true ||
+        nextActionHeight == null) {
       return false;
     }
     final currentHeight = _safelyObservedProofHeight();
@@ -808,6 +892,11 @@ class _IronwoodMigrationCoordinatorHostState
   void initState() {
     super.initState();
     unawaited(
+      ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .resumeBackgroundPreparations(),
+    );
+    unawaited(
       ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
     );
     _pollTimer = Timer.periodic(_migrationStatusPollInterval, (_) {
@@ -837,11 +926,29 @@ class _IronwoodMigrationCoordinatorHostState
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(syncProvider, (_, next) {
-      unawaited(
-        ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
-      );
-    });
+    // Narrowed to the completion timestamp on purpose. `SyncState` has no
+    // `operator ==` and a 20ms timer rewrites it for the whole of a sync
+    // (`sync_provider.dart` `_displayProgressTimer`), so an unnarrowed listen
+    // fires up to 50x/second. Every fire set `_refreshPending`, which kept
+    // `_drainRefreshes()` from ever draining: `_refreshOnce()` then ran
+    // back-to-back for the entire sync, and it is not cheap — a full
+    // `get_wallet_summary`, a migration-status read on its own connection, and
+    // a Keychain read, per account, while the scanner was writing to the same
+    // SQLite. The 5s `_pollTimer` above already covers periodic refresh, so
+    // the unconditional `refreshNow()` here was redundant as well as hot.
+    ref.listen(
+      syncProvider.select((sync) => sync.asData?.value.lastSyncCompletedAt),
+      (previousCompletedAt, nextCompletedAt) {
+        if (nextCompletedAt == null || nextCompletedAt == previousCompletedAt) {
+          return;
+        }
+        final coordinator = ref.read(
+          ironwoodMigrationCoordinatorProvider.notifier,
+        );
+        unawaited(coordinator.refreshNow());
+        unawaited(coordinator.resumeBackgroundPreparations());
+      },
+    );
     ref.watch(ironwoodMigrationCoordinatorProvider);
     return widget.child;
   }

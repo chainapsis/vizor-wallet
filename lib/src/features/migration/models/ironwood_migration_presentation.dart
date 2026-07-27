@@ -25,6 +25,7 @@ bool migrationHasDueProofBatch(
   final nextActionHeight = status.nextActionHeight;
   if (status.phase != kIronwoodMigrationBroadcastScheduledPhase ||
       status.signedChildPcztCount <= 0 ||
+      status.proofReady != true ||
       nextActionHeight == null ||
       currentHeight <= 0 ||
       nextActionHeight > currentHeight) {
@@ -140,12 +141,18 @@ int _migrationPlanCompletionBlocks(rust_sync.OrchardMigrationPrivatePlan plan) {
 
 int migrationPlanPreparationDelayBlocks(
   rust_sync.OrchardMigrationPrivatePlan plan,
-) =>
-    (plan.denominationSplitLayerCount <= 0
-        ? 0
-        : plan.denominationSplitLayerCount * _preparationConfirmationBlocks +
-              _preparationBroadcastBufferBlocks) +
-    plan.proofReadinessDelayBlocks;
+) => migrationPlanNoteSplitDelayBlocks(plan) + plan.proofReadinessDelayBlocks;
+
+int migrationPlanNoteSplitDelayBlocks(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) => plan.denominationSplitLayerCount <= 0
+    ? 0
+    : plan.denominationSplitLayerCount * _preparationConfirmationBlocks +
+          _preparationBroadcastBufferBlocks;
+
+String migrationPlanNoteSplitDurationLabel(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) => _formatMigrationDuration(migrationPlanNoteSplitDelayBlocks(plan));
 
 int migrationPlanPartDelayBlocks({
   required int preparationDelayBlocks,
@@ -470,19 +477,21 @@ String migrationPreparationProgressLabel(rust_sync.MigrationStatus status) {
   final total = status.denominationSplitTotalCount;
   final completed = status.denominationSplitCompletedCount.clamp(0, total);
   if (total <= 0) return 'Preparing split transactions';
-  if (completed >= total) {
-    return '$completed of $total split transactions confirmed';
-  }
 
-  final current = (completed + 1).clamp(1, total);
   final confirmationTarget = status.denominationConfirmationTarget;
+  final current = (completed + 1).clamp(1, total);
   if (confirmationTarget <= 0) return 'Preparing split $current of $total';
   final confirmations = status.denominationConfirmationCount.clamp(
     0,
     confirmationTarget,
   );
-  return 'Split $current of $total, $confirmations of $confirmationTarget '
-      'confirmations';
+  if (confirmations > 0 || completed >= total) {
+    final visibleConfirmations = completed >= total
+        ? confirmationTarget
+        : confirmations;
+    return '$visibleConfirmations of $confirmationTarget confirmations';
+  }
+  return 'Split $current of $total';
 }
 
 String _counted(int count, String singular, String plural) =>

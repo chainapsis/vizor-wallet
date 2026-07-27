@@ -84,6 +84,10 @@ const BATCH_SIZE_FOREGROUND: u32 = 2000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
+// The wallet automatically keeps 100 recent checkpoints. Stay below that
+// pruning depth so the first checkpoint created in a scan batch is still
+// available for explicit migration retention after the batch completes.
+const BATCH_SIZE_MIGRATION_ANCHOR_RETENTION: u32 = 96;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 
@@ -171,6 +175,14 @@ fn effective_base_batch_size(default_batch_size: u32) -> u32 {
     }
 
     default_batch_size
+}
+
+fn migration_anchor_retention_batch_size(base_batch_size: u32, required: bool) -> u32 {
+    if required {
+        base_batch_size.min(BATCH_SIZE_MIGRATION_ANCHOR_RETENTION)
+    } else {
+        base_batch_size
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -1313,17 +1325,25 @@ async fn run_sync_impl(
     allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
+    let mut migration_anchor_retention_required =
+        crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
+            .map_err(SyncError::db)?;
     let default_batch_size = if running_mode == 2 {
         BATCH_SIZE_BACKGROUND
     } else {
         BATCH_SIZE_FOREGROUND
     };
-    let base_batch_size = effective_base_batch_size(default_batch_size);
+    let unclamped_base_batch_size = effective_base_batch_size(default_batch_size);
+    let mut base_batch_size = migration_anchor_retention_batch_size(
+        unclamped_base_batch_size,
+        migration_anchor_retention_required,
+    );
     log::info!(
-        "[{}] sync: starting (mode={}, base_batch={})",
+        "[{}] sync: starting (mode={}, base_batch={}, migration_anchor_retention={})",
         elapsed(),
         running_mode,
-        base_batch_size
+        base_batch_size,
+        migration_anchor_retention_required,
     );
 
     // Persist the active session before any new sync work begins. A crash or
@@ -1974,6 +1994,51 @@ async fn run_sync_impl(
             },
         };
 
+        if migration_anchor_retention_required {
+            let retained = with_wallet_db_write_lock(
+                "sync_engine.retain_migration_anchor_checkpoints",
+                || {
+                    crate::wallet::sync::retain_prepared_note_anchor_checkpoints_after_scan(
+                        db_data_path,
+                        network,
+                        &mut db,
+                    )
+                },
+            )
+            .map_err(|error| {
+                SyncError::other(format!(
+                    "retain migration anchor checkpoints after scan: {error}"
+                ))
+            })?;
+            if retained > 0 {
+                log::info!(
+                    "[{}] sync: retained {retained} migration anchor checkpoint(s)",
+                    elapsed(),
+                );
+            }
+            // Retention costs every remaining batch of this sync: the batch size
+            // stays below the checkpoint pruning depth and each batch runs this
+            // maintenance pass. Re-check so a run that finished, was abandoned,
+            // or released its last reference mid-sync stops paying for it. The
+            // check only runs while retention is already required, so a sync
+            // without a migration keeps its full batch size for free.
+            let still_required =
+                crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
+                    .map_err(SyncError::db)?;
+            if !still_required {
+                migration_anchor_retention_required = false;
+                base_batch_size = migration_anchor_retention_batch_size(
+                    unclamped_base_batch_size,
+                    migration_anchor_retention_required,
+                );
+                log::info!(
+                    "[{}] sync: migration anchor retention released (base_batch={})",
+                    elapsed(),
+                    base_batch_size,
+                );
+            }
+        }
+
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
             log::info!("[{}] sync: exiting after scan", elapsed());
             return Ok(());
@@ -2203,6 +2268,23 @@ async fn run_sync_impl(
     // unresolved in an earlier run.
     crate::wallet::sync::reconcile_wallet_locks_after_sync(db_data_path, network)
         .map_err(SyncError::db)?;
+    if migration_anchor_retention_required {
+        with_wallet_db_write_lock(
+            "sync_engine.retain_migration_anchor_checkpoints.final",
+            || {
+                crate::wallet::sync::retain_prepared_note_anchor_checkpoints_after_scan(
+                    db_data_path,
+                    network,
+                    &mut db,
+                )
+            },
+        )
+        .map_err(|error| {
+            SyncError::other(format!(
+                "retain migration anchor checkpoints after sync: {error}"
+            ))
+        })?;
+    }
     log::info!(
         "[{}] sync: completed (fully_scanned={}, chain_tip={})",
         elapsed(),
@@ -2405,6 +2487,13 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn migration_anchor_retention_caps_batches_below_the_checkpoint_pruning_depth() {
+        assert_eq!(migration_anchor_retention_batch_size(1_000, true), 96);
+        assert_eq!(migration_anchor_retention_batch_size(80, true), 80);
+        assert_eq!(migration_anchor_retention_batch_size(1_000, false), 1_000);
     }
 
     #[test]

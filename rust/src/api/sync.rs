@@ -785,6 +785,10 @@ pub struct MigrationStatus {
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
     pub next_action_height: Option<u32>,
+    /// Exact foreground proof preflight. `None` means no signed proof action
+    /// is currently applicable; `Some(false)` keeps a height-due action gated
+    /// until its anchor checkpoint and witness are actually available.
+    pub proof_ready: Option<bool>,
     pub estimated_completion_height: Option<u32>,
     pub next_action_part_index: Option<u32>,
     pub current_signing_part_indices: Option<Vec<u32>>,
@@ -1111,6 +1115,72 @@ pub fn migrate_orchard_to_ironwood_immediately(
     })
 }
 
+pub fn prepare_orchard_migration_immediate_pczt(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    approved_total_input_zatoshi: u64,
+    approved_fee_zatoshi: u64,
+    approved_migrated_zatoshi: u64,
+    approved_input_note_count: u32,
+) -> Result<KeystoneMigrationSigningRequest, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let request = wallet_sync::prepare_orchard_migration_immediate_pczt(
+            &db_path,
+            network,
+            &account_uuid,
+            wallet_sync::OrchardMigrationImmediatePlan {
+                total_input_zatoshi: approved_total_input_zatoshi,
+                fee_zatoshi: approved_fee_zatoshi,
+                migrated_zatoshi: approved_migrated_zatoshi,
+                input_note_count: approved_input_note_count,
+            },
+        )?;
+        Ok(KeystoneMigrationSigningRequest {
+            request_id: request.request_id,
+            signing_batch_limit: request.signing_batch_limit,
+            messages: request
+                .messages
+                .into_iter()
+                .map(|message| KeystoneMigrationMessage {
+                    id: message.id,
+                    redacted_pczt: message.redacted_pczt,
+                })
+                .collect(),
+        })
+    })
+}
+
+pub async fn complete_orchard_migration_immediate_pczt(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    request_id: String,
+    signed_messages: Vec<KeystoneSignedMigrationMessage>,
+) -> Result<IronwoodMigrationResult, String> {
+    let network = parse_network_and_migrate(&db_path, &network)?;
+    let r = wallet_sync::complete_orchard_migration_immediate_pczt(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        &account_uuid,
+        &request_id,
+        to_wallet_signed_messages(signed_messages)?,
+    )
+    .await?;
+    Ok(IronwoodMigrationResult {
+        txids: r.txids,
+        status: r.status,
+        broadcasted_count: r.broadcasted_count,
+        total_count: r.total_count,
+        message: r.message,
+        fee_zatoshi: r.fee_zatoshi,
+        migrated_zatoshi: r.migrated_zatoshi,
+    })
+}
+
 pub fn get_orchard_migration_immediate_plan(
     db_path: String,
     network: String,
@@ -1168,6 +1238,12 @@ pub fn get_orchard_migration_status(
             balance.ironwood,
             balance.ironwood_pending,
         )?;
+        let proof_ready = wallet_sync::orchard_migration_proof_readiness(
+            &db_path,
+            network,
+            &account_uuid,
+            &status,
+        )?;
         Ok(MigrationStatus {
             phase: status.phase,
             active_run_id: status.active_run_id,
@@ -1189,6 +1265,7 @@ pub fn get_orchard_migration_status(
             schedule_mean_delay_blocks: status.schedule_mean_delay_blocks,
             schedule_max_delay_blocks: status.schedule_max_delay_blocks,
             next_action_height: status.next_action_height,
+            proof_ready,
             estimated_completion_height: status.estimated_completion_height,
             next_action_part_index: status.next_action_part_index,
             current_signing_part_indices: Some(status.current_signing_part_indices),
@@ -1603,10 +1680,15 @@ pub async fn complete_orchard_migration_denominations_pczt(
     })
 }
 
+/// Prepares the split and migration PCZTs for one Keystone signing session.
+///
+/// The approved schedule must still match the denomination plan when the
+/// signing request is created.
 pub fn prepare_orchard_migration_single_qr_pczt(
     db_path: String,
     network: String,
     account_uuid: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1614,6 +1696,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
             &db_path,
             network,
             &account_uuid,
+            to_wallet_migration_schedule(approved_schedule),
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,

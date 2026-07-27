@@ -88,7 +88,7 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
           ],
         ),
       MobileIronwoodMigrationPreviewSurface.migrationComplete =>
-        const _MigrationCompletePreview(),
+        const _MigrationCompletePreview(amountText: '142.992 ZEC'),
       MobileIronwoodMigrationPreviewSurface.homeAttention =>
         const _MigrationHomeAttentionPreview(),
       MobileIronwoodMigrationPreviewSurface.homeAttentionModal =>
@@ -197,6 +197,7 @@ class _MobileMigrationNotificationPermissionScreenState
     extends ConsumerState<_MobileMigrationNotificationPermissionScreen> {
   AppLifecycleListener? _lifecycleListener;
   var _busy = false;
+  String? _continueError;
 
   @override
   void initState() {
@@ -291,7 +292,13 @@ class _MobileMigrationNotificationPermissionScreenState
 
   Future<void> _continueAfterNotificationGate() async {
     final plan = widget.privatePlan;
-    if (!_busy && mounted) setState(() => _busy = true);
+    if (mounted) {
+      setState(() {
+        _busy = true;
+        _continueError = null;
+      });
+    }
+    var draftSaved = false;
     try {
       if (plan == null) {
         throw StateError('Migration plan is unavailable.');
@@ -308,20 +315,30 @@ class _MobileMigrationNotificationPermissionScreenState
             accountUuid: accountUuid,
             approvedSchedule: plan.scheduledTransfers,
           );
+      draftSaved = true;
       if (!mounted) return;
       await _refreshPrivateMigrationDraftPresentation(ref);
       if (!mounted) return;
-      if (plan.denominationSplitStageCount != 0) {
-        context.go('/migration/private/start', extra: plan);
-        return;
-      }
-      await _continuePrivateMigrationAfterNotificationGate(ref, plan);
+      final destination = await _continuePrivateMigrationAfterNotificationGate(
+        ref,
+        plan,
+      );
       if (!mounted) return;
-      context.go('/migration/private/status', extra: plan);
+      _openPrivateMigrationDestination(context, destination, plan);
     } catch (error) {
       debugPrint('Failed to activate direct-note migration: $error');
       if (!mounted) return;
-      context.go('/migration/private/start', extra: plan);
+      if (draftSaved || await _hasDurablePrivateMigrationRun(ref)) {
+        if (!mounted) return;
+        context.go(
+          '/migration/private/status',
+          extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
+        );
+        return;
+      }
+      setState(() {
+        _continueError = "Couldn't start the migration. Try again.";
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -331,6 +348,7 @@ class _MobileMigrationNotificationPermissionScreenState
   Widget build(BuildContext context) {
     return _MigrationNotificationPromptPreview(
       busy: _busy,
+      errorMessage: _continueError,
       onBack: () => context.go('/migration/options'),
       onAllow: () => unawaited(_allowNotifications()),
       onNotNow: () => unawaited(_confirmNotNow()),
@@ -347,6 +365,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
     this.onAllow,
     this.onNotNow,
     this.busy = false,
+    this.errorMessage,
   });
 
   final bool showConfirmation;
@@ -354,6 +373,7 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
   final VoidCallback? onAllow;
   final VoidCallback? onNotNow;
   final bool busy;
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -365,6 +385,16 @@ class _MigrationNotificationPromptPreview extends StatelessWidget {
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (errorMessage != null) ...[
+            Text(
+              errorMessage!,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(
+                color: const Color(0xFFFFFFFF),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+          ],
           AppButton(
             key: const ValueKey('migration_preview_not_now'),
             variant: AppButtonVariant.ghost,
@@ -1034,6 +1064,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.completedBatches,
     this.totalBatches,
     this.completedRingSegments,
+    this.awaitingRingSegments,
     this.currentSigningPartIndices = const {},
     this.segmentValuesZatoshi,
     this.migratedAmountText,
@@ -1058,6 +1089,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final int? completedBatches;
   final int? totalBatches;
   final Set<int>? completedRingSegments;
+  final Set<int>? awaitingRingSegments;
   final Set<int> currentSigningPartIndices;
   final List<BigInt>? segmentValuesZatoshi;
   final String? migratedAmountText;
@@ -1147,6 +1179,11 @@ class _MigrationProgressPreview extends StatelessWidget {
                   totalBatches: resolvedTotalBatches,
                   totalParts: totalParts,
                   completedSegments: resolvedCompletedRingSegments,
+                  awaitingSegments:
+                      awaitingRingSegments?.difference(
+                        resolvedCompletedRingSegments,
+                      ) ??
+                      const {},
                   highlightedSegments:
                       state == _MigrationProgressState.needsInput
                       ? currentSigningPartIndices
@@ -1197,6 +1234,7 @@ class _MigrationBatchDial extends StatelessWidget {
     required this.totalBatches,
     required this.totalParts,
     required this.completedSegments,
+    this.awaitingSegments = const {},
     required this.highlightedSegments,
     required this.segmentWeights,
     this.dimension = 256,
@@ -1209,6 +1247,7 @@ class _MigrationBatchDial extends StatelessWidget {
   final int totalBatches;
   final int totalParts;
   final Set<int> completedSegments;
+  final Set<int> awaitingSegments;
   final Set<int> highlightedSegments;
   final List<double> segmentWeights;
   final double dimension;
@@ -1239,6 +1278,7 @@ class _MigrationBatchDial extends StatelessWidget {
             dimension: dimension,
             segmentWeights: segmentWeights,
             completedSegments: completedSegments,
+            awaitingSegments: awaitingSegments,
             highlightedSegments: highlightedSegments,
           ),
           Column(
@@ -1951,10 +1991,121 @@ class _AnimatedMigrationWaitLoopState extends State<_AnimatedMigrationWaitLoop>
   }
 }
 
-class _MigrationCompletePreview extends StatelessWidget {
-  const _MigrationCompletePreview({this.amountText, this.onDone});
+/// The amount shown on a finished migration.
+///
+/// Single rule on purpose. The dedicated completion route and the status
+/// screen's completion branch both render the same result, and the completion
+/// provider publishes its own total for routing — three places that could
+/// otherwise disagree about what the user migrated.
+String migrationCompletedAmountText(
+  rust_sync.MigrationStatus status, {
+  required String fallbackAmountText,
+}) {
+  final total = status.parts.isNotEmpty
+      ? status.parts.fold<BigInt>(
+          BigInt.zero,
+          (sum, part) => sum + part.valueZatoshi,
+        )
+      : status.targetValuesZatoshi.fold<BigInt>(
+          BigInt.zero,
+          (sum, value) => sum + value,
+        );
+  final text = total > BigInt.zero
+      ? ZecAmount.fromZatoshi(total).compactBalance.amountText
+      : fallbackAmountText;
+  return '$text ZEC';
+}
 
-  final String? amountText;
+/// The finished-migration result, with the behaviour that has to accompany it.
+///
+/// Owns marking the completion seen so the dedicated route and the status
+/// screen cannot drift apart on when a result stops being re-shown. The two
+/// reach this surface under different conditions — the route because home
+/// found an unseen completion, the status screen because the run it is already
+/// showing finished — but once here they must behave identically.
+class _MigrationCompleteSurface extends ConsumerStatefulWidget {
+  const _MigrationCompleteSurface({
+    required this.status,
+    required this.onDone,
+    required this.fallbackAmountText,
+  });
+
+  final rust_sync.MigrationStatus status;
+  final VoidCallback onDone;
+  final String fallbackAmountText;
+
+  @override
+  ConsumerState<_MigrationCompleteSurface> createState() =>
+      _MigrationCompleteSurfaceState();
+}
+
+class _MigrationCompleteSurfaceState
+    extends ConsumerState<_MigrationCompleteSurface> {
+  bool _seenRecorded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_markCompletionSeen());
+    });
+  }
+
+  Future<void> _markCompletionSeen() async {
+    if (_seenRecorded || !mounted) return;
+    _seenRecorded = true;
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    // Prefer the identity the completion provider itself published. Recomputing
+    // it from this status can disagree with the status the provider read, and a
+    // key that never matches leaves the run forever unseen, so home would route
+    // back to the result on every return. Only trust it for the account on
+    // screen: a reloading provider keeps serving its previous value, so right
+    // after an account switch the published identity can still be the account
+    // the user left.
+    final publishedValue = ref.read(ironwoodMigrationCompletionProvider).value;
+    final published = publishedValue?.accountUuid == accountUuid
+        ? publishedValue
+        : null;
+    final network =
+        published?.network ?? ref.read(ironwoodMigrationInputsProvider).network;
+    final completionId =
+        published?.completionId ?? ironwoodMigrationCompletionId(widget.status);
+    try {
+      await ref
+          .read(ironwoodMigrationCompletionStoreProvider)
+          .markSeen(
+            network: network,
+            accountUuid: accountUuid,
+            completionId: completionId,
+          );
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(ironwoodMigrationCompletionProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _MigrationCompletePreview(
+      amountText: migrationCompletedAmountText(
+        widget.status,
+        fallbackAmountText: widget.fallbackAmountText,
+      ),
+      onDone: widget.onDone,
+    );
+  }
+}
+
+class _MigrationCompletePreview extends StatelessWidget {
+  const _MigrationCompletePreview({required this.amountText, this.onDone});
+
+  /// Required, and never empty. A placeholder default here would be a sample
+  /// amount rendered to a real user as their migration result; an empty one
+  /// leaves the headline with a blank line where the total belongs. Preview
+  /// call sites pass their own sample.
+  final String amountText;
   final VoidCallback? onDone;
 
   @override
@@ -1999,7 +2150,7 @@ class _MigrationCompletePreview extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(
-            'Your\n${amountText ?? '142.992 ZEC'}\nare on Ironwood!',
+            'Your\n$amountText\nare on Ironwood!',
             textAlign: TextAlign.center,
             style: AppTypography.displayLarge.copyWith(
               color: const Color(0xFFFFFFFF),
@@ -2338,12 +2489,14 @@ class _AnimatedMigrationAttentionRing extends StatefulWidget {
     required this.dimension,
     required this.segmentWeights,
     required this.completedSegments,
+    required this.awaitingSegments,
     required this.highlightedSegments,
   });
 
   final double dimension;
   final List<double> segmentWeights;
   final Set<int> completedSegments;
+  final Set<int> awaitingSegments;
   final Set<int> highlightedSegments;
 
   @override
@@ -2412,9 +2565,10 @@ class _AnimatedMigrationAttentionRingState
         size: Size.square(widget.dimension),
         painter: _MigrationRingPainter(
           trackColor: context.colors.border.subtle,
-          activeColor: const Color(0xFF00A460),
+          activeColor: context.colors.border.utilityPositiveStrong,
           segmentWeights: widget.segmentWeights,
           completedSegments: widget.completedSegments,
+          awaitingSegments: widget.awaitingSegments,
           highlightedSegments: widget.highlightedSegments,
           highlightColor: context.colors.text.accent,
           highlightOpacity: _reducedMotion ? 1 : _opacity.value,
@@ -2424,12 +2578,16 @@ class _AnimatedMigrationAttentionRingState
   }
 }
 
+/// Opacity the design uses for a broadcast part that is still confirming.
+const double _awaitingSegmentOpacity = 0.5;
+
 class _MigrationRingPainter extends CustomPainter {
   const _MigrationRingPainter({
     required this.trackColor,
     required this.activeColor,
     required this.segmentWeights,
     this.completedSegments = const {},
+    this.awaitingSegments = const {},
     this.highlightedSegments = const {},
     this.highlightColor,
     this.highlightOpacity = 1,
@@ -2439,6 +2597,11 @@ class _MigrationRingPainter extends CustomPainter {
   final Color activeColor;
   final List<double> segmentWeights;
   final Set<int> completedSegments;
+
+  /// Parts already broadcast but still waiting for their confirmations. They
+  /// are past the point the user can influence, yet not final, so they read as
+  /// a dimmed form of the completed colour rather than as untouched track.
+  final Set<int> awaitingSegments;
   final Set<int> highlightedSegments;
   final Color? highlightColor;
   final double highlightOpacity;
@@ -2474,6 +2637,8 @@ class _MigrationRingPainter extends CustomPainter {
         ..strokeWidth = strokeWidth;
       paint.color = completedSegments.contains(index)
           ? activeColor
+          : awaitingSegments.contains(index)
+          ? activeColor.withValues(alpha: _awaitingSegmentOpacity)
           : highlightedSegments.contains(index)
           ? (highlightColor ?? activeColor).withValues(alpha: highlightOpacity)
           : trackColor;
@@ -2488,6 +2653,7 @@ class _MigrationRingPainter extends CustomPainter {
         activeColor != oldDelegate.activeColor ||
         !_sameDoubleList(segmentWeights, oldDelegate.segmentWeights) ||
         completedSegments != oldDelegate.completedSegments ||
+        awaitingSegments != oldDelegate.awaitingSegments ||
         highlightedSegments != oldDelegate.highlightedSegments ||
         highlightColor != oldDelegate.highlightColor ||
         highlightOpacity != oldDelegate.highlightOpacity ||

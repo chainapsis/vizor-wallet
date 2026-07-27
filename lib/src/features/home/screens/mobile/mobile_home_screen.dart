@@ -144,10 +144,119 @@ class _IronwoodMigrationAttentionMountGateState
     if (!widget.isHomeCurrent) return const SizedBox.shrink();
     final evaluateInitialEntry = !_hasMountedHost;
     _hasMountedHost = true;
-    return _IronwoodMigrationAttentionHost(
-      key: const ValueKey('mobile_home_migration_attention_host'),
-      evaluateInitialEntry: evaluateInitialEntry,
+    return Stack(
+      children: [
+        _IronwoodMigrationAttentionHost(
+          key: const ValueKey('mobile_home_migration_attention_host'),
+          evaluateInitialEntry: evaluateInitialEntry,
+        ),
+        const _IronwoodMigrationCompletionHost(
+          key: ValueKey('mobile_home_migration_completion_host'),
+        ),
+      ],
     );
+  }
+}
+
+/// Opens the migration completion screen once for a run that finished while
+/// the user was elsewhere.
+///
+/// A migration normally completes in the background, and the home CTA hides
+/// itself once the run is complete, so without this the result screen is only
+/// reachable by standing on the status screen at the moment the phase flips.
+/// The status screen records the run as seen when it renders, so this navigates
+/// at most once per completed run.
+class _IronwoodMigrationCompletionHost extends ConsumerStatefulWidget {
+  const _IronwoodMigrationCompletionHost({super.key});
+
+  @override
+  ConsumerState<_IronwoodMigrationCompletionHost> createState() =>
+      _IronwoodMigrationCompletionHostState();
+}
+
+/// Completions this session already routed to.
+///
+/// The host is unmounted whenever home is not the current route, so a
+/// widget-local guard forgets the moment the user returns from the completion
+/// screen. Keeping it in the provider scope bounds the routing to once per run
+/// per session even if recording the run as seen fails.
+final _ironwoodMigrationRoutedCompletionsProvider = Provider<Set<String>>(
+  (_) => <String>{},
+);
+
+class _IronwoodMigrationCompletionHostState
+    extends ConsumerState<_IronwoodMigrationCompletionHost> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _evaluate(ref.read(ironwoodMigrationCompletionProvider));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(ironwoodMigrationCompletionProvider, (_, next) {
+      _evaluate(next);
+    });
+    return const SizedBox.shrink();
+  }
+
+  void _evaluate(AsyncValue<IronwoodMigrationCompletionState> completionAsync) {
+    if (!mounted) return;
+    // A refresh keeps serving the previous value, and recording the run as seen
+    // triggers exactly such a refresh. Acting on that stale value would route
+    // back to a completion the user has already been shown.
+    if (completionAsync.isLoading || completionAsync.hasError) return;
+    final completion = completionAsync.value;
+    if (completion == null || !completion.visible) return;
+    final network = completion.network;
+    final accountUuid = completion.accountUuid;
+    final completionId = completion.completionId;
+    if (network == null || accountUuid == null || completionId == null) return;
+    // Only present the account the user is actually on. Switching accounts must
+    // not drag them into another account's result screen.
+    if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+      return;
+    }
+    if (!_isForeground) return;
+    final key = '$network:$accountUuid:$completionId';
+    final routed = ref.read(_ironwoodMigrationRoutedCompletionsProvider);
+    if (routed.contains(key)) return;
+    if (!_isOnHome()) return;
+    // A tap that is already opening another screen has not committed its route
+    // when this fires, which is how the completion screen ended up layered over
+    // whatever the user had just asked for. Re-check everything on the next
+    // frame and yield to that navigation if it happened.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || routed.contains(key) || !_isForeground) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (!_isOnHome()) return;
+      routed.add(key);
+      context.go('/migration/complete');
+    });
+  }
+
+  /// Whether home is the screen the user is actually looking at.
+  ///
+  /// `GoRouterState.of` resolves the nearest enclosing page, and this host
+  /// lives inside a `StatefulShellRoute.indexedStack` branch that stays mounted
+  /// behind other tabs and under pushed routes. It therefore keeps reporting
+  /// `/home` no matter where the user navigated, which made the guard vacuous.
+  /// The router's current configuration is the actual location.
+  bool _isOnHome() {
+    return GoRouter.of(context).routerDelegate.currentConfiguration.uri.path ==
+        '/home';
+  }
+
+  /// Routing is a foreground courtesy. A wake in the background must not move
+  /// the user's place in the app.
+  bool get _isForeground {
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return lifecycle == null || lifecycle == AppLifecycleState.resumed;
   }
 }
 

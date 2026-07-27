@@ -5,6 +5,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
     required this.step,
     this.previewData,
     this.previewPrivatePlan,
+    this.previewImmediatePlan,
     this.previewReviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.onOpenReleaseNotesOverride,
     super.key,
@@ -13,6 +14,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
   final IronwoodMigrationFlowStep step;
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final IronwoodMigrationReviewPreviewStage previewReviewStage;
   final VoidCallback? onOpenReleaseNotesOverride;
 
@@ -26,6 +28,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
       step: step,
       data: data,
       previewPrivatePlan: previewPrivatePlan,
+      previewImmediatePlan: previewImmediatePlan,
       previewReviewStage: previewReviewStage,
       onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
     );
@@ -179,46 +182,68 @@ class IronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         disableSidebarActions: true,
         child: const Center(child: CircularProgressIndicator()),
       ),
-      error: (_, _) => _IronwoodMigrationFrame(
-        toolbar: _privateStatusToolbar(context),
-        disableSidebarActions: true,
-        child: const _IronwoodMigrationPrivateStatusErrorContent(),
+      error: (_, _) {
+        final cachedStatus = coordinator.statuses[request.accountUuid];
+        return cachedStatus == null
+            ? _IronwoodMigrationFrame(
+                toolbar: _privateStatusToolbar(context),
+                disableSidebarActions: true,
+                child: const _IronwoodMigrationPrivateStatusErrorContent(),
+              )
+            : _buildStatusFrame(
+                context,
+                request: request,
+                coordinator: coordinator,
+                status: cachedStatus,
+              );
+      },
+      data: (status) => _buildStatusFrame(
+        context,
+        request: request,
+        coordinator: coordinator,
+        status: status,
       ),
-      data: (status) {
-        final coordinatedStatus = coordinator.statuses[request.accountUuid];
-        final effectiveStatus =
-            status.activeRunId == null &&
-                kIronwoodMigrationStartPhases.contains(status.phase) &&
-                coordinatedStatus?.activeRunId != null
-            ? coordinatedStatus!
-            : status;
-        if (_isEmptyCompletedMigrationStatus(effectiveStatus)) {
-          return const _RedirectTo('/home');
-        }
-        if (effectiveStatus.activeRunId == null &&
-            kIronwoodMigrationStartPhases.contains(effectiveStatus.phase)) {
-          if (coordinator.advancingAccounts.contains(request.accountUuid)) {
-            return _IronwoodMigrationFrame(
-              toolbar: _privateStatusToolbar(context),
-              disableSidebarActions: true,
-              child: const Center(child: CircularProgressIndicator()),
-            );
-          }
-          return _IronwoodMigrationFrame(
-            toolbar: _privateStatusToolbar(context),
-            disableSidebarActions: true,
-            child: const _IronwoodMigrationPrivateStatusErrorContent(),
-          );
-        }
+    );
+  }
+
+  Widget _buildStatusFrame(
+    BuildContext context, {
+    required IronwoodMigrationStatusRequest request,
+    required IronwoodMigrationCoordinatorState coordinator,
+    required rust_sync.MigrationStatus status,
+  }) {
+    final coordinatedStatus = coordinator.statuses[request.accountUuid];
+    final effectiveStatus =
+        status.activeRunId == null &&
+            kIronwoodMigrationStartPhases.contains(status.phase) &&
+            coordinatedStatus?.activeRunId != null
+        ? coordinatedStatus!
+        : status;
+    if (_isEmptyCompletedMigrationStatus(effectiveStatus)) {
+      return const _RedirectTo('/home');
+    }
+    if (effectiveStatus.activeRunId == null &&
+        kIronwoodMigrationStartPhases.contains(effectiveStatus.phase)) {
+      if (coordinator.advancingAccounts.contains(request.accountUuid)) {
         return _IronwoodMigrationFrame(
           toolbar: _privateStatusToolbar(context),
           disableSidebarActions: true,
-          child: _IronwoodMigrationPrivateStatusContent(
-            status: effectiveStatus,
-            accountUuid: request.accountUuid,
-          ),
+          child: const Center(child: CircularProgressIndicator()),
         );
-      },
+      }
+      return _IronwoodMigrationFrame(
+        toolbar: _privateStatusToolbar(context),
+        disableSidebarActions: true,
+        child: const _IronwoodMigrationPrivateStatusErrorContent(),
+      );
+    }
+    return _IronwoodMigrationFrame(
+      toolbar: _privateStatusToolbar(context),
+      disableSidebarActions: true,
+      child: _IronwoodMigrationPrivateStatusContent(
+        status: effectiveStatus,
+        accountUuid: request.accountUuid,
+      ),
     );
   }
 }

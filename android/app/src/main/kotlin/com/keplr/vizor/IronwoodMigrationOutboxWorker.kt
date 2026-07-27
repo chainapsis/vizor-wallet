@@ -45,6 +45,7 @@ internal data class IronwoodMigrationOutboxRunResult(
     val observedHeight: Long? = null,
     val delayMs: Long? = null,
     val proofReadyBatchId: String? = null,
+    val proofReadyVerified: Boolean? = null,
     val transportAccountUuid: String? = null,
 )
 
@@ -141,14 +142,26 @@ internal class IronwoodMigrationOutboxRunner(
     private fun runOnceLocked(cancelled: () -> Boolean): IronwoodMigrationOutboxRunResult {
         if (cancelled()) return result(IronwoodMigrationOutboxOutcome.CANCELLED)
         var pendingProofReadyBatchId: String? = null
+        var pendingProofReadyVerified: Boolean? = null
         val endpoint = repository.update { snapshot ->
             IronwoodOutboxState.recoverInterrupted(snapshot, clockMs())
-            pendingProofReadyBatchId =
-                IronwoodOutboxState.pendingProofReadyBatchId(snapshot)
+            pendingProofReadyBatchId = IronwoodOutboxState
+                .pendingProofReadyBatchId(snapshot)
+            pendingProofReadyVerified = true.takeIf {
+                pendingProofReadyBatchId != null
+            }
+            if (pendingProofReadyBatchId == null) {
+                pendingProofReadyBatchId = IronwoodOutboxState
+                    .pendingUnverifiedProofReadyBatchId(snapshot)
+                pendingProofReadyVerified = false.takeIf {
+                    pendingProofReadyBatchId != null
+                }
+            }
             IronwoodOutboxState.nextEndpoint(snapshot)
         } ?: return result(
             IronwoodMigrationOutboxOutcome.NO_WORK,
             pendingProofReadyBatchId,
+            pendingProofReadyVerified,
         )
 
         val remoteHeight = try {
@@ -158,11 +171,13 @@ internal class IronwoodMigrationOutboxRunner(
                 result(
                     IronwoodMigrationOutboxOutcome.CANCELLED,
                     pendingProofReadyBatchId,
+                    pendingProofReadyVerified,
                 )
             } else {
                 result(
                     IronwoodMigrationOutboxOutcome.RETRY,
                     pendingProofReadyBatchId,
+                    pendingProofReadyVerified,
                 )
             }
         }
@@ -170,11 +185,13 @@ internal class IronwoodMigrationOutboxRunner(
             return result(
                 IronwoodMigrationOutboxOutcome.CANCELLED,
                 pendingProofReadyBatchId,
+                pendingProofReadyVerified,
             )
         }
 
         var needsUserActionAccountUuid: String? = null
         var proofReadyBatchId = pendingProofReadyBatchId
+        var proofReadyVerified = pendingProofReadyVerified
         var selectedBatchId: String? = null
         var selectedAccountUuid: String? = null
         val submission = try {
@@ -187,12 +204,17 @@ internal class IronwoodMigrationOutboxRunner(
                     remoteHeight,
                     now,
                 )
-                val newlyProofReadyBatchId = IronwoodOutboxState.markProofReadyIfNeeded(
-                    snapshot,
-                    endpoint,
-                    remoteHeight,
-                )
-                proofReadyBatchId = proofReadyBatchId ?: newlyProofReadyBatchId
+                if (proofReadyBatchId == null) {
+                    proofReadyBatchId =
+                        IronwoodOutboxState.markUnverifiedProofReadyNoticeIfNeeded(
+                            snapshot,
+                            endpoint,
+                            remoteHeight,
+                        )
+                    proofReadyVerified = false.takeIf {
+                        proofReadyBatchId != null
+                    }
+                }
                 val selected = IronwoodOutboxState.selectDue(
                     snapshot,
                     endpoint,
@@ -220,6 +242,7 @@ internal class IronwoodMigrationOutboxRunner(
             return result(
                 IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION,
                 proofReadyBatchId,
+                proofReadyVerified,
                 selectedAccountUuid,
             )
         }
@@ -228,16 +251,23 @@ internal class IronwoodMigrationOutboxRunner(
                 return result(
                     IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION,
                     proofReadyBatchId,
+                    proofReadyVerified,
                     needsUserActionAccountUuid,
                 )
             }
-            return waiting(endpoint, remoteHeight, proofReadyBatchId)
+            return waiting(
+                endpoint,
+                remoteHeight,
+                proofReadyBatchId,
+                proofReadyVerified,
+            )
         }
         if (cancelled()) {
             recordUncertain(submission, "The outbox worker was stopped.")
             return result(
                 IronwoodMigrationOutboxOutcome.CANCELLED,
                 proofReadyBatchId,
+                proofReadyVerified,
                 selectedAccountUuid,
             )
         }
@@ -250,12 +280,14 @@ internal class IronwoodMigrationOutboxRunner(
                 result(
                     IronwoodMigrationOutboxOutcome.CANCELLED,
                     proofReadyBatchId,
+                    proofReadyVerified,
                     selectedAccountUuid,
                 )
             } else {
                 result(
                     IronwoodMigrationOutboxOutcome.RETRY,
                     proofReadyBatchId,
+                    proofReadyVerified,
                     selectedAccountUuid,
                 )
             }
@@ -297,6 +329,7 @@ internal class IronwoodMigrationOutboxRunner(
                         observedHeight = remoteHeight,
                         delayMs = delay,
                         proofReadyBatchId = proofReadyBatchId,
+                        proofReadyVerified = proofReadyVerified,
                         transportAccountUuid = batch.accountUuid,
                     )
                 } else {
@@ -312,6 +345,7 @@ internal class IronwoodMigrationOutboxRunner(
                     result(
                         IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION,
                         proofReadyBatchId,
+                        proofReadyVerified,
                         batch.accountUuid,
                     )
                 }
@@ -321,6 +355,7 @@ internal class IronwoodMigrationOutboxRunner(
             result(
                 IronwoodMigrationOutboxOutcome.NEEDS_USER_ACTION,
                 proofReadyBatchId,
+                proofReadyVerified,
                 selectedAccountUuid,
             )
         }
@@ -330,6 +365,7 @@ internal class IronwoodMigrationOutboxRunner(
         endpoint: String,
         remoteHeight: Long,
         proofReadyBatchId: String?,
+        proofReadyVerified: Boolean?,
     ): IronwoodMigrationOutboxRunResult {
         val snapshot = repository.read()
         val next = IronwoodOutboxState.nextActionHeight(snapshot, endpoint)
@@ -347,6 +383,7 @@ internal class IronwoodMigrationOutboxRunner(
             observedHeight = remoteHeight,
             delayMs = delay,
             proofReadyBatchId = proofReadyBatchId,
+            proofReadyVerified = proofReadyVerified,
             transportAccountUuid = next?.let {
                 IronwoodOutboxState.nextActionAccountUuid(snapshot, endpoint, it)
             },
@@ -385,10 +422,12 @@ internal class IronwoodMigrationOutboxRunner(
     private fun result(
         outcome: IronwoodMigrationOutboxOutcome,
         proofReadyBatchId: String? = null,
+        proofReadyVerified: Boolean? = null,
         transportAccountUuid: String? = null,
     ) = IronwoodMigrationOutboxRunResult(
         outcome = outcome,
         proofReadyBatchId = proofReadyBatchId,
+        proofReadyVerified = proofReadyVerified,
         transportAccountUuid = transportAccountUuid,
     )
 
@@ -517,7 +556,11 @@ class IronwoodMigrationOutboxWorker(
         if (!cancelled()) {
             result.proofReadyBatchId?.let { batchId ->
                 notificationDeliveries +=
-                    deliverProofReadyNotification(repository, batchId)
+                    deliverProofReadyNotification(
+                        repository,
+                        batchId,
+                        result.proofReadyVerified == true,
+                    )
             }
             if (!cancelled()) {
                 repository.read().let(
@@ -584,6 +627,7 @@ class IronwoodMigrationOutboxWorker(
     private fun deliverProofReadyNotification(
         repository: IronwoodMigrationOutboxRepository,
         batchId: String,
+        verified: Boolean,
     ): IronwoodMigrationNotificationDelivery {
         val delivery = IronwoodMigrationOutboxNotifier(applicationContext).notifyProofReady()
         if (delivery != IronwoodMigrationNotificationDelivery.DELIVERED) {
@@ -591,7 +635,17 @@ class IronwoodMigrationOutboxWorker(
         }
         return runCatching {
             repository.update { snapshot ->
-                IronwoodOutboxState.acknowledgeProofReadyNotification(snapshot, batchId)
+                if (verified) {
+                    IronwoodOutboxState.acknowledgeProofReadyNotification(
+                        snapshot,
+                        batchId,
+                    )
+                } else {
+                    IronwoodOutboxState.acknowledgeUnverifiedProofReadyNotification(
+                        snapshot,
+                        batchId,
+                    )
+                }
             }
             IronwoodMigrationNotificationDelivery.DELIVERED
         }.getOrDefault(IronwoodMigrationNotificationDelivery.RETRY)
@@ -692,8 +746,8 @@ internal class IronwoodMigrationOutboxNotifier(
 ) {
     fun notifyProofReady(): IronwoodMigrationNotificationDelivery = notifyMigrationStatus(
         notificationId = PROOF_READY_NOTIFICATION_ID,
-        title = "Wallet migration is ready to continue",
-        body = "Open Vizor to continue securing your wallet.",
+        title = "Continue your Ironwood migration",
+        body = "Open Vizor to prepare the next migration transfer.",
     )
 
     fun notifyNeedsUserAction(): IronwoodMigrationNotificationDelivery = notifyMigrationStatus(

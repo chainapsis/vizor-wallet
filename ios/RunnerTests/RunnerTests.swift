@@ -283,6 +283,49 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testMigrationPreparationForegroundLaunchRedirectsChainWaits() {
+    XCTAssertTrue(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: true,
+        hasBoundPreparation: false,
+        notificationsDisabled: false,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: false,
+        hasBoundPreparation: false,
+        notificationsDisabled: false,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: true,
+        hasBoundPreparation: false,
+        notificationsDisabled: true,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: true,
+        hasBoundPreparation: true,
+        notificationsDisabled: false,
+        resumeTarget: .backgroundProcessing
+      )
+    )
+    XCTAssertFalse(
+      shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+        hasPendingRequest: true,
+        hasBoundPreparation: false,
+        notificationsDisabled: false,
+        resumeTarget: .continuedProcessing
+      )
+    )
+  }
+
   func testMigrationPreparationDefersChainWaitsToProcessingTask() {
     XCTAssertEqual(
       migrationPreparationPassResult(states: [0]),
@@ -319,6 +362,36 @@ class RunnerTests: XCTestCase {
         inspectionFailed: false
       ),
       .continuedProcessing
+    )
+  }
+
+  func testMigrationPreparationForegroundContinuationOnlyTracksConfirmationWork() {
+    XCTAssertTrue(
+      migrationPreparationStateNeedsForegroundContinuation(0)
+    )
+    for state in UInt8(1)...UInt8(5) {
+      XCTAssertFalse(
+        migrationPreparationStateNeedsForegroundContinuation(state)
+      )
+    }
+  }
+
+  func testMigrationPreparationContinuedTaskOnlyRunsConfirmationWork() {
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.continuedProcessing),
+      .run
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.backgroundProcessing),
+      .handoffToBackground
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.idle),
+      .complete
+    )
+    XCTAssertEqual(
+      migrationPreparationContinuedTaskDisposition(.terminal),
+      .complete
     )
   }
 
@@ -544,6 +617,63 @@ class RunnerTests: XCTestCase {
         previousFingerprint: "main:account-1:run-1:sign:0",
         fingerprint: "main:account-1:run-1:sign:1"
       )
+    )
+  }
+
+  func testMigrationPreparationNeedsActionFingerprintCommitsOnlyAfterAcceptedSubmission() {
+    XCTAssertNil(
+      migrationPreparationNeedsActionFingerprintAfterSubmission(
+        previousFingerprint: nil,
+        fingerprint: "main:account-1:run-1:foreground",
+        submissionAccepted: false
+      )
+    )
+    XCTAssertEqual(
+      migrationPreparationNeedsActionFingerprintAfterSubmission(
+        previousFingerprint: nil,
+        fingerprint: "main:account-1:run-1:foreground",
+        submissionAccepted: true
+      ),
+      "main:account-1:run-1:foreground"
+    )
+  }
+
+  func testMigrationPreparationNeedsActionResetInvalidatesAnInFlightSubmission() throws {
+    var tracker = MigrationPreparationNeedsActionSubmissionTracker()
+    let token = try XCTUnwrap(
+      tracker.begin(
+        scope: "main:account-1:run-1",
+        fingerprint: "main:account-1:run-1:foreground"
+      )
+    )
+
+    XCTAssertEqual(tracker.scopes, ["main:account-1:run-1"])
+    tracker.reset()
+    XCTAssertEqual(
+      tracker.complete(
+        scope: "main:account-1:run-1",
+        token: token
+      ),
+      .invalidated
+    )
+  }
+
+  func testMigrationPreparationNeedsActionKeepsANewerSubmissionCurrent() throws {
+    var tracker = MigrationPreparationNeedsActionSubmissionTracker()
+    let firstToken = try XCTUnwrap(
+      tracker.begin(scope: "global", fingerprint: "global:first")
+    )
+    let secondToken = try XCTUnwrap(
+      tracker.begin(scope: "global", fingerprint: "global:second")
+    )
+
+    XCTAssertEqual(
+      tracker.complete(scope: "global", token: firstToken),
+      .superseded
+    )
+    XCTAssertEqual(
+      tracker.complete(scope: "global", token: secondToken),
+      .current
     )
   }
 

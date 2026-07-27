@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -92,6 +93,28 @@ class SyncState {
   /// newly-polled chain tip. This never includes value that was pending in the
   /// last completed snapshot.
   final BigInt displaySpendableBalance;
+
+  /// Stable Ironwood spendable value shown while a previously-complete wallet
+  /// catches up. Active migration surfaces must use this instead of the
+  /// aggregate display balance so Orchard funds are never presented as
+  /// migration-sendable.
+  final BigInt displayIronwoodBalance;
+
+  /// Stable pending Ironwood value used by migration holdings surfaces while
+  /// an incremental sync is reconciling pool balances.
+  final BigInt displayIronwoodPendingBalance;
+
+  /// Stable Orchard spendable and pending values used by migration progress
+  /// surfaces while an incremental sync reconciles pool balances.
+  final BigInt displayOrchardBalance;
+  final BigInt displayOrchardPendingBalance;
+
+  /// Stable total-holdings value for account-level balance surfaces.
+  final BigInt displayTotalBalance;
+
+  /// Stable shielded holdings, including pending value, for Home while an
+  /// incremental sync is reconciling individual pool balances.
+  final BigInt displayShieldedBalance;
 
   /// Whether [displaySpendableBalance] is the current Rust value or the last
   /// completed sync snapshot. Rust remains authoritative for proposals.
@@ -210,6 +233,9 @@ class SyncState {
       hasAuthoritativeBalance: hasAuthoritativeBalance,
       syncComplete: syncComplete,
     );
+    final preservePoolDisplay =
+        spendableDisplay.freshness ==
+        SpendableBalanceFreshness.lastCompletedSync;
 
     return copyWith(
       hasBalanceData: hasAuthoritativeBalance || hasBalanceData,
@@ -234,8 +260,33 @@ class SyncState {
           : this.shieldTransparentAmount,
       spendableBalance: nextSpendableBalance,
       displaySpendableBalance: spendableDisplay.balance,
+      displayIronwoodBalance: preservePoolDisplay
+          ? displayIronwoodBalance
+          : balance?.ironwood,
+      displayIronwoodPendingBalance: preservePoolDisplay
+          ? displayIronwoodPendingBalance
+          : balance?.ironwoodPending,
+      displayOrchardBalance: preservePoolDisplay
+          ? displayOrchardBalance
+          : balance?.orchard,
+      displayOrchardPendingBalance: preservePoolDisplay
+          ? displayOrchardPendingBalance
+          : balance?.orchardPending,
       displaySpendableFreshness: spendableDisplay.freshness,
       totalBalance: balance?.total,
+      displayTotalBalance: preservePoolDisplay
+          ? displayTotalBalance
+          : balance?.total,
+      displayShieldedBalance: preservePoolDisplay
+          ? displayShieldedBalance
+          : balance == null
+          ? null
+          : balance.sapling +
+                balance.orchard +
+                balance.ironwood +
+                balance.saplingPending +
+                balance.orchardPending +
+                balance.ironwoodPending,
       recentTransactions: fetchedRecentTransactions,
     );
   }
@@ -267,8 +318,14 @@ class SyncState {
     BigInt? shieldTransparentAmount,
     BigInt? spendableBalance,
     BigInt? displaySpendableBalance,
+    BigInt? displayIronwoodBalance,
+    BigInt? displayIronwoodPendingBalance,
+    BigInt? displayOrchardBalance,
+    BigInt? displayOrchardPendingBalance,
     this.displaySpendableFreshness = SpendableBalanceFreshness.authoritative,
     BigInt? totalBalance,
+    BigInt? displayTotalBalance,
+    BigInt? displayShieldedBalance,
     this.failure,
     this.error,
     this.recentTransactions = const [],
@@ -294,6 +351,25 @@ class SyncState {
        spendableBalance = spendableBalance ?? BigInt.zero,
        displaySpendableBalance =
            displaySpendableBalance ?? spendableBalance ?? BigInt.zero,
+       displayIronwoodBalance =
+           displayIronwoodBalance ?? ironwoodBalance ?? BigInt.zero,
+       displayIronwoodPendingBalance =
+           displayIronwoodPendingBalance ??
+           ironwoodPendingBalance ??
+           BigInt.zero,
+       displayOrchardBalance =
+           displayOrchardBalance ?? orchardBalance ?? BigInt.zero,
+       displayOrchardPendingBalance =
+           displayOrchardPendingBalance ?? orchardPendingBalance ?? BigInt.zero,
+       displayTotalBalance = displayTotalBalance ?? totalBalance ?? BigInt.zero,
+       displayShieldedBalance =
+           displayShieldedBalance ??
+           (saplingBalance ?? BigInt.zero) +
+               (orchardBalance ?? BigInt.zero) +
+               (ironwoodBalance ?? BigInt.zero) +
+               (saplingPendingBalance ?? BigInt.zero) +
+               (orchardPendingBalance ?? BigInt.zero) +
+               (ironwoodPendingBalance ?? BigInt.zero),
        totalBalance = totalBalance ?? BigInt.zero;
 
   SyncState copyWith({
@@ -323,8 +399,14 @@ class SyncState {
     BigInt? shieldTransparentAmount,
     BigInt? spendableBalance,
     BigInt? displaySpendableBalance,
+    BigInt? displayIronwoodBalance,
+    BigInt? displayIronwoodPendingBalance,
+    BigInt? displayOrchardBalance,
+    BigInt? displayOrchardPendingBalance,
     SpendableBalanceFreshness? displaySpendableFreshness,
     BigInt? totalBalance,
+    BigInt? displayTotalBalance,
+    BigInt? displayShieldedBalance,
     SyncFailure? failure,
     bool clearFailure = false,
     String? error,
@@ -373,9 +455,20 @@ class SyncState {
       spendableBalance: spendableBalance ?? this.spendableBalance,
       displaySpendableBalance:
           displaySpendableBalance ?? this.displaySpendableBalance,
+      displayIronwoodBalance:
+          displayIronwoodBalance ?? this.displayIronwoodBalance,
+      displayIronwoodPendingBalance:
+          displayIronwoodPendingBalance ?? this.displayIronwoodPendingBalance,
+      displayOrchardBalance:
+          displayOrchardBalance ?? this.displayOrchardBalance,
+      displayOrchardPendingBalance:
+          displayOrchardPendingBalance ?? this.displayOrchardPendingBalance,
       displaySpendableFreshness:
           displaySpendableFreshness ?? this.displaySpendableFreshness,
       totalBalance: totalBalance ?? this.totalBalance,
+      displayTotalBalance: displayTotalBalance ?? this.displayTotalBalance,
+      displayShieldedBalance:
+          displayShieldedBalance ?? this.displayShieldedBalance,
       failure: clearFailure ? null : failure ?? this.failure,
       error: clearError ? null : error ?? this.error,
       recentTransactions: recentTransactions ?? this.recentTransactions,
@@ -777,10 +870,35 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displaySpendableBalance: canPreserveCompletedSpendable
             ? scopedPrev?.displaySpendableBalance
             : scopedPrev?.spendableBalance,
+        displayIronwoodBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayIronwoodBalance
+            : scopedPrev?.ironwoodBalance,
+        displayIronwoodPendingBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayIronwoodPendingBalance
+            : scopedPrev?.ironwoodPendingBalance,
+        displayOrchardBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayOrchardBalance
+            : scopedPrev?.orchardBalance,
+        displayOrchardPendingBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayOrchardPendingBalance
+            : scopedPrev?.orchardPendingBalance,
         displaySpendableFreshness: canPreserveCompletedSpendable
             ? SpendableBalanceFreshness.lastCompletedSync
             : SpendableBalanceFreshness.authoritative,
         totalBalance: scopedPrev?.totalBalance,
+        displayTotalBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayTotalBalance
+            : scopedPrev?.totalBalance,
+        displayShieldedBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayShieldedBalance
+            : scopedPrev == null
+            ? null
+            : scopedPrev.saplingBalance +
+                  scopedPrev.orchardBalance +
+                  scopedPrev.ironwoodBalance +
+                  scopedPrev.saplingPendingBalance +
+                  scopedPrev.orchardPendingBalance +
+                  scopedPrev.ironwoodPendingBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: startedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
@@ -1086,8 +1204,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
         spendableBalance: scopedPrev?.spendableBalance,
         displaySpendableBalance: spendableDisplay.balance,
+        displayIronwoodBalance: scopedPrev?.displayIronwoodBalance,
+        displayIronwoodPendingBalance:
+            scopedPrev?.displayIronwoodPendingBalance,
+        displayOrchardBalance: scopedPrev?.displayOrchardBalance,
+        displayOrchardPendingBalance: scopedPrev?.displayOrchardPendingBalance,
         displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: scopedPrev?.totalBalance,
+        displayTotalBalance: scopedPrev?.displayTotalBalance,
+        displayShieldedBalance: scopedPrev?.displayShieldedBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
@@ -1195,8 +1320,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
         spendableBalance: scopedPrev?.spendableBalance,
         displaySpendableBalance: spendableDisplay.balance,
+        displayIronwoodBalance: scopedPrev?.displayIronwoodBalance,
+        displayIronwoodPendingBalance:
+            scopedPrev?.displayIronwoodPendingBalance,
+        displayOrchardBalance: scopedPrev?.displayOrchardBalance,
+        displayOrchardPendingBalance: scopedPrev?.displayOrchardPendingBalance,
         displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: scopedPrev?.totalBalance,
+        displayTotalBalance: scopedPrev?.displayTotalBalance,
+        displayShieldedBalance: scopedPrev?.displayShieldedBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
@@ -1795,6 +1927,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       hasAuthoritativeBalance: useFetchedBalance,
       syncComplete: event.isComplete,
     );
+    final preservePoolDisplay =
+        spendableDisplay.freshness ==
+        SpendableBalanceFreshness.lastCompletedSync;
 
     state = AsyncData(
       SyncState(
@@ -1848,8 +1983,43 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             : stateScopedPrev?.shieldTransparentAmount,
         spendableBalance: nextSpendableBalance,
         displaySpendableBalance: spendableDisplay.balance,
+        displayIronwoodBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayIronwoodBalance
+            : useFetchedBalance
+            ? ironwood
+            : stateScopedPrev?.ironwoodBalance,
+        displayIronwoodPendingBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayIronwoodPendingBalance
+            : useFetchedBalance
+            ? ironwoodPending
+            : stateScopedPrev?.ironwoodPendingBalance,
+        displayOrchardBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayOrchardBalance
+            : useFetchedBalance
+            ? orchard
+            : stateScopedPrev?.orchardBalance,
+        displayOrchardPendingBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayOrchardPendingBalance
+            : useFetchedBalance
+            ? orchardPending
+            : stateScopedPrev?.orchardPendingBalance,
         displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: useFetchedBalance ? total : stateScopedPrev?.totalBalance,
+        displayTotalBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayTotalBalance
+            : useFetchedBalance
+            ? total
+            : stateScopedPrev?.totalBalance,
+        displayShieldedBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayShieldedBalance
+            : useFetchedBalance
+            ? (sapling ?? BigInt.zero) +
+                  (orchard ?? BigInt.zero) +
+                  (ironwood ?? BigInt.zero) +
+                  (saplingPending ?? BigInt.zero) +
+                  (orchardPending ?? BigInt.zero) +
+                  (ironwoodPending ?? BigInt.zero)
+            : stateScopedPrev?.displayShieldedBalance,
         recentTransactions: useFetchedRecentTxs
             ? recentTxs
             : stateScopedPrev?.recentTransactions ?? const [],
@@ -2183,6 +2353,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       releaseSnapshotOnAuthoritativeBalance:
           releaseSnapshotOnAuthoritativeBalance,
     );
+    final preservePoolDisplay =
+        spendableDisplay.freshness ==
+        SpendableBalanceFreshness.lastCompletedSync;
 
     state = AsyncData(
       SyncState(
@@ -2226,8 +2399,33 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             shieldTransparentAmount ?? accountFallback?.shieldTransparentAmount,
         spendableBalance: nextSpendableBalance,
         displaySpendableBalance: spendableDisplay.balance,
+        displayIronwoodBalance: preservePoolDisplay
+            ? accountFallback?.displayIronwoodBalance
+            : ironwood ?? accountFallback?.ironwoodBalance,
+        displayIronwoodPendingBalance: preservePoolDisplay
+            ? accountFallback?.displayIronwoodPendingBalance
+            : ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
+        displayOrchardBalance: preservePoolDisplay
+            ? accountFallback?.displayOrchardBalance
+            : orchard ?? accountFallback?.orchardBalance,
+        displayOrchardPendingBalance: preservePoolDisplay
+            ? accountFallback?.displayOrchardPendingBalance
+            : orchardPending ?? accountFallback?.orchardPendingBalance,
         displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: total ?? accountFallback?.totalBalance,
+        displayTotalBalance: preservePoolDisplay
+            ? accountFallback?.displayTotalBalance
+            : total ?? accountFallback?.totalBalance,
+        displayShieldedBalance: preservePoolDisplay
+            ? accountFallback?.displayShieldedBalance
+            : hasAuthoritativeBalance
+            ? (sapling ?? BigInt.zero) +
+                  (orchard ?? BigInt.zero) +
+                  (ironwood ?? BigInt.zero) +
+                  (saplingPending ?? BigInt.zero) +
+                  (orchardPending ?? BigInt.zero) +
+                  (ironwoodPending ?? BigInt.zero)
+            : accountFallback?.displayShieldedBalance,
         failure: current?.failure,
         error: current?.error,
         recentTransactions: didFetchRecentTxs
@@ -2249,7 +2447,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     rust_sync.WalletBalance balance,
     SyncState? previous,
   ) {
-    if (balance.spendable != BigInt.zero ||
+    if (!kDebugMode ||
+        balance.spendable != BigInt.zero ||
         (previous?.displaySpendableBalance ?? BigInt.zero) <= BigInt.zero) {
       return;
     }
@@ -2258,7 +2457,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       '(changePending=${balance.changePendingConfirmation}, '
       'valuePending=${balance.valuePendingSpendability}, '
       'uneconomic=${balance.uneconomicValue}, '
-      'display=${previous?.displaySpendableBalance})',
+      'ironwood=${balance.ironwood}, '
+      'display=${previous?.displaySpendableBalance}, '
+      'displayIronwood=${previous?.displayIronwoodBalance})',
     );
   }
 
@@ -2266,6 +2467,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     rust_sync.WalletBalanceAvailability availability,
     String accountUuid,
   ) {
+    if (!kDebugMode) return;
+
     log(
       'SyncNotifier: wallet balance is temporarily unavailable '
       '(availability=${availability.name}, account=$accountUuid)',

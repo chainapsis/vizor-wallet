@@ -37,6 +37,7 @@ enum BackgroundMigrationOutboxRunner {
     store: BackgroundMigrationOutboxStore = .shared,
     cancellation: BackgroundMigrationCancellation,
     now: Date = Date(),
+    requiresPreparationProofVerification: Bool = false,
     dependencies: BackgroundMigrationOutboxRunnerDependencies = .live
   ) -> BackgroundMigrationOutboxRunResult {
     guard runLock.try() else {
@@ -122,11 +123,19 @@ enum BackgroundMigrationOutboxRunner {
           endpoint: endpoint,
           at: now
         )
-        proofReady = snapshot.markProofReadyIfNeeded(
-          remoteHeight: remoteHeight,
-          endpoint: endpoint,
-          at: now
-        )
+        proofReady =
+          requiresPreparationProofVerification
+          ? snapshot.pendingProofReadyNotification()
+            ?? snapshot.pendingUnverifiedProofReadyNotice()
+            ?? snapshot.proofReadinessCandidate(
+              remoteHeight: remoteHeight,
+              endpoint: endpoint
+            )
+          : snapshot.markProofReadyIfNeeded(
+            remoteHeight: remoteHeight,
+            endpoint: endpoint,
+            at: now
+          )
         selected = snapshot.selectDue(
           remoteHeight: remoteHeight,
           endpoint: endpoint,

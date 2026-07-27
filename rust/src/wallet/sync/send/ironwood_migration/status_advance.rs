@@ -13,8 +13,8 @@ fn mark_prepared_notes_waiting(db_path: &str, run_id: &str) -> Result<(), String
     super::migration::mark_run_phase(
         db_path,
         run_id,
-        super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS,
-        Some("Prepared denomination notes are not spendable yet."),
+        super::migration::PHASE_READY_TO_MIGRATE,
+        Some("Waiting for the anchor block needed to migrate prepared notes."),
     )
 }
 
@@ -46,11 +46,11 @@ fn prepared_notes_not_spendable_result(
 ) -> IronwoodMigrationResult {
     IronwoodMigrationResult {
         txids: String::new(),
-        status: super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS.to_string(),
+        status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
         broadcasted_count: 0,
         total_count,
         message: Some(
-            "Prepared denomination notes are not spendable yet. Sync and try again.".to_string(),
+            "Waiting for the anchor block needed to migrate prepared notes.".to_string(),
         ),
         fee_zatoshi: 0,
         migrated_zatoshi,
@@ -363,6 +363,7 @@ fn prepare_software_migration_run(
                 predicted,
                 (index + 1) as u32,
                 block_offset,
+                None,
             )?
             .ok_or("Predicted migration note is below the migration fee threshold".to_string())
         })

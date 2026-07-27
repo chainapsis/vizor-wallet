@@ -384,7 +384,12 @@ struct TxOutput {
 
 impl TxOutput {
     fn detail_address(&self, tx_kind: &str) -> Option<String> {
-        if tx_kind == "sent" {
+        if tx_kind == "migration" {
+            // A migration moves value between pools owned by the same account.
+            // Its internal receiver is implementation detail, not a
+            // counterparty address that should be exposed in Activity.
+            None
+        } else if tx_kind == "sent" {
             if self.output_pool == 0 {
                 return self
                     .transparent_receiver_address
@@ -1229,6 +1234,13 @@ fn detail_includes_output(
         "received" | "receiving" => {
             !base.is_shielding && to_own && (!from_own || is_user_visible_self_output(output))
         }
+        "migration" => {
+            !base.is_shielding
+                && from_own
+                && to_own
+                && base.spent_orchard_note
+                && is_ironwood_output(output)
+        }
         _ => false,
     }
 }
@@ -1425,7 +1437,14 @@ fn classify_history_tx(
     }
 
     if is_internal_ironwood_transition(base, summary) {
-        return Vec::new();
+        return vec![build_classified_tx(
+            base,
+            "migration",
+            summary.internal_ironwood_transition.amount,
+            "ironwood",
+            false,
+            1,
+        )];
     }
 
     let mut rows = Vec::new();
@@ -1758,17 +1777,20 @@ mod tests {
     }
 
     #[test]
-    fn classify_internal_ironwood_transition_omits_activity() {
+    fn classify_internal_ironwood_transition_as_migration() {
         let mut summary = ActivitySummary::default();
         summary.internal_ironwood_transition.amount = 624_980_000;
 
         let rows = classify_history_tx(&tx_base_for_history(), &summary, 0);
 
-        assert!(rows.is_empty());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "migration");
+        assert_eq!(rows[0].info.display_amount, 624_980_000);
+        assert_eq!(rows[0].info.display_pool, "ironwood");
     }
 
     #[test]
-    fn classify_expired_internal_ironwood_transition_omits_activity() {
+    fn classify_expired_internal_ironwood_transition_as_failed_migration() {
         let mut base = tx_base_for_history();
         base.mined_height = None;
         base.expired_unmined = true;
@@ -1778,7 +1800,11 @@ mod tests {
 
         let rows = classify_history_tx(&base, &summary, 0);
 
-        assert!(rows.is_empty());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].info.tx_kind, "migration");
+        assert!(rows[0].info.expired_unmined);
+        assert_eq!(rows[0].info.display_amount, 624_980_000);
+        assert_eq!(rows[0].info.display_pool, "ironwood");
     }
 
     fn fake_raw() -> Vec<u8> {
@@ -2927,7 +2953,7 @@ mod tests {
     }
 
     #[test]
-    fn history_omits_orchard_to_ironwood_internal_transition() {
+    fn history_classifies_orchard_to_ironwood_internal_transition_as_migration() {
         let db = fresh_history_db();
         let account = test_account_uuid();
         let migration_tx = fake_txid(0xB5);
@@ -2968,11 +2994,15 @@ mod tests {
         )
         .unwrap();
 
-        assert!(got.is_empty());
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(migration_tx));
+        assert_eq!(got[0].tx_kind, "migration");
+        assert_eq!(got[0].display_amount, 624_980_000);
+        assert_eq!(got[0].display_pool, "ironwood");
     }
 
     #[test]
-    fn history_omits_pool_4_internal_transition() {
+    fn history_classifies_pool_4_internal_transition_as_migration() {
         let db = fresh_history_db();
         let account = test_account_uuid();
         let migration_tx = fake_txid(0xB6);
@@ -3012,7 +3042,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(got.is_empty());
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_hex, hex::encode(migration_tx));
+        assert_eq!(got[0].tx_kind, "migration");
+        assert_eq!(got[0].display_amount, 624_980_000);
+        assert_eq!(got[0].display_pool, "ironwood");
     }
 
     #[test]

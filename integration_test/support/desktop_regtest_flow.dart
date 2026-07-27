@@ -151,9 +151,15 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
     tester,
     const ValueKey('ironwood_migration_intro_continue_button'),
   );
+  for (var step = 0; step < 3; step++) {
+    await tapAppButton(
+      tester,
+      const ValueKey('ironwood_migration_how_it_works_continue_button'),
+    );
+  }
   await tapAppButton(
     tester,
-    const ValueKey('ironwood_migration_how_it_works_continue_button'),
+    const ValueKey('ironwood_migration_what_to_expect_continue_button'),
   );
   await tapAppWidget(
     tester,
@@ -169,6 +175,39 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
       find.byKey(const ValueKey('ironwood_migration_review_screen')),
     ),
     description: 'private migration review',
+  );
+}
+
+Future<void> openImmediateMigrationReview(WidgetTester tester) async {
+  await tapAppButton(
+    tester,
+    const ValueKey('home_desktop_ironwood_migration_cta_button'),
+  );
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_intro_continue_button'),
+  );
+  for (var step = 0; step < 3; step++) {
+    await tapAppButton(
+      tester,
+      const ValueKey('ironwood_migration_how_it_works_continue_button'),
+    );
+  }
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_what_to_expect_continue_button'),
+  );
+  await tapAppWidget(tester, const ValueKey('ironwood_migration_fast_option'));
+  await tapAppButton(
+    tester,
+    const ValueKey('ironwood_migration_select_review_button'),
+  );
+  await pumpUntil(
+    tester,
+    () => tester.any(
+      find.byKey(const ValueKey('ironwood_migration_immediate_review_screen')),
+    ),
+    description: 'Immediate migration review',
   );
 }
 

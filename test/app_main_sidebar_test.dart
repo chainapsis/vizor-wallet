@@ -68,6 +68,48 @@ void main() {
     expect(find.text('About Vizor'), findsNothing);
   });
 
+  testWidgets('sidebar preserves completed holdings while sync reads zero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          spendableBalance: BigInt.zero,
+          displaySpendableBalance: BigInt.from(4_200_000_000),
+          orchardBalance: BigInt.zero,
+          displayOrchardBalance: BigInt.from(3_000_000_000),
+          ironwoodBalance: BigInt.zero,
+          displayIronwoodBalance: BigInt.from(1_200_000_000),
+          displaySpendableFreshness:
+              SpendableBalanceFreshness.lastCompletedSync,
+          totalBalance: BigInt.zero,
+          displayTotalBalance: BigInt.from(4_200_000_000),
+        ),
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('42'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_orchard_balance')))
+          .data,
+      contains('30'),
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_ironwood_balance')))
+          .data,
+      contains('12'),
+    );
+  });
+
   testWidgets(
     'sidebar keeps software migration automatic while children await anchors',
     (tester) async {

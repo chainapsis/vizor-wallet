@@ -1,5 +1,31 @@
 part of '../ironwood_migration_flow_screen.dart';
 
+int _compareMigrationPartsByExpectedProcessingOrder(
+  rust_sync.MigrationPartStatus left,
+  rust_sync.MigrationPartStatus right,
+) {
+  // The approved schedule order is immutable, but an overdue transaction can
+  // be assigned a new height while migration is running. The ring and schedule
+  // must follow that current expected chronology rather than leaving completed
+  // colors scattered according to the stale original order.
+  final leftHeight = left.scheduledHeight;
+  final rightHeight = right.scheduledHeight;
+  if (leftHeight != null || rightHeight != null) {
+    final comparison = (leftHeight ?? 1 << 30).compareTo(
+      rightHeight ?? 1 << 30,
+    );
+    if (comparison != 0) return comparison;
+  }
+
+  final leftOrder = left.scheduleOrder;
+  final rightOrder = right.scheduleOrder;
+  if (leftOrder != null || rightOrder != null) {
+    final comparison = (leftOrder ?? 1 << 30).compareTo(rightOrder ?? 1 << 30);
+    if (comparison != 0) return comparison;
+  }
+  return left.partIndex.compareTo(right.partIndex);
+}
+
 class _MigrationStatusContent extends StatefulWidget {
   const _MigrationStatusContent({
     required this.status,
@@ -23,13 +49,11 @@ class _MigrationStatusContent extends StatefulWidget {
 class _MigrationStatusContentState extends State<_MigrationStatusContent> {
   String? _progressRunId;
   int _maxSeenCurrentHeight = 0;
-  final Map<String, double> _maxSeenProgress = {};
 
   void _syncProgressRun(String runId) {
     if (_progressRunId == runId) return;
     _progressRunId = runId;
     _maxSeenCurrentHeight = 0;
-    _maxSeenProgress.clear();
   }
 
   int _displayCurrentHeight(int currentHeight) {
@@ -40,257 +64,124 @@ class _MigrationStatusContentState extends State<_MigrationStatusContent> {
     return currentHeight;
   }
 
-  List<String> _progressKeys({
-    required String runId,
-    required String progressScope,
-    required List<rust_sync.MigrationPartStatus> parts,
-    required int count,
-  }) {
-    return [
-      for (var i = 0; i < count; i++)
-        '$runId:$progressScope:part:${parts.isNotEmpty && i < parts.length ? parts[i].partIndex : i}',
-    ];
-  }
-
-  List<double> _monotonicProgresses({
-    required List<String> keys,
-    required List<_MigrationBatchStatus> statuses,
-    required List<double> rawProgresses,
-  }) {
-    return [
-      for (var i = 0; i < keys.length; i++)
-        _monotonicProgress(
-          key: keys[i],
-          status: i < statuses.length
-              ? statuses[i]
-              : _MigrationBatchStatus.none,
-          rawProgress: i < rawProgresses.length ? rawProgresses[i] : 0.0,
-        ),
-    ];
-  }
-
-  double _monotonicProgress({
-    required String key,
-    required _MigrationBatchStatus status,
-    required double rawProgress,
-  }) {
-    final clampedProgress = status == _MigrationBatchStatus.complete
-        ? 1.0
-        : rawProgress.clamp(0, 1).toDouble();
-    final previous = _maxSeenProgress[key] ?? 0.0;
-    final next = math.max(previous, clampedProgress);
-    _maxSeenProgress[key] = next;
-    return next;
-  }
-
   @override
   Widget build(BuildContext context) {
     final status = widget.status;
     final runId = status.activeRunId ?? 'inactive';
     _syncProgressRun(runId);
 
-    final parts = _displayMigrationParts(status);
+    final parts = [..._displayMigrationParts(status)]
+      ..sort(_compareMigrationPartsByExpectedProcessingOrder);
     var values = parts.isNotEmpty
         ? [for (final part in parts) part.valueZatoshi]
         : [for (final value in status.targetValuesZatoshi) value];
     if (values.isEmpty && status.phase != kIronwoodMigrationCompletePhase) {
       values = [BigInt.zero];
     }
-    final partNumbers = parts.isNotEmpty
-        ? [for (final part in parts) part.partIndex + 1]
-        : [for (var i = 0; i < values.length; i++) i + 1];
+    final readyHasMigrationProgress =
+        status.pendingTxCount > 0 ||
+        status.broadcastedTxCount > 0 ||
+        status.confirmedTxCount > 0 ||
+        status.signedChildPcztCount > 0;
     final statuses = status.phase == kIronwoodMigrationCompletePhase
         ? List<_MigrationBatchStatus>.filled(
             values.length,
             _MigrationBatchStatus.complete,
           )
+        // A completed denomination split only means the notes are ready to
+        // migrate. It must not paint the transfer ring green before any
+        // migration note has actually been signed and confirmed.
+        : status.phase == kIronwoodMigrationReadyToMigratePhase &&
+              !readyHasMigrationProgress
+        ? List<_MigrationBatchStatus>.filled(
+            values.length,
+            _MigrationBatchStatus.scheduled,
+          )
         : parts.isNotEmpty
         ? [for (final part in parts) _migrationBatchStatus(part.state)]
         : _legacyMigrationBatchStatuses(status, values.length);
-    if (widget.action == _StatusAction.needsInput &&
-        !statuses.contains(_MigrationBatchStatus.needsInput)) {
-      final inputIndex = statuses.indexWhere(
-        (status) => status != _MigrationBatchStatus.complete,
-      );
-      if (inputIndex >= 0) {
-        statuses[inputIndex] = _MigrationBatchStatus.needsInput;
+    final signingPartIndices =
+        status.currentSigningPartIndices?.toSet() ?? const <int>{};
+    final signingSegmentIndices = <int>[];
+    if (widget.action == _StatusAction.needsInput) {
+      for (var index = 0; index < statuses.length; index++) {
+        final partIndex = parts.isNotEmpty && index < parts.length
+            ? parts[index].partIndex
+            : index;
+        if (signingPartIndices.contains(partIndex)) {
+          statuses[index] = _MigrationBatchStatus.needsInput;
+          signingSegmentIndices.add(index);
+        }
+      }
+      if (signingSegmentIndices.isEmpty) {
+        final inputIndex = statuses.indexWhere(
+          (status) => status != _MigrationBatchStatus.complete,
+        );
+        if (inputIndex >= 0) {
+          statuses[inputIndex] = _MigrationBatchStatus.needsInput;
+          signingSegmentIndices.add(inputIndex);
+        }
       }
     }
     final total = values.fold<BigInt>(BigInt.zero, (sum, value) => sum + value);
     final displayCurrentHeight = _displayCurrentHeight(widget.currentHeight);
-    final rawProgresses = _migrationBatchProgresses(
-      status: status,
-      parts: parts,
-      statuses: statuses,
-      currentHeight: displayCurrentHeight,
-      isAdvancing: widget.isAdvancing,
-    );
-    final rawSegmentProgresses = [
-      for (var i = 0; i < values.length; i++)
-        _migrationSegmentProgress(
-          values: values,
-          totalZatoshi: total,
-          statuses: statuses,
-          progresses: rawProgresses,
-          index: i,
+    final isPreparing = _shouldShowPreparingStatusContent(status, statuses);
+    final content = status.phase == kIronwoodMigrationCompletePhase
+        ? _MigrationCompleteStatusContent(
+            key: const ValueKey('ironwood_migration_status_complete'),
+            totalZatoshi: total,
+            onDone: widget.onAction,
+          )
+        : _MigrationLiveStatusContent(
+            key: const ValueKey('ironwood_migration_active_status'),
+            isPreparing: isPreparing,
+            preparationProgressLabel: migrationPreparationProgressLabel(status),
+            values: values,
+            totalZatoshi: total,
+            statuses: statuses,
+            signingSegmentIndices: signingSegmentIndices,
+            action: widget.action,
+            isAdvancing: widget.isAdvancing,
+            onAction: widget.onAction,
+            waitingForAnchor:
+                status.phase == kIronwoodMigrationReadyToMigratePhase &&
+                status.proofReady == false,
+            estimatedTime: _transferEstimatedCompletion(
+              status,
+              currentHeight: displayCurrentHeight,
+              needsInput: widget.action == _StatusAction.needsInput,
+              parts: parts,
+            ),
+          );
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 680),
+      reverseDuration: const Duration(milliseconds: 360),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          scale: Tween<double>(
+            begin: 0.965,
+            end: 1,
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+          child: child,
         ),
-    ];
-    final progressKeys = _progressKeys(
-      runId: runId,
-      progressScope:
-          status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase
-          ? 'denomination'
-          : 'transfer',
-      parts: parts,
-      count: values.length,
-    );
-    final progresses = _monotonicProgresses(
-      keys: progressKeys,
-      statuses: statuses,
-      rawProgresses: rawSegmentProgresses,
-    );
-    if (_shouldShowPreparingStatusContent(status, statuses)) {
-      return _MigrationPreparingStatusContent(
-        key: ValueKey('ironwood_migration_preparing_${status.activeRunId}'),
-        status: status,
-        values: values,
-        totalZatoshi: total,
-        statuses: statuses,
-        progresses: progresses,
-        progressKeys: progressKeys,
-      );
-    }
-
-    final spendableLabel = _migrationSpendableBalanceLabel(
-      values: values,
-      statuses: statuses,
-    );
-    final buttonLabel = switch (widget.action) {
-      _StatusAction.needsInput => 'Sign with Keystone',
-      _StatusAction.retry => 'Retry migration',
-      _ => 'Go home',
-    };
-    final actionRequiresContinuation =
-        widget.action == _StatusAction.needsInput ||
-        widget.action == _StatusAction.retry;
-
-    return SizedBox(
-      key: ValueKey('ironwood_migration_status_${status.phase}'),
-      width: 420,
-      height: 656,
-      child: Stack(
-        children: [
-          Positioned(
-            top: 37.5,
-            left: 12,
-            width: 396,
-            child: Column(
-              children: [
-                Text(
-                  'Migration in Progress',
-                  style: AppTypography.headlineSmall.copyWith(
-                    color: context.colors.text.accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            left: 12,
-            top: 24,
-            width: 396,
-            height: 540,
-            child: _MigrationStatusBatchPanel(
-              values: values,
-              partNumbers: partNumbers,
-              totalZatoshi: total,
-              statuses: statuses,
-              progresses: progresses,
-              progressKeys: progressKeys,
-              completionLabel: _transferEstimatedCompletion(
-                status,
-                currentHeight: displayCurrentHeight,
-                needsInput: widget.action == _StatusAction.needsInput,
-                parts: parts,
-              ),
-              spendableLabel: spendableLabel,
-            ),
-          ),
-          Positioned(
-            left: 95,
-            top: 596,
-            width: 230,
-            child: Center(
-              child: AppButton(
-                key: const ValueKey('ironwood_migration_status_action_button'),
-                onPressed: widget.isAdvancing && actionRequiresContinuation
-                    ? null
-                    : actionRequiresContinuation
-                    ? widget.onAction
-                    : () => context.go('/home'),
-                variant: actionRequiresContinuation
-                    ? AppButtonVariant.primary
-                    : AppButtonVariant.secondary,
-                height: 36,
-                minWidth: widget.action == _StatusAction.needsInput ? 150 : 96,
-                expand: false,
-                child: SizedBox(
-                  width: widget.action == _StatusAction.needsInput
-                      ? 118
-                      : widget.action == _StatusAction.retry
-                      ? 92
-                      : 64,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(buttonLabel),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
+      child: content,
     );
   }
 }
 
-bool _shouldShowPreparingStatusContent(
-  rust_sync.MigrationStatus status,
-  List<_MigrationBatchStatus> statuses,
-) {
-  if (statuses.isEmpty) return false;
-  final hasLaterStatus = statuses.any(
-    (status) =>
-        status == _MigrationBatchStatus.scheduled ||
-        status == _MigrationBatchStatus.migrating ||
-        status == _MigrationBatchStatus.confirming ||
-        status == _MigrationBatchStatus.complete ||
-        status == _MigrationBatchStatus.needsInput,
-  );
-  if (hasLaterStatus) return false;
-  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-    return true;
-  }
-  return false;
-}
-
-class _MigrationPreparingStatusContent extends StatelessWidget {
-  const _MigrationPreparingStatusContent({
+class _MigrationCompleteStatusContent extends StatelessWidget {
+  const _MigrationCompleteStatusContent({
     super.key,
-    required this.status,
-    required this.values,
     required this.totalZatoshi,
-    required this.statuses,
-    required this.progresses,
-    required this.progressKeys,
+    required this.onDone,
   });
 
-  final rust_sync.MigrationStatus status;
-  final List<BigInt> values;
   final BigInt totalZatoshi;
-  final List<_MigrationBatchStatus> statuses;
-  final List<double> progresses;
-  final List<String> progressKeys;
+  final VoidCallback? onDone;
 
   @override
   Widget build(BuildContext context) {
@@ -301,27 +192,42 @@ class _MigrationPreparingStatusContent extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            top: 61,
-            left: 12,
-            width: 396,
+            left: 70,
+            top: 54,
+            width: 280,
+            height: 210,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CustomPaint(painter: _MigrationCompleteRibbonPainter()),
+                Image.asset(
+                  'assets/illustrations/ironwood_migration_done_coins.png',
+                  fit: BoxFit.contain,
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 40,
+            top: 270,
+            width: 340,
             child: Column(
               children: [
                 Text(
-                  'Migration in Progress',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  'Your\n${_formatZecAmountCompact(totalZatoshi)} ZEC\n'
+                  'are on Ironwood!',
                   textAlign: TextAlign.center,
-                  style: AppTypography.headlineSmall.copyWith(
+                  style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
+                    height: 1.08,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
                 Text(
-                  _migrationPreparingDurationLabel(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  'Migration completed successfully and you can\n'
+                  'spend your funds as usual.',
                   textAlign: TextAlign.center,
-                  style: AppTypography.labelLarge.copyWith(
+                  style: AppTypography.bodyMedium.copyWith(
                     color: colors.text.secondary,
                   ),
                 ),
@@ -329,53 +235,17 @@ class _MigrationPreparingStatusContent extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: 12,
-            top: 164,
-            width: 396,
-            height: 65,
-            child: _MigrationStatusBatchChart(
-              values: values,
-              totalZatoshi: totalZatoshi,
-              statuses: statuses,
-              progresses: progresses,
-              progressKeys: progressKeys,
-            ),
-          ),
-          Positioned(
-            left: 12,
-            top: 264,
-            width: 396,
-            child: _MigrationPreparingStepsCard(
-              status: status,
-              partCount: values.length,
-            ),
-          ),
-          const Positioned(
-            left: 83,
-            top: 460,
-            width: 254,
-            child: _MigrationPreparingInfo(),
-          ),
-          Positioned(
-            left: 95,
-            top: 596,
-            width: 230,
-            child: Center(
-              child: AppButton(
-                key: const ValueKey('ironwood_migration_status_action_button'),
-                onPressed: () => context.go('/home'),
-                variant: AppButtonVariant.secondary,
-                height: 36,
-                minWidth: 96,
-                expand: false,
-                child: const SizedBox(
-                  width: 64,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('Go home'),
-                  ),
-                ),
-              ),
+            left: 162,
+            top: 510,
+            width: 96,
+            child: AppButton(
+              key: const ValueKey('ironwood_migration_status_action_button'),
+              onPressed: onDone,
+              variant: AppButtonVariant.secondary,
+              height: 36,
+              minWidth: 96,
+              expand: true,
+              child: const Text('Done'),
             ),
           ),
         ],
@@ -384,122 +254,420 @@ class _MigrationPreparingStatusContent extends StatelessWidget {
   }
 }
 
-class _MigrationPreparingStepsCard extends StatelessWidget {
-  const _MigrationPreparingStepsCard({
-    required this.status,
-    required this.partCount,
+class _MigrationCompleteRibbonPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF009C5D)
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(size.width * 0.18, size.height * 0.38)
+      ..lineTo(size.width * 0.43, size.height * 0.20)
+      ..lineTo(size.width * 0.72, size.height * 0.31)
+      ..lineTo(size.width * 0.72, size.height * 0.52)
+      ..lineTo(size.width * 0.88, size.height * 0.60)
+      ..lineTo(size.width * 0.62, size.height * 0.80)
+      ..lineTo(size.width * 0.34, size.height * 0.69)
+      ..lineTo(size.width * 0.34, size.height * 0.52)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MigrationCompleteRibbonPainter oldDelegate) =>
+      false;
+}
+
+class _MigrationLiveStatusContent extends StatelessWidget {
+  const _MigrationLiveStatusContent({
+    super.key,
+    required this.isPreparing,
+    required this.preparationProgressLabel,
+    required this.values,
+    required this.totalZatoshi,
+    required this.statuses,
+    required this.signingSegmentIndices,
+    required this.action,
+    required this.isAdvancing,
+    required this.onAction,
+    required this.estimatedTime,
+    required this.waitingForAnchor,
   });
 
-  final rust_sync.MigrationStatus status;
-  final int partCount;
+  final bool isPreparing;
+  final String preparationProgressLabel;
+  final List<BigInt> values;
+  final BigInt totalZatoshi;
+  final List<_MigrationBatchStatus> statuses;
+  final List<int> signingSegmentIndices;
+  final _StatusAction action;
+  final bool isAdvancing;
+  final VoidCallback? onAction;
+  final String estimatedTime;
+  final bool waitingForAnchor;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final splitComplete = _migrationPreparingSplitComplete(status);
-    final confirmationsComplete = _migrationPreparingConfirmationsComplete(
-      status,
+    final disableAnimations =
+        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final isSigning = action == _StatusAction.needsInput;
+    final isComplete = action == _StatusAction.backHome;
+    final completedAmount = _migrationCompletedAmount(values, statuses);
+    final noteCount = values.length;
+    final signIndex = signingSegmentIndices.isNotEmpty
+        ? signingSegmentIndices.first
+        : statuses.indexOf(_MigrationBatchStatus.needsInput);
+    final batchIndex = signIndex < 0 ? 0 : signIndex;
+    final batchValue = signingSegmentIndices.fold<BigInt>(
+      BigInt.zero,
+      (sum, index) => index < values.length ? sum + values[index] : sum,
     );
-    final remainingBlocks = _migrationPreparingRemainingConfirmationBlocks(
-      status,
-    );
-    final effectivePartCount = math.max(1, partCount);
+    final batchNumber = (batchIndex ~/ 8) + 1;
+    final completedNotes = statuses
+        .where((status) => status == _MigrationBatchStatus.complete)
+        .length;
+    final percentage = _migrationPercentage(batchValue, totalZatoshi);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background.ground,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appSurfaceShadow(colors),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.md,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Note split',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.bodyMedium.copyWith(
-                color: colors.text.accent,
-                fontWeight: FontWeight.w500,
+    return SizedBox(
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            width: 420,
+            bottom: 0,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 360),
+              opacity: !isSigning && !isPreparing ? 1 : 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(32),
+                  ),
+                  // Figma's wide radial gradient is effectively vertical at
+                  // this 420 px width. Keep its exact stop colors/opacity so
+                  // the bottom panel, including its two rounded corners,
+                  // reads as one surface instead of a separate glow.
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0.69843, 0.84922, 0.92461, 1],
+                    colors: [
+                      Color(0x05141818),
+                      Color(0x350A5E3C),
+                      Color(0x4E05814E),
+                      Color(0x6600A460),
+                    ],
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: AppSpacing.sm),
-            _MigrationPreparingStepRow(
-              stepKey: 'split',
-              state: splitComplete
-                  ? _MigrationPreparationStepState.complete
-                  : _MigrationPreparationStepState.active,
-              label:
-                  'Split notes into $effectivePartCount migration '
-                  '${effectivePartCount == 1 ? 'part' : 'parts'}',
-            ),
-            const _MigrationPreparingStepConnector(),
-            _MigrationPreparingStepRow(
-              stepKey: 'confirmations',
-              state: confirmationsComplete
-                  ? _MigrationPreparationStepState.complete
-                  : splitComplete
-                  ? _MigrationPreparationStepState.active
-                  : _MigrationPreparationStepState.pending,
-              showPendingLoader: true,
-              stepNumber: 2,
-              label: remainingBlocks <= 0
-                  ? 'Waiting for confirmation'
-                  : 'Wait $remainingBlocks '
-                        '${remainingBlocks == 1 ? 'block' : 'blocks'} '
-                        'for confirmation',
-            ),
-          ],
-        ),
+          ),
+          Stack(
+            children: [
+              Positioned(
+                left: 12,
+                top: 16,
+                width: 396,
+                child: Text(
+                  'Ironwood Migration',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 12,
+                top: 54,
+                width: 396,
+                child: _MigrationStageHeader(
+                  stage: isPreparing
+                      ? _MigrationStage.preparation
+                      : isComplete
+                      ? _MigrationStage.finish
+                      : _MigrationStage.migration,
+                ),
+              ),
+              Positioned(
+                left: 82,
+                top: 108,
+                width: 256,
+                height: 256,
+                child: _MigrationMorphingRing(
+                  key: const ValueKey('ironwood_migration_morphing_ring'),
+                  preparing: isPreparing,
+                  preparationColor: colors.text.accent.withValues(alpha: 0.20),
+                  values: values,
+                  totalZatoshi: totalZatoshi,
+                  statuses: statuses,
+                  child: _MigrationRingCenterTransition(
+                    key: const ValueKey('ironwood_migration_ring_center'),
+                    preparing: isPreparing,
+                    child: isPreparing
+                        ? Column(
+                            key: const ValueKey('preparing-ring-label'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  key: const ValueKey(
+                                    'ironwood_migration_preparation_loader',
+                                  ),
+                                  value: disableAnimations ? 0.72 : null,
+                                  strokeWidth: 2,
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Preparing your notes',
+                                textAlign: TextAlign.center,
+                                style: AppTypography.bodySmall,
+                              ),
+                            ],
+                          )
+                        : Column(
+                            key: const ValueKey('migration-ring-label'),
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                completedAmount > BigInt.zero
+                                    ? 'Migrated'
+                                    : 'Amount to migrate',
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.secondary,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                completedAmount > BigInt.zero
+                                    ? '${_formatZecAmountCompact(completedAmount)}/'
+                                          '${_formatZecAmountCompact(totalZatoshi)} ZEC'
+                                    : '${_formatZecAmountCompact(totalZatoshi)} ZEC',
+                                style: AppTypography.headlineSmall.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              if (completedAmount > BigInt.zero)
+                                Text(
+                                  '$completedNotes/$noteCount notes',
+                                  style: AppTypography.bodyMedium.copyWith(
+                                    color: colors.text.accent,
+                                  ),
+                                ),
+                              if (!isComplete) ...[
+                                const SizedBox(height: 6),
+                                AppButton(
+                                  key: const ValueKey(
+                                    'ironwood_migration_view_schedule_button',
+                                  ),
+                                  onPressed: () =>
+                                      context.go('/migration/private/schedule'),
+                                  variant: AppButtonVariant.ghost,
+                                  height: 28,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.xxs,
+                                  ),
+                                  expand: false,
+                                  trailing: const AppIcon(
+                                    AppIcons.chevronForward,
+                                    size: 14,
+                                  ),
+                                  child: const Text(
+                                    'View Schedule',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 28,
+                top: isPreparing ? 382 : 390,
+                width: 364,
+                child: isPreparing
+                    ? _MigrationLiveMetric(
+                        icon: AppIcons.wrench,
+                        label: 'Status',
+                        value: preparationProgressLabel,
+                      )
+                    : Column(
+                        children: [
+                          _MigrationLiveMetric(
+                            icon: AppIcons.shieldKeyhole,
+                            label: 'Available in Ironwood',
+                            value:
+                                '${_formatZecAmountCompact(completedAmount)} ZEC',
+                            accent: true,
+                          ),
+                          const SizedBox(height: 16),
+                          _MigrationLiveMetric(
+                            icon: AppIcons.wrench,
+                            label: 'Status',
+                            value: isComplete
+                                ? 'Migration complete'
+                                : isSigning
+                                ? 'Waiting for your approval'
+                                : waitingForAnchor
+                                ? 'Waiting for anchor block'
+                                : 'Migration in progress',
+                          ),
+                        ],
+                      ),
+              ),
+              if (isPreparing)
+                const Positioned(
+                  left: 12,
+                  top: 426,
+                  width: 396,
+                  height: 127,
+                  child: _MigrationPreparationInfoCard(),
+                )
+              else if (isSigning)
+                Positioned(
+                  left: 12,
+                  top: 511,
+                  width: 396,
+                  child: Column(
+                    children: [
+                      _MigrationSigningBatchCard(
+                        batchNumber: batchNumber,
+                        value: batchValue,
+                        percentage: percentage,
+                        noteCount: signingSegmentIndices.length,
+                      ),
+                      const SizedBox(height: 14),
+                      AppButton(
+                        key: const ValueKey(
+                          'ironwood_migration_status_action_button',
+                        ),
+                        onPressed: isAdvancing ? null : onAction,
+                        height: 44,
+                        minWidth: 230,
+                        expand: false,
+                        child: Text(
+                          isAdvancing
+                              ? 'Preparing batch...'
+                              : 'Sign Batch #$batchNumber',
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (action == _StatusAction.backHome)
+                Positioned(
+                  left: 95,
+                  top: 596,
+                  width: 230,
+                  child: Center(
+                    child: AppButton(
+                      key: const ValueKey(
+                        'ironwood_migration_status_action_button',
+                      ),
+                      onPressed: onAction,
+                      variant: AppButtonVariant.secondary,
+                      height: 36,
+                      minWidth: 96,
+                      expand: false,
+                      child: const Text('Go home'),
+                    ),
+                  ),
+                )
+              else
+                Positioned(
+                  left: 12,
+                  top: 502,
+                  width: 396,
+                  height: 150,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AppIcon(
+                        AppIcons.bell,
+                        size: 20,
+                        color: const Color(0xFF00D084),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        estimatedTime,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'The next signing window will open around this time.\n'
+                        'Keep Vizor open to continue your migration.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
 }
 
-enum _MigrationPreparationStepState { complete, active, pending }
-
-class _MigrationPreparingStepRow extends StatelessWidget {
-  const _MigrationPreparingStepRow({
-    required this.stepKey,
-    required this.state,
+class _MigrationLiveMetric extends StatelessWidget {
+  const _MigrationLiveMetric({
+    required this.icon,
     required this.label,
-    this.stepNumber,
-    this.showPendingLoader = false,
+    required this.value,
+    this.accent = false,
   });
 
-  final String stepKey;
-  final _MigrationPreparationStepState state;
+  final String icon;
   final String label;
-  final int? stepNumber;
-  final bool showPendingLoader;
+  final String value;
+  final bool accent;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final color = accent ? colors.text.accent : colors.text.primary;
     return Row(
-      key: ValueKey('ironwood_migration_prepare_step_${stepKey}_${state.name}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _MigrationPreparingStepBadge(
-          state: state,
-          stepNumber: stepNumber,
-          showPendingLoader: showPendingLoader,
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
+        AppIcon(icon, size: 16, color: color),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 132,
           child: Text(
             label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
             style: AppTypography.labelLarge.copyWith(
-              color: state == _MigrationPreparationStepState.pending
-                  ? colors.text.secondary
-                  : colors.text.accent,
+              color: color,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: 2,
+            softWrap: true,
+            textAlign: TextAlign.right,
+            style: AppTypography.labelLarge.copyWith(
+              color: color,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
@@ -508,184 +676,812 @@ class _MigrationPreparingStepRow extends StatelessWidget {
   }
 }
 
-class _MigrationPreparingStepBadge extends StatelessWidget {
-  const _MigrationPreparingStepBadge({
-    required this.state,
-    required this.stepNumber,
-    this.showPendingLoader = false,
+class _MigrationSigningBatchCard extends StatelessWidget {
+  const _MigrationSigningBatchCard({
+    required this.batchNumber,
+    required this.value,
+    required this.percentage,
+    required this.noteCount,
   });
 
-  final _MigrationPreparationStepState state;
-  final int? stepNumber;
-  final bool showPendingLoader;
+  final int batchNumber;
+  final BigInt value;
+  final String percentage;
+  final int noteCount;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: context.colors.background.ground,
+      borderRadius: BorderRadius.circular(AppRadii.large),
+      border: Border.all(color: context.colors.border.subtle),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Row(
+        children: [
+          const AppIcon(AppIcons.checkCircle, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            'Batch #$batchNumber ($noteCount notes)',
+            style: AppTypography.labelLarge,
+          ),
+          const Spacer(),
+          Text.rich(
+            TextSpan(
+              text: '${_formatZecAmountCompact(value)} ZEC ',
+              style: AppTypography.labelLarge,
+              children: [
+                TextSpan(
+                  text: '($percentage)',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+BigInt _migrationCompletedAmount(
+  List<BigInt> values,
+  List<_MigrationBatchStatus> statuses,
+) => values.indexed.fold<BigInt>(BigInt.zero, (sum, entry) {
+  final (index, value) = entry;
+  return index < statuses.length &&
+          statuses[index] == _MigrationBatchStatus.complete
+      ? sum + value
+      : sum;
+});
+
+bool _shouldShowPreparingStatusContent(
+  rust_sync.MigrationStatus status,
+  List<_MigrationBatchStatus> statuses,
+) {
+  // Note-split preparation is represented by one intentionally indeterminate
+  // visual, even while individual split transactions are confirming.
+  return status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase;
+}
+
+class _MigrationPreparationInfoCard extends StatelessWidget {
+  const _MigrationPreparationInfoCard();
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: context.colors.background.ground,
+      borderRadius: BorderRadius.circular(AppRadii.large),
+      boxShadow: appSurfaceShadow(context.colors),
+    ),
+    child: const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: _MigrationPreparationInfoRow(
+              icon: AppIcons.wallet,
+              message:
+                  'We’re organizing your balance into common-sized parts. '
+                  'This makes your migration harder to link.',
+            ),
+          ),
+          SizedBox(height: 8),
+          Expanded(
+            child: _MigrationPreparationInfoRow(
+              icon: AppIcons.history,
+              message:
+                  'Once preparation finishes, your migration can begin '
+                  'automatically.',
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _MigrationPreparationInfoRow extends StatelessWidget {
+  const _MigrationPreparationInfoRow({
+    required this.icon,
+    required this.message,
+  });
+
+  final String icon;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    final animateLoader =
-        !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
-    final backgroundColor = switch (state) {
-      _MigrationPreparationStepState.complete => GreenPrimitives.p500Light,
-      _MigrationPreparationStepState.active => colors.background.inverse,
-      _MigrationPreparationStepState.pending => colors.background.raised,
-    };
-    final foregroundColor = switch (state) {
-      _MigrationPreparationStepState.complete => Colors.white,
-      _MigrationPreparationStepState.active => colors.icon.inverse,
-      _MigrationPreparationStepState.pending => colors.text.secondary,
-    };
-
-    return SizedBox(
-      width: 24,
-      height: 24,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          color: backgroundColor,
-          shape: const OvalBorder(),
-        ),
-        child: Center(
-          child: switch (state) {
-            _MigrationPreparationStepState.complete => AppIcon(
-              AppIcons.check,
-              size: 14,
-              color: foregroundColor,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppIcon(icon, size: 20, color: context.colors.icon.accent),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            message,
+            maxLines: 3,
+            style: AppTypography.bodySmall.copyWith(
+              color: context.colors.text.accent,
             ),
-            _MigrationPreparationStepState.active => AppIcon(
-              AppIcons.loader,
-              size: 15,
-              color: foregroundColor,
-              animated: animateLoader,
-            ),
-            _MigrationPreparationStepState.pending =>
-              showPendingLoader
-                  ? AppIcon(
-                      AppIcons.loader,
-                      size: 15,
-                      color: foregroundColor,
-                      animated: animateLoader,
-                    )
-                  : Text(
-                      '${stepNumber ?? ''}',
-                      style: AppTypography.labelMedium.copyWith(
-                        color: foregroundColor,
-                      ),
-                    ),
-          },
+          ),
         ),
-      ),
+      ],
     );
   }
 }
 
-class _MigrationPreparingStepConnector extends StatelessWidget {
-  const _MigrationPreparingStepConnector();
+class _MigrationRingCenterTransition extends StatefulWidget {
+  const _MigrationRingCenterTransition({
+    super.key,
+    required this.preparing,
+    required this.child,
+  });
+
+  final bool preparing;
+  final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 24,
-      height: 34,
-      child: CustomPaint(
-        painter: _MigrationPreparingStepConnectorPainter(
-          color: context.colors.border.regular,
-        ),
-      ),
-    );
-  }
+  State<_MigrationRingCenterTransition> createState() =>
+      _MigrationRingCenterTransitionState();
 }
 
-class _MigrationPreparingStepConnectorPainter extends CustomPainter {
-  const _MigrationPreparingStepConnectorPainter({required this.color});
-
-  final Color color;
+class _MigrationRingCenterTransitionState
+    extends State<_MigrationRingCenterTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  Widget? _preparingChild;
+  Widget? _liveChild;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.65)
-      ..strokeWidth = 1
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    var y = 4.0;
-    const dash = 3.5;
-    const gap = 3.0;
-    final x = size.width / 2;
-    while (y < size.height - 4) {
-      final nextY = math.min(y + dash, size.height - 4);
-      canvas.drawLine(Offset(x, y), Offset(x, nextY), paint);
-      y = nextY + gap;
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 920),
+      value: widget.preparing ? 0 : 1,
+    );
+    if (widget.preparing) {
+      _preparingChild = widget.child;
+    } else {
+      _liveChild = widget.child;
     }
   }
 
   @override
-  bool shouldRepaint(
-    covariant _MigrationPreparingStepConnectorPainter oldDelegate,
-  ) => oldDelegate.color != color;
-}
+  void didUpdateWidget(covariant _MigrationRingCenterTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.preparing) {
+      _preparingChild = widget.child;
+    } else {
+      _liveChild = widget.child;
+    }
+    if (oldWidget.preparing == widget.preparing) return;
+    if (widget.preparing) {
+      _controller.reverse(from: 1);
+    } else {
+      _controller.forward(from: 0);
+    }
+  }
 
-class _MigrationPreparingInfo extends StatelessWidget {
-  const _MigrationPreparingInfo();
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Column(
-      children: [
-        Text(
-          'Migration will start automatically once note split is complete.',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: AppTypography.labelLarge.copyWith(
-            color: colors.text.accent,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          'You can leave this screen, but keep Vizor open & running.',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: AppTypography.labelLarge.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-      ],
+    if (widget.preparing && _liveChild == null) return widget.child;
+    if (!widget.preparing && _preparingChild == null) return widget.child;
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final progress = Curves.easeInOutCubic.transform(_controller.value);
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            if (_preparingChild != null)
+              Opacity(
+                opacity: (1 - progress * 2).clamp(0, 1),
+                child: _preparingChild,
+              ),
+            if (_liveChild != null)
+              Opacity(
+                opacity: ((progress - 0.5) * 2).clamp(0, 1),
+                child: _liveChild,
+              ),
+          ],
+        );
+      },
     );
   }
 }
 
-bool _migrationPreparingSplitComplete(rust_sync.MigrationStatus status) {
-  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+class _MigrationMorphingRing extends StatefulWidget {
+  const _MigrationMorphingRing({
+    super.key,
+    required this.preparing,
+    required this.preparationColor,
+    required this.values,
+    required this.totalZatoshi,
+    required this.statuses,
+    required this.child,
+  });
+
+  final bool preparing;
+  final Color preparationColor;
+  final List<BigInt> values;
+  final BigInt totalZatoshi;
+  final List<_MigrationBatchStatus> statuses;
+  final Widget child;
+
+  @override
+  State<_MigrationMorphingRing> createState() => _MigrationMorphingRingState();
+}
+
+class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
+    with TickerProviderStateMixin {
+  static const _minimumWeight = 0.035;
+  static const _maximumWeight = 0.22;
+  static const _stepDuration = Duration(milliseconds: 390);
+  static const _stepBreather = Duration(milliseconds: 105);
+  static const _spinDuration = Duration(milliseconds: 1800);
+  static const _restBetweenBlocks = Duration(milliseconds: 900);
+
+  final math.Random _random = math.Random(704075305);
+  late final AnimationController _stepController = AnimationController(
+    vsync: this,
+    duration: _stepDuration,
+  );
+  late final AnimationController _spinController = AnimationController(
+    vsync: this,
+    duration: _spinDuration,
+  );
+  late final AnimationController _morphController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 920),
+  );
+  late List<double> _weights;
+  late List<double> _fromWeights;
+  late List<double> _toWeights;
+  Timer? _idleTimer;
+  bool _reduceMotion = false;
+  List<_MigrationRingVisualSegment> _morphFrom = const [];
+  List<_MigrationRingVisualSegment> _morphTo = const [];
+  List<_MigrationRingVisualSegment> _lastPreparationSegments = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _weights = List.of(_MigrationPreparationRingPainter.initialSegmentRatios);
+    _fromWeights = List.of(_weights);
+    _toWeights = List.of(_weights);
+    _lastPreparationSegments = _preparationSegments(_weights);
+    if (widget.preparing) {
+      _morphFrom = _lastPreparationSegments;
+      _morphTo = _lastPreparationSegments;
+      _runIdleLoop();
+    } else {
+      _morphFrom = _liveSegments(
+        values: widget.values,
+        totalZatoshi: widget.totalZatoshi,
+        statuses: widget.statuses,
+      );
+      _morphTo = _morphFrom;
+      _morphController.value = 1;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _MigrationMorphingRing oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.preparing) return;
+
+    final next = _liveSegments(
+      values: widget.values,
+      totalZatoshi: widget.totalZatoshi,
+      statuses: widget.statuses,
+    );
+    if (_sameVisualSegments(_morphTo, next)) return;
+
+    final current = oldWidget.preparing
+        ? _lastPreparationSegments
+        : _interpolateVisualSegments(
+            _morphFrom,
+            _morphTo,
+            Curves.easeInOutCubic.transform(_morphController.value),
+          );
+    _morphFrom = current;
+    _morphTo = next;
+    _idleTimer?.cancel();
+    _stepController.stop();
+    _spinController.stop();
+    if (_reduceMotion) {
+      _morphController.value = 1;
+    } else {
+      _morphController.forward(from: 0);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+  }
+
+  Future<void> _runIdleLoop() async {
+    // Keep the Figma-comparison first frame stable before starting idle motion.
+    await _wait(const Duration(milliseconds: 400));
+    try {
+      while (mounted) {
+        if (!widget.preparing) return;
+        if (_reduceMotion) {
+          await _wait(const Duration(seconds: 1));
+          continue;
+        }
+        for (var cycle = 0; cycle < 3 && mounted; cycle++) {
+          await _adjustSegmentWeights();
+          if (!mounted) return;
+          await _spinController.forward(from: 0);
+        }
+        await _wait(_restBetweenBlocks);
+      }
+    } on TickerCanceled {
+      // Disposal can stop either controller while an idle cycle is running.
+    }
+  }
+
+  Future<void> _adjustSegmentWeights() async {
+    final steps = 3 + _random.nextInt(3);
+    for (var step = 0; step < steps; step++) {
+      if (!mounted) return;
+      final fromIndex = _random.nextInt(_weights.length);
+      var toIndex = _random.nextInt(_weights.length - 1);
+      if (toIndex >= fromIndex) toIndex++;
+
+      final availableToGive = math.min(
+        _weights[fromIndex] - _minimumWeight,
+        _maximumWeight - _weights[toIndex],
+      );
+      final availableToTake = math.min(
+        _maximumWeight - _weights[fromIndex],
+        _weights[toIndex] - _minimumWeight,
+      );
+      final gives = availableToGive >= availableToTake;
+      final available = gives ? availableToGive : availableToTake;
+      if (available <= 0.005) continue;
+      final amount = available * (0.4 + _random.nextDouble() * 0.6);
+
+      setState(() {
+        _fromWeights = List.of(_weights);
+        _toWeights = List.of(_weights);
+        _toWeights[fromIndex] += gives ? -amount : amount;
+        _toWeights[toIndex] += gives ? amount : -amount;
+      });
+      await _stepController.forward(from: 0);
+      _weights = List.of(_toWeights);
+      await _wait(_stepBreather);
+    }
+  }
+
+  Future<void> _wait(Duration duration) {
+    final completer = Completer<void>();
+    _idleTimer?.cancel();
+    _idleTimer = Timer(duration, completer.complete);
+    return completer.future;
+  }
+
+  @override
+  void dispose() {
+    _idleTimer?.cancel();
+    _stepController.dispose();
+    _spinController.dispose();
+    _morphController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final semanticsLabel = widget.preparing
+        ? 'Preparing migration notes.'
+        : [
+            'Migration notes in expected processing order.',
+            for (var index = 0; index < widget.values.length; index++)
+              'Note ${index + 1}: '
+                  '${_formatZecAmountCompact(widget.values[index])} ZEC, '
+                  '${_migrationRingStatusSemantics(index < widget.statuses.length ? widget.statuses[index] : _MigrationBatchStatus.scheduled)}.',
+          ].join(' ');
+    return Semantics(
+      container: true,
+      excludeSemantics: true,
+      label: semanticsLabel,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([
+          _stepController,
+          _spinController,
+          _morphController,
+        ]),
+        builder: (context, _) {
+          final eased = Curves.easeOutBack.transform(_stepController.value);
+          final weights = List.generate(
+            _weights.length,
+            (index) =>
+                _fromWeights[index] +
+                ((_toWeights[index] - _fromWeights[index]) * eased),
+          );
+          final preparationSegments = _preparationSegments(weights);
+          _lastPreparationSegments = preparationSegments;
+          final visualSegments = widget.preparing
+              ? preparationSegments
+              : _interpolateVisualSegments(
+                  _morphFrom,
+                  _morphTo,
+                  Curves.easeInOutCubic.transform(_morphController.value),
+                );
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              if (widget.preparing)
+                const SizedBox.shrink(
+                  key: ValueKey('ironwood_migration_preparation_ring'),
+                ),
+              CustomPaint(
+                key: const ValueKey('ironwood_migration_ring_paint'),
+                size: const Size.square(256),
+                painter: _MigrationRingVisualPainter(
+                  segments: visualSegments,
+                  rotation: widget.preparing
+                      ? Curves.easeInOutCubic.transform(_spinController.value)
+                      : 0,
+                ),
+              ),
+              widget.child,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  List<_MigrationRingVisualSegment> _preparationSegments(
+    List<double> weights,
+  ) => [
+    for (final weight in weights)
+      _MigrationRingVisualSegment(
+        weight: weight,
+        color: widget.preparationColor,
+      ),
+  ];
+}
+
+class _MigrationRingVisualSegment {
+  const _MigrationRingVisualSegment({
+    required this.weight,
+    required this.color,
+    this.presence = 1,
+  });
+
+  final double weight;
+  final Color color;
+  final double presence;
+}
+
+// At the ring's 104 px radius this produces roughly one logical pixel of
+// center-line arc. With rounded 12 px caps it reads as a single dot instead of
+// disappearing, while remaining small enough not to distort normal notes.
+const _migrationRingMinimumSegmentWeight = 0.0025;
+
+List<_MigrationRingVisualSegment> _liveSegments({
+  required List<BigInt> values,
+  required BigInt totalZatoshi,
+  required List<_MigrationBatchStatus> statuses,
+}) {
+  if (values.isEmpty || totalZatoshi <= BigInt.zero) return const [];
+  final weights = _normalizedMigrationRingWeights(values);
+  return [
+    for (var index = 0; index < values.length; index++)
+      _MigrationRingVisualSegment(
+        weight: weights[index],
+        color: _migrationRingStatusColor(
+          index < statuses.length
+              ? statuses[index]
+              : _MigrationBatchStatus.scheduled,
+        ),
+      ),
+  ];
+}
+
+List<double> _normalizedMigrationRingWeights(List<BigInt> values) {
+  final positiveIndices = [
+    for (var index = 0; index < values.length; index++)
+      if (values[index] > BigInt.zero) index,
+  ];
+  if (positiveIndices.isEmpty) {
+    return List<double>.filled(values.length, 0);
+  }
+
+  final positiveTotal = positiveIndices.fold<BigInt>(
+    BigInt.zero,
+    (sum, index) => sum + values[index],
+  );
+  final minimumWeight = math.min(
+    _migrationRingMinimumSegmentWeight,
+    1 / positiveIndices.length,
+  );
+  final weights = List<double>.filled(values.length, 0);
+  var remainingIndices = List<int>.of(positiveIndices);
+  var remainingWeight = 1.0;
+  var remainingValue = positiveTotal;
+
+  // Water-fill the smallest notes to the visual floor, then distribute the
+  // remaining ring among larger notes in their original value proportions.
+  // Unlike max(weight, floor) followed by normalization, this guarantees both
+  // the floor and an exact total weight of one.
+  while (remainingIndices.isNotEmpty) {
+    final belowFloor = [
+      for (final index in remainingIndices)
+        if ((values[index] / remainingValue).toDouble() * remainingWeight <
+            minimumWeight)
+          index,
+    ];
+    if (belowFloor.isEmpty) {
+      for (final index in remainingIndices) {
+        weights[index] =
+            (values[index] / remainingValue).toDouble() * remainingWeight;
+      }
+      break;
+    }
+
+    for (final index in belowFloor) {
+      weights[index] = minimumWeight;
+      remainingValue -= values[index];
+    }
+    remainingWeight -= minimumWeight * belowFloor.length;
+    remainingIndices.removeWhere(belowFloor.contains);
+  }
+
+  // Absorb floating-point residue into the largest note so callers can rely
+  // on the invariant that the represented proportions sum to exactly one.
+  final largestIndex = positiveIndices.reduce(
+    (left, right) => values[left] >= values[right] ? left : right,
+  );
+  final sum = weights.fold<double>(0, (total, weight) => total + weight);
+  weights[largestIndex] += 1 - sum;
+  return weights;
+}
+
+Color _migrationRingStatusColor(_MigrationBatchStatus status) =>
+    switch (status) {
+      _MigrationBatchStatus.none => const Color(0xFF3F4040),
+      _MigrationBatchStatus.preparing => const Color(0xFF00D084),
+      _MigrationBatchStatus.scheduled => const Color(0xFF0B4631),
+      _MigrationBatchStatus.migrating => const Color(0xFF00D084),
+      _MigrationBatchStatus.confirming => const Color(0xFF0EA76C),
+      _MigrationBatchStatus.complete => const Color(0xFF00C875),
+      _MigrationBatchStatus.needsInput => const Color(0xFFF7F7F7),
+    };
+
+String _migrationRingStatusSemantics(_MigrationBatchStatus status) =>
+    switch (status) {
+      _MigrationBatchStatus.none => 'not started',
+      _MigrationBatchStatus.preparing => 'preparing',
+      _MigrationBatchStatus.scheduled => 'scheduled',
+      _MigrationBatchStatus.migrating => 'migrating',
+      _MigrationBatchStatus.confirming => 'confirming',
+      _MigrationBatchStatus.complete => 'completed',
+      _MigrationBatchStatus.needsInput => 'needs input',
+    };
+
+List<_MigrationRingVisualSegment> _interpolateVisualSegments(
+  List<_MigrationRingVisualSegment> from,
+  List<_MigrationRingVisualSegment> to,
+  double t,
+) {
+  final count = math.max(from.length, to.length);
+  if (count == 0) return const [];
+  const transparent = _MigrationRingVisualSegment(
+    weight: 0,
+    color: Color(0x003F4040),
+    presence: 0,
+  );
+  return [
+    for (var index = 0; index < count; index++)
+      _MigrationRingVisualSegment(
+        weight:
+            (index < from.length ? from[index].weight : transparent.weight) +
+            ((index < to.length ? to[index].weight : transparent.weight) -
+                    (index < from.length
+                        ? from[index].weight
+                        : transparent.weight)) *
+                t,
+        color: Color.lerp(
+          index < from.length ? from[index].color : transparent.color,
+          index < to.length ? to[index].color : transparent.color,
+          t,
+        )!,
+        presence:
+            (index < from.length
+                ? from[index].presence
+                : transparent.presence) +
+            ((index < to.length ? to[index].presence : transparent.presence) -
+                    (index < from.length
+                        ? from[index].presence
+                        : transparent.presence)) *
+                t,
+      ),
+  ];
+}
+
+bool _sameVisualSegments(
+  List<_MigrationRingVisualSegment> left,
+  List<_MigrationRingVisualSegment> right,
+) {
+  if (left.length != right.length) return false;
+  for (var index = 0; index < left.length; index++) {
+    if (left[index].weight != right[index].weight ||
+        left[index].color != right[index].color ||
+        left[index].presence != right[index].presence) {
+      return false;
+    }
+  }
+  return true;
+}
+
+class _MigrationRingVisualPainter extends CustomPainter {
+  const _MigrationRingVisualPainter({
+    required this.segments,
+    required this.rotation,
+  });
+
+  final List<_MigrationRingVisualSegment> segments;
+  final double rotation;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (segments.isEmpty) return;
+    final positiveWeight = segments.fold<double>(
+      0,
+      (sum, segment) => sum + math.max(0, segment.weight),
+    );
+    if (positiveWeight <= 0) return;
+
+    final rect = Rect.fromCenter(
+      center: size.center(Offset.zero),
+      width: 208,
+      height: 208,
+    );
+    // Presence is animated separately from value. A tiny live note must keep
+    // its full gap, while a segment that is actually entering or leaving the
+    // morph gradually acquires or surrenders that gap.
+    final presences = [
+      for (final segment in segments) segment.presence.clamp(0.0, 1.0),
+    ];
+    final effectiveCount = presences.fold<double>(
+      0,
+      (sum, value) => sum + value,
+    );
+    if (effectiveCount <= 0) return;
+    final radius = rect.width / 2;
+    final availablePerSegment = math.pi * 2 * radius / effectiveCount;
+    final strokeWidth = math.min(12.0, math.max(1.0, availablePerSegment - 1));
+    final dotCenterLineSweep = 1 / radius;
+    final gap = math.min(
+      0.17,
+      math.max(0, math.pi * 2 / effectiveCount - dotCenterLineSweep),
+    );
+    final drawableSweep = math.max(0, math.pi * 2 - effectiveCount * gap);
+    final paint = Paint()
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.rotate(rotation * math.pi * 2);
+    canvas.translate(-size.width / 2, -size.height / 2);
+    var angle = -math.pi / 2;
+    for (var index = 0; index < segments.length; index++) {
+      final segment = segments[index];
+      final presence = presences[index];
+      final sweep =
+          math.max(0, segment.weight) / positiveWeight * drawableSweep;
+      paint.color = segment.color;
+      if (sweep > 0.001 && paint.color.a > 0) {
+        canvas.drawArc(rect, angle + gap * presence / 2, sweep, false, paint);
+      }
+      angle += sweep + gap * presence;
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _MigrationRingVisualPainter oldDelegate) =>
+      oldDelegate.rotation != rotation ||
+      !_sameVisualSegments(oldDelegate.segments, segments);
+}
+
+class _MigrationPreparationRingPainter extends CustomPainter {
+  const _MigrationPreparationRingPainter({
+    required this.color,
+    required this.weights,
+    required this.rotation,
+  });
+
+  final Color color;
+  final List<double> weights;
+  final double rotation;
+
+  static const _ringOuterDiameter = 220.0;
+
+  // Decorative only: the ratios intentionally do not represent note value or
+  // confirmation progress, but they still form one complete ring.
+  static const initialSegmentRatios = <double>[
+    0.11,
+    0.08,
+    0.12,
+    0.07,
+    0.10,
+    0.11,
+    0.09,
+    0.10,
+    0.08,
+    0.14,
+  ];
+  static const _visibleGap = 0.055;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final rect = Rect.fromCenter(
+      center: size.center(Offset.zero),
+      width: _ringOuterDiameter - paint.strokeWidth,
+      height: _ringOuterDiameter - paint.strokeWidth,
+    );
+    final fullSweep = math.pi * 2;
+    final radius = rect.width / 2;
+    // Include round-cap length in the angular gap so adjacent pills never
+    // overlap, while keeping an approximately 6 px empty space between them.
+    final gap = (paint.strokeWidth / radius) + _visibleGap;
+    final drawableSweep = fullSweep - (weights.length * gap);
+
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.rotate(rotation * fullSweep);
+    canvas.translate(-size.width / 2, -size.height / 2);
+
+    var angle = -math.pi / 2;
+    for (final weight in weights) {
+      final sweep = math.max(0.01, weight * drawableSweep);
+      canvas.drawArc(rect, angle + (gap / 2), sweep, false, paint);
+      angle += sweep + gap;
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _MigrationPreparationRingPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.rotation != rotation ||
+      !_sameWeights(oldDelegate.weights, weights);
+
+  bool _sameWeights(List<double> otherWeights, List<double> currentWeights) {
+    if (otherWeights.length != currentWeights.length) return false;
+    for (var index = 0; index < otherWeights.length; index++) {
+      if (otherWeights[index] != currentWeights[index]) return false;
+    }
     return true;
   }
-
-  final total = status.denominationSplitTotalCount;
-  if (total > 0) {
-    return status.denominationSplitCompletedCount >= total &&
-        status.pendingSplitStageCount <= 0;
-  }
-  return status.pendingSplitStageCount <= 0;
 }
-
-bool _migrationPreparingConfirmationsComplete(
-  rust_sync.MigrationStatus status,
-) {
-  final target = status.denominationConfirmationTarget;
-  return target > 0 && status.denominationConfirmationCount >= target;
-}
-
-int _migrationPreparingRemainingConfirmationBlocks(
-  rust_sync.MigrationStatus status,
-) {
-  final target = status.denominationConfirmationTarget > 0
-      ? status.denominationConfirmationTarget
-      : _migrationPrepareConfirmationBlocks;
-  return math.max(0, target - status.denominationConfirmationCount);
-}
-
-String _migrationPreparingDurationLabel() => 'This will take 10-20 min';
 
 _MigrationBatchStatus _migrationBatchStatus(
   rust_sync.MigrationPartState state,
@@ -736,233 +1532,6 @@ int _currentMigrationHeight(SyncState? syncState) {
     return math.min(scannedHeight, chainTipHeight);
   }
   return math.max(scannedHeight, chainTipHeight);
-}
-
-List<double> _migrationBatchProgresses({
-  required rust_sync.MigrationStatus status,
-  required List<rust_sync.MigrationPartStatus> parts,
-  required List<_MigrationBatchStatus> statuses,
-  required int currentHeight,
-  required bool isAdvancing,
-}) {
-  if (statuses.isEmpty) return const [];
-
-  if (status.phase == kIronwoodMigrationCompletePhase) {
-    return List<double>.filled(statuses.length, 1);
-  }
-
-  if (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-    final hasDenominationPartProgress =
-        parts.isNotEmpty &&
-        parts.any(
-          (part) => part.state != rust_sync.MigrationPartState.preparing,
-        );
-    if (hasDenominationPartProgress) {
-      return [
-        for (var i = 0; i < parts.length; i++)
-          _migrationPartStatusProgress(
-            part: parts[i],
-            visualStatus: i < statuses.length
-                ? statuses[i]
-                : _migrationBatchStatus(parts[i].state),
-            currentHeight: currentHeight,
-            isAdvancing: isAdvancing,
-            preparePhase: true,
-          ),
-      ];
-    }
-
-    final progress = _prepareMigrationProgress(
-      status,
-      isAdvancing: isAdvancing,
-    );
-    return List<double>.filled(statuses.length, progress);
-  }
-
-  if (parts.isNotEmpty) {
-    return [
-      for (var i = 0; i < parts.length; i++)
-        _migrationPartStatusProgress(
-          part: parts[i],
-          visualStatus: i < statuses.length
-              ? statuses[i]
-              : _migrationBatchStatus(parts[i].state),
-          currentHeight: currentHeight,
-          isAdvancing: isAdvancing,
-        ),
-    ];
-  }
-
-  return [
-    for (var i = 0; i < statuses.length; i++)
-      _legacyMigrationBatchProgress(
-        status: status,
-        visualStatus: statuses[i],
-        index: i,
-        currentHeight: currentHeight,
-        isAdvancing: isAdvancing,
-      ),
-  ];
-}
-
-double _prepareMigrationProgress(
-  rust_sync.MigrationStatus status, {
-  required bool isAdvancing,
-}) {
-  final totalStages = status.denominationSplitTotalCount;
-  final stageProgress = totalStages > 0
-      ? (status.denominationSplitCompletedCount / totalStages).clamp(0, 1)
-      : 0.0;
-
-  if (status.pendingSplitStageCount > 0) {
-    return math.max(stageProgress.toDouble(), isAdvancing ? 0.18 : 0.12);
-  }
-
-  final confirmationTarget = status.denominationConfirmationTarget;
-  if (confirmationTarget > 0) {
-    final confirmationProgress =
-        (status.denominationConfirmationCount / confirmationTarget).clamp(0, 1);
-    final combined =
-        _prepareBroadcastCommitProgress +
-        (1 - _prepareBroadcastCommitProgress) * confirmationProgress;
-    return math.max(stageProgress.toDouble(), combined);
-  }
-
-  return math.max(stageProgress.toDouble(), isAdvancing ? 0.24 : 0.16);
-}
-
-double _prepareConfirmationProgress({
-  required int confirmationCount,
-  required int confirmationTarget,
-}) {
-  if (confirmationTarget <= 0) return _prepareBroadcastCommitProgress;
-  final confirmationProgress = (confirmationCount / confirmationTarget)
-      .clamp(0, 1)
-      .toDouble();
-  return _prepareBroadcastCommitProgress +
-      (1 - _prepareBroadcastCommitProgress) * confirmationProgress;
-}
-
-double _migrationPartStatusProgress({
-  required rust_sync.MigrationPartStatus part,
-  required _MigrationBatchStatus visualStatus,
-  required int currentHeight,
-  required bool isAdvancing,
-  bool preparePhase = false,
-}) {
-  if (visualStatus == _MigrationBatchStatus.needsInput) {
-    return math.max(
-      _scheduledBlockProgress(
-        startHeight: part.scheduleStartHeight,
-        targetHeight: part.scheduledHeight,
-        currentHeight: currentHeight,
-      ),
-      _scheduledBlockProgressCap,
-    );
-  }
-
-  return switch (part.state) {
-    rust_sync.MigrationPartState.preparing => 0.12,
-    rust_sync.MigrationPartState.scheduled => _scheduledBlockProgress(
-      startHeight: part.scheduleStartHeight,
-      targetHeight: part.scheduledHeight,
-      currentHeight: currentHeight,
-    ),
-    rust_sync.MigrationPartState.migrating =>
-      preparePhase
-          ? _prepareBroadcastCommitProgress
-          : isAdvancing
-          ? _broadcastCommitProgressCap
-          : _scheduledBlockProgressCap,
-    rust_sync.MigrationPartState.confirming =>
-      preparePhase
-          ? _prepareConfirmationProgress(
-              confirmationCount: part.confirmationCount,
-              confirmationTarget: part.confirmationTarget,
-            )
-          : _confirmationProgress(
-              confirmationCount: part.confirmationCount,
-              confirmationTarget: part.confirmationTarget,
-            ),
-    rust_sync.MigrationPartState.completed => 1,
-    rust_sync.MigrationPartState.needsInput => _scheduledBlockProgressCap,
-  };
-}
-
-double _legacyMigrationBatchProgress({
-  required rust_sync.MigrationStatus status,
-  required _MigrationBatchStatus visualStatus,
-  required int index,
-  required int currentHeight,
-  required bool isAdvancing,
-}) {
-  return switch (visualStatus) {
-    _MigrationBatchStatus.none => 1,
-    _MigrationBatchStatus.preparing => isAdvancing ? 0.18 : 0.12,
-    _MigrationBatchStatus.scheduled => _legacyScheduledProgress(
-      status,
-      index,
-      currentHeight: currentHeight,
-    ),
-    _MigrationBatchStatus.migrating =>
-      isAdvancing ? _broadcastCommitProgressCap : _scheduledBlockProgressCap,
-    _MigrationBatchStatus.confirming =>
-      status.totalCount > 0
-          ? _confirmationProgress(
-              confirmationCount: status.confirmedTxCount,
-              confirmationTarget: status.totalCount,
-            )
-          : _broadcastCommitProgressCap,
-    _MigrationBatchStatus.complete => 1,
-    _MigrationBatchStatus.needsInput => _scheduledBlockProgressCap,
-  };
-}
-
-double _legacyScheduledProgress(
-  rust_sync.MigrationStatus status,
-  int index, {
-  required int currentHeight,
-}) {
-  final scheduled = [...status.scheduledBroadcasts]
-    ..sort((a, b) => a.scheduledHeight.compareTo(b.scheduledHeight));
-  if (index >= scheduled.length) return 0;
-  final broadcast = scheduled[index];
-  return _scheduledBlockProgress(
-    startHeight: broadcast.scheduleStartHeight,
-    targetHeight: broadcast.scheduledHeight,
-    currentHeight: currentHeight,
-  );
-}
-
-double _scheduledBlockProgress({
-  required int? startHeight,
-  required int? targetHeight,
-  required int currentHeight,
-}) {
-  if (targetHeight == null || currentHeight <= 0) return 0;
-  final effectiveStart = startHeight ?? math.max(0, targetHeight - 1);
-  if (targetHeight <= effectiveStart) {
-    return currentHeight >= targetHeight ? _scheduledBlockProgressCap : 0;
-  }
-  final elapsed = (currentHeight - effectiveStart).clamp(
-    0,
-    targetHeight - effectiveStart,
-  );
-  return _scheduledBlockProgressCap *
-      (elapsed / (targetHeight - effectiveStart));
-}
-
-double _confirmationProgress({
-  required int confirmationCount,
-  required int confirmationTarget,
-}) {
-  if (confirmationTarget <= 0) return _broadcastCommitProgressCap;
-  final confirmationRatio = (confirmationCount / confirmationTarget).clamp(
-    0,
-    1,
-  );
-  return _broadcastCommitProgressCap +
-      (1 - _broadcastCommitProgressCap) * confirmationRatio;
 }
 
 String _privateMigrationStartErrorMessage(Object error) {

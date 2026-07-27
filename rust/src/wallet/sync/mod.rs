@@ -42,8 +42,8 @@ mod transactions;
 // exactly).
 pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
-    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationScheduleEntry, MigrationStatus,
-    PreparationTimingPolicy,
+    proof_retry_height, reconcile_wallet_locks_after_sync, MigrationPartState,
+    MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
@@ -54,14 +54,16 @@ pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::{
     advance_orchard_migration_preparation_for_run, complete_orchard_migration_batch_pczt,
-    complete_orchard_migration_denominations_pczt, complete_orchard_migration_single_qr_pczt,
-    create_or_resume_private_migration_draft, discard_all_keystone_migration_requests,
-    discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
-    keystone_migration_proof_status, migrate_orchard_to_ironwood,
-    migrate_orchard_to_ironwood_immediately, prepare_orchard_migration_batch_pczt,
-    prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_single_qr_pczt,
-    retire_unbroadcast_orchard_migration, KeystoneSignedMigrationMessage,
-    OrchardMigrationImmediatePlan,
+    complete_orchard_migration_denominations_pczt, complete_orchard_migration_immediate_pczt,
+    complete_orchard_migration_single_qr_pczt, create_or_resume_private_migration_draft,
+    discard_all_keystone_migration_requests, discard_keystone_migration_request,
+    discard_keystone_migration_requests_for_account, keystone_migration_proof_status,
+    migrate_orchard_to_ironwood, migrate_orchard_to_ironwood_immediately,
+    orchard_migration_proof_readiness, orchard_migration_proof_readiness_at_scanned_height,
+    prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
+    prepare_orchard_migration_immediate_pczt, prepare_orchard_migration_single_qr_pczt,
+    retain_prepared_note_anchor_checkpoints_after_scan, retire_unbroadcast_orchard_migration,
+    KeystoneSignedMigrationMessage, OrchardMigrationImmediatePlan,
 };
 pub use send::{
     broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
@@ -74,6 +76,7 @@ pub(crate) use send::{
 pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
+pub(crate) use send::migration_anchor_retention_required;
 pub(crate) use send::resubmit_pending_transactions;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ProposalResult;

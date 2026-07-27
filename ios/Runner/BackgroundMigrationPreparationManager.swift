@@ -83,6 +83,61 @@ func shouldPostMigrationPreparationNeedsActionNotification(
   previousFingerprint != fingerprint
 }
 
+func migrationPreparationNeedsActionFingerprintAfterSubmission(
+  previousFingerprint: String?,
+  fingerprint: String,
+  submissionAccepted: Bool
+) -> String? {
+  submissionAccepted ? fingerprint : previousFingerprint
+}
+
+enum MigrationPreparationNeedsActionSubmissionCompletion: Equatable {
+  case current
+  case invalidated
+  case superseded
+}
+
+struct MigrationPreparationNeedsActionSubmissionTracker {
+  private var nextToken: UInt64 = 0
+  private var pendingFingerprints: [String: String] = [:]
+  private var requestTokens: [String: UInt64] = [:]
+
+  var scopes: Set<String> {
+    Set(pendingFingerprints.keys).union(requestTokens.keys)
+  }
+
+  mutating func begin(scope: String, fingerprint: String) -> UInt64? {
+    guard pendingFingerprints[scope] != fingerprint else { return nil }
+    nextToken &+= 1
+    pendingFingerprints[scope] = fingerprint
+    requestTokens[scope] = nextToken
+    return nextToken
+  }
+
+  mutating func complete(
+    scope: String,
+    token: UInt64
+  ) -> MigrationPreparationNeedsActionSubmissionCompletion {
+    guard requestTokens[scope] == token else {
+      return requestTokens[scope] == nil ? .invalidated : .superseded
+    }
+    pendingFingerprints.removeValue(forKey: scope)
+    return .current
+  }
+
+  mutating func clear(scopes: Set<String>) {
+    for scope in scopes {
+      pendingFingerprints.removeValue(forKey: scope)
+      requestTokens.removeValue(forKey: scope)
+    }
+  }
+
+  mutating func reset() {
+    pendingFingerprints.removeAll()
+    requestTokens.removeAll()
+  }
+}
+
 private enum BackgroundMigrationPreparationStepResult {
   case progress(CMigrationPreparationProgress)
   case retry(TimeInterval)
@@ -106,6 +161,12 @@ enum BackgroundMigrationPreparationResumeTarget: Equatable {
   case backgroundProcessing
 }
 
+enum BackgroundMigrationPreparationContinuedTaskDisposition: Equatable {
+  case run
+  case handoffToBackground
+  case complete
+}
+
 func migrationPreparationResumeTarget(
   states: [UInt8],
   inspectionFailed: Bool
@@ -122,12 +183,41 @@ func migrationPreparationResumeTarget(
   return .idle
 }
 
+func migrationPreparationContinuedTaskDisposition(
+  _ resumeTarget: BackgroundMigrationPreparationResumeTarget
+) -> BackgroundMigrationPreparationContinuedTaskDisposition {
+  switch resumeTarget {
+  case .continuedProcessing:
+    return .run
+  case .backgroundProcessing:
+    return .handoffToBackground
+  case .idle, .terminal:
+    return .complete
+  }
+}
+
 func shouldMarkMigrationPreparationForegroundContinuation(
   hasPendingRequest: Bool,
   hasBoundPreparation: Bool,
   notificationsDisabled: Bool
 ) -> Bool {
   hasPendingRequest && hasBoundPreparation && !notificationsDisabled
+}
+
+func shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+  hasPendingRequest: Bool,
+  hasBoundPreparation: Bool,
+  notificationsDisabled: Bool,
+  resumeTarget: BackgroundMigrationPreparationResumeTarget
+) -> Bool {
+  hasPendingRequest && !hasBoundPreparation && !notificationsDisabled
+    && resumeTarget == .backgroundProcessing
+}
+
+func migrationPreparationStateNeedsForegroundContinuation(
+  _ state: UInt8
+) -> Bool {
+  state == 0
 }
 
 func migrationPreparationRuntimeState(
@@ -217,6 +307,8 @@ final class BackgroundMigrationPreparationManager {
   private var foregroundHandoffRequested = false
   private var foregroundContinuationScopes: Set<String>
   private var needsActionNotificationFingerprints: [String: String]
+  private var needsActionNotificationSubmissionTracker =
+    MigrationPreparationNeedsActionSubmissionTracker()
   private var taskProgress: Progress?
   private var lastCompletedUnitCount: Int64 = 0
   private var authorizationMonitor:
@@ -235,6 +327,7 @@ final class BackgroundMigrationPreparationManager {
   }
 
   func handoffPendingRequestForForegroundLaunch() {
+    pruneForegroundContinuationScopes()
     BGTaskScheduler.shared.getPendingTaskRequests { [weak self] requests in
       guard let self else { return }
       let hasPendingRequest = requests.contains {
@@ -252,6 +345,35 @@ final class BackgroundMigrationPreparationManager {
           hasBoundPreparation: hasBoundPreparation,
           notificationsDisabled: notificationsDisabled
         )
+      let resumeTarget =
+        hasPendingRequest && !hasBoundPreparation && !notificationsDisabled
+        ? self.preparationResumeTarget()
+        : .idle
+      let shouldHandoffToBackground =
+        shouldHandoffMigrationPreparationToBackgroundOnForegroundLaunch(
+          hasPendingRequest: hasPendingRequest,
+          hasBoundPreparation: hasBoundPreparation,
+          notificationsDisabled: notificationsDisabled,
+          resumeTarget: resumeTarget
+        )
+      if shouldHandoffToBackground {
+        self.recordSchedulingState(
+          "processing_redirected_on_foreground_launch"
+        )
+        BackgroundMigrationManager.shared.schedulePreparationHandoff(
+          after: 60
+        ) { scheduled in
+          if scheduled {
+            BGTaskScheduler.shared.cancel(
+              taskRequestWithIdentifier: Self.taskIdentifier
+            )
+            self.cancelWatchdog()
+          } else {
+            self.recordDeferredSchedulingFailure()
+          }
+        }
+        return
+      }
       if !shouldContinue {
         BGTaskScheduler.shared.cancel(
           taskRequestWithIdentifier: Self.taskIdentifier
@@ -286,6 +408,7 @@ final class BackgroundMigrationPreparationManager {
     runId: String,
     completion: @escaping (BackgroundMigrationPreparationRuntimeState) -> Void
   ) {
+    pruneForegroundContinuationScopes()
     let scope = Self.foregroundContinuationScope(
       network: network,
       accountUuid: accountUuid,
@@ -413,6 +536,37 @@ final class BackgroundMigrationPreparationManager {
     authorizationEpoch: UInt64,
     completion: @escaping (Bool) -> Void
   ) {
+    pruneForegroundContinuationScopes()
+    switch migrationPreparationContinuedTaskDisposition(
+      preparationResumeTarget()
+    ) {
+    case .run:
+      break
+    case .handoffToBackground:
+      recordSchedulingState("processing_redirected_before_submit")
+      BackgroundMigrationManager.shared.schedulePreparationHandoff(
+        after: 60
+      ) { scheduled in
+        if scheduled {
+          BGTaskScheduler.shared.cancel(
+            taskRequestWithIdentifier: Self.taskIdentifier
+          )
+          self.cancelWatchdog()
+        } else {
+          self.recordDeferredSchedulingFailure()
+        }
+        completion(scheduled)
+      }
+      return
+    case .complete:
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      recordSchedulingState("not_needed_before_submit")
+      cancelWatchdog()
+      completion(false)
+      return
+    }
     let shouldCheckScheduler = stateLock.withPreparationLock { () -> Bool in
       guard !mutationQuiesced
         && !submissionInFlight
@@ -665,6 +819,7 @@ final class BackgroundMigrationPreparationManager {
       expired = false
       mutationQuiesced = false
     }
+    pruneForegroundContinuationScopes()
     switch preparationResumeTarget() {
     case .idle, .terminal:
       BGTaskScheduler.shared.cancel(
@@ -705,93 +860,6 @@ final class BackgroundMigrationPreparationManager {
     let fraction = min(max(progress.percentage, 0), 1)
     let syncUnits = Int64((25 + fraction * 25).rounded())
     updateProgress(syncUnits)
-  }
-
-  func runDeferredPass(
-    completion: @escaping (BackgroundMigrationPreparationPassResult) -> Void
-  ) {
-    let authorizationEpoch = captureNotificationAuthorizationEpoch()
-    IronwoodMigrationNotificationGate.shared.status { [weak self] status in
-      guard let self else {
-        completion(.cancelled)
-        return
-      }
-      guard status.allowsBackgroundMigration else {
-        IronwoodMigrationNotificationGate.shared.hardDisable()
-        completion(.cancelled)
-        return
-      }
-      guard self.enableNotificationWork(ifCurrent: authorizationEpoch) else {
-        completion(.cancelled)
-        return
-      }
-      self.queue.async {
-        completion(self.runDeferredPassAuthorized())
-      }
-    }
-  }
-
-  private func runDeferredPassAuthorized()
-    -> BackgroundMigrationPreparationPassResult
-  {
-    let foregroundContinuationPending = stateLock.withPreparationLock {
-      !foregroundContinuationScopes.isEmpty
-    }
-    if foregroundContinuationPending {
-      return .needsAction
-    }
-    let mayRun = stateLock.withPreparationLock { () -> Bool in
-      guard !mutationQuiesced
-        && !notificationAuthorization.isDisabled
-        && !taskRunning
-      else { return false }
-      taskRunning = true
-      deferredPassRunning = true
-      expired = false
-      foregroundHandoffRequested = false
-      taskProgress = nil
-      return true
-    }
-    guard mayRun else {
-      let blockedByMutation = stateLock.withPreparationLock {
-        mutationQuiesced
-      }
-      return blockedByMutation ? .cancelled : .deferred(60)
-    }
-
-    startAuthorizationMonitoring()
-    recordSchedulingState("processing")
-    let passResult = runPreparationPass()
-    let result =
-      passResult == .waitingForConfirmations
-      ? .deferred(Self.busyRetryDelay)
-      : passResult
-    let handedOff = stateLock.withPreparationLock { () -> Bool in
-      let handedOff = foregroundHandoffRequested
-      taskRunning = false
-      deferredPassRunning = false
-      foregroundHandoffRequested = false
-      return handedOff
-    }
-    stopAuthorizationMonitoring()
-    if handedOff {
-      markForegroundContinuationsReady()
-      recordSchedulingState("processing_handed_off_to_foreground")
-      return .cancelled
-    }
-    switch result {
-    case .completed:
-      recordSchedulingState("processing_completed")
-    case .waitingForConfirmations, .deferred:
-      recordSchedulingState("processing_deferred")
-    case .needsAction:
-      markForegroundContinuationsReady()
-      recordSchedulingState("processing_needs_action")
-      cancelWatchdog()
-    case .cancelled:
-      recordSchedulingState("processing_cancelled")
-    }
-    return result
   }
 
   func expireDeferredPass() {
@@ -843,8 +911,40 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func handleAuthorized(_ task: BGContinuedProcessingTask) {
+    stateLock.withPreparationLock {
+      submissionInFlight = false
+    }
+    switch migrationPreparationContinuedTaskDisposition(
+      preparationResumeTarget()
+    ) {
+    case .run:
+      break
+    case .handoffToBackground:
+      recordSchedulingState("processing_redirected_on_launch")
+      BackgroundMigrationManager.shared.schedulePreparationHandoff(
+        after: 60
+      ) { scheduled in
+        if scheduled {
+          BGTaskScheduler.shared.cancel(
+            taskRequestWithIdentifier: Self.taskIdentifier
+          )
+          self.cancelWatchdog()
+        } else {
+          self.recordDeferredSchedulingFailure()
+        }
+        task.setTaskCompleted(success: true)
+      }
+      return
+    case .complete:
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      recordSchedulingState("not_needed_on_launch")
+      cancelWatchdog()
+      task.setTaskCompleted(success: true)
+      return
+    }
     let mayRun = stateLock.withPreparationLock { () -> Bool in
-        submissionInFlight = false
         guard !mutationQuiesced
           && !notificationAuthorization.isDisabled
           && !taskRunning
@@ -1086,11 +1186,61 @@ final class BackgroundMigrationPreparationManager {
     return target == .continuedProcessing || target == .backgroundProcessing
   }
 
+  /// Tells the user a bound preparation can only continue in the foreground.
+  ///
+  /// The silent wake broadcasts and queries but never scans, and preparation
+  /// needs a scan to see its denomination confirmations. Without this the run
+  /// simply stalls until the user happens to reopen the app.
+  ///
+  /// Frequency is governed by the existing needs-action fingerprint: it carries
+  /// the inspected preparation state, and that state cannot move while nothing
+  /// is scanning, so a stalled run is announced once and only speaks again when
+  /// its progress actually changes.
+  func notifyPreparationNeedsForeground() {
+    guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
+    else { return }
+    for manifest in manifests {
+      guard let runId = manifest.expectedRunId else { continue }
+      var preparation = CMigrationPreparationProgress(
+        state: 0,
+        confirmation_count: 0,
+        confirmation_target: 0,
+        completed_stage_count: 0,
+        total_stage_count: 0
+      )
+      guard
+        zcash_inspect_migration_preparation(
+          manifest.dbPath,
+          manifest.network,
+          manifest.accountUuid,
+          runId,
+          &preparation
+        ) == 0
+      else { continue }
+      // 0 is "still preparing": the phase that needs a scan we will not do here.
+      guard preparation.state == 0 else { continue }
+      postNeedsActionNotification(
+        reason: "foreground-preparation-required",
+        manifest: manifest,
+        progress: preparation
+      )
+    }
+  }
+
   private func preparationResumeTarget()
     -> BackgroundMigrationPreparationResumeTarget
   {
     guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
-    else { return .idle }
+    else {
+      // A transient protected-data or Keychain failure is not proof that no
+      // preparation exists. Defer once to BGProcessing, whose preparation pass
+      // surfaces the existing credential-store-unavailable recovery instead of
+      // silently completing the task.
+      return migrationPreparationResumeTarget(
+        states: [],
+        inspectionFailed: true
+      )
+    }
     var states: [UInt8] = []
     var inspectionFailed = false
     for manifest in manifests {
@@ -1170,21 +1320,60 @@ final class BackgroundMigrationPreparationManager {
 
   @discardableResult
   private func markForegroundContinuationsReady() -> Bool {
+    guard let scopes = foregroundContinuationEligibleScopes() else {
+      return false
+    }
+    stateLock.withPreparationLock {
+      foregroundContinuationScopes = scopes
+      persistForegroundContinuationScopesLocked()
+    }
+    return !scopes.isEmpty
+  }
+
+  private func pruneForegroundContinuationScopes() {
+    guard let eligibleScopes = foregroundContinuationEligibleScopes() else {
+      return
+    }
+    stateLock.withPreparationLock {
+      foregroundContinuationScopes.formIntersection(eligibleScopes)
+      persistForegroundContinuationScopesLocked()
+    }
+  }
+
+  private func foregroundContinuationEligibleScopes() -> Set<String>? {
     guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
-    else { return false }
-    let scopes = manifests.compactMap { manifest -> String? in
-      guard let runId = manifest.expectedRunId else { return nil }
-      return Self.foregroundContinuationScope(
+    else { return nil }
+    var scopes = Set<String>()
+    for manifest in manifests {
+      guard let runId = manifest.expectedRunId else { continue }
+      let scope = Self.foregroundContinuationScope(
         network: manifest.network,
         accountUuid: manifest.accountUuid,
         runId: runId
       )
+      var preparation = CMigrationPreparationProgress(
+        state: 0,
+        confirmation_count: 0,
+        confirmation_target: 0,
+        completed_stage_count: 0,
+        total_stage_count: 0
+      )
+      let code = zcash_inspect_migration_preparation(
+        manifest.dbPath,
+        manifest.network,
+        manifest.accountUuid,
+        runId,
+        &preparation
+      )
+      if code != 0
+        || migrationPreparationStateNeedsForegroundContinuation(
+          preparation.state
+        )
+      {
+        scopes.insert(scope)
+      }
     }
-    stateLock.withPreparationLock {
-      foregroundContinuationScopes.formUnion(scopes)
-      persistForegroundContinuationScopesLocked()
-    }
-    return !scopes.isEmpty
+    return scopes
   }
 
   private func persistForegroundContinuationScopesLocked() {
@@ -1611,30 +1800,59 @@ final class BackgroundMigrationPreparationManager {
     scope: String,
     fingerprint: String
   ) {
-    let shouldPost = stateLock.withPreparationLock { () -> Bool in
+    let submissionToken = stateLock.withPreparationLock { () -> UInt64? in
       guard shouldPostMigrationPreparationNeedsActionNotification(
         previousFingerprint: needsActionNotificationFingerprints[scope],
         fingerprint: fingerprint
-      ) else {
-        return false
-      }
-      needsActionNotificationFingerprints[scope] = fingerprint
-      persistNeedsActionNotificationFingerprintsLocked()
-      return true
+      ) else { return nil }
+      return needsActionNotificationSubmissionTracker.begin(
+        scope: scope,
+        fingerprint: fingerprint
+      )
     }
-    guard shouldPost else { return }
+    guard let submissionToken else { return }
 
     let content = UNMutableNotificationContent()
     content.title = "User action needed"
     content.body = "Open and unlock Vizor to continue."
     content.sound = .default
+    let requestIdentifier = Self.needsActionNotificationIdentifier(scope: scope)
     addNotificationIfEnabled(
       UNNotificationRequest(
-        identifier: Self.needsActionNotificationIdentifier(scope: scope),
+        identifier: requestIdentifier,
         content: content,
         trigger: nil
       )
-    )
+    ) { submissionAccepted in
+      self.stateLock.withPreparationLock {
+        switch self.needsActionNotificationSubmissionTracker.complete(
+          scope: scope,
+          token: submissionToken
+        ) {
+        case .current:
+          self.needsActionNotificationFingerprints[scope] =
+            migrationPreparationNeedsActionFingerprintAfterSubmission(
+              previousFingerprint:
+                self.needsActionNotificationFingerprints[scope],
+              fingerprint: fingerprint,
+              submissionAccepted: submissionAccepted
+            )
+          if submissionAccepted {
+            self.persistNeedsActionNotificationFingerprintsLocked()
+          }
+        case .invalidated:
+          let center = UNUserNotificationCenter.current()
+          center.removePendingNotificationRequests(
+            withIdentifiers: [requestIdentifier]
+          )
+          center.removeDeliveredNotifications(
+            withIdentifiers: [requestIdentifier]
+          )
+        case .superseded:
+          break
+        }
+      }
+    }
   }
 
   private func needsActionFingerprint(
@@ -1660,6 +1878,7 @@ final class BackgroundMigrationPreparationManager {
       for scope in scopes {
         needsActionNotificationFingerprints.removeValue(forKey: scope)
       }
+      needsActionNotificationSubmissionTracker.clear(scopes: scopes)
       persistNeedsActionNotificationFingerprintsLocked()
     }
     let identifiers = scopes.map {
@@ -1676,10 +1895,14 @@ final class BackgroundMigrationPreparationManager {
 
   private func resetNeedsActionNotifications() {
     let identifiers = stateLock.withPreparationLock { () -> [String] in
-      let identifiers = needsActionNotificationFingerprints.keys.map {
+      let scopes = Set(needsActionNotificationFingerprints.keys).union(
+        needsActionNotificationSubmissionTracker.scopes
+      )
+      let identifiers = scopes.map {
         Self.needsActionNotificationIdentifier(scope: $0)
       }
       needsActionNotificationFingerprints.removeAll()
+      needsActionNotificationSubmissionTracker.reset()
       persistNeedsActionNotificationFingerprintsLocked()
       return identifiers
     }
@@ -1718,24 +1941,30 @@ final class BackgroundMigrationPreparationManager {
     )
   }
 
-  private func addNotificationIfEnabled(_ request: UNNotificationRequest) {
+  private func addNotificationIfEnabled(
+    _ request: UNNotificationRequest,
+    completion: ((Bool) -> Void)? = nil
+  ) {
     guard !stateLock.withPreparationLock({
       notificationAuthorization.isDisabled
     }) else {
+      completion?(false)
       return
     }
     let center = UNUserNotificationCenter.current()
-    center.add(request) { _ in
+    center.add(request) { error in
       let disabled = self.stateLock.withPreparationLock {
         self.notificationAuthorization.isDisabled
       }
-      guard disabled else { return }
-      center.removePendingNotificationRequests(
-        withIdentifiers: [request.identifier]
-      )
-      center.removeDeliveredNotifications(
-        withIdentifiers: [request.identifier]
-      )
+      if disabled {
+        center.removePendingNotificationRequests(
+          withIdentifiers: [request.identifier]
+        )
+        center.removeDeliveredNotifications(
+          withIdentifiers: [request.identifier]
+        )
+      }
+      completion?(error == nil && !disabled)
     }
   }
 

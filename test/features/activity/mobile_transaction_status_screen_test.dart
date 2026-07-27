@@ -445,6 +445,27 @@ void main() {
     expect(amountY, lessThan(toY));
   });
 
+  testWidgets('migration tx shows the Orchard -> Ironwood balance flow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _tx(kind: 'migration', displayPool: 'ironwood'),
+        detail: _detail(kind: 'migration'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migrated to Ironwood'), findsOneWidget);
+    expect(find.text('Amount'), findsOneWidget);
+    expect(find.text('From Orchard balance'), findsOneWidget);
+    expect(find.text('To'), findsOneWidget);
+    expect(find.text('Ironwood balance'), findsOneWidget);
+    expect(find.text('Ironwood'), findsOneWidget);
+    expect(find.text('Completed'), findsOneWidget);
+    expect(find.text(_address), findsNothing);
+  });
+
   testWidgets('tapping the tx fee help opens the fee info sheet', (
     tester,
   ) async {

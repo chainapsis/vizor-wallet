@@ -8,10 +8,13 @@ use serde::{Deserialize, Serialize};
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zeroize::Zeroizing;
 
-use crate::wallet::db::{open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout};
-use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
+use crate::wallet::db::{
+    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
+    WALLET_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::secret_payload;
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 use super::READ_DB_BUSY_TIMEOUT;
 
@@ -44,6 +47,8 @@ const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
 const PENDING_TXS_TABLE: &str = "vizor_migration_pending_txs";
 const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
+const RETAINED_ANCHORS_TABLE: &str = "vizor_migration_retained_orchard_anchors";
+const RETENTION_RELEASE_SENTINEL_RUN_ID: &str = "";
 pub(crate) fn delete_account_migration_rows_with_tx(
     tx: &rusqlite::Transaction<'_>,
     account_uuid: &str,
@@ -93,6 +98,7 @@ pub(crate) const PHASE_AWAITING_PREPARATION: &str = "awaiting_preparation";
 pub(crate) const PHASE_AWAITING_DENOMINATION_SIGNATURE: &str = "awaiting_denomination_signature";
 pub(crate) const PHASE_WAITING_DENOM_CONFIRMATIONS: &str = "waiting_denom_confirmations";
 pub(crate) const PHASE_READY_TO_MIGRATE: &str = "ready_to_migrate";
+pub(crate) const MIGRATION_KEYSTONE_BATCH_MAX_PARTS: u32 = 8;
 pub(crate) const PHASE_BROADCAST_SCHEDULED: &str = "broadcast_scheduled";
 pub(crate) const PHASE_BROADCASTING: &str = "broadcasting";
 pub(crate) const PHASE_WAITING_MIGRATION_CONFIRMATIONS: &str = "waiting_migration_confirmations";
@@ -111,6 +117,14 @@ pub(crate) struct PreparedOrchardNoteRef {
     pub value_zatoshi: u64,
     pub note_version: u8,
     pub nullifier_hex: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedAnchorRetentionCandidate {
+    pub run_id: String,
+    pub account_uuid: String,
+    pub note: PreparedOrchardNoteRef,
+    pub timing_policy: MigrationTimingPolicy,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -192,6 +206,12 @@ pub(crate) struct SignedMigrationPczt {
     pub fee_zatoshi: u64,
     pub selected_note: PreparedOrchardNoteRef,
     pub metadata: PendingMigrationTxMetadata,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SignedChildProofCandidate {
+    pub selected_note: PreparedOrchardNoteRef,
+    pub anchor_boundary_height: Option<u32>,
 }
 
 pub(crate) struct DuePendingMigrationTx {
@@ -403,7 +423,7 @@ pub(crate) fn migration_status(
         pending_split_stage_count: 0,
         message: None,
         can_abandon: false,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
         schedule_mean_delay_blocks: schedule_parameters_with_policy(
             network,
             configured_timing_policy(network),
@@ -504,7 +524,7 @@ fn timing_policy_for_run_with_conn(
     run_id: &str,
     network: WalletNetwork,
 ) -> Result<MigrationTimingPolicy, String> {
-    if network != WalletNetwork::Test {
+    if !matches!(network, WalletNetwork::Test | WalletNetwork::Regtest) {
         return Ok(MigrationTimingPolicy::Standard);
     }
     let value = conn
@@ -536,7 +556,9 @@ fn adopt_timing_policy_for_active_run(
     network: WalletNetwork,
     desired_policy: MigrationTimingPolicy,
 ) -> Result<(), String> {
-    if network != WalletNetwork::Test || desired_policy != MigrationTimingPolicy::FastTestnet {
+    if !matches!(network, WalletNetwork::Test | WalletNetwork::Regtest)
+        || desired_policy != MigrationTimingPolicy::FastTestnet
+    {
         return Ok(());
     }
     let Some(run) = active_run(conn, account_uuid, network)? else {
@@ -1269,6 +1291,266 @@ pub(crate) fn prepared_notes_for_run(
         .map_err(|e| format!("Read prepared notes: {e}"))
 }
 
+pub(crate) fn prepared_anchor_retention_candidates(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<Vec<PreparedAnchorRetentionCandidate>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT r.run_id, r.phase, r.account_uuid, r.timing_policy,
+                    p.txid_hex, p.output_index, p.value_zatoshi,
+                    p.note_version, p.nullifier_hex
+             FROM {RUNS_TABLE} r
+             INNER JOIN {PREPARED_NOTES_TABLE} p ON p.run_id = r.run_id
+             WHERE r.network = ?1
+               AND r.phase IN (?2, ?3, ?4, ?5, ?6, ?7)
+               AND p.note_version = 2
+             ORDER BY r.account_uuid, p.txid_hex, p.output_index"
+        ))
+        .map_err(|e| format!("Prepare migration anchor retention query: {e}"))?;
+    let rows = stmt
+        .query_map(
+            params![
+                network_name(network),
+                PHASE_WAITING_DENOM_CONFIRMATIONS,
+                PHASE_READY_TO_MIGRATE,
+                PHASE_BROADCAST_SCHEDULED,
+                // A broadcast pass persists this phase before its first send
+                // and only leaves it once a send is recorded, so an interrupted
+                // pass keeps the phase while the run still owns unpromoted
+                // signed children. Omitting it released their anchors.
+                PHASE_BROADCASTING,
+                PHASE_FAILED_RECOVERABLE,
+                PHASE_PAUSED,
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    PreparedOrchardNoteRef {
+                        txid_hex: row.get(4)?,
+                        output_index: row.get(5)?,
+                        value_zatoshi: row.get(6)?,
+                        note_version: row.get(7)?,
+                        nullifier_hex: row.get(8)?,
+                    },
+                ))
+            },
+        )
+        .map_err(|e| format!("Query migration anchor retention candidates: {e}"))?;
+    let rows = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration anchor retention candidate: {e}"))?;
+    drop(stmt);
+
+    let mut remaining_by_run = BTreeMap::new();
+    let mut candidates = Vec::new();
+    for (run_id, phase, account_uuid, timing_policy, note) in rows {
+        // Before materialization, retain every prepared note because Keystone
+        // may not have supplied child signatures yet. Once any child has been
+        // signed or promoted, retain only signed children that have not already
+        // been promoted to pending transactions. This also covers paused runs
+        // that have not reached the signing step yet.
+        if matches!(
+            phase.as_str(),
+            PHASE_BROADCAST_SCHEDULED
+                | PHASE_BROADCASTING
+                | PHASE_FAILED_RECOVERABLE
+                | PHASE_PAUSED
+        ) {
+            let remaining = match remaining_by_run.entry(run_id.clone()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let has_materialized_children =
+                        migration_child_materialization_exists_with_conn(&conn, &run_id)?;
+                    let remaining = has_materialized_children
+                        .then(|| unpromoted_signed_child_note_outpoints_with_conn(&conn, &run_id));
+                    entry.insert(remaining.transpose()?)
+                }
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            };
+            if let Some(remaining) = remaining {
+                if !remaining.contains(&(note.txid_hex.to_ascii_lowercase(), note.output_index)) {
+                    continue;
+                }
+            }
+        }
+        candidates.push(PreparedAnchorRetentionCandidate {
+            run_id,
+            account_uuid,
+            note,
+            timing_policy: MigrationTimingPolicy::from_str(&timing_policy)?,
+        });
+    }
+    Ok(candidates)
+}
+
+pub(crate) fn migration_anchor_retention_references_exist(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!(
+            "SELECT EXISTS(
+                SELECT 1 FROM {RETAINED_ANCHORS_TABLE} WHERE network = ?1
+             )"
+        ),
+        params![network_name(network)],
+        |row| row.get::<_, bool>(0),
+    )
+    .map_err(|e| format!("Check migration anchor retention references: {e}"))
+}
+
+/// Blocks between the checkpoints librustzcash keeps as durable anchors.
+///
+/// Mirrors `ANCHOR_RETENTION_INTERVAL` in
+/// `zcash_client_backend::data_api::ll::wallet`, which is private to that
+/// crate. The pinned revision uses 144; a released version of the crate used
+/// 288, so this must be re-checked whenever the librustzcash pin moves.
+const LIBRUSTZCASH_ANCHOR_RETENTION_INTERVAL: u32 = 144;
+
+/// Whether librustzcash itself retains the checkpoint at `height` as a durable
+/// anchor, mirroring its `should_retain_anchor`.
+fn is_wallet_durable_anchor(height: u32, anchor_retention_floor: Option<BlockHeight>) -> bool {
+    anchor_retention_floor.is_some_and(|floor| height >= u32::from(floor))
+        && height % LIBRUSTZCASH_ANCHOR_RETENTION_INTERVAL == 0
+}
+
+pub(crate) fn stage_migration_anchor_retention_references(
+    db_path: &str,
+    network: WalletNetwork,
+    desired: &BTreeSet<(String, u32)>,
+    retained_before_maintenance: &BTreeSet<u32>,
+) -> Result<Vec<u32>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let network_name = network_name(network);
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT run_id, checkpoint_height, owns_retention
+             FROM {RETAINED_ANCHORS_TABLE}
+             WHERE network = ?1
+             ORDER BY checkpoint_height, run_id"
+        ))
+        .map_err(|e| format!("Prepare migration anchor retention references: {e}"))?;
+    let current = stmt
+        .query_map(params![network_name], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, bool>(2)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration anchor retention references: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration anchor retention reference: {e}"))?;
+    drop(stmt);
+
+    let currently_owned = current
+        .iter()
+        .filter_map(|(_, height, owns)| owns.then_some(*height))
+        .collect::<BTreeSet<_>>();
+    let desired_heights = desired
+        .iter()
+        .map(|(_, height)| *height)
+        .collect::<BTreeSet<_>>();
+    // librustzcash independently retains interval-aligned checkpoints at or
+    // after anchor-retention activation as durable anchors. Migration may have
+    // retained the same checkpoint first, but must not later remove the
+    // wallet's durable retention.
+    let anchor_retention_floor = network.activation_height(NetworkUpgrade::Nu6_3);
+    let release = currently_owned
+        .difference(&desired_heights)
+        .copied()
+        .filter(|height| !is_wallet_durable_anchor(*height, anchor_retention_floor))
+        .collect::<Vec<_>>();
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration anchor retention update: {e}"))?;
+    tx.execute(
+        &format!("DELETE FROM {RETAINED_ANCHORS_TABLE} WHERE network = ?1"),
+        params![network_name],
+    )
+    .map_err(|e| format!("Clear migration anchor retention references: {e}"))?;
+
+    let mut owner_assigned = BTreeSet::new();
+    for (run_id, checkpoint_height) in desired {
+        let migration_owns = currently_owned.contains(checkpoint_height)
+            || !retained_before_maintenance.contains(checkpoint_height)
+            // Builds before the ownership table retained migration
+            // checkpoints directly. Adopt those legacy non-durable pins so
+            // they can be released when the run no longer needs them, while
+            // leaving librustzcash's independently durable anchors alone.
+            || !is_wallet_durable_anchor(*checkpoint_height, anchor_retention_floor);
+        let owns_retention = migration_owns && owner_assigned.insert(*checkpoint_height);
+        tx.execute(
+            &format!(
+                "INSERT INTO {RETAINED_ANCHORS_TABLE}
+                 (network, run_id, checkpoint_height, owns_retention)
+                 VALUES (?1, ?2, ?3, ?4)"
+            ),
+            params![network_name, run_id, checkpoint_height, owns_retention,],
+        )
+        .map_err(|e| format!("Record migration anchor retention reference: {e}"))?;
+    }
+    for checkpoint_height in &release {
+        tx.execute(
+            &format!(
+                "INSERT INTO {RETAINED_ANCHORS_TABLE}
+                 (network, run_id, checkpoint_height, owns_retention)
+                 VALUES (?1, ?2, ?3, 1)"
+            ),
+            params![
+                network_name,
+                RETENTION_RELEASE_SENTINEL_RUN_ID,
+                checkpoint_height,
+            ],
+        )
+        .map_err(|e| format!("Stage migration anchor retention release: {e}"))?;
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit migration anchor retention update: {e}"))?;
+    Ok(release)
+}
+
+pub(crate) fn finish_migration_anchor_retention_releases(
+    db_path: &str,
+    network: WalletNetwork,
+    released: &[u32],
+) -> Result<(), String> {
+    if released.is_empty() {
+        return Ok(());
+    }
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let network_name = network_name(network);
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration anchor retention release cleanup: {e}"))?;
+    for checkpoint_height in released {
+        tx.execute(
+            &format!(
+                "DELETE FROM {RETAINED_ANCHORS_TABLE}
+                 WHERE network = ?1 AND run_id = ?2 AND checkpoint_height = ?3"
+            ),
+            params![
+                network_name,
+                RETENTION_RELEASE_SENTINEL_RUN_ID,
+                checkpoint_height,
+            ],
+        )
+        .map_err(|e| format!("Finish migration anchor retention release: {e}"))?;
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit migration anchor retention release cleanup: {e}"))
+}
+
 fn insert_prepared_notes_with_tx(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
@@ -1310,21 +1592,24 @@ pub(crate) fn insert_pending_txs(
         return Ok(());
     }
 
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin migration pending insert: {e}"))?;
-    insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
-    tx.commit()
-        .map_err(|e| format!("Commit migration pending insert: {e}"))?;
-    Ok(())
+    with_wallet_db_write_lock("migration.insert_pending_txs", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin migration pending insert: {e}"))?;
+        insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+        tx.commit()
+            .map_err(|e| format!("Commit migration pending insert: {e}"))?;
+        Ok(())
+    })
 }
 
 pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     db_path: &str,
     run_id: &str,
     pending_txs: Vec<PendingMigrationTxInsert>,
+    remaining_child_retry_height: u32,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<(), String> {
@@ -1332,15 +1617,18 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
         return Ok(());
     }
 
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
-    insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
+    with_wallet_db_write_lock(
+        "migration.promote_signed_child_pczts_to_pending_txs",
+        || {
+            let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+            ensure_schema(&conn)?;
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
+            insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+            tx.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
              SET proof_retry_height = CASE
                      WHEN EXISTS (
                          SELECT 1
@@ -1353,24 +1641,26 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
                                  AND p.part_index = c.child_index
                            )
                      )
-                     THEN proof_retry_height
+                     THEN ?3
                      ELSE NULL
                  END,
                  updated_at_ms = ?1
              WHERE run_id = ?2"
-        ),
-        params![now_ms()?, run_id],
+                ),
+                params![now_ms()?, run_id, remaining_child_retry_height],
+            )
+            .map_err(|e| format!("Update migration proof retry height after promotion: {e}"))?;
+            // Retain the compact signatures and base PCZTs until the run completes.
+            // If a trusted denomination transaction is later reorged, the affected
+            // children can be re-anchored and proved again without another Keystone
+            // scan. `signed_child_pczt_count` reports only children that do not
+            // currently have a pending transaction, so retaining these rows does not
+            // make an already-promoted batch look unfinished.
+            tx.commit()
+                .map_err(|e| format!("Commit signed migration PCZT promotion: {e}"))?;
+            Ok(())
+        },
     )
-    .map_err(|e| format!("Update migration proof retry height after promotion: {e}"))?;
-    // Retain the compact signatures and base PCZTs until the run completes.
-    // If a trusted denomination transaction is later reorged, the affected
-    // children can be re-anchored and proved again without another Keystone
-    // scan. `signed_child_pczt_count` reports only children that do not
-    // currently have a pending transaction, so retaining these rows does not
-    // make an already-promoted batch look unfinished.
-    tx.commit()
-        .map_err(|e| format!("Commit signed migration PCZT promotion: {e}"))?;
-    Ok(())
 }
 
 pub(crate) fn set_run_approved_schedule(
@@ -1432,6 +1722,24 @@ pub(crate) fn target_values_for_run(db_path: &str, run_id: &str) -> Result<Vec<u
         .map_err(|e| format!("Decode migration target values: {e}"))
 }
 
+pub(crate) fn signed_schedule_origin_for_run(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Option<u32>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!(
+            "SELECT signed_schedule_origin_height
+             FROM {RUNS_TABLE}
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Read signed migration schedule origin: {e}"))
+}
+
 pub(crate) fn schedule_block_offset_for_part(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],
@@ -1488,7 +1796,7 @@ fn insert_pending_txs_with_tx(
         .map_err(|e| format!("Read migration run policy: {e}"))?;
     let network = WalletNetwork::from_str(&network)
         .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
-    let timing_policy = if network == WalletNetwork::Test {
+    let timing_policy = if matches!(network, WalletNetwork::Test | WalletNetwork::Regtest) {
         MigrationTimingPolicy::from_str(&timing_policy)?
     } else {
         MigrationTimingPolicy::Standard
@@ -1996,6 +2304,43 @@ pub(crate) fn signed_child_pczts_for_run(
     Ok(signed)
 }
 
+pub(crate) fn signed_child_proof_candidates_for_run(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Vec<SignedChildProofCandidate>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT c.selected_note_json, c.anchor_boundary_height
+             FROM {SIGNED_CHILD_PCZTS_TABLE} c
+             WHERE c.run_id = ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM {PENDING_TXS_TABLE} p
+                   WHERE p.run_id = c.run_id AND p.part_index = c.child_index
+               )
+             ORDER BY c.child_index ASC, c.message_id ASC"
+        ))
+        .map_err(|e| format!("Prepare signed migration proof candidate query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<u32>>(1)?))
+        })
+        .map_err(|e| format!("Query signed migration proof candidates: {e}"))?;
+
+    let mut candidates = Vec::new();
+    for row in rows {
+        let (selected_note_json, anchor_boundary_height) =
+            row.map_err(|e| format!("Read signed migration proof candidate: {e}"))?;
+        let selected_note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
+            .map_err(|e| format!("Decode signed migration proof candidate note: {e}"))?;
+        candidates.push(SignedChildProofCandidate {
+            selected_note,
+            anchor_boundary_height,
+        });
+    }
+    Ok(candidates)
+}
+
 pub(crate) fn signed_child_message_ids_by_part(
     db_path: &str,
     run_id: &str,
@@ -2038,6 +2383,32 @@ fn unpromoted_signed_child_pczt_count_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
 ) -> Result<u32, String> {
+    u32::try_from(unpromoted_signed_child_note_outpoints_with_conn(conn, run_id)?.len())
+        .map_err(|_| "Signed migration PCZT count overflow".to_string())
+}
+
+fn migration_child_materialization_exists_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<bool, String> {
+    conn.query_row(
+        &format!(
+            "SELECT EXISTS(
+                SELECT 1 FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1
+                UNION ALL
+                SELECT 1 FROM {PENDING_TXS_TABLE} WHERE run_id = ?1
+             )"
+        ),
+        params![run_id],
+        |row| row.get::<_, bool>(0),
+    )
+    .map_err(|e| format!("Check migration child materialization: {e}"))
+}
+
+fn unpromoted_signed_child_note_outpoints_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<Vec<(String, u32)>, String> {
     let pending = pending_migration_note_outpoints_with_conn(&conn, run_id)?;
     let mut stmt = conn
         .prepare_cached(&format!(
@@ -2045,23 +2416,22 @@ fn unpromoted_signed_child_pczt_count_with_conn(
              FROM {SIGNED_CHILD_PCZTS_TABLE}
              WHERE run_id = ?1"
         ))
-        .map_err(|e| format!("Prepare signed migration PCZT count: {e}"))?;
+        .map_err(|e| format!("Prepare unpromoted signed migration PCZT query: {e}"))?;
     let rows = stmt
         .query_map(params![run_id], |row| row.get::<_, String>(0))
-        .map_err(|e| format!("Query signed migration PCZT count: {e}"))?;
-    let mut count = 0u32;
+        .map_err(|e| format!("Query unpromoted signed migration PCZTs: {e}"))?;
+    let mut unpromoted = Vec::new();
     for row in rows {
         let selected_note_json =
-            row.map_err(|e| format!("Read signed migration PCZT count: {e}"))?;
+            row.map_err(|e| format!("Read unpromoted signed migration PCZT: {e}"))?;
         let note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
-            .map_err(|e| format!("Decode signed migration PCZT count note: {e}"))?;
-        if !pending.contains(&(note.txid_hex.to_ascii_lowercase(), note.output_index)) {
-            count = count
-                .checked_add(1)
-                .ok_or("Signed migration PCZT count overflow")?;
+            .map_err(|e| format!("Decode unpromoted signed migration PCZT note: {e}"))?;
+        let outpoint = (note.txid_hex.to_ascii_lowercase(), note.output_index);
+        if !pending.contains(&outpoint) {
+            unpromoted.push(outpoint);
         }
     }
-    Ok(count)
+    Ok(unpromoted)
 }
 
 pub(crate) fn pending_migration_note_outpoints(
@@ -3971,7 +4341,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
     // child transaction has reached trusted depth. Never infer it from the
     // per-transaction `confirmed` marker, which means only that the child is
     // currently mined and can still be reorged before the trust threshold.
-    let mut phase = conn
+    let phase = conn
         .query_row(
             &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
             params![run.run_id],
@@ -3980,13 +4350,6 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         .optional()
         .map_err(|e| format!("Read durable migration phase: {e}"))?
         .unwrap_or_else(|| run.phase.clone());
-    if phase == PHASE_READY_TO_MIGRATE
-        && pending_tx_count == 0
-        && prepared_note_count > 0
-        && !prepared_note_spend_metadata_available_for_run(conn, &run.run_id)?
-    {
-        phase = PHASE_WAITING_DENOM_CONFIRMATIONS.to_string();
-    }
     let denomination_confirmation_target = denomination_confirmations_required();
     // A private-migration draft is persisted before Keystone signs its
     // denomination PCZTs. It deliberately has no staged transactions yet;
@@ -4077,7 +4440,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         pending_split_stage_count,
         message: run.last_error,
         can_abandon,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
         schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
         next_action_height: timing_projection.next_action_height,
@@ -4096,15 +4459,24 @@ pub(crate) fn select_migration_batch_signing_part_indices(
     recovery_part_indices: &[u32],
 ) -> Result<Vec<u32>, String> {
     if !recovery_part_indices.is_empty() {
-        return Ok(recovery_part_indices.to_vec());
+        return Ok(recovery_part_indices
+            .iter()
+            .copied()
+            .take(MIGRATION_KEYSTONE_BATCH_MAX_PARTS as usize)
+            .collect());
     }
     if prepared_note_count == 0 {
         return Err("Migration run has no prepared denomination notes".to_string());
     }
-    if pending_tx_count > 0 || signed_child_pczt_count > 0 {
-        return Err("Migration transactions are already signed and scheduled".to_string());
+    let assigned_count = pending_tx_count
+        .checked_add(signed_child_pczt_count)
+        .ok_or("Migration signed transaction count overflow")?;
+    if assigned_count >= prepared_note_count {
+        return Err("All migration transactions are already signed and scheduled".to_string());
     }
-    Ok((0..prepared_note_count).collect())
+    Ok((assigned_count
+        ..prepared_note_count.min(assigned_count + MIGRATION_KEYSTONE_BATCH_MAX_PARTS))
+        .collect())
 }
 
 fn migration_parts_for_run(

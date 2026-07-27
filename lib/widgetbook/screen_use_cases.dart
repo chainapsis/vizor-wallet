@@ -2,6 +2,7 @@
 // widgetbook is dev-only; see `widgetbook.dart` for the boundary.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
@@ -797,6 +798,14 @@ Widget buildIronwoodMigrationHowItWorksUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationWhatToExpectUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/what-to-expect',
+    step: IronwoodMigrationFlowStep.whatToExpect,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_232_000_000)),
+  );
+}
+
 Widget buildIronwoodMigrationOptionsUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/options',
@@ -810,6 +819,38 @@ Widget buildIronwoodMigrationPrivateReviewUseCase(BuildContext context) {
     initialLocation: '/migration/private/review',
     step: IronwoodMigrationFlowStep.review,
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+  );
+}
+
+Widget buildIronwoodMigrationImmediateReviewUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/immediate/review',
+    step: IronwoodMigrationFlowStep.immediateReview,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+  );
+}
+
+Widget buildIronwoodMigrationImmediateKeystoneRequestUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/immediate/keystone/sign',
+    step: IronwoodMigrationFlowStep.immediateReview,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+  );
+}
+
+Widget buildIronwoodMigrationImmediateKeystoneScannerUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/immediate/keystone/sign',
+    step: IronwoodMigrationFlowStep.immediateReview,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    previewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+    previewImmediateKeystoneScanner: true,
   );
 }
 
@@ -860,6 +901,66 @@ Widget buildIronwoodMigrationPrivateStatusNeedsInputUseCase(
     data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_223_000_000)),
     previewStatus: _previewPrivateMigrationNeedsInputStatus(),
     isHardware: true,
+  );
+}
+
+Widget buildIronwoodMigrationPostPrepareWaitingUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareWaitingStatus(),
+  );
+}
+
+Widget buildIronwoodMigrationScheduleUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/schedule',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareProgressedStatus(),
+  );
+}
+
+Widget buildIronwoodMigrationCompleteUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareStatus(
+      phase: kIronwoodMigrationCompletePhase,
+      parts: _previewPostPrepareParts(completedNoteCount: 3),
+    ),
+  );
+}
+
+Widget buildIronwoodMigrationPostPrepareSigningUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareSigningStatus(),
+    isHardware: true,
+  );
+}
+
+Widget buildIronwoodMigrationPostPrepareProgressedUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareProgressedStatus(),
+  );
+}
+
+Widget buildIronwoodMigrationPostPrepareActiveUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/status',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewPostPrepareActiveStatus(),
   );
 }
 
@@ -1105,7 +1206,6 @@ Widget _buildMobileIronwoodMigrationUseCase({
     MobileIronwoodMigrationStep.howItWorks ||
     MobileIronwoodMigrationStep.options => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.fastReview => BigInt.from(14_224_000_000),
-    MobileIronwoodMigrationStep.privateStart ||
     MobileIronwoodMigrationStep.notifications ||
     MobileIronwoodMigrationStep.preparing ||
     MobileIronwoodMigrationStep.migrating => BigInt.from(14_220_000_000),
@@ -1290,6 +1390,8 @@ Widget _buildIronwoodMigrationUseCase({
   IronwoodMigrationReviewPreviewStage reviewPreviewStage =
       IronwoodMigrationReviewPreviewStage.review,
   bool isHardware = false,
+  rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
+  bool previewImmediateKeystoneScanner = false,
 }) {
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
   return ProviderScope(
@@ -1330,6 +1432,8 @@ Widget _buildIronwoodMigrationUseCase({
       data: data,
       previewStatus: previewStatus,
       reviewPreviewStage: reviewPreviewStage,
+      previewImmediatePlan: previewImmediatePlan,
+      previewImmediateKeystoneScanner: previewImmediateKeystoneScanner,
     ),
   );
 }
@@ -2009,6 +2113,8 @@ class _IronwoodMigrationHarness extends StatefulWidget {
     required this.data,
     this.previewStatus,
     this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.review,
+    this.previewImmediatePlan,
+    this.previewImmediateKeystoneScanner = false,
   });
 
   final String initialLocation;
@@ -2016,6 +2122,8 @@ class _IronwoodMigrationHarness extends StatefulWidget {
   final IronwoodMigrationFlowData data;
   final rust_sync.MigrationStatus? previewStatus;
   final IronwoodMigrationReviewPreviewStage reviewPreviewStage;
+  final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
+  final bool previewImmediateKeystoneScanner;
 
   @override
   State<_IronwoodMigrationHarness> createState() =>
@@ -2059,6 +2167,19 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
           ),
         ),
         GoRoute(
+          path: '/migration/what-to-expect',
+          builder: (_, _) => IronwoodMigrationFlowScreen(
+            step: IronwoodMigrationFlowStep.whatToExpect,
+            previewData:
+                widget.initialStep == IronwoodMigrationFlowStep.whatToExpect
+                ? widget.data
+                : _ironwoodMigrationFlowData(
+                    zatoshi: BigInt.from(14_232_000_000),
+                  ),
+            onOpenReleaseNotesOverride: () {},
+          ),
+        ),
+        GoRoute(
           path: '/migration/options',
           builder: (_, _) => IronwoodMigrationFlowScreen(
             step: IronwoodMigrationFlowStep.options,
@@ -2095,6 +2216,54 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
             previewStatus:
                 widget.previewStatus ?? _previewPrivateMigrationStatus(),
           ),
+        ),
+        GoRoute(
+          path: '/migration/private/schedule',
+          builder: (_, _) => IronwoodMigrationScheduleScreen(
+            previewStatus:
+                widget.previewStatus ?? _previewPrivateMigrationStatus(),
+          ),
+        ),
+        GoRoute(
+          path: '/migration/immediate/review',
+          builder: (_, _) => IronwoodMigrationFlowScreen(
+            step: IronwoodMigrationFlowStep.immediateReview,
+            previewData:
+                widget.initialStep == IronwoodMigrationFlowStep.immediateReview
+                ? widget.data
+                : _ironwoodMigrationFlowData(
+                    zatoshi: BigInt.from(14_224_000_000),
+                  ),
+            previewImmediatePlan:
+                widget.previewImmediatePlan ??
+                _previewMobileImmediateMigrationPlan(),
+            onOpenReleaseNotesOverride: () {},
+          ),
+        ),
+        GoRoute(
+          path: '/migration/immediate/keystone/sign',
+          builder: (_, _) {
+            final plan =
+                widget.previewImmediatePlan ??
+                _previewMobileImmediateMigrationPlan();
+            return IronwoodMigrationKeystoneImmediateSignScreen(
+              approvedPlan: plan,
+              previewRequest: rust_sync.KeystoneMigrationSigningRequest(
+                requestId: 'preview-immediate',
+                messages: [
+                  rust_sync.KeystoneMigrationMessage(
+                    id: 'preview-immediate-transaction',
+                    redactedPczt: Uint8List.fromList(const [1, 2, 3]),
+                  ),
+                ],
+                signingBatchLimit: 1,
+              ),
+              previewUrParts: const [
+                'ur:zcash-sign-request/preview-immediate-transaction',
+              ],
+              previewStartScanning: widget.previewImmediateKeystoneScanner,
+            );
+          },
         ),
         GoRoute(
           path: '/home',
@@ -2943,31 +3112,43 @@ rust_sync.MigrationStatus _previewPrivateMigrationTransferStatus() {
         1,
         4_000_000_000,
         rust_sync.MigrationPartState.completed,
+        scheduleOrder: 3,
+        scheduledHeight: 3_000_100,
       ),
       _previewMigrationPart(
         4,
         500_000_000,
         rust_sync.MigrationPartState.migrating,
+        scheduleOrder: 0,
+        scheduledHeight: 3_000_200,
       ),
       _previewMigrationPart(
         0,
         8_000_000_000,
         rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: 1,
+        scheduledHeight: 3_000_300,
       ),
       _previewMigrationPart(
         5,
         220_000_000,
         rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: 2,
+        scheduledHeight: 3_000_400,
       ),
       _previewMigrationPart(
         3,
         500_000_000,
         rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: 4,
+        scheduledHeight: 3_000_500,
       ),
       _previewMigrationPart(
         2,
         1_000_000_000,
         rust_sync.MigrationPartState.scheduled,
+        scheduleOrder: 5,
+        scheduledHeight: 3_000_600,
       ),
     ],
   );
@@ -3036,15 +3217,111 @@ rust_sync.MigrationStatus _previewPrivateMigrationNeedsInputStatus() {
   );
 }
 
+rust_sync.MigrationStatus _previewPostPrepareWaitingStatus() =>
+    _previewPostPrepareStatus(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      parts: _previewPostPrepareParts(),
+      proofReady: false,
+    );
+
+rust_sync.MigrationStatus _previewPostPrepareSigningStatus() =>
+    _previewPostPrepareStatus(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      parts: _previewPostPrepareParts(
+        firstState: rust_sync.MigrationPartState.needsInput,
+      ),
+      proofReady: true,
+      currentSigningPartIndices: const [0, 1, 2],
+    );
+
+rust_sync.MigrationStatus _previewPostPrepareProgressedStatus() =>
+    _previewPostPrepareStatus(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      parts: _previewPostPrepareParts(completedNoteCount: 1),
+    );
+
+rust_sync.MigrationStatus _previewPostPrepareActiveStatus() =>
+    _previewPostPrepareStatus(
+      phase: kIronwoodMigrationWaitingConfirmationsPhase,
+      parts: _previewPostPrepareParts(
+        completedNoteCount: 1,
+        activeNoteIndex: 1,
+      ),
+    );
+
+const _postPrepareNoteValues = <int>[
+  4_000_000_000,
+  3_500_000_000,
+  2_500_000_000,
+];
+
+List<rust_sync.MigrationPartStatus> _previewPostPrepareParts({
+  rust_sync.MigrationPartState firstState =
+      rust_sync.MigrationPartState.scheduled,
+  int completedNoteCount = 0,
+  int? activeNoteIndex,
+}) => [
+  for (var index = 0; index < _postPrepareNoteValues.length; index++)
+    _previewMigrationPart(
+      index,
+      _postPrepareNoteValues[index],
+      index < completedNoteCount
+          ? rust_sync.MigrationPartState.completed
+          : index == activeNoteIndex
+          ? rust_sync.MigrationPartState.confirming
+          : index == 0
+          ? firstState
+          : rust_sync.MigrationPartState.scheduled,
+    ),
+];
+
+rust_sync.MigrationStatus _previewPostPrepareStatus({
+  required String phase,
+  required List<rust_sync.MigrationPartStatus> parts,
+  bool? proofReady,
+  List<int> currentSigningPartIndices = const [],
+}) => rust_sync.MigrationStatus(
+  phase: phase,
+  activeRunId: 'post-prepare-preview-run',
+  targetValuesZatoshi: frb.Uint64List.fromList(_postPrepareNoteValues),
+  preparedNoteCount: _postPrepareNoteValues.length,
+  denominationConfirmationCount: 3,
+  denominationConfirmationTarget: 3,
+  denominationSplitCompletedCount: 1,
+  denominationSplitTotalCount: 1,
+  pendingTxCount: _postPrepareNoteValues.length,
+  broadcastedTxCount: 1,
+  confirmedTxCount: parts
+      .where((part) => part.state == rust_sync.MigrationPartState.completed)
+      .length,
+  totalCount: _postPrepareNoteValues.length,
+  signedChildPcztCount: 0,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 8,
+  scheduleMeanDelayBlocks: 108,
+  scheduleMaxDelayBlocks: 432,
+  proofReady: proofReady,
+  currentSigningPartIndices: currentSigningPartIndices.isEmpty
+      ? null
+      : frb.Uint32List.fromList(currentSigningPartIndices),
+  scheduledBroadcasts: const [],
+  parts: parts,
+);
+
 rust_sync.MigrationPartStatus _previewMigrationPart(
   int partIndex,
   int valueZatoshi,
-  rust_sync.MigrationPartState state,
-) {
+  rust_sync.MigrationPartState state, {
+  int? scheduleOrder,
+  int? scheduledHeight,
+}) {
   return rust_sync.MigrationPartStatus(
     partIndex: partIndex,
+    scheduleOrder: scheduleOrder,
     valueZatoshi: BigInt.from(valueZatoshi),
     state: state,
+    scheduledHeight: scheduledHeight,
     confirmationCount: state == rust_sync.MigrationPartState.completed ? 3 : 0,
     confirmationTarget: 3,
   );

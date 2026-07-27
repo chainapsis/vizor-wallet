@@ -40,6 +40,15 @@ pub(crate) fn open_wallet_db_for_read_with_timeout(
     Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
 }
 
+pub(crate) fn open_wallet_db_readonly_with_timeout(
+    db_path: &str,
+    network: WalletNetwork,
+    timeout: Duration,
+) -> Result<WalletDatabase, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(timeout))?;
+    Ok(WalletDb::from_connection(conn, network, SystemClock, OsRng))
+}
+
 pub(crate) fn open_wallet_raw_conn_with_timeout(
     db_path: &str,
     timeout: Duration,

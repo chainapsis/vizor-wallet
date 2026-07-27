@@ -37,11 +37,12 @@ class _IronwoodMigrationLoadingShell extends StatelessWidget {
   }
 }
 
-class _IronwoodMigrationShell extends StatelessWidget {
+class _IronwoodMigrationShell extends ConsumerWidget {
   const _IronwoodMigrationShell({
     required this.step,
     required this.data,
     this.previewPrivatePlan,
+    this.previewImmediatePlan,
     this.previewReviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.onOpenReleaseNotesOverride,
   });
@@ -49,11 +50,12 @@ class _IronwoodMigrationShell extends StatelessWidget {
   final IronwoodMigrationFlowStep step;
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final IronwoodMigrationReviewPreviewStage previewReviewStage;
   final VoidCallback? onOpenReleaseNotesOverride;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef _) {
     final content = switch (step) {
       IronwoodMigrationFlowStep.prepare => const Center(
         child: CircularProgressIndicator(),
@@ -65,8 +67,11 @@ class _IronwoodMigrationShell extends StatelessWidget {
       ),
       IronwoodMigrationFlowStep.howItWorks =>
         _IronwoodMigrationHowItWorksContent(data: data),
+      IronwoodMigrationFlowStep.whatToExpect =>
+        const _IronwoodMigrationWhatToExpectContent(),
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
+        immediateEnabled: true,
       ),
       IronwoodMigrationFlowStep.review =>
         _IronwoodMigrationPrivateReviewContent(
@@ -79,6 +84,11 @@ class _IronwoodMigrationShell extends StatelessWidget {
           forceAnalyzing:
               previewReviewStage ==
               IronwoodMigrationReviewPreviewStage.analyzing,
+        ),
+      IronwoodMigrationFlowStep.immediateReview =>
+        _IronwoodMigrationImmediateReviewContent(
+          data: data,
+          previewPlan: previewImmediatePlan,
         ),
     };
 
@@ -109,8 +119,10 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
         IronwoodMigrationFlowStep.prepare => 'Home',
         IronwoodMigrationFlowStep.intro => 'Home',
         IronwoodMigrationFlowStep.howItWorks => 'Ironwood Pool',
-        IronwoodMigrationFlowStep.options => 'How Migration Works',
+        IronwoodMigrationFlowStep.whatToExpect => 'How Migration Works',
+        IronwoodMigrationFlowStep.options => 'About Migration',
         IronwoodMigrationFlowStep.review => 'Migration Options',
+        IronwoodMigrationFlowStep.immediateReview => 'Migration Options',
       },
       onTap: () {
         switch (step) {
@@ -120,9 +132,13 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
             context.go('/home');
           case IronwoodMigrationFlowStep.howItWorks:
             context.go('/migration/intro');
-          case IronwoodMigrationFlowStep.options:
+          case IronwoodMigrationFlowStep.whatToExpect:
             context.go('/migration/how-it-works');
+          case IronwoodMigrationFlowStep.options:
+            context.go('/migration/what-to-expect');
           case IronwoodMigrationFlowStep.review:
+            context.go('/migration/options');
+          case IronwoodMigrationFlowStep.immediateReview:
             context.go('/migration/options');
         }
       },
@@ -132,7 +148,10 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
 
 Widget _privateStatusToolbar(BuildContext context) {
   return AppPaneToolbar(
-    leading: AppBackLink(label: 'Home', onTap: () => context.go('/home')),
+    leading: AppBackLink(
+      label: 'Ironwood Pool',
+      onTap: () => context.go('/home'),
+    ),
   );
 }
 
@@ -141,11 +160,13 @@ class _IronwoodMigrationFrame extends StatelessWidget {
     required this.toolbar,
     required this.child,
     required this.disableSidebarActions,
+    this.overlay,
   });
 
   final Widget toolbar;
   final Widget child;
   final bool disableSidebarActions;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -156,9 +177,15 @@ class _IronwoodMigrationFrame extends StatelessWidget {
             ? const {'/swap', '/voting'}
             : const {},
       ),
-      pane: AppPaneScrollScaffold(
-        toolbar: toolbar,
-        child: Align(alignment: Alignment.topCenter, child: child),
+      pane: Stack(
+        fit: StackFit.expand,
+        children: [
+          AppPaneScrollScaffold(
+            toolbar: toolbar,
+            child: Align(alignment: Alignment.topCenter, child: child),
+          ),
+          ?overlay,
+        ],
       ),
     );
   }
@@ -186,14 +213,14 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
         children: [
           Positioned(
             left: 0,
-            top: 16,
+            top: 26,
             width: 420,
             height: 200,
             child: _PoolMigrationHero(data: data),
           ),
           Positioned(
             left: 0,
-            top: 250,
+            top: 257,
             width: 420,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -239,7 +266,7 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
           ),
           Positioned(
             left: 95,
-            top: 540,
+            top: 548,
             width: 230,
             child: _FlowButtons(
               primaryKey: const ValueKey(
@@ -260,10 +287,64 @@ class _IronwoodMigrationIntroContent extends StatelessWidget {
   }
 }
 
-class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
+class _IronwoodMigrationHowItWorksContent extends StatefulWidget {
   const _IronwoodMigrationHowItWorksContent({required this.data});
 
   final IronwoodMigrationFlowData data;
+
+  @override
+  State<_IronwoodMigrationHowItWorksContent> createState() =>
+      _IronwoodMigrationHowItWorksContentState();
+}
+
+class _IronwoodMigrationHowItWorksContentState
+    extends State<_IronwoodMigrationHowItWorksContent> {
+  static const _steps = [
+    (
+      title: 'Orchard (legacy shielded) balance is frozen',
+      body:
+          'A one-time migration to Ironwood is required to spend your existing '
+          'shielded balance.',
+    ),
+    (
+      title: 'Pre-migration preparations',
+      body:
+          'Vizor splits your total balance into smaller, common-sized notes '
+          'before migrating.',
+    ),
+    (
+      title: 'Delayed and randomized migrations',
+      body:
+          'Vizor sends parts at staggered intervals across multiple batches '
+          'to reduce traceability.',
+    ),
+  ];
+
+  late final PageController _pageController;
+  var _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _next() {
+    if (_page < _steps.length - 1) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+    context.go('/migration/what-to-expect');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -276,10 +357,10 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
         children: [
           Positioned(
             left: 12,
-            top: 24,
+            top: 45,
             width: 396,
             child: Text(
-              'How Migration Works',
+              'How the Migration Works',
               textAlign: TextAlign.center,
               style: AppTypography.headlineLarge.copyWith(
                 color: colors.text.accent,
@@ -288,55 +369,128 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
           ),
           Positioned(
             left: 12,
-            top: 81.5,
+            top: 142,
             width: 396,
-            child: const Column(
+            height: 280,
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: _steps.length,
+              onPageChanged: (value) => setState(() => _page = value),
+              itemBuilder: (context, index) {
+                final step = _steps[index];
+                return DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.background.ground,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: 160,
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              left: 16,
+                              top: 24,
+                              child: Text(
+                                'Step ${index + 1}',
+                                style: AppTypography.labelLarge.copyWith(
+                                  color: colors.text.secondary,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              width: 190,
+                              height: 160,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.asset(
+                                  _ironwoodMigrationHowStepAssets[index],
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.center,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  step.title,
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: colors.text.accent,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: 330,
+                                  child: Text(
+                                    step.body,
+                                    style: AppTypography.bodyMedium.copyWith(
+                                      color: colors.text.secondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          Positioned(
+            left: 166,
+            top: 454,
+            width: 88,
+            height: 8,
+            child: Row(
               children: [
-                _ProcessCard(
-                  steps: [
-                    _ProcessStepData(
-                      number: 1,
-                      title: 'Choose how you migrate',
-                      body:
-                          'Compare a privacy-optimized schedule with a faster '
-                          'migration.',
+                for (var index = 0; index < _steps.length; index++) ...[
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    width: index == _page ? 40 : 20,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: index == _page
+                          ? colors.background.inverse
+                          : colors.background.overlay,
+                      borderRadius: BorderRadius.circular(AppRadii.full),
                     ),
-                    _ProcessStepData(
-                      number: 2,
-                      title: 'Prepare your balance',
-                      body:
-                          'Vizor reorganizes your balance into common-sized '
-                          'parts before migration begins.',
-                    ),
-                    _ProcessStepData(
-                      number: 3,
-                      title: 'Move to Ironwood',
-                      body:
-                          'Privacy-optimized migrations send parts at staggered '
-                          'times to reduce linkability.',
-                    ),
-                  ],
-                ),
-                SizedBox(height: 12),
-                _SpendAsFundsArriveCard(),
+                  ),
+                  if (index < _steps.length - 1) const SizedBox(width: 4),
+                ],
               ],
             ),
           ),
           Positioned(
             left: 95,
-            top: 540,
+            top: 596,
             width: 230,
             child: AppButton(
               key: const ValueKey(
                 'ironwood_migration_how_it_works_continue_button',
               ),
-              onPressed: () => context.go('/migration/options'),
+              onPressed: _next,
               height: 44,
               minWidth: 230,
               expand: true,
               constrainContent: true,
               child: const Text(
-                'Continue',
+                'Next',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -348,10 +502,193 @@ class _IronwoodMigrationHowItWorksContent extends StatelessWidget {
   }
 }
 
+class _IronwoodMigrationWhatToExpectContent extends StatelessWidget {
+  const _IronwoodMigrationWhatToExpectContent();
+
+  static const _items = [
+    (
+      title: 'Migrations can take a long time',
+      body:
+          'Ironwood migrations can take anywhere from several hours up to a '
+          'couple of days depending on your migration amount.',
+    ),
+    (
+      title: 'You can spend as funds arrive',
+      body:
+          'Each confirmed Ironwood amount is available to spend while the '
+          'rest of the migration continues.',
+    ),
+    (
+      title: 'Keep Vizor running',
+      body:
+          'Vizor continues while minimized. Migration pauses while your Mac '
+          'sleeps or Vizor is locked, then resumes when you return.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 12,
+            top: 68,
+            width: 396,
+            child: Text(
+              'What to expect',
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineLarge.copyWith(
+                color: colors.text.accent,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 147,
+            width: 396,
+            height: 371,
+            child: Stack(
+              children: [
+                for (var index = 0; index < _items.length; index++)
+                  Positioned(
+                    left: 0,
+                    top: switch (index) {
+                      0 => 0,
+                      1 => 148,
+                      _ => 275,
+                    },
+                    width: 396,
+                    height: switch (index) {
+                      0 => 116,
+                      1 => 95,
+                      _ => 96,
+                    },
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _MigrationExpectationIllustration(
+                          index: index,
+                          asset: _ironwoodMigrationExpectationAssets[index],
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _items[index].title,
+                                style: AppTypography.bodyMediumStrong.copyWith(
+                                  color: colors.text.accent,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _items[index].body,
+                                style: AppTypography.bodyMedium.copyWith(
+                                  color: colors.text.secondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Positioned(
+                  left: 80,
+                  top: 115,
+                  right: 0,
+                  child: Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: colors.border.subtle,
+                  ),
+                ),
+                Positioned(
+                  left: 80,
+                  top: 242,
+                  right: 0,
+                  child: Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: colors.border.subtle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            child: AppButton(
+              key: const ValueKey(
+                'ironwood_migration_what_to_expect_continue_button',
+              ),
+              onPressed: () => context.go('/migration/options'),
+              height: 44,
+              minWidth: 230,
+              expand: true,
+              constrainContent: true,
+              child: const Text('Next'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MigrationExpectationIllustration extends StatelessWidget {
+  const _MigrationExpectationIllustration({
+    required this.index,
+    required this.asset,
+  });
+
+  final int index;
+  final String asset;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = switch (index) {
+      0 => const Color(0xFF8F4BE8),
+      1 => const Color(0xFFE6B800),
+      _ => const Color(0xFFD3155B),
+    };
+    final scale = switch (index) {
+      0 => 1.18,
+      1 => 1.2,
+      _ => 1.22,
+    };
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: ColoredBox(
+        color: background,
+        child: SizedBox.square(
+          dimension: 64,
+          child: Transform.scale(
+            scale: scale,
+            child: Image.asset(asset, fit: BoxFit.cover),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _IronwoodMigrationOptionsContent extends StatefulWidget {
-  const _IronwoodMigrationOptionsContent({required this.data});
+  const _IronwoodMigrationOptionsContent({
+    required this.data,
+    required this.immediateEnabled,
+  });
 
   final IronwoodMigrationFlowData data;
+  final bool immediateEnabled;
 
   @override
   State<_IronwoodMigrationOptionsContent> createState() =>
@@ -365,6 +702,9 @@ class _IronwoodMigrationOptionsContentState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final selected = widget.immediateEnabled
+        ? _selected
+        : _MigrationMode.private;
     return SizedBox(
       width: 420,
       height: 656,
@@ -377,7 +717,7 @@ class _IronwoodMigrationOptionsContentState
             child: Column(
               children: [
                 Text(
-                  'Choose How to Migrate',
+                  'Choose how to migrate',
                   textAlign: TextAlign.center,
                   style: AppTypography.headlineLarge.copyWith(
                     color: colors.text.accent,
@@ -408,10 +748,12 @@ class _IronwoodMigrationOptionsContentState
                 _MigrationOptionCard(
                   key: const ValueKey('ironwood_migration_private_option'),
                   mode: _MigrationMode.private,
-                  selected: _selected == _MigrationMode.private,
-                  title: 'Privacy optimized',
+                  selected: selected == _MigrationMode.private,
+                  title: 'Private',
                   badge: 'Recommended',
-                  body: 'Sends independent parts over different time windows.',
+                  body:
+                      'Splits transactions into multiple parts to minimize '
+                      'traceability, but will take longer.',
                   onTap: () =>
                       setState(() => _selected = _MigrationMode.private),
                 ),
@@ -419,10 +761,15 @@ class _IronwoodMigrationOptionsContentState
                 _MigrationOptionCard(
                   key: const ValueKey('ironwood_migration_fast_option'),
                   mode: _MigrationMode.fast,
-                  selected: _selected == _MigrationMode.fast,
-                  title: 'Faster but less private',
-                  body: 'Coming soon. Moves funds sooner with less separation.',
-                  onTap: () => setState(() => _selected = _MigrationMode.fast),
+                  selected: selected == _MigrationMode.fast,
+                  title: 'Immediate',
+                  body: widget.immediateEnabled
+                      ? 'Migrates your entire balance in one batch. Fast but '
+                            'less private.'
+                      : 'Immediate migration is not available with Keystone.',
+                  onTap: widget.immediateEnabled
+                      ? () => setState(() => _selected = _MigrationMode.fast)
+                      : null,
                 ),
               ],
             ),
@@ -433,15 +780,22 @@ class _IronwoodMigrationOptionsContentState
             width: 230,
             child: AppButton(
               key: const ValueKey('ironwood_migration_select_review_button'),
-              onPressed: _selected == _MigrationMode.private
-                  ? () => context.go('/migration/private/review')
-                  : null,
+              onPressed: () {
+                final selectedAtTap = widget.immediateEnabled
+                    ? _selected
+                    : _MigrationMode.private;
+                context.go(
+                  selectedAtTap == _MigrationMode.private
+                      ? '/migration/private/review'
+                      : '/migration/immediate/review',
+                );
+              },
               height: 44,
               minWidth: 230,
               expand: true,
               constrainContent: true,
               trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-              child: const Text('Select & Review'),
+              child: const Text('Select & review'),
             ),
           ),
         ],

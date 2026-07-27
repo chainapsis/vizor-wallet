@@ -42,6 +42,11 @@ class DriverHandler(BaseHTTPRequestHandler):
     activation_height: str
     wallet_snapshot: Optional[Dict[str, str]] = None
     wallet_snapshot_lock = threading.Lock()
+    # ThreadingHTTPServer handles requests concurrently, but zcashd and
+    # lightwalletd mutations must be observed as one atomic operation. Without
+    # this lock, a second /mine request can advance the chain while the first
+    # mine.sh is waiting for its exact lightwalletd tip hash.
+    chain_operation_lock = threading.Lock()
 
     @classmethod
     def ironwood_env(cls) -> Dict[str, str]:
@@ -87,12 +92,13 @@ class DriverHandler(BaseHTTPRequestHandler):
         try:
             payload = self.read_json()
             if self.path == "/activate":
-                output = run_command(
-                    self.repo_root,
-                    ["scripts/ironwood-regtest/activate-ironwood.sh"],
-                    timeout=300,
-                    env=self.ironwood_env(),
-                )
+                with self.chain_operation_lock:
+                    output = run_command(
+                        self.repo_root,
+                        ["scripts/ironwood-regtest/activate-ironwood.sh"],
+                        timeout=300,
+                        env=self.ironwood_env(),
+                    )
                 self.respond(200, {"ok": True, "output": output})
                 return
 
@@ -100,23 +106,25 @@ class DriverHandler(BaseHTTPRequestHandler):
                 blocks = int(payload.get("blocks", 1))
                 if blocks <= 0:
                     raise ValueError("blocks must be positive")
-                output = run_command(
-                    self.repo_root,
-                    ["scripts/ironwood-regtest/mine.sh", str(blocks)],
-                    timeout=300,
-                    env=self.ironwood_env(),
-                )
+                with self.chain_operation_lock:
+                    output = run_command(
+                        self.repo_root,
+                        ["scripts/ironwood-regtest/mine.sh", str(blocks)],
+                        timeout=300,
+                        env=self.ironwood_env(),
+                    )
                 self.respond(200, {"ok": True, "output": output})
                 return
 
             if self.path == "/reorg":
                 fork_height = int(payload["forkHeight"])
-                output = run_command(
-                    self.repo_root,
-                    ["scripts/ironwood-regtest/reorg.sh", str(fork_height)],
-                    timeout=300,
-                    env=self.ironwood_env(),
-                )
+                with self.chain_operation_lock:
+                    output = run_command(
+                        self.repo_root,
+                        ["scripts/ironwood-regtest/reorg.sh", str(fork_height)],
+                        timeout=300,
+                        env=self.ironwood_env(),
+                    )
                 self.respond(200, json.loads(output))
                 return
 
@@ -124,66 +132,69 @@ class DriverHandler(BaseHTTPRequestHandler):
                 txids = payload.get("txids", [])
                 if not isinstance(txids, list) or not txids:
                     raise ValueError("txids must be a non-empty list")
-                output = run_command(
-                    self.repo_root,
-                    [
-                        "scripts/ironwood-regtest/release-reorg-transactions.sh",
-                        *[str(txid) for txid in txids],
-                    ],
-                    timeout=120,
-                    env=self.ironwood_env(),
-                )
+                with self.chain_operation_lock:
+                    output = run_command(
+                        self.repo_root,
+                        [
+                            "scripts/ironwood-regtest/release-reorg-transactions.sh",
+                            *[str(txid) for txid in txids],
+                        ],
+                        timeout=120,
+                        env=self.ironwood_env(),
+                    )
                 self.respond(200, json.loads(output))
                 return
 
             if self.path in {"/lightwalletd/stop", "/lightwalletd/start"}:
                 action = "stop" if self.path.endswith("/stop") else "start"
-                run_command(
-                    self.repo_root,
-                    [
-                        "docker",
-                        "compose",
-                        "-f",
-                        "docker-compose.zcash-ironwood-regtest.yml",
-                        action,
-                        "lightwalletd",
-                    ],
-                    timeout=240,
-                    env=self.ironwood_env(),
-                )
-                if action == "start":
+                with self.chain_operation_lock:
                     run_command(
+                        self.repo_root,
+                        [
+                            "docker",
+                            "compose",
+                            "-f",
+                            "docker-compose.zcash-ironwood-regtest.yml",
+                            action,
+                            "lightwalletd",
+                        ],
+                        timeout=240,
+                        env=self.ironwood_env(),
+                    )
+                    if action == "start":
+                        run_command(
+                            self.repo_root,
+                            ["scripts/ironwood-regtest/status.sh"],
+                            timeout=240,
+                            env=self.ironwood_env(),
+                        )
+                self.respond(200, {"ok": True})
+                return
+
+            if self.path == "/node/restart":
+                with self.chain_operation_lock:
+                    run_command(
+                        self.repo_root,
+                        [
+                            "docker",
+                            "compose",
+                            "-f",
+                            "docker-compose.zcash-ironwood-regtest.yml",
+                            "up",
+                            "-d",
+                            "--force-recreate",
+                            "zcashd",
+                            "lightwalletd",
+                        ],
+                        timeout=300,
+                        env=self.ironwood_env(),
+                    )
+                    output = run_command(
                         self.repo_root,
                         ["scripts/ironwood-regtest/status.sh"],
                         timeout=240,
                         env=self.ironwood_env(),
                     )
-                self.respond(200, {"ok": True})
-                return
-
-            if self.path == "/node/restart":
-                run_command(
-                    self.repo_root,
-                    [
-                        "docker",
-                        "compose",
-                        "-f",
-                        "docker-compose.zcash-ironwood-regtest.yml",
-                        "up",
-                        "-d",
-                        "--force-recreate",
-                        "zcashd",
-                        "lightwalletd",
-                    ],
-                    timeout=300,
-                    env=self.ironwood_env(),
-                )
-                output = run_command(
-                    self.repo_root,
-                    ["scripts/ironwood-regtest/status.sh"],
-                    timeout=240,
-                    env=self.ironwood_env(),
-                )
                 self.respond(200, {"ok": True, "status": json.loads(output)})
                 return
 

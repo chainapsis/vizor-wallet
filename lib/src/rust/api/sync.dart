@@ -345,6 +345,40 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
   approvedInputNoteCount: approvedInputNoteCount,
 );
 
+Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationImmediatePczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required BigInt approvedTotalInputZatoshi,
+  required BigInt approvedFeeZatoshi,
+  required BigInt approvedMigratedZatoshi,
+  required int approvedInputNoteCount,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationImmediatePczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedTotalInputZatoshi: approvedTotalInputZatoshi,
+  approvedFeeZatoshi: approvedFeeZatoshi,
+  approvedMigratedZatoshi: approvedMigratedZatoshi,
+  approvedInputNoteCount: approvedInputNoteCount,
+);
+
+Future<IronwoodMigrationResult> completeOrchardMigrationImmediatePczt({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<KeystoneSignedMigrationMessage> signedMessages,
+}) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationImmediatePczt(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  requestId: requestId,
+  signedMessages: signedMessages,
+);
+
 Future<OrchardMigrationImmediatePlan?> getOrchardMigrationImmediatePlan({
   required String dbPath,
   required String network,
@@ -531,14 +565,20 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
       spacePreparationBroadcasts: spacePreparationBroadcasts,
     );
 
+/// Prepares the split and migration PCZTs for one Keystone signing session.
+///
+/// The approved schedule must still match the denomination plan when the
+/// signing request is created.
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required List<MigrationScheduledTransfer> approvedSchedule,
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
 );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
@@ -1503,6 +1543,11 @@ class MigrationStatus {
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
   final int? nextActionHeight;
+
+  /// Exact foreground proof preflight. `None` means no signed proof action
+  /// is currently applicable; `Some(false)` keeps a height-due action gated
+  /// until its anchor checkpoint and witness are actually available.
+  final bool? proofReady;
   final int? estimatedCompletionHeight;
   final int? nextActionPartIndex;
   final Uint32List? currentSigningPartIndices;
@@ -1530,6 +1575,7 @@ class MigrationStatus {
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
     this.nextActionHeight,
+    this.proofReady,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
     this.currentSigningPartIndices,
@@ -1559,6 +1605,7 @@ class MigrationStatus {
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
       nextActionHeight.hashCode ^
+      proofReady.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
       currentSigningPartIndices.hashCode ^
@@ -1593,6 +1640,7 @@ class MigrationStatus {
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           nextActionHeight == other.nextActionHeight &&
+          proofReady == other.proofReady &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&
           currentSigningPartIndices == other.currentSigningPartIndices &&

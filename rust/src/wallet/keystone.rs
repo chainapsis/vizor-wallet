@@ -121,7 +121,7 @@ pub(crate) const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
 const ZCASH_SIGN_STATUS_SIGNED: u32 = 0;
 // Must match the signer's `ZCASH_BATCH_MAX_PCZTS`; the device rejects any larger
 // batch before checking or signing it.
-pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 35;
+pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 40;
 // Must match the signer's `ZCASH_BATCH_MAX_TOTAL_BYTES`. The firmware applies
 // this to both the canonical PCZT byte total and request-id + Postcard envelope.
 const ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES: usize = 512 * 1024;
@@ -839,7 +839,7 @@ mod tests {
     }
 
     #[test]
-    fn encodes_thirty_five_zcash_sign_batch_messages() {
+    fn encodes_forty_zcash_sign_batch_messages() {
         let messages = (1..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
             .map(|index| ZcashBatchMessageInput {
                 id: format!("tx-{index}"),
@@ -847,10 +847,10 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let parts = encode_zcash_sign_batch_ur_parts("request-35", &messages, 1_000_000)
-            .expect("35-message batch should encode");
+        let parts = encode_zcash_sign_batch_ur_parts("request-40", &messages, 1_000_000)
+            .expect("40-message batch should encode");
         let envelope = ZcashSignBatch::try_from(decode_test_ur_parts(&parts))
-            .expect("35-message zcash-sign-batch CBOR should decode");
+            .expect("40-message zcash-sign-batch CBOR should decode");
         let request =
             BatchSignRequest::parse(envelope.get_data()).expect("Postcard request should decode");
 

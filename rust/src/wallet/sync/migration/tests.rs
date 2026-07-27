@@ -1869,7 +1869,6 @@ fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
         [],
     )
     .unwrap();
-
     let mut rng = StdRng::seed_from_u64(0x318);
     let after_existing = next_preparation_scheduled_height(
         &conn,
@@ -1894,6 +1893,17 @@ fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
 
 #[test]
 fn fast_testnet_uses_accelerated_preparation_delays() {
+    assert_eq!(
+        preparation_schedule_parameters(
+            WalletNetwork::Regtest,
+            MigrationTimingPolicy::FastTestnet,
+        ),
+        (
+            FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS,
+            FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS,
+        ),
+    );
+
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     insert_preparation_policy_test_run(
@@ -1911,6 +1921,15 @@ fn fast_testnet_uses_accelerated_preparation_delays() {
         [],
     )
     .unwrap();
+    assert_eq!(
+        timing_policy_for_run_with_conn(
+            &conn,
+            "fast-testnet-preparation",
+            WalletNetwork::Regtest,
+        )
+        .unwrap(),
+        MigrationTimingPolicy::FastTestnet,
+    );
 
     let mut rng = StdRng::seed_from_u64(0x318);
     for _ in 0..32 {
@@ -2102,6 +2121,16 @@ fn regtest_schedule_is_short_but_still_requires_blocks() {
 
 #[test]
 fn fast_testnet_uses_accelerated_schedule_and_anchor_timing() {
+    assert_eq!(
+        schedule_parameters_with_policy(
+            WalletNetwork::Regtest,
+            MigrationTimingPolicy::FastTestnet,
+        ),
+        (
+            FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS,
+            FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS,
+        ),
+    );
     assert_eq!(
         schedule_parameters_with_policy(WalletNetwork::Test, MigrationTimingPolicy::FastTestnet,),
         (
@@ -2421,6 +2450,72 @@ fn approved_schedule_controls_storage_and_overdue_catch_up() {
 }
 
 #[test]
+fn regtest_fast_policy_survives_pending_transaction_materialization() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, timing_policy)
+             VALUES ('run-fast', 'account-1', 'regtest', ?1, ?2, 1, 1,
+                     '[100]', 'fast_testnet')"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    drop(conn);
+
+    let schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100,
+        block_offset: 12,
+    }];
+    set_run_approved_schedule(
+        &db_path,
+        "run-fast",
+        WalletNetwork::Regtest,
+        &schedule,
+        &[100],
+    )
+    .unwrap();
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: None,
+    };
+    insert_pending_txs(
+        &db_path,
+        "run-fast",
+        vec![PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: "22".repeat(32),
+            raw_tx: vec![0xaa],
+            target_height: 501,
+            anchor_boundary_height: None,
+            expiry_height: 69_120,
+            scheduled_height: 512,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note,
+            },
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+}
+
+#[test]
 fn approved_schedule_part_index_disambiguates_equal_values() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
@@ -2586,7 +2681,25 @@ fn last_broadcast_keeps_run_materializing_while_signed_child_remains() {
 }
 
 #[test]
-fn approved_schedule_supports_incremental_proof_persistence() {
+fn durable_anchor_check_matches_the_pinned_librustzcash_interval() {
+    // librustzcash retains interval-aligned checkpoints at or after anchor
+    // retention activation. Releasing one of those would drop a witness anchor
+    // the wallet still depends on, so migration must recognise every one of
+    // them, not only the ones that happen to be multiples of a wider interval.
+    let floor = Some(BlockHeight::from_u32(1_000));
+
+    assert!(is_wallet_durable_anchor(1_008, floor));
+    assert!(is_wallet_durable_anchor(1_152, floor));
+    assert!(!is_wallet_durable_anchor(1_100, floor));
+
+    // Below activation librustzcash retains nothing, so migration owns the
+    // checkpoint outright and may release it.
+    assert!(!is_wallet_durable_anchor(864, floor));
+    assert!(!is_wallet_durable_anchor(144, None));
+}
+
+#[test]
+fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -2603,6 +2716,23 @@ fn approved_schedule_supports_incremental_proof_persistence() {
     )
     .unwrap();
     for (part_index, target_height) in [(0, 501), (1, 999)] {
+        let selected_note = PreparedOrchardNoteRef {
+            txid_hex: format!("{:064x}", part_index + 10),
+            output_index: 0,
+            value_zatoshi: if part_index == 0 { 110 } else { 210 },
+            note_version: 2,
+            nullifier_hex: None,
+        };
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version,
+                  nullifier_hex, lock_state)
+                 VALUES ('run-1', ?1, 0, ?2, 2, NULL, 'locked')"
+            ),
+            params![selected_note.txid_hex, selected_note.value_zatoshi],
+        )
+        .unwrap();
         conn.execute(
             &format!(
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
@@ -2611,7 +2741,7 @@ fn approved_schedule_supports_incremental_proof_persistence() {
                   scheduled_height, value_zatoshi, fee_zatoshi,
                   selected_note_json, metadata_json)
                  VALUES ('run-1', ?1, ?2, 'base', 'sigs', ?3, ?4,
-                         ?5, ?6, 10, '{{}}', '{{}}')"
+                         ?5, ?6, 10, ?7, '{{}}')"
             ),
             params![
                 format!("child-{part_index}"),
@@ -2621,6 +2751,7 @@ fn approved_schedule_supports_incremental_proof_persistence() {
                     .unwrap(),
                 if part_index == 0 { 502 } else { 501 },
                 if part_index == 0 { 100 } else { 200 },
+                serde_json::to_string(&selected_note).unwrap(),
             ],
         )
         .unwrap();
@@ -2676,24 +2807,92 @@ fn approved_schedule_supports_incremental_proof_persistence() {
 
     set_proof_retry_height(&db_path, "run-1", 1_200).unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(1_200));
+    assert_eq!(
+        prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest)
+            .unwrap()
+            .len(),
+        2
+    );
+    let candidates = signed_child_proof_candidates_for_run(&db_path, "run-1").unwrap();
+    assert_eq!(candidates.len(), 2);
     promote_signed_child_pczts_to_pending_txs(
         &db_path,
         "run-1",
         vec![pending(0, 100, 501)],
+        1_200,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
     .unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), Some(1_200));
+    let retention_candidates =
+        prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest).unwrap();
+    assert_eq!(
+        retention_candidates
+            .iter()
+            .map(|candidate| candidate.note.txid_hex.as_str())
+            .collect::<Vec<_>>(),
+        vec![format!("{:064x}", 11)]
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    // PHASE_BROADCASTING is persisted before the first send of a broadcast
+    // pass, so an interrupted pass leaves a run there while it still owns
+    // unpromoted signed children. Dropping it from retention released their
+    // anchors and let the next full-size scan batch prune the checkpoint.
+    for recoverable_phase in [PHASE_FAILED_RECOVERABLE, PHASE_PAUSED, PHASE_BROADCASTING] {
+        conn.execute(
+            &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = 'run-1'"),
+            params![recoverable_phase],
+        )
+        .unwrap();
+        let candidates =
+            prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest).unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.note.txid_hex.as_str())
+                .collect::<Vec<_>>(),
+            vec![format!("{:064x}", 11)]
+        );
+    }
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = 'run-1'"),
+        params![PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
+    drop(conn);
+    let candidates = signed_child_proof_candidates_for_run(&db_path, "run-1").unwrap();
+    assert_eq!(
+        candidates,
+        vec![SignedChildProofCandidate {
+            selected_note: PreparedOrchardNoteRef {
+                txid_hex: format!("{:064x}", 11),
+                output_index: 0,
+                value_zatoshi: 210,
+                note_version: 2,
+                nullifier_hex: None,
+            },
+            anchor_boundary_height: None,
+        }]
+    );
     promote_signed_child_pczts_to_pending_txs(
         &db_path,
         "run-1",
         vec![pending(1, 200, 999)],
+        1_400,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
     .unwrap();
     assert_eq!(proof_retry_height(&db_path, "run-1").unwrap(), None);
+    assert!(
+        prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(signed_child_proof_candidates_for_run(&db_path, "run-1")
+        .unwrap()
+        .is_empty());
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     let mut stmt = conn
@@ -2715,6 +2914,101 @@ fn approved_schedule_supports_incremental_proof_persistence() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert_eq!(stored, vec![(1, 500, 501), (0, 500, 502)]);
+}
+
+#[test]
+fn paused_unmaterialized_run_retains_all_prepared_notes() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES ('run-1', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,200]')"
+        ),
+        params![db_path, PHASE_PAUSED],
+    )
+    .unwrap();
+    for index in 0..2 {
+        conn.execute(
+            &format!(
+                "INSERT INTO {PREPARED_NOTES_TABLE}
+                 (run_id, txid_hex, output_index, value_zatoshi, note_version, lock_state)
+                 VALUES ('run-1', ?1, 0, ?2, 2, 'locked')"
+            ),
+            params![format!("{:064x}", index + 1), 100 + index],
+        )
+        .unwrap();
+    }
+    drop(conn);
+
+    assert_eq!(
+        prepared_anchor_retention_candidates(&db_path, WalletNetwork::Regtest)
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn migration_anchor_retention_ownership_transfers_and_releases() {
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    drop(conn);
+
+    let durable_height = 144;
+    let desired = BTreeSet::from([
+        ("run-1".to_string(), 100),
+        ("run-1".to_string(), 101),
+        ("run-1".to_string(), durable_height),
+    ]);
+    assert!(stage_migration_anchor_retention_references(
+        &db_path,
+        WalletNetwork::Regtest,
+        &desired,
+        &BTreeSet::from([100, durable_height]),
+    )
+    .unwrap()
+    .is_empty());
+
+    let desired = BTreeSet::from([
+        ("run-2".to_string(), 101),
+        ("run-2".to_string(), durable_height),
+    ]);
+    let released = stage_migration_anchor_retention_references(
+        &db_path,
+        WalletNetwork::Regtest,
+        &desired,
+        &BTreeSet::from([100, 101, durable_height]),
+    )
+    .unwrap();
+    assert_eq!(released, vec![100]);
+    finish_migration_anchor_retention_releases(&db_path, WalletNetwork::Regtest, &released)
+        .unwrap();
+
+    let released = stage_migration_anchor_retention_references(
+        &db_path,
+        WalletNetwork::Regtest,
+        &BTreeSet::new(),
+        &BTreeSet::from([101, durable_height]),
+    )
+    .unwrap();
+    assert_eq!(released, vec![101]);
+    assert!(migration_anchor_retention_references_exist(&db_path, WalletNetwork::Regtest).unwrap());
+
+    finish_migration_anchor_retention_releases(&db_path, WalletNetwork::Regtest, &released)
+        .unwrap();
+    assert!(
+        !migration_anchor_retention_references_exist(&db_path, WalletNetwork::Regtest).unwrap()
+    );
 }
 
 #[test]
@@ -4348,12 +4642,30 @@ fn migration_batch_signing_selector_reports_initial_and_resign_requests_exactly(
         vec![1, 10]
     );
     assert_eq!(
+        select_migration_batch_signing_part_indices(
+            12,
+            12,
+            0,
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        )
+        .unwrap(),
+        vec![0, 1, 2, 3, 4, 5, 6, 7]
+    );
+    assert_eq!(
+        select_migration_batch_signing_part_indices(12, 0, 0, &[]).unwrap(),
+        vec![0, 1, 2, 3, 4, 5, 6, 7]
+    );
+    assert_eq!(
+        select_migration_batch_signing_part_indices(12, 8, 0, &[]).unwrap(),
+        vec![8, 9, 10, 11]
+    );
+    assert_eq!(
         select_migration_batch_signing_part_indices(0, 0, 0, &[]).unwrap_err(),
         "Migration run has no prepared denomination notes"
     );
     assert_eq!(
-        select_migration_batch_signing_part_indices(3, 1, 0, &[]).unwrap_err(),
-        "Migration transactions are already signed and scheduled"
+        select_migration_batch_signing_part_indices(3, 3, 0, &[]).unwrap_err(),
+        "All migration transactions are already signed and scheduled"
     );
 }
 
@@ -4651,7 +4963,7 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
 }
 
 #[test]
-fn status_waits_for_spend_metadata_before_presigned_child_finalization() {
+fn status_keeps_migration_stage_while_waiting_for_spend_metadata() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     conn.execute(
@@ -4740,7 +5052,7 @@ fn status_waits_for_spend_metadata_before_presigned_child_finalization() {
         last_error: None,
     };
     let status = status_for_run(&conn, run.clone()).unwrap();
-    assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+    assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 0);
     assert_eq!(status.pending_split_stage_count, 0);
 
@@ -4766,7 +5078,7 @@ fn status_waits_for_spend_metadata_before_presigned_child_finalization() {
     .unwrap();
 
     let status = status_for_run(&conn, run.clone()).unwrap();
-    assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
+    assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 1);
     assert_eq!(status.pending_split_stage_count, 0);
 

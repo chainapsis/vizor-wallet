@@ -151,10 +151,15 @@ class IronwoodMigrationPreparationRunnerTest {
             inspectResults = ArrayDeque(listOf(progress(WAITING))),
             advanceResult = progress(PROOF_READY),
         )
+        val verifiedAccounts = mutableListOf<String>()
 
-        val outcome = IronwoodMigrationPreparationRunner(native).run(listOf(manifest()))
+        val outcome = IronwoodMigrationPreparationRunner(
+            native = native,
+            onProofReady = { verifiedAccounts += it.accountUuid },
+        ).run(listOf(manifest()))
 
         assertEquals(IronwoodMigrationPreparationOutcome.COMPLETED, outcome)
+        assertEquals(listOf("account"), verifiedAccounts)
         assertEquals(1, native.syncCalls)
         assertEquals(1, native.advanceCalls)
         assertTrue(native.credentialReference!!.all { it == 0.toByte() })

@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -29,6 +30,7 @@ import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_f
 import 'package:zcash_wallet/src/features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
+import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_qr_scanner_card.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -45,10 +47,12 @@ final _rustApiFake = _RustApiFake();
 
 class _RustApiFake implements RustLibApi {
   final encodedRequestIds = <String>[];
+  final encodedMaxFragmentLengths = <BigInt>[];
   final decodedRequestIds = <String>[];
 
   void reset() {
     encodedRequestIds.clear();
+    encodedMaxFragmentLengths.clear();
     decodedRequestIds.clear();
   }
 
@@ -62,6 +66,7 @@ class _RustApiFake implements RustLibApi {
     required BigInt maxFragmentLen,
   }) async {
     encodedRequestIds.add(requestId);
+    encodedMaxFragmentLengths.add(maxFragmentLen);
     return ['UR:ZCASH-SIGN-BATCH/$requestId'];
   }
 
@@ -262,6 +267,26 @@ class _SuccessfulEntrySyncTestMigrationCoordinator
   }
 }
 
+class _ProofPermitTestMigrationCoordinator
+    extends IronwoodMigrationCoordinator {
+  int refreshCount = 0;
+
+  IronwoodMigrationCoordinatorState get exposedState => state;
+
+  @override
+  IronwoodMigrationCoordinatorState build() {
+    return const IronwoodMigrationCoordinatorState(
+      foregroundProgressPermits: {'account-1'},
+      childProofBatchPermits: {'account-1'},
+    );
+  }
+
+  @override
+  Future<void> refreshNow({bool forceAdvance = false}) async {
+    refreshCount++;
+  }
+}
+
 class _ControlledRefreshTestMigrationCoordinator
     extends IronwoodMigrationCoordinator {
   final List<Completer<void>> refreshes = [];
@@ -393,6 +418,7 @@ rust_sync.MigrationStatus _status({
   List<rust_sync.MigrationPartStatus> parts = const [],
   List<int> targetValues = const [412_000_000, 412_000_000, 412_000_000],
   int? nextActionHeight,
+  bool? proofReady = true,
   int? estimatedCompletionHeight,
   int? nextActionPartIndex,
   List<int>? currentSigningPartIndices,
@@ -422,6 +448,7 @@ rust_sync.MigrationStatus _status({
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    proofReady: proofReady,
     estimatedCompletionHeight: estimatedCompletionHeight,
     nextActionPartIndex: nextActionPartIndex,
     currentSigningPartIndices: currentSigningPartIndices == null
@@ -506,7 +533,7 @@ rust_sync.MigrationStatus _visualMigrationStatus() {
 }
 
 AppBootstrapState _bootstrap({bool hardware = false}) => AppBootstrapState(
-  initialLocation: '/migration/private/start',
+  initialLocation: '/migration/private/status',
   initialAccountState: AccountState(
     accounts: [
       AccountInfo(
@@ -558,7 +585,6 @@ Widget _app({
       MobileIronwoodMigrationStep.options => '/migration/options',
       MobileIronwoodMigrationStep.notifications =>
         '/migration/private/notifications',
-      MobileIronwoodMigrationStep.privateStart => '/migration/private/start',
       MobileIronwoodMigrationStep.fastReview => '/migration/fast/review',
       MobileIronwoodMigrationStep.preparing => '/migration/private/preparing',
       MobileIronwoodMigrationStep.migrating => '/migration/private/status',
@@ -580,10 +606,6 @@ Widget _app({
       GoRoute(
         path: '/migration/private/notifications',
         builder: (_, _) => screen(MobileIronwoodMigrationStep.notifications),
-      ),
-      GoRoute(
-        path: '/migration/private/start',
-        builder: (_, _) => screen(MobileIronwoodMigrationStep.privateStart),
       ),
       GoRoute(
         path: '/migration/fast/review',
@@ -634,6 +656,8 @@ Widget _productionApp({
   bool realKeystoneDenominationRoute = false,
   bool realKeystoneBatchRoute = false,
   bool disableAnimations = true,
+  VoidCallback? onKeystoneDenominationRouteBuilt,
+  List<Override> extraOverrides = const [],
 }) {
   final cta = status == null
       ? const IronwoodHomeMigrationCtaState.start(
@@ -650,6 +674,10 @@ Widget _productionApp({
     routes: [
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
       GoRoute(
+        path: '/migration/cta-prime',
+        builder: (_, _) => const _RouteCtaPrimeScreen(),
+      ),
+      GoRoute(
         path: '/migration/intro',
         builder: (_, _) => const Text('intro route'),
       ),
@@ -660,22 +688,12 @@ Widget _productionApp({
         ),
       ),
       GoRoute(
-        path: '/migration/private/start',
-        builder: (_, state) => MobileIronwoodMigrationFlowScreen(
-          step: MobileIronwoodMigrationStep.privateStart,
-          previewPrivatePlan: switch (state.extra) {
-            rust_sync.OrchardMigrationPrivatePlan plan => plan,
-            _ => null,
-          },
-        ),
-      ),
-      GoRoute(
         path: '/migration/private/notifications',
         builder: (_, state) => MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.notifications,
           previewPrivatePlan: switch (state.extra) {
             rust_sync.OrchardMigrationPrivatePlan plan => plan,
-            _ => null,
+            _ => privatePlan,
           },
         ),
       ),
@@ -686,6 +704,17 @@ Widget _productionApp({
         ),
       ),
       GoRoute(
+        path: '/migration/immediate/keystone/sign',
+        builder: (_, state) {
+          final plan = state.extra! as rust_sync.OrchardMigrationImmediatePlan;
+          return Text('keystone immediate sign route:${plan.migratedZatoshi}');
+        },
+      ),
+      GoRoute(
+        path: '/migration/complete',
+        builder: (_, _) => const MobileIronwoodMigrationCompleteScreen(),
+      ),
+      GoRoute(
         path: '/migration/private/status',
         builder: (_, _) => MobileIronwoodMigrationPrivateStatusScreen(
           approvedPlan: privatePlan,
@@ -693,9 +722,24 @@ Widget _productionApp({
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
-        builder: (_, _) => realKeystoneDenominationRoute
-            ? const MobileIronwoodMigrationKeystoneDenominationSignScreen()
-            : const Text('keystone denomination sign route'),
+        builder: (_, state) {
+          onKeystoneDenominationRouteBuilt?.call();
+          final entry = switch (state.extra) {
+            MobileIronwoodMigrationKeystoneDenominationSignEntry value => value,
+            _ => null,
+          };
+          return realKeystoneDenominationRoute
+              ? MobileIronwoodMigrationKeystoneDenominationSignScreen(
+                  approvedSchedule: switch (state.extra) {
+                    List<rust_sync.MigrationScheduledTransfer> schedule =>
+                      schedule,
+                    _ => entry?.approvedSchedule ?? const [],
+                  },
+                  initialRequest: entry?.request,
+                  initialAccountUuid: entry?.accountUuid,
+                )
+              : const Text('keystone denomination sign route');
+        },
       ),
       GoRoute(
         path: '/migration/private/keystone/batch/sign',
@@ -708,6 +752,7 @@ Widget _productionApp({
 
   return ProviderScope(
     overrides: [
+      ...extraOverrides,
       appBootstrapProvider.overrideWithValue(_bootstrap(hardware: hardware)),
       if (hardware) accountProvider.overrideWith(_HardwareAccountNotifier.new),
       syncProvider.overrideWith(
@@ -762,7 +807,26 @@ Widget _productionApp({
   );
 }
 
+class _RouteCtaPrimeScreen extends ConsumerWidget {
+  const _RouteCtaPrimeScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cta = ref.watch(ironwoodMigrationRouteCtaProvider);
+    return cta.when(
+      data: (_) => TextButton(
+        key: const ValueKey('open_migration_options'),
+        onPressed: () => context.go('/migration/options'),
+        child: const Text('Open migration options'),
+      ),
+      error: (_, _) => const Text('route CTA error'),
+      loading: () => const CircularProgressIndicator(),
+    );
+  }
+}
+
 IronwoodMigrationService _migrationService({
+  Future<rust_sync.MigrationStatus> Function()? onGetStatus,
   Future<rust_sync.IronwoodMigrationResult> Function(
     String accountUuid,
     List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
@@ -784,6 +848,11 @@ IronwoodMigrationService _migrationService({
     String accountUuid,
   )?
   onPrepareKeystoneDenominations,
+  Future<rust_sync.IronwoodMigrationResult> Function(
+    String accountUuid,
+    List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  )?
+  onCompleteKeystoneDenominations,
   Future<String> Function(
     String accountUuid,
     List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
@@ -794,6 +863,7 @@ IronwoodMigrationService _migrationService({
     getWalletDbPath: () async => '/tmp/wallet.db',
     getStatus:
         ({required dbPath, required network, required accountUuid}) async =>
+            await onGetStatus?.call() ??
             _status(phase: kIronwoodMigrationWaitingDenomConfirmationsPhase),
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
@@ -842,6 +912,23 @@ IronwoodMigrationService _migrationService({
         ({required dbPath, required network, required accountUuid}) =>
             onPrepareKeystoneDenominations?.call(accountUuid) ??
             Future.value(_keystoneDenominationRequest()),
+    completeKeystoneDenominationMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required requestId,
+          required signedMessages,
+          required password,
+          required saltBase64,
+          required approvedSchedule,
+        }) =>
+            onCompleteKeystoneDenominations?.call(
+              accountUuid,
+              approvedSchedule,
+            ) ??
+            Future.value(_migrationResult()),
     createPrivateMigrationDraft:
         ({
           required dbPath,
@@ -851,6 +938,14 @@ IronwoodMigrationService _migrationService({
         }) =>
             onCreatePrivateDraft?.call(accountUuid, approvedSchedule) ??
             Future.value('private-draft-run'),
+    getKeystoneProofStatus: ({required requestId}) async =>
+        const rust_sync.KeystoneMigrationProofStatus(
+          readyCount: 1,
+          totalCount: 1,
+          isReady: true,
+          isFailed: false,
+        ),
+    discardKeystoneMigrationRequest: ({required requestId}) async {},
     broadcastDueMigration:
         ({
           required dbPath,
@@ -1166,7 +1261,7 @@ void main() {
     expect(find.text('Privacy trade-off'), findsOneWidget);
   });
 
-  testWidgets('does not offer Immediate migration to Keystone accounts', (
+  testWidgets('routes Keystone Immediate migration through mobile signing', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -1185,7 +1280,7 @@ void main() {
       of: immediateOption,
       matching: find.byType(GestureDetector),
     );
-    expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNull);
+    expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNotNull);
     await tester.tap(immediateOption);
     await tester.pump();
     expect(
@@ -1193,8 +1288,137 @@ void main() {
         of: immediateOption,
         matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
       ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Review Migration Plan'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_broadcast_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'keystone immediate sign route:${_immediatePlan.migratedZatoshi}',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('locks the migration choice while continue is preparing', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(ios: true),
+        privatePlanFuture: planCompleter.future,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_loading')),
+      findsOneWidget,
+    );
+
+    // Continue already committed to the private plan, so switching the option
+    // underneath it must not take effect.
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
+    );
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_private_option')),
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
       findsNothing,
     );
+
+    // Leaving mid-flight would strand the draft this step is about to save.
+    final lockedPop = tester.widget<PopScope>(
+      find
+          .ancestor(
+            of: find.text('Choose How to Migrate'),
+            matching: find.byType(PopScope),
+          )
+          .first,
+    );
+    expect(lockedPop.canPop, isFalse);
+
+    planCompleter.complete(_plan);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a failed plan releases the migration choice lock', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(ios: true),
+        privatePlanLoader: () =>
+            Future<rust_sync.OrchardMigrationPrivatePlan?>.error(
+              StateError('plan unavailable'),
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("Couldn't prepare the migration plan. Try again."),
+      findsOneWidget,
+    );
+    expect(find.text('Choose How to Migrate'), findsOneWidget);
+    // The lock disables Continue, both option cards and back at once, so
+    // holding it here left the user on an error with no way to retry or leave.
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_loading')),
+      findsNothing,
+    );
+
+    final popScope =
+        tester.widget(
+              find
+                  .ancestor(
+                    of: find.byKey(
+                      const ValueKey('mobile_ironwood_options_continue_button'),
+                    ),
+                    matching: find.byWidgetPredicate(
+                      (widget) => widget is PopScope,
+                    ),
+                  )
+                  .first,
+            )
+            as PopScope;
+    expect(popScope.canPop, isTrue);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
   testWidgets('routes private migration by actual notification authorization', (
@@ -1249,7 +1473,7 @@ void main() {
     planCompleter.complete(_plan);
     await tester.pumpAndSettle();
 
-    expect(find.text('Preparing your migration'), findsOneWidget);
+    expect(find.text('keystone denomination sign route'), findsOneWidget);
     expect(find.text('Review Migration Plan'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -1312,6 +1536,237 @@ void main() {
     expect(find.text('Migration in progress…'), findsOneWidget);
   });
 
+  testWidgets('completes a direct-note Keystone draft without showing a QR', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final directNotePlan = _planWith(denominationSplitStageCount: 0);
+    final readyStatus = _status(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      pendingSplitStageCount: 0,
+    );
+    var completionCount = 0;
+    var denominationRouteBuildCount = 0;
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          onPrepareKeystoneDenominations: (_) async =>
+              rust_sync.KeystoneMigrationSigningRequest(
+                requestId: 'direct-note-request',
+                messages: const [],
+                signingBatchLimit: 50,
+              ),
+          onCompleteKeystoneDenominations:
+              (accountUuid, approvedSchedule) async {
+                expect(accountUuid, 'account-1');
+                expect(approvedSchedule, directNotePlan.scheduledTransfers);
+                completionCount += 1;
+                return _migrationResult();
+              },
+        ),
+        hardware: true,
+        privatePlan: directNotePlan,
+        status: readyStatus,
+        realKeystoneDenominationRoute: true,
+        onKeystoneDenominationRouteBuilt: () {
+          denominationRouteBuildCount += 1;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(completionCount, 1);
+    expect(denominationRouteBuildCount, 0);
+    expect(find.byType(KeystoneQrScannerCard), findsNothing);
+    expect(find.text('Migration in progress…'), findsOneWidget);
+  });
+
+  testWidgets(
+    'does not return to About while the started Keystone status refreshes',
+    (tester) async {
+      _useMobileViewport(tester);
+      final directNotePlan = _planWith(denominationSplitStageCount: 0);
+      final readyStatus = _status(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        pendingSplitStageCount: 0,
+      );
+      final refreshedCta = Completer<IronwoodHomeMigrationCtaState>();
+      var ctaLoadCount = 0;
+      var completionCount = 0;
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/cta-prime',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            onPrepareKeystoneDenominations: (_) async =>
+                rust_sync.KeystoneMigrationSigningRequest(
+                  requestId: 'direct-note-request',
+                  messages: const [],
+                  signingBatchLimit: 50,
+                ),
+            onCompleteKeystoneDenominations:
+                (accountUuid, approvedSchedule) async {
+                  completionCount += 1;
+                  return _migrationResult();
+                },
+          ),
+          hardware: true,
+          privatePlan: directNotePlan,
+          ctaLoader: () {
+            ctaLoadCount += 1;
+            if (ctaLoadCount == 1) {
+              return Future.value(
+                const IronwoodHomeMigrationCtaState.start(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                ),
+              );
+            }
+            return refreshedCta.future;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('open_migration_options')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+      );
+
+      for (
+        var pumpCount = 0;
+        completionCount == 0 && pumpCount < 20;
+        pumpCount++
+      ) {
+        await tester.pump();
+      }
+      expect(completionCount, 1);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('intro route'), findsNothing);
+
+      refreshedCta.complete(
+        IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: readyStatus,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('intro route'), findsNothing);
+      expect(find.text('Migration in progress…'), findsOneWidget);
+    },
+  );
+
+  testWidgets('reuses the prepared Keystone split request on the QR route', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    var prepareCount = 0;
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          onPrepareKeystoneDenominations: (_) async {
+            prepareCount += 1;
+            return _keystoneDenominationRequest();
+          },
+        ),
+        hardware: true,
+        privatePlan: _plan,
+        realKeystoneDenominationRoute: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(prepareCount, 1);
+    expect(find.text('Scan with Keystone'), findsOneWidget);
+  });
+
+  testWidgets(
+    'starts a split private plan while the options action is loading',
+    (tester) async {
+      _useMobileViewport(tester);
+      final startCompleter = Completer<rust_sync.IronwoodMigrationResult>();
+      final startedStatus = _status(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+      );
+      var started = false;
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/options',
+          migrationService: _migrationService(
+            ios: true,
+            onStart: (accountUuid, approvedSchedule) {
+              expect(accountUuid, 'account-1');
+              expect(approvedSchedule, _plan.scheduledTransfers);
+              started = true;
+              return startCompleter.future;
+            },
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          ),
+          startedStatus: startedStatus,
+          ctaBuilder: () => started
+              ? IronwoodHomeMigrationCtaState.resume(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                  status: startedStatus,
+                )
+              : const IronwoodHomeMigrationCtaState.start(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+      );
+      await tester.pump();
+
+      expect(started, isTrue);
+      expect(
+        find.byKey(const ValueKey('mobile_ironwood_options_continue_loading')),
+        findsOneWidget,
+      );
+      expect(find.text('Choose How to Migrate'), findsOneWidget);
+      expect(find.text('Preparing your migration'), findsNothing);
+
+      startCompleter.complete(_migrationResult());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Preparing your migration'), findsOneWidget);
+    },
+  );
+
   testWidgets(
     'saves a software private draft only after the notification gate',
     (tester) async {
@@ -1352,44 +1807,139 @@ void main() {
     },
   );
 
-  testWidgets('starts private preparation without showing the review screen', (
+  testWidgets('resumes a saved software draft inside migration status', (
     tester,
   ) async {
     _useMobileViewport(tester);
-    var started = false;
-    var startCount = 0;
-    final startedStatus = _status(
+    final draftStatus = _status(
+      phase: kIronwoodMigrationAwaitingPreparationPhase,
+    );
+    final resumedStatus = _status(
       phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
     );
+    var resumed = false;
+    var startCount = 0;
+
     await tester.pumpWidget(
       _productionApp(
-        initialLocation: '/migration/private/start',
+        initialLocation: '/migration/private/status',
         migrationService: _migrationService(
-          onStart: (_, _) async {
-            started = true;
-            startCount++;
+          onGetStatus: () async => resumed ? resumedStatus : draftStatus,
+          onStart: (accountUuid, approvedSchedule) async {
+            expect(accountUuid, 'account-1');
+            expect(approvedSchedule, isEmpty);
+            startCount += 1;
+            resumed = true;
             return _migrationResult();
           },
         ),
-        startedStatus: startedStatus,
-        ctaBuilder: () => started
-            ? IronwoodHomeMigrationCtaState.resume(
-                network: 'main',
-                accountUuid: 'account-1',
-                status: startedStatus,
-              )
-            : const IronwoodHomeMigrationCtaState.start(
-                network: 'main',
-                accountUuid: 'account-1',
-              ),
+        status: draftStatus,
+        startedStatus: resumedStatus,
+        ctaBuilder: () => IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: resumed ? resumedStatus : draftStatus,
+        ),
       ),
     );
     await tester.pumpAndSettle();
 
     expect(startCount, 1);
-    expect(find.text('Review Migration Plan'), findsNothing);
     expect(find.text('Preparing your migration'), findsOneWidget);
   });
+
+  testWidgets('retries a failed software draft resume from migration status', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final draftStatus = _status(
+      phase: kIronwoodMigrationAwaitingPreparationPhase,
+    );
+    final resumedStatus = _status(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+    );
+    var resumed = false;
+    var startCount = 0;
+
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          onGetStatus: () async => resumed ? resumedStatus : draftStatus,
+          onStart: (_, approvedSchedule) async {
+            expect(approvedSchedule, isEmpty);
+            startCount += 1;
+            if (startCount == 1) {
+              throw StateError('temporary preparation failure');
+            }
+            resumed = true;
+            return _migrationResult();
+          },
+        ),
+        status: draftStatus,
+        startedStatus: resumedStatus,
+        ctaBuilder: () => IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: resumed ? resumedStatus : draftStatus,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(startCount, 1);
+    expect(find.text("Couldn't start migration. Try again."), findsOneWidget);
+    expect(find.text('Continue preparation'), findsOneWidget);
+
+    await tester.tap(find.text('Continue preparation'));
+    await tester.pumpAndSettle();
+
+    expect(startCount, 2);
+    expect(find.text("Couldn't start migration. Try again."), findsNothing);
+    expect(find.text('Preparing your migration'), findsOneWidget);
+  });
+
+  testWidgets(
+    'refreshes status without restarting when a saved draft already advanced',
+    (tester) async {
+      _useMobileViewport(tester);
+      final draftStatus = _status(
+        phase: kIronwoodMigrationAwaitingPreparationPhase,
+      );
+      final advancedStatus = _status(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        pendingSplitStageCount: 0,
+      );
+      var advancedObserved = false;
+      var startCount = 0;
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(
+            onGetStatus: () async {
+              advancedObserved = true;
+              return advancedStatus;
+            },
+            onStart: (_, _) async {
+              startCount += 1;
+              return _migrationResult();
+            },
+          ),
+          status: draftStatus,
+          ctaBuilder: () => IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: advancedObserved ? advancedStatus : draftStatus,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(startCount, 0);
+      expect(find.text('Migration in progress…'), findsOneWidget);
+    },
+  );
 
   testWidgets('requests notifications only after the explicit allow action', (
     tester,
@@ -1398,7 +1948,6 @@ void main() {
     var authorization =
         IronwoodMigrationNotificationAuthorizationStatus.notDetermined;
     var requestCount = 0;
-    final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/private/notifications',
@@ -1412,7 +1961,10 @@ void main() {
             return true;
           },
         ),
-        privatePlanFuture: planCompleter.future,
+        privatePlan: _plan,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -1437,16 +1989,12 @@ void main() {
     expect(requestCount, 1);
     expect(find.text('Preparing your migration'), findsOneWidget);
     expect(find.text('Review Migration Plan'), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
-    planCompleter.complete(_plan);
-    await tester.pump();
   });
 
   testWidgets('requires confirmation before continuing without notifications', (
     tester,
   ) async {
     _useMobileViewport(tester);
-    final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/private/notifications',
@@ -1455,7 +2003,10 @@ void main() {
           getNotificationAuthorizationStatus: () async =>
               IronwoodMigrationNotificationAuthorizationStatus.denied,
         ),
-        privatePlanFuture: planCompleter.future,
+        privatePlan: _plan,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -1475,10 +2026,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Preparing your migration'), findsOneWidget);
     expect(find.text('Review Migration Plan'), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
-    planCompleter.complete(_plan);
-    await tester.pump();
   });
+
+  testWidgets(
+    'shows a retry when notification continuation cannot save draft',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/notifications',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.denied,
+            onCreatePrivateDraft: (_, _) async =>
+                throw StateError('draft write failed'),
+          ),
+          privatePlan: _plan,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue without notifications'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text("Couldn't start the migration. Try again."),
+        findsOneWidget,
+      );
+      expect(find.text('Keep your migration on schedule'), findsOneWidget);
+    },
+  );
 
   testWidgets('keeps design label and opens Settings after denial', (
     tester,
@@ -1965,7 +2545,7 @@ void main() {
     var keystonePrepareCount = 0;
     await tester.pumpWidget(
       _productionApp(
-        initialLocation: '/migration/private/start',
+        initialLocation: '/migration/private/status',
         migrationService: _migrationService(
           onStart: (_, _) async {
             softwareStartCount += 1;
@@ -1978,6 +2558,9 @@ void main() {
           },
         ),
         hardware: true,
+        status: _status(
+          phase: kIronwoodMigrationAwaitingDenominationSignaturePhase,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -1998,9 +2581,12 @@ void main() {
     _useMobileViewport(tester);
     await tester.pumpWidget(
       _productionApp(
-        initialLocation: '/migration/private/start',
+        initialLocation: '/migration/private/status',
         migrationService: _migrationService(),
         hardware: true,
+        status: _status(
+          phase: kIronwoodMigrationAwaitingDenominationSignaturePhase,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -2080,6 +2666,10 @@ void main() {
       find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
       findsOneWidget,
     );
+    final qrStage = tester.widget<KeystonePcztQrStage>(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+    );
+    expect(qrStage.frameInterval, const Duration(milliseconds: 200));
     expect(tester.takeException(), isNull);
 
     final nextButton = find.byKey(
@@ -2096,12 +2686,70 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('reuses the mobile Keystone flow for Immediate migration', (
+    tester,
+  ) async {
+    _useMobileViewport(tester, size: const Size(393, 852));
+    final request = rust_sync.KeystoneMigrationSigningRequest(
+      requestId: 'immediate-preview-request',
+      messages: [
+        rust_sync.KeystoneMigrationMessage(
+          id: 'immediate-transaction',
+          redactedPczt: Uint8List.fromList([1]),
+        ),
+      ],
+      signingBatchLimit: 1,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appBootstrapProvider.overrideWithValue(_bootstrap())],
+        child: AppTheme(
+          data: AppThemeData.dark,
+          child: MaterialApp(
+            home: MobileIronwoodMigrationKeystoneImmediateSignScreen(
+              approvedPlan: _immediatePlan,
+              previewRequest: request,
+              previewUrParts: const ['UR:ZCASH-SIGN-BATCH/IMMEDIATE'],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Step 1/2'), findsOneWidget);
+    expect(find.text('Scan with Keystone'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+      findsOneWidget,
+    );
+
+    final nextButton = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_next'),
+    );
+    await tester.ensureVisible(nextButton);
+    await tester.tap(nextButton);
+    await tester.pump();
+
+    expect(find.text('Step 2/2'), findsOneWidget);
+    expect(find.text('Confirm with Keystone'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('mobile_ironwood_keystone_signing_scan_target'),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'leaves signing after a completion error when the migration was committed',
     (tester) async {
       _useMobileViewport(tester);
       var committed = false;
       var completionCount = 0;
+      final coordinator = _ProofPermitTestMigrationCoordinator();
       final credentialStore = _FailingBindCredentialStore(failAtBindCall: 1);
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
@@ -2167,6 +2815,7 @@ void main() {
         _productionApp(
           initialLocation: '/migration/private/keystone/denominations/sign',
           migrationService: service,
+          migrationCoordinator: () => coordinator,
           hardware: true,
           realKeystoneDenominationRoute: true,
           statusLoader: () async => committed
@@ -2195,6 +2844,14 @@ void main() {
       expect(completionCount, 1);
       expect(credentialStore.bindCallCount, 1);
       expect(
+        coordinator.exposedState.childProofBatchPermits,
+        isNot(contains('account-1')),
+      );
+      expect(
+        coordinator.exposedState.foregroundProgressPermits,
+        contains('account-1'),
+      );
+      expect(
         find.byType(MobileIronwoodMigrationKeystoneDenominationSignScreen),
         findsNothing,
       );
@@ -2211,6 +2868,7 @@ void main() {
       _useMobileViewport(tester);
       var committed = false;
       var completionCount = 0;
+      final coordinator = _ProofPermitTestMigrationCoordinator();
       final credentialStore = _FailingBindCredentialStore(
         failAtBindCall: 2,
         initialRunId: 'run-1',
@@ -2279,6 +2937,7 @@ void main() {
         _productionApp(
           initialLocation: '/migration/private/keystone/batch/sign',
           migrationService: service,
+          migrationCoordinator: () => coordinator,
           hardware: true,
           realKeystoneBatchRoute: true,
           statusLoader: () async => status(),
@@ -2301,6 +2960,15 @@ void main() {
 
       expect(completionCount, 1);
       expect(credentialStore.bindCallCount, 2);
+      expect(coordinator.refreshCount, greaterThanOrEqualTo(1));
+      expect(
+        coordinator.exposedState.childProofBatchPermits,
+        isNot(contains('account-1')),
+      );
+      expect(
+        coordinator.exposedState.foregroundProgressPermits,
+        contains('account-1'),
+      );
       expect(
         find.byType(MobileIronwoodMigrationKeystoneBatchSignScreen),
         findsNothing,
@@ -2318,8 +2986,12 @@ void main() {
     _useMobileViewport(tester);
     await tester.pumpWidget(
       _productionApp(
-        initialLocation: '/migration/private/start',
-        migrationService: _migrationService(),
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        ),
         hardware: true,
         privatePlan: _planWith(
           denominationSplitStageCount: 13,
@@ -2329,8 +3001,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Continue preparation'), findsOneWidget);
-    expect(find.text('keystone denomination sign route'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('keystone denomination sign route'), findsOneWidget);
   });
 
   testWidgets('accepts exactly 50 transactions in each Keystone round', (
@@ -2339,8 +3015,12 @@ void main() {
     _useMobileViewport(tester);
     await tester.pumpWidget(
       _productionApp(
-        initialLocation: '/migration/private/start',
-        migrationService: _migrationService(),
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        ),
         hardware: true,
         privatePlan: _planWith(
           denominationSplitStageCount: 50,
@@ -2351,10 +3031,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Continue preparation'), findsOneWidget);
-    expect(find.text('keystone denomination sign route'), findsNothing);
-
-    await tester.tap(find.text('Continue preparation'));
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('keystone denomination sign route'), findsOneWidget);
@@ -2378,16 +3057,24 @@ void main() {
     ]) {
       await tester.pumpWidget(
         _productionApp(
-          initialLocation: '/migration/private/start',
-          migrationService: _migrationService(),
+          initialLocation: '/migration/options',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          ),
           hardware: true,
           privatePlan: plan,
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Continue preparation'), findsOneWidget);
-      expect(find.text('keystone denomination sign route'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('keystone denomination sign route'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     }
@@ -2463,6 +3150,11 @@ void main() {
       }
       expect(prepareCount, 1);
       expect(qr, findsOneWidget);
+      expect(_rustApiFake.encodedMaxFragmentLengths, [BigInt.from(300)]);
+      expect(
+        tester.widget<KeystonePcztQrStage>(qr).frameInterval,
+        const Duration(milliseconds: 200),
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await discardStarted.future;
@@ -2478,6 +3170,10 @@ void main() {
       }
       expect(prepareCount, 2);
       expect(qr, findsOneWidget);
+      expect(_rustApiFake.encodedMaxFragmentLengths, [
+        BigInt.from(300),
+        BigInt.from(300),
+      ]);
     },
   );
 
@@ -2604,6 +3300,41 @@ void main() {
     expect(continueCount, greaterThanOrEqualTo(1));
     expect(find.text('keystone batch sign route'), findsNothing);
   });
+
+  testWidgets(
+    'keeps a height-due Keystone proof gated until preflight passes',
+    (tester) async {
+      _useMobileViewport(tester, size: const Size(320, 568));
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            signedChildPcztCount: 1,
+            nextActionHeight: 3_000_000,
+            proofReady: false,
+          ),
+          hardware: true,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 3_000_000,
+            chainTipHeight: 3_000_000,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Prepare batch #1'), findsNothing);
+      expect(
+        find.byKey(
+          const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
+        ),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('keeps proof preparation visibly busy until status refresh', (
     tester,
@@ -2806,6 +3537,52 @@ void main() {
     expect(painter.highlightedSegments, {
       for (var index = 0; index < 10; index++) index,
     });
+  });
+
+  testWidgets('marks broadcast parts awaiting confirmation on the ring', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final parts = [
+      for (var index = 0; index < 4; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: switch (index) {
+            0 => rust_sync.MigrationPartState.completed,
+            // Rust reports a broadcast part as migrating until it is mined and
+            // confirming until it reaches its target, so the ring has to treat
+            // both as awaiting.
+            1 => rust_sync.MigrationPartState.migrating,
+            2 => rust_sync.MigrationPartState.confirming,
+            _ => rust_sync.MigrationPartState.scheduled,
+          },
+          confirmationCount: index == 0 ? 3 : 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationWaitingConfirmationsPhase,
+          parts: parts,
+          targetValues: List<int>.filled(4, 100_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final ring = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('mobile_ironwood_migration_attention_ring')),
+    );
+    final painter = ring.painter as dynamic;
+    // A broadcast part reads as a dimmed form of the confirmed colour, never as
+    // untouched track: the user just watched those transfers leave.
+    expect(painter.completedSegments, {0});
+    expect(painter.awaitingSegments, {1, 2});
   });
 
   testWidgets(
@@ -3114,6 +3891,153 @@ void main() {
     }
   });
 
+  testWidgets('marks the displayed account seen, not a stale published one', (
+    tester,
+  ) async {
+    // The completion provider keeps serving its previous value while it
+    // reloads, so right after an account switch the published identity can
+    // still be the account the user left. Trusting it would mark that account
+    // seen while the one on screen stays unseen and keeps being routed back to.
+    _useMobileViewport(tester);
+    final seen = <String>[];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationCompletePhase,
+          targetValues: const [412_000_000],
+        ),
+        extraOverrides: [
+          ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+            _RecordingCompletionStore(seen),
+          ),
+          ironwoodMigrationCompletionProvider.overrideWith(
+            (ref) => IronwoodMigrationCompletionState.visible(
+              network: 'main',
+              accountUuid: 'account-left-behind',
+              completionId: 'stale-completion',
+              transferredZatoshi: BigInt.from(412_000_000),
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(seen, hasLength(1));
+    expect(seen.single, startsWith('main:account-1:'));
+  });
+
+  testWidgets('completion route keeps the result after marking it seen', (
+    tester,
+  ) async {
+    // Marking a completion seen invalidates the provider that published it, so
+    // `visible` flips to false right after this screen appears. Reading the
+    // provider on every build would redirect home and flash the result past —
+    // the behaviour this dedicated route exists to remove.
+    _useMobileViewport(tester);
+    final seen = <String>[];
+    final completion = ValueNotifier<IronwoodMigrationCompletionState>(
+      IronwoodMigrationCompletionState.visible(
+        network: 'main',
+        accountUuid: 'account-1',
+        completionId: 'completion-1',
+        transferredZatoshi: BigInt.from(412_000_000),
+      ),
+    );
+    addTearDown(completion.dispose);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/complete',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationCompletePhase,
+          targetValues: const [412_000_000],
+        ),
+        extraOverrides: [
+          ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+            _RecordingCompletionStore(seen),
+          ),
+          ironwoodMigrationCompletionProvider.overrideWith(
+            (ref) => completion.value,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’re all set!'), findsOneWidget);
+    expect(seen, hasLength(1));
+
+    completion.value = const IronwoodMigrationCompletionState.hidden();
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’re all set!'), findsOneWidget);
+    expect(find.text('home route'), findsNothing);
+  });
+
+  testWidgets('completion headline never renders a placeholder amount', (
+    tester,
+  ) async {
+    // The preview gallery's sample total must not reach a real user as their
+    // migration result, and an absent amount must not leave the headline with
+    // a blank line where the total belongs.
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/complete',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationCompletePhase,
+          targetValues: const [412_000_000],
+        ),
+        extraOverrides: [
+          ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+            _RecordingCompletionStore(<String>[]),
+          ),
+          ironwoodMigrationCompletionProvider.overrideWith(
+            (ref) => IronwoodMigrationCompletionState.visible(
+              network: 'main',
+              accountUuid: 'account-1',
+              completionId: 'completion-1',
+              transferredZatoshi: BigInt.from(412_000_000),
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('142.992'), findsNothing);
+    expect(find.textContaining('4.12 ZEC'), findsOneWidget);
+  });
+
+  testWidgets('completion route returns home when nothing completed', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/complete',
+        migrationService: _migrationService(),
+        status: _status(
+          phase: kIronwoodMigrationCompletePhase,
+          targetValues: const [412_000_000],
+        ),
+        extraOverrides: [
+          ironwoodMigrationCompletionProvider.overrideWith(
+            (ref) => const IronwoodMigrationCompletionState.hidden(),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You’re all set!'), findsNothing);
+    expect(find.text('home route'), findsOneWidget);
+  });
+
   testWidgets('returns home from the full-screen completion state', (
     tester,
   ) async {
@@ -3239,105 +4163,130 @@ void main() {
     },
   );
 
-  testWidgets('shows preparation retry when start has no durable run', (
+  testWidgets('shows a retry when a private draft cannot be saved', (
     tester,
   ) async {
     _useMobileViewport(tester);
     await tester.pumpWidget(
       _productionApp(
-        initialLocation: '/migration/private/start',
+        initialLocation: '/migration/options',
         migrationService: _migrationService(
-          onStart: (_, _) async => _migrationResult(),
-        ),
-        startedStatus: _status(
-          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
-          activeRunId: null,
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          onCreatePrivateDraft: (_, _) async =>
+              throw StateError('draft write failed'),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text("Couldn't start migration. Try again."), findsOneWidget);
-    expect(find.text('Preparing...'), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("Couldn't start the migration. Try again."),
+      findsOneWidget,
+    );
+    expect(find.text('Choose How to Migrate'), findsOneWidget);
   });
 
-  testWidgets('opens status when start reports an error after creating a run', (
-    tester,
-  ) async {
-    _useMobileViewport(tester);
-    var started = false;
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/start',
-        migrationService: _migrationService(
-          onStart: (_, _) {
-            started = true;
-            return Future.error(StateError('post-start failure'));
-          },
-        ),
-        startedStatus: _status(
-          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
-          activeRunId: 'run-1',
-        ),
-        ctaBuilder: () => started
-            ? IronwoodHomeMigrationCtaState.resume(
-                network: 'main',
-                accountUuid: 'account-1',
-                status: _status(
-                  phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+  testWidgets(
+    'opens status when draft persistence reports an error after committing',
+    (tester) async {
+      _useMobileViewport(tester);
+      final draftStatus = _status(
+        phase: kIronwoodMigrationAwaitingPreparationPhase,
+        activeRunId: 'committed-draft-run',
+      );
+      var draftCommitted = false;
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/options',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            onCreatePrivateDraft: (_, _) async {
+              draftCommitted = true;
+              throw StateError('credential reconciliation failed');
+            },
+          ),
+          ctaBuilder: () => draftCommitted
+              ? IronwoodHomeMigrationCtaState.resume(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                  status: draftStatus,
+                )
+              : const IronwoodHomeMigrationCtaState.start(
+                  network: 'main',
+                  accountUuid: 'account-1',
                 ),
-              )
-            : const IronwoodHomeMigrationCtaState.start(
-                network: 'main',
-                accountUuid: 'account-1',
-              ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text("Couldn't start migration. Try again."), findsNothing);
-    expect(find.text('Preparing your migration'), findsOneWidget);
-  });
-
-  testWidgets('opens status when post-start verification is unavailable', (
-    tester,
-  ) async {
-    _useMobileViewport(tester);
-    var started = false;
-    var statusReadCount = 0;
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/start',
-        migrationService: _migrationService(
-          onStart: (_, _) async {
-            started = true;
-            return _migrationResult();
-          },
         ),
-        statusLoader: () async {
-          statusReadCount++;
-          throw StateError('temporary status failure');
-        },
-        ctaBuilder: () => started
-            ? IronwoodHomeMigrationCtaState.resume(
-                network: 'main',
-                accountUuid: 'account-1',
-                status: _status(
-                  phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
-                ),
-              )
-            : const IronwoodHomeMigrationCtaState.start(
-                network: 'main',
-                accountUuid: 'account-1',
-              ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(statusReadCount, 1);
-    expect(find.text("Couldn't start migration. Try again."), findsNothing);
-    expect(find.text('Preparing your migration'), findsOneWidget);
-  });
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text("Couldn't start the migration. Try again."),
+        findsNothing,
+      );
+      expect(find.text('Preparing your migration'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'opens status when fresh preparation errors after saving a draft',
+    (tester) async {
+      _useMobileViewport(tester);
+      var started = false;
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/options',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            onStart: (_, _) {
+              started = true;
+              return Future.error(StateError('post-start failure'));
+            },
+          ),
+          startedStatus: _status(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+            activeRunId: 'run-1',
+          ),
+          ctaBuilder: () => started
+              ? IronwoodHomeMigrationCtaState.resume(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                  status: _status(
+                    phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+                  ),
+                )
+              : const IronwoodHomeMigrationCtaState.start(
+                  network: 'main',
+                  accountUuid: 'account-1',
+                ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text("Couldn't start migration. Try again."), findsNothing);
+      expect(find.text('Preparing your migration'), findsOneWidget);
+    },
+  );
 
   testWidgets('maps a live denomination status to Preparing', (tester) async {
     _useMobileViewport(tester);
@@ -3713,6 +4662,42 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
+      expect(find.text('Continue preparation'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'waits for preparation runtime inspection before choosing resume state',
+    (tester) async {
+      _useMobileViewport(tester);
+      final runtimeState =
+          Completer<IronwoodMigrationPreparationRuntimeState>();
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            getPreparationRuntimeState:
+                ({required network, required accountUuid, required runId}) =>
+                    runtimeState.future,
+          ),
+          status: _status(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('Syncing your wallet…'), findsOneWidget);
+      expect(find.text('Continue preparation'), findsNothing);
+
+      runtimeState.complete(IronwoodMigrationPreparationRuntimeState.running);
       await tester.pumpAndSettle();
 
       expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
@@ -4435,4 +5420,26 @@ void main() {
     expect(find.text('Migration complete'), findsNothing);
     expect(find.text('0/1 Batch'), findsOneWidget);
   });
+}
+
+class _RecordingCompletionStore implements IronwoodMigrationCompletionStore {
+  _RecordingCompletionStore(this.seen);
+
+  final List<String> seen;
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async => false;
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    seen.add('$network:$accountUuid:$completionId');
+  }
 }

@@ -353,6 +353,75 @@ private enum BackgroundMigrationNotification {
   }
 }
 
+/// Confirms migration proof readiness straight from the wallet database.
+///
+/// The inspection is a plain FFI call, so it does not need the preparation task
+/// machinery that only exists on iOS 26. That makes it the whole verification on
+/// older supported versions, where background preparation never runs and this
+/// notification is the only thing that brings the user back to continue the
+/// migration. iOS 26 wraps the same inspection with a preparation sync when the
+/// first look says the witness is not there yet.
+enum IronwoodMigrationProofReadinessCheck {
+  struct Scope {
+    let batch: BackgroundMigrationOutboxBatch
+    let manifest: IronwoodMigrationBackgroundManifest
+  }
+
+  static func scope(batchId: String) -> Scope? {
+    guard
+      let batch = try? BackgroundMigrationOutboxStore.shared.read().batches.first(
+        where: { $0.batchId == batchId }
+      ),
+      let manifest = IronwoodMigrationBackgroundCredentialStore.loadAll()?.first(
+        where: {
+          $0.expectedRunId == batch.runId
+            && $0.accountUuid == batch.accountUuid
+            && $0.network == batch.network
+        }
+      )
+    else {
+      return nil
+    }
+    return Scope(batch: batch, manifest: manifest)
+  }
+
+  /// Returns whether the run's proof is ready, or `nil` when the inspection
+  /// itself failed and readiness stays unknown.
+  static func inspect(_ scope: Scope) -> Bool? {
+    var ready = false
+    let code = zcash_inspect_migration_proof_readiness(
+      scope.manifest.dbPath,
+      scope.manifest.network,
+      scope.manifest.accountUuid,
+      scope.batch.runId,
+      &ready
+    )
+    return code == 0 ? ready : nil
+  }
+
+  /// Verification for versions without background preparation: inspect only,
+  /// and record the readiness so the notification is not announced twice.
+  static func verifyWithoutPreparation(batchId: String) -> Bool {
+    guard let scope = scope(batchId: batchId), inspect(scope) == true else {
+      return false
+    }
+    var matched = false
+    guard
+      (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
+        matched = snapshot.recordVerifiedProofReadiness(
+          network: scope.batch.network,
+          accountUuid: scope.batch.accountUuid,
+          runId: scope.batch.runId,
+          at: Date()
+        )
+      }) != nil
+    else {
+      return false
+    }
+    return matched
+  }
+}
+
 final class BackgroundMigrationManager {
   static let shared = BackgroundMigrationManager()
   static let taskIdentifier = "com.keplr.vizor.ironwood-migration"
@@ -643,22 +712,18 @@ final class BackgroundMigrationManager {
       self.stateLock.vizorWithLock {
         self.activeCancellation = cancellation
       }
-      if #available(iOS 26.0, *) {
-        BackgroundMigrationPreparationManager.shared.runDeferredPass {
-          preparationResult in
-          self.runOutbox(
-            task: task,
-            cancellation: cancellation,
-            preparationResult: preparationResult
-          )
-        }
-      } else {
-        self.runOutbox(
-          task: task,
-          cancellation: cancellation,
-          preparationResult: .completed
-        )
-      }
+      // This wake is a silent BGProcessingTask. It queries the chain tip,
+      // broadcasts transactions that are already signed, and notifies — it does
+      // not scan. Preparation work needs a chain sync to see its denomination
+      // confirmations, so it belongs to the user-initiated, user-visible
+      // continued-processing task, not here. Running it from this wake meant a
+      // closed app performing multi-minute chain syncs the user never asked
+      // for.
+      self.runOutbox(
+        task: task,
+        cancellation: cancellation,
+        preparationResult: .completed
+      )
     }
   }
 
@@ -687,35 +752,72 @@ final class BackgroundMigrationManager {
           self.finishForegroundOnly(task)
           return
         }
+        // Readiness cannot be established here without scanning, and this wake
+        // does not scan. Reaching the anchor height is a chain-tip question, so
+        // the runner marks the candidate from the observed height and the
+        // notification tells the user to reopen the app, which is where the
+        // sync and the proof belong. The announcement is recorded apart from a
+        // verified one so it does not retire the batch.
         let runResult = BackgroundMigrationOutboxRunner.runOnce(
-          cancellation: cancellation
+          cancellation: cancellation,
+          requiresPreparationProofVerification: true
         )
         self.clearActiveCancellation()
-        guard self.wakeDisposition == .continueBackgroundWork else {
-          self.finishForegroundOnly(task)
-          return
+        let announced = runResult.proofReady.flatMap {
+          self.unverifiedProofReadyNotice(for: $0)
         }
-        self.finishWake(
-          runResult,
+        // A run waiting on denomination confirmations needs a scan to move, and
+        // this wake does not scan. Saying nothing leaves it stalled until the
+        // user happens to reopen the app. The notification is deduplicated by
+        // the preparation state it reports, and that state cannot change while
+        // nothing is scanning, so a stalled run is announced once rather than
+        // on every wake.
+        if #available(iOS 26.0, *) {
+          BackgroundMigrationPreparationManager.shared
+            .notifyPreparationNeedsForeground()
+        }
+        self.finishOutboxRun(
+          BackgroundMigrationOutboxRunResult(
+            transport: runResult.transport,
+            proofReady: announced,
+            broadcastComplete: runResult.broadcastComplete,
+            transportAccountUuid: runResult.transportAccountUuid
+          ),
+          task: task,
           preparationResult: preparationResult
-        ) { rescheduled in
-          let preparationSucceeded =
-            migrationPreparationBackgroundWakeSucceeded(preparationResult)
-          self.stopAuthorizationMonitoring()
-          if self.wakeDisposition == .finishForegroundOnly {
-            task.setTaskCompleted(
-              success: self.wakeDisposition.taskCompletionIsSuccessful
-            )
-            return
-          }
-          task.setTaskCompleted(
-            success: runResult.transport != .temporarilyUnavailable
-              && runResult.transport != .cancelled
-              && preparationSucceeded
-              && rescheduled
-          )
-        }
+        )
       }
+    }
+  }
+
+  private func finishOutboxRun(
+    _ runResult: BackgroundMigrationOutboxRunResult,
+    task: BGProcessingTask,
+    preparationResult: BackgroundMigrationPreparationPassResult
+  ) {
+    guard wakeDisposition == .continueBackgroundWork else {
+      finishForegroundOnly(task)
+      return
+    }
+    finishWake(
+      runResult,
+      preparationResult: preparationResult
+    ) { rescheduled in
+      let preparationSucceeded =
+        migrationPreparationBackgroundWakeSucceeded(preparationResult)
+      self.stopAuthorizationMonitoring()
+      if self.wakeDisposition == .finishForegroundOnly {
+        task.setTaskCompleted(
+          success: self.wakeDisposition.taskCompletionIsSuccessful
+        )
+        return
+      }
+      task.setTaskCompleted(
+        success: runResult.transport != .temporarilyUnavailable
+          && runResult.transport != .cancelled
+          && preparationSucceeded
+          && rescheduled
+      )
     }
   }
 
@@ -943,7 +1045,7 @@ final class BackgroundMigrationManager {
       (batch.armedAt != nil
         && batch.items.contains { item in
           item.status == .armed || item.status == .submitting
-        }) || (batch.nextProofHeight != nil && batch.proofReadyNotifiedAt == nil)
+        }) || (batch.nextProofHeight != nil && batch.awaitsProofReadyAnnouncement)
         || (batch.broadcastCompleteNotificationPendingAt != nil
           && batch.broadcastCompleteNotifiedAt == nil)
     }
@@ -1016,6 +1118,37 @@ final class BackgroundMigrationManager {
     }
   }
 
+  /// Records that this batch owes the height-only nudge, and returns it so the
+  /// wake delivers it. A retry of an already-queued nudge passes straight
+  /// through; a batch that was nudged before returns nil so it is not repeated.
+  private func unverifiedProofReadyNotice(
+    for candidate: BackgroundMigrationProofReadyMetadata
+  ) -> BackgroundMigrationProofReadyMetadata? {
+    if !candidate.verified { return candidate }
+    // A build that verified readiness here could leave a verified announcement
+    // queued. Nothing marks one any more, so deliver and acknowledge it through
+    // the path that queued it — re-marking it as a nudge is refused, which
+    // would strand the notification with no way to clear it.
+    if let pending = (try? BackgroundMigrationOutboxStore.shared.read())?
+      .pendingProofReadyNotification(),
+      pending.batchId == candidate.batchId
+    {
+      return pending
+    }
+    var notice: BackgroundMigrationProofReadyMetadata?
+    guard
+      (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
+        notice = snapshot.markUnverifiedProofReadyNoticeIfNeeded(
+          batchId: candidate.batchId,
+          at: Date()
+        )
+      }) != nil
+    else {
+      return nil
+    }
+    return notice
+  }
+
   private func deliverProofReadyNotification(
     _ proofReady: BackgroundMigrationProofReadyMetadata?,
     completion: @escaping (Bool) -> Void
@@ -1033,10 +1166,19 @@ final class BackgroundMigrationManager {
       if delivered {
         acknowledged =
           (try? BackgroundMigrationOutboxStore.shared.update { snapshot in
-            try snapshot.acknowledgeProofReadyNotification(
-              batchId: proofReady.batchId,
-              at: Date()
-            )
+            if proofReady.verified {
+              try snapshot.acknowledgeProofReadyNotification(
+                batchId: proofReady.batchId,
+                at: Date()
+              )
+            } else {
+              // Leaves proofReadyNotifiedAt nil on purpose, so the verified
+              // announcement is still available once readiness holds.
+              try snapshot.acknowledgeUnverifiedProofReadyNotice(
+                batchId: proofReady.batchId,
+                at: Date()
+              )
+            }
           }) != nil
       }
       completion(delivered && acknowledged)

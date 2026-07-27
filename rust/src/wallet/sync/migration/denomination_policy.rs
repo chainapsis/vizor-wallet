@@ -109,6 +109,9 @@ fn largest_zip318_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
 
 fn anchor_bucket_modulus(network: WalletNetwork, timing_policy: MigrationTimingPolicy) -> u32 {
     match network {
+        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => {
+            FAST_TESTNET_ANCHOR_BUCKET_MODULUS
+        }
         WalletNetwork::Regtest => REGTEST_ANCHOR_BUCKET_MODULUS,
         WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => {
             FAST_TESTNET_ANCHOR_BUCKET_MODULUS
@@ -119,6 +122,7 @@ fn anchor_bucket_modulus(network: WalletNetwork, timing_policy: MigrationTimingP
 
 fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingPolicy) -> u32 {
     match network {
+        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => 1,
         // Empty regtest blocks do not add commitment-tree checkpoints. Allow
         // the checkpoint containing the denomination note so E2E can advance.
         WalletNetwork::Regtest => 0,
@@ -164,14 +168,8 @@ pub(crate) fn proof_ready_height_for_note_mined_height(
         .trusted()
         .get()
         .saturating_sub(1);
-    let remainder = mined_height % modulus;
-    let containing_boundary = if remainder == 0 {
-        mined_height
-    } else {
-        mined_height
-            .checked_add(modulus - remainder)
-            .ok_or("Migration proof readiness height overflow")?
-    };
+    let containing_boundary =
+        anchor_boundary_containing_note_with_policy(network, timing_policy, mined_height)?;
     let aging_blocks = modulus
         .checked_mul(anchor_bucket_min_age(network, timing_policy))
         .ok_or("Migration proof readiness height overflow")?;
@@ -179,6 +177,22 @@ pub(crate) fn proof_ready_height_for_note_mined_height(
         .checked_add(aging_blocks)
         .and_then(|height| height.checked_add(confirmation_lag))
         .ok_or_else(|| "Migration proof readiness height overflow".to_string())
+}
+
+pub(crate) fn anchor_boundary_containing_note_with_policy(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    mined_height: u32,
+) -> Result<u32, String> {
+    let modulus = anchor_bucket_modulus(network, timing_policy);
+    let remainder = mined_height % modulus;
+    if remainder == 0 {
+        Ok(mined_height)
+    } else {
+        mined_height
+            .checked_add(modulus - remainder)
+            .ok_or_else(|| "Migration anchor boundary overflow".to_string())
+    }
 }
 
 pub(crate) fn next_anchor_retry_height_after(

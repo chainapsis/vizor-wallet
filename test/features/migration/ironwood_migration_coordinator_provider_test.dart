@@ -225,6 +225,7 @@ void main() {
         'broadcast_scheduled',
         signedChildPcztCount: 1,
         nextActionHeight: 1_000,
+        proofReady: true,
       ),
       _hardwareUuid: _status('complete', activeRunId: null),
     };
@@ -332,12 +333,112 @@ void main() {
     },
   );
 
+  test('manual retry uses the due native outbox recovery lane', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final recoveries = <String>[];
+    final broadcasts = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: broadcasts,
+      outboxRecoveries: recoveries,
+      recoverOutbox: (_) async => throw StateError(
+        'Ironwood migration credential is missing for the active run.',
+      ),
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
+
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    await coordinator.refreshNow();
+    recoveries.clear();
+
+    await expectLater(
+      coordinator.retry(_softwareUuid, status: statuses[_softwareUuid]),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(recoveries, [_softwareUuid]);
+    expect(broadcasts, isEmpty);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .errors[_softwareUuid],
+      contains('credential is missing for the active run'),
+    );
+  });
+
+  test(
+    'manual retry recovers a due outbox before sync reports a height',
+    () async {
+      // A status screen can be the first surface after a cold launch, so an
+      // explicit retry can run before the first sync snapshot arrives. Treating
+      // the unknown height as "not due" would route the user action back into the
+      // ordinary advance that cannot restore a missing native outbox batch.
+      final statuses = {
+        _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final recoveries = <String>[];
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+        outboxRecoveries: recoveries,
+        recoverOutbox: (_) async => throw StateError(
+          'Ironwood migration credential is missing for the active run.',
+        ),
+        syncState: SyncState(),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await expectLater(
+        coordinator.retry(_softwareUuid, status: statuses[_softwareUuid]),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(recoveries, [_softwareUuid]);
+      expect(broadcasts, isEmpty);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .errors[_softwareUuid],
+        contains('credential is missing for the active run'),
+      );
+    },
+  );
+
   test('resumes proof preparation when its anchor height is scanned', () async {
     final statuses = {
       _softwareUuid: _status(
         'broadcast_scheduled',
         signedChildPcztCount: 1,
         nextActionHeight: 1_000,
+        proofReady: true,
       ),
       _hardwareUuid: _status('complete', activeRunId: null),
     };
@@ -378,6 +479,7 @@ void main() {
         'broadcast_scheduled',
         signedChildPcztCount: 16,
         nextActionHeight: 1_000,
+        proofReady: true,
         scheduledHeight: 1_100,
       ),
       _hardwareUuid: _status('complete', activeRunId: null),
@@ -393,6 +495,7 @@ void main() {
           'broadcast_scheduled',
           signedChildPcztCount: 8,
           nextActionHeight: 1_000,
+          proofReady: true,
           scheduledHeight: 1_100,
         );
         return _result('broadcast_scheduled');
@@ -432,6 +535,7 @@ void main() {
           'ready_to_migrate',
           signedChildPcztCount: 1,
           nextActionHeight: 1_000,
+          proofReady: true,
         ),
       };
       final advances = <String>[];
@@ -493,6 +597,50 @@ void main() {
 
     expect(advances, isEmpty);
   });
+
+  test(
+    'does not prepare a height-due proof until witness preflight passes',
+    () async {
+      final statuses = {
+        _softwareUuid: _status(
+          'broadcast_scheduled',
+          signedChildPcztCount: 1,
+          nextActionHeight: 1_000,
+          proofReady: false,
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final advances = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: advances,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantChildProofBatchPermit(_softwareUuid);
+      await coordinator.refreshNow();
+
+      expect(advances, isEmpty);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .childProofBatchPermits,
+        contains(_softwareUuid),
+      );
+    },
+  );
 
   test('does not prepare proof before any wallet height is scanned', () async {
     final statuses = {
@@ -1287,6 +1435,38 @@ void main() {
     },
   );
 
+  testWidgets('startup recovery records verified proof readiness explicitly', (
+    tester,
+  ) async {
+    final proofReadinessRecords = <String>[];
+    final container = _container(
+      statuses: {
+        _softwareUuid: _status(
+          'ready_to_migrate',
+          nextActionHeight: 1_000,
+          proofReady: true,
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      },
+      softwareStarts: [],
+      broadcasts: [],
+      syncState: SyncState(),
+      isIOS: true,
+      proofReadinessRecords: proofReadinessRecords,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const IronwoodMigrationCoordinatorHost(child: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(proofReadinessRecords, [_softwareUuid]);
+  });
+
   testWidgets('initial status refresh does not restart Keystone preparation', (
     tester,
   ) async {
@@ -1418,6 +1598,7 @@ ProviderContainer _container({
   bool isIOS = false,
   IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
   List<String>? backgroundPreparationStarts,
+  List<String>? proofReadinessRecords,
   bool mutableAccounts = false,
   AppSecurityState? initialSecurityState,
 }) {
@@ -1444,6 +1625,17 @@ ProviderContainer _container({
         ? null
         : () async {
             backgroundPreparationStarts.add(_softwareUuid);
+            return true;
+          },
+    recordVerifiedProofReadiness: proofReadinessRecords == null
+        ? null
+        : ({
+            required network,
+            required accountUuid,
+            required runId,
+            required observedHeight,
+          }) async {
+            proofReadinessRecords.add(accountUuid);
             return true;
           },
     scheduleBackgroundMigration: () async => true,
@@ -1626,6 +1818,7 @@ rust_sync.MigrationStatus _status(
   String scheduledTxid = 'scheduled-tx',
   int signedChildPcztCount = 0,
   int? nextActionHeight,
+  bool? proofReady,
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -1647,6 +1840,7 @@ rust_sync.MigrationStatus _status(
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    proofReady: proofReady,
     scheduledBroadcasts: scheduledHeight == null
         ? const []
         : [

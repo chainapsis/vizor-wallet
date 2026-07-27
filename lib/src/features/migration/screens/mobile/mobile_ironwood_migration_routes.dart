@@ -85,19 +85,15 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.howItWorks =>
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
-        immediateEnabled: !isHardware,
+        immediateEnabled: true,
       ),
       MobileIronwoodMigrationStep.notifications =>
         _MobileMigrationNotificationPermissionScreen(
           privatePlan: previewPrivatePlan,
         ),
-      MobileIronwoodMigrationStep.privateStart => _MobileMigrationPrivateStart(
-        privatePlan: previewPrivatePlan,
-      ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,
         previewPlan: previewImmediatePlan,
-        isHardware: isHardware,
       ),
       MobileIronwoodMigrationStep.preparing => _MobileMigrationPreparing(
         data: data,
@@ -115,6 +111,82 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   }
 }
 
+/// Dedicated destination for a finished migration.
+///
+/// The result used to be reachable only as a branch inside the status screen,
+/// so home's completion routing had to send the user to
+/// `/migration/private/status`. That screen refreshes its own status on entry
+/// and renders its loading/progress surface until the durable phase resolves,
+/// which is why a finished migration flashed "in progress" before landing on
+/// the result. The status screen keeps its own completion branch so the result
+/// still appears when the user is already standing on it; both render the same
+/// [_MigrationCompleteSurface], which owns the amount and the seen-marking.
+class MobileIronwoodMigrationCompleteScreen extends ConsumerStatefulWidget {
+  const MobileIronwoodMigrationCompleteScreen({super.key});
+
+  @override
+  ConsumerState<MobileIronwoodMigrationCompleteScreen> createState() =>
+      _MobileIronwoodMigrationCompleteScreenState();
+}
+
+class _MobileIronwoodMigrationCompleteScreenState
+    extends ConsumerState<MobileIronwoodMigrationCompleteScreen> {
+  /// The account whose result this screen opened for, held across rebuilds.
+  ///
+  /// Marking a completion seen invalidates the provider that published it, so
+  /// `visible` flips to false moments after this screen appears. Re-deciding
+  /// from that provider on every build would redirect home and flash the
+  /// result past — the exact behaviour this route exists to remove.
+  String? _shownAccountUuid;
+
+  @override
+  Widget build(BuildContext context) {
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+
+    // Switching accounts must not leave another account's result on screen.
+    final shownAccountUuid = _shownAccountUuid;
+    if (shownAccountUuid != null && shownAccountUuid != accountUuid) {
+      return const _MobileMigrationRedirectHome();
+    }
+
+    final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
+    final data = ref.watch(ironwoodMigrationFlowDataProvider);
+    final status = ctaAsync.value?.status;
+    final completedStatus =
+        status != null && status.phase == kIronwoodMigrationCompletePhase
+        ? status
+        : null;
+
+    if (shownAccountUuid == null) {
+      final completion = ref.watch(ironwoodMigrationCompletionProvider);
+      // Never bounce off this route while either source is still settling;
+      // that flicker is what this screen exists to remove.
+      if (completion.isLoading || ctaAsync.isLoading) {
+        return const _MobileMigrationLoadingScreen();
+      }
+      final value = completion.value;
+      if (value == null ||
+          !value.visible ||
+          value.accountUuid != accountUuid ||
+          completedStatus == null) {
+        return const _MobileMigrationRedirectHome();
+      }
+      _shownAccountUuid = accountUuid;
+    }
+
+    // The result headline is built from a real amount or not shown at all, so
+    // wait for the flow data rather than rendering a blank total.
+    if (completedStatus == null || data == null) {
+      return const _MobileMigrationLoadingScreen();
+    }
+    return _MigrationCompleteSurface(
+      status: completedStatus,
+      fallbackAmountText: data.amountText,
+      onDone: () => context.go('/home'),
+    );
+  }
+}
+
 class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
   const MobileIronwoodMigrationPrivateStatusScreen({
     this.approvedPlan,
@@ -127,6 +199,14 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ctaAsync = ref.watch(ironwoodMigrationRouteCtaProvider);
     final data = ref.watch(ironwoodMigrationFlowDataProvider);
+
+    // A newly started run invalidates the route CTA before opening this
+    // screen. Do not let the previous `start` value redirect back to About
+    // while the durable run status is still loading.
+    if (ctaAsync.isLoading &&
+        ctaAsync.value?.mode == IronwoodHomeMigrationCtaMode.start) {
+      return const _MobileMigrationLoadingScreen();
+    }
 
     return ctaAsync.when(
       skipLoadingOnReload: true,
@@ -151,10 +231,6 @@ class MobileIronwoodMigrationPrivateStatusScreen extends ConsumerWidget {
         if (data == null) return const _MobileMigrationRedirectHome();
         if (!_hasRenderableMobileMigrationStatus(status)) {
           return const _MobileMigrationLoadingScreen();
-        }
-        if (status.phase == kIronwoodMigrationAwaitingPreparationPhase &&
-            !isHardware) {
-          return const _MobileMigrationRedirectTo('/migration/private/start');
         }
         return _MobileMigrationLiveStatus(
           data: data,

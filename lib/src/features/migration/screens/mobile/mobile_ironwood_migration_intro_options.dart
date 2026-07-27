@@ -151,6 +151,10 @@ class _MobileMigrationOptionsState
   String? _continueError;
 
   void _select(_MobileMigrationOption option) {
+    // Continue commits to the selected option: it prepares that plan, saves a
+    // draft, and routes on. Switching underneath that would apply one option's
+    // work to the other's screen.
+    if (_isContinuing) return;
     if (option == _MobileMigrationOption.immediate &&
         !widget.immediateEnabled) {
       return;
@@ -196,6 +200,10 @@ class _MobileMigrationOptionsState
       debugPrint('Failed to prepare private migration choice: $error');
       if (!mounted) return;
       setState(() {
+        // The lock disables back, both option cards and Continue, so any exit
+        // that leaves the user on this screen has to release it. Keeping it
+        // held here strands them on an error they cannot retry or leave.
+        _isContinuing = false;
         _continueError = "Couldn't prepare the migration plan. Try again.";
       });
       return;
@@ -214,6 +222,7 @@ class _MobileMigrationOptionsState
       return;
     }
 
+    var draftSaved = false;
     try {
       if (!mounted) return;
       if (!authorization.allowsBackgroundMigration) {
@@ -226,20 +235,27 @@ class _MobileMigrationOptionsState
             accountUuid: accountUuid,
             approvedSchedule: plan.scheduledTransfers,
           );
+      draftSaved = true;
       if (!mounted) return;
       await _refreshPrivateMigrationDraftPresentation(ref);
       if (!mounted) return;
-      await _continuePrivateMigrationAfterNotificationGate(ref, plan);
-      if (!mounted) return;
-      context.go(
-        plan.denominationSplitStageCount == 0
-            ? '/migration/private/status'
-            : '/migration/private/start',
-        extra: plan,
+      final continuation = await _continuePrivateMigrationAfterNotificationGate(
+        ref,
+        plan,
       );
+      if (!mounted) return;
+      _openPrivateMigrationDestination(context, continuation, plan);
     } catch (error) {
       debugPrint('Failed to activate direct-note migration: $error');
       if (!mounted) return;
+      if (draftSaved || await _hasDurablePrivateMigrationRun(ref)) {
+        if (!mounted) return;
+        context.go(
+          '/migration/private/status',
+          extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
+        );
+        return;
+      }
       setState(() {
         _continueError = "Couldn't start the migration. Try again.";
       });
@@ -253,64 +269,73 @@ class _MobileMigrationOptionsState
     final privateSelected = _selectedOption == _MobileMigrationOption.private;
     final immediateSelected =
         _selectedOption == _MobileMigrationOption.immediate;
-    return _MobileMigrationStepScaffold(
-      onBack: () => context.go('/migration/how-it-works'),
-      navTitle: 'How to Migrate',
-      topGap: 91,
-      childGap: 24,
-      title: 'Choose How to Migrate',
-      subtitle:
-          'Choose between more privacy over time or a faster migration. '
-          'You can review the details before anything moves.',
-      bottom: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_continueError != null) ...[
-            Text(
-              _continueError!,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodySmall.copyWith(
-                color: context.colors.text.destructive,
+    return PopScope(
+      // The in-flight step saves a migration draft and then routes on. Leaving
+      // in the middle would strand that work on a screen the user has left.
+      canPop: !_isContinuing,
+      child: _MobileMigrationStepScaffold(
+        onBack: _isContinuing
+            ? () {}
+            : () => context.go('/migration/how-it-works'),
+        navTitle: 'How to Migrate',
+        topGap: 91,
+        childGap: 24,
+        title: 'Choose How to Migrate',
+        subtitle:
+            'Choose between more privacy over time or a faster migration. '
+            'You can review the details before anything moves.',
+        bottom: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_continueError != null) ...[
+              Text(
+                _continueError!,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: context.colors.text.destructive,
+                ),
               ),
+              const SizedBox(height: AppSpacing.s),
+            ],
+            _MobileMigrationPrimaryButton(
+              key: const ValueKey('mobile_ironwood_options_continue_button'),
+              label: 'Continue',
+              busy: _isContinuing,
+              onPressed: _isContinuing ? null : _continue,
             ),
-            const SizedBox(height: AppSpacing.s),
           ],
-          _MobileMigrationPrimaryButton(
-            key: const ValueKey('mobile_ironwood_options_continue_button'),
-            label: 'Continue',
-            busy: _isContinuing,
-            onPressed: _isContinuing ? null : _continue,
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          _MobileMigrationOptionCard(
-            key: const ValueKey('mobile_ironwood_private_option'),
-            title: 'Private',
-            body:
-                'Splits transactions into multiple parts to minimize '
-                'traceability, but takes longer.',
-            selected: privateSelected,
-            icon: _MigrationChoiceIcon.private,
-            recommended: true,
-            onTap: () => _select(_MobileMigrationOption.private),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _MobileMigrationOptionCard(
-            key: const ValueKey('mobile_ironwood_immediate_option'),
-            title: 'Immediate',
-            body: widget.immediateEnabled
-                ? 'Migrates your entire balance in one batch. '
-                      'Fast, but less private.'
-                : 'Not available with Keystone.',
-            selected: immediateSelected,
-            icon: _MigrationChoiceIcon.immediate,
-            onTap: widget.immediateEnabled
-                ? () => _select(_MobileMigrationOption.immediate)
-                : null,
-          ),
-        ],
+        ),
+        child: Column(
+          children: [
+            _MobileMigrationOptionCard(
+              key: const ValueKey('mobile_ironwood_private_option'),
+              title: 'Private',
+              body:
+                  'Splits transactions into multiple parts to minimize '
+                  'traceability, but takes longer.',
+              selected: privateSelected,
+              icon: _MigrationChoiceIcon.private,
+              recommended: true,
+              onTap: _isContinuing
+                  ? null
+                  : () => _select(_MobileMigrationOption.private),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MobileMigrationOptionCard(
+              key: const ValueKey('mobile_ironwood_immediate_option'),
+              title: 'Immediate',
+              body: widget.immediateEnabled
+                  ? 'Migrates your entire balance in one batch. '
+                        'Fast, but less private.'
+                  : 'Not available with Keystone.',
+              selected: immediateSelected,
+              icon: _MigrationChoiceIcon.immediate,
+              onTap: widget.immediateEnabled && !_isContinuing
+                  ? () => _select(_MobileMigrationOption.immediate)
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -329,12 +354,60 @@ Future<void> _refreshPrivateMigrationDraftPresentation(WidgetRef ref) async {
   }
 }
 
-Future<void> _continuePrivateMigrationAfterNotificationGate(
+Future<bool> _hasDurablePrivateMigrationRun(WidgetRef ref) async {
+  ref.invalidate(ironwoodMigrationRouteCtaProvider);
+  try {
+    final cta = await ref.read(ironwoodMigrationRouteCtaProvider.future);
+    return cta.status?.activeRunId != null;
+  } catch (_) {
+    return false;
+  }
+}
+
+enum _PrivateMigrationContinuationDestination {
+  status,
+  keystoneDenominationSigning,
+}
+
+void _openPrivateMigrationDestination(
+  BuildContext context,
+  ({
+    _PrivateMigrationContinuationDestination destination,
+    MobileIronwoodMigrationKeystoneDenominationSignEntry? keystoneEntry,
+  })
+  continuation,
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) {
+  switch (continuation.destination) {
+    case _PrivateMigrationContinuationDestination.status:
+      context.go(
+        '/migration/private/status',
+        extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
+      );
+      return;
+    case _PrivateMigrationContinuationDestination.keystoneDenominationSigning:
+      final entry = continuation.keystoneEntry;
+      if (entry == null) {
+        throw StateError('Keystone signing request is unavailable.');
+      }
+      context.go(
+        '/migration/private/keystone/denominations/sign',
+        extra: entry,
+      );
+      return;
+  }
+}
+
+Future<
+  ({
+    _PrivateMigrationContinuationDestination destination,
+    MobileIronwoodMigrationKeystoneDenominationSignEntry? keystoneEntry,
+  })
+>
+_continuePrivateMigrationAfterNotificationGate(
   WidgetRef ref,
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) async {
-  if (plan.denominationSplitStageCount != 0) return;
-
   final accountState = await ref.read(accountProvider.future);
   final accountUuid = accountState.activeAccountUuid;
   if (accountUuid == null) {
@@ -346,26 +419,45 @@ Future<void> _continuePrivateMigrationAfterNotificationGate(
     final request = await service.prepareKeystoneDenominationPrivateMigration(
       accountUuid: accountUuid,
     );
-    if (request.messages.isNotEmpty) {
-      throw StateError(
-        'Direct-note migration unexpectedly requires preparation signatures.',
+    if (request.messages.isEmpty) {
+      await service.completeKeystoneDenominationPrivateMigration(
+        accountUuid: accountUuid,
+        requestId: request.requestId,
+        signedMessages: const [],
+        approvedSchedule: plan.scheduledTransfers,
+      );
+      _invalidateStartedPrivateMigration(ref);
+      return (
+        destination: _PrivateMigrationContinuationDestination.status,
+        keystoneEntry: null,
       );
     }
-    await service.completeKeystoneDenominationPrivateMigration(
-      accountUuid: accountUuid,
-      requestId: request.requestId,
-      signedMessages: const [],
-      approvedSchedule: plan.scheduledTransfers,
+    return (
+      destination:
+          _PrivateMigrationContinuationDestination.keystoneDenominationSigning,
+      keystoneEntry: MobileIronwoodMigrationKeystoneDenominationSignEntry(
+        approvedSchedule: plan.scheduledTransfers,
+        request: request,
+        accountUuid: accountUuid,
+      ),
     );
-  } else {
-    await ref
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .startSoftwareMigration(
-          accountUuid: accountUuid,
-          approvedSchedule: plan.scheduledTransfers,
-        );
   }
 
+  await ref
+      .read(ironwoodMigrationCoordinatorProvider.notifier)
+      .startSoftwareMigration(
+        accountUuid: accountUuid,
+        approvedSchedule: plan.scheduledTransfers,
+      );
+
+  _invalidateStartedPrivateMigration(ref);
+  return (
+    destination: _PrivateMigrationContinuationDestination.status,
+    keystoneEntry: null,
+  );
+}
+
+void _invalidateStartedPrivateMigration(WidgetRef ref) {
   ref.invalidate(ironwoodMigrationRouteCtaProvider);
   ref.invalidate(ironwoodHomeMigrationCtaProvider);
   ref.invalidate(ironwoodMigrationFlowDataProvider);

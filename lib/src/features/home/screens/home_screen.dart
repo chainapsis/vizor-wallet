@@ -287,20 +287,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ironwoodHomeMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
     final isMigrationInProgress =
         ironwoodHomeMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
-    final totalShieldedBalance =
-        sync.saplingBalance +
-        sync.orchardBalance +
-        sync.ironwoodBalance +
-        sync.saplingPendingBalance +
-        sync.orchardPendingBalance +
-        sync.ironwoodPendingBalance;
-    final ironwoodBalance = sync.ironwoodBalance + sync.ironwoodPendingBalance;
+    final totalShieldedBalance = sync.displayShieldedBalance;
+    final ironwoodBalance =
+        sync.displayIronwoodBalance + sync.displayIronwoodPendingBalance;
     final displayedShieldedBalance = isMigrationInProgress
         ? ironwoodBalance
         : totalShieldedBalance;
     final migratingBalance = _remainingMigrationBalance(
       ironwoodHomeMigrationCta,
-      fallback: sync.orchardBalance + sync.orchardPendingBalance,
+      fallback: sync.displayOrchardBalance + sync.displayOrchardPendingBalance,
     );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final shieldedFiatBalanceText = _formatFiatBalance(
@@ -596,9 +591,10 @@ class _HomePaneState extends ConsumerState<_HomePane> {
     final isMigrationInProgress =
         widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
     final hasBalance = isMigrationInProgress
-        ? widget.sync.ironwoodBalance + widget.sync.ironwoodPendingBalance >
+        ? widget.sync.displayIronwoodBalance +
+                  widget.sync.displayIronwoodPendingBalance >
               BigInt.zero
-        : widget.sync.totalBalance > BigInt.zero;
+        : widget.sync.displayTotalBalance > BigInt.zero;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
     final animateMigrationCta = ref.watch(
       homeMigrationCtaPulseMotionEnabledProvider,

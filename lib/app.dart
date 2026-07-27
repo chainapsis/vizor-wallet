@@ -743,6 +743,12 @@ List<RouteBase> _desktopRoutes() => [
     ),
   ),
   GoRoute(
+    path: '/migration/what-to-expect',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.whatToExpect,
+    ),
+  ),
+  GoRoute(
     path: '/migration/options',
     builder: (_, _) => const IronwoodMigrationFlowScreen(
       step: IronwoodMigrationFlowStep.options,
@@ -759,8 +765,43 @@ List<RouteBase> _desktopRoutes() => [
     ),
   ),
   GoRoute(
+    path: '/migration/immediate/review',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.immediateReview,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/immediate/keystone/sign',
+    redirect: (_, state) =>
+        state.extra is rust_sync.OrchardMigrationImmediatePlan
+        ? null
+        : '/migration/immediate/review',
+    builder: (_, state) => IronwoodMigrationKeystoneImmediateSignScreen(
+      approvedPlan: state.extra! as rust_sync.OrchardMigrationImmediatePlan,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/fast/review',
+    redirect: (_, _) => '/migration/immediate/review',
+  ),
+  GoRoute(
     path: '/migration/private/status',
     builder: (_, _) => const IronwoodMigrationPrivateStatusScreen(),
+  ),
+  GoRoute(
+    path: '/migration/private/schedule',
+    builder: (_, _) => const IronwoodMigrationScheduleScreen(),
+  ),
+  GoRoute(
+    path: '/migration/private/keystone/sign',
+    redirect: (_, state) =>
+        state.extra is List<rust_sync.MigrationScheduledTransfer>
+        ? null
+        : '/migration/private/review',
+    builder: (_, state) => IronwoodMigrationKeystoneCombinedSignScreen(
+      approvedSchedule:
+          state.extra! as List<rust_sync.MigrationScheduledTransfer>,
+    ),
   ),
   GoRoute(
     path: '/migration/private/keystone/denominations/sign',

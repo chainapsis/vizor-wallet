@@ -105,6 +105,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
       expect(boundaryKey.currentContext, isNotNull);
       expect(tester.takeException(), isNull);

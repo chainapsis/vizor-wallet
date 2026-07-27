@@ -8,6 +8,7 @@
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use zeroize::Zeroizing;
 
@@ -226,7 +227,35 @@ pub fn inspect(
     if status.active_run_id.as_deref() != Some(expected_run_id) {
         return Ok(MigrationPreparationProgress::inactive());
     }
-    progress_for_status(db_path, network, &status)
+    progress_for_status(db_path, network, account_uuid, &status)
+}
+
+pub fn inspect_proof_readiness(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<bool, MigrationPreparationError> {
+    let status = sync::migration_status(db_path, network, account_uuid, 0, 0, 0, 0)
+        .map_err(MigrationPreparationError::Execution)?;
+    if status.active_run_id.as_deref() != Some(expected_run_id) {
+        return Ok(false);
+    }
+    let scanned_height = sync::get_sync_progress(db_path, network)
+        .and_then(|progress| {
+            u32::try_from(progress.scanned_height)
+                .map_err(|_| "Migration scanned height exceeds u32".to_string())
+        })
+        .map_err(MigrationPreparationError::Execution)?;
+    sync::orchard_migration_proof_readiness_at_scanned_height(
+        db_path,
+        network,
+        account_uuid,
+        &status,
+        scanned_height,
+    )
+    .map(|readiness| readiness == Some(true))
+    .map_err(MigrationPreparationError::Execution)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -271,7 +300,7 @@ pub fn advance(
         ));
     }
 
-    let mut progress = progress_for_status(db_path, network, &status)?;
+    let mut progress = progress_for_status(db_path, network, account_uuid, &status)?;
     if control.cancel.load(Ordering::SeqCst) {
         progress.state = MigrationPreparationState::Cancelled;
     }
@@ -296,6 +325,7 @@ fn is_valid_credential(credential: &[u8]) -> bool {
 fn progress_for_status(
     db_path: &str,
     network: WalletNetwork,
+    account_uuid: &str,
     status: &sync::MigrationStatus,
 ) -> Result<MigrationPreparationProgress, MigrationPreparationError> {
     if status.active_run_id.is_none() {
@@ -307,13 +337,49 @@ fn progress_for_status(
                 .map_err(|_| "Migration scanned height exceeds u32".to_string())
         })
         .map_err(MigrationPreparationError::Execution)?;
+    let next_proof_height = status
+        .active_run_id
+        .as_deref()
+        .map(|run_id| sync::proof_retry_height(db_path, run_id))
+        .transpose()
+        .map_err(MigrationPreparationError::Execution)?
+        .flatten();
+    let proof_ready = if proof_readiness_preflight_needed(
+        &status.phase,
+        status.signed_child_pczt_count,
+        next_proof_height,
+        scanned_height,
+    ) {
+        let started_at = Instant::now();
+        let result = sync::orchard_migration_proof_readiness_at_scanned_height(
+            db_path,
+            network,
+            account_uuid,
+            status,
+            scanned_height,
+        );
+        let elapsed_ms = started_at.elapsed().as_millis();
+        match &result {
+            Ok(readiness) => log::info!(
+                "migration preparation: proof readiness preflight completed in {elapsed_ms}ms (ready={})",
+                readiness == &Some(true)
+            ),
+            Err(error) => log::warn!(
+                "migration preparation: proof readiness preflight failed after {elapsed_ms}ms: {error}"
+            ),
+        }
+        result.map_err(MigrationPreparationError::Execution)?
+    } else {
+        None
+    };
 
     Ok(MigrationPreparationProgress {
         state: classify_state(
             &status.phase,
             status.signed_child_pczt_count,
-            status.next_action_height,
+            next_proof_height,
             scanned_height,
+            proof_ready,
         ),
         confirmation_count: status.denomination_confirmation_count,
         confirmation_target: status.denomination_confirmation_target,
@@ -322,18 +388,35 @@ fn progress_for_status(
     })
 }
 
+fn proof_readiness_preflight_needed(
+    phase: &str,
+    signed_child_pczt_count: u32,
+    next_proof_height: Option<u32>,
+    scanned_height: u32,
+) -> bool {
+    phase == "ready_to_migrate"
+        && signed_child_pczt_count > 0
+        && next_proof_height.is_some_and(|height| height <= scanned_height)
+}
+
 fn classify_state(
     phase: &str,
     signed_child_pczt_count: u32,
-    next_action_height: Option<u32>,
+    next_proof_height: Option<u32>,
     scanned_height: u32,
+    proof_ready: Option<bool>,
 ) -> MigrationPreparationState {
     match phase {
         "waiting_denom_confirmations" => {
             MigrationPreparationState::WaitingForDenominationPreparation
         }
-        "ready_to_migrate" if signed_child_pczt_count > 0 => match next_action_height {
-            Some(height) if height <= scanned_height => MigrationPreparationState::ProofReady,
+        "ready_to_migrate" if signed_child_pczt_count > 0 => match next_proof_height {
+            Some(height) if height <= scanned_height && proof_ready == Some(true) => {
+                MigrationPreparationState::ProofReady
+            }
+            Some(height) if height <= scanned_height => {
+                MigrationPreparationState::WaitingForPreparedNoteAnchor
+            }
             Some(_) => MigrationPreparationState::WaitingForPreparedNoteAnchor,
             None => MigrationPreparationState::NeedsUserAction,
         },
@@ -389,17 +472,43 @@ mod tests {
     #[test]
     fn state_mapping_distinguishes_anchor_wait_from_proof_readiness() {
         assert_eq!(
-            classify_state("ready_to_migrate", 1, Some(2_000), 1_999),
+            classify_state("ready_to_migrate", 1, Some(2_000), 1_999, None),
             MigrationPreparationState::WaitingForPreparedNoteAnchor
         );
         assert_eq!(
-            classify_state("ready_to_migrate", 1, Some(2_000), 2_000),
+            classify_state("ready_to_migrate", 1, Some(2_000), 2_000, Some(false)),
+            MigrationPreparationState::WaitingForPreparedNoteAnchor
+        );
+        assert_eq!(
+            classify_state("ready_to_migrate", 1, Some(2_000), 2_000, Some(true)),
             MigrationPreparationState::ProofReady
         );
         assert_eq!(
-            classify_state("ready_to_migrate", 1, None, 2_000),
+            classify_state("ready_to_migrate", 1, None, 2_000, None),
             MigrationPreparationState::NeedsUserAction
         );
+    }
+
+    #[test]
+    fn proof_readiness_preflight_runs_only_after_the_height_gate() {
+        assert!(!proof_readiness_preflight_needed(
+            "ready_to_migrate",
+            1,
+            Some(2_000),
+            1_999,
+        ));
+        assert!(proof_readiness_preflight_needed(
+            "ready_to_migrate",
+            1,
+            Some(2_000),
+            2_000,
+        ));
+        assert!(!proof_readiness_preflight_needed(
+            "waiting_denom_confirmations",
+            1,
+            Some(2_000),
+            2_000,
+        ));
     }
 
     #[test]
@@ -411,16 +520,16 @@ mod tests {
             "complete",
         ] {
             assert_eq!(
-                classify_state(phase, 0, None, 0),
+                classify_state(phase, 0, None, 0, None),
                 MigrationPreparationState::Inactive
             );
         }
         assert_eq!(
-            classify_state("waiting_denom_confirmations", 0, None, 0),
+            classify_state("waiting_denom_confirmations", 0, None, 0, None),
             MigrationPreparationState::WaitingForDenominationPreparation
         );
         assert_eq!(
-            classify_state("ready_to_migrate", 0, Some(0), 0),
+            classify_state("ready_to_migrate", 0, Some(0), 0, None),
             MigrationPreparationState::NeedsUserAction
         );
     }

@@ -118,7 +118,7 @@ class IronwoodMigrationOutboxTest {
                 requiredTxids = expectedTxids,
             ),
         )
-        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+        org.junit.Assert.assertThrows(IronwoodOutboxConflictException::class.java) {
             IronwoodOutboxState.hasBatch(
                 snapshot = snapshot,
                 batchId = batch.batchId,
@@ -128,6 +128,48 @@ class IronwoodMigrationOutboxTest {
                 expectedTxids = expectedTxids + "missing-txid",
                 requiredTxids = setOf("missing-txid"),
             )
+        }
+    }
+
+    @Test
+    fun discardBatchRemovesOnlyTheIdleRecord() {
+        val discarded = batch(
+            item(expiryHeight = 69_120),
+            batchId = "batch-1",
+        )
+        val preserved = batch(
+            item(expiryHeight = 69_120),
+            batchId = "batch-2",
+        )
+        val snapshot = IronwoodOutboxSnapshot(
+            batches = mutableListOf(discarded, preserved),
+        )
+
+        assertTrue(IronwoodOutboxState.discardBatch(snapshot, discarded.batchId))
+        assertEquals(listOf(preserved.batchId), snapshot.batches.map { it.batchId })
+        assertTrue(!IronwoodOutboxState.discardBatch(snapshot, discarded.batchId))
+    }
+
+    @Test
+    fun discardBatchRefusesDeliveryState() {
+        val submitting = item(
+            expiryHeight = 69_120,
+            status = IronwoodOutboxItemStatus.SUBMITTING,
+        )
+        val attempted = item(expiryHeight = 69_120).apply {
+            attemptCount = 1
+        }
+
+        listOf(submitting, attempted).forEach { item ->
+            val batch = batch(item)
+            val snapshot = IronwoodOutboxSnapshot(
+                batches = mutableListOf(batch),
+            )
+
+            org.junit.Assert.assertThrows(IronwoodOutboxConflictException::class.java) {
+                IronwoodOutboxState.discardBatch(snapshot, batch.batchId)
+            }
+            assertEquals(listOf(batch.batchId), snapshot.batches.map { it.batchId })
         }
     }
 
@@ -191,7 +233,7 @@ class IronwoodMigrationOutboxTest {
     }
 
     @Test
-    fun proofWatchStopsSchedulingAfterHeightIsObserved() {
+    fun heightNoticeDoesNotRetireVerifiedProofReadiness() {
         repository.update {
             it.batches += batch(
                 item = null,
@@ -206,8 +248,13 @@ class IronwoodMigrationOutboxTest {
 
         assertEquals(IronwoodMigrationOutboxOutcome.WAITING, result.outcome)
         assertEquals("batch-1", result.proofReadyBatchId)
+        assertEquals(false, result.proofReadyVerified)
         assertNull(result.nextHeight)
-        assertEquals(120L, repository.read().batches.single().proofReadyObservedHeight)
+        assertNull(repository.read().batches.single().proofReadyObservedHeight)
+        assertEquals(
+            120L,
+            repository.read().batches.single().proofReadyHeightNoticeObservedHeight,
+        )
 
         val pending = IronwoodMigrationOutboxRunner(
             repository = repository,
@@ -215,20 +262,71 @@ class IronwoodMigrationOutboxTest {
         ).runOnce()
         assertEquals(IronwoodMigrationOutboxOutcome.NO_WORK, pending.outcome)
         assertEquals("batch-1", pending.proofReadyBatchId)
+        assertEquals(false, pending.proofReadyVerified)
         assertTrue(IronwoodOutboxState.hasRunnableWork(repository.read()))
 
         repository.update {
             assertTrue(
-                IronwoodOutboxState.acknowledgeProofReadyNotification(it, "batch-1"),
+                IronwoodOutboxState.acknowledgeUnverifiedProofReadyNotification(
+                    it,
+                    "batch-1",
+                ),
             )
         }
-        val acknowledged = IronwoodMigrationOutboxRunner(
+        val heightNoticeAcknowledged = IronwoodMigrationOutboxRunner(
             repository = repository,
             transport = FakeTransport(height = 120),
         ).runOnce()
-        assertEquals(IronwoodMigrationOutboxOutcome.NO_WORK, acknowledged.outcome)
-        assertNull(acknowledged.proofReadyBatchId)
+        assertEquals(
+            IronwoodMigrationOutboxOutcome.NO_WORK,
+            heightNoticeAcknowledged.outcome,
+        )
+        assertNull(heightNoticeAcknowledged.proofReadyBatchId)
         assertTrue(!IronwoodOutboxState.hasRunnableWork(repository.read()))
+
+        repository.update {
+            assertTrue(
+                IronwoodOutboxState.recordVerifiedProofReadiness(
+                    snapshot = it,
+                    network = "test",
+                    accountUuid = "account-1",
+                    runId = "run-1",
+                    observedHeight = 121,
+                ),
+            )
+        }
+        val verified = IronwoodMigrationOutboxRunner(
+            repository = repository,
+            transport = FakeTransport(height = 121),
+        ).runOnce()
+        assertEquals(IronwoodMigrationOutboxOutcome.NO_WORK, verified.outcome)
+        assertEquals("batch-1", verified.proofReadyBatchId)
+        assertEquals(true, verified.proofReadyVerified)
+        assertTrue(IronwoodOutboxState.hasRunnableWork(repository.read()))
+
+        repository.update {
+            assertTrue(
+                IronwoodOutboxState.acknowledgeProofReadyNotification(
+                    it,
+                    "batch-1",
+                ),
+            )
+        }
+        assertTrue(!IronwoodOutboxState.hasRunnableWork(repository.read()))
+        repository.update {
+            assertTrue(
+                IronwoodOutboxState.recordVerifiedProofReadiness(
+                    snapshot = it,
+                    network = "test",
+                    accountUuid = "account-1",
+                    runId = "run-1",
+                    observedHeight = 122,
+                ),
+            )
+        }
+        assertNull(
+            IronwoodOutboxState.pendingProofReadyBatchId(repository.read()),
+        )
     }
 
     @Test

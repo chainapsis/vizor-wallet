@@ -112,6 +112,94 @@ fn migration_anchor_never_uses_a_checkpoint_before_the_prepared_note() {
 }
 
 #[test]
+fn migration_anchor_retention_rolls_forward_with_the_trusted_anchor() {
+    let first_boundary = migration::anchor_boundary_containing_note_with_policy(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        5_401,
+    )
+    .unwrap();
+
+    assert_eq!(first_boundary, 5_472);
+    assert_eq!(
+        migration_anchor_retention_boundary(
+            WalletNetwork::Main,
+            migration::MigrationTimingPolicy::Standard,
+            first_boundary,
+            5_401,
+        ),
+        Some(5_472),
+    );
+    assert_eq!(
+        migration_anchor_retention_boundary(
+            WalletNetwork::Main,
+            migration::MigrationTimingPolicy::Standard,
+            5_616,
+            5_401,
+        ),
+        Some(5_616),
+    );
+    let aged_anchor = first_boundary
+        + migration::ZIP318_ANCHOR_BUCKET_MODULUS * (migration::ZIP318_ANCHOR_AGE_CAP + 1);
+    assert!(!migration::zip318_anchor_boundary_is_candidate_with_policy(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        first_boundary,
+        aged_anchor,
+        5_401,
+        0,
+    ));
+    let rolled_boundary = migration_anchor_retention_boundary(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        aged_anchor,
+        5_401,
+    )
+    .unwrap();
+    assert_eq!(rolled_boundary, aged_anchor);
+    assert!(migration::zip318_anchor_boundary_is_candidate_with_policy(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        rolled_boundary,
+        aged_anchor + migration::ZIP318_ANCHOR_BUCKET_MODULUS,
+        5_401,
+        0,
+    ));
+    assert_eq!(
+        representative_orchard_checkpoint(&[5_400, 5_460, 5_500], first_boundary, 5_401),
+        Some(5_460),
+    );
+}
+
+#[test]
+fn migration_anchor_retention_keeps_the_latest_and_currently_eligible_buckets() {
+    let retained = migration_anchor_checkpoints_to_retain(
+        WalletNetwork::Main,
+        migration::MigrationTimingPolicy::Standard,
+        5_616,
+        5_401,
+        0,
+        &[5_400, 5_460, 5_600],
+    );
+
+    assert_eq!(retained, BTreeSet::from([5_460, 5_600]));
+}
+
+#[test]
+fn proof_readiness_checks_later_candidates_after_an_unready_child() {
+    let mut checked = Vec::new();
+
+    assert!(
+        any_migration_proof_candidate_ready(&[0, 1, 2], |candidate| {
+            checked.push(*candidate);
+            Ok(*candidate == 1)
+        })
+        .unwrap()
+    );
+    assert_eq!(checked, vec![0, 1]);
+}
+
+#[test]
 fn migration_anchor_counts_empty_buckets_with_the_same_root_once() {
     let checkpoints = [5_400, 5_800];
 
@@ -200,6 +288,29 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 },
             );
     }
+    for (request_id, account_uuid) in [
+        ("delete-immediate-request", DELETED_ACCOUNT),
+        ("keep-immediate-request", KEPT_ACCOUNT),
+    ] {
+        keystone_immediate_migration_requests()
+            .lock()
+            .unwrap()
+            .insert(
+                request_id.to_string(),
+                StoredImmediateMigrationPczt {
+                    account_uuid: account_uuid.to_string(),
+                    network: WalletNetwork::Test,
+                    message_id: format!("{request_id}-transaction"),
+                    state: KeystoneMigrationRequestState::ProofReady,
+                    proof_error: None,
+                    base_pczt: vec![],
+                    pczt_with_proofs: Some(vec![]),
+                    fee_zatoshi: 10_000,
+                    migrated_zatoshi: 90_000,
+                    input_lock: None,
+                },
+            );
+    }
 
     discard_keystone_migration_requests_for_account(DELETED_ACCOUNT, WalletNetwork::Test).unwrap();
 
@@ -207,6 +318,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
         "delete-denomination-request",
         "delete-batch-request",
         "delete-single-request",
+        "delete-immediate-request",
     ] {
         assert!(keystone_migration_proof_status(request_id).is_err());
     }
@@ -214,6 +326,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
         "keep-denomination-request",
         "keep-batch-request",
         "keep-single-request",
+        "keep-immediate-request",
     ] {
         assert!(keystone_migration_proof_status(request_id).is_ok());
         discard_keystone_migration_request(request_id).unwrap();

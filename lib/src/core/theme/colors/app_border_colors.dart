@@ -14,6 +14,7 @@ import '../primitives.dart';
 /// * [utilityDestructive] — Validation / destructive emphasis.
 /// * [utilityDestructiveSubtle] — Soft destructive border.
 /// * [utilitySuccess] — Success emphasis.
+/// * [utilityPositiveStrong] — Positive-state emphasis on the green ramp.
 /// * [brandCrimsonStrong] — Brand feedback / accent border.
 class AppBorderColors {
   const AppBorderColors({
@@ -26,6 +27,7 @@ class AppBorderColors {
     required this.utilityDestructive,
     required this.utilityDestructiveSubtle,
     required this.utilitySuccess,
+    required this.utilityPositiveStrong,
     required this.brandCrimsonStrong,
   });
 
@@ -38,6 +40,7 @@ class AppBorderColors {
   final Color utilityDestructive;
   final Color utilityDestructiveSubtle;
   final Color utilitySuccess;
+  final Color utilityPositiveStrong;
   final Color brandCrimsonStrong;
 
   static const dark = AppBorderColors(
@@ -50,6 +53,7 @@ class AppBorderColors {
     utilityDestructive: PlumPrimitives.p400Dark,
     utilityDestructiveSubtle: PlumPrimitives.p100Dark,
     utilitySuccess: GoldPrimitives.p500Dark,
+    utilityPositiveStrong: GreenPrimitives.p300Dark,
     brandCrimsonStrong: CrimsonPrimitives.p400Dark,
   );
 
@@ -63,6 +67,7 @@ class AppBorderColors {
     utilityDestructive: PlumPrimitives.p300Light,
     utilityDestructiveSubtle: PlumPrimitives.p100Light,
     utilitySuccess: GoldPrimitives.p400Light,
+    utilityPositiveStrong: GreenPrimitives.p500Light,
     brandCrimsonStrong: CrimsonPrimitives.p300Light,
   );
 }

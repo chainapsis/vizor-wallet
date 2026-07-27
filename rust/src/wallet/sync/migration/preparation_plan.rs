@@ -315,6 +315,29 @@ fn zat(value: u64) -> Zatoshis {
     Zatoshis::from_u64(value).expect("planner values are bounded by the validated totals")
 }
 
+fn extract_direct_funding(
+    available: &[u64],
+    remaining: &mut Vec<u64>,
+) -> (Vec<bool>, Vec<(usize, Zatoshis)>) {
+    let mut used = vec![false; available.len()];
+    let mut direct_funding = Vec::new();
+    remaining.retain(|&funding| {
+        match available
+            .iter()
+            .enumerate()
+            .position(|(index, &value)| !used[index] && value == funding)
+        {
+            Some(index) => {
+                used[index] = true;
+                direct_funding.push((index, zat(funding)));
+                false
+            }
+            None => true,
+        }
+    });
+    (used, direct_funding)
+}
+
 /// Plan the note-preparation transactions that mint `funding` (the self-funding note values, in
 /// zatoshi) from `available` (the wallet's spendable source-pool note values, in zatoshi), reserving
 /// `fee_per_tx` zatoshi for each transaction (the ZIP-317 fee of a padded [`PREP_TX_ACTIONS`]-action
@@ -323,6 +346,20 @@ fn zat(value: u64) -> Zatoshis {
 /// Returns an empty plan when `funding` is empty, and [`PrepError::InsufficientFunds`] when the
 /// available value cannot cover the funding notes plus the per-transaction fees.
 pub fn plan_preparation(
+    available: &[Zatoshis],
+    funding: &[Zatoshis],
+    fee_per_tx: Zatoshis,
+) -> Result<PreparationPlan, PrepError> {
+    match plan_preparation_greedy(available, funding, fee_per_tx) {
+        Ok(plan) => Ok(plan),
+        Err(PrepError::InsufficientFunds) => {
+            plan_preparation_via_consolidation(available, funding, fee_per_tx)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn plan_preparation_greedy(
     available: &[Zatoshis],
     funding: &[Zatoshis],
     fee_per_tx: Zatoshis,
@@ -356,22 +393,7 @@ pub fn plan_preparation(
     // Exact-match pass: a wallet note already equal to a funding value IS that funding note, so it is
     // used directly, with no preparation transaction and no fee. The matched notes are removed from
     // both the funding still to produce and the notes available to spend.
-    let mut used = vec![false; available.len()];
-    let mut direct_funding: Vec<(usize, Zatoshis)> = Vec::new();
-    remaining.retain(|&f| {
-        match available
-            .iter()
-            .enumerate()
-            .position(|(i, &v)| !used[i] && v == f)
-        {
-            Some(i) => {
-                used[i] = true;
-                direct_funding.push((i, zat(f)));
-                false
-            }
-            None => true,
-        }
-    });
+    let (used, direct_funding) = extract_direct_funding(&available, &mut remaining);
 
     let mut layers: Vec<Vec<PrepTransaction>> = Vec::new();
     if remaining.is_empty() {
@@ -556,6 +578,135 @@ pub fn plan_preparation(
         layers,
         direct_funding,
     })
+}
+
+/// Complete fallback for fragmented balances that defeat the largest-first
+/// greedy assignment despite having enough total value. It preserves exact
+/// funding-note matches, consolidates every other positive wallet note into
+/// one feeder, then uses the balanced fan-out planner. This can add a layer
+/// compared with a successful greedy plan, but it prevents a migration run
+/// from leaving change that immediately requires another run.
+fn plan_preparation_via_consolidation(
+    available: &[Zatoshis],
+    funding: &[Zatoshis],
+    fee_per_tx: Zatoshis,
+) -> Result<PreparationPlan, PrepError> {
+    let _: Zatoshis = available
+        .iter()
+        .copied()
+        .sum::<Option<Zatoshis>>()
+        .ok_or(PrepError::BalanceInvalid)?;
+    let _: Zatoshis = funding
+        .iter()
+        .copied()
+        .sum::<Option<Zatoshis>>()
+        .ok_or(PrepError::BalanceInvalid)?;
+
+    let available_values = available
+        .iter()
+        .map(|value| u64::from(*value))
+        .collect::<Vec<_>>();
+    let fee = u64::from(fee_per_tx);
+    let mut targets = funding
+        .iter()
+        .map(|value| u64::from(*value))
+        .filter(|value| *value > 0)
+        .collect::<Vec<_>>();
+    targets.sort_unstable_by(|a, b| b.cmp(a));
+    let (used, direct_funding) = extract_direct_funding(&available_values, &mut targets);
+    if targets.is_empty() {
+        return Ok(PreparationPlan::from_parts(Vec::new(), direct_funding));
+    }
+
+    let mut current = available_values
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &value)| {
+            (!used[index] && value > 0).then_some(PrepInput::Wallet {
+                index,
+                value: zat(value),
+            })
+        })
+        .collect::<Vec<_>>();
+    if current.is_empty() {
+        return Err(PrepError::InsufficientFunds);
+    }
+
+    let mut layers = Vec::<Vec<PrepTransaction>>::new();
+    while current.len() > 1 {
+        let mut transactions = Vec::new();
+        let mut next = Vec::new();
+        let leftover = consolidate(current, layers.len(), fee, &mut transactions, &mut next);
+        next.extend(leftover);
+        if transactions.is_empty() {
+            return Err(PrepError::InsufficientFunds);
+        }
+        layers.push(transactions);
+        current = next;
+    }
+
+    let source = current
+        .pop()
+        .expect("positive available inputs guarantee a consolidated source");
+    let source_value = u64::from(source.value());
+    if source_value < subtree_cost(&targets, fee).1 {
+        return Err(PrepError::InsufficientFunds);
+    }
+    let layer = layers.len();
+    build_split(source, source_value, &targets, fee, layer, &mut layers);
+
+    // `build_split` labels an unspent remainder as an intermediate. Convert it
+    // to terminal change using the same finalization as the greedy planner.
+    let spent = layers
+        .iter()
+        .flat_map(|transactions| transactions.iter())
+        .flat_map(|transaction| transaction.inputs.iter())
+        .filter_map(|input| match input {
+            PrepInput::Prior {
+                layer,
+                transaction,
+                output,
+                ..
+            } => Some((*layer, *transaction, *output)),
+            PrepInput::Wallet { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    for (layer_index, transactions) in layers.iter_mut().enumerate() {
+        for (transaction_index, transaction) in transactions.iter_mut().enumerate() {
+            for (output_index, output) in transaction.outputs.iter_mut().enumerate() {
+                if let PrepOutput::Intermediate(value) = *output {
+                    if !spent.contains(&(layer_index, transaction_index, output_index)) {
+                        *output = PrepOutput::Change(value);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(PreparationPlan {
+        layers,
+        direct_funding,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn consolidation_fallback_preserves_exact_funding_notes() {
+        let value = |value| Zatoshis::from_u64(value).unwrap();
+        let plan = plan_preparation_via_consolidation(
+            &[value(100), value(100), value(100)],
+            &[value(100), value(150)],
+            value(10),
+        )
+        .unwrap();
+
+        assert_eq!(plan.direct_funding_notes(), &[(0, value(100))]);
+        assert_eq!(plan.funding_notes(), vec![value(150), value(100)]);
+        assert_eq!(plan.residual_notes(), vec![value(30)]);
+    }
 }
 
 /// Split `n` notes into consolidation batches of at most [`CONSOLIDATION_INPUTS_PER_TX`], never

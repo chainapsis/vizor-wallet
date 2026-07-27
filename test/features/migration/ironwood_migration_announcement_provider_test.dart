@@ -31,6 +31,214 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  test(
+    'stays hidden for Orchard residual value below a denomination',
+    () async {
+      // ZIP 318's smallest denomination is 0.01 ZEC; less than that cannot be
+      // migrated at all, so prompting for it only produces a dead end.
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(999_999),
+          spendableBalance: BigInt.from(999_999),
+          totalBalance: BigInt.from(999_999),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+
+      expect(
+        (await container.read(
+          ironwoodMigrationAnnouncementProvider.future,
+        )).visible,
+        isFalse,
+      );
+      expect(
+        (await container.read(ironwoodPostMigrationStateProvider.future)).mode,
+        isNot(IronwoodPostMigrationMode.required),
+      );
+    },
+  );
+
+  test(
+    'stays hidden when a denomination is affordable but its fees are not',
+    () async {
+      // The planner subtracts the 80,000 split fee and the 15,000 migration fee
+      // before it looks for a denomination, so 1,000,000 buys the denomination
+      // and nothing to move it with. Prompting here is the same dead end.
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(1_094_999),
+          spendableBalance: BigInt.from(1_094_999),
+          totalBalance: BigInt.from(1_094_999),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+
+      expect(
+        (await container.read(ironwoodPostMigrationStateProvider.future)).mode,
+        isNot(IronwoodPostMigrationMode.required),
+      );
+    },
+  );
+
+  test(
+    'stays hidden while the balance that clears the gate is pending',
+    () async {
+      // The planner is handed spendable value only, and pending Orchard has its
+      // own waiting phase there, so counting it here offered a migration that
+      // cannot be planned until those funds confirm.
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(95_000),
+          orchardPendingBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.from(95_000),
+          totalBalance: BigInt.from(1_095_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+
+      expect(
+        (await container.read(ironwoodPostMigrationStateProvider.future)).mode,
+        isNot(IronwoodPostMigrationMode.required),
+      );
+    },
+  );
+
+  test(
+    'still prompts once Orchard funds cover a denomination and its fees',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          scannedHeight: 3_500_000,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(1_095_000),
+          spendableBalance: BigInt.from(1_095_000),
+          totalBalance: BigInt.from(1_095_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+
+      expect(
+        (await container.read(ironwoodPostMigrationStateProvider.future)).mode,
+        IronwoodPostMigrationMode.required,
+      );
+    },
+  );
+
+  test('completion surfaces a settled migration receipt once', () async {
+    final completionStore = _FakeCompletionStore();
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationCompletePhase,
+      migrationTargetValues: const [14_000_000_000, 212_300_000],
+      migrationPartTxids: const ['tx-a', 'tx-b'],
+      completionStore: completionStore,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        ironwoodBalance: BigInt.from(14_212_300_000),
+        spendableBalance: BigInt.from(14_212_300_000),
+        totalBalance: BigInt.from(14_212_300_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(
+      ironwoodMigrationCompletionProvider.future,
+    );
+
+    expect(state.visible, isTrue);
+    expect(state.network, 'main');
+    expect(state.accountUuid, _accountUuid);
+    expect(state.transferredZatoshi, BigInt.from(14_212_300_000));
+    expect(state.completionId, hasLength(64));
+  });
+
+  test('completion ignores an Ironwood balance without a receipt', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationCompletePhase,
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        ironwoodBalance: BigInt.from(100_000_000),
+        spendableBalance: BigInt.from(100_000_000),
+        totalBalance: BigInt.from(100_000_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(
+      ironwoodMigrationCompletionProvider.future,
+    );
+
+    expect(state.visible, isFalse);
+  });
+
+  test('completion stays hidden once the run was presented', () async {
+    final container = _container(
+      ironwoodActiveAtTip: true,
+      migrationPhase: kIronwoodMigrationCompletePhase,
+      migrationTargetValues: const [14_000_000_000, 212_300_000],
+      completionStore: _FakeCompletionStore(seesEverything: true),
+      syncState: SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        isSyncComplete: true,
+        scannedHeight: 3_500_000,
+        chainTipHeight: 3_500_000,
+        ironwoodBalance: BigInt.from(14_212_300_000),
+        spendableBalance: BigInt.from(14_212_300_000),
+        totalBalance: BigInt.from(14_212_300_000),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    await _settleCoreProviders(container);
+    final state = await container.read(
+      ironwoodMigrationCompletionProvider.future,
+    );
+
+    expect(state.visible, isFalse);
+  });
+
   test('resolves hidden while chain upgrade status is still loading', () async {
     final chainStatus = Completer<rust_wallet.ChainUpgradeStatus>();
     final container = _container(
@@ -205,6 +413,44 @@ void main() {
     expect(state.locksNavigation, isFalse);
     expect(migrationSpendable, BigInt.from(1_000_000));
   });
+
+  test(
+    'active migration keeps the completed Ironwood display during sync',
+    () async {
+      final container = _container(
+        ironwoodActiveAtTip: true,
+        migrationPhase: kIronwoodMigrationBroadcastScheduledPhase,
+        migrationActiveRunId: 'run-1',
+        migrationTargetValues: const [1_000_000, 2_000_000],
+        syncState: SyncState(
+          accountUuid: _accountUuid,
+          hasAccountScopedData: true,
+          isSyncing: true,
+          isSyncComplete: false,
+          scannedHeight: 3_499_900,
+          chainTipHeight: 3_500_000,
+          orchardBalance: BigInt.from(3_000_000),
+          ironwoodBalance: BigInt.zero,
+          displayIronwoodBalance: BigInt.from(1_000_000),
+          spendableBalance: BigInt.zero,
+          displaySpendableBalance: BigInt.from(4_000_000),
+          displaySpendableFreshness:
+              SpendableBalanceFreshness.lastCompletedSync,
+          totalBalance: BigInt.zero,
+          displayTotalBalance: BigInt.from(4_000_000),
+        ),
+      );
+      addTearDown(container.dispose);
+
+      await _settleCoreProviders(container);
+      await container.read(ironwoodPostMigrationStateProvider.future);
+      final migrationSpendable = container.read(
+        ironwoodMigrationAwareDisplaySpendableProvider(_accountUuid),
+      );
+
+      expect(migrationSpendable, BigInt.from(1_000_000));
+    },
+  );
 
   test(
     'post migration state waits for externally migrated pending Ironwood',
@@ -390,7 +636,7 @@ void main() {
           isSyncComplete: true,
           scannedHeight: 3_500_000,
           chainTipHeight: 3_500_000,
-          orchardBalance: BigInt.from(1_000_000),
+          orchardBalance: BigInt.from(1_095_000),
           ironwoodBalance: BigInt.from(1_000_000),
           spendableBalance: BigInt.from(2_000_000),
           totalBalance: BigInt.from(2_000_000),
@@ -424,7 +670,7 @@ void main() {
           isSyncing: true,
           scannedHeight: 3_499_900,
           chainTipHeight: 3_500_000,
-          orchardBalance: BigInt.from(1_000_000),
+          orchardBalance: BigInt.from(1_095_000),
           ironwoodBalance: BigInt.from(1_000_000),
           spendableBalance: BigInt.from(2_000_000),
           totalBalance: BigInt.from(2_000_000),
@@ -717,7 +963,7 @@ void main() {
     addTearDown(subscription.close);
 
     final initial = container.read(ironwoodMigrationFlowDataProvider);
-    expect(initial?.amountZatoshi, BigInt.from(1_000_000));
+    expect(initial?.amountZatoshi, BigInt.from(1_095_000));
     expect(initial?.accountName, 'Account 1');
     expect(migrationStatusCalls, isEmpty);
     flowEvents.clear();
@@ -738,7 +984,7 @@ void main() {
     await container.pump();
 
     final afterProgressTick = container.read(ironwoodMigrationFlowDataProvider);
-    expect(afterProgressTick?.amountZatoshi, BigInt.from(1_000_000));
+    expect(afterProgressTick?.amountZatoshi, BigInt.from(1_095_000));
     expect(flowEvents, isEmpty);
     expect(migrationStatusCalls, ['$_dbPath|main|$_accountUuid']);
   });
@@ -802,6 +1048,7 @@ ProviderContainer _container({
   String? migrationActiveRunId,
   ChainUpgradeStatusGetter? getChainUpgradeStatus,
   _FakeAnnouncementStore? announcementStore,
+  _FakeCompletionStore? completionStore,
   List<String>? migrationStatusCalls,
   List<int> migrationTargetValues = const [],
   List<String> migrationPartTxids = const [],
@@ -812,6 +1059,9 @@ ProviderContainer _container({
   return ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      ironwoodMigrationCompletionStoreProvider.overrideWithValue(
+        completionStore ?? _FakeCompletionStore(),
+      ),
       chainUpgradeStatusGetterProvider.overrideWithValue(
         getChainUpgradeStatus ??
             ({required lightwalletdUrl, required network}) async =>
@@ -899,7 +1149,7 @@ SyncState _readySyncState() {
     isSyncComplete: true,
     scannedHeight: 3_500_000,
     chainTipHeight: 3_500_000,
-    orchardBalance: BigInt.from(1_000_000),
+    orchardBalance: BigInt.from(1_095_000),
     spendableBalance: BigInt.from(1_000_000),
     totalBalance: BigInt.from(1_000_000),
   );
@@ -915,7 +1165,7 @@ SyncState _syncingReadyState() {
     displayTargetPercentage: 0.34,
     scannedHeight: 3_499_700,
     chainTipHeight: 3_500_000,
-    orchardBalance: BigInt.from(1_000_000),
+    orchardBalance: BigInt.from(1_095_000),
     spendableBalance: BigInt.from(1_000_000),
     totalBalance: BigInt.from(1_000_000),
     phase: 'scan',
@@ -937,7 +1187,7 @@ IronwoodMigrationInputs _migrationInputs({
     isBackgroundMode: false,
     isSyncComplete: !isSyncing,
     hasSyncFailure: false,
-    orchardBalance: BigInt.from(1_000_000),
+    orchardBalance: BigInt.from(1_095_000),
     orchardPendingBalance: BigInt.zero,
     ironwoodBalance: BigInt.zero,
     ironwoodPendingBalance: BigInt.zero,
@@ -1044,3 +1294,38 @@ class _FakeAnnouncementStore implements IronwoodMigrationAnnouncementStore {
 }
 
 String _seenKey(String network, String accountUuid) => '$network|$accountUuid';
+
+class _FakeCompletionStore implements IronwoodMigrationCompletionStore {
+  _FakeCompletionStore({Set<String>? seenKeys, this.seesEverything = false})
+    : _seenKeys = seenKeys ?? <String>{};
+
+  final Set<String> _seenKeys;
+  final bool seesEverything;
+
+  @override
+  Future<bool> isSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    return seesEverything ||
+        _seenKeys.contains(
+          _completionSeenKey(network, accountUuid, completionId),
+        );
+  }
+
+  @override
+  Future<void> markSeen({
+    required String network,
+    required String accountUuid,
+    required String completionId,
+  }) async {
+    _seenKeys.add(_completionSeenKey(network, accountUuid, completionId));
+  }
+}
+
+String _completionSeenKey(
+  String network,
+  String accountUuid,
+  String completionId,
+) => '$network|$accountUuid|$completionId';

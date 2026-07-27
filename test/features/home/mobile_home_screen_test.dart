@@ -213,6 +213,9 @@ Widget _app(
   IronwoodHomeMigrationCtaState? migrationPresentationCta,
   IronwoodMigrationAnnouncementState announcement =
       const IronwoodMigrationAnnouncementState.hidden(),
+  AsyncValue<IronwoodMigrationCompletionState>? migrationCompletion,
+  Future<IronwoodMigrationCompletionState>? migrationCompletionFuture,
+  bool useShellRouter = false,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
   Set<String> seenMigrationAttentionFingerprints = const {},
   SwapActivityStore? swapActivityStore,
@@ -221,7 +224,33 @@ Widget _app(
   final router = GoRouter(
     initialLocation: '/home',
     routes: [
-      GoRoute(path: '/home', builder: (_, _) => const MobileHomeScreen()),
+      if (useShellRouter)
+        // The production mobile shell keeps every branch mounted, so a widget
+        // on the home branch keeps reporting its own /home route after the user
+        // moves elsewhere. Route checks have to survive that.
+        StatefulShellRoute.indexedStack(
+          builder: (_, _, shell) => shell,
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/home',
+                  builder: (_, _) => const MobileHomeScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/shell-activity',
+                  builder: (_, _) => const Text('shell activity route'),
+                ),
+              ],
+            ),
+          ],
+        )
+      else
+        GoRoute(path: '/home', builder: (_, _) => const MobileHomeScreen()),
       GoRoute(path: '/send', builder: (_, _) => const Text('send route')),
       GoRoute(path: '/receive', builder: (_, _) => const Text('receive route')),
       GoRoute(
@@ -248,12 +277,29 @@ Widget _app(
         path: '/migration/intro',
         builder: (_, _) => const Text('migration intro route'),
       ),
+      GoRoute(
+        path: '/migration/complete',
+        builder: (_, _) => const Text('migration complete route'),
+      ),
+      GoRoute(
+        path: '/migration/private/status',
+        builder: (_, _) => const Text('migration status route'),
+      ),
     ],
   );
 
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      if (migrationCompletion != null || migrationCompletionFuture != null)
+        ironwoodMigrationCompletionProvider.overrideWith(
+          (ref) =>
+              migrationCompletionFuture ??
+              switch (migrationCompletion) {
+                AsyncData(:final value) => Future.value(value),
+                _ => Completer<IronwoodMigrationCompletionState>().future,
+              },
+        ),
       syncProvider.overrideWith(() => effectiveSyncNotifier),
       if (syncKeepAwakeNotifier != null)
         syncKeepAwakeProvider.overrideWith(() => syncKeepAwakeNotifier),
@@ -362,6 +408,7 @@ rust_sync.MigrationStatus _proofReadyMigrationStatus({
   bool needsInput = false,
   String phase = kIronwoodMigrationReadyToMigratePhase,
   int nextActionHeight = 3000000,
+  bool? proofReady = true,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
   return rust_sync.MigrationStatus(
@@ -384,6 +431,7 @@ rust_sync.MigrationStatus _proofReadyMigrationStatus({
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    proofReady: proofReady,
     scheduledBroadcasts: scheduledBroadcasts,
     parts: [
       rust_sync.MigrationPartStatus(
@@ -751,6 +799,108 @@ void main() {
     expect(find.text('migration intro route'), findsOneWidget);
   });
 
+  testWidgets('routes to a finished migration once per session', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.zero),
+        migrationCompletion: AsyncData(
+          IronwoodMigrationCompletionState.visible(
+            network: 'main',
+            accountUuid: 'account-1',
+            completionId: 'completion-1',
+            transferredZatoshi: BigInt.from(14_212_300_000),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration complete route'), findsOneWidget);
+
+    // Leaving the completion screen unmounts the host. Returning home must not
+    // route back into a completion the user was already shown.
+    GoRouter.of(
+      tester.element(find.text('migration complete route')),
+    ).go('/home');
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration complete route'), findsNothing);
+  });
+
+  testWidgets('does not route away from the tab the user switched to', (
+    tester,
+  ) async {
+    // The host stays mounted on the home branch of the shell, where
+    // `GoRouterState.of` keeps reporting /home after the user switches tabs.
+    // Reading that instead of the router's location let a finished migration
+    // pull the user off whatever they were doing.
+    final completion = Completer<IronwoodMigrationCompletionState>();
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.zero),
+        migrationCompletionFuture: completion.future,
+        useShellRouter: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    GoRouter.of(
+      tester.element(find.byType(MobileHomeScreen)),
+    ).go('/shell-activity');
+    await tester.pumpAndSettle();
+    expect(find.text('shell activity route'), findsOneWidget);
+
+    completion.complete(
+      IronwoodMigrationCompletionState.visible(
+        network: 'main',
+        accountUuid: 'account-1',
+        completionId: 'completion-1',
+        transferredZatoshi: BigInt.from(14_212_300_000),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration complete route'), findsNothing);
+    expect(find.text('shell activity route'), findsOneWidget);
+  });
+
+  testWidgets('does not route to another account\'s completion', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.zero),
+        migrationCompletion: AsyncData(
+          IronwoodMigrationCompletionState.visible(
+            network: 'main',
+            accountUuid: 'another-account',
+            completionId: 'completion-2',
+            transferredZatoshi: BigInt.from(14_212_300_000),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration complete route'), findsNothing);
+  });
+
+  testWidgets('does not route while the completion state is unsettled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.zero),
+        migrationCompletion: const AsyncLoading(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('migration complete route'), findsNothing);
+  });
+
   testWidgets('keeps the required migration lock while the raw CTA is hidden', (
     tester,
   ) async {
@@ -1089,6 +1239,30 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'does not request proof when height is due but preflight is not',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          _syncedState(
+            orchardBalance: BigInt.from(100000000),
+            scannedHeight: 3000000,
+            chainTipHeight: 3000000,
+          ),
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _proofReadyMigrationStatus(proofReady: false),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Next migration batch is ready'), findsNothing);
+      expect(find.text('Your next migration batch is ready'), findsNothing);
+    },
+  );
 
   testWidgets('does not request proof before migration height is known', (
     tester,

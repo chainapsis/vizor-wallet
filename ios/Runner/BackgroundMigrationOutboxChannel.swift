@@ -59,6 +59,19 @@ enum BackgroundMigrationOutboxChannel {
     return recovered
   }
 
+  static func discardBatch(
+    arguments: Any?,
+    store: BackgroundMigrationOutboxStore = .shared
+  ) throws -> Bool {
+    let arguments = try dictionary(arguments)
+    let batchId = try string(arguments, "batchId")
+    var discarded = false
+    _ = try store.update { snapshot in
+      discarded = try snapshot.discardBatch(batchId: batchId)
+    }
+    return discarded
+  }
+
   static func hasBatch(
     arguments: Any?,
     store: BackgroundMigrationOutboxStore = .shared
@@ -78,6 +91,29 @@ enum BackgroundMigrationOutboxChannel {
       expectedTxids: Set(expectedTxids),
       requiredTxids: Set(requiredTxids)
     )
+  }
+
+  static func recordVerifiedProofReadiness(
+    arguments: Any?,
+    store: BackgroundMigrationOutboxStore = .shared
+  ) throws -> Bool {
+    let arguments = try dictionary(arguments)
+    let network = try string(arguments, "network")
+    let accountUuid = try string(arguments, "accountUuid")
+    let runId = try string(arguments, "runId")
+    _ = try uint64(arguments, "observedHeight")
+    var shouldSchedule = false
+    _ = try store.update { snapshot in
+      let matched = snapshot.recordVerifiedProofReadiness(
+        network: network,
+        accountUuid: accountUuid,
+        runId: runId,
+        at: Date()
+      )
+      shouldSchedule =
+        matched && snapshot.pendingProofReadyNotification() != nil
+    }
+    return shouldSchedule
   }
 
   static func listReceipts(
@@ -144,11 +180,14 @@ enum BackgroundMigrationOutboxChannel {
   }
 
   static func runOnceNow(
-    store: BackgroundMigrationOutboxStore = .shared
+    store: BackgroundMigrationOutboxStore = .shared,
+    dependencies: BackgroundMigrationOutboxRunnerDependencies = .live
   ) -> BackgroundMigrationOutboxRunResult {
     BackgroundMigrationOutboxRunner.runOnce(
       store: store,
-      cancellation: BackgroundMigrationCancellation()
+      cancellation: BackgroundMigrationCancellation(),
+      requiresPreparationProofVerification: true,
+      dependencies: dependencies
     )
   }
 
