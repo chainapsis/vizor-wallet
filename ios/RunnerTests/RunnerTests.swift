@@ -603,14 +603,9 @@ class RunnerTests: XCTestCase {
         totalStageCount: 2,
         confirmationTarget: 3
       ),
-      .completed(
-        MigrationPreparationConfirmationProgress(
-          confirmedUnitCount: 6,
-          totalUnitCount: 6,
-          completedTransactionCount: 2,
-          totalTransactionCount: 2,
-          isComplete: true
-        )
+      .needsForegroundRecovery(
+        fingerprint: "state-1-unverified",
+        taskFailed: true
       )
     )
     XCTAssertEqual(

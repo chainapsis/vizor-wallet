@@ -514,6 +514,11 @@ Swift BackgroundMigrationPreparationManager
   preparation is active. Its normal polling loop only queries the lightwalletd
   tip and each materialized preparation tx. It never runs a wallet sync or
   advances migration state.
+- The iOS C-FFI inspection path opens SQLite with `SQLITE_OPEN_READ_ONLY` and
+  queries only the run phase and stage counts it needs. It must not call
+  `migration_status`, stage helpers that run `ensure_schema`, or any schema
+  upgrade path. Missing or incompatible preparation tables are a foreground
+  recovery signal, never a reason to repair the DB from the system task.
 - The iOS task treats `NotFound` and mempool as zero confirmations, derives
   mined confirmation depth from the queried chain tip, and waits until every
   observable tx in the current wave reaches 3 confirmations. It then persists

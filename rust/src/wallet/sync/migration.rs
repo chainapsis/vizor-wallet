@@ -653,6 +653,81 @@ pub(crate) fn observable_denomination_transaction_ids(
         .map_err(|e| format!("Read observable migration txids: {e}"))
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReadOnlyMigrationPreparationSnapshot {
+    pub phase: String,
+    pub completed_stage_count: u32,
+    pub total_stage_count: u32,
+}
+
+/// Reads only the state required by the iOS confirmation tracker.
+///
+/// This deliberately bypasses `migration_status` and the denomination stage
+/// helpers because those foreground paths may run schema upgrades. A missing
+/// or legacy-incompatible table is returned as an error so iOS hands the run
+/// back to the foreground instead of mutating the wallet from a background
+/// confirmation task.
+pub(crate) fn migration_preparation_snapshot_read_only(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<Option<ReadOnlyMigrationPreparationSnapshot>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    if !table_exists(&conn, RUNS_TABLE)? {
+        return Ok(None);
+    }
+    let phase = conn
+        .query_row(
+            &format!(
+                "SELECT phase
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1 AND account_uuid = ?2 AND network = ?3
+                   AND phase NOT IN ('{PHASE_NO_ORCHARD_FUNDS}', '{PHASE_COMPLETE}',
+                                     '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')"
+            ),
+            params![expected_run_id, account_uuid, network_name(network)],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration preparation phase: {e}"))?;
+    let Some(phase) = phase else {
+        return Ok(None);
+    };
+
+    let (completed_stage_count, total_stage_count) = if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        if !table_exists(&conn, STAGES_TABLE)? {
+            return Err(
+                "Migration preparation stage schema requires foreground recovery".to_string(),
+            );
+        }
+        let counts = conn
+            .query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(status = 'confirmed'), 0), COUNT(*)
+                         FROM {STAGES_TABLE}
+                         WHERE run_id = ?1"
+                ),
+                params![expected_run_id],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .map_err(|e| format!("Read migration preparation stage counts: {e}"))?;
+        (
+            u32::try_from(counts.0)
+                .map_err(|_| "Completed migration stage count exceeds u32".to_string())?,
+            u32::try_from(counts.1).map_err(|_| "Migration stage count exceeds u32".to_string())?,
+        )
+    } else {
+        (0, 0)
+    };
+
+    Ok(Some(ReadOnlyMigrationPreparationSnapshot {
+        phase,
+        completed_stage_count,
+        total_stage_count,
+    }))
+}
+
 /// Returns whether Orchard inputs remain reserved by either an active
 /// migration or a false-terminal run awaiting explicit post-sync recovery.
 ///

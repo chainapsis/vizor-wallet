@@ -312,7 +312,12 @@ pub extern "C" fn zcash_inspect_migration_preparation(
             }
         };
 
-        match migration_preparation::inspect(db_path, network, account_uuid, expected_run_id) {
+        match migration_preparation::inspect_read_only(
+            db_path,
+            network,
+            account_uuid,
+            expected_run_id,
+        ) {
             Ok(progress) => {
                 *output = progress.into();
                 0

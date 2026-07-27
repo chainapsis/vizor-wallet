@@ -317,19 +317,12 @@ func migrationPreparationScopeTrackingDisposition(
   case 0:
     return nil
   case 1:
-    let transactionCount = max(completedStageCount, totalStageCount)
-    let target = max(1, confirmationTarget)
-    let (unitCount, overflow) = Int64(transactionCount)
-      .multipliedReportingOverflow(by: Int64(target))
-    let boundedUnitCount = overflow ? Int64.max : unitCount
-    return .completed(
-      MigrationPreparationConfirmationProgress(
-        confirmedUnitCount: boundedUnitCount,
-        totalUnitCount: boundedUnitCount,
-        completedTransactionCount: Int(transactionCount),
-        totalTransactionCount: Int(transactionCount),
-        isComplete: true
-      )
+    // A local proof-ready snapshot is not network confirmation evidence.
+    // The iOS background task may only complete from lightwalletd observations
+    // collected in this process; any state-1 value is handed to foreground.
+    return .needsForegroundRecovery(
+      fingerprint: "state-1-unverified",
+      taskFailed: true
     )
   case 2, 3:
     return .needsForegroundRecovery(
