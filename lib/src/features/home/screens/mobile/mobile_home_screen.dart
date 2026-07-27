@@ -1209,6 +1209,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   const SizedBox(height: AppSpacing.s),
                   MobileIronwoodMigrationBanner(
                     inProgress: migrationInProgress,
+                    preparing: isIronwoodMigrationPreparingPhase(
+                      widget.ironwoodMigrationCta.status?.phase,
+                    ),
                     attentionKind: migrationAttention?.kind,
                     actionNeededCount: migrationAttention?.count ?? 0,
                     remainingText: _mobileIronwoodRemainingAmountText(

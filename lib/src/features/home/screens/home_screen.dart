@@ -1688,6 +1688,10 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
             _HomeDesktopMigrationCtaButton(
               label: migrationRequired
                   ? 'Migrate to Ironwood'
+                  : isIronwoodMigrationPreparingPhase(
+                      widget.ironwoodMigrationCta.status?.phase,
+                    )
+                  ? 'Preparing migration'
                   : '${hideAmountIfPrivacyMode('${widget.migratingBalanceText} ZEC', privacyModeEnabled: widget.privacyModeEnabled)} still migrating',
               animateIndicator: widget.animateMigrationCta,
               onTap: widget.onIronwoodMigrationCta,
