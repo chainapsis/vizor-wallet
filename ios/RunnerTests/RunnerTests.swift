@@ -350,6 +350,57 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testFailedNotificationSubmissionDoesNotRecordContinuationScope() {
+    let existing = "test:account-existing:run-0"
+    let newlyReady = "test:account-a:run-1"
+
+    XCTAssertEqual(
+      migrationPreparationContinuationScopesAfterNotificationSubmission(
+        existingScopes: [existing],
+        continuationReadyScopes: [newlyReady],
+        notificationSubmissionRequired: true,
+        notificationSubmitted: false
+      ),
+      [existing]
+    )
+  }
+
+  func testSuccessfulNotificationSubmissionRecordsContinuationScope() {
+    let existing = "test:account-existing:run-0"
+    let newlyReady = "test:account-a:run-1"
+
+    XCTAssertEqual(
+      migrationPreparationContinuationScopesAfterNotificationSubmission(
+        existingScopes: [existing],
+        continuationReadyScopes: [newlyReady],
+        notificationSubmissionRequired: true,
+        notificationSubmitted: true
+      ),
+      [existing, newlyReady]
+    )
+  }
+
+  func testFailedTrackingTaskAttemptsToRearm() {
+    XCTAssertTrue(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: true,
+        quiesced: false,
+        expired: false,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: true,
+        quiesced: false,
+        expired: true,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
   func testTrackingBatchKeepsAccountResultsIndependent() {
     let completedProgress = MigrationPreparationConfirmationProgress(
       confirmedUnitCount: 3,
@@ -444,6 +495,19 @@ class RunnerTests: XCTestCase {
       MigrationPreparationTrackingCompletionPresentation(
         title: "Open Vizor to continue preparation",
         subtitle: "Confirmed transactions are ready"
+      )
+    )
+    XCTAssertEqual(
+      migrationPreparationTrackingPostBatchAction(
+        batch,
+        taskFailureObserved: false,
+        stopRequested: false
+      ),
+      .awaitForegroundHandoff(
+        MigrationPreparationTrackingCompletionPresentation(
+          title: "Open Vizor to continue preparation",
+          subtitle: "Confirmed transactions are ready"
+        )
       )
     )
     XCTAssertEqual(

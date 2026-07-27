@@ -642,7 +642,7 @@ pub(crate) fn observable_denomination_transaction_ids(
         .prepare(&format!(
             "SELECT expected_txid_hex
              FROM {STAGES_TABLE}
-             WHERE run_id = ?1 AND status != 'awaiting_inputs'
+             WHERE run_id = ?1 AND status IN ('broadcasted', 'confirmed')
              ORDER BY stage_index ASC"
         ))
         .map_err(|e| format!("Prepare observable migration txid query: {e}"))?;

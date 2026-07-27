@@ -116,6 +116,14 @@ struct MigrationPreparationTrackingCompletionPresentation: Equatable {
   let subtitle: String
 }
 
+enum MigrationPreparationTrackingPostBatchAction: Equatable {
+  case continueTracking
+  case awaitForegroundHandoff(
+    MigrationPreparationTrackingCompletionPresentation
+  )
+  case finish
+}
+
 func migrationPreparationTrackingCompletionPresentation(
   _ batch: MigrationPreparationTrackingBatch
 ) -> MigrationPreparationTrackingCompletionPresentation? {
@@ -129,6 +137,36 @@ func migrationPreparationTrackingCompletionPresentation(
     title: "Open Vizor to continue preparation",
     subtitle: "Confirmed transactions are ready"
   )
+}
+
+func migrationPreparationTrackingPostBatchAction(
+  _ batch: MigrationPreparationTrackingBatch,
+  taskFailureObserved: Bool,
+  stopRequested: Bool
+) -> MigrationPreparationTrackingPostBatchAction {
+  if !taskFailureObserved, !stopRequested,
+    let presentation = migrationPreparationTrackingCompletionPresentation(
+      batch
+    )
+  {
+    return .awaitForegroundHandoff(presentation)
+  }
+  if batch.shouldContinue && !stopRequested {
+    return .continueTracking
+  }
+  return .finish
+}
+
+func migrationPreparationContinuationScopesAfterNotificationSubmission(
+  existingScopes: Set<String>,
+  continuationReadyScopes: Set<String>,
+  notificationSubmissionRequired: Bool,
+  notificationSubmitted: Bool
+) -> Set<String> {
+  guard !notificationSubmissionRequired || notificationSubmitted else {
+    return existingScopes
+  }
+  return existingScopes.union(continuationReadyScopes)
 }
 
 func migrationPreparationTrackingBatch(
@@ -524,6 +562,17 @@ func migrationPreparationTrackingTaskSucceeded(
 ) -> Bool {
   !taskFailed && !quiesced
     && (!expired || handedOff || notificationsDisabled)
+}
+
+func migrationPreparationTrackingShouldAttemptRearm(
+  completionFailed: Bool,
+  quiesced: Bool,
+  expired: Bool,
+  handedOff: Bool,
+  notificationsDisabled: Bool
+) -> Bool {
+  completionFailed && !quiesced && !expired && !handedOff
+    && !notificationsDisabled
 }
 
 func migrationPreparationTrackingExpirationNotificationEvents(
@@ -1310,25 +1359,32 @@ final class BackgroundMigrationPreparationManager {
           let notificationSubmitted = self.applyTrackingBatch(batch)
           taskFailureObserved =
             taskFailureObserved || !notificationSubmitted
-          if let handoffPresentation =
-            migrationPreparationTrackingCompletionPresentation(batch),
-            !taskFailureObserved
-          {
+          switch migrationPreparationTrackingPostBatchAction(
+            batch,
+            taskFailureObserved: taskFailureObserved,
+            stopRequested: self.isTrackingStopRequested
+          ) {
+          case .awaitForegroundHandoff(let presentation):
+            self.waitForForegroundHandoff(
+              task,
+              presentation: presentation,
+              cancellation: cancellation
+            )
             self.finishConfirmationTrackingTask(
               task,
               taskFailed: false,
-              completionPresentation: handoffPresentation
+              completionPresentation: nil
             )
             return
-          }
-          guard batch.shouldContinue, !self.isTrackingStopRequested else {
+          case .finish:
             self.finishConfirmationTrackingTask(
               task,
               taskFailed: taskFailureObserved,
-              completionPresentation:
-                migrationPreparationTrackingCompletionPresentation(batch)
+              completionPresentation: nil
             )
             return
+          case .continueTracking:
+            break
           }
           guard self.waitForNextConfirmationQuery(
             cancellation: cancellation
@@ -1686,31 +1742,57 @@ final class BackgroundMigrationPreparationManager {
     return !isTrackingStopRequested && !cancellation.isCancelled
   }
 
+  private func waitForForegroundHandoff(
+    _ task: BGContinuedProcessingTask,
+    presentation: MigrationPreparationTrackingCompletionPresentation,
+    cancellation: BackgroundMigrationCancellation
+  ) {
+    task.updateTitle(
+      presentation.title,
+      subtitle: presentation.subtitle
+    )
+    recordSchedulingState("confirmation_step_ready_for_foreground")
+    while !isTrackingStopRequested {
+      if cancellation.waitUntilCancelled(
+        timeout: Self.progressHeartbeatInterval
+      ) {
+        return
+      }
+      advanceTrackingHeartbeat()
+    }
+  }
+
   private func applyTrackingBatch(
     _ batch: MigrationPreparationTrackingBatch
   ) -> Bool {
     guard !stateLock.withPreparationLock({ mutationQuiesced }) else {
       return true
     }
-    if !batch.continuationReadyScopes.isEmpty {
-      stateLock.withPreparationLock {
-        foregroundContinuationScopes.formUnion(
-          batch.continuationReadyScopes
-        )
-        persistForegroundContinuationScopesLocked()
-      }
-    }
     if let progress = batch.progress {
       updateTrackingProgress(progress)
     }
-    if !batch.notificationEvents.isEmpty,
-      !stateLock.withPreparationLock({
-        notificationAuthorization.isDisabled
-      })
-    {
-      return submitNotificationEvents(batch.notificationEvents)
+    let notificationsDisabled = stateLock.withPreparationLock {
+      notificationAuthorization.isDisabled
     }
-    return true
+    let notificationSubmissionRequired =
+      !batch.notificationEvents.isEmpty && !notificationsDisabled
+    let notificationSubmitted =
+      !notificationSubmissionRequired
+      || submitNotificationEvents(batch.notificationEvents)
+    if !batch.continuationReadyScopes.isEmpty {
+      stateLock.withPreparationLock {
+        foregroundContinuationScopes =
+          migrationPreparationContinuationScopesAfterNotificationSubmission(
+            existingScopes: foregroundContinuationScopes,
+            continuationReadyScopes: batch.continuationReadyScopes,
+            notificationSubmissionRequired:
+              notificationSubmissionRequired,
+            notificationSubmitted: notificationSubmitted
+          )
+        persistForegroundContinuationScopesLocked()
+      }
+    }
+    return notificationSubmitted
   }
 
   private func submitNotificationEvents(
@@ -1861,6 +1943,19 @@ final class BackgroundMigrationPreparationManager {
     }
     cancelWatchdog()
     task.setTaskCompleted(success: success)
+    if migrationPreparationTrackingShouldAttemptRearm(
+      completionFailed: completionFailed,
+      quiesced: runtime.quiesced,
+      expired: runtime.expired,
+      handedOff: runtime.handedOff,
+      notificationsDisabled: runtime.disabled
+    ) {
+      start { scheduled in
+        if !scheduled {
+          print("[BGPreparation] failed task could not re-arm tracking")
+        }
+      }
+    }
   }
 
   private func startAuthorizationMonitoring() {

@@ -617,7 +617,7 @@ fn insert_test_stage(
 }
 
 #[test]
-fn observable_denomination_transaction_ids_are_scoped_to_the_active_run() {
+fn observable_denomination_transaction_ids_only_include_broadcast_stages_from_the_active_run() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -633,14 +633,26 @@ fn observable_denomination_transaction_ids_are_scoped_to_the_active_run() {
         params![PHASE_WAITING_DENOM_CONFIRMATIONS],
     )
     .unwrap();
-    let expected_txid = "11".repeat(32);
-    insert_test_stage(
-        &conn,
+    let pending_txid = "11".repeat(32);
+    let broadcasted_txid = "22".repeat(32);
+    let confirmed_txid = "33".repeat(32);
+    let tx = conn.unchecked_transaction().unwrap();
+    insert_denomination_stages_with_tx(
+        &tx,
         "run-1",
-        &expected_txid,
-        DenominationStageStatus::Pending,
-        None,
-    );
+        vec![
+            pending_test_stage_for_part(0, &pending_txid, 100_000_000, Some(0)),
+            pending_test_stage_for_part(1, &broadcasted_txid, 200_000_000, Some(1)),
+            pending_test_stage_for_part(2, &confirmed_txid, 300_000_000, Some(2)),
+        ],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    mark_denomination_stage_broadcasted(&conn, "run-1", &broadcasted_txid).unwrap();
+    mark_denomination_stage_confirmed_at(&conn, "run-1", &confirmed_txid, 20, &[0xabu8; 32])
+        .unwrap();
     drop(conn);
 
     assert_eq!(
@@ -651,7 +663,7 @@ fn observable_denomination_transaction_ids_are_scoped_to_the_active_run() {
             "run-1",
         )
         .unwrap(),
-        vec![expected_txid],
+        vec![broadcasted_txid, confirmed_txid],
     );
     assert!(observable_denomination_transaction_ids(
         &db_path,

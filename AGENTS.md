@@ -507,7 +507,8 @@ Swift BackgroundMigrationPreparationManager
     → update system task progress until every executed preparation tx has
       3 confirmations
     → persist a foreground-continuation token and notify the user
-    → complete the task and leave sync / migration advance to foreground
+    → keep the task visible as "Open Vizor" until foreground handoff or expiry
+    → leave sync / migration advance to foreground
 ```
 
 - iOS submits `BGContinuedProcessingTaskRequest` only while denomination
@@ -522,9 +523,10 @@ Swift BackgroundMigrationPreparationManager
 - The iOS task treats `NotFound` and mempool as zero confirmations, derives
   mined confirmation depth from the queried chain tip, and waits until every
   observable tx in the current wave reaches 3 confirmations. It then persists
-  the foreground handoff, notifies the user to open Vizor, and ends the system
-  task. Foreground reentry owns the wallet sync, denomination advance, and
-  submission of a fresh read-only task for the next wave.
+  the foreground handoff, notifies the user to open Vizor, and keeps the system
+  task visible without a completion presentation until foreground handoff or
+  OS expiration. Foreground reentry owns the wallet sync, denomination
+  advance, and submission of a fresh read-only task for the next wave.
 - Android keeps its WorkManager foreground worker and native preparation path.
   The worker may run the existing mode-2 full sync, inspect proof readiness,
   advance denomination preparation, and enqueue a continuation.
