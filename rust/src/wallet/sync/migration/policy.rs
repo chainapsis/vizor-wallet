@@ -5,8 +5,10 @@ pub(crate) const ZIP318_ANCHOR_BUCKET_MODULUS: u32 = 144;
 pub(crate) const REGTEST_ANCHOR_BUCKET_MODULUS: u32 = 1;
 pub(crate) const ZIP318_ANCHOR_AGE_CAP: u32 = 16;
 pub(crate) const ZIP318_EXPIRY_MODULUS: u32 = 34_560;
+// Keep the original value readable for runs created before the shorter policy.
 pub(crate) const ZIP318_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 144;
 pub(crate) const ZIP318_TRANSFER_MAX_DELAY_BLOCKS: u32 = 576;
+pub(crate) const NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 72;
 pub(crate) const REGTEST_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 1;
 pub(crate) const REGTEST_TRANSFER_MAX_DELAY_BLOCKS: u32 = 4;
 pub(crate) const FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 12;
@@ -26,6 +28,7 @@ static FAST_TESTNET_MIGRATION_ENABLED: AtomicBool = AtomicBool::new(false);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MigrationTimingPolicy {
     Standard,
+    Standard90Minutes,
     FastTestnet,
 }
 
@@ -33,6 +36,7 @@ impl MigrationTimingPolicy {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Standard => "standard",
+            Self::Standard90Minutes => "standard_90m",
             Self::FastTestnet => "fast_testnet",
         }
     }
@@ -40,6 +44,7 @@ impl MigrationTimingPolicy {
     fn from_str(value: &str) -> Result<Self, String> {
         match value {
             "standard" => Ok(Self::Standard),
+            "standard_90m" => Ok(Self::Standard90Minutes),
             "fast_testnet" => Ok(Self::FastTestnet),
             _ => Err(format!("Unsupported migration timing policy: {value}")),
         }
@@ -55,8 +60,10 @@ pub(crate) fn configured_timing_policy(network: WalletNetwork) -> MigrationTimin
         && FAST_TESTNET_MIGRATION_ENABLED.load(Ordering::Relaxed)
     {
         MigrationTimingPolicy::FastTestnet
-    } else {
+    } else if network == WalletNetwork::Regtest {
         MigrationTimingPolicy::Standard
+    } else {
+        MigrationTimingPolicy::Standard90Minutes
     }
 }
 
@@ -81,6 +88,14 @@ fn schedule_parameters_with_policy(
             FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS,
             FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS,
         ),
+        WalletNetwork::Main | WalletNetwork::Test
+            if timing_policy == MigrationTimingPolicy::Standard90Minutes =>
+        {
+            (
+                NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+                ZIP318_TRANSFER_MAX_DELAY_BLOCKS,
+            )
+        }
         WalletNetwork::Main | WalletNetwork::Test => (
             ZIP318_TRANSFER_MEAN_DELAY_BLOCKS,
             ZIP318_TRANSFER_MAX_DELAY_BLOCKS,
