@@ -886,6 +886,260 @@ void main() {
     },
   );
 
+  testWidgets('anchor wait shows the next migration window and batch amount', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          activeRunId: 'run-1',
+          proofReady: false,
+          signedChildPcztCount: 2,
+          nextActionHeight: 1_144,
+          nextProofWindowHeight: 1_144,
+          nextProofWindowPartIndices: const [1, 2],
+          targetValuesZatoshi: const [1_000_000_000, 200_000_000, 300_000_000],
+          totalCount: 3,
+          parts: [
+            _migrationPart(
+              0,
+              1_000_000_000,
+              rust_sync.MigrationPartState.completed,
+              scheduleOrder: 0,
+            ),
+            _migrationPart(
+              1,
+              200_000_000,
+              rust_sync.MigrationPartState.preparing,
+              scheduleOrder: 1,
+              scheduledHeight: 1_150,
+            ),
+            _migrationPart(
+              2,
+              300_000_000,
+              rust_sync.MigrationPartState.preparing,
+              scheduleOrder: 2,
+              scheduledHeight: 1_160,
+            ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 1_000,
+          chainTipHeight: 1_000,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Next migration window'), findsOneWidget);
+    expect(find.text('5 ZEC'), findsNWidgets(2));
+    expect(find.text('Expected at'), findsOneWidget);
+    expect(find.text('1,144'), findsOneWidget);
+  });
+
+  testWidgets(
+    'reached migration window reports wallet sync while proof is unavailable',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+            proofReady: false,
+            signedChildPcztCount: 1,
+            nextActionHeight: 1_144,
+            nextProofWindowHeight: 1_144,
+            nextProofWindowPartIndices: const [0],
+            targetValuesZatoshi: const [200_000_000],
+            totalCount: 1,
+            parts: [
+              _migrationPart(
+                0,
+                200_000_000,
+                rust_sync.MigrationPartState.preparing,
+                scheduledHeight: 1_150,
+              ),
+            ],
+          ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 1_144,
+            chainTipHeight: 1_144,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Opening migration window'), findsOneWidget);
+      expect(find.text('Waiting for wallet sync'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'an earlier broadcast takes priority over the next proof window',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationBroadcastScheduledPhase,
+            activeRunId: 'run-1',
+            proofReady: false,
+            pendingTxCount: 1,
+            signedChildPcztCount: 1,
+            nextActionHeight: 1_100,
+            nextProofWindowHeight: 1_144,
+            nextProofWindowPartIndices: const [1],
+            targetValuesZatoshi: const [100_000_000, 200_000_000],
+            totalCount: 2,
+            parts: [
+              _migrationPart(
+                0,
+                100_000_000,
+                rust_sync.MigrationPartState.scheduled,
+                scheduledHeight: 1_100,
+              ),
+              _migrationPart(
+                1,
+                200_000_000,
+                rust_sync.MigrationPartState.preparing,
+                scheduledHeight: 1_200,
+              ),
+            ],
+          ),
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 1_000,
+            chainTipHeight: 1_000,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Next migration'), findsOneWidget);
+      expect(find.text('Next migration window'), findsNothing);
+      expect(find.text('1,100'), findsOneWidget);
+    },
+  );
+
+  testWidgets('an overdue migration is shown as sending now', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          nextActionHeight: 510,
+          nextProofWindowHeight: 566,
+          nextProofWindowPartIndices: const [1],
+          targetValuesZatoshi: const [5_000_000_000, 2_000_000_000],
+          totalCount: 2,
+          pendingTxCount: 1,
+          signedChildPcztCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              5_000_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduledHeight: 510,
+            ),
+            _migrationPart(
+              1,
+              2_000_000_000,
+              rust_sync.MigrationPartState.preparing,
+              scheduledHeight: 615,
+            ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 550,
+          chainTipHeight: 550,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Sending migration'), findsOneWidget);
+    expect(find.text('Sending now'), findsOneWidget);
+    expect(find.text('50 ZEC'), findsOneWidget);
+    expect(find.text('510'), findsNothing);
+    expect(find.text('Next migration window'), findsNothing);
+  });
+
+  testWidgets('preparing and scheduled notes use the same ring color', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [100_000_000, 200_000_000],
+          totalCount: 2,
+          pendingTxCount: 1,
+          signedChildPcztCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              100_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduledHeight: 1_100,
+            ),
+            _migrationPart(
+              1,
+              200_000_000,
+              rust_sync.MigrationPartState.preparing,
+              scheduledHeight: 1_200,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1000));
+
+    final paint = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+    );
+    final dynamic painter = paint.painter;
+    final segments = painter.segments as List<dynamic>;
+    expect(segments[0].color, segments[1].color);
+  });
+
   testWidgets('private status keeps scheduled batches on the transfer UI', (
     tester,
   ) async {
@@ -3874,6 +4128,8 @@ rust_sync.MigrationStatus _migrationStatus({
   int denominationSplitTotalCount = 0,
   int signedChildPcztCount = 0,
   int? nextActionHeight,
+  int? nextProofWindowHeight,
+  List<int>? nextProofWindowPartIndices,
   int? estimatedCompletionHeight,
   int? preparationMeanDelayBlocks,
   bool? proofReady,
@@ -3904,6 +4160,10 @@ rust_sync.MigrationStatus _migrationStatus({
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    nextProofWindowHeight: nextProofWindowHeight,
+    nextProofWindowPartIndices: nextProofWindowPartIndices == null
+        ? null
+        : frb.Uint32List.fromList(nextProofWindowPartIndices),
     estimatedCompletionHeight: estimatedCompletionHeight,
     preparationMeanDelayBlocks: preparationMeanDelayBlocks,
     proofReady: proofReady,

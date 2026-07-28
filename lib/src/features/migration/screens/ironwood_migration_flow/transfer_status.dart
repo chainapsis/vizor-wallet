@@ -291,6 +291,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
       statuses: statuses,
       totalZatoshi: totalZatoshi,
       waitingForAnchor: waitingForAnchor,
+      currentHeight: currentHeight,
     );
     final preparationPresentation = _preparationRingPresentation(status);
     final signIndex = signingSegmentIndices.isNotEmpty
@@ -836,6 +837,7 @@ _MigrationRingPresentation _migrationRingPresentation({
   required List<_MigrationBatchStatus> statuses,
   required BigInt totalZatoshi,
   required bool waitingForAnchor,
+  required int currentHeight,
 }) {
   final needsInputIndex = statuses.indexOf(_MigrationBatchStatus.needsInput);
   if (needsInputIndex >= 0) {
@@ -846,21 +848,76 @@ _MigrationRingPresentation _migrationRingPresentation({
     );
   }
 
+  final nextProofWindowHeight = status.nextProofWindowHeight;
+  final proofWindowPartIndices =
+      status.nextProofWindowPartIndices?.toSet() ?? const <int>{};
+  final earliestScheduledHeight = parts
+      .where(
+        (part) =>
+            part.state == rust_sync.MigrationPartState.scheduled &&
+            part.scheduledHeight != null,
+      )
+      .map((part) => part.scheduledHeight!)
+      .fold<int?>(null, (earliest, height) {
+        return earliest == null ? height : math.min(earliest, height);
+      });
+  final proofWindowIsNext =
+      nextProofWindowHeight != null &&
+      proofWindowPartIndices.isNotEmpty &&
+      (earliestScheduledHeight == null ||
+          nextProofWindowHeight < earliestScheduledHeight);
+  if (proofWindowIsNext) {
+    final windowAmount = parts
+        .where((part) => proofWindowPartIndices.contains(part.partIndex))
+        .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi);
+    final displayAmount = windowAmount > BigInt.zero
+        ? windowAmount
+        : totalZatoshi;
+    if (status.proofReady == false &&
+        currentHeight > 0 &&
+        currentHeight >= nextProofWindowHeight) {
+      return _MigrationRingPresentation(
+        label: 'Opening migration window',
+        amount: displayAmount,
+        detail: 'Waiting for wallet sync',
+      );
+    }
+    if (status.proofReady == true) {
+      return _MigrationRingPresentation(
+        label: 'Migration window ready',
+        amount: displayAmount,
+        detail: 'Preparing migration',
+      );
+    }
+    return _MigrationRingPresentation(
+      label: 'Next migration window',
+      amount: displayAmount,
+      detail: 'Expected at',
+      scheduledHeight: nextProofWindowHeight,
+    );
+  }
+
   final scheduledIndex = statuses.indexOf(_MigrationBatchStatus.scheduled);
   if (scheduledIndex >= 0) {
     final part = scheduledIndex < parts.length ? parts[scheduledIndex] : null;
     final legacyBroadcast = part == null
         ? _nextScheduledBroadcast(status)
         : null;
+    final scheduledHeight =
+        part?.scheduledHeight ?? legacyBroadcast?.scheduledHeight;
+    final isDue =
+        scheduledHeight != null &&
+        currentHeight > 0 &&
+        scheduledHeight <= currentHeight;
     return _MigrationRingPresentation(
-      label: 'Next migration',
+      label: isDue ? 'Sending migration' : 'Next migration',
       amount: legacyBroadcast?.valueZatoshi ?? values[scheduledIndex],
-      detail:
-          (part?.scheduledHeight ?? legacyBroadcast?.scheduledHeight) == null
+      detail: isDue
+          ? 'Sending now'
+          : scheduledHeight == null
           ? 'Schedule pending'
           : 'at',
-      scheduledHeight:
-          part?.scheduledHeight ?? legacyBroadcast?.scheduledHeight,
+      scheduledHeight: isDue ? null : scheduledHeight,
     );
   }
 
@@ -957,7 +1014,7 @@ class _MigrationRingDetail extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('at', style: style),
+        Text(presentation.detail, style: style),
         const SizedBox(width: 4),
         AppIcon(AppIcons.block, size: 16, color: context.colors.icon.success),
         const SizedBox(width: 4),
@@ -1590,8 +1647,8 @@ _MigrationRingVisualSegment _migrationRingStatusSegment({
       _MigrationRingMotion.none,
     ),
     _MigrationBatchStatus.preparing => (
-      const Color(0xFF00D084),
-      const Color(0xFF00D084),
+      palette.scheduled,
+      palette.scheduled,
       _MigrationRingMotion.none,
     ),
     _MigrationBatchStatus.scheduled => (

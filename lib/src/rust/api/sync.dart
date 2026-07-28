@@ -1596,6 +1596,14 @@ class MigrationStatus {
   final int? preparationMeanDelayBlocks;
   final int? nextActionHeight;
 
+  /// Earliest chain height at which the next ZIP 318 proof window should be
+  /// retried. Kept separate from `next_action_height`, which may instead
+  /// describe an earlier scheduled broadcast.
+  final int? nextProofWindowHeight;
+
+  /// Migration parts expected to use that proof window.
+  final Uint32List? nextProofWindowPartIndices;
+
   /// Exact foreground proof preflight. `None` means no signed proof action
   /// is currently applicable; `Some(false)` keeps a height-due action gated
   /// until its anchor checkpoint and witness are actually available.
@@ -1629,6 +1637,8 @@ class MigrationStatus {
     required this.scheduleMaxDelayBlocks,
     this.preparationMeanDelayBlocks,
     this.nextActionHeight,
+    this.nextProofWindowHeight,
+    this.nextProofWindowPartIndices,
     this.proofReady,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
@@ -1661,6 +1671,8 @@ class MigrationStatus {
       scheduleMaxDelayBlocks.hashCode ^
       preparationMeanDelayBlocks.hashCode ^
       nextActionHeight.hashCode ^
+      nextProofWindowHeight.hashCode ^
+      nextProofWindowPartIndices.hashCode ^
       proofReady.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
@@ -1698,6 +1710,8 @@ class MigrationStatus {
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           preparationMeanDelayBlocks == other.preparationMeanDelayBlocks &&
           nextActionHeight == other.nextActionHeight &&
+          nextProofWindowHeight == other.nextProofWindowHeight &&
+          nextProofWindowPartIndices == other.nextProofWindowPartIndices &&
           proofReady == other.proofReady &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&

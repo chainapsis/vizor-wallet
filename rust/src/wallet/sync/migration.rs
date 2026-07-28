@@ -348,6 +348,11 @@ pub(crate) struct MigrationStatus {
     pub preparation_mean_delay_blocks: u32,
     /// Earliest block height at which the wallet can make more progress.
     pub next_action_height: Option<u32>,
+    /// Earliest chain height at which the wallet should retry proofs against
+    /// the next usable ZIP 318 anchor window.
+    pub next_proof_window_height: Option<u32>,
+    /// Unpromoted migration parts waiting for that proof window.
+    pub next_proof_window_part_indices: Vec<u32>,
     /// Projected height at which every migration part reaches trusted depth.
     pub estimated_completion_height: Option<u32>,
     /// Part associated with `next_action_height`, when it can be identified.
@@ -362,6 +367,8 @@ pub(crate) struct MigrationStatus {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct MigrationTimingProjection {
     next_action_height: Option<u32>,
+    next_proof_window_height: Option<u32>,
+    next_proof_window_part_indices: Vec<u32>,
     estimated_completion_height: Option<u32>,
     next_action_part_index: Option<u32>,
     schedule_order_by_part: BTreeMap<u32, u32>,
@@ -458,6 +465,8 @@ pub(crate) fn migration_status(
         .1,
         preparation_mean_delay_blocks: 0,
         next_action_height: None,
+        next_proof_window_height: None,
+        next_proof_window_part_indices: Vec::new(),
         estimated_completion_height: None,
         next_action_part_index: None,
         current_signing_part_indices: Vec::new(),
@@ -4259,6 +4268,19 @@ fn calculate_migration_timing_projection(
         (None, Some(proof)) => Some(proof),
         (None, None) => None,
     };
+    let mut next_proof_window_part_indices = signed_children
+        .iter()
+        .map(|child| child.part_index)
+        .collect::<Vec<_>>();
+    next_proof_window_part_indices.sort_by_key(|part_index| {
+        (
+            schedule_order_by_part
+                .get(part_index)
+                .copied()
+                .unwrap_or(u32::MAX),
+            *part_index,
+        )
+    });
 
     let projected_signed_parts = if signed_children.is_empty() {
         Vec::new()
@@ -4371,6 +4393,8 @@ fn calculate_migration_timing_projection(
 
     Ok(MigrationTimingProjection {
         next_action_height: next_action.map(|value| value.0),
+        next_proof_window_height: proof_next.map(|value| value.0),
+        next_proof_window_part_indices,
         next_action_part_index: next_action.and_then(|value| value.1),
         estimated_completion_height,
         schedule_order_by_part,
@@ -4578,6 +4602,8 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
             preparation_schedule_parameters(network, timing_policy).0
         },
         next_action_height: timing_projection.next_action_height,
+        next_proof_window_height: timing_projection.next_proof_window_height,
+        next_proof_window_part_indices: timing_projection.next_proof_window_part_indices,
         estimated_completion_height: timing_projection.estimated_completion_height,
         next_action_part_index: timing_projection.next_action_part_index,
         current_signing_part_indices,

@@ -804,6 +804,12 @@ pub struct MigrationStatus {
     pub schedule_max_delay_blocks: u32,
     pub preparation_mean_delay_blocks: Option<u32>,
     pub next_action_height: Option<u32>,
+    /// Earliest chain height at which the next ZIP 318 proof window should be
+    /// retried. Kept separate from `next_action_height`, which may instead
+    /// describe an earlier scheduled broadcast.
+    pub next_proof_window_height: Option<u32>,
+    /// Migration parts expected to use that proof window.
+    pub next_proof_window_part_indices: Option<Vec<u32>>,
     /// Exact foreground proof preflight. `None` means no signed proof action
     /// is currently applicable; `Some(false)` keeps a height-due action gated
     /// until its anchor checkpoint and witness are actually available.
@@ -1286,6 +1292,8 @@ pub fn get_orchard_migration_status(
             schedule_max_delay_blocks: status.schedule_max_delay_blocks,
             preparation_mean_delay_blocks: Some(status.preparation_mean_delay_blocks),
             next_action_height: status.next_action_height,
+            next_proof_window_height: status.next_proof_window_height,
+            next_proof_window_part_indices: Some(status.next_proof_window_part_indices),
             proof_ready,
             estimated_completion_height: status.estimated_completion_height,
             next_action_part_index: status.next_action_part_index,

@@ -8937,8 +8937,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationStatus dco_decode_migration_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 28)
-      throw Exception('unexpected arr length: expect 28 but see ${arr.length}');
+    if (arr.length != 30)
+      throw Exception('unexpected arr length: expect 30 but see ${arr.length}');
     return MigrationStatus(
       phase: dco_decode_String(arr[0]),
       activeRunId: dco_decode_opt_String(arr[1]),
@@ -8961,16 +8961,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduleMaxDelayBlocks: dco_decode_u_32(arr[18]),
       preparationMeanDelayBlocks: dco_decode_opt_box_autoadd_u_32(arr[19]),
       nextActionHeight: dco_decode_opt_box_autoadd_u_32(arr[20]),
-      proofReady: dco_decode_opt_box_autoadd_bool(arr[21]),
-      estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[22]),
-      nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[23]),
-      currentSigningPartIndices: dco_decode_opt_list_prim_u_32_strict(arr[24]),
+      nextProofWindowHeight: dco_decode_opt_box_autoadd_u_32(arr[21]),
+      nextProofWindowPartIndices: dco_decode_opt_list_prim_u_32_strict(arr[22]),
+      proofReady: dco_decode_opt_box_autoadd_bool(arr[23]),
+      estimatedCompletionHeight: dco_decode_opt_box_autoadd_u_32(arr[24]),
+      nextActionPartIndex: dco_decode_opt_box_autoadd_u_32(arr[25]),
+      currentSigningPartIndices: dco_decode_opt_list_prim_u_32_strict(arr[26]),
       scheduledBroadcasts: dco_decode_list_migration_scheduled_broadcast(
-        arr[25],
+        arr[27],
       ),
       preparationTransactions:
-          dco_decode_opt_list_migration_preparation_transaction_status(arr[26]),
-      parts: dco_decode_list_migration_part_status(arr[27]),
+          dco_decode_opt_list_migration_preparation_transaction_status(arr[28]),
+      parts: dco_decode_list_migration_part_status(arr[29]),
     );
   }
 
@@ -11587,6 +11589,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       deserializer,
     );
     var var_nextActionHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_nextProofWindowHeight = sse_decode_opt_box_autoadd_u_32(
+      deserializer,
+    );
+    var var_nextProofWindowPartIndices = sse_decode_opt_list_prim_u_32_strict(
+      deserializer,
+    );
     var var_proofReady = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_estimatedCompletionHeight = sse_decode_opt_box_autoadd_u_32(
       deserializer,
@@ -11625,6 +11633,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       scheduleMaxDelayBlocks: var_scheduleMaxDelayBlocks,
       preparationMeanDelayBlocks: var_preparationMeanDelayBlocks,
       nextActionHeight: var_nextActionHeight,
+      nextProofWindowHeight: var_nextProofWindowHeight,
+      nextProofWindowPartIndices: var_nextProofWindowPartIndices,
       proofReady: var_proofReady,
       estimatedCompletionHeight: var_estimatedCompletionHeight,
       nextActionPartIndex: var_nextActionPartIndex,
@@ -14254,6 +14264,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       serializer,
     );
     sse_encode_opt_box_autoadd_u_32(self.nextActionHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.nextProofWindowHeight, serializer);
+    sse_encode_opt_list_prim_u_32_strict(
+      self.nextProofWindowPartIndices,
+      serializer,
+    );
     sse_encode_opt_box_autoadd_bool(self.proofReady, serializer);
     sse_encode_opt_box_autoadd_u_32(self.estimatedCompletionHeight, serializer);
     sse_encode_opt_box_autoadd_u_32(self.nextActionPartIndex, serializer);

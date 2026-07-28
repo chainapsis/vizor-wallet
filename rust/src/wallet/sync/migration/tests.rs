@@ -1606,6 +1606,8 @@ fn timing_projection_starts_approved_offsets_after_initial_proof_readiness() {
 
     assert_eq!(projection.next_action_height, Some(200));
     assert_eq!(projection.next_action_part_index, Some(0));
+    assert_eq!(projection.next_proof_window_height, Some(200));
+    assert_eq!(projection.next_proof_window_part_indices, vec![0, 1, 2]);
     assert_eq!(projection.estimated_completion_height, Some(299));
     assert_eq!(
         projection.schedule_order_by_part,
@@ -1751,6 +1753,8 @@ fn timing_projection_keeps_unpromoted_parts_after_a_reschedule() {
 
     assert_eq!(projection.next_action_height, Some(550));
     assert_eq!(projection.next_action_part_index, Some(1));
+    assert_eq!(projection.next_proof_window_height, Some(550));
+    assert_eq!(projection.next_proof_window_part_indices, vec![1]);
     assert_eq!(projection.estimated_completion_height, Some(791));
     assert_eq!(
         projection.projected_signed_parts,

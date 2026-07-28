@@ -8038,6 +8038,8 @@ impl SseDecode for crate::api::sync::MigrationStatus {
         let mut var_scheduleMaxDelayBlocks = <u32>::sse_decode(deserializer);
         let mut var_preparationMeanDelayBlocks = <Option<u32>>::sse_decode(deserializer);
         let mut var_nextActionHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_nextProofWindowHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_nextProofWindowPartIndices = <Option<Vec<u32>>>::sse_decode(deserializer);
         let mut var_proofReady = <Option<bool>>::sse_decode(deserializer);
         let mut var_estimatedCompletionHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_nextActionPartIndex = <Option<u32>>::sse_decode(deserializer);
@@ -8070,6 +8072,8 @@ impl SseDecode for crate::api::sync::MigrationStatus {
             schedule_max_delay_blocks: var_scheduleMaxDelayBlocks,
             preparation_mean_delay_blocks: var_preparationMeanDelayBlocks,
             next_action_height: var_nextActionHeight,
+            next_proof_window_height: var_nextProofWindowHeight,
+            next_proof_window_part_indices: var_nextProofWindowPartIndices,
             proof_ready: var_proofReady,
             estimated_completion_height: var_estimatedCompletionHeight,
             next_action_part_index: var_nextActionPartIndex,
@@ -10630,6 +10634,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationStatus {
                 .into_into_dart()
                 .into_dart(),
             self.next_action_height.into_into_dart().into_dart(),
+            self.next_proof_window_height.into_into_dart().into_dart(),
+            self.next_proof_window_part_indices
+                .into_into_dart()
+                .into_dart(),
             self.proof_ready.into_into_dart().into_dart(),
             self.estimated_completion_height
                 .into_into_dart()
@@ -13031,6 +13039,8 @@ impl SseEncode for crate::api::sync::MigrationStatus {
         <u32>::sse_encode(self.schedule_max_delay_blocks, serializer);
         <Option<u32>>::sse_encode(self.preparation_mean_delay_blocks, serializer);
         <Option<u32>>::sse_encode(self.next_action_height, serializer);
+        <Option<u32>>::sse_encode(self.next_proof_window_height, serializer);
+        <Option<Vec<u32>>>::sse_encode(self.next_proof_window_part_indices, serializer);
         <Option<bool>>::sse_encode(self.proof_ready, serializer);
         <Option<u32>>::sse_encode(self.estimated_completion_height, serializer);
         <Option<u32>>::sse_encode(self.next_action_part_index, serializer);
