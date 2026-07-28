@@ -2572,9 +2572,21 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
 /// canonical chain. This needs no seed, PCZT, or encryption password, so the
 /// normal status path can reconcile a reorg even after every child has been
 /// broadcast.
+/// A pending stage discovered on-chain and its remaining peers are updated in
+/// one transaction. The submission timing was not persisted, so a spaced run
+/// conservatively restarts its peer delays from the scanned height.
 pub(crate) fn reconcile_denomination_stage_chain_state(
     db_path: &str,
     run_id: &str,
+) -> Result<(), String> {
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, None, &mut OsRng)
+}
+
+fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?Sized>(
+    db_path: &str,
+    run_id: &str,
+    recovery_observed_height: Option<u32>,
+    rng: &mut R,
 ) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
@@ -2599,6 +2611,7 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
     let mut affected = BTreeSet::new();
     let mut invalid_stages = BTreeSet::new();
     let mut identities_to_record = BTreeMap::new();
+    let mut recovered_pending_txids = BTreeSet::new();
 
     for record in &records {
         let txid = record.expected_txid_hex.to_ascii_lowercase();
@@ -2606,10 +2619,11 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
             (DenominationStageStatus::AwaitingInputs, Some(identity)) => {
                 identities_to_record.insert(txid, identity.clone());
             }
-            (
-                DenominationStageStatus::Pending | DenominationStageStatus::Broadcasted,
-                Some(identity),
-            ) => {
+            (DenominationStageStatus::Pending, Some(identity)) => {
+                recovered_pending_txids.insert(txid.clone());
+                identities_to_record.insert(txid, identity.clone());
+            }
+            (DenominationStageStatus::Broadcasted, Some(identity)) => {
                 identities_to_record.insert(txid, identity.clone());
             }
             (DenominationStageStatus::Confirmed, None) => {
@@ -2648,7 +2662,36 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
             break;
         }
     }
+    let recovery_network = if recovered_pending_txids.is_empty()
+        || preparation_timing_policy_for_run_with_conn(&conn, run_id)?
+            == PreparationTimingPolicy::Immediate
+    {
+        None
+    } else {
+        let network = conn
+            .query_row(
+                &format!("SELECT network FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|e| format!("Read recovered denomination run network: {e}"))?;
+        let network = WalletNetwork::from_str(&network)
+            .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
+        Some(network)
+    };
     drop(conn);
+
+    let recovery_context = if let Some(network) = recovery_network {
+        let observed_height = if let Some(height) = recovery_observed_height {
+            height
+        } else {
+            u32::try_from(super::get_sync_progress(db_path, network)?.scanned_height)
+                .map_err(|_| "Migration scanned height exceeds u32".to_string())?
+        };
+        Some((network, observed_height))
+    } else {
+        None
+    };
 
     if !affected.is_empty() {
         // Child cleanup comes first. If the process stops before stage state is
@@ -2659,21 +2702,56 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
 
     if !invalid_stages.is_empty() || !identities_to_record.is_empty() {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin denomination chain-state reconciliation: {e}"))?;
+        let mut recovered_pending_stage = false;
+        for txid in &recovered_pending_txids {
+            let still_pending = tx
+                .query_row(
+                    &format!(
+                        "SELECT status = 'pending' FROM {STAGES_TABLE}
+                         WHERE run_id = ?1 AND expected_txid_hex = ?2"
+                    ),
+                    params![run_id, txid],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|e| format!("Check recovered denomination stage state: {e}"))?;
+            recovered_pending_stage |= still_pending;
+        }
         for txid in &invalid_stages {
-            reset_denomination_stage_exact(&conn, run_id, txid)?;
+            reset_denomination_stage_exact(&tx, run_id, txid)?;
         }
         for (txid, identity) in identities_to_record {
             if invalid_stages.contains(&txid) {
                 continue;
             }
             replace_denomination_stage_confirmation_identity(
-                &conn,
+                &tx,
                 run_id,
                 &txid,
                 identity.mined_height,
                 &identity.block_hash,
             )?;
         }
+        if let (true, Some((network, observed_height))) =
+            (recovered_pending_stage, recovery_context)
+        {
+            let rerandomized = rerandomize_remaining_preparation_broadcast_heights(
+                &tx,
+                run_id,
+                network,
+                observed_height,
+                rng,
+            )?;
+            if rerandomized > 0 {
+                log::info!(
+                    "migration: re-randomized {rerandomized} preparation stage(s) after recovering an on-chain pending stage"
+                );
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit denomination chain-state reconciliation: {e}"))?;
     }
 
     if !affected.is_empty() {

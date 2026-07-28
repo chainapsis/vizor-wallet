@@ -676,6 +676,50 @@ fn preparation_catch_up_test_rows(
     .unwrap()
 }
 
+fn insert_recovered_pending_preparation_test_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    scheduled_heights: [u32; 3],
+    mined_height: u32,
+) {
+    conn.execute_batch(
+        "CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);
+         CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             block INTEGER,
+             mined_height INTEGER
+         );",
+    )
+    .unwrap();
+    insert_preparation_policy_test_run(conn, run_id, PreparationTimingPolicy::Zip318Spaced, 3, 101);
+    for (stage_index, scheduled_height) in scheduled_heights.into_iter().enumerate() {
+        conn.execute(
+            &format!(
+                "UPDATE {STAGES_TABLE}
+                 SET scheduled_height = ?1, expiry_height = 3490560
+                 WHERE run_id = ?2 AND stage_index = ?3"
+            ),
+            params![scheduled_height, run_id, stage_index],
+        )
+        .unwrap();
+    }
+
+    let block_hash = [0xabu8; 32];
+    conn.execute(
+        "INSERT INTO blocks (height, hash) VALUES (?1, ?2)",
+        params![mined_height, block_hash.as_slice()],
+    )
+    .unwrap();
+    let mut stored_txid = hex::decode(format!("{:064x}", 1)).unwrap();
+    stored_txid.reverse();
+    conn.execute(
+        "INSERT INTO transactions (txid, block, mined_height)
+         VALUES (?1, ?2, ?2)",
+        params![stored_txid, mined_height],
+    )
+    .unwrap();
+}
+
 fn seed_account_migration_rows(
     conn: &rusqlite::Connection,
     run_id: &str,
@@ -2190,6 +2234,184 @@ fn late_preparation_broadcast_rerandomizes_remaining_effective_heights() {
     .map(|stage| stage.scheduled_height.unwrap())
     .collect::<Vec<_>>();
     assert_eq!(displayed_heights, effective_heights);
+}
+
+#[test]
+fn recovered_pending_preparation_stage_rerandomizes_remaining_peers_once() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "recovered-preparation-catch-up";
+    insert_recovered_pending_preparation_test_run(&conn, run_id, [100, 150, 175], 200);
+    let before = preparation_catch_up_test_rows(&conn, run_id);
+    drop(conn);
+
+    let mut rng = StdRng::seed_from_u64(0x318);
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), &mut rng)
+        .unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let statuses = conn
+        .prepare(&format!(
+            "SELECT status FROM {STAGES_TABLE}
+             WHERE run_id = ?1 ORDER BY stage_index"
+        ))
+        .unwrap()
+        .query_map(params![run_id], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(statuses, vec!["confirmed", "pending", "pending"]);
+    let after = preparation_catch_up_test_rows(&conn, run_id);
+    assert_eq!(
+        before
+            .iter()
+            .map(|row| (row.0, row.1, row.3))
+            .collect::<Vec<_>>(),
+        after
+            .iter()
+            .map(|row| (row.0, row.1, row.3))
+            .collect::<Vec<_>>(),
+        "recovery must preserve every signed schedule and expiry",
+    );
+    assert!(after[0].2.is_none());
+    let recovered_heights = after[1..]
+        .iter()
+        .map(|row| row.1.max(row.2.unwrap_or(0)))
+        .collect::<Vec<_>>();
+    assert!(recovered_heights[0] >= 250);
+    assert!(recovered_heights.windows(2).all(|pair| pair[0] <= pair[1]));
+    drop(conn);
+
+    let first_recovery = after.iter().map(|row| row.2).collect::<Vec<Option<u32>>>();
+    let mut second_rng = StdRng::seed_from_u64(0x123);
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(300), &mut second_rng)
+        .unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    assert_eq!(
+        preparation_catch_up_test_rows(&conn, run_id)
+            .iter()
+            .map(|row| row.2)
+            .collect::<Vec<Option<u32>>>(),
+        first_recovery,
+        "a confirmed recovery must not re-randomize peers again",
+    );
+}
+
+#[test]
+fn recovered_pending_preparation_stage_conservatively_delays_near_future_peers() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "recovered-preparation-on-time";
+    insert_recovered_pending_preparation_test_run(&conn, run_id, [100, 251, 252], 200);
+    drop(conn);
+
+    let mut rng = StdRng::seed_from_u64(0x318);
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), &mut rng)
+        .unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let rows = preparation_catch_up_test_rows(&conn, run_id);
+    assert!(rows[0].2.is_none());
+    assert!(rows[1..].iter().all(|row| row.2.is_some()));
+    assert!(rows[1].1.max(rows[1].2.unwrap_or(0)) > rows[1].1);
+    for row in &rows[1..] {
+        assert!(row.1.max(row.2.unwrap_or(0)) >= row.1);
+    }
+    let status: String = conn
+        .query_row(
+            &format!(
+                "SELECT status FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND stage_index = 0"
+            ),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "confirmed");
+}
+
+#[test]
+fn recovered_pending_preparation_stage_rolls_back_if_rescheduling_fails() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "recovered-preparation-rollback";
+    insert_recovered_pending_preparation_test_run(&conn, run_id, [100, 150, 175], 200);
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE} SET timing_policy = 'invalid'
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .unwrap();
+    drop(conn);
+
+    let mut rng = StdRng::seed_from_u64(0x318);
+    let error =
+        reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), &mut rng)
+            .unwrap_err();
+    assert!(error.contains("Unsupported migration timing policy"));
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let rows = preparation_catch_up_test_rows(&conn, run_id);
+    assert!(rows.iter().all(|row| row.2.is_none()));
+    let status: String = conn
+        .query_row(
+            &format!(
+                "SELECT status FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND stage_index = 0"
+            ),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "pending");
+}
+
+#[test]
+fn recovered_pending_immediate_stage_does_not_require_catch_up_context() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "recovered-immediate-preparation";
+    insert_recovered_pending_preparation_test_run(&conn, run_id, [100, 150, 175], 200);
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE} SET preparation_timing_policy = 'immediate'
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .unwrap();
+    drop(conn);
+
+    reconcile_denomination_stage_chain_state(db_path, run_id).unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let rows = preparation_catch_up_test_rows(&conn, run_id);
+    assert!(rows.iter().all(|row| row.2.is_none()));
+    let status: String = conn
+        .query_row(
+            &format!(
+                "SELECT status FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND stage_index = 0"
+            ),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "confirmed");
 }
 
 #[test]
