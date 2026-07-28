@@ -96,6 +96,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
         MobileIronwoodKeystoneSigningViewState.scanner => _ScannerContent(
           camera: camera,
           round: round,
+          signingRoundLabel: signingRoundLabel,
           onToggleFlashlight: onToggleFlashlight,
           onShowRequestQr: onShowRequestQr,
           onCancel: onCancel,
@@ -188,8 +189,8 @@ class _StepOneContent extends StatelessWidget {
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_round',
                         ),
-                        style: AppTypography.bodySmall.copyWith(
-                          color: colors.text.secondary,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.accent,
                         ),
                       ),
                     ],
@@ -449,6 +450,7 @@ class _ScannerContent extends StatelessWidget {
   const _ScannerContent({
     required this.camera,
     required this.round,
+    required this.signingRoundLabel,
     required this.onToggleFlashlight,
     required this.onShowRequestQr,
     required this.onCancel,
@@ -458,6 +460,7 @@ class _ScannerContent extends StatelessWidget {
 
   final Widget? camera;
   final MobileIronwoodKeystoneSigningRound round;
+  final String? signingRoundLabel;
   final VoidCallback? onToggleFlashlight;
   final VoidCallback? onShowRequestQr;
   final VoidCallback? onCancel;
@@ -563,6 +566,18 @@ class _ScannerContent extends StatelessWidget {
                           color: const Color(0xFFFFFFFF),
                         ),
                       ),
+                      if (signingRoundLabel != null) ...[
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          signingRoundLabel!,
+                          key: const ValueKey(
+                            'mobile_ironwood_keystone_signing_round',
+                          ),
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: const Color(0xFFFFFFFF),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

@@ -357,6 +357,15 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                             key: const ValueKey('preparing-ring-label'),
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              AppIcon(
+                                AppIcons.loader,
+                                key: const ValueKey(
+                                  'ironwood_migration_preparation_loader',
+                                ),
+                                size: AppIconSize.large,
+                                color: colors.text.accent,
+                              ),
+                              const SizedBox(height: 6),
                               Text(
                                 preparationPresentation.label,
                                 textAlign: TextAlign.center,
