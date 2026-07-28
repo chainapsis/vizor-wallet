@@ -564,6 +564,12 @@ void main() {
         find.text('1 transaction to sign · click QR to enlarge'),
         findsOneWidget,
       );
+      final backToReviewButton = find.widgetWithText(
+        AppButton,
+        'Back to review',
+      );
+      expect(backToReviewButton, findsOneWidget);
+      expect(tester.getSize(backToReviewButton).height, 44);
 
       final enlargeQr = find.byKey(
         const ValueKey('keystone_migration_enlarge_qr'),
@@ -596,8 +602,9 @@ void main() {
       );
       expect(find.text('Back to QR'), findsNothing);
 
-      final back = find.bySemanticsLabel('Back to Review migration');
-      await tester.tap(back);
+      final backToRequestQr = find.bySemanticsLabel('Back to Request QR');
+      expect(backToRequestQr, findsOneWidget);
+      await tester.tap(backToRequestQr);
       await tester.pump();
 
       expect(find.text('Step 1 of 2'), findsNothing);
@@ -607,7 +614,9 @@ void main() {
         findsNothing,
       );
 
-      await tester.tap(back);
+      final backToReview = find.bySemanticsLabel('Back to Review migration');
+      expect(backToReview, findsOneWidget);
+      await tester.tap(backToReview);
       await tester.pumpAndSettle();
 
       expect(

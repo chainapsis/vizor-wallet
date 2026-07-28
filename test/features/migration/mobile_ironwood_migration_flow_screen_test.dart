@@ -2734,6 +2734,16 @@ void main() {
       find.text('Scan the new signed QR shown on Keystone.'),
       findsOneWidget,
     );
+    final signingRoundLabel = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_round'),
+    );
+    final scanTarget = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_scan_target'),
+    );
+    expect(
+      tester.getBottomLeft(signingRoundLabel).dy,
+      lessThanOrEqualTo(tester.getTopLeft(scanTarget).dy),
+    );
     expect(tester.takeException(), isNull);
 
     await tester.binding.handlePopRoute();

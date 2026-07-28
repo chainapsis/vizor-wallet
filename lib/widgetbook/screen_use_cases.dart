@@ -859,6 +859,17 @@ Widget buildIronwoodMigrationImmediateKeystoneScannerUseCase(
   );
 }
 
+Widget buildIronwoodMigrationPrivateKeystoneRequestUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/keystone/sign',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(14_224_000_000)),
+    isHardware: true,
+  );
+}
+
 Widget buildIronwoodMigrationAnalyzingUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/private/review',
@@ -1177,6 +1188,7 @@ Widget _buildMobileIronwoodMigrationKeystoneSigningUseCase(
       child: MobileIronwoodKeystoneSigningView(
         state: state,
         round: MobileIronwoodKeystoneSigningRound.denominationSplit,
+        signingRoundLabel: 'Round 1 of 2',
         qrCode: const _KeystoneMigrationQrPreview(),
         camera: const _KeystoneMigrationCameraPreview(),
         onNext: () {},
@@ -2287,6 +2299,29 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
               previewStartScanning: widget.previewImmediateKeystoneScanner,
             );
           },
+        ),
+        GoRoute(
+          path: '/migration/private/keystone/sign',
+          builder: (_, _) => IronwoodMigrationKeystoneCombinedSignScreen(
+            approvedSchedule: const [],
+            previewRequest: rust_sync.KeystoneMigrationSigningRequest(
+              requestId: 'preview-private',
+              messages: [
+                rust_sync.KeystoneMigrationMessage(
+                  id: 'preview-private-split-1',
+                  redactedPczt: Uint8List.fromList(const [1, 2, 3]),
+                ),
+                rust_sync.KeystoneMigrationMessage(
+                  id: 'preview-private-split-2',
+                  redactedPczt: Uint8List.fromList(const [4, 5, 6]),
+                ),
+              ],
+              signingBatchLimit: 1,
+            ),
+            previewUrParts: const [
+              'ur:zcash-sign-request/preview-private-split-1',
+            ],
+          ),
         ),
         GoRoute(
           path: '/home',

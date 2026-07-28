@@ -1008,7 +1008,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
     return _IronwoodMigrationFrame(
       toolbar: _keystoneDenominationToolbar(
-        label: widget.step.toolbarLabel,
+        label: _stage == _KeystoneDenominationSignStage.scanning
+            ? 'Request QR'
+            : widget.step.toolbarLabel,
         onBack: _handleBack,
       ),
       disableSidebarActions: true,
@@ -1466,7 +1468,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           AppButton(
             onPressed: () => unawaited(_returnToReview()),
             variant: AppButtonVariant.ghost,
-            height: 36,
+            height: 44,
             minWidth: 230,
             child: Text(widget.step.previousButtonLabel),
           ),
