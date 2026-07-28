@@ -203,11 +203,24 @@ impl ImmediateMigrationInputLock {
             }
             Ok::<(), String>(())
         })?;
+        super::proposal_locks::remove(&self.db_path, self.owner)?;
         self.active = false;
         Ok(())
     }
 
     fn retain_until_expiry(&mut self) {
+        // Best effort: the transaction may already be on the network, so the
+        // ambiguity outcome must not surface as a failure. A missed mark only
+        // means restart recovery releases the lock early instead of waiting
+        // for the recorded expiry height.
+        if let Err(error) =
+            super::proposal_locks::mark_retain_until_expiry(&self.db_path, self.owner)
+        {
+            log::warn!(
+                "Immediate migration failed to retain its input lock for the \
+                 ambiguous broadcast window: {error}"
+            );
+        }
         self.active = false;
     }
 }
@@ -1726,12 +1739,32 @@ fn build_orchard_migration_immediate_pczt(
             0,
         )?;
         let input_lock_owner = LockOwner::random(&mut OsRng);
-        db.lock_outputs(
-            &locked_outputs,
+        let lock_expiry_height =
+            immediate_migration_lock_expiry(BlockHeight::from(target_height))?;
+        // Persist the owner and output references before taking the DB locks,
+        // exactly like ephemeral send-proposal locks. A Keystone Immediate
+        // migration holds this lock across a QR signing session; if the
+        // process dies before completion, the next process must release these
+        // inputs instead of leaving them locked until the ZIP 318 canonical
+        // expiry (weeks away).
+        super::proposal_locks::persist(
+            db_path,
             input_lock_owner,
-            immediate_migration_lock_expiry(BlockHeight::from(target_height))?,
-        )
-        .map_err(|e| format!("Lock Immediate migration inputs: {e:?}"))?;
+            &locked_outputs,
+            lock_expiry_height,
+        )?;
+        if let Err(error) =
+            db.lock_outputs(&locked_outputs, input_lock_owner, lock_expiry_height)
+        {
+            let cleanup = super::proposal_locks::remove(db_path, input_lock_owner);
+            return Err(match cleanup {
+                Ok(()) => format!("Lock Immediate migration inputs: {error:?}"),
+                Err(cleanup_error) => format!(
+                    "Lock Immediate migration inputs: {error:?}; \
+                     also failed to remove recovery rows: {cleanup_error}"
+                ),
+            });
+        }
         Ok::<_, String>((
             built.bytes,
             built.orchard_spend_action_indices,
