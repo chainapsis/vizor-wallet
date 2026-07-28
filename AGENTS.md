@@ -579,6 +579,13 @@ while an executed denomination preparation waits for confirmations.
 - Foreground reentry acknowledges the token before syncing and advancing the
   durable run. If another transaction wave is materialized, it submits a fresh
   read-only continued-processing task.
+- A foreground handoff records continuations only for runs that genuinely need
+  the foreground — never for a run the read-only task could still finish. A
+  multi-account task otherwise parks an account that is merely mid-wave, and
+  that account stops being re-armed until the user makes it active. The
+  "is a preparation bound to this request" boolean stays broader than the
+  recorded set on purpose: it gates cancellation of the pending request, so
+  deriving it from the recorded set would cancel healthy mid-wave runs.
 - OS expiration is completed without a failure presentation and re-arms
   background tracking, because it interrupts one execution opportunity rather
   than proving the migration failed. Expiry posts no notification of its own:

@@ -561,6 +561,78 @@ func migrationPreparationPendingTrackableScopes(
   confirmationTrackableScopes.subtracting(continuationScopes)
 }
 
+/// A one-shot gate for `setTaskCompleted`.
+///
+/// The re-arm path completes the task from an asynchronous submission callback
+/// and from a timeout fallback, so both race to finish the same task. Calling
+/// `setTaskCompleted` twice is undefined behavior, so exactly one of them may
+/// win.
+final class MigrationPreparationCompletionLatch {
+  private let lock = NSLock()
+  private var fired = false
+
+  init() {}
+
+  /// Returns `true` exactly once, for the first caller.
+  func claim() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    if fired { return false }
+    fired = true
+    return true
+  }
+}
+
+/// The continuation scopes to record when the foreground claims a running
+/// tracking task.
+///
+/// A handoff must not park a run that the background task could still finish
+/// on its own. `foregroundContinuationEligibleScopes` accepts state `0`, so
+/// marking every eligible scope would record accounts that are merely still
+/// counting confirmations. In a multi-account task that is a stall: account A
+/// confirms, the user opens the app, and account B — mid-wave — is recorded as
+/// handed-off. `pendingTrackableScopes` then subtracts B so nothing re-arms,
+/// the launch guard drops queued tasks, and the tracking pass skips B. B only
+/// unsticks when the user switches to it and opens its migration screen.
+///
+/// So add only the runs that genuinely need the foreground — the eligible
+/// scopes that are *not* confirmation-trackable (states `2`, `3`, `5`, and
+/// unreadable inspections). Confirmed waves are not lost by this: they are
+/// recorded incrementally by `applyTrackingBatch` once their notification is
+/// submitted, and arrive here inside `existingScopes`.
+func migrationPreparationHandoffContinuationScopes(
+  existingScopes: Set<String>,
+  eligibleScopes: Set<String>,
+  confirmationTrackableScopes: Set<String>
+) -> Set<String> {
+  existingScopes.union(
+    eligibleScopes.subtracting(confirmationTrackableScopes)
+  )
+}
+
+/// Whether a foreground launch found any preparation run bound to the pending
+/// request.
+///
+/// Deliberately broader than what
+/// `migrationPreparationHandoffContinuationScopes` records, and it must stay
+/// that way. This answers "is there anything here at all", not "did we park
+/// anything". `handoffPendingRequestForForegroundLaunch` feeds it into
+/// `shouldMarkMigrationPreparationForegroundContinuation`, and a `false` there
+/// makes `shouldContinue` false, which **cancels the pending task request**.
+///
+/// Deriving it from the recorded set instead would do exactly that to the
+/// healthy case: a wallet whose only run is a mid-wave state `0` account
+/// records nothing (correctly — the read-only task can still finish it), the
+/// boolean would flip false, and because that run's resume target is
+/// `.continuedProcessing` rather than `.backgroundProcessing` the redirect
+/// branch does not catch it. The request would be cancelled on every cold
+/// launch, killing background tracking for a run that was fine.
+func migrationPreparationHandoffHasBoundPreparation(
+  eligibleScopes: Set<String>
+) -> Bool {
+  !eligibleScopes.isEmpty
+}
+
 /// Whether the tracking loop may run a confirmation query right now.
 ///
 /// While the app is active the foreground coordinator's status poll and the
@@ -777,6 +849,13 @@ final class BackgroundMigrationPreparationManager {
   private static let confirmationQueryInterval: TimeInterval = 60
   private static let progressHeartbeatInterval: TimeInterval = 15
   private static let notificationSubmissionTimeout: TimeInterval = 5
+  /// How long the re-arm submission may run before the task completes anyway.
+  ///
+  /// The task is held open across an asynchronous submission so iOS cannot
+  /// suspend the process before the replacement request is filed. That hold
+  /// has to be short: the expiration path reaches here with very little time
+  /// left, and never completing the task is worse than an unarmed re-arm.
+  private static let rearmSubmissionTimeout: TimeInterval = 10
   private static let busyRetryDelay: TimeInterval = 60
   private static let transientRetryDelay: TimeInterval = 60
   private static let confirmationTarget: UInt64 = 3
@@ -892,9 +971,16 @@ final class BackgroundMigrationPreparationManager {
       let notificationsDisabled = self.stateLock.withPreparationLock {
         self.notificationAuthorization.isDisabled
       }
+      // Records only the runs that genuinely need the foreground, but reports
+      // "any eligible run exists". The boolean is deliberately broader than
+      // the recorded set: it gates `shouldContinue` below, and a `false` there
+      // cancels the pending request — which for a healthy mid-wave state `0`
+      // run (nothing to record, resume target `.continuedProcessing`, so the
+      // redirect branch above does not catch it) would kill background
+      // tracking on every cold launch.
       let hasBoundPreparation =
         hasPendingRequest && !notificationsDisabled
-        && self.markForegroundContinuationsReady()
+        && self.markForegroundContinuationsReadyForHandoff()
       let shouldContinue =
         shouldMarkMigrationPreparationForegroundContinuation(
           hasPendingRequest: hasPendingRequest,
@@ -1001,7 +1087,14 @@ final class BackgroundMigrationPreparationManager {
           )
         }
         if shouldClaimPendingRequest {
-          self.markForegroundContinuationsReady()
+          // Never park a trackable run here. This branch fires whenever *this*
+          // screen's run has a recorded continuation — the
+          // `foregroundContinuationPending ||` disjunct above does not require
+          // `!canTrackInBackground` — so a different account can still be
+          // mid-wave. Blanket marking plus the cancel below would leave that
+          // account with no running task, no queued request, and a recorded
+          // continuation that only its own migration screen can clear.
+          self.markForegroundContinuationsReadyForHandoff()
           BGTaskScheduler.shared.cancel(
             taskRequestWithIdentifier: Self.taskIdentifier
           )
@@ -2006,13 +2099,14 @@ final class BackgroundMigrationPreparationManager {
         disabled: notificationAuthorization.isDisabled
       )
     }
-    // Only an explicit foreground handoff parks every eligible run as
-    // handed-off. Confirmed-wave scopes are already recorded incrementally by
-    // `applyTrackingBatch` once their notification is submitted, so blanket
-    // marking on a mid-wave expiry would park runs that never confirmed and
-    // block the background task from re-arming and resuming them.
+    // Only an explicit foreground handoff records continuations here, and even
+    // then only for runs that genuinely need the foreground. Confirmed-wave
+    // scopes are already recorded incrementally by `applyTrackingBatch` once
+    // their notification is submitted, so blanket marking on a mid-wave expiry
+    // would park runs that never confirmed and block the background task from
+    // re-arming and resuming them.
     if runtime.handedOff && !runtime.quiesced {
-      markForegroundContinuationsReady()
+      markForegroundContinuationsReadyForHandoff()
     }
     // Expiry posts no notification of its own. Every scope recorded in
     // `foregroundContinuationScopes` here is a confirmed wave that already
@@ -2088,20 +2182,45 @@ final class BackgroundMigrationPreparationManager {
     } else {
       recordSchedulingState("confirmation_tracking_finished")
     }
-    cancelWatchdog()
-    task.setTaskCompleted(success: success)
-    if migrationPreparationTrackingShouldAttemptRearm(
+    guard migrationPreparationTrackingShouldAttemptRearm(
       completionFailed: completionFailed,
       quiesced: runtime.quiesced,
       expired: runtime.expired,
       handedOff: runtime.handedOff,
       notificationsDisabled: runtime.disabled
-    ) {
-      start { scheduled in
-        if !scheduled {
-          print("[BGPreparation] failed task could not re-arm tracking")
-        }
+    ) else {
+      cancelWatchdog()
+      task.setTaskCompleted(success: success)
+      return
+    }
+
+    // Retire this task's watchdog before re-arming, never after. `cancelWatchdog`
+    // and the `scheduleWatchdog` inside `startAuthorized` share one notification
+    // identifier, so cancelling once the submission has run would delete the
+    // watchdog the replacement request just armed for itself.
+    cancelWatchdog()
+
+    // Submit the replacement BEFORE completing. `start` is asynchronous — a
+    // notification-gate status callback, then `getPendingTaskRequests`, then
+    // the submit — and once `setTaskCompleted` returns iOS may suspend the
+    // process before any of that runs, silently leaving no armed task. Mid-wave
+    // expiry is the primary re-arm path and posts no notification of its own,
+    // so losing the submission here would strand the run until the user
+    // reopens Vizor with nothing to tell them.
+    let latch = MigrationPreparationCompletionLatch()
+    let complete = {
+      guard latch.claim() else { return }
+      task.setTaskCompleted(success: success)
+    }
+    // The task must finish even if the submission callback never fires.
+    queue.asyncAfter(deadline: .now() + Self.rearmSubmissionTimeout) {
+      complete()
+    }
+    start { scheduled in
+      if !scheduled {
+        print("[BGPreparation] failed task could not re-arm tracking")
       }
+      complete()
     }
   }
 
@@ -2352,6 +2471,38 @@ final class BackgroundMigrationPreparationManager {
       persistForegroundContinuationScopesLocked()
     }
     return !scopes.isEmpty
+  }
+
+  /// Records continuations for a foreground handoff without parking runs the
+  /// background task could still finish. See
+  /// `migrationPreparationHandoffContinuationScopes` for why this is not the
+  /// blanket `markForegroundContinuationsReady`.
+  ///
+  /// Returns whether any eligible run exists — **not** whether anything was
+  /// recorded. Callers use it as "is there a preparation bound to this
+  /// request", and narrowing it to the recorded set cancels the pending
+  /// request for healthy mid-wave runs; see
+  /// `migrationPreparationHandoffHasBoundPreparation`.
+  @discardableResult
+  private func markForegroundContinuationsReadyForHandoff() -> Bool {
+    // Unreadable manifests report "no bound preparation", matching what the
+    // blanket path returns in the same situation.
+    guard let eligibleScopes = foregroundContinuationEligibleScopes() else {
+      return false
+    }
+    let trackableScopes = confirmationTrackableScopes() ?? []
+    stateLock.withPreparationLock {
+      foregroundContinuationScopes =
+        migrationPreparationHandoffContinuationScopes(
+          existingScopes: foregroundContinuationScopes,
+          eligibleScopes: eligibleScopes,
+          confirmationTrackableScopes: trackableScopes
+        )
+      persistForegroundContinuationScopesLocked()
+    }
+    return migrationPreparationHandoffHasBoundPreparation(
+      eligibleScopes: eligibleScopes
+    )
   }
 
   private func pruneForegroundContinuationScopes() {

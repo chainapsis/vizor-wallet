@@ -450,6 +450,129 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testHandoffDoesNotParkAnUnconfirmedTrackableRun() {
+    // Observed shape: accounts A and B share one task. A's wave confirms and
+    // is recorded, the user opens the app, and B is still counting. Parking B
+    // as handed-off stops every re-arm for it, so it only resumes when the
+    // user switches to B and opens its migration screen.
+    let confirmedA = "test:account-a:run-1"
+    let stillCountingB = "test:account-b:run-2"
+
+    XCTAssertEqual(
+      migrationPreparationHandoffContinuationScopes(
+        existingScopes: [confirmedA],
+        eligibleScopes: [confirmedA, stillCountingB],
+        confirmationTrackableScopes: [stillCountingB]
+      ),
+      [confirmedA]
+    )
+  }
+
+  func testHandoffKeepsAlreadyRecordedConfirmedScopes() {
+    // `applyTrackingBatch` records a confirmed wave as soon as its
+    // notification is submitted. A handoff must not drop that.
+    let confirmed = "test:account-a:run-1"
+
+    XCTAssertEqual(
+      migrationPreparationHandoffContinuationScopes(
+        existingScopes: [confirmed],
+        eligibleScopes: [],
+        confirmationTrackableScopes: []
+      ),
+      [confirmed]
+    )
+  }
+
+  func testHandoffRecordsRunsThatGenuinelyNeedTheForeground() {
+    // States 2, 3, 5 and unreadable inspections are eligible but not
+    // confirmation-trackable: no read-only query pass can advance them.
+    let needsForeground = "test:account-c:run-3"
+
+    XCTAssertEqual(
+      migrationPreparationHandoffContinuationScopes(
+        existingScopes: [],
+        eligibleScopes: [needsForeground],
+        confirmationTrackableScopes: []
+      ),
+      [needsForeground]
+    )
+  }
+
+  func testClaimingAPendingRequestKeepsOtherAccountsTrackable() {
+    // The runtime-state claim branch: account A's wave confirmed and was
+    // recorded, so opening A's migration screen claims and cancels the pending
+    // request. A's run row still reads state `0` until the foreground
+    // advances it, so A is *both* recorded and trackable here — and account B
+    // is mid-wave. A must survive, B must not be parked, or B is left with no
+    // task, no queued request, and a continuation only its own screen clears.
+    let confirmedA = "test:account-a:run-1"
+    let stillCountingB = "test:account-b:run-2"
+
+    XCTAssertEqual(
+      migrationPreparationHandoffContinuationScopes(
+        existingScopes: [confirmedA],
+        eligibleScopes: [confirmedA, stillCountingB],
+        confirmationTrackableScopes: [confirmedA, stillCountingB]
+      ),
+      [confirmedA]
+    )
+  }
+
+  func testTrackableOnlyLaunchIsBoundButRecordsNothing() {
+    // The regression this guards: a wallet whose only run is a healthy
+    // mid-wave state `0` account records nothing, because the read-only task
+    // can still finish it. If the "bound preparation" boolean were derived
+    // from that empty recorded set it would go false, `shouldContinue` would
+    // go false, and the pending request would be cancelled on every cold
+    // launch. Its resume target is `.continuedProcessing`, so the
+    // background-redirect branch would not rescue it either.
+    let stillCounting = "test:account-a:run-1"
+
+    XCTAssertTrue(
+      migrationPreparationHandoffHasBoundPreparation(
+        eligibleScopes: [stillCounting]
+      )
+    )
+    XCTAssertTrue(
+      migrationPreparationHandoffContinuationScopes(
+        existingScopes: [],
+        eligibleScopes: [stillCounting],
+        confirmationTrackableScopes: [stillCounting]
+      ).isEmpty
+    )
+  }
+
+  func testLaunchWithNoEligibleRunIsNotBound() {
+    XCTAssertFalse(
+      migrationPreparationHandoffHasBoundPreparation(eligibleScopes: [])
+    )
+  }
+
+  func testTaskCompletionLatchFiresExactlyOnce() {
+    // The re-arm path races a submission callback against a timeout fallback.
+    // `setTaskCompleted` twice is undefined behavior, so exactly one wins.
+    let latch = MigrationPreparationCompletionLatch()
+
+    XCTAssertTrue(latch.claim())
+    XCTAssertFalse(latch.claim())
+    XCTAssertFalse(latch.claim())
+  }
+
+  func testTaskCompletionLatchIsClaimedOnceUnderConcurrency() {
+    let latch = MigrationPreparationCompletionLatch()
+    let claims = NSCounter()
+    let group = DispatchGroup()
+
+    for _ in 0..<64 {
+      DispatchQueue.global().async(group: group) {
+        if latch.claim() { claims.increment() }
+      }
+    }
+    group.wait()
+
+    XCTAssertEqual(claims.value, 1)
+  }
+
   func testForegroundPausesConfirmationQueriesAfterTheSeedingPass() {
     // Backgrounded: the task owns wave detection, so it always queries.
     XCTAssertTrue(
@@ -1674,6 +1797,127 @@ class RunnerTests: XCTestCase {
     center.completeAdd(error: nil)
   }
 
+  func testRetainingASubsetRefreshesTheStalePendingSummary() {
+    // Account A is deleted while B still needs attention. The queued request
+    // was written for A+B, so without a reschedule the alert would still
+    // announce "2 accounts need attention" for a wallet that has one.
+    let center = MigrationPreparationNotificationCenterHarness()
+    let suiteName = "MigrationNotificationCoordinator.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+    }
+    let coordinator = MigrationPreparationNotificationCoordinator(
+      center: center,
+      defaults: defaults
+    )
+    let initialRequestAdded = expectation(description: "initial request added")
+    let refreshedRequestAdded = expectation(
+      description: "pending request refreshed"
+    )
+    center.onAdd = { request in
+      if request.content.body.hasPrefix("2 accounts") {
+        initialRequestAdded.fulfill()
+      } else {
+        refreshedRequestAdded.fulfill()
+      }
+    }
+    let accountA = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "missing-transactions"
+    )
+    let accountB = MigrationPreparationNotificationEvent(
+      scope: "test:account-b:run-2",
+      kind: .terminalFailure,
+      fingerprint: "invalid-state"
+    )
+    let initialSubmissionCompleted = expectation(
+      description: "initial submission completed"
+    )
+    coordinator.enqueue([accountA, accountB]) { success in
+      XCTAssertTrue(success)
+      initialSubmissionCompleted.fulfill()
+    }
+    wait(for: [initialRequestAdded], timeout: 1)
+    center.completeAdd(error: nil)
+    wait(for: [initialSubmissionCompleted], timeout: 1)
+
+    coordinator.retain(scopes: [accountB.scope])
+
+    wait(for: [refreshedRequestAdded], timeout: 1)
+    XCTAssertEqual(
+      center.addedRequests.last?.content.body,
+      "Open Vizor to continue."
+    )
+    center.completeAdd(error: nil)
+  }
+
+  func testRetainingEverythingDoesNotRescheduleTheSummary() {
+    let center = MigrationPreparationNotificationCenterHarness()
+    let suiteName = "MigrationNotificationCoordinator.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+      defaults.removePersistentDomain(forName: suiteName)
+    }
+    let coordinator = MigrationPreparationNotificationCoordinator(
+      center: center,
+      defaults: defaults
+    )
+    let initialRequestAdded = expectation(description: "initial request added")
+    center.onAdd = { _ in initialRequestAdded.fulfill() }
+    let accountA = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "missing-transactions"
+    )
+    let accountB = MigrationPreparationNotificationEvent(
+      scope: "test:account-b:run-2",
+      kind: .terminalFailure,
+      fingerprint: "invalid-state"
+    )
+    let initialSubmissionCompleted = expectation(
+      description: "initial submission completed"
+    )
+    coordinator.enqueue([accountA, accountB]) { success in
+      XCTAssertTrue(success)
+      initialSubmissionCompleted.fulfill()
+    }
+    wait(for: [initialRequestAdded], timeout: 1)
+    center.completeAdd(error: nil)
+    wait(for: [initialSubmissionCompleted], timeout: 1)
+    let requestCountBeforeRetain = center.addedRequests.count
+
+    let noReschedule = expectation(description: "no reschedule")
+    noReschedule.isInverted = true
+    center.onAdd = { _ in noReschedule.fulfill() }
+
+    coordinator.retain(scopes: [accountA.scope, accountB.scope])
+
+    wait(for: [noReschedule], timeout: 0.5)
+    XCTAssertEqual(center.addedRequests.count, requestCountBeforeRetain)
+  }
+
+  func testRetainingASubsetReportsTheChangeToTheCoordinator() {
+    var state = MigrationPreparationNotificationBatchState()
+    let accountA = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .needsForegroundRecovery,
+      fingerprint: "missing-transactions"
+    )
+    let accountB = MigrationPreparationNotificationEvent(
+      scope: "test:account-b:run-2",
+      kind: .terminalFailure,
+      fingerprint: "invalid-state"
+    )
+    _ = state.enqueue(accountA)
+    _ = state.enqueue(accountB)
+
+    XCTAssertTrue(state.retain(scopes: [accountB.scope]))
+    XCTAssertFalse(state.retain(scopes: [accountB.scope]))
+    XCTAssertEqual(state.summary?.accountCount, 1)
+  }
+
   func testMigrationPreparationRetriesInspectionFailuresInBackground() {
     XCTAssertEqual(
       migrationPreparationResumeTarget(
@@ -2165,6 +2409,24 @@ final class NativeLightwalletdClientTests: XCTestCase {
       XCTFail("Expected unavailable trailers in both byte orders to be NotFound")
       return
     }
+  }
+}
+
+/// A lock-guarded counter for asserting on concurrent callers.
+private final class NSCounter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var count = 0
+
+  var value: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return count
+  }
+
+  func increment() {
+    lock.lock()
+    count += 1
+    lock.unlock()
   }
 }
 

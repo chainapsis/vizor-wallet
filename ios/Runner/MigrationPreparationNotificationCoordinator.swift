@@ -94,7 +94,14 @@ struct MigrationPreparationNotificationBatchState: Codable, Equatable {
     batchDeadline = nil
   }
 
-  mutating func retain(scopes: Set<String>) {
+  /// Drops every scope outside `scopes`.
+  ///
+  /// Returns whether the pending set actually changed, so the coordinator can
+  /// tell "nothing to do" from "the scheduled alert now overstates what is
+  /// wrong" and only reschedule in the second case.
+  @discardableResult
+  mutating func retain(scopes: Set<String>) -> Bool {
+    let previousPendingEvents = pendingEvents
     pendingEvents = pendingEvents.filter {
       scopes.contains($0.value.scope)
     }
@@ -106,6 +113,7 @@ struct MigrationPreparationNotificationBatchState: Codable, Equatable {
     if pendingEvents.isEmpty {
       batchDeadline = nil
     }
+    return pendingEvents != previousPendingEvents
   }
 
   @discardableResult
@@ -301,14 +309,45 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
 
   func retain(scopes: Set<String>) {
     queue.async {
-      self.state.retain(scopes: scopes)
+      let now = Date()
+      let existingDeadline = self.state.batchDeadline
+      let changed = self.state.retain(scopes: scopes)
+      if self.state.summary != nil {
+        self.state.batchDeadline = existingDeadline
+      }
       self.persistState()
-      guard self.state.summary == nil else { return }
-      self.submissionGeneration &+= 1
-      self.center.removePendingNotificationRequests(
-        withIdentifiers: [Self.summaryIdentifier]
-      )
-      self.removeDeliveredSummary()
+      guard self.state.summary != nil else {
+        self.submissionGeneration &+= 1
+        self.center.removePendingNotificationRequests(
+          withIdentifiers: [Self.summaryIdentifier]
+        )
+        self.removeDeliveredSummary()
+        return
+      }
+      // Retention shrank the batch but left scopes behind. The request already
+      // queued still carries the dropped account, so it would announce
+      // "2 accounts need attention" after one of them is gone.
+      guard changed else { return }
+      self.center.getPendingNotificationRequests { requests in
+        let pendingIdentifiers = requests.map(\.identifier)
+        self.queue.async {
+          guard self.state.summary != nil else { return }
+          let summaryIsPending = pendingIdentifiers.contains(
+            Self.summaryIdentifier
+          )
+          guard summaryIsPending else {
+            // Preserve an already delivered aggregate. Reset the stale
+            // aggregation deadline so another event cannot expire the scopes
+            // that still need attention.
+            self.state.batchDeadline = nil
+            self.persistState()
+            return
+          }
+          // The alert has not fired yet, so replace its stale content with the
+          // retained summary while keeping the original deadline.
+          self.schedulePendingSummary(now: now) { _ in }
+        }
+      }
     }
   }
 
