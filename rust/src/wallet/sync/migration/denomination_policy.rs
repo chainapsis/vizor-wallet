@@ -81,6 +81,38 @@ pub(crate) fn zip318_canonical_migration_expiry_height(
         .ok_or_else(|| "ZIP 318 canonical expiry height overflow".to_string())
 }
 
+/// Height at which a pre-signed migration child's anchor window opens: one
+/// anchor bucket before its scheduled broadcast height. See
+/// [`presigned_child_anchor_window_open`] for the invariant this protects.
+pub(crate) fn presigned_child_anchor_window_open_height(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    scheduled_height: u32,
+) -> u32 {
+    scheduled_height.saturating_sub(anchor_bucket_modulus(network, timing_policy))
+}
+
+/// Whether a pre-signed migration child may be anchored and proved now.
+///
+/// ZIP 318 anchors are drawn 1..=[`ZIP318_ANCHOR_AGE_CAP`] buckets behind the
+/// broadcast height, so a transfer's anchor must be resolved close to its
+/// scheduled broadcast: freezing it earlier ages the anchor past the shared
+/// cohort window by the time the transfer is mined, which both distinguishes
+/// the transfer from every conforming wallet's and orders a run's transfers
+/// by schedule position. One bucket of lead is the earliest point at which
+/// the full candidate set relative to the scheduled height is scannable.
+/// Overdue children (scheduled at or below the scanned height) are always
+/// open: they broadcast immediately, so a draw against the current height is
+/// cohort-fresh.
+pub(crate) fn presigned_child_anchor_window_open(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    scheduled_height: u32,
+    scanned_height: u32,
+) -> bool {
+    scanned_height >= presigned_child_anchor_window_open_height(network, timing_policy, scheduled_height)
+}
+
 fn largest_zip318_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
     if value_zatoshi < ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI {
         return None;

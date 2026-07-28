@@ -1546,6 +1546,79 @@ fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
 }
 
 #[test]
+fn presigned_child_anchor_window_opens_one_bucket_before_broadcast() {
+    // Main-network buckets are 144 blocks: the window opens at scheduled - 144.
+    assert!(!presigned_child_anchor_window_open(
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        10_144,
+        9_999,
+    ));
+    assert!(presigned_child_anchor_window_open(
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        10_144,
+        10_000,
+    ));
+    // Overdue children stay open: they broadcast immediately, so a draw
+    // against the current height is cohort-fresh.
+    assert!(presigned_child_anchor_window_open(
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        9_000,
+        10_000,
+    ));
+    // Fast-Testnet buckets are 12 blocks.
+    assert!(!presigned_child_anchor_window_open(
+        WalletNetwork::Test,
+        MigrationTimingPolicy::FastTestnet,
+        1_012,
+        999,
+    ));
+    assert!(presigned_child_anchor_window_open(
+        WalletNetwork::Test,
+        MigrationTimingPolicy::FastTestnet,
+        1_012,
+        1_000,
+    ));
+}
+
+#[test]
+fn scheduled_reference_draw_keeps_child_anchor_in_cohort_at_broadcast() {
+    let scheduled: u32 = 3_456_100;
+    let latest_boundary = scheduled - (scheduled % ZIP318_ANCHOR_BUCKET_MODULUS);
+    let candidates = zip318_anchor_candidate_boundaries_with_policy(
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        scheduled,
+        1,
+        0,
+    );
+    assert_eq!(candidates.len() as u32, ZIP318_ANCHOR_AGE_CAP);
+
+    // By the window-open height every candidate relative to the scheduled
+    // broadcast is already scannable, so the weighted draw sees the full
+    // 1..=cap cohort and every anchor it returns is cohort-aged at broadcast.
+    let window_open = presigned_child_anchor_window_open_height(
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        scheduled,
+    );
+    assert!(candidates.iter().all(|boundary| *boundary <= window_open));
+    for _ in 0..32 {
+        let drawn = zip318_draw_anchor_boundary_from_available_with_policy(
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard,
+            scheduled,
+            &candidates,
+        )
+        .unwrap();
+        let age = (latest_boundary - drawn) / ZIP318_ANCHOR_BUCKET_MODULUS;
+        assert!((1..=ZIP318_ANCHOR_AGE_CAP).contains(&age));
+    }
+}
+
+#[test]
 fn planner_drains_balance_beyond_the_old_run_cap() {
     let input = 1_999_999_950_000_000;
     let migration_fee = 10_000;
@@ -3030,6 +3103,7 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
                 nullifier_hex: None,
             },
             anchor_boundary_height: None,
+            scheduled_height: Some(501),
         }]
     );
     promote_signed_child_pczts_to_pending_txs(

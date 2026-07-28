@@ -2083,12 +2083,28 @@ pub(crate) fn orchard_migration_proof_readiness_at_scanned_height(
         return Ok(Some(false));
     }
     any_migration_proof_candidate_ready(&candidates, |candidate| {
+        // A child without a persisted schedule requires fresh signatures and
+        // can never be proved; one whose anchor window has not opened yet is
+        // deliberately not finalizable (see
+        // `presigned_child_anchor_window_open`).
+        let Some(scheduled_height) = candidate.scheduled_height else {
+            return Ok(false);
+        };
+        if !super::migration::presigned_child_anchor_window_open(
+            network,
+            timing_policy,
+            scheduled_height,
+            scanned_height,
+        ) {
+            return Ok(false);
+        }
         orchard_witness_is_available_for_prepared_note(
             db_path,
             network,
             account_uuid,
             &candidate.selected_note,
             candidate.anchor_boundary_height,
+            scheduled_height,
             timing_policy,
         )
     })
@@ -3682,12 +3698,23 @@ fn orchard_anchor_and_witnesses_for_denomination_inputs(
     )))
 }
 
+/// Resolves the ZIP 318 anchor boundary and witness for one pre-signed
+/// migration child.
+///
+/// Candidacy and the weighted draw are evaluated against
+/// `max(scheduled_height, anchor height)`, so the anchor's bucket age is
+/// measured relative to the height the transfer will actually broadcast at:
+/// an on-time child draws a boundary that is 1..=cap buckets old *at its
+/// scheduled height*, and an overdue child draws against the present.
+/// Callers gate on `presigned_child_anchor_window_open` so the candidate set
+/// relative to that reference is fully scannable when the draw happens.
 fn orchard_anchor_and_witness_for_prepared_note(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     note_ref: &super::migration::PreparedOrchardNoteRef,
     preferred_anchor_boundary_height: Option<u32>,
+    scheduled_height: u32,
     timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<Option<(u32, orchard::Anchor, orchard::tree::MerklePath)>, String> {
     if note_ref.note_version != 2 {
@@ -3725,6 +3752,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
         return Err("Prepared note value changed during revalidation".to_string());
     }
     let anchor_height_u32 = u32::from(anchor_height);
+    let draw_reference_height = anchor_height_u32.max(scheduled_height);
     let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
     let mined_height = selected
         .mined_height()
@@ -3734,7 +3762,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
     let policy_candidates = super::migration::zip318_anchor_candidate_boundaries_with_policy(
         network,
         timing_policy,
-        anchor_height_u32,
+        draw_reference_height,
         mined_height,
         nu6_3_activation_height,
     );
@@ -3755,7 +3783,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
             network,
             timing_policy,
             *boundary,
-            anchor_height_u32,
+            draw_reference_height,
             mined_height,
             nu6_3_activation_height,
         ) && available_anchor_candidates
@@ -3789,7 +3817,7 @@ fn orchard_anchor_and_witness_for_prepared_note(
             super::migration::zip318_draw_anchor_boundary_from_available_with_policy(
                 network,
                 timing_policy,
-                anchor_height_u32,
+                draw_reference_height,
                 &witnessable_boundaries,
             )
         });
@@ -3803,12 +3831,17 @@ fn orchard_anchor_and_witness_for_prepared_note(
     Ok(Some(witnessable_candidates.swap_remove(selected_index)))
 }
 
+/// Read-only readiness probe mirroring
+/// `orchard_anchor_and_witness_for_prepared_note`: candidates are evaluated
+/// against the same `max(scheduled_height, anchor height)` reference so a
+/// positive answer means the finalize path could resolve an anchor now.
 fn orchard_witness_is_available_for_prepared_note(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     note_ref: &super::migration::PreparedOrchardNoteRef,
     preferred_anchor_boundary_height: Option<u32>,
+    scheduled_height: u32,
     timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<bool, String> {
     if note_ref.note_version != 2 {
@@ -3850,7 +3883,7 @@ fn orchard_witness_is_available_for_prepared_note(
         return Err("Prepared note value changed during revalidation".to_string());
     }
 
-    let anchor_height_u32 = u32::from(anchor_height);
+    let draw_reference_height = u32::from(anchor_height).max(scheduled_height);
     let mined_height = selected
         .mined_height()
         .ok_or("Prepared migration note mined height unavailable")?;
@@ -3859,7 +3892,7 @@ fn orchard_witness_is_available_for_prepared_note(
     let policy_candidates = super::migration::zip318_anchor_candidate_boundaries_with_policy(
         network,
         timing_policy,
-        anchor_height_u32,
+        draw_reference_height,
         mined_height,
         nu6_3_activation_height_u32(network)?,
     );
@@ -4052,6 +4085,7 @@ fn finalize_presigned_migration_children(
     let proof_limit = policy.proof_limit(signed_child_count);
     let mut finalized_count = 0usize;
     let mut deferred_child_seen = false;
+    let mut earliest_gated_window_open: Option<u32> = None;
     let mut stopped_at_proof_limit = false;
     for (child_index, child) in signed_children.into_iter().enumerate() {
         if policy.is_cancelled() {
@@ -4067,6 +4101,24 @@ fn finalize_presigned_migration_children(
         )) {
             continue;
         }
+        if !super::migration::presigned_child_anchor_window_open(
+            network,
+            timing_policy,
+            child.scheduled_height,
+            current_scanned_height,
+        ) {
+            let window_open_height = super::migration::presigned_child_anchor_window_open_height(
+                network,
+                timing_policy,
+                child.scheduled_height,
+            );
+            earliest_gated_window_open = Some(
+                earliest_gated_window_open.map_or(window_open_height, |existing| {
+                    existing.min(window_open_height)
+                }),
+            );
+            continue;
+        }
         let current_note = current_prepared
             .iter()
             .find(|note| same_prepared_note_without_nullifier(note, &child.selected_note))
@@ -4078,6 +4130,7 @@ fn finalize_presigned_migration_children(
                 account_uuid,
                 current_note,
                 child.anchor_boundary_height,
+                child.scheduled_height,
                 timing_policy,
             ) {
                 Ok(result) => result,
@@ -4182,9 +4235,17 @@ fn finalize_presigned_migration_children(
         )? {
             retry_height = retry_height.max(ready_height);
         }
+        if let Some(window_open_height) = earliest_gated_window_open {
+            // A window-gated child needs no new anchor bucket or note
+            // readiness; it becomes finalizable at its own window-open height.
+            retry_height = retry_height.min(window_open_height);
+        }
         if deferred_child_seen && !stopped_at_proof_limit {
             defer_presigned_proof_until(db_path, run_id, retry_height)?;
-        } else if finalized_count > 0 || stopped_at_proof_limit {
+        } else if finalized_count > 0
+            || stopped_at_proof_limit
+            || earliest_gated_window_open.is_some()
+        {
             super::migration::set_proof_retry_height(db_path, run_id, retry_height)?;
         }
     }

@@ -212,6 +212,9 @@ pub(crate) struct SignedMigrationPczt {
 pub(crate) struct SignedChildProofCandidate {
     pub selected_note: PreparedOrchardNoteRef,
     pub anchor_boundary_height: Option<u32>,
+    /// `None` marks a legacy row that requires fresh signatures; see
+    /// `signed_child_pczts_for_run`.
+    pub scheduled_height: Option<u32>,
 }
 
 pub(crate) struct DuePendingMigrationTx {
@@ -2335,7 +2338,7 @@ pub(crate) fn signed_child_proof_candidates_for_run(
     let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT c.selected_note_json, c.anchor_boundary_height
+            "SELECT c.selected_note_json, c.anchor_boundary_height, c.scheduled_height
              FROM {SIGNED_CHILD_PCZTS_TABLE} c
              WHERE c.run_id = ?1
                AND NOT EXISTS (
@@ -2347,19 +2350,24 @@ pub(crate) fn signed_child_proof_candidates_for_run(
         .map_err(|e| format!("Prepare signed migration proof candidate query: {e}"))?;
     let rows = stmt
         .query_map(params![run_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Option<u32>>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<u32>>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+            ))
         })
         .map_err(|e| format!("Query signed migration proof candidates: {e}"))?;
 
     let mut candidates = Vec::new();
     for row in rows {
-        let (selected_note_json, anchor_boundary_height) =
+        let (selected_note_json, anchor_boundary_height, scheduled_height) =
             row.map_err(|e| format!("Read signed migration proof candidate: {e}"))?;
         let selected_note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
             .map_err(|e| format!("Decode signed migration proof candidate note: {e}"))?;
         candidates.push(SignedChildProofCandidate {
             selected_note,
             anchor_boundary_height,
+            scheduled_height,
         });
     }
     Ok(candidates)
