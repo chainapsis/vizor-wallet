@@ -342,7 +342,7 @@ fn create_padded_orchard_denomination_pczts(
         &mut OsRng,
     )?;
 
-    let padded_bundle_type = orchard::builder::BundleType::Transactional {
+    let padded_bundle_padding = BundlePadding {
         bundle_required: false,
         pad_to_minimum: Some(
             u8::try_from(super::migration::DENOMINATION_SPLIT_ACTIONS)
@@ -470,7 +470,7 @@ fn create_padded_orchard_denomination_pczts(
             .iter()
             .map(|output| output.value_zatoshi)
             .collect::<Vec<_>>();
-        let builder = make_orchard_split_builder_with_type(
+        let builder = make_orchard_split_builder_with_padding(
             network,
             target_height.into(),
             expiry_height,
@@ -481,7 +481,7 @@ fn create_padded_orchard_denomination_pczts(
             recipient,
             &output_values,
             &memo,
-            padded_bundle_type,
+            padded_bundle_padding,
         )?;
         let exact_fee = builder
             .get_fee(&fee_rule)

@@ -1954,7 +1954,7 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
         let orchard_anchor = merkle_path.root(cmx);
 
-        make_orchard_split_builder_with_type(
+        make_orchard_split_builder_with_padding(
             network,
             target_height,
             expiry_height,
@@ -1965,7 +1965,7 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
             recipient,
             &[output_value],
             &memo,
-            orchard::builder::BundleType::DEFAULT,
+            BundlePadding::DEFAULT,
         )
     };
 
@@ -2005,7 +2005,7 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
     let memo = MemoBytes::empty();
     let outputs = vec![100_000u64; 10];
     let fee_rule = ConservativeZip317FeeRule;
-    let bundle_type = orchard::builder::BundleType::Transactional {
+    let bundle_padding = BundlePadding {
         bundle_required: false,
         pad_to_minimum: Some(16),
     };
@@ -2026,7 +2026,7 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
         let merkle_path = dummy_orchard_merkle_path().unwrap();
         let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
         let anchor = merkle_path.root(cmx);
-        make_orchard_split_builder_with_type(
+        make_orchard_split_builder_with_padding(
             network,
             target_height,
             expiry_height,
@@ -2037,7 +2037,7 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
             recipient,
             &outputs,
             &memo,
-            bundle_type,
+            bundle_padding,
         )
     };
 

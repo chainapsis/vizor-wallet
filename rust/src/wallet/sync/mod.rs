@@ -471,7 +471,7 @@ pub(super) struct StoredProposal {
     pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
     /// When `true`, the proposal was fee-counted with unpadded Orchard-pool
     /// bundles (migration children only) and the PCZT must be built with
-    /// `BundleType::UNPADDED` to balance. See `zip317_helper`.
+    /// `BundlePadding::UNPADDED` to balance. See `zip317_helper`.
     pub unpadded_orchard_pool_bundles: bool,
     pub network: WalletNetwork,
     pub account_id: AccountUuid,
