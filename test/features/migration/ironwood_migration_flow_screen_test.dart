@@ -3076,6 +3076,100 @@ void main() {
     expect(find.text('Migration schedule unavailable'), findsNothing);
   });
 
+  testWidgets('migration schedule confirms and applies shorter timing', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var shortened = false;
+    var retimeCalls = 0;
+    Future<rust_sync.MigrationStatus> getStatus({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+    }) async => _migrationStatus(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      activeRunId: 'run-1',
+      scheduleMeanDelayBlocks: shortened ? 72 : 144,
+      targetValuesZatoshi: const [10_000_000],
+      totalCount: 1,
+      parts: [
+        _migrationPart(0, 10_000_000, rust_sync.MigrationPartState.scheduled),
+      ],
+    );
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus: getStatus,
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: () => defaultRpcEndpointConfig('main'),
+      isIOS: () => false,
+      isAndroid: () => false,
+      quiesceMigrationWork: () async {},
+      resumeMigrationWork: () async {},
+      retimeActiveMigration:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+          }) async {
+            retimeCalls++;
+            shortened = true;
+            return const rust_sync.MigrationRetimeResult(
+              runId: 'run-1',
+              changed: true,
+              rescheduledTxCount: 1,
+              needsSignatureCount: 0,
+            );
+          },
+    );
+    final initialStatus = await getStatus(
+      dbPath: '/tmp/wallet.db',
+      network: 'main',
+      accountUuid: 'account-1',
+    );
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: initialStatus,
+        ),
+        initialLocation: '/migration/private/schedule',
+        statusGetter: getStatus,
+        migrationService: service,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_use_shorter_timing')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Use shorter timing?'), findsOneWidget);
+    expect(retimeCalls, 0);
+
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_confirm_shorter_timing')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(retimeCalls, 1);
+    expect(find.text('Migration timing updated.'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_use_shorter_timing')),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'migration schedule uses the authoritative anchor-aware completion height',
     (tester) async {
@@ -4653,6 +4747,7 @@ rust_sync.MigrationStatus _migrationStatus({
   List<int>? nextProofWindowPartIndices,
   int? estimatedCompletionHeight,
   int? preparationMeanDelayBlocks,
+  int scheduleMeanDelayBlocks = 144,
   bool? proofReady,
   List<int>? currentSigningPartIndices,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
@@ -4678,7 +4773,7 @@ rust_sync.MigrationStatus _migrationStatus({
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
     signingBatchLimit: 35,
-    scheduleMeanDelayBlocks: 144,
+    scheduleMeanDelayBlocks: scheduleMeanDelayBlocks,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
     nextProofWindowHeight: nextProofWindowHeight,

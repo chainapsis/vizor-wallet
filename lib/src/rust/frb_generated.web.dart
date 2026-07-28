@@ -480,6 +480,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   dco_decode_migration_preparation_transaction_status(dynamic raw);
 
   @protected
+  MigrationRetimeResult dco_decode_migration_retime_result(dynamic raw);
+
+  @protected
   MigrationScheduledBroadcast dco_decode_migration_scheduled_broadcast(
     dynamic raw,
   );
@@ -1306,6 +1309,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   MigrationPreparationTransactionStatus
   sse_decode_migration_preparation_transaction_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationRetimeResult sse_decode_migration_retime_result(
     SseDeserializer deserializer,
   );
 
@@ -2321,6 +2329,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_migration_preparation_transaction_status(
     MigrationPreparationTransactionStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_retime_result(
+    MigrationRetimeResult self,
     SseSerializer serializer,
   );
 

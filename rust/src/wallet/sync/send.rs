@@ -2807,6 +2807,36 @@ struct ActiveIronwoodMigration {
     key: String,
 }
 
+pub(crate) fn retime_active_orchard_migration(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<super::migration::MigrationRetimeResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let progress = super::get_sync_progress(db_path, network)?;
+    let scanned_height = u32::try_from(progress.scanned_height)
+        .map_err(|_| "Migration scanned height exceeds u32".to_string())?;
+    let chain_tip_height = u32::try_from(progress.chain_tip_height)
+        .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if scanned_height < chain_tip_height {
+        return Err("Sync the wallet before shortening migration timing".to_string());
+    }
+    if scanned_height == 0 {
+        return Err("Wallet must sync before shortening migration timing".to_string());
+    }
+    with_wallet_db_write_lock("send.migration.retime_active", || {
+        super::migration::retime_active_migration_with_rng(
+            db_path,
+            account_uuid,
+            network,
+            expected_run_id,
+            scanned_height,
+            &mut OsRng,
+        )
+    })
+}
+
 impl ActiveIronwoodMigration {
     fn acquire(db_path: &str, account_uuid: &str) -> Result<Self, String> {
         let key = format!("{db_path}:{account_uuid}");

@@ -618,6 +618,14 @@ pub(crate) struct ActiveRun {
     pub last_error: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MigrationRetimeResult {
+    pub run_id: String,
+    pub changed: bool,
+    pub rescheduled_tx_count: u32,
+    pub needs_signature_count: u32,
+}
+
 fn timing_policy_for_run_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
@@ -697,6 +705,285 @@ fn adopt_timing_policy_for_active_run(
     )
     .map_err(|e| format!("Adopt fast Testnet migration timing: {e}"))?;
     Ok(())
+}
+
+pub(crate) fn retime_active_migration_with_rng<R: RngCore + CryptoRng + ?Sized>(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+    schedule_origin_height: u32,
+    rng: &mut R,
+) -> Result<MigrationRetimeResult, String> {
+    if !matches!(network, WalletNetwork::Main | WalletNetwork::Test) {
+        return Err(
+            "Shorter migration timing is only available on Mainnet and Testnet".to_string(),
+        );
+    }
+
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration timing update: {e}"))?;
+    let run = active_run(&tx, account_uuid, network)?
+        .ok_or("There is no active Ironwood migration for this account")?;
+    if run.run_id != expected_run_id {
+        return Err(
+            "The active Ironwood migration changed before timing could be updated".to_string(),
+        );
+    }
+
+    let current_policy = timing_policy_for_run_with_conn(&tx, &run.run_id, network)?;
+    if current_policy == MigrationTimingPolicy::Standard90Minutes {
+        tx.commit()
+            .map_err(|e| format!("Close unchanged migration timing update: {e}"))?;
+        return Ok(MigrationRetimeResult {
+            run_id: run.run_id,
+            changed: false,
+            rescheduled_tx_count: 0,
+            needs_signature_count: 0,
+        });
+    }
+    if current_policy != MigrationTimingPolicy::Standard {
+        return Err("This migration does not use the legacy timing policy".to_string());
+    }
+
+    let old_schedule_json = tx
+        .query_row(
+            &format!("SELECT schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run.run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration schedule before timing update: {e}"))?;
+    let old_schedule =
+        serde_json::from_str::<Vec<MigrationScheduleEntry>>(&old_schedule_json).unwrap_or_default();
+    let old_order = old_schedule
+        .iter()
+        .enumerate()
+        .filter_map(|(order, entry)| entry.part_index.map(|part_index| (part_index, order)))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut immutable_stmt = tx
+        .prepare_cached(&format!(
+            "SELECT part_index FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status IN ('broadcasted', 'confirmed')"
+        ))
+        .map_err(|e| format!("Prepare immutable migration part query: {e}"))?;
+    let immutable_parts = immutable_stmt
+        .query_map(params![run.run_id], |row| row.get::<_, Option<u32>>(0))
+        .map_err(|e| format!("Query immutable migration parts: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read immutable migration parts: {e}"))?
+        .into_iter()
+        .map(|part_index| {
+            part_index.ok_or_else(|| {
+                "A submitted migration transaction is missing its part index".to_string()
+            })
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    drop(immutable_stmt);
+
+    let mut immutable_entries = immutable_parts
+        .iter()
+        .map(|part_index| {
+            let value_zatoshi = run
+                .target_values_zatoshi
+                .get(*part_index as usize)
+                .copied()
+                .ok_or("A submitted migration part is outside the approved target list")?;
+            Ok((
+                old_order.get(part_index).copied().unwrap_or(usize::MAX),
+                MigrationScheduleEntry {
+                    part_index: Some(*part_index),
+                    value_zatoshi,
+                    block_offset: 0,
+                },
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    immutable_entries.sort_by_key(|(order, entry)| (*order, entry.part_index));
+
+    let remaining_parts = run
+        .target_values_zatoshi
+        .iter()
+        .copied()
+        .enumerate()
+        .filter_map(|(part_index, value_zatoshi)| {
+            let part_index = u32::try_from(part_index).ok()?;
+            (!immutable_parts.contains(&part_index)).then_some((part_index, value_zatoshi))
+        });
+    let mut schedule = immutable_entries
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect::<Vec<_>>();
+    schedule.extend(planned_transfer_schedule_for_parts_with_policy(
+        remaining_parts,
+        network,
+        MigrationTimingPolicy::Standard90Minutes,
+        rng,
+    ));
+    validate_schedule_with_policy(
+        &schedule,
+        &run.target_values_zatoshi,
+        network,
+        MigrationTimingPolicy::Standard90Minutes,
+    )?;
+    let schedule_json = serde_json::to_string(&schedule)
+        .map_err(|e| format!("Encode shortened migration schedule: {e}"))?;
+    let offsets_by_part = schedule
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .part_index
+                .map(|part_index| (part_index, entry.block_offset))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let mut pending_stmt = tx
+        .prepare_cached(&format!(
+            "SELECT txid_hex, part_index, expiry_height, status
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status IN ('scheduled', 'needs_resign')"
+        ))
+        .map_err(|e| format!("Prepare migration transactions for timing update: {e}"))?;
+    let pending = pending_stmt
+        .query_map(params![run.run_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<u32>>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration transactions for timing update: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration transactions for timing update: {e}"))?;
+    drop(pending_stmt);
+
+    let now = now_ms()?;
+    let mut rescheduled_tx_count = 0u32;
+    for (txid_hex, part_index, expiry_height, status) in pending {
+        let part_index = part_index
+            .ok_or_else(|| format!("Migration transaction {txid_hex} is missing its part index"))?;
+        let block_offset = offsets_by_part
+            .get(&part_index)
+            .copied()
+            .ok_or("The shortened migration schedule is missing a pending part")?;
+        let scheduled_height = schedule_origin_height
+            .checked_add(block_offset)
+            .ok_or("Shortened migration scheduled height overflow")?;
+        let scheduled_at_ms = now
+            .checked_add(i64::from(block_offset).saturating_mul(1000))
+            .ok_or("Shortened migration scheduled time overflow")?;
+        let remains_valid = status == "scheduled"
+            && zip318_canonical_migration_expiry_height(scheduled_height)? == expiry_height;
+        if remains_valid {
+            tx.execute(
+                &format!(
+                    "UPDATE {PENDING_TXS_TABLE}
+                     SET scheduled_height = ?1, schedule_start_height = ?2,
+                         scheduled_at_ms = ?3
+                     WHERE run_id = ?4 AND txid_hex = ?5 AND status = 'scheduled'"
+                ),
+                params![
+                    scheduled_height,
+                    schedule_origin_height,
+                    scheduled_at_ms,
+                    run.run_id,
+                    txid_hex,
+                ],
+            )
+            .map_err(|e| format!("Apply shortened migration transaction timing: {e}"))?;
+            rescheduled_tx_count = rescheduled_tx_count
+                .checked_add(1)
+                .ok_or("Shortened migration transaction count overflow")?;
+        } else {
+            tx.execute(
+                &format!(
+                    "UPDATE {PENDING_TXS_TABLE}
+                     SET status = 'needs_resign', scheduled_height = ?1,
+                         schedule_start_height = ?2, scheduled_at_ms = ?3
+                     WHERE run_id = ?4 AND txid_hex = ?5
+                       AND status IN ('scheduled', 'needs_resign')"
+                ),
+                params![
+                    scheduled_height,
+                    schedule_origin_height,
+                    scheduled_at_ms,
+                    run.run_id,
+                    txid_hex,
+                ],
+            )
+            .map_err(|e| format!("Require a fresh migration signature after timing update: {e}"))?;
+        }
+    }
+
+    let invalidated_signed_children = tx
+        .execute(
+            &format!(
+                "DELETE FROM {SIGNED_CHILD_PCZTS_TABLE}
+                 WHERE run_id = ?1
+                   AND child_index NOT IN (
+                       SELECT part_index FROM {PENDING_TXS_TABLE}
+                       WHERE run_id = ?1 AND part_index IS NOT NULL
+                   )"
+            ),
+            params![run.run_id],
+        )
+        .map_err(|e| format!("Invalidate unsigned-schedule migration signatures: {e}"))?;
+    let pending_needs_signature = count_pending_with_status(&tx, &run.run_id, "needs_resign")?;
+    let invalidated_signed_children = u32::try_from(invalidated_signed_children)
+        .map_err(|_| "Invalidated migration signature count overflow".to_string())?;
+    let needs_signature_count = pending_needs_signature
+        .checked_add(invalidated_signed_children)
+        .ok_or("Migration signature count overflow")?;
+    let phase = if needs_signature_count > 0 {
+        PHASE_READY_TO_MIGRATE
+    } else {
+        run.phase.as_str()
+    };
+    let message = (needs_signature_count > 0).then(|| {
+        format!(
+            "Migration timing was shortened. {needs_signature_count} remaining transaction(s) need fresh signatures."
+        )
+    });
+    let updated = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET timing_policy = ?1, schedule_json = ?2,
+                     signed_schedule_origin_height = ?3, phase = ?4,
+                     proof_retry_height = CASE WHEN ?5 > 0 THEN NULL ELSE proof_retry_height END,
+                     updated_at_ms = ?6, last_error = ?7
+                 WHERE run_id = ?8 AND account_uuid = ?9 AND network = ?10
+                   AND timing_policy = 'standard'"
+            ),
+            params![
+                MigrationTimingPolicy::Standard90Minutes.as_str(),
+                schedule_json,
+                schedule_origin_height,
+                phase,
+                needs_signature_count,
+                now,
+                message,
+                run.run_id,
+                account_uuid,
+                network_name(network),
+            ],
+        )
+        .map_err(|e| format!("Save shortened migration timing: {e}"))?;
+    if updated != 1 {
+        return Err("The active migration changed while timing was being updated".to_string());
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit shortened migration timing: {e}"))?;
+    Ok(MigrationRetimeResult {
+        run_id: run.run_id,
+        changed: true,
+        rescheduled_tx_count,
+        needs_signature_count,
+    })
 }
 
 pub(crate) fn active_migration_run(

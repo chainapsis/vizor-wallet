@@ -2761,6 +2761,267 @@ fn ninety_minute_schedule_samples_the_truncated_distribution() {
 }
 
 #[test]
+fn active_migration_retime_preserves_submitted_parts_and_invalidates_expiry_changes() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let values = [100, 200, 300, 400];
+    let schedule_origin = 1_000;
+    let mut expected_rng = StdRng::seed_from_u64(0x90_318);
+    let expected_remaining = planned_transfer_schedule_for_parts_with_policy(
+        [(1, 200), (2, 300), (3, 400)],
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard90Minutes,
+        &mut expected_rng,
+    );
+    let expected_heights = expected_remaining
+        .iter()
+        .map(|entry| {
+            (
+                entry.part_index.unwrap(),
+                schedule_origin + entry.block_offset,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let reusable_expiry = zip318_canonical_migration_expiry_height(expected_heights[&1]).unwrap();
+    let crossing_expiry = zip318_canonical_migration_expiry_height(expected_heights[&2]).unwrap()
+        + ZIP318_EXPIRY_MODULUS;
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    let old_schedule = values
+        .iter()
+        .enumerate()
+        .map(|(part_index, value_zatoshi)| MigrationScheduleEntry {
+            part_index: Some(part_index as u32),
+            value_zatoshi: *value_zatoshi,
+            block_offset: (part_index as u32 + 1) * ZIP318_TRANSFER_MEAN_DELAY_BLOCKS,
+        })
+        .collect::<Vec<_>>();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              timing_policy, signed_schedule_origin_height)
+             VALUES ('run-1', 'account-1', 'main', ?1, ?2, 1, 1, ?3, ?4,
+                     'standard', 10)"
+        ),
+        params![
+            db_path,
+            PHASE_BROADCAST_SCHEDULED,
+            serde_json::to_string(&values).unwrap(),
+            serde_json::to_string(&old_schedule).unwrap(),
+        ],
+    )
+    .unwrap();
+    for (part_index, status, scheduled_height, schedule_start_height, expiry_height) in [
+        (0, "confirmed", 50, 20, 69_120),
+        (1, "scheduled", 200, 10, reusable_expiry),
+        (
+            2,
+            "scheduled",
+            ZIP318_EXPIRY_MODULUS + 10,
+            10,
+            crossing_expiry,
+        ),
+    ] {
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  schedule_start_height, scheduled_height, original_scheduled_height,
+                  status, metadata_json)
+                 VALUES ('run-1', ?1, ?2, 'ciphertext', 11, ?3, ?4, 1, ?5,
+                         0, ?4, 1, ?6, ?7, ?7, ?8, '{{}}')"
+            ),
+            params![
+                format!("{part_index:064x}"),
+                part_index,
+                expiry_height,
+                values[part_index as usize],
+                format!("{:064x}", part_index + 100),
+                schedule_start_height,
+                scheduled_height,
+                status,
+            ],
+        )
+        .unwrap();
+    }
+    for child_index in [2u32, 3] {
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, target_height, expiry_height,
+                  scheduled_height, value_zatoshi, fee_zatoshi,
+                  selected_note_json, metadata_json)
+                 VALUES ('run-1', ?1, ?2, 'base', 'sigs', 11, 69120, 12,
+                         ?3, 1, '{{}}', '{{}}')"
+            ),
+            params![
+                format!("migration-{}", child_index + 1),
+                child_index,
+                values[child_index as usize],
+            ],
+        )
+        .unwrap();
+    }
+    drop(conn);
+
+    let mut rng = StdRng::seed_from_u64(0x90_318);
+    let result = retime_active_migration_with_rng(
+        &db_path,
+        "account-1",
+        WalletNetwork::Main,
+        "run-1",
+        schedule_origin,
+        &mut rng,
+    )
+    .unwrap();
+    assert_eq!(
+        result,
+        MigrationRetimeResult {
+            run_id: "run-1".to_string(),
+            changed: true,
+            rescheduled_tx_count: 1,
+            needs_signature_count: 2,
+        }
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let run_state = conn
+        .query_row(
+            &format!(
+                "SELECT timing_policy, phase, signed_schedule_origin_height, schedule_json
+                 FROM {RUNS_TABLE} WHERE run_id = 'run-1'"
+            ),
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(run_state.0, "standard_90m");
+    assert_eq!(run_state.1, PHASE_READY_TO_MIGRATE);
+    assert_eq!(run_state.2, schedule_origin);
+    let shortened_schedule: Vec<MigrationScheduleEntry> =
+        serde_json::from_str(&run_state.3).unwrap();
+    validate_schedule_with_policy(
+        &shortened_schedule,
+        &values,
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard90Minutes,
+    )
+    .unwrap();
+    assert_eq!(shortened_schedule[0].part_index, Some(0));
+    assert_eq!(shortened_schedule[0].block_offset, 0);
+
+    let pending = [0u32, 1, 2].map(|part_index| {
+        conn.query_row(
+            &format!(
+                "SELECT status, scheduled_height, schedule_start_height
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = 'run-1' AND part_index = ?1"
+            ),
+            params![part_index],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, u32>(2)?,
+                ))
+            },
+        )
+        .unwrap()
+    });
+    assert_eq!(pending[0], ("confirmed".to_string(), 50, 20));
+    assert_eq!(
+        pending[1],
+        (
+            "scheduled".to_string(),
+            expected_heights[&1],
+            schedule_origin,
+        )
+    );
+    assert_eq!(
+        pending[2],
+        (
+            "needs_resign".to_string(),
+            expected_heights[&2],
+            schedule_origin,
+        )
+    );
+    let remaining_signed_children: Vec<u32> = conn
+        .prepare(&format!(
+            "SELECT child_index FROM {SIGNED_CHILD_PCZTS_TABLE}
+             WHERE run_id = 'run-1' ORDER BY child_index"
+        ))
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(remaining_signed_children, vec![2]);
+    drop(conn);
+
+    let mut retry_rng = StdRng::seed_from_u64(0xdead_beef);
+    let retry = retime_active_migration_with_rng(
+        &db_path,
+        "account-1",
+        WalletNetwork::Main,
+        "run-1",
+        schedule_origin + 10,
+        &mut retry_rng,
+    )
+    .unwrap();
+    assert!(!retry.changed);
+}
+
+#[test]
+fn active_migration_retime_rejects_a_stale_run_without_mutating_policy() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('run-current', 'account-1', 'main', ?1, ?2, 1, 1,
+                     '[100]', '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":144}}]')"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    drop(conn);
+
+    let error = retime_active_migration_with_rng(
+        &db_path,
+        "account-1",
+        WalletNetwork::Main,
+        "run-stale",
+        1_000,
+        &mut StdRng::seed_from_u64(1),
+    )
+    .unwrap_err();
+    assert!(error.contains("changed before timing could be updated"));
+    assert_eq!(
+        timing_policy_for_run(&db_path, "run-current", WalletNetwork::Main).unwrap(),
+        MigrationTimingPolicy::Standard,
+    );
+}
+
+#[test]
 fn fast_testnet_uses_accelerated_schedule_and_anchor_timing() {
     assert_eq!(
         schedule_parameters_with_policy(WalletNetwork::Regtest, MigrationTimingPolicy::FastTestnet,),

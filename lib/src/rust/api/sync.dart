@@ -413,6 +413,24 @@ Future<MigrationStatus> getOrchardMigrationStatus({
   accountUuid: accountUuid,
 );
 
+/// Changes one expected active migration from the legacy three-hour transfer
+/// spacing to the 90-minute policy.
+///
+/// The wallet must be fully synced. The operation is atomic, leaves submitted
+/// transactions untouched, and returns an idempotent unchanged result if the
+/// same run was already updated by an earlier call.
+Future<MigrationRetimeResult> retimeActiveOrchardMigration({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String expectedRunId,
+}) => RustLib.instance.api.crateApiSyncRetimeActiveOrchardMigration(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  expectedRunId: expectedRunId,
+);
+
 Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
   required String dbPath,
   required String network,
@@ -1581,6 +1599,48 @@ class MigrationPreparationTransactionStatus {
           minedHeight == other.minedHeight &&
           confirmationCount == other.confirmationCount &&
           confirmationTarget == other.confirmationTarget;
+}
+
+/// Outcome of changing an active legacy migration to the shorter timing
+/// policy. Transactions already submitted to the network are never changed.
+class MigrationRetimeResult {
+  final String runId;
+
+  /// False when a retry observes that the requested run already uses the
+  /// shorter policy.
+  final bool changed;
+
+  /// Signed transactions that kept their original expiry and were assigned
+  /// a new broadcast height.
+  final int rescheduledTxCount;
+
+  /// Remaining transactions whose committed expiry or unsigned schedule
+  /// requires a fresh signature.
+  final int needsSignatureCount;
+
+  const MigrationRetimeResult({
+    required this.runId,
+    required this.changed,
+    required this.rescheduledTxCount,
+    required this.needsSignatureCount,
+  });
+
+  @override
+  int get hashCode =>
+      runId.hashCode ^
+      changed.hashCode ^
+      rescheduledTxCount.hashCode ^
+      needsSignatureCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationRetimeResult &&
+          runtimeType == other.runtimeType &&
+          runId == other.runId &&
+          changed == other.changed &&
+          rescheduledTxCount == other.rescheduledTxCount &&
+          needsSignatureCount == other.needsSignatureCount;
 }
 
 class MigrationScheduledBroadcast {

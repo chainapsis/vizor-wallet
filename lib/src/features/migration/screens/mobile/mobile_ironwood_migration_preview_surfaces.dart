@@ -1075,6 +1075,8 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.actionBatchLabel,
     this.actionBatchValue,
     this.onAction,
+    this.secondaryActionLabel,
+    this.onSecondaryAction,
     this.actionRunning = false,
     this.onBack,
     this.onPreparationCompleteDone,
@@ -1100,6 +1102,8 @@ class _MigrationProgressPreview extends StatelessWidget {
   final String? actionBatchLabel;
   final String? actionBatchValue;
   final VoidCallback? onAction;
+  final String? secondaryActionLabel;
+  final VoidCallback? onSecondaryAction;
   final bool actionRunning;
   final VoidCallback? onBack;
   final VoidCallback? onPreparationCompleteDone;
@@ -1176,6 +1180,19 @@ class _MigrationProgressPreview extends StatelessWidget {
                   statusValueOverride: statusValueOverride,
                 ),
                 const Spacer(),
+                if (secondaryActionLabel != null) ...[
+                  AppButton(
+                    key: const ValueKey(
+                      'mobile_ironwood_migration_use_shorter_timing',
+                    ),
+                    expand: true,
+                    constrainContent: true,
+                    variant: AppButtonVariant.ghost,
+                    onPressed: onSecondaryAction,
+                    child: Text(secondaryActionLabel!),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
                 if (state == _MigrationProgressState.needsInput)
                   _MigrationNeedsInputCard(
                     message: actionMessage,

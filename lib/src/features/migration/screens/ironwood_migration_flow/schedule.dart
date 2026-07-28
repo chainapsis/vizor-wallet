@@ -83,14 +83,23 @@ class IronwoodMigrationPreparationScheduleScreen extends ConsumerWidget {
   }
 }
 
-class IronwoodMigrationScheduleScreen extends ConsumerWidget {
+class IronwoodMigrationScheduleScreen extends ConsumerStatefulWidget {
   const IronwoodMigrationScheduleScreen({this.previewStatus, super.key});
 
   final rust_sync.MigrationStatus? previewStatus;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final preview = previewStatus;
+  ConsumerState<IronwoodMigrationScheduleScreen> createState() =>
+      _IronwoodMigrationScheduleScreenState();
+}
+
+class _IronwoodMigrationScheduleScreenState
+    extends ConsumerState<IronwoodMigrationScheduleScreen> {
+  bool _retiming = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = widget.previewStatus;
     if (preview != null) {
       return _frame(context, preview, ref.watch(syncProvider).asData?.value);
     }
@@ -126,10 +135,15 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
                     context,
                     cachedStatus,
                     ref.watch(syncProvider).asData?.value,
+                    request: request,
                   );
           },
-          data: (status) =>
-              _frame(context, status, ref.watch(syncProvider).asData?.value),
+          data: (status) => _frame(
+            context,
+            status,
+            ref.watch(syncProvider).asData?.value,
+            request: request,
+          ),
         );
   }
 
@@ -139,7 +153,12 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
     SyncState? syncState, {
     bool statusUnavailable = false,
     VoidCallback? onRetry,
+    IronwoodMigrationStatusRequest? request,
   }) {
+    final canRetime =
+        request != null &&
+        status != null &&
+        canShortenIronwoodMigrationTiming(status);
     return _IronwoodMigrationFrame(
       toolbar: AppPaneToolbar(
         leading: AppBackLink(
@@ -156,8 +175,58 @@ class IronwoodMigrationScheduleScreen extends ConsumerWidget {
           : _MigrationScheduleContent(
               status: status,
               currentHeight: _currentMigrationHeight(syncState),
+              retiming: _retiming,
+              onShortenTiming: canRetime
+                  ? () => _confirmShorterTiming(request, status)
+                  : null,
             ),
     );
+  }
+
+  Future<void> _confirmShorterTiming(
+    IronwoodMigrationStatusRequest request,
+    rust_sync.MigrationStatus status,
+  ) async {
+    if (_retiming || status.activeRunId == null) return;
+    final appTheme = AppTheme.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AppTheme(
+        data: appTheme,
+        child: const IronwoodMigrationRetimeDialog(),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _retiming = true);
+    try {
+      final result = await ref
+          .read(ironwoodMigrationServiceProvider)
+          .shortenActiveMigrationTiming(
+            network: request.network,
+            accountUuid: request.accountUuid,
+            expectedRunId: status.activeRunId!,
+          );
+      if (!mounted) return;
+      ref.invalidate(ironwoodMigrationStatusProvider(request));
+      showAppToast(
+        context,
+        result.needsSignatureCount == 0
+            ? 'Migration timing updated.'
+            : 'Timing updated. ${result.needsSignatureCount} transfer(s) '
+                  'need a fresh signature.',
+      );
+    } catch (error) {
+      if (mounted) {
+        showAppToast(
+          context,
+          "Couldn't update migration timing. $error",
+          iconName: AppIcons.warning,
+          tone: AppToastTone.destructive,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _retiming = false);
+    }
   }
 }
 
@@ -682,10 +751,14 @@ class _MigrationScheduleContent extends StatelessWidget {
   const _MigrationScheduleContent({
     required this.status,
     required this.currentHeight,
+    required this.retiming,
+    this.onShortenTiming,
   });
 
   final rust_sync.MigrationStatus status;
   final int currentHeight;
+  final bool retiming;
+  final VoidCallback? onShortenTiming;
 
   @override
   Widget build(BuildContext context) {
@@ -743,6 +816,26 @@ class _MigrationScheduleContent extends StatelessWidget {
               ],
             ),
           ),
+          if (onShortenTiming != null) ...[
+            const SizedBox(height: 10),
+            Center(
+              child: AppButton(
+                key: const ValueKey('ironwood_migration_use_shorter_timing'),
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.medium,
+                onPressed: retiming ? null : onShortenTiming,
+                leading: retiming
+                    ? const AppIcon(
+                        AppIcons.loader,
+                        semanticLabel: 'Updating migration timing',
+                      )
+                    : null,
+                child: Text(
+                  retiming ? 'Updating timing...' : 'Use shorter timing',
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
           Expanded(
             child: Padding(

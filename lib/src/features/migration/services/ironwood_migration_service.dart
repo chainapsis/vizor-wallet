@@ -225,6 +225,15 @@ typedef IronwoodMigrationUnbroadcastRetirer =
       required String accountUuid,
       required String expectedRunId,
     });
+typedef IronwoodMigrationRetimer =
+    Future<rust_sync.MigrationRetimeResult> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required String expectedRunId,
+    });
+typedef IronwoodMigrationWorkQuiescer = Future<void> Function();
+typedef IronwoodMigrationWorkResumer = Future<void> Function();
 typedef IronwoodMigrationMacosSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
@@ -605,6 +614,9 @@ class IronwoodMigrationService {
     IronwoodMigrationImmediatePlanGetter? getImmediatePlan,
     IronwoodMigrationImmediateStarter? startImmediateMigration,
     IronwoodMigrationUnbroadcastRetirer? retireUnbroadcastMigration,
+    IronwoodMigrationRetimer? retimeActiveMigration,
+    IronwoodMigrationWorkQuiescer? quiesceMigrationWork,
+    IronwoodMigrationWorkResumer? resumeMigrationWork,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
     IronwoodMigrationOutboxPreparer? prepareMigrationOutbox,
@@ -689,6 +701,14 @@ class IronwoodMigrationService {
        retireUnbroadcastMigration =
            retireUnbroadcastMigration ??
            rust_sync.retireUnbroadcastOrchardMigration,
+       retimeActiveMigration =
+           retimeActiveMigration ?? rust_sync.retimeActiveOrchardMigration,
+       quiesceMigrationWork =
+           quiesceMigrationWork ??
+           IronwoodMigrationBackgroundLifecycle.instance.quiesce,
+       resumeMigrationWork =
+           resumeMigrationWork ??
+           IronwoodMigrationBackgroundLifecycle.instance.resumeAfterMutation,
        startMacosSoftwareMigration =
            startMacosSoftwareMigration ?? _defaultStartMacosSoftwareMigration,
        broadcastDueMigration =
@@ -785,6 +805,9 @@ class IronwoodMigrationService {
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationImmediateStarter startImmediateMigration;
   final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
+  final IronwoodMigrationRetimer retimeActiveMigration;
+  final IronwoodMigrationWorkQuiescer quiesceMigrationWork;
+  final IronwoodMigrationWorkResumer resumeMigrationWork;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
   final IronwoodMigrationOutboxPreparer prepareMigrationOutbox;
@@ -941,6 +964,158 @@ class IronwoodMigrationService {
             status: status,
           );
           return status;
+        });
+      },
+    );
+  }
+
+  /// Pauses native migration delivery and redraws only this run's unsubmitted
+  /// transfers under the shorter timing policy. Any accepted receipt is
+  /// reconciled before mutation, and an outbox batch with an uncertain
+  /// submission prevents the change.
+  Future<rust_sync.MigrationRetimeResult> shortenActiveMigrationTiming({
+    required String network,
+    required String accountUuid,
+    required String expectedRunId,
+  }) {
+    return operationRegistry.run(
+      network: network,
+      accountUuid: accountUuid,
+      operation: () async {
+        final dbPath = await getWalletDbPath();
+        final endpoint = getEndpoint();
+        final context = _MigrationCredentialContext(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        );
+        return _serializeCredentialState(context, () async {
+          var quiesceAttempted = false;
+          try {
+            quiesceAttempted = true;
+            await quiesceMigrationWork();
+
+            var status = await _getStatusForContext(context);
+            _validateMigrationRetimeStatus(status, expectedRunId);
+            _MigrationCredential? credential;
+            var hadScheduledOutbox = false;
+            var outboxCleared = false;
+
+            if (_usesNativeMigrationOutbox) {
+              final reconciliation = await _reconcileMigrationOutboxReceipts(
+                context: context,
+              );
+              if (reconciliation.unreconciledCount > 0) {
+                throw StateError(
+                  'A submitted migration transfer could not be reconciled. '
+                  'Try again after Vizor refreshes its migration status.',
+                );
+              }
+              status = await _getStatusForContext(context);
+              _validateMigrationRetimeStatus(status, expectedRunId);
+              hadScheduledOutbox = _scheduledBroadcastTxids(status).isNotEmpty;
+              if (hadScheduledOutbox) {
+                final manifest = await backgroundCredentialStore.read(
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                );
+                if (manifest == null) {
+                  throw StateError(
+                    '$_credentialRecoveryRequiredError The current schedule '
+                    'must remain available until timing is updated.',
+                  );
+                }
+                final resolvedManifest = await _resolveManifestContext(
+                  manifest,
+                  context,
+                );
+                await backgroundCredentialStore.bindExpectedRunId(
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                  expectedRunId: expectedRunId,
+                );
+                credential = _MigrationCredential(
+                  password: resolvedManifest.credentialHex,
+                  saltBase64: resolvedManifest.saltBase64,
+                );
+                try {
+                  await discardMigrationOutboxBatch(
+                    batchId: _migrationOutboxBatchId(context, expectedRunId),
+                  );
+                  outboxCleared = true;
+                  _scheduledBackgroundMigrations.remove(
+                    _credentialKey(context),
+                  );
+                } catch (error) {
+                  throw StateError(
+                    'A migration transfer is still being submitted. Wait for '
+                    'its status to settle before changing the timing. $error',
+                  );
+                }
+              }
+            }
+
+            rust_sync.MigrationRetimeResult result;
+            try {
+              result = await retimeActiveMigration(
+                dbPath: context.dbPath,
+                network: context.network,
+                accountUuid: context.accountUuid,
+                expectedRunId: expectedRunId,
+              );
+            } catch (error) {
+              if (hadScheduledOutbox && outboxCleared && credential != null) {
+                try {
+                  await _stagePersistedMigrationOutbox(
+                    context: context,
+                    credential: credential,
+                    expectedRunId: expectedRunId,
+                    statusForStaleBatchDiscard: status,
+                  );
+                } catch (restoreError) {
+                  debugPrint(
+                    'Failed to restore the migration outbox after timing '
+                    'update failed: $restoreError',
+                  );
+                }
+              }
+              rethrow;
+            }
+
+            final updatedStatus = await _getStatusForContext(context);
+            final scheduledTxids = _scheduledBroadcastTxids(updatedStatus);
+            if (_usesNativeMigrationOutbox && scheduledTxids.isNotEmpty) {
+              final currentCredential = credential;
+              if (currentCredential == null) {
+                throw StateError(
+                  '$_credentialRecoveryRequiredError The shortened schedule '
+                  'could not be restored to background delivery.',
+                );
+              }
+              await _stagePersistedMigrationOutbox(
+                context: context,
+                credential: currentCredential,
+                expectedRunId: expectedRunId,
+                requiredTxids: scheduledTxids,
+                statusForStaleBatchDiscard: updatedStatus,
+              );
+            } else if (_usesNativeMigrationOutbox) {
+              _scheduledBackgroundMigrations.remove(_credentialKey(context));
+            }
+            return result;
+          } finally {
+            if (quiesceAttempted) {
+              try {
+                await resumeMigrationWork();
+              } catch (error) {
+                debugPrint(
+                  'Failed to resume Ironwood migration after timing update: '
+                  '$error',
+                );
+              }
+            }
+          }
         });
       },
     );
@@ -2674,6 +2849,23 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
     },
   );
 });
+
+void _validateMigrationRetimeStatus(
+  rust_sync.MigrationStatus status,
+  String expectedRunId,
+) {
+  if (status.activeRunId != expectedRunId) {
+    throw StateError(
+      'The active Ironwood migration changed before timing could be updated.',
+    );
+  }
+  if (status.scheduleMeanDelayBlocks != 144 &&
+      status.scheduleMeanDelayBlocks != 72) {
+    throw StateError(
+      'This migration does not use timing that can be shortened.',
+    );
+  }
+}
 
 RpcEndpointConfig _missingEndpoint() {
   throw StateError('Ironwood migration endpoint getter is not configured.');

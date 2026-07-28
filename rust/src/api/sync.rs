@@ -712,6 +712,21 @@ pub struct MigrationScheduledTransfer {
     pub block_offset: u32,
 }
 
+/// Outcome of changing an active legacy migration to the shorter timing
+/// policy. Transactions already submitted to the network are never changed.
+pub struct MigrationRetimeResult {
+    pub run_id: String,
+    /// False when a retry observes that the requested run already uses the
+    /// shorter policy.
+    pub changed: bool,
+    /// Signed transactions that kept their original expiry and were assigned
+    /// a new broadcast height.
+    pub rescheduled_tx_count: u32,
+    /// Remaining transactions whose committed expiry or unsigned schedule
+    /// requires a fresh signature.
+    pub needs_signature_count: u32,
+}
+
 pub struct MigrationOutboxItem {
     /// Stable Swift outbox item identifier. This is the finalized txid.
     pub item_id: String,
@@ -1423,6 +1438,35 @@ pub fn get_orchard_migration_status(
                     confirmation_target: part.confirmation_target,
                 })
                 .collect(),
+        })
+    })
+}
+
+/// Changes one expected active migration from the legacy three-hour transfer
+/// spacing to the 90-minute policy.
+///
+/// The wallet must be fully synced. The operation is atomic, leaves submitted
+/// transactions untouched, and returns an idempotent unchanged result if the
+/// same run was already updated by an earlier call.
+pub fn retime_active_orchard_migration(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    expected_run_id: String,
+) -> Result<MigrationRetimeResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::retime_active_orchard_migration(
+            &db_path,
+            network,
+            &account_uuid,
+            &expected_run_id,
+        )
+        .map(|result| MigrationRetimeResult {
+            run_id: result.run_id,
+            changed: result.changed,
+            rescheduled_tx_count: result.rescheduled_tx_count,
+            needs_signature_count: result.needs_signature_count,
         })
     })
 }

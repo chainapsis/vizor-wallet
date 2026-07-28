@@ -4580,6 +4580,153 @@ void main() {
       ]);
     },
   );
+
+  test(
+    'shorter timing pauses delivery, redraws, and stages the replacement batch',
+    () async {
+      final events = <String>[];
+      var shortened = false;
+      final service = await _retimeService(
+        events: events,
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  scheduleMeanDelayBlocks: shortened ? 72 : 144,
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        onRetime: () => shortened = true,
+      );
+
+      final result = await service.shortenActiveMigrationTiming(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+
+      expect(result.changed, isTrue);
+      expect(result.rescheduledTxCount, 1);
+      expect(events, [
+        'quiesce',
+        'receipts',
+        'discard',
+        'retime',
+        'export',
+        'stage',
+        'arm',
+        'resume',
+      ]);
+    },
+  );
+
+  test(
+    'shorter timing refuses an unreconciled accepted receipt before mutation',
+    () async {
+      final events = <String>[];
+      final service = await _retimeService(
+        events: events,
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        receipts: const [
+          {'network': 'test', 'accountUuid': 'account-1'},
+        ],
+      );
+
+      await expectLater(
+        service.shortenActiveMigrationTiming(
+          network: 'test',
+          accountUuid: 'account-1',
+          expectedRunId: 'run-1',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('could not be reconciled'),
+          ),
+        ),
+      );
+      expect(events, ['quiesce', 'receipts', 'resume']);
+    },
+  );
+
+  test(
+    'shorter timing refuses a native batch with uncertain delivery state',
+    () async {
+      final events = <String>[];
+      final service = await _retimeService(
+        events: events,
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        discardError: PlatformException(code: 'outbox_item_submitting'),
+      );
+
+      await expectLater(
+        service.shortenActiveMigrationTiming(
+          network: 'test',
+          accountUuid: 'account-1',
+          expectedRunId: 'run-1',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('still being submitted'),
+          ),
+        ),
+      );
+      expect(events, ['quiesce', 'receipts', 'discard', 'resume']);
+    },
+  );
+
+  test('failed shorter timing mutation restores the original outbox', () async {
+    final events = <String>[];
+    final service = await _retimeService(
+      events: events,
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(
+                phase: 'broadcast_scheduled',
+                activeRunId: 'run-1',
+                parts: [_migrationPart(txidHex: 'tx-1')],
+                scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+              ),
+      retimeError: StateError('database busy'),
+    );
+
+    await expectLater(
+      service.shortenActiveMigrationTiming(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(events, [
+      'quiesce',
+      'receipts',
+      'discard',
+      'retime',
+      'export',
+      'stage',
+      'arm',
+      'resume',
+    ]);
+  });
 }
 
 rust_sync.MigrationStatus _migrationStatus({
@@ -4588,6 +4735,7 @@ rust_sync.MigrationStatus _migrationStatus({
   int broadcastedTxCount = 0,
   bool? proofReady,
   int? nextActionHeight,
+  int scheduleMeanDelayBlocks = 144,
   List<rust_sync.MigrationPartStatus> parts = const [],
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
@@ -4608,7 +4756,7 @@ rust_sync.MigrationStatus _migrationStatus({
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 35,
-    scheduleMeanDelayBlocks: 144,
+    scheduleMeanDelayBlocks: scheduleMeanDelayBlocks,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
     proofReady: proofReady,
@@ -4647,6 +4795,78 @@ RpcEndpointConfig _testEndpoint() => const RpcEndpointConfig(
   networkName: 'test',
   lightwalletdUrl: 'https://lwd.example:443',
 );
+
+Future<IronwoodMigrationService> _retimeService({
+  required List<String> events,
+  required IronwoodMigrationStatusGetter getStatus,
+  List<Map<Object?, Object?>> receipts = const [],
+  Object? discardError,
+  Object? retimeError,
+  void Function()? onRetime,
+}) async {
+  final store = await _boundBackgroundCredentialStore();
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus: getStatus,
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) async =>
+            null,
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    backgroundCredentialStore: store,
+    getEndpoint: _testEndpoint,
+    isMobile: () => true,
+    isIOS: () => true,
+    isAndroid: () => false,
+    quiesceMigrationWork: () async => events.add('quiesce'),
+    resumeMigrationWork: () async => events.add('resume'),
+    listMigrationOutboxReceipts: () async {
+      events.add('receipts');
+      return receipts;
+    },
+    discardMigrationOutboxBatch: ({required batchId}) async {
+      events.add('discard');
+      if (discardError != null) throw discardError;
+      return true;
+    },
+    retimeActiveMigration:
+        ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required expectedRunId,
+        }) async {
+          events.add('retime');
+          if (retimeError != null) throw retimeError;
+          onRetime?.call();
+          return const rust_sync.MigrationRetimeResult(
+            runId: 'run-1',
+            changed: true,
+            rescheduledTxCount: 1,
+            needsSignatureCount: 0,
+          );
+        },
+    exportMigrationOutbox:
+        ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required password,
+          required saltBase64,
+        }) async {
+          events.add('export');
+          return _outboxBatch(txids: ['tx-1']);
+        },
+    stageMigrationOutboxBatch: (payload) async {
+      events.add('stage');
+      return {'tx-1': 'digest-1'};
+    },
+    armMigrationOutboxBatch:
+        ({required batchId, required expectedDigests}) async {
+          events.add('arm');
+          return true;
+        },
+  );
+}
 
 IronwoodMigrationService _notificationAuthorizationService({
   required bool isIOS,

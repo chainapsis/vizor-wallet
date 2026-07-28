@@ -619,6 +619,10 @@ class _MobileMigrationRedesignedStatusState
         widget.status.parts.any(
           (part) => part.state == rust_sync.MigrationPartState.needsInput,
         );
+    final canShortenTiming =
+        accountUuid != null &&
+        state != _MigrationProgressState.needsInput &&
+        canShortenIronwoodMigrationTiming(widget.status);
     return _MigrationProgressPreview(
       state: state,
       showPreparationCompleteModal: _showPreparationComplete,
@@ -661,6 +665,14 @@ class _MobileMigrationRedesignedStatusState
       onAction: accountUuid == null || _actionRunning
           ? null
           : () => unawaited(_performRequiredAction(accountUuid)),
+      secondaryActionLabel: canShortenTiming
+          ? _actionRunning
+                ? 'Updating timing...'
+                : 'Use shorter timing'
+          : null,
+      onSecondaryAction: !canShortenTiming || _actionRunning
+          ? null
+          : () => unawaited(_confirmShorterTiming(accountUuid)),
     );
   }
 
@@ -817,6 +829,52 @@ class _MobileMigrationRedesignedStatusState
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
           .recover(accountUuid);
+    } finally {
+      if (mounted) setState(() => _actionRunning = false);
+    }
+  }
+
+  Future<void> _confirmShorterTiming(String accountUuid) async {
+    if (_actionRunning || widget.status.activeRunId == null) return;
+    final request = ref.read(ironwoodMigrationInputsProvider).statusRequest;
+    if (request == null || request.accountUuid != accountUuid) return;
+    final appTheme = AppTheme.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AppTheme(
+        data: appTheme,
+        child: const IronwoodMigrationRetimeDialog(),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _actionRunning = true);
+    try {
+      final result = await ref
+          .read(ironwoodMigrationServiceProvider)
+          .shortenActiveMigrationTiming(
+            network: request.network,
+            accountUuid: accountUuid,
+            expectedRunId: widget.status.activeRunId!,
+          );
+      if (!mounted) return;
+      ref.invalidate(ironwoodMigrationStatusProvider(request));
+      ref.invalidate(ironwoodMigrationRouteCtaProvider);
+      showAppToast(
+        context,
+        result.needsSignatureCount == 0
+            ? 'Migration timing updated.'
+            : 'Timing updated. ${result.needsSignatureCount} transfer(s) '
+                  'need a fresh signature.',
+      );
+    } catch (error) {
+      if (mounted) {
+        showAppToast(
+          context,
+          "Couldn't update migration timing. $error",
+          iconName: AppIcons.warning,
+          tone: AppToastTone.destructive,
+        );
+      }
     } finally {
       if (mounted) setState(() => _actionRunning = false);
     }

@@ -425,6 +425,7 @@ rust_sync.MigrationStatus _status({
   int pendingTxCount = 2,
   int signedChildPcztCount = 0,
   int pendingSplitStageCount = 2,
+  int scheduleMeanDelayBlocks = 144,
   String? message,
   List<rust_sync.MigrationScheduledBroadcast>? scheduledBroadcasts,
 }) {
@@ -445,7 +446,7 @@ rust_sync.MigrationStatus _status({
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
     signingBatchLimit: 12,
-    scheduleMeanDelayBlocks: 144,
+    scheduleMeanDelayBlocks: scheduleMeanDelayBlocks,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
     proofReady: proofReady,
@@ -860,6 +861,7 @@ IronwoodMigrationService _migrationService({
     List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   )?
   onCreatePrivateDraft,
+  IronwoodMigrationRetimer? onRetime,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -883,6 +885,9 @@ IronwoodMigrationService _migrationService({
     // iOS outbox credential contract. Credential behavior has dedicated
     // service tests.
     isMobile: () => false,
+    quiesceMigrationWork: () async {},
+    resumeMigrationWork: () async {},
+    retimeActiveMigration: onRetime,
     supportsBackgroundMigration: () => true,
     getNotificationAuthorizationStatus:
         getNotificationAuthorizationStatus ??
@@ -2626,6 +2631,72 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(continueCount, greaterThanOrEqualTo(1));
+  });
+
+  testWidgets('mobile migration status applies shorter timing', (tester) async {
+    _useMobileViewport(tester);
+
+    var shortened = false;
+    var retimeCalls = 0;
+    rust_sync.MigrationStatus currentStatus() => _status(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      scheduleMeanDelayBlocks: shortened ? 72 : 144,
+      pendingTxCount: 1,
+    );
+    final service = _migrationService(
+      onGetStatus: () async => currentStatus(),
+      onRetime:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+          }) async {
+            retimeCalls++;
+            shortened = true;
+            return const rust_sync.MigrationRetimeResult(
+              runId: 'run-1',
+              changed: true,
+              rescheduledTxCount: 1,
+              needsSignatureCount: 0,
+            );
+          },
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: service,
+        status: currentStatus(),
+        statusLoader: () async => currentStatus(),
+        ctaBuilder: () => IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: currentStatus(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final action = find.byKey(
+      const ValueKey('mobile_ironwood_migration_use_shorter_timing'),
+    );
+    await tester.ensureVisible(action);
+    await tester.pumpAndSettle();
+    expect(action, findsOneWidget);
+
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.text('Use shorter timing?'), findsOneWidget);
+    expect(retimeCalls, 0);
+
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_confirm_shorter_timing')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(retimeCalls, 1);
+    expect(find.text('Migration timing updated.'), findsOneWidget);
+    expect(action, findsNothing);
   });
 
   testWidgets('keeps migration status actions reachable on compact screens', (
