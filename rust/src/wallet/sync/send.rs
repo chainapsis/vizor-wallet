@@ -523,7 +523,6 @@ pub(crate) struct KeystoneMigrationProofStatus {
 }
 
 const SHIELDING_THRESHOLD_ZATOSHI: u64 = 100_000;
-const MIGRATION_NO_EXPIRY_HEIGHT: u32 = 0;
 const MIGRATION_ORCHARD_ACTION_COUNT: usize = 2;
 const MIGRATION_IRONWOOD_ACTION_COUNT: usize = 1;
 static ACTIVE_IRONWOOD_MIGRATIONS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -1454,8 +1453,26 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         Some(run) => super::migration::approved_schedule_for_run(db_path, &run.run_id)?,
         None => approved_schedule.clone(),
     };
+    let (preparation_policy_for_build, migration_policy_for_build) = match &draft_run {
+        Some(run) => (
+            super::migration::preparation_timing_policy_for_run(db_path, &run.run_id)?,
+            super::migration::timing_policy_for_run(db_path, &run.run_id, network)?,
+        ),
+        None => (
+            preparation_timing_policy,
+            super::migration::configured_timing_policy(network),
+        ),
+    };
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
-        prepare_software_migration_run(db_path, network, account_uuid, seed, &signing_schedule)
+        prepare_software_migration_run(
+            db_path,
+            network,
+            account_uuid,
+            seed,
+            &signing_schedule,
+            preparation_policy_for_build,
+            migration_policy_for_build,
+        )
     })?;
 
     let Some(prepared) = prepared else {
@@ -2727,6 +2744,7 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
 fn make_orchard_split_builder_with_type(
     network: WalletNetwork,
     target_height: u32,
+    expiry_height: u32,
     orchard_anchor: orchard::Anchor,
     orchard_inputs: &[(orchard::Note, orchard::tree::MerklePath)],
     orchard_fvk: &orchard::keys::FullViewingKey,
@@ -2749,7 +2767,7 @@ fn make_orchard_split_builder_with_type(
             ironwood_bundle_type: orchard::builder::BundleType::DEFAULT,
         },
     )
-    .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
+    .with_expiry_height(BlockHeight::from(expiry_height));
 
     if network.is_nu_active(
         zcash_protocol::consensus::NetworkUpgrade::Nu6_3,
@@ -4261,20 +4279,12 @@ fn finalize_ready_denomination_stages(
         }
 
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        let scheduled_height = super::migration::next_preparation_scheduled_height(
-            &conn,
-            run_id,
-            network,
-            current_migration_scanned_height(db_path, network)?,
-            &mut OsRng,
-        )?;
         super::migration::promote_awaiting_denomination_stage(
             &conn,
             run_id,
             stage.stage_index,
             &stage.expected_txid_hex,
             extracted.raw_tx,
-            scheduled_height,
             pending_password,
             pending_salt_base64,
         )?;
@@ -4283,6 +4293,96 @@ fn finalize_ready_denomination_stages(
             .ok_or("Finalized denomination proof count overflow")?;
     }
     Ok(promoted_count)
+}
+
+fn expired_denomination_stage_count(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    observed_height: u32,
+) -> Result<u32, String> {
+    let expired_unbroadcast = super::migration::expired_unbroadcast_denomination_stage_count(
+        conn,
+        run_id,
+        observed_height,
+    )?;
+    let expired_broadcasted = super::migration::expired_broadcasted_denomination_stage_count(
+        conn,
+        run_id,
+        observed_height,
+    )?;
+    let expired_count = expired_unbroadcast
+        .checked_add(expired_broadcasted)
+        .ok_or("Expired migration preparation count overflow")?;
+    Ok(expired_count)
+}
+
+/// Retires a run only after wallet scanning reaches a stage expiry. Retirement
+/// unlocks inputs, so an unscanned chain tip cannot be used here.
+fn retire_expired_denomination_run(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    scanned_height: u32,
+) -> Result<Option<CreatedBroadcastResult>, String> {
+    let expired_count = {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        expired_denomination_stage_count(&conn, run_id, scanned_height)?
+    };
+    if expired_count == 0 {
+        return Ok(None);
+    }
+
+    let message = format!(
+        "{expired_count} migration preparation transaction(s) expired before confirmation. Restart migration to rebuild the preparation schedule with fresh expiry heights."
+    );
+    super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
+    Ok(Some(CreatedBroadcastResult {
+        txids: String::new(),
+        status: super::migration::PHASE_FAILED_TERMINAL,
+        broadcasted_count: 0,
+        total_count: expired_count,
+        message: Some(message),
+    }))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DenominationStageBroadcastReadiness {
+    AwaitingHeight,
+    AwaitingExpiryScan,
+    Ready,
+}
+
+fn denomination_stage_broadcast_readiness(
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    stage: &super::migration::PendingRawDenominationStage,
+    chain_tip_height: u32,
+) -> DenominationStageBroadcastReadiness {
+    // Preparation stages created before canonical expiries were introduced
+    // persist zero as the transaction's no-expiry sentinel. Preserve that
+    // meaning so an in-flight legacy run can finish instead of waiting forever
+    // for an expiry scan that deliberately excludes zero-expiry stages.
+    if stage.expiry_height > 0 && stage.expiry_height <= chain_tip_height {
+        DenominationStageBroadcastReadiness::AwaitingExpiryScan
+    } else if preparation_timing_policy == super::migration::PreparationTimingPolicy::Immediate
+        || stage.effective_broadcast_height() <= chain_tip_height
+    {
+        DenominationStageBroadcastReadiness::Ready
+    } else {
+        DenominationStageBroadcastReadiness::AwaitingHeight
+    }
+}
+
+fn denomination_expiry_scan_wait_result(txids: &str, total_count: u32) -> CreatedBroadcastResult {
+    CreatedBroadcastResult {
+        txids: txids.to_string(),
+        status: CreatedBroadcastResult::PENDING_BROADCAST,
+        broadcasted_count: 0,
+        total_count,
+        message: Some(
+            "Migration preparation reached its expiry height. Waiting for wallet sync to determine whether the preparation schedule must be rebuilt."
+                .to_string(),
+        ),
+    }
 }
 
 async fn broadcast_pending_denomination_stages(
@@ -4294,39 +4394,55 @@ async fn broadcast_pending_denomination_stages(
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<Option<CreatedBroadcastResult>, String> {
-    let pending = {
+    let progress = super::get_sync_progress(db_path, network)?;
+    let scanned_height = u32::try_from(progress.scanned_height)
+        .map_err(|_| "Migration scanned height exceeds u32".to_string())?;
+    let known_chain_tip_height = u32::try_from(progress.chain_tip_height)
+        .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if let Some(result) = retire_expired_denomination_run(db_path, network, run_id, scanned_height)?
+    {
+        return Ok(Some(result));
+    }
+    let (pending, expired_at_known_tip, stage_count) = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        super::migration::pending_raw_denomination_stages(
+        let pending = super::migration::pending_raw_denomination_stages(
             &conn,
             run_id,
             pending_password,
             pending_salt_base64,
-        )?
+        )?;
+        let expired_at_known_tip =
+            expired_denomination_stage_count(&conn, run_id, known_chain_tip_height)?;
+        let stage_count = super::migration::denomination_stage_status_counts(&conn, run_id)?.total;
+        (pending, expired_at_known_tip, stage_count)
     };
-    if pending.is_empty() {
-        return Ok(None);
-    }
-    let preparation_timing_policy =
-        super::migration::preparation_timing_policy_for_run(db_path, run_id)?;
-    let observed_height = current_migration_scanned_height(db_path, network)?;
-    let due = pending
-        .iter()
-        .filter(|stage| {
-            preparation_timing_policy == super::migration::PreparationTimingPolicy::Immediate
-                || stage.scheduled_height <= observed_height
-        })
-        .collect::<Vec<_>>();
-    if due.is_empty() {
-        return Ok(None);
-    }
-
     let txids = pending
         .iter()
         .map(|stage| stage.expected_txid_hex.as_str())
         .collect::<Vec<_>>()
         .join(",");
+    if expired_at_known_tip > 0 {
+        return Ok(Some(denomination_expiry_scan_wait_result(
+            &txids,
+            stage_count,
+        )));
+    }
+    if pending.is_empty() {
+        return Ok(None);
+    }
+    let preparation_timing_policy =
+        super::migration::preparation_timing_policy_for_run(db_path, run_id)?;
     let total_count = u32::try_from(pending.len())
         .map_err(|_| "Pending denomination stage count exceeds u32".to_string())?;
+    if !pending.iter().any(|stage| {
+        denomination_stage_broadcast_readiness(
+            preparation_timing_policy,
+            stage,
+            known_chain_tip_height,
+        ) == DenominationStageBroadcastReadiness::Ready
+    }) {
+        return Ok(None);
+    }
     if policy.is_cancelled() {
         return Ok(Some(CreatedBroadcastResult {
             txids,
@@ -4350,6 +4466,43 @@ async fn broadcast_pending_denomination_stages(
             }));
         }
     };
+    let live_chain_tip_height =
+        match crate::wallet::sync_engine::get_latest_block(&mut client).await {
+            Ok(tip) => u32::try_from(tip.height)
+                .map_err(|_| "Live migration chain tip exceeds u32".to_string())?,
+            Err(e) => {
+                return Ok(Some(CreatedBroadcastResult {
+                    txids,
+                    status: CreatedBroadcastResult::PENDING_BROADCAST,
+                    broadcasted_count: 0,
+                    total_count,
+                    message: Some(format!(
+                        "Denomination split broadcast could not refresh the chain tip: {e}"
+                    )),
+                }));
+            }
+        };
+    let chain_tip_height = known_chain_tip_height.max(live_chain_tip_height);
+    let expired_at_live_tip = {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        expired_denomination_stage_count(&conn, run_id, chain_tip_height)?
+    };
+    if expired_at_live_tip > 0 {
+        return Ok(Some(denomination_expiry_scan_wait_result(
+            &txids,
+            stage_count,
+        )));
+    }
+    let due = pending
+        .iter()
+        .filter(|stage| {
+            denomination_stage_broadcast_readiness(
+                preparation_timing_policy,
+                stage,
+                chain_tip_height,
+            ) == DenominationStageBroadcastReadiness::Ready
+        })
+        .collect::<Vec<_>>();
 
     let mut broadcasted_count = 0u32;
     let broadcast_limit =
@@ -4359,6 +4512,7 @@ async fn broadcast_pending_denomination_stages(
             policy.limit(due.len())
         };
     for stage in due.into_iter().take(broadcast_limit) {
+        let stage_was_overdue = stage.effective_broadcast_height() < chain_tip_height;
         if policy.is_cancelled() {
             break;
         }
@@ -4397,11 +4551,27 @@ async fn broadcast_pending_denomination_stages(
         }
 
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin migration denomination broadcast transition: {e}"))?;
         super::migration::mark_denomination_stage_broadcasted(
-            &conn,
+            &tx,
             run_id,
             &stage.expected_txid_hex,
         )?;
+        if preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
+            && stage_was_overdue
+        {
+            super::migration::rerandomize_remaining_preparation_broadcast_heights(
+                &tx,
+                run_id,
+                network,
+                chain_tip_height,
+                &mut OsRng,
+            )?;
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit migration denomination broadcast transition: {e}"))?;
         broadcasted_count = broadcasted_count
             .checked_add(1)
             .ok_or("Broadcasted denomination stage count overflow")?;
@@ -4411,19 +4581,6 @@ async fn broadcast_pending_denomination_stages(
             stage.expected_txid_hex
         );
     }
-    if broadcasted_count > 0
-        && preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
-    {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        super::migration::reschedule_remaining_preparation_stages(
-            &conn,
-            run_id,
-            network,
-            observed_height,
-            &mut OsRng,
-        )?;
-    }
-
     Ok(Some(CreatedBroadcastResult {
         txids,
         status: if broadcasted_count == 0 {

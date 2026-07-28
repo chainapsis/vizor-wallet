@@ -204,7 +204,6 @@ abstract class RustLibApi extends BaseApi {
     required String password,
     required String saltBase64,
     required List<MigrationScheduledTransfer> approvedSchedule,
-    required bool spacePreparationBroadcasts,
   });
 
   Future<IronwoodMigrationResult>
@@ -227,7 +226,6 @@ abstract class RustLibApi extends BaseApi {
     required List<KeystoneSignedMigrationMessage> signedMessages,
     required String password,
     required String saltBase64,
-    required bool spacePreparationBroadcasts,
   });
 
   Future<void> crateApiSimpleConfigureFastTestnetMigration({
@@ -816,6 +814,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String network,
     required String accountUuid,
+    required bool spacePreparationBroadcasts,
   });
 
   Future<KeystoneMigrationSigningRequest>
@@ -844,6 +843,7 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required String accountUuid,
     required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
   });
 
   Future<BigInt> crateApiWalletPreviewSoftwareAccountTransparentBalance({
@@ -1787,7 +1787,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String password,
     required String saltBase64,
     required List<MigrationScheduledTransfer> approvedSchedule,
-    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1808,7 +1807,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             approvedSchedule,
             serializer,
           );
-          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1832,7 +1830,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           password,
           saltBase64,
           approvedSchedule,
-          spacePreparationBroadcasts,
         ],
         apiImpl: this,
       ),
@@ -1853,7 +1850,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "password",
           "saltBase64",
           "approvedSchedule",
-          "spacePreparationBroadcasts",
         ],
       );
 
@@ -1930,7 +1926,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<KeystoneSignedMigrationMessage> signedMessages,
     required String password,
     required String saltBase64,
-    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1947,7 +1942,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_String(password, serializer);
           sse_encode_String(saltBase64, serializer);
-          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1969,7 +1963,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           signedMessages,
           password,
           saltBase64,
-          spacePreparationBroadcasts,
         ],
         apiImpl: this,
       ),
@@ -1989,7 +1982,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "signedMessages",
           "password",
           "saltBase64",
-          "spacePreparationBroadcasts",
         ],
       );
 
@@ -5789,6 +5781,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String network,
     required String accountUuid,
+    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5797,6 +5790,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5810,7 +5804,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         ),
         constMeta:
             kCrateApiSyncPrepareOrchardMigrationDenominationsPcztConstMeta,
-        argValues: [dbPath, network, accountUuid],
+        argValues: [dbPath, network, accountUuid, spacePreparationBroadcasts],
         apiImpl: this,
       ),
     );
@@ -5820,7 +5814,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   get kCrateApiSyncPrepareOrchardMigrationDenominationsPcztConstMeta =>
       const TaskConstMeta(
         debugName: "prepare_orchard_migration_denominations_pczt",
-        argNames: ["dbPath", "network", "accountUuid"],
+        argNames: [
+          "dbPath",
+          "network",
+          "accountUuid",
+          "spacePreparationBroadcasts",
+        ],
       );
 
   @override
@@ -5950,6 +5949,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required String accountUuid,
     required List<MigrationScheduledTransfer> approvedSchedule,
+    required bool spacePreparationBroadcasts,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5962,6 +5962,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             approvedSchedule,
             serializer,
           );
+          sse_encode_bool(spacePreparationBroadcasts, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5974,7 +5975,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncPrepareOrchardMigrationSingleQrPcztConstMeta,
-        argValues: [dbPath, network, accountUuid, approvedSchedule],
+        argValues: [
+          dbPath,
+          network,
+          accountUuid,
+          approvedSchedule,
+          spacePreparationBroadcasts,
+        ],
         apiImpl: this,
       ),
     );
@@ -5983,7 +5990,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncPrepareOrchardMigrationSingleQrPcztConstMeta =>
       const TaskConstMeta(
         debugName: "prepare_orchard_migration_single_qr_pczt",
-        argNames: ["dbPath", "network", "accountUuid", "approvedSchedule"],
+        argNames: [
+          "dbPath",
+          "network",
+          "accountUuid",
+          "approvedSchedule",
+          "spacePreparationBroadcasts",
+        ],
       );
 
   @override

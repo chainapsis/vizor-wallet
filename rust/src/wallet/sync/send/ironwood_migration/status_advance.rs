@@ -111,7 +111,6 @@ fn reconcile_mined_denomination_stages(
             stage.stage_index,
             &stage.expected_txid_hex,
             raw_tx,
-            0,
             pending_password,
             pending_salt_base64,
         )?;
@@ -309,9 +308,17 @@ fn prepare_software_migration_run(
     account_uuid: &str,
     seed: SecretVec<u8>,
     approved_schedule: &[super::migration::MigrationScheduleEntry],
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<Option<PreparedSoftwareMigrationRun>, String> {
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
-    let Some(mut split) = create_padded_orchard_denomination_pczts(db_path, network, account_uuid)?
+    let Some(mut split) = create_padded_orchard_denomination_pczts(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        migration_timing_policy,
+    )?
     else {
         return Ok(None);
     };
