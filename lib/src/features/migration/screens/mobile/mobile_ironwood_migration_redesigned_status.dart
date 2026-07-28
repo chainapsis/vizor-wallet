@@ -580,11 +580,34 @@ class _MobileMigrationRedesignedStatusState
           _preparationRuntimeState !=
               IronwoodMigrationPreparationRuntimeState
                   .foregroundContinuationPending;
+      // Whether leaving now stalls the run. An advance holds the foreground
+      // permit, so backgrounding drops it and nothing moves until the next
+      // reentry. An armed background task keeps observing without the app.
+      final backgroundTrackingArmed =
+          _preparationRuntimeState ==
+              IronwoodMigrationPreparationRuntimeState.scheduled ||
+          _preparationRuntimeState ==
+              IronwoodMigrationPreparationRuntimeState.running;
+      final notificationsDisabled =
+          _preparationRuntimeState ==
+          IronwoodMigrationPreparationRuntimeState.disabled;
+      final preparationState = actionInProgress
+          ? _MigrationPreparationState.advancing
+          : backgroundTrackingArmed
+          ? _MigrationPreparationState.backgroundTracking
+          : needsManualResume
+          ? _MigrationPreparationState.paused
+          : _MigrationPreparationState.active;
       return _MigrationPreparationPreview(
-        state: needsManualResume
-            ? _MigrationPreparationState.paused
-            : _MigrationPreparationState.active,
+        state: preparationState,
         isKeystone: widget.isHardware,
+        // Without notifications the task cannot be armed at all, so the
+        // generic "you left" pause copy would misname the cause.
+        pausedMessage:
+            notificationsDisabled &&
+                preparationState == _MigrationPreparationState.paused
+            ? _migrationPreparationNotificationsDisabledMessage
+            : null,
         onBack: () => context.go('/home'),
         onContinue: !needsManualResume || accountUuid == null
             ? null

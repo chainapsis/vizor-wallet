@@ -341,6 +341,17 @@ class _PreparationHandoffTestMigrationCoordinator
   }
 }
 
+/// A coordinator that reports an advance already in flight for the test
+/// account, so the status screen renders its "keep Vizor open" state.
+class _AdvancingTestMigrationCoordinator extends IronwoodMigrationCoordinator {
+  @override
+  IronwoodMigrationCoordinatorState build() {
+    return const IronwoodMigrationCoordinatorState(
+      advancingAccounts: {'account-1'},
+    );
+  }
+}
+
 class _DurablePhaseRetryTestMigrationCoordinator
     extends IronwoodMigrationCoordinator {
   int retryCount = 0;
@@ -4325,8 +4336,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preparing your migration'), findsOneWidget);
+    // Notifications are unauthorized in this setup, so the run cannot be
+    // tracked in the background at all. The pause copy names that cause
+    // instead of implying the user walked away.
     expect(
-      find.text('Preparation was paused because you left.'),
+      find.text(
+        'Allow notifications to continue in the background, or keep '
+        'Vizor open.',
+      ),
       findsOneWidget,
     );
     expect(find.text('Continue preparation'), findsOneWidget);
@@ -4427,7 +4444,12 @@ void main() {
 
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Syncing your wallet…'), findsNothing);
-      expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
+      expect(
+        find.text(
+          'Confirming in the background. You can close Vizor.',
+        ),
+        findsOneWidget,
+      );
     },
   );
 
@@ -4664,8 +4686,129 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
+      expect(
+        find.text(
+          'Confirming in the background. You can close Vizor.',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Continue preparation'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'tells the user it is safe to leave once tracking is merely scheduled',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            getPreparationRuntimeState:
+                ({
+                  required network,
+                  required accountUuid,
+                  required runId,
+                }) async =>
+                    IronwoodMigrationPreparationRuntimeState.scheduled,
+          ),
+          status: _status(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Confirming in the background. You can close Vizor.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'tells the user to keep Vizor open while an advance is in flight',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationCoordinator: _AdvancingTestMigrationCoordinator.new,
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.authorized,
+            getPreparationRuntimeState:
+                ({
+                  required network,
+                  required accountUuid,
+                  required runId,
+                }) async => IronwoodMigrationPreparationRuntimeState.running,
+          ),
+          status: _status(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // An advance holds the foreground permit, so leaving now stalls the run
+      // until the next reentry. That must outrank the "safe to leave" copy
+      // even though background tracking is also armed.
+      expect(
+        find.text('Preparing the next transactions. Keep Vizor open.'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Confirming in the background. You can close Vizor.',
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'names notifications as the reason background tracking cannot run',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(
+            ios: true,
+            getNotificationAuthorizationStatus: () async =>
+                IronwoodMigrationNotificationAuthorizationStatus.denied,
+            getPreparationRuntimeState:
+                ({
+                  required network,
+                  required accountUuid,
+                  required runId,
+                }) async => IronwoodMigrationPreparationRuntimeState.disabled,
+          ),
+          status: _status(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Allow notifications to continue in the background, or keep '
+          'Vizor open.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Preparation was paused because you left.'),
+        findsNothing,
+      );
     },
   );
 
@@ -4700,7 +4843,12 @@ void main() {
       runtimeState.complete(IronwoodMigrationPreparationRuntimeState.running);
       await tester.pumpAndSettle();
 
-      expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
+      expect(
+        find.text(
+          'Confirming in the background. You can close Vizor.',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Continue preparation'), findsNothing);
     },
   );
@@ -4745,6 +4893,8 @@ void main() {
 
       expect(coordinator.retryCount, 1);
       expect(acknowledgementCount, 1);
+      // The handoff resolves to `idle` with a foreground permit, not to an
+      // armed background task, so this keeps the plain active copy.
       expect(find.text('Preparation will\ntake 10–20 min'), findsOneWidget);
       expect(find.text('Continue preparation'), findsNothing);
     },
