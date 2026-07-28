@@ -550,7 +550,7 @@ class _MigrationReviewContent extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Image.asset(
-                    _ironwoodMigrationExpectationAssets[2],
+                    _ironwoodMigrationExpectationRunningAsset,
                     width: 32,
                     height: 32,
                     fit: BoxFit.cover,

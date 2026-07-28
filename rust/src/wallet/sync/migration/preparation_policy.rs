@@ -92,31 +92,141 @@ fn preparation_delay_with_rng<R: RngCore + CryptoRng + ?Sized>(
     }
 }
 
-fn preparation_policies_for_run_with_conn(
-    conn: &rusqlite::Connection,
+/// Draws and assigns every preparation transaction's broadcast height before
+/// the transaction is signed. Later layers are based past the preceding
+/// layer's schedule so their inputs have time to become spendable.
+pub(crate) fn planned_preparation_scheduled_heights<
+    R: RngCore + CryptoRng + ?Sized,
+>(
+    network: WalletNetwork,
+    preparation_policy: PreparationTimingPolicy,
+    timing_policy: MigrationTimingPolicy,
+    target_height: u32,
+    stage_layers: &[usize],
+    rng: &mut R,
+) -> Result<Vec<u32>, String> {
+    let Some(last_layer) = stage_layers.iter().copied().max() else {
+        return Ok(Vec::new());
+    };
+    let mut heights = vec![0; stage_layers.len()];
+    let mut layer_base = target_height.saturating_sub(1);
+
+    for layer_index in 0..=last_layer {
+        let mut stage_indices = stage_layers
+            .iter()
+            .enumerate()
+            .filter_map(|(stage_index, layer)| (*layer == layer_index).then_some(stage_index))
+            .collect::<Vec<_>>();
+        if stage_indices.is_empty() {
+            return Err(format!(
+                "Migration preparation schedule is missing layer {layer_index}"
+            ));
+        }
+        if preparation_policy == PreparationTimingPolicy::Zip318Spaced {
+            stage_indices.shuffle(rng);
+        }
+
+        let mut scheduled_height = layer_base;
+        for stage_index in stage_indices {
+            if preparation_policy == PreparationTimingPolicy::Zip318Spaced {
+                scheduled_height = scheduled_height
+                    .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
+                    .ok_or("Migration preparation scheduled height overflow")?;
+            }
+            heights[stage_index] = scheduled_height;
+        }
+        layer_base = scheduled_height
+            .checked_add(denomination_confirmations_required())
+            .ok_or("Migration preparation layer height overflow")?;
+    }
+
+    Ok(heights)
+}
+
+/// Re-randomizes the operational broadcast heights of every remaining stage
+/// after a preparation broadcast misses its planned height. The original
+/// schedule remains unchanged because it determines the signed expiry height.
+pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
+    R: RngCore + CryptoRng + ?Sized,
+>(
+    tx: &rusqlite::Transaction<'_>,
     run_id: &str,
-) -> Result<(PreparationTimingPolicy, MigrationTimingPolicy), String> {
-    let (preparation_value, migration_value) = conn
-        .query_row(
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    rng: &mut R,
+) -> Result<u32, String> {
+    if preparation_timing_policy_for_run_with_conn(tx, run_id)?
+        == PreparationTimingPolicy::Immediate
+    {
+        return Ok(0);
+    }
+    let timing_policy = timing_policy_for_run_with_conn(tx, run_id, network)?;
+    let remaining = {
+        let mut stmt = tx
+            .prepare_cached(&format!(
+                "SELECT stage_index, scheduled_height,
+                        broadcast_not_before_height
+                 FROM {STAGES_TABLE}
+                 WHERE run_id = ?1
+                   AND status IN ('awaiting_inputs', 'pending')
+                 ORDER BY MAX(scheduled_height,
+                              COALESCE(broadcast_not_before_height, 0)) ASC,
+                          stage_index ASC"
+            ))
+            .map_err(|e| format!("Prepare remaining denomination catch-up query: {e}"))?;
+        let rows = stmt
+            .query_map(params![run_id], |row| {
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, Option<u32>>(2)?,
+                ))
+            })
+            .map_err(|e| format!("Query remaining denomination catch-up stages: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read remaining denomination catch-up stage: {e}"))?
+    };
+
+    let mut preceding_height = chain_tip_height;
+    for (stage_index, scheduled_height, existing_not_before_height) in &remaining {
+        let randomized_height = preceding_height
+            .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
+            .ok_or("Migration preparation catch-up height overflow")?;
+        let effective_height = randomized_height
+            .max(*scheduled_height)
+            .max(existing_not_before_height.unwrap_or(0));
+        tx.execute(
             &format!(
-                "SELECT preparation_timing_policy, timing_policy
-                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+                "UPDATE {STAGES_TABLE}
+                 SET broadcast_not_before_height = ?1
+                 WHERE run_id = ?2 AND stage_index = ?3
+                   AND status IN ('awaiting_inputs', 'pending')"
             ),
-            params![run_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            params![effective_height, run_id, stage_index],
         )
-        .map_err(|e| format!("Read migration preparation policies: {e}"))?;
-    Ok((
-        PreparationTimingPolicy::from_str(&preparation_value)?,
-        MigrationTimingPolicy::from_str(&migration_value)?,
-    ))
+        .map_err(|e| format!("Reschedule migration denomination catch-up stage: {e}"))?;
+        preceding_height = effective_height;
+    }
+
+    u32::try_from(remaining.len())
+        .map_err(|_| "Migration preparation catch-up count exceeds u32".to_string())
 }
 
 fn preparation_timing_policy_for_run_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
 ) -> Result<PreparationTimingPolicy, String> {
-    preparation_policies_for_run_with_conn(conn, run_id).map(|(policy, _)| policy)
+    let value = conn
+        .query_row(
+            &format!(
+                "SELECT preparation_timing_policy
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration preparation timing policy: {e}"))?;
+    PreparationTimingPolicy::from_str(&value)
 }
 
 pub(crate) fn preparation_timing_policy_for_run(
@@ -126,206 +236,4 @@ pub(crate) fn preparation_timing_policy_for_run(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     preparation_timing_policy_for_run_with_conn(&conn, run_id)
-}
-
-fn initialize_preparation_schedule_with_tx<R: RngCore + CryptoRng + ?Sized>(
-    tx: &rusqlite::Transaction<'_>,
-    run_id: &str,
-    network: WalletNetwork,
-    policy: PreparationTimingPolicy,
-    rng: &mut R,
-) -> Result<(), String> {
-    if policy == PreparationTimingPolicy::Immediate {
-        return Ok(());
-    }
-    let (_, timing_policy) = preparation_policies_for_run_with_conn(tx, run_id)?;
-
-    let mut stmt = tx
-        .prepare_cached(&format!(
-            "SELECT stage_index, target_height
-             FROM {STAGES_TABLE}
-             WHERE run_id = ?1 AND status = 'pending'
-             ORDER BY stage_index ASC"
-        ))
-        .map_err(|e| format!("Prepare root denomination schedule query: {e}"))?;
-    let mut roots = stmt
-        .query_map(params![run_id], |row| {
-            Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?))
-        })
-        .map_err(|e| format!("Query root denomination schedule: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Read root denomination schedule: {e}"))?;
-    drop(stmt);
-    if roots.is_empty() {
-        return Err("Migration denomination plan has no broadcastable root".to_string());
-    }
-
-    roots.shuffle(rng);
-    let mut scheduled_height = roots
-        .iter()
-        .map(|(_, target_height)| target_height.saturating_sub(1))
-        .min()
-        .unwrap_or(0);
-    for (stage_index, _) in roots {
-        scheduled_height = scheduled_height
-            .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
-            .ok_or("Migration preparation scheduled height overflow")?;
-        tx.execute(
-            &format!(
-                "UPDATE {STAGES_TABLE}
-                 SET scheduled_height = ?1
-                 WHERE run_id = ?2 AND stage_index = ?3 AND status = 'pending'"
-            ),
-            params![scheduled_height, run_id, stage_index],
-        )
-        .map_err(|e| format!("Schedule root denomination stage: {e}"))?;
-    }
-    Ok(())
-}
-
-fn reschedule_pending_preparation_stages_with_tx<R: RngCore + CryptoRng + ?Sized>(
-    tx: &rusqlite::Transaction<'_>,
-    run_id: &str,
-    network: WalletNetwork,
-    rng: &mut R,
-) -> Result<(), String> {
-    let (preparation_policy, timing_policy) =
-        preparation_policies_for_run_with_conn(tx, run_id)?;
-    if preparation_policy == PreparationTimingPolicy::Immediate {
-        return Ok(());
-    }
-
-    let mut stmt = tx
-        .prepare_cached(&format!(
-            "SELECT stage_index, target_height
-             FROM {STAGES_TABLE}
-             WHERE run_id = ?1 AND status = 'pending'
-             ORDER BY scheduled_height ASC, stage_index ASC"
-        ))
-        .map_err(|e| format!("Prepare denomination reschedule query: {e}"))?;
-    let pending = stmt
-        .query_map(params![run_id], |row| {
-            Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?))
-        })
-        .map_err(|e| format!("Query denomination stages to reschedule: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Read denomination stages to reschedule: {e}"))?;
-    drop(stmt);
-    if pending.is_empty() {
-        return Ok(());
-    }
-
-    let previous_scheduled_height = tx
-        .query_row(
-            &format!(
-                "SELECT MAX(scheduled_height)
-                 FROM {STAGES_TABLE}
-                 WHERE run_id = ?1 AND status != 'pending'
-                   AND scheduled_height > 0"
-            ),
-            params![run_id],
-            |row| row.get::<_, Option<u32>>(0),
-        )
-        .map_err(|e| format!("Read previous denomination schedule: {e}"))?;
-    let mut scheduled_height = previous_scheduled_height.unwrap_or_else(|| {
-        pending
-            .iter()
-            .map(|(_, target_height)| target_height.saturating_sub(1))
-            .min()
-            .unwrap_or(0)
-    });
-    for (stage_index, _) in pending {
-        scheduled_height = scheduled_height
-            .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
-            .ok_or("Migration preparation scheduled height overflow")?;
-        tx.execute(
-            &format!(
-                "UPDATE {STAGES_TABLE}
-                 SET scheduled_height = ?1
-                 WHERE run_id = ?2 AND stage_index = ?3 AND status = 'pending'"
-            ),
-            params![scheduled_height, run_id, stage_index],
-        )
-        .map_err(|e| format!("Reschedule denomination stage: {e}"))?;
-    }
-    Ok(())
-}
-
-pub(crate) fn next_preparation_scheduled_height<R: RngCore + CryptoRng + ?Sized>(
-    conn: &rusqlite::Connection,
-    run_id: &str,
-    network: WalletNetwork,
-    observed_height: u32,
-    rng: &mut R,
-) -> Result<u32, String> {
-    let (preparation_policy, timing_policy) =
-        preparation_policies_for_run_with_conn(conn, run_id)?;
-    if preparation_policy == PreparationTimingPolicy::Immediate {
-        return Ok(0);
-    }
-    let last_scheduled_height = conn
-        .query_row(
-            &format!(
-                "SELECT MAX(scheduled_height)
-                 FROM {STAGES_TABLE}
-                 WHERE run_id = ?1 AND scheduled_height > 0"
-            ),
-            params![run_id],
-            |row| row.get::<_, Option<u32>>(0),
-        )
-        .map_err(|e| format!("Read latest denomination schedule: {e}"))?
-        .unwrap_or(observed_height);
-    observed_height
-        .max(last_scheduled_height)
-        .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
-        .ok_or_else(|| "Migration preparation scheduled height overflow".to_string())
-}
-
-pub(crate) fn reschedule_remaining_preparation_stages<R: RngCore + CryptoRng + ?Sized>(
-    conn: &rusqlite::Connection,
-    run_id: &str,
-    network: WalletNetwork,
-    observed_height: u32,
-    rng: &mut R,
-) -> Result<(), String> {
-    let (preparation_policy, timing_policy) =
-        preparation_policies_for_run_with_conn(conn, run_id)?;
-    if preparation_policy == PreparationTimingPolicy::Immediate {
-        return Ok(());
-    }
-    let mut stmt = conn
-        .prepare_cached(&format!(
-            "SELECT stage_index
-             FROM {STAGES_TABLE}
-             WHERE run_id = ?1 AND status = 'pending'
-             ORDER BY scheduled_height ASC, stage_index ASC"
-        ))
-        .map_err(|e| format!("Prepare remaining denomination schedule query: {e}"))?;
-    let remaining = stmt
-        .query_map(params![run_id], |row| row.get::<_, u32>(0))
-        .map_err(|e| format!("Query remaining denomination schedule: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Read remaining denomination schedule: {e}"))?;
-    drop(stmt);
-
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin remaining denomination reschedule: {e}"))?;
-    let mut scheduled_height = observed_height;
-    for stage_index in remaining {
-        scheduled_height = scheduled_height
-            .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
-            .ok_or("Migration preparation scheduled height overflow")?;
-        tx.execute(
-            &format!(
-                "UPDATE {STAGES_TABLE}
-                 SET scheduled_height = ?1
-                 WHERE run_id = ?2 AND stage_index = ?3 AND status = 'pending'"
-            ),
-            params![scheduled_height, run_id, stage_index],
-        )
-        .map_err(|e| format!("Reschedule remaining denomination stage: {e}"))?;
-    }
-    tx.commit()
-        .map_err(|e| format!("Commit remaining denomination reschedule: {e}"))
 }

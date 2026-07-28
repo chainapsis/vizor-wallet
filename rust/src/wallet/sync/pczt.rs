@@ -75,7 +75,7 @@ use std::convert::Infallible;
 use std::sync::OnceLock;
 
 use zcash_client_backend::data_api::WalletWrite;
-use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_primitives::transaction::{builder::BundlePadding, Transaction, TxId};
 use zcash_proofs::prover::LocalTxProver;
 
 use crate::wallet::db::with_wallet_db_write_lock;
@@ -308,13 +308,13 @@ pub async fn create_pczt_from_proposal(
         )
         .map_err(|e| format!("Revalidate hardware proposal input locks: {e:?}"))?;
         super::proposal_locks::update_expiry(db_path, current_lock.owner, live_expiry_height)?;
-        // Build with the bundle type the proposal was fee-counted against
+        // Build with the padding policy the proposal was fee-counted against
         // (see `StoredProposal::unpadded_orchard_pool_bundles`), so the
         // builder's balance check matches the proposal's fee.
-        let bundle_type = if stored.unpadded_orchard_pool_bundles {
-            ::orchard::builder::BundleType::UNPADDED
+        let bundle_padding = if stored.unpadded_orchard_pool_bundles {
+            BundlePadding::UNPADDED
         } else {
-            ::orchard::builder::BundleType::DEFAULT
+            BundlePadding::DEFAULT
         };
         // The transaction version rides on the proposal; expiry is pinned to
         // the live chain tip obtained immediately before this DB operation.
@@ -329,7 +329,7 @@ pub async fn create_pczt_from_proposal(
             OvkPolicy::Sender,
             &proposal_for_pczt,
             Some(live_expiry_height),
-            bundle_type,
+            bundle_padding,
         )
         .map_err(|e| format!("Create PCZT failed: {e}"))?;
         let pczt_bytes = pczt

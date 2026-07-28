@@ -20,6 +20,7 @@ import '../../features/migration/providers/ironwood_migration_announcement_provi
 import '../../features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../config/network_config.dart';
 import '../config/swap_feature_config.dart';
+import '../formatting/number_format.dart';
 import '../formatting/zec_amount.dart';
 import '../privacy/privacy_mask.dart';
 import '../profile_pictures.dart';
@@ -1389,7 +1390,6 @@ class _SidebarSyncStatus extends StatefulWidget {
 
 class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
     with SingleTickerProviderStateMixin {
-  static const _width = 176.0;
   static const _height = 32.0;
   static const _indicatorWidth = 5.0;
   static const _indicatorHeight = 32.0;
@@ -1452,6 +1452,20 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
   Widget build(BuildContext context) {
     final colors = context.colors;
     final status = SyncStatusLabel.from(widget.sync);
+    final syncedHeight =
+        status.kind == SyncStatusKind.synced &&
+            widget.sync.isSyncComplete &&
+            widget.sync.scannedHeight > 0
+        ? widget.sync.scannedHeight
+        : null;
+    final label = status.kind == SyncStatusKind.synced
+        ? 'Synced'
+        : status.label;
+    final semanticsLabel = syncedHeight == null
+        ? (status.kind == SyncStatusKind.synced
+              ? 'Synced'
+              : status.semanticsLabel)
+        : 'Synced at block ${formatGroupedInteger(syncedHeight)}';
     final textColor = switch (status.kind) {
       SyncStatusKind.syncing => colors.sync.textSyncing,
       SyncStatusKind.failed => colors.sync.textError,
@@ -1471,9 +1485,10 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
               return _row(
                 indicatorColor: indicatorColor,
                 glow: _SidebarSyncMotion.glowFor(t),
+                syncedHeight: syncedHeight,
                 text: _SidebarSyncShimmerLabel(
                   key: const ValueKey('sidebar_sync_text'),
-                  label: status.label,
+                  label: label,
                   baseColor: textColor,
                   highlightColor: colors.sync.lightSuccess,
                   progress: t,
@@ -1484,30 +1499,30 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
         : _row(
             indicatorColor: indicatorColor,
             glow: _SidebarSyncMotion.staticGlow,
+            syncedHeight: syncedHeight,
             text: Text(
-              status.label,
+              label,
               key: const ValueKey('sidebar_sync_text'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(
-                color: textColor,
-                fontWeight: FontWeight.w400,
-              ),
+              style: AppTypography.labelLarge.copyWith(color: textColor),
             ),
           );
 
     return SizedBox(
-      width: _width,
+      width: double.infinity,
       height: _height,
-      child: Semantics(label: status.semanticsLabel, child: body),
+      child: Semantics(label: semanticsLabel, child: body),
     );
   }
 
   Widget _row({
     required Color indicatorColor,
     required ({double blur, double alpha})? glow,
+    required int? syncedHeight,
     required Widget text,
   }) {
+    final colors = context.colors;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -1538,10 +1553,34 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
         ),
         Positioned(
           left: _textLeft,
-          right: AppSpacing.xxs,
+          right: AppSpacing.xs,
           top: 0,
           bottom: 0,
-          child: Align(alignment: Alignment.centerLeft, child: text),
+          child: Row(
+            children: [
+              Expanded(
+                child: Align(alignment: Alignment.centerLeft, child: text),
+              ),
+              if (syncedHeight != null) ...[
+                const SizedBox(width: AppSpacing.s),
+                Text(
+                  formatGroupedInteger(syncedHeight),
+                  key: const ValueKey('sidebar_sync_height'),
+                  maxLines: 1,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                AppIcon(
+                  AppIcons.block,
+                  key: const ValueKey('sidebar_sync_block_icon'),
+                  size: AppIconSize.medium,
+                  color: colors.text.accent,
+                ),
+              ],
+            ],
+          ),
         ),
       ],
     );
@@ -1631,7 +1670,6 @@ class _SidebarSyncShimmerLabel extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: AppTypography.labelLarge.copyWith(
           color: const Color(0xFFFFFFFF),
-          fontWeight: FontWeight.w400,
         ),
       ),
     );

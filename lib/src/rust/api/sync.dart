@@ -515,15 +515,19 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
       saltBase64: saltBase64,
     );
 
+/// Prepares denomination PCZTs with expiry heights derived from their planned
+/// broadcast heights.
 Future<KeystoneMigrationSigningRequest>
 prepareOrchardMigrationDenominationsPczt({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationDenominationsPczt(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 Future<String> createOrResumePrivateMigrationDraft({
@@ -550,7 +554,6 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required String password,
   required String saltBase64,
   required List<MigrationScheduledTransfer> approvedSchedule,
-  required bool spacePreparationBroadcasts,
 }) =>
     RustLib.instance.api.crateApiSyncCompleteOrchardMigrationDenominationsPczt(
       dbPath: dbPath,
@@ -562,7 +565,6 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
       password: password,
       saltBase64: saltBase64,
       approvedSchedule: approvedSchedule,
-      spacePreparationBroadcasts: spacePreparationBroadcasts,
     );
 
 /// Prepares the split and migration PCZTs for one Keystone signing session.
@@ -574,11 +576,13 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
   required String network,
   required String accountUuid,
   required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
@@ -590,7 +594,6 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   required List<KeystoneSignedMigrationMessage> signedMessages,
   required String password,
   required String saltBase64,
-  required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
@@ -600,7 +603,6 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   signedMessages: signedMessages,
   password: password,
   saltBase64: saltBase64,
-  spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationBatchPczt({
@@ -1450,6 +1452,57 @@ class MigrationPartStatus {
           confirmationTarget == other.confirmationTarget;
 }
 
+enum MigrationPreparationTransactionState {
+  awaitingInputs,
+  scheduled,
+  broadcasted,
+  confirming,
+  completed,
+}
+
+class MigrationPreparationTransactionStatus {
+  final int stageIndex;
+  final BigInt approximateValueZatoshi;
+  final MigrationPreparationTransactionState state;
+  final int? scheduledHeight;
+  final int? minedHeight;
+  final int confirmationCount;
+  final int confirmationTarget;
+
+  const MigrationPreparationTransactionStatus({
+    required this.stageIndex,
+    required this.approximateValueZatoshi,
+    required this.state,
+    this.scheduledHeight,
+    this.minedHeight,
+    required this.confirmationCount,
+    required this.confirmationTarget,
+  });
+
+  @override
+  int get hashCode =>
+      stageIndex.hashCode ^
+      approximateValueZatoshi.hashCode ^
+      state.hashCode ^
+      scheduledHeight.hashCode ^
+      minedHeight.hashCode ^
+      confirmationCount.hashCode ^
+      confirmationTarget.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationPreparationTransactionStatus &&
+          runtimeType == other.runtimeType &&
+          stageIndex == other.stageIndex &&
+          approximateValueZatoshi == other.approximateValueZatoshi &&
+          state == other.state &&
+          scheduledHeight == other.scheduledHeight &&
+          minedHeight == other.minedHeight &&
+          confirmationCount == other.confirmationCount &&
+          confirmationTarget == other.confirmationTarget;
+}
+
 class MigrationScheduledBroadcast {
   final String txidHex;
   final BigInt valueZatoshi;
@@ -1542,7 +1595,16 @@ class MigrationStatus {
   final int signingBatchLimit;
   final int scheduleMeanDelayBlocks;
   final int scheduleMaxDelayBlocks;
+  final int? preparationMeanDelayBlocks;
   final int? nextActionHeight;
+
+  /// Earliest chain height at which the next ZIP 318 proof window should be
+  /// retried. Kept separate from `next_action_height`, which may instead
+  /// describe an earlier scheduled broadcast.
+  final int? nextProofWindowHeight;
+
+  /// Migration parts expected to use that proof window.
+  final Uint32List? nextProofWindowPartIndices;
 
   /// Exact foreground proof preflight. `None` means no signed proof action
   /// is currently applicable; `Some(false)` keeps a height-due action gated
@@ -1552,6 +1614,7 @@ class MigrationStatus {
   final int? nextActionPartIndex;
   final Uint32List? currentSigningPartIndices;
   final List<MigrationScheduledBroadcast> scheduledBroadcasts;
+  final List<MigrationPreparationTransactionStatus>? preparationTransactions;
   final List<MigrationPartStatus> parts;
 
   const MigrationStatus({
@@ -1574,12 +1637,16 @@ class MigrationStatus {
     required this.signingBatchLimit,
     required this.scheduleMeanDelayBlocks,
     required this.scheduleMaxDelayBlocks,
+    this.preparationMeanDelayBlocks,
     this.nextActionHeight,
+    this.nextProofWindowHeight,
+    this.nextProofWindowPartIndices,
     this.proofReady,
     this.estimatedCompletionHeight,
     this.nextActionPartIndex,
     this.currentSigningPartIndices,
     required this.scheduledBroadcasts,
+    this.preparationTransactions,
     required this.parts,
   });
 
@@ -1604,12 +1671,16 @@ class MigrationStatus {
       signingBatchLimit.hashCode ^
       scheduleMeanDelayBlocks.hashCode ^
       scheduleMaxDelayBlocks.hashCode ^
+      preparationMeanDelayBlocks.hashCode ^
       nextActionHeight.hashCode ^
+      nextProofWindowHeight.hashCode ^
+      nextProofWindowPartIndices.hashCode ^
       proofReady.hashCode ^
       estimatedCompletionHeight.hashCode ^
       nextActionPartIndex.hashCode ^
       currentSigningPartIndices.hashCode ^
       scheduledBroadcasts.hashCode ^
+      preparationTransactions.hashCode ^
       parts.hashCode;
 
   @override
@@ -1639,12 +1710,16 @@ class MigrationStatus {
           signingBatchLimit == other.signingBatchLimit &&
           scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
+          preparationMeanDelayBlocks == other.preparationMeanDelayBlocks &&
           nextActionHeight == other.nextActionHeight &&
+          nextProofWindowHeight == other.nextProofWindowHeight &&
+          nextProofWindowPartIndices == other.nextProofWindowPartIndices &&
           proofReady == other.proofReady &&
           estimatedCompletionHeight == other.estimatedCompletionHeight &&
           nextActionPartIndex == other.nextActionPartIndex &&
           currentSigningPartIndices == other.currentSigningPartIndices &&
           scheduledBroadcasts == other.scheduledBroadcasts &&
+          preparationTransactions == other.preparationTransactions &&
           parts == other.parts;
 }
 
