@@ -139,6 +139,7 @@ class DesktopUnlockContent extends StatelessWidget {
     this.autofocus = false,
     this.showForgotPassword = true,
     this.reserveForgotPasswordSpace = false,
+    this.descriptionText = 'Enter your password to open Vizor.',
     super.key,
   });
 
@@ -151,6 +152,7 @@ class DesktopUnlockContent extends StatelessWidget {
   final bool autofocus;
   final bool showForgotPassword;
   final bool reserveForgotPasswordSpace;
+  final String descriptionText;
 
   static const double cardWidth = 396;
   static const double cardHeight = 509;
@@ -189,7 +191,7 @@ class DesktopUnlockContent extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                'Enter your password to open Vizor.',
+                descriptionText,
                 style: AppTypography.bodyMediumStrong.copyWith(
                   color: colors.text.accent,
                 ),

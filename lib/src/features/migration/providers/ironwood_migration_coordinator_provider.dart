@@ -203,6 +203,7 @@ class IronwoodMigrationCoordinator
   bool _refreshPending = false;
   bool _forceAdvancePending = false;
   bool _foreground = true;
+  int _accountStateEpoch = 0;
   final _desktopOpenFallbackGate = DesktopOpenMigrationFallbackGate();
   bool _hasObservedInitialAccountList = false;
   Future<void>? _backgroundPreparationRecovery;
@@ -215,8 +216,18 @@ class IronwoodMigrationCoordinator
   @override
   IronwoodMigrationCoordinatorState build() {
     ref.listen(accountProvider, (_, next) {
-      final hasAccounts = next.value?.accounts.isNotEmpty ?? false;
-      if (!_hasObservedInitialAccountList && hasAccounts) {
+      _accountStateEpoch += 1;
+      final accountState = next.value;
+      if (accountState == null) {
+        unawaited(refreshNow());
+        return;
+      }
+      final hasAccounts = accountState.accounts.isNotEmpty;
+      if (!hasAccounts) {
+        _clearProcessLocalStateForNoAccounts();
+        return;
+      }
+      if (!_hasObservedInitialAccountList) {
         _hasObservedInitialAccountList = true;
         unawaited(resumeBackgroundPreparations());
         unawaited(refreshNow());
@@ -353,7 +364,11 @@ class IronwoodMigrationCoordinator
     if (ref.read(appSecurityProvider).requiresUnlock) return;
 
     final accountState = ref.read(accountProvider).value;
-    if (accountState == null || accountState.accounts.isEmpty) return;
+    if (accountState == null) return;
+    if (accountState.accounts.isEmpty) {
+      _clearProcessLocalStateForNoAccounts();
+      return;
+    }
     _hasObservedInitialAccountList = true;
 
     final service = ref.read(ironwoodMigrationServiceProvider);
@@ -559,13 +574,14 @@ class IronwoodMigrationCoordinator
 
     final accountState = ref.read(accountProvider).value;
     if (accountState == null || accountState.accounts.isEmpty) return;
+    final accountStateEpoch = _accountStateEpoch;
     if (kAppFormFactor == AppFormFactor.desktop &&
         _desktopOpenFallbackGate.needsAuthoritativeEntryHeight) {
       try {
         final entryHeight = await ref
             .read(rpcEndpointFailoverProvider.notifier)
             .getLatestBlockHeight();
-        if (!ref.mounted) return;
+        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
         _desktopOpenFallbackGate.observeForegroundEntryHeight(
           entryHeight.toInt(),
         );
@@ -592,7 +608,7 @@ class IronwoodMigrationCoordinator
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
         } catch (error) {
           snapshotComplete = false;
           log(
@@ -622,7 +638,7 @@ class IronwoodMigrationCoordinator
               network: endpoint.networkName,
               accountUuid: account.uuid,
             );
-        if (!ref.mounted) return;
+        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
         nextStatuses[account.uuid] = status;
         nextErrors.remove(account.uuid);
 
@@ -635,12 +651,12 @@ class IronwoodMigrationCoordinator
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           status = await service.status(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           nextStatuses[account.uuid] = status;
           final stillDue = migrationHasDueScheduledBroadcast(
             status,
@@ -670,12 +686,12 @@ class IronwoodMigrationCoordinator
           accountUuid: account.uuid,
         )) {
           await _advance(account.uuid, status: status);
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           status = await service.status(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           nextStatuses[account.uuid] = status;
         }
         if (account.uuid == accountState.activeAccountUuid &&
@@ -690,7 +706,7 @@ class IronwoodMigrationCoordinator
       }
     }
 
-    if (!ref.mounted) return;
+    if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
     if (activeBalanceMayHaveChanged) {
       try {
         // Migration status reads reconcile the database, but the home card
@@ -702,10 +718,38 @@ class IronwoodMigrationCoordinator
         // refresh races with a normal sync.
         log('Ironwood migration balance refresh failed: $error');
       }
-      if (!ref.mounted) return;
+      if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
     }
     state = state.copyWith(statuses: nextStatuses, errors: nextErrors);
     _invalidateMigrationProviders(accountState.activeAccountUuid);
+  }
+
+  bool _canApplyRefreshForAccountEpoch(int accountStateEpoch) =>
+      ref.mounted && accountStateEpoch == _accountStateEpoch;
+
+  void _clearProcessLocalStateForNoAccounts() {
+    final hadWalletState =
+        _hasObservedInitialAccountList ||
+        state.statuses.isNotEmpty ||
+        state.errors.isNotEmpty ||
+        state.advancingAccounts.isNotEmpty ||
+        state.foregroundProgressPermits.isNotEmpty ||
+        state.childProofBatchPermits.isNotEmpty ||
+        _lastAdvanceAt.isNotEmpty ||
+        _outboxRecoveryWindows.isNotEmpty ||
+        _lastAdvanceProgressKeys.isNotEmpty;
+    if (!hadWalletState) return;
+
+    _hasObservedInitialAccountList = false;
+    _lastAdvanceAt.clear();
+    _outboxRecoveryWindows.clear();
+    _lastAdvanceProgressKeys.clear();
+    _desktopOpenFallbackGate.leaveForeground();
+    if (_foreground) {
+      _desktopOpenFallbackGate.enterForeground();
+    }
+    state = const IronwoodMigrationCoordinatorState();
+    _invalidateMigrationProviders(null);
   }
 
   bool _migrationBalanceMayHaveChanged(

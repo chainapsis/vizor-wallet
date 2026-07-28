@@ -517,11 +517,15 @@ void main() {
       final routeCta = await container.read(
         ironwoodMigrationRouteCtaProvider.future,
       );
+      final homeBalanceMode = container.read(
+        ironwoodHomeBalancePresentationProvider,
+      );
 
       expect(state.mode, IronwoodPostMigrationMode.complete);
       expect(state.locksNavigation, isFalse);
       expect(homeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
       expect(routeCta.mode, IronwoodHomeMigrationCtaMode.hidden);
+      expect(homeBalanceMode, IronwoodHomeBalancePresentationMode.ironwoodOnly);
     },
   );
 
@@ -651,10 +655,14 @@ void main() {
       final homeCta = await container.read(
         ironwoodHomeMigrationCtaProvider.future,
       );
+      final homeBalanceMode = container.read(
+        ironwoodHomeBalancePresentationProvider,
+      );
 
       expect(state.mode, IronwoodPostMigrationMode.required);
       expect(state.locksNavigation, isTrue);
       expect(homeCta.mode, IronwoodHomeMigrationCtaMode.start);
+      expect(homeBalanceMode, IronwoodHomeBalancePresentationMode.allShielded);
     },
   );
 
@@ -942,6 +950,46 @@ void main() {
     );
     expect(changedAccount.mode, IronwoodHomeMigrationCtaMode.hidden);
   });
+
+  test(
+    'home balance presentation ignores stale state from another account',
+    () async {
+      const secondAccountUuid = '550e8400-e29b-41d4-a716-446655440001';
+      var inputs = _migrationInputs(accountUuid: _accountUuid);
+      final postState = IronwoodPostMigrationState.complete(
+        network: 'main',
+        accountUuid: _accountUuid,
+        status: _migrationStatus(kIronwoodMigrationCompletePhase),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          ironwoodMigrationInputsProvider.overrideWith((ref) => inputs),
+          ironwoodPostMigrationStateProvider.overrideWith((ref) async {
+            return postState;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(ironwoodPostMigrationStateProvider.future);
+      expect(
+        container.read(ironwoodHomeBalancePresentationProvider),
+        IronwoodHomeBalancePresentationMode.ironwoodOnly,
+      );
+
+      inputs = _migrationInputs(
+        accountUuid: secondAccountUuid,
+        isSyncing: true,
+      );
+      container.invalidate(ironwoodMigrationInputsProvider);
+      await container.pump();
+
+      expect(
+        container.read(ironwoodHomeBalancePresentationProvider),
+        IronwoodHomeBalancePresentationMode.allShielded,
+      );
+    },
+  );
 
   test('migration flow data stays available during sync', () async {
     final migrationStatusCalls = <String>[];

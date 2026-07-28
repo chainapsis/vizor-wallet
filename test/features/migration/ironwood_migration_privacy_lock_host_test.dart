@@ -63,7 +63,7 @@ void main() {
     final security = _FakeSecurityNotifier();
     final container = ProviderContainer(
       overrides: [
-        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appBootstrapProvider.overrideWithValue(_bootstrap(hasWallet: true)),
         appSecurityProvider.overrideWith(() => security),
         ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(
           true,
@@ -90,6 +90,76 @@ void main() {
     expect(
       container.read(ironwoodMigrationPrivacyLockEligibleProvider),
       isTrue,
+    );
+  });
+
+  test('Keystone signing suppresses privacy idle lock eligibility', () {
+    final security = _FakeSecurityNotifier();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap(hasWallet: true)),
+        appSecurityProvider.overrideWith(() => security),
+        ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(
+          true,
+        ),
+        ironwoodMigrationCoordinatorProvider.overrideWith(
+          () => _FakeMigrationCoordinator(
+            IronwoodMigrationCoordinatorState(
+              statuses: {
+                'active-account': _migrationStatus(
+                  'waiting_denom_confirmations',
+                ),
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(
+      ironwoodMigrationPrivacyLockSuppressionProvider.notifier,
+    );
+
+    final suppression = notifier.acquire();
+    expect(
+      container.read(ironwoodMigrationPrivacyLockEligibleProvider),
+      isFalse,
+    );
+
+    notifier.release(suppression);
+    expect(
+      container.read(ironwoodMigrationPrivacyLockEligibleProvider),
+      isTrue,
+    );
+  });
+
+  test('wallet reset disables eligibility for stale migration status', () {
+    final security = _FakeSecurityNotifier();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(() => security),
+        ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(
+          true,
+        ),
+        ironwoodMigrationCoordinatorProvider.overrideWith(
+          () => _FakeMigrationCoordinator(
+            IronwoodMigrationCoordinatorState(
+              statuses: {
+                'deleted-account': _migrationStatus(
+                  'waiting_denom_confirmations',
+                ),
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(
+      container.read(ironwoodMigrationPrivacyLockEligibleProvider),
+      isFalse,
     );
   });
 
@@ -134,6 +204,11 @@ void main() {
 
     expect(find.text('Migration in progress'), findsOneWidget);
     expect(find.text('Welcome back'), findsOneWidget);
+    expect(
+      find.text('We auto-locked Vizor after 10 minutes of inactivity.'),
+      findsOneWidget,
+    );
+    expect(find.text('Enter your password to open Vizor.'), findsNothing);
     expect(find.text('Unlock Vizor'), findsOneWidget);
     expect(find.text('Forgot password?'), findsNothing);
     expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsOneWidget);
@@ -148,6 +223,10 @@ void main() {
     );
     await _focusVirtualUnlockPassword(tester);
     expect(tester.takeException(), isNull);
+  });
+
+  test('uses a ten-minute production idle timeout', () {
+    expect(kIronwoodMigrationPrivacyIdleTimeout, const Duration(minutes: 10));
   });
 
   testWidgets('pointer interaction restarts the idle interval', (tester) async {
@@ -192,6 +271,45 @@ void main() {
     expect(find.text('Migration in progress'), findsOneWidget);
   });
 
+  testWidgets(
+    'releasing Keystone signing suppression restarts the default idle timer',
+    (tester) async {
+      final clock = _TestClock();
+      final container = ProviderContainer(
+        overrides: _overrides(_FakeSecurityNotifier()),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(
+        ironwoodMigrationPrivacyLockSuppressionProvider.notifier,
+      );
+      final suppression = notifier.acquire();
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _themedHost(clock),
+        ),
+      );
+      await tester.pump();
+
+      clock.elapse(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Migration in progress'), findsNothing);
+
+      notifier.release(suppression);
+      await tester.pump();
+
+      clock.elapse(const Duration(milliseconds: 49));
+      await tester.pump(const Duration(milliseconds: 49));
+      expect(find.text('Migration in progress'), findsNothing);
+
+      clock.elapse(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(find.text('Migration in progress'), findsOneWidget);
+    },
+  );
+
   testWidgets('background idle time locks immediately on resume', (
     tester,
   ) async {
@@ -207,6 +325,36 @@ void main() {
 
     expect(find.text('Migration in progress'), findsOneWidget);
   });
+
+  testWidgets(
+    'Keystone signing suppression still locks after background timeout',
+    (tester) async {
+      final clock = _TestClock();
+      final container = ProviderContainer(
+        overrides: _overrides(_FakeSecurityNotifier()),
+      );
+      addTearDown(container.dispose);
+      container
+          .read(ironwoodMigrationPrivacyLockSuppressionProvider.notifier)
+          .acquire();
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _themedHost(clock),
+        ),
+      );
+      await tester.pump();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      clock.elapse(const Duration(minutes: 1));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(find.text('Migration in progress'), findsOneWidget);
+    },
+  );
 
   testWidgets('confirmation only clears the virtual lock', (tester) async {
     final clock = _TestClock();
@@ -246,6 +394,23 @@ void main() {
 
     expect(find.text('Incorrect password. Try again.'), findsOneWidget);
     expect(find.text('Migration in progress'), findsOneWidget);
+  });
+
+  testWidgets('wallet password reset clears the active privacy lock', (
+    tester,
+  ) async {
+    final clock = _TestClock();
+    final security = _FakeSecurityNotifier();
+    await tester.pumpWidget(_app(clock: clock, security: security));
+    await tester.pump();
+    await _elapseIdleInterval(tester, clock);
+    expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsOneWidget);
+
+    security.reset();
+    await tester.pump();
+
+    expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsNothing);
+    expect(find.text('Protected content'), findsOneWidget);
   });
 
   testWidgets(
@@ -316,7 +481,7 @@ List<Override> _overrides(_FakeSecurityNotifier security) {
     appBootstrapProvider.overrideWithValue(_bootstrap()),
     appSecurityProvider.overrideWith(() => security),
     ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(true),
-    ironwoodMigrationPrivacyLockEligibleProvider.overrideWith(
+    ironwoodMigrationPrivacyLockRequiredProvider.overrideWith(
       (ref) => ref.watch(_eligibilityProvider),
     ),
   ];
@@ -359,10 +524,22 @@ Future<void> _elapseIdleInterval(WidgetTester tester, _TestClock clock) async {
   await tester.pump();
 }
 
-AppBootstrapState _bootstrap() {
+AppBootstrapState _bootstrap({bool hasWallet = false}) {
   return AppBootstrapState(
     initialLocation: '/home',
-    initialAccountState: const AccountState(),
+    initialAccountState: hasWallet
+        ? const AccountState(
+            accounts: [
+              AccountInfo(
+                uuid: 'active-account',
+                name: 'Account',
+                order: 0,
+                isSeedAnchor: true,
+              ),
+            ],
+            activeAccountUuid: 'active-account',
+          )
+        : const AccountState(),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: kZcashDefaultNetworkName,
     rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
