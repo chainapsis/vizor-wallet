@@ -93,6 +93,46 @@ void main() {
     );
   });
 
+  test('Keystone signing suppresses privacy idle lock eligibility', () {
+    final security = _FakeSecurityNotifier();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(() => security),
+        ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(
+          true,
+        ),
+        ironwoodMigrationCoordinatorProvider.overrideWith(
+          () => _FakeMigrationCoordinator(
+            IronwoodMigrationCoordinatorState(
+              statuses: {
+                'active-account': _migrationStatus(
+                  'waiting_denom_confirmations',
+                ),
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(
+      ironwoodMigrationPrivacyLockSuppressionProvider.notifier,
+    );
+
+    final suppression = notifier.acquire();
+    expect(
+      container.read(ironwoodMigrationPrivacyLockEligibleProvider),
+      isFalse,
+    );
+
+    notifier.release(suppression);
+    expect(
+      container.read(ironwoodMigrationPrivacyLockEligibleProvider),
+      isTrue,
+    );
+  });
+
   testWidgets('disabled feature leaves the child unwrapped and idle', (
     tester,
   ) async {
@@ -191,6 +231,45 @@ void main() {
     await tester.pump();
     expect(find.text('Migration in progress'), findsOneWidget);
   });
+
+  testWidgets(
+    'releasing Keystone signing suppression restarts the default idle timer',
+    (tester) async {
+      final clock = _TestClock();
+      final container = ProviderContainer(
+        overrides: _overrides(_FakeSecurityNotifier()),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(
+        ironwoodMigrationPrivacyLockSuppressionProvider.notifier,
+      );
+      final suppression = notifier.acquire();
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _themedHost(clock),
+        ),
+      );
+      await tester.pump();
+
+      clock.elapse(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Migration in progress'), findsNothing);
+
+      notifier.release(suppression);
+      await tester.pump();
+
+      clock.elapse(const Duration(milliseconds: 49));
+      await tester.pump(const Duration(milliseconds: 49));
+      expect(find.text('Migration in progress'), findsNothing);
+
+      clock.elapse(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(find.text('Migration in progress'), findsOneWidget);
+    },
+  );
 
   testWidgets('background idle time locks immediately on resume', (
     tester,
@@ -317,7 +396,9 @@ List<Override> _overrides(_FakeSecurityNotifier security) {
     appSecurityProvider.overrideWith(() => security),
     ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(true),
     ironwoodMigrationPrivacyLockEligibleProvider.overrideWith(
-      (ref) => ref.watch(_eligibilityProvider),
+      (ref) =>
+          ref.watch(_eligibilityProvider) &&
+          ref.watch(ironwoodMigrationPrivacyLockSuppressionProvider) == null,
     ),
   ];
 }

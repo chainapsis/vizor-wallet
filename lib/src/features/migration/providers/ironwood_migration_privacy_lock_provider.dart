@@ -12,10 +12,44 @@ final ironwoodMigrationPrivacyLockFeatureEnabledProvider = Provider<bool>((_) {
   return kIronwoodMigrationPrivacyLockEnabled;
 });
 
+class IronwoodMigrationPrivacyLockSuppression {
+  const IronwoodMigrationPrivacyLockSuppression({required this.token});
+
+  final int token;
+}
+
+class IronwoodMigrationPrivacyLockSuppressionNotifier
+    extends Notifier<IronwoodMigrationPrivacyLockSuppression?> {
+  int _nextToken = 0;
+
+  @override
+  IronwoodMigrationPrivacyLockSuppression? build() => null;
+
+  IronwoodMigrationPrivacyLockSuppression acquire() {
+    final suppression = IronwoodMigrationPrivacyLockSuppression(
+      token: _nextToken++,
+    );
+    state = suppression;
+    return suppression;
+  }
+
+  void release(IronwoodMigrationPrivacyLockSuppression suppression) {
+    if (state?.token != suppression.token) return;
+    state = null;
+  }
+}
+
+final ironwoodMigrationPrivacyLockSuppressionProvider =
+    NotifierProvider<
+      IronwoodMigrationPrivacyLockSuppressionNotifier,
+      IronwoodMigrationPrivacyLockSuppression?
+    >(IronwoodMigrationPrivacyLockSuppressionNotifier.new);
+
 final ironwoodMigrationPrivacyLockEligibleProvider = Provider<bool>((ref) {
   if (kAppFormFactor != AppFormFactor.desktop ||
       !ref.watch(ironwoodMigrationPrivacyLockFeatureEnabledProvider) ||
-      ref.watch(appSecurityProvider).requiresUnlock) {
+      ref.watch(appSecurityProvider).requiresUnlock ||
+      ref.watch(ironwoodMigrationPrivacyLockSuppressionProvider) != null) {
     return false;
   }
 
