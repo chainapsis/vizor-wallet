@@ -7,7 +7,7 @@ import '../../../providers/app_security_provider.dart';
 import '../models/ironwood_migration_phases.dart';
 import 'ironwood_migration_coordinator_provider.dart';
 
-const kIronwoodMigrationPrivacyIdleTimeout = Duration(minutes: 1);
+const kIronwoodMigrationPrivacyIdleTimeout = Duration(minutes: 10);
 
 final ironwoodMigrationPrivacyLockFeatureEnabledProvider = Provider<bool>((_) {
   return kIronwoodMigrationPrivacyLockEnabled;

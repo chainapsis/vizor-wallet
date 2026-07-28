@@ -360,6 +360,8 @@ class _IronwoodMigrationVirtualUnlockScreenState
                   autofocus: true,
                   showForgotPassword: false,
                   reserveForgotPasswordSpace: true,
+                  descriptionText:
+                      'We auto-locked Vizor after 10 minutes of inactivity.',
                   onChanged: () => setState(() => _errorText = null),
                   onSubmit: _submit,
                 ),

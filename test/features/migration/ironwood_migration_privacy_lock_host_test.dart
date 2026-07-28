@@ -204,6 +204,11 @@ void main() {
 
     expect(find.text('Migration in progress'), findsOneWidget);
     expect(find.text('Welcome back'), findsOneWidget);
+    expect(
+      find.text('We auto-locked Vizor after 10 minutes of inactivity.'),
+      findsOneWidget,
+    );
+    expect(find.text('Enter your password to open Vizor.'), findsNothing);
     expect(find.text('Unlock Vizor'), findsOneWidget);
     expect(find.text('Forgot password?'), findsNothing);
     expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsOneWidget);
@@ -218,6 +223,10 @@ void main() {
     );
     await _focusVirtualUnlockPassword(tester);
     expect(tester.takeException(), isNull);
+  });
+
+  test('uses a ten-minute production idle timeout', () {
+    expect(kIronwoodMigrationPrivacyIdleTimeout, const Duration(minutes: 10));
   });
 
   testWidgets('pointer interaction restarts the idle interval', (tester) async {
