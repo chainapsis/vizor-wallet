@@ -3094,7 +3094,7 @@ void main() {
     },
   );
 
-  testWidgets('migration schedule shows block heights and per-note states', (
+  testWidgets('migration schedule distinguishes states from future heights', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -3107,27 +3107,105 @@ void main() {
       activeRunId: 'run-1',
       targetValuesZatoshi: const [10_000_000, 20_000_000, 30_000_000],
       totalCount: 3,
-      estimatedCompletionHeight: 1_040,
+      estimatedCompletionHeight: 4_210_040,
       parts: [
         _migrationPart(
           0,
           10_000_000,
           rust_sync.MigrationPartState.completed,
-          scheduledHeight: 1_010,
+          scheduledHeight: 4_209_990,
+          originalScheduledHeight: 4_209_980,
+          effectiveScheduledHeight: 4_209_990,
+          minedHeight: 4_209_997,
           confirmationCount: 3,
         ),
         _migrationPart(
           1,
           20_000_000,
           rust_sync.MigrationPartState.confirming,
-          scheduledHeight: 1_020,
+          scheduledHeight: 4_209_992,
+          originalScheduledHeight: 4_209_985,
+          effectiveScheduledHeight: 4_209_992,
+          minedHeight: 4_209_998,
           confirmationCount: 1,
         ),
         _migrationPart(
           2,
           30_000_000,
           rust_sync.MigrationPartState.scheduled,
-          scheduledHeight: 1_030,
+          scheduledHeight: 4_210_030,
+          originalScheduledHeight: 4_210_020,
+          effectiveScheduledHeight: 4_210_030,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'test',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+        initialLocation: '/migration/private/schedule',
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 4_210_000,
+          chainTipHeight: 4_210_000,
+        ),
+        disableAnimations: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Left to migrate'), findsOneWidget);
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+    expect(find.text('in ~50 minutes'), findsOneWidget);
+    expect(find.text('Completed at block 4,209,997'), findsOneWidget);
+    expect(find.text('Confirming 1/3'), findsOneWidget);
+    expect(find.text('Rescheduled #4,210,030'), findsOneWidget);
+    expect(find.text('4,209,980'), findsNothing);
+    expect(find.text('4,209,985'), findsNothing);
+    expect(
+      find.bySemanticsLabel('Note 1, 0.1 ZEC, completed at block 4,209,997.'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel(
+        'Note 2, 0.2 ZEC, confirming, '
+        '1 of 3 confirmations, mined at block 4,209,998.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel(
+        'Note 3, 0.3 ZEC, rescheduled from block 4,210,020 '
+        'to block 4,210,030.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('migration schedule marks an overdue scheduled part as due now', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final status = _migrationStatus(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: const [10_000_000],
+      totalCount: 1,
+      estimatedCompletionHeight: 1_010,
+      parts: [
+        _migrationPart(
+          0,
+          10_000_000,
+          rust_sync.MigrationPartState.scheduled,
+          scheduledHeight: 990,
         ),
       ],
     );
@@ -3150,29 +3228,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Left to migrate'), findsOneWidget);
-    expect(find.text('0.5 ZEC'), findsOneWidget);
-    expect(find.text('in ~50 minutes'), findsOneWidget);
-    expect(find.text('1,010'), findsOneWidget);
-    expect(find.text('1,020'), findsOneWidget);
-    expect(find.text('1,030'), findsOneWidget);
-    expect(find.text('Completed'), findsNothing);
-    expect(find.text('Scheduled'), findsNothing);
-    expect(
-      find.bySemanticsLabel('Note 1, 0.1 ZEC, block 1,010, completed.'),
-      findsOneWidget,
-    );
-    expect(
-      find.bySemanticsLabel(
-        'Note 2, 0.2 ZEC, block 1,020, confirming, '
-        '1 of 3 confirmations.',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.bySemanticsLabel('Note 3, 0.3 ZEC, block 1,030, scheduled.'),
-      findsOneWidget,
-    );
+    expect(find.text('Due now'), findsOneWidget);
+    expect(find.text('Scheduled #990'), findsNothing);
+    expect(find.bySemanticsLabel('Note 1, 0.1 ZEC, due now.'), findsOneWidget);
   });
 
   testWidgets(
@@ -4617,6 +4675,9 @@ rust_sync.MigrationPartStatus _migrationPart(
   int confirmationTarget = 3,
   int? scheduleStartHeight,
   int? scheduledHeight,
+  int? originalScheduledHeight,
+  int? effectiveScheduledHeight,
+  int? minedHeight,
 }) => rust_sync.MigrationPartStatus(
   partIndex: partIndex,
   scheduleOrder: scheduleOrder,
@@ -4624,6 +4685,9 @@ rust_sync.MigrationPartStatus _migrationPart(
   state: state,
   scheduleStartHeight: scheduleStartHeight,
   scheduledHeight: scheduledHeight,
+  originalScheduledHeight: originalScheduledHeight ?? scheduledHeight,
+  effectiveScheduledHeight: effectiveScheduledHeight ?? scheduledHeight,
+  minedHeight: minedHeight,
   confirmationCount: confirmationCount,
   confirmationTarget: confirmationTarget,
 );

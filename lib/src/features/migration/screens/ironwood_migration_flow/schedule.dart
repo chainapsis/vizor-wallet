@@ -762,6 +762,7 @@ class _MigrationScheduleContent extends StatelessWidget {
                       number: index + 1,
                       part: part,
                       total: total,
+                      currentHeight: currentHeight,
                     ),
                   );
                 },
@@ -779,18 +780,24 @@ class _MigrationScheduleRow extends StatelessWidget {
     required this.number,
     required this.part,
     required this.total,
+    required this.currentHeight,
   });
 
   final int number;
   final rust_sync.MigrationPartStatus part;
   final BigInt total;
+  final int currentHeight;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final value = part.valueZatoshi;
     return Semantics(
-      label: _migrationScheduleRowSemantics(number, part),
+      label: _migrationScheduleRowSemantics(
+        number,
+        part,
+        currentHeight: currentHeight,
+      ),
       excludeSemantics: true,
       child: SizedBox(
         height: 56,
@@ -826,7 +833,10 @@ class _MigrationScheduleRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                _MigrationSchedulePartStatus(part: part),
+                _MigrationSchedulePartStatus(
+                  part: part,
+                  currentHeight: currentHeight,
+                ),
               ],
             ),
           ),
@@ -837,9 +847,13 @@ class _MigrationScheduleRow extends StatelessWidget {
 }
 
 class _MigrationSchedulePartStatus extends StatelessWidget {
-  const _MigrationSchedulePartStatus({required this.part});
+  const _MigrationSchedulePartStatus({
+    required this.part,
+    required this.currentHeight,
+  });
 
   final rust_sync.MigrationPartStatus part;
+  final int currentHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -850,12 +864,29 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
         state == rust_sync.MigrationPartState.confirming;
     final completed = state == rust_sync.MigrationPartState.completed;
     final needsInput = state == rust_sync.MigrationPartState.needsInput;
-    final height = part.scheduledHeight;
-    final label = height == null
-        ? needsInput
-              ? 'Ready to sign'
-              : 'Schedule pending'
-        : formatGroupedInteger(height);
+    final originalHeight = part.originalScheduledHeight ?? part.scheduledHeight;
+    final effectiveHeight =
+        part.effectiveScheduledHeight ?? part.scheduledHeight;
+    final minedHeight = part.minedHeight;
+    final label = switch (state) {
+      rust_sync.MigrationPartState.completed =>
+        minedHeight == null
+            ? 'Complete'
+            : 'Completed at block ${formatGroupedInteger(minedHeight)}',
+      rust_sync.MigrationPartState.confirming =>
+        'Confirming ${part.confirmationCount}/${part.confirmationTarget}',
+      rust_sync.MigrationPartState.migrating => 'Waiting to be mined',
+      rust_sync.MigrationPartState.scheduled =>
+        effectiveHeight == null
+            ? 'Schedule pending'
+            : effectiveHeight <= currentHeight
+            ? 'Due now'
+            : originalHeight != null && originalHeight != effectiveHeight
+            ? 'Rescheduled #${formatGroupedInteger(effectiveHeight)}'
+            : 'Scheduled #${formatGroupedInteger(effectiveHeight)}',
+      rust_sync.MigrationPartState.preparing => 'Preparing',
+      rust_sync.MigrationPartState.needsInput => 'Ready to sign',
+    };
     final textStyle = AppTypography.labelLarge.copyWith(
       color: completed
           ? colors.text.positiveStrong
@@ -901,22 +932,34 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
 
 String _migrationScheduleRowSemantics(
   int number,
-  rust_sync.MigrationPartStatus part,
-) {
-  final height = part.scheduledHeight;
-  final heightLabel = height == null
-      ? 'schedule pending'
-      : 'block ${formatGroupedInteger(height)}';
+  rust_sync.MigrationPartStatus part, {
+  required int currentHeight,
+}) {
+  final originalHeight = part.originalScheduledHeight ?? part.scheduledHeight;
+  final effectiveHeight = part.effectiveScheduledHeight ?? part.scheduledHeight;
+  final minedHeight = part.minedHeight;
   final stateLabel = switch (part.state) {
     rust_sync.MigrationPartState.preparing => 'preparing',
-    rust_sync.MigrationPartState.scheduled => 'scheduled',
+    rust_sync.MigrationPartState.scheduled =>
+      effectiveHeight == null
+          ? 'schedule pending'
+          : effectiveHeight <= currentHeight
+          ? 'due now'
+          : originalHeight != null && originalHeight != effectiveHeight
+          ? 'rescheduled from block ${formatGroupedInteger(originalHeight)} '
+                'to block ${formatGroupedInteger(effectiveHeight)}'
+          : 'scheduled at block ${formatGroupedInteger(effectiveHeight)}',
     rust_sync.MigrationPartState.migrating => 'broadcast, waiting to be mined',
     rust_sync.MigrationPartState.confirming =>
       'confirming, ${part.confirmationCount} of '
-          '${part.confirmationTarget} confirmations',
-    rust_sync.MigrationPartState.completed => 'completed',
+          '${part.confirmationTarget} confirmations'
+          '${minedHeight == null ? '' : ', mined at block ${formatGroupedInteger(minedHeight)}'}',
+    rust_sync.MigrationPartState.completed =>
+      minedHeight == null
+          ? 'completed'
+          : 'completed at block ${formatGroupedInteger(minedHeight)}',
     rust_sync.MigrationPartState.needsInput => 'ready to sign',
   };
   return 'Note $number, ${_formatZecAmountCompact(part.valueZatoshi)} ZEC, '
-      '$heightLabel, $stateLabel.';
+      '$stateLabel.';
 }

@@ -298,6 +298,9 @@ pub(crate) struct MigrationPartStatus {
     pub txid_hex: Option<String>,
     pub schedule_start_height: Option<u32>,
     pub scheduled_height: Option<u32>,
+    pub original_scheduled_height: Option<u32>,
+    pub effective_scheduled_height: Option<u32>,
+    pub mined_height: Option<u32>,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
 }
@@ -2028,8 +2031,10 @@ fn insert_pending_txs_with_tx(
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  schedule_start_height, scheduled_height, status, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 'scheduled', ?16)"
+                  schedule_start_height, scheduled_height, original_scheduled_height,
+                  status, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                         ?13, ?14, ?15, ?15, 'scheduled', ?16)"
                 ),
                 params![
                     run_id,
@@ -3372,7 +3377,7 @@ pub(crate) fn replace_resigned_pending_parts(
             .query_row(
                 &format!(
                     "SELECT value_zatoshi, selected_note_txid,
-                            selected_note_output_index
+                            selected_note_output_index, original_scheduled_height
                      FROM {PENDING_TXS_TABLE}
                      WHERE run_id = ?1 AND txid_hex = ?2
                        AND status = 'needs_resign'"
@@ -3383,6 +3388,7 @@ pub(crate) fn replace_resigned_pending_parts(
                         row.get::<_, u64>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, u32>(2)?,
+                        row.get::<_, Option<u32>>(3)?,
                     ))
                 },
             )
@@ -3423,6 +3429,7 @@ pub(crate) fn replace_resigned_pending_parts(
             .checked_add(i64::from(schedule_entry.block_offset).saturating_mul(1000))
             .ok_or("Replacement migration time overflow")?;
         let scheduled_height = pending.scheduled_height;
+        let original_scheduled_height = original.3;
 
         tx.execute(
             &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = ?1 AND txid_hex = ?2"),
@@ -3435,9 +3442,10 @@ pub(crate) fn replace_resigned_pending_parts(
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  schedule_start_height, scheduled_height, status, metadata_json)
+                  schedule_start_height, scheduled_height, original_scheduled_height,
+                  status, metadata_json)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                         ?13, ?14, ?15, 'scheduled', ?16)"
+                         ?13, ?14, ?15, ?16, 'scheduled', ?17)"
             ),
             params![
                 run_id,
@@ -3455,6 +3463,7 @@ pub(crate) fn replace_resigned_pending_parts(
                 scheduled_at_ms,
                 schedule_start_height,
                 scheduled_height,
+                original_scheduled_height,
                 metadata_json,
             ],
         )
@@ -5029,6 +5038,9 @@ fn migration_parts_for_run(
             txid_hex: None,
             schedule_start_height: None,
             scheduled_height: None,
+            original_scheduled_height: None,
+            effective_scheduled_height: None,
+            mined_height: None,
             confirmation_count: 0,
             confirmation_target,
         })
@@ -5038,7 +5050,9 @@ fn migration_parts_for_run(
         .prepare_cached(&format!(
             "SELECT part_index, txid_hex, value_zatoshi, fee_zatoshi,
                     COALESCE(schedule_start_height, target_height - 1),
-                    scheduled_height, status
+                    scheduled_height,
+                    original_scheduled_height,
+                    status
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1
              ORDER BY scheduled_height ASC, txid_hex ASC"
@@ -5053,7 +5067,8 @@ fn migration_parts_for_run(
                 row.get::<_, u64>(3)?,
                 row.get::<_, u32>(4)?,
                 row.get::<_, u32>(5)?,
-                row.get::<_, String>(6)?,
+                row.get::<_, Option<u32>>(6)?,
+                row.get::<_, String>(7)?,
             ))
         })
         .map_err(|e| format!("Query migration part statuses: {e}"))?
@@ -5068,6 +5083,7 @@ fn migration_parts_for_run(
         fee_zatoshi,
         schedule_start_height,
         scheduled_height,
+        original_scheduled_height,
         raw_status,
     ) in rows
     {
@@ -5093,14 +5109,16 @@ fn migration_parts_for_run(
             .unwrap_or(parts.len() as u32);
         assigned.insert(part_index);
 
+        let chain_identity = local_denomination_chain_identity(conn, &txid_hex)?;
+        let mined_height = chain_identity
+            .as_ref()
+            .map(|identity| identity.mined_height);
         let (state, confirmation_count) = match raw_status.as_str() {
             "scheduled" => (MigrationPartState::Scheduled, 0),
             "broadcasted" => (MigrationPartState::Migrating, 0),
             "confirmed" => {
-                let confirmation_count = match local_denomination_chain_identity(conn, &txid_hex)? {
-                    Some(identity) => {
-                        synced_orchard_confirmation_count(conn, identity.mined_height)?
-                    }
+                let confirmation_count = match mined_height {
+                    Some(mined_height) => synced_orchard_confirmation_count(conn, mined_height)?,
                     None => 0,
                 };
                 let state = if phase == PHASE_COMPLETE || confirmation_count >= confirmation_target
@@ -5125,6 +5143,9 @@ fn migration_parts_for_run(
             txid_hex: Some(txid_hex),
             schedule_start_height: Some(schedule_start_height),
             scheduled_height: Some(scheduled_height),
+            original_scheduled_height,
+            effective_scheduled_height: Some(scheduled_height),
+            mined_height,
             confirmation_count,
             confirmation_target,
         };
@@ -5160,6 +5181,9 @@ fn denomination_migration_parts_for_run(
             txid_hex: None,
             schedule_start_height: None,
             scheduled_height: None,
+            original_scheduled_height: None,
+            effective_scheduled_height: None,
+            mined_height: None,
             confirmation_count: 0,
             confirmation_target,
         })
@@ -5170,6 +5194,11 @@ fn denomination_migration_parts_for_run(
         let txid_hex = stage.expected_txid_hex.to_ascii_lowercase();
         let (state, confirmation_count) =
             denomination_stage_part_state(conn, &stage, confirmation_target)?;
+        let mined_height = match stage.confirmed_mined_height {
+            Some(mined_height) => Some(mined_height),
+            None => local_denomination_chain_identity(conn, &txid_hex)?
+                .map(|identity| identity.mined_height),
+        };
         for output in stage
             .outputs
             .iter()
@@ -5207,6 +5236,9 @@ fn denomination_migration_parts_for_run(
                 txid_hex: Some(txid_hex.clone()),
                 schedule_start_height: None,
                 scheduled_height: None,
+                original_scheduled_height: None,
+                effective_scheduled_height: None,
+                mined_height,
                 confirmation_count,
                 confirmation_target,
             };

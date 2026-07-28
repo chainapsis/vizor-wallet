@@ -7937,6 +7937,9 @@ impl SseDecode for crate::api::sync::MigrationPartStatus {
         let mut var_txidHex = <Option<String>>::sse_decode(deserializer);
         let mut var_scheduleStartHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_scheduledHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_originalScheduledHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_effectiveScheduledHeight = <Option<u32>>::sse_decode(deserializer);
+        let mut var_minedHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_confirmationCount = <u32>::sse_decode(deserializer);
         let mut var_confirmationTarget = <u32>::sse_decode(deserializer);
         return crate::api::sync::MigrationPartStatus {
@@ -7947,6 +7950,9 @@ impl SseDecode for crate::api::sync::MigrationPartStatus {
             txid_hex: var_txidHex,
             schedule_start_height: var_scheduleStartHeight,
             scheduled_height: var_scheduledHeight,
+            original_scheduled_height: var_originalScheduledHeight,
+            effective_scheduled_height: var_effectiveScheduledHeight,
+            mined_height: var_minedHeight,
             confirmation_count: var_confirmationCount,
             confirmation_target: var_confirmationTarget,
         };
@@ -10545,6 +10551,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPartStatus {
             self.txid_hex.into_into_dart().into_dart(),
             self.schedule_start_height.into_into_dart().into_dart(),
             self.scheduled_height.into_into_dart().into_dart(),
+            self.original_scheduled_height.into_into_dart().into_dart(),
+            self.effective_scheduled_height.into_into_dart().into_dart(),
+            self.mined_height.into_into_dart().into_dart(),
             self.confirmation_count.into_into_dart().into_dart(),
             self.confirmation_target.into_into_dart().into_dart(),
         ]
@@ -13078,6 +13087,9 @@ impl SseEncode for crate::api::sync::MigrationPartStatus {
         <Option<String>>::sse_encode(self.txid_hex, serializer);
         <Option<u32>>::sse_encode(self.schedule_start_height, serializer);
         <Option<u32>>::sse_encode(self.scheduled_height, serializer);
+        <Option<u32>>::sse_encode(self.original_scheduled_height, serializer);
+        <Option<u32>>::sse_encode(self.effective_scheduled_height, serializer);
+        <Option<u32>>::sse_encode(self.mined_height, serializer);
         <u32>::sse_encode(self.confirmation_count, serializer);
         <u32>::sse_encode(self.confirmation_target, serializer);
     }

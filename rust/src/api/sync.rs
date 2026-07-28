@@ -754,7 +754,14 @@ pub struct MigrationPartStatus {
     pub state: MigrationPartState,
     pub txid_hex: Option<String>,
     pub schedule_start_height: Option<u32>,
+    /// Backward-compatible alias for `effective_scheduled_height`.
     pub scheduled_height: Option<u32>,
+    /// First absolute block height assigned to this logical migration part.
+    pub original_scheduled_height: Option<u32>,
+    /// Current absolute block height after any catch-up rescheduling.
+    pub effective_scheduled_height: Option<u32>,
+    /// Actual block containing the transaction, once observed in the local chain.
+    pub mined_height: Option<u32>,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
 }
@@ -1409,6 +1416,9 @@ pub fn get_orchard_migration_status(
                     txid_hex: part.txid_hex,
                     schedule_start_height: part.schedule_start_height,
                     scheduled_height: part.scheduled_height,
+                    original_scheduled_height: part.original_scheduled_height,
+                    effective_scheduled_height: part.effective_scheduled_height,
+                    mined_height: part.mined_height,
                     confirmation_count: part.confirmation_count,
                     confirmation_target: part.confirmation_target,
                 })

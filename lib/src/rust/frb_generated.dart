@@ -8882,8 +8882,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MigrationPartStatus dco_decode_migration_part_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 9)
-      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    if (arr.length != 12)
+      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
     return MigrationPartStatus(
       partIndex: dco_decode_u_32(arr[0]),
       scheduleOrder: dco_decode_opt_box_autoadd_u_32(arr[1]),
@@ -8892,8 +8892,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txidHex: dco_decode_opt_String(arr[4]),
       scheduleStartHeight: dco_decode_opt_box_autoadd_u_32(arr[5]),
       scheduledHeight: dco_decode_opt_box_autoadd_u_32(arr[6]),
-      confirmationCount: dco_decode_u_32(arr[7]),
-      confirmationTarget: dco_decode_u_32(arr[8]),
+      originalScheduledHeight: dco_decode_opt_box_autoadd_u_32(arr[7]),
+      effectiveScheduledHeight: dco_decode_opt_box_autoadd_u_32(arr[8]),
+      minedHeight: dco_decode_opt_box_autoadd_u_32(arr[9]),
+      confirmationCount: dco_decode_u_32(arr[10]),
+      confirmationTarget: dco_decode_u_32(arr[11]),
     );
   }
 
@@ -11540,6 +11543,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_txidHex = sse_decode_opt_String(deserializer);
     var var_scheduleStartHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_scheduledHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
+    var var_originalScheduledHeight = sse_decode_opt_box_autoadd_u_32(
+      deserializer,
+    );
+    var var_effectiveScheduledHeight = sse_decode_opt_box_autoadd_u_32(
+      deserializer,
+    );
+    var var_minedHeight = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_confirmationCount = sse_decode_u_32(deserializer);
     var var_confirmationTarget = sse_decode_u_32(deserializer);
     return MigrationPartStatus(
@@ -11550,6 +11560,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       txidHex: var_txidHex,
       scheduleStartHeight: var_scheduleStartHeight,
       scheduledHeight: var_scheduledHeight,
+      originalScheduledHeight: var_originalScheduledHeight,
+      effectiveScheduledHeight: var_effectiveScheduledHeight,
+      minedHeight: var_minedHeight,
       confirmationCount: var_confirmationCount,
       confirmationTarget: var_confirmationTarget,
     );
@@ -14298,6 +14311,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_String(self.txidHex, serializer);
     sse_encode_opt_box_autoadd_u_32(self.scheduleStartHeight, serializer);
     sse_encode_opt_box_autoadd_u_32(self.scheduledHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.originalScheduledHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.effectiveScheduledHeight, serializer);
+    sse_encode_opt_box_autoadd_u_32(self.minedHeight, serializer);
     sse_encode_u_32(self.confirmationCount, serializer);
     sse_encode_u_32(self.confirmationTarget, serializer);
   }

@@ -1408,7 +1408,18 @@ class MigrationPartStatus {
   final MigrationPartState state;
   final String? txidHex;
   final int? scheduleStartHeight;
+
+  /// Backward-compatible alias for `effective_scheduled_height`.
   final int? scheduledHeight;
+
+  /// First absolute block height assigned to this logical migration part.
+  final int? originalScheduledHeight;
+
+  /// Current absolute block height after any catch-up rescheduling.
+  final int? effectiveScheduledHeight;
+
+  /// Actual block containing the transaction, once observed in the local chain.
+  final int? minedHeight;
   final int confirmationCount;
   final int confirmationTarget;
 
@@ -1420,6 +1431,9 @@ class MigrationPartStatus {
     this.txidHex,
     this.scheduleStartHeight,
     this.scheduledHeight,
+    this.originalScheduledHeight,
+    this.effectiveScheduledHeight,
+    this.minedHeight,
     required this.confirmationCount,
     required this.confirmationTarget,
   });
@@ -1433,6 +1447,9 @@ class MigrationPartStatus {
       txidHex.hashCode ^
       scheduleStartHeight.hashCode ^
       scheduledHeight.hashCode ^
+      originalScheduledHeight.hashCode ^
+      effectiveScheduledHeight.hashCode ^
+      minedHeight.hashCode ^
       confirmationCount.hashCode ^
       confirmationTarget.hashCode;
 
@@ -1448,6 +1465,9 @@ class MigrationPartStatus {
           txidHex == other.txidHex &&
           scheduleStartHeight == other.scheduleStartHeight &&
           scheduledHeight == other.scheduledHeight &&
+          originalScheduledHeight == other.originalScheduledHeight &&
+          effectiveScheduledHeight == other.effectiveScheduledHeight &&
+          minedHeight == other.minedHeight &&
           confirmationCount == other.confirmationCount &&
           confirmationTarget == other.confirmationTarget;
 }

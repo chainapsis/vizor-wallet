@@ -191,6 +191,106 @@ fn pending_test_stage_for_part(
 }
 
 #[test]
+fn schema_backfills_only_recoverable_original_schedule_heights() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    let schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100,
+        block_offset: 5,
+    }];
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              signed_schedule_origin_height)
+             VALUES ('run-original', 'account-1', 'regtest', 'db', ?1, 1, 1,
+                     '[100]', ?2, 100)"
+        ),
+        params![
+            PHASE_BROADCAST_SCHEDULED,
+            serde_json::to_string(&schedule).unwrap()
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PENDING_TXS_TABLE}
+             (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+              expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+              selected_note_output_index, selected_note_value, scheduled_at_ms,
+              schedule_start_height, scheduled_height, status, metadata_json)
+             VALUES ('run-original', ?1, 0, 'raw', 101, 69120, 100, 0, ?2,
+                     0, 100, 1, 109, 110, 'scheduled', '{{}}')"
+        ),
+        params!["11".repeat(32), "22".repeat(32)],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('run-unknown-original', 'account-1', 'regtest', 'db', ?1,
+                     1, 1, '[100]', '[]')"
+        ),
+        params![PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PENDING_TXS_TABLE}
+             (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+              expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+              selected_note_output_index, selected_note_value, scheduled_at_ms,
+              schedule_start_height, scheduled_height, status, metadata_json)
+             VALUES ('run-unknown-original', ?1, 0, 'raw', 101, 69120, 100, 0,
+                     ?2, 0, 100, 1, 109, 110, 'scheduled', '{{}}')"
+        ),
+        params!["33".repeat(32), "44".repeat(32)],
+    )
+    .unwrap();
+
+    ensure_schema(&conn).unwrap();
+
+    let heights = conn
+        .query_row(
+            &format!(
+                "SELECT original_scheduled_height, scheduled_height
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'run-original'"
+            ),
+            [],
+            |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)),
+        )
+        .unwrap();
+    assert_eq!(heights, (105, 110));
+    let unknown_original = conn
+        .query_row(
+            &format!(
+                "SELECT original_scheduled_height
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'run-unknown-original'"
+            ),
+            [],
+            |row| row.get::<_, Option<u32>>(0),
+        )
+        .unwrap();
+    assert_eq!(unknown_original, None);
+    let unknown_parts = migration_parts_for_run(
+        &conn,
+        "run-unknown-original",
+        &[100],
+        PHASE_BROADCAST_SCHEDULED,
+        3,
+    )
+    .unwrap();
+    assert_eq!(unknown_parts[0].original_scheduled_height, None);
+    assert_eq!(unknown_parts[0].effective_scheduled_height, Some(110));
+}
+
+#[test]
 fn legacy_signed_schedule_backfill_uses_approved_offsets_and_discards_wrong_bucket() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
@@ -3649,16 +3749,21 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
     assert_eq!(totals.txids, vec!["33".repeat(32)]);
     assert_eq!(totals.value_zatoshi, 100);
     assert_eq!(totals.fee_zatoshi, 10);
-    let replacement_part_index: u32 =
+    let (replacement_part_index, replacement_original_scheduled_height): (u32, Option<u32>) =
         open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
             .unwrap()
             .query_row(
-                &format!("SELECT part_index FROM {PENDING_TXS_TABLE} WHERE run_id = 'expired-run'"),
+                &format!(
+                    "SELECT part_index, original_scheduled_height
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = 'expired-run'"
+                ),
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
     assert_eq!(replacement_part_index, 0);
+    assert_eq!(replacement_original_scheduled_height, Some(91));
     let (signed_origin, replacement_scheduled_height): (u32, u32) =
         open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
             .unwrap()
@@ -3677,6 +3782,85 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
     assert_eq!(replacement_scheduled_height, 101);
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET status = 'needs_resign',
+                 original_scheduled_height = NULL,
+                 expiry_height = 1
+             WHERE run_id = 'expired-run'"
+        ),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET signed_schedule_origin_height = NULL,
+                 target_values_json = 'unrecoverable legacy metadata'
+             WHERE run_id = 'expired-run'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    replace_resigned_pending_parts(
+        &db_path,
+        "expired-run",
+        WalletNetwork::Regtest,
+        vec![PendingMigrationTxReplacement {
+            old_txid_hex: "33".repeat(32),
+            replacement: PendingMigrationTxInsert {
+                part_index: 0,
+                txid_hex: "55".repeat(32),
+                raw_tx: vec![7, 8, 9],
+                target_height: 102,
+                anchor_boundary_height: Some(90),
+                expiry_height: zip318_canonical_migration_expiry_height(102).unwrap(),
+                scheduled_height: 102,
+                value_zatoshi: 100,
+                fee_zatoshi: 10,
+                selected_note: selected_note.clone(),
+                metadata: PendingMigrationTxMetadata {
+                    tx_kind: "migration".to_string(),
+                    funding_account_uuid: "account-1".to_string(),
+                    selected_note: selected_note.clone(),
+                },
+            },
+        }],
+        Vec::new(),
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let unknown_original_after_replacement =
+        open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
+            .unwrap()
+            .query_row(
+                &format!(
+                    "SELECT original_scheduled_height
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = 'expired-run'"
+                ),
+                [],
+                |row| row.get::<_, Option<u32>>(0),
+            )
+            .unwrap();
+    assert_eq!(unknown_original_after_replacement, None);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET signed_schedule_origin_height = 90,
+                 target_values_json = '[100]'
+             WHERE run_id = 'expired-run'"
+        ),
+        [],
+    )
+    .unwrap();
     conn.execute(
         &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = 'expired-run'"),
         [],
@@ -4952,9 +5136,9 @@ fn migration_parts_report_exact_mixed_states_and_trusted_depth() {
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
                   expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  scheduled_height, status, metadata_json)
+                  scheduled_height, original_scheduled_height, status, metadata_json)
                  VALUES ('run-parts', ?1, ?2, 'raw', 1, 100, 100, 1, ?3,
-                         0, 101, 1, ?4, ?5, '{{}}')"
+                         0, 101, 1, ?4, ?4, ?5, '{{}}')"
             ),
             params![
                 txid,
@@ -4966,6 +5150,15 @@ fn migration_parts_report_exact_mixed_states_and_trusted_depth() {
         )
         .unwrap();
     }
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 9
+             WHERE run_id = 'run-parts' AND part_index = 0"
+        ),
+        [],
+    )
+    .unwrap();
     for (txid, mined_height) in [(&txids[2], 20u32), (&txids[3], 18u32)] {
         let mut txid_blob = hex::decode(txid).unwrap();
         txid_blob.reverse();
@@ -4987,11 +5180,19 @@ fn migration_parts_report_exact_mixed_states_and_trusted_depth() {
 
     assert_eq!(parts.len(), 4);
     assert_eq!(parts[0].state, MigrationPartState::Scheduled);
+    assert_eq!(parts[0].original_scheduled_height, Some(1));
+    assert_eq!(parts[0].effective_scheduled_height, Some(9));
+    assert_eq!(parts[0].mined_height, None);
     assert_eq!(parts[1].state, MigrationPartState::Migrating);
+    assert_eq!(parts[1].original_scheduled_height, Some(2));
+    assert_eq!(parts[1].effective_scheduled_height, Some(2));
+    assert_eq!(parts[1].mined_height, None);
     assert_eq!(parts[2].state, MigrationPartState::Confirming);
     assert_eq!(parts[2].confirmation_count, 1);
+    assert_eq!(parts[2].mined_height, Some(20));
     assert_eq!(parts[3].state, MigrationPartState::Completed);
     assert_eq!(parts[3].confirmation_count, 3);
+    assert_eq!(parts[3].mined_height, Some(18));
     assert_eq!(
         parts.iter().map(|part| part.part_index).collect::<Vec<_>>(),
         vec![0, 1, 2, 3]
