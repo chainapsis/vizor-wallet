@@ -87,6 +87,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildIronwoodMigrationAnnouncementModalUseCase,
   ),
   FigmaCompareScenario(
+    id: 'ironwood-migration-privacy-lock',
+    description: 'Desktop virtual unlock shown during Ironwood migration',
+    builder: buildIronwoodMigrationPrivacyLockUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'desktop-home-ironwood-migration-required',
     description:
         'Desktop home balance card in Ironwood migration-required state',
