@@ -676,6 +676,21 @@ void main() {
       expect(rounds.map((round) => round.length), [2, 2, 1]);
     });
 
+    test('splits the first message beyond the 40-message firmware cap', () {
+      final messages = [for (var i = 0; i < 41; i++) message('m$i', 10)];
+      expect(
+        keystoneSigningRoundsForTest(
+          messages.take(40).toList(),
+          40,
+        ).map((round) => round.length),
+        [40],
+      );
+      expect(
+        keystoneSigningRoundsForTest(messages, 40).map((round) => round.length),
+        [40, 1],
+      );
+    });
+
     test('splits a round that would exceed the firmware byte ceiling', () {
       // 40 messages of 26 KiB total over 1 MiB — the count fits in one round
       // but the firmware rejects anything over 512 KiB per round.

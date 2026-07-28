@@ -3209,7 +3209,7 @@ void main() {
     expect(find.text('keystone combined sign route:12'), findsOneWidget);
   });
 
-  testWidgets('accepts exactly 50 transactions in each Keystone round', (
+  testWidgets('accepts exactly 40 transactions in each Keystone round', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -3223,9 +3223,9 @@ void main() {
         ),
         hardware: true,
         privatePlan: _planWith(
-          denominationSplitStageCount: 50,
-          plannedBatchCount: 50,
-          signingBatchLimit: 50,
+          denominationSplitStageCount: 40,
+          plannedBatchCount: 40,
+          signingBatchLimit: 40,
         ),
       ),
     );
@@ -3236,23 +3236,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('keystone combined sign route:50'), findsOneWidget);
+    expect(find.text('keystone combined sign route:40'), findsOneWidget);
   });
 
-  testWidgets('supports 51 Keystone transactions across signing requests', (
+  testWidgets('supports 41 Keystone transactions across signing requests', (
     tester,
   ) async {
     _useMobileViewport(tester);
     for (final plan in [
       _planWith(
-        denominationSplitStageCount: 51,
-        plannedBatchCount: 50,
-        signingBatchLimit: 50,
+        denominationSplitStageCount: 41,
+        plannedBatchCount: 40,
+        signingBatchLimit: 40,
       ),
       _planWith(
-        denominationSplitStageCount: 50,
-        plannedBatchCount: 51,
-        signingBatchLimit: 50,
+        denominationSplitStageCount: 40,
+        plannedBatchCount: 41,
+        signingBatchLimit: 40,
       ),
     ]) {
       await tester.pumpWidget(
