@@ -2574,7 +2574,7 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
 /// broadcast.
 /// A pending stage discovered on-chain and its remaining peers are updated in
 /// one transaction. The submission timing was not persisted, so a spaced run
-/// conservatively restarts its peer delays from the scanned height.
+/// conservatively restarts its peer delays from the current chain tip.
 pub(crate) fn reconcile_denomination_stage_chain_state(
     db_path: &str,
     run_id: &str,
@@ -2585,7 +2585,7 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
 fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?Sized>(
     db_path: &str,
     run_id: &str,
-    recovery_observed_height: Option<u32>,
+    recovery_chain_tip_height: Option<u32>,
     rng: &mut R,
 ) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -2682,13 +2682,13 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
     drop(conn);
 
     let recovery_context = if let Some(network) = recovery_network {
-        let observed_height = if let Some(height) = recovery_observed_height {
+        let chain_tip_height = if let Some(height) = recovery_chain_tip_height {
             height
         } else {
-            u32::try_from(super::get_sync_progress(db_path, network)?.scanned_height)
-                .map_err(|_| "Migration scanned height exceeds u32".to_string())?
+            u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+                .map_err(|_| "Migration chain tip exceeds u32".to_string())?
         };
-        Some((network, observed_height))
+        Some((network, chain_tip_height))
     } else {
         None
     };
@@ -2734,14 +2734,14 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
                 &identity.block_hash,
             )?;
         }
-        if let (true, Some((network, observed_height))) =
+        if let (true, Some((network, chain_tip_height))) =
             (recovered_pending_stage, recovery_context)
         {
             let rerandomized = rerandomize_remaining_preparation_broadcast_heights(
                 &tx,
                 run_id,
                 network,
-                observed_height,
+                chain_tip_height,
                 rng,
             )?;
             if rerandomized > 0 {

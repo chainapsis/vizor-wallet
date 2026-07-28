@@ -152,7 +152,7 @@ pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
     network: WalletNetwork,
-    observed_height: u32,
+    chain_tip_height: u32,
     rng: &mut R,
 ) -> Result<u32, String> {
     if preparation_timing_policy_for_run_with_conn(tx, run_id)?
@@ -187,7 +187,7 @@ pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
             .map_err(|e| format!("Read remaining denomination catch-up stage: {e}"))?
     };
 
-    let mut preceding_height = observed_height;
+    let mut preceding_height = chain_tip_height;
     for (stage_index, scheduled_height, existing_not_before_height) in &remaining {
         let randomized_height = preceding_height
             .checked_add(preparation_delay_with_rng(network, timing_policy, rng))

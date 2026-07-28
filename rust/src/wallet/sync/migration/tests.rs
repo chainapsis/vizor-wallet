@@ -2237,20 +2237,32 @@ fn late_preparation_broadcast_rerandomizes_remaining_effective_heights() {
 }
 
 #[test]
-fn recovered_pending_preparation_stage_rerandomizes_remaining_peers_once() {
+fn recovered_pending_preparation_stage_uses_chain_tip_and_rerandomizes_once() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_str().unwrap();
     let conn = rusqlite::Connection::open(db_path).unwrap();
     ensure_schema(&conn).unwrap();
     let run_id = "recovered-preparation-catch-up";
-    insert_recovered_pending_preparation_test_run(&conn, run_id, [100, 150, 175], 200);
+    let scanned_inclusion_height = 200;
+    let chain_tip_height = 500;
+    insert_recovered_pending_preparation_test_run(
+        &conn,
+        run_id,
+        [100, 150, 175],
+        scanned_inclusion_height,
+    );
     let before = preparation_catch_up_test_rows(&conn, run_id);
     drop(conn);
 
     let mut rng = StdRng::seed_from_u64(0x318);
-    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), &mut rng)
-        .unwrap();
+    reconcile_denomination_stage_chain_state_with_rng(
+        db_path,
+        run_id,
+        Some(chain_tip_height),
+        &mut rng,
+    )
+    .unwrap();
 
     let conn = rusqlite::Connection::open(db_path).unwrap();
     let statuses = conn
@@ -2281,13 +2293,14 @@ fn recovered_pending_preparation_stage_rerandomizes_remaining_peers_once() {
         .iter()
         .map(|row| row.1.max(row.2.unwrap_or(0)))
         .collect::<Vec<_>>();
-    assert!(recovered_heights[0] >= 250);
+    assert!(scanned_inclusion_height < chain_tip_height);
+    assert!(recovered_heights[0] >= chain_tip_height);
     assert!(recovered_heights.windows(2).all(|pair| pair[0] <= pair[1]));
     drop(conn);
 
     let first_recovery = after.iter().map(|row| row.2).collect::<Vec<Option<u32>>>();
     let mut second_rng = StdRng::seed_from_u64(0x123);
-    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(300), &mut second_rng)
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(600), &mut second_rng)
         .unwrap();
     let conn = rusqlite::Connection::open(db_path).unwrap();
     assert_eq!(
