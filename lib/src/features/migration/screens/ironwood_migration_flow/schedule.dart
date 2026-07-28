@@ -453,7 +453,7 @@ class _MigrationPreparationOutputRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final destination = switch (output.kind) {
-      rust_sync.MigrationPreparationOutputKind.migration => 'Final',
+      rust_sync.MigrationPreparationOutputKind.migration => 'For migration',
       rust_sync.MigrationPreparationOutputKind.change => 'Stays in Orchard',
       rust_sync.MigrationPreparationOutputKind.continuation =>
         'Used in round ${output.nextRound ?? 1}',
@@ -610,7 +610,7 @@ String _preparationScheduleRowSemantics(
   final outputs = transaction.outputs
       .map((output) {
         final destination = switch (output.kind) {
-          rust_sync.MigrationPreparationOutputKind.migration => 'final',
+          rust_sync.MigrationPreparationOutputKind.migration => 'for migration',
           rust_sync.MigrationPreparationOutputKind.change => 'stays in Orchard',
           rust_sync.MigrationPreparationOutputKind.continuation =>
             'used in round ${output.nextRound ?? 1}',
