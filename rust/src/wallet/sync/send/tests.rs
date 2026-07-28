@@ -13,6 +13,28 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn ordinary_payment_change_is_not_split_for_note_management() {
+    let policy = ordinary_payment_split_policy();
+
+    assert_eq!(policy.target_output_count(), NonZeroUsize::MIN);
+    assert_eq!(policy.min_split_output_value(), None);
+}
+
+#[test]
+fn shielding_keeps_note_management_split_policy() {
+    let policy = note_management_split_policy();
+
+    assert_eq!(
+        policy.target_output_count().get(),
+        NOTE_MANAGEMENT_TARGET_OUTPUT_COUNT
+    );
+    assert_eq!(
+        policy.min_split_output_value(),
+        Some(Zatoshis::const_from_u64(MIN_NOTE_MANAGEMENT_OUTPUT_ZATOSHI))
+    );
+}
+
+#[test]
 fn send_proposal_expires_at_its_lock_boundary() {
     let min_target = BlockHeight::from_u32(1_000);
     assert!(!send_proposal_is_expired(

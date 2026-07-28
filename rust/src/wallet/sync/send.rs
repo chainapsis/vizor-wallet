@@ -115,6 +115,8 @@ use super::{
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
 const SEND_PROPOSAL_LOCK_BLOCKS: u32 = 40;
+const NOTE_MANAGEMENT_TARGET_OUTPUT_COUNT: usize = 4;
+const MIN_NOTE_MANAGEMENT_OUTPUT_ZATOSHI: u64 = 10_000_000;
 
 fn send_proposal_lock_expiry(min_target_height: BlockHeight) -> BlockHeight {
     min_target_height + SEND_PROPOSAL_LOCK_BLOCKS
@@ -2861,7 +2863,8 @@ fn build_shielding_proposal(
 
     // Regular shielding transactions stay padded (`DEFAULT`); only migration
     // children opt in to unpadded Orchard-pool bundles.
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, None, false);
+    let (change_strategy, input_selector) =
+        zip317_helper::<WalletDatabase>(None, None, note_management_split_policy(), false);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -2927,6 +2930,7 @@ fn propose_send_with_reserved_notes(
     let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(
         None,
         proposed_tx_version,
+        ordinary_payment_split_policy(),
         unpadded_orchard_pool_bundles,
     );
 
@@ -5514,13 +5518,23 @@ where
     stats
 }
 
-/// ZIP-317 change-strategy / input-selector factory used by both
-/// `propose_send` and `estimate_fee`. Keeps the configuration
-/// (Orchard-preferred change, minimum 0.1 ZEC output split) in one
-/// place so the two entry points can't drift.
+fn ordinary_payment_split_policy() -> SplitPolicy {
+    SplitPolicy::single_output()
+}
+
+fn note_management_split_policy() -> SplitPolicy {
+    SplitPolicy::with_min_output_value(
+        NonZeroUsize::new(NOTE_MANAGEMENT_TARGET_OUTPUT_COUNT).unwrap(),
+        Zatoshis::const_from_u64(MIN_NOTE_MANAGEMENT_OUTPUT_ZATOSHI),
+    )
+}
+
+/// ZIP-317 change-strategy / input-selector factory used by payment and
+/// shielding proposals.
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
     proposed_tx_version: Option<TxVersion>,
+    split_policy: SplitPolicy,
     unpadded_orchard_pool_bundles: bool,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
@@ -5531,10 +5545,7 @@ fn zip317_helper<DbT: InputSource>(
         change_memo,
         ShieldedPool::Orchard,
         DustOutputPolicy::default(),
-        SplitPolicy::with_min_output_value(
-            NonZeroUsize::new(4).unwrap(),
-            Zatoshis::const_from_u64(1000_0000),
-        ),
+        split_policy,
     );
     // Migration children only: count exactly the requested actions so the
     // proposal's fee matches the unpadded bundle the PCZT builder produces.
