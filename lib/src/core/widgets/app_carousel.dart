@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -306,43 +307,50 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
                     ).createShader(bounds),
                     child: NotificationListener<ScrollNotification>(
                       onNotification: _handleScrollNotification,
-                      child: PageView.builder(
-                        key: const ValueKey('app_carousel_page_view'),
-                        controller: _pageController,
-                        physics: widget.items.length == 1
-                            ? const NeverScrollableScrollPhysics()
-                            : const PageScrollPhysics(),
-                        itemCount: widget.items.length == 1 ? 1 : null,
-                        onPageChanged: (page) {
-                          _absolutePage = page;
-                          _pendingLogicalPage = _logicalPage(page);
-                        },
-                        itemBuilder: (context, page) {
-                          final logicalPage = _logicalPage(page);
-                          final item = widget.items[logicalPage];
-                          final card = Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: _pageInset,
-                            ),
-                            child: Center(
-                              child: _AppCarouselCard(
-                                key: ValueKey('app_carousel_card_$logicalPage'),
-                                item: item,
+                      child: ScrollConfiguration(
+                        behavior: const _AppCarouselScrollBehavior(),
+                        child: PageView.builder(
+                          key: const ValueKey('app_carousel_page_view'),
+                          controller: _pageController,
+                          physics: widget.items.length == 1
+                              ? const NeverScrollableScrollPhysics()
+                              : const PageScrollPhysics(),
+                          itemCount: widget.items.length == 1 ? 1 : null,
+                          onPageChanged: (page) {
+                            _absolutePage = page;
+                            _pendingLogicalPage = _logicalPage(page);
+                            _commitSettledPage();
+                          },
+                          itemBuilder: (context, page) {
+                            final logicalPage = _logicalPage(page);
+                            final item = widget.items[logicalPage];
+                            final card = Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: _pageInset,
                               ),
-                            ),
-                          );
-                          if (logicalPage != _activeLogicalPage) {
-                            return ExcludeSemantics(child: card);
-                          }
-                          return Semantics(
-                            container: true,
-                            label:
-                                '${widget.semanticLabel} '
-                                '${logicalPage + 1} of ${widget.items.length}. '
-                                '${item.message}',
-                            child: ExcludeSemantics(child: card),
-                          );
-                        },
+                              child: Center(
+                                child: _AppCarouselCard(
+                                  key: ValueKey(
+                                    'app_carousel_card_$logicalPage',
+                                  ),
+                                  item: item,
+                                ),
+                              ),
+                            );
+                            if (logicalPage != _activeLogicalPage) {
+                              return ExcludeSemantics(child: card);
+                            }
+                            return Semantics(
+                              container: true,
+                              label:
+                                  '${widget.semanticLabel} '
+                                  '${logicalPage + 1} of '
+                                  '${widget.items.length}. '
+                                  '${item.message}',
+                              child: ExcludeSemantics(child: card),
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
@@ -388,6 +396,16 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+class _AppCarouselScrollBehavior extends ScrollBehavior {
+  const _AppCarouselScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    ...super.dragDevices,
+    PointerDeviceKind.mouse,
+  };
 }
 
 class _AppCarouselCard extends StatelessWidget {

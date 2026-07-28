@@ -87,6 +87,28 @@ void main() {
     );
   });
 
+  testWidgets('mouse dragging changes page', (tester) async {
+    final pages = <int>[];
+    await tester.pumpWidget(
+      _harness(autoplay: false, onPageChanged: pages.add),
+    );
+    final pageView = find.byKey(const ValueKey('app_carousel_page_view'));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    final center = tester.getCenter(pageView);
+    await mouse.addPointer(location: center);
+    await mouse.down(center);
+    await mouse.moveBy(const Offset(-415, 0));
+    await mouse.up();
+    await tester.pumpAndSettle();
+
+    expect(pages, [1]);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('app_carousel_indicator_1'))),
+      const Size(40, 6),
+    );
+  });
+
   testWidgets('a single item is not duplicated or scrollable', (tester) async {
     await tester.pumpWidget(
       _harness(
@@ -132,6 +154,18 @@ void main() {
     await _advanceAutoplay(tester);
     await _advanceAutoplay(tester);
     expect(pages, [1, 2, 0]);
+  });
+
+  testWidgets('indicator selection responds before the card settles', (
+    tester,
+  ) async {
+    final pages = <int>[];
+    await tester.pumpWidget(_harness(onPageChanged: pages.add));
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(pages, [1]);
   });
 
   testWidgets('reduced motion disables autoplay', (tester) async {
