@@ -452,6 +452,7 @@ class _MigrationPreparationOutputRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final displayedValue = output.targetValueZatoshi ?? output.valueZatoshi;
     final destination = switch (output.kind) {
       rust_sync.MigrationPreparationOutputKind.migration => 'For migration',
       rust_sync.MigrationPreparationOutputKind.change => 'Stays in Orchard',
@@ -471,7 +472,7 @@ class _MigrationPreparationOutputRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '${_formatZecAmountCompact(output.valueZatoshi)} ZEC',
+              '${_formatZecAmountCompact(displayedValue)} ZEC',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppTypography.bodyMedium.copyWith(
@@ -609,13 +610,14 @@ String _preparationScheduleRowSemantics(
   };
   final outputs = transaction.outputs
       .map((output) {
+        final displayedValue = output.targetValueZatoshi ?? output.valueZatoshi;
         final destination = switch (output.kind) {
           rust_sync.MigrationPreparationOutputKind.migration => 'for migration',
           rust_sync.MigrationPreparationOutputKind.change => 'stays in Orchard',
           rust_sync.MigrationPreparationOutputKind.continuation =>
             'used in round ${output.nextRound ?? 1}',
         };
-        return '${_formatZecAmountCompact(output.valueZatoshi)} ZEC, $destination';
+        return '${_formatZecAmountCompact(displayedValue)} ZEC, $destination';
       })
       .join('; ');
   return [

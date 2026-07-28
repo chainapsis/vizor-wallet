@@ -2230,6 +2230,7 @@ fn late_preparation_broadcast_rerandomizes_remaining_effective_heights() {
     let displayed_heights = migration_preparation_transactions_for_run(
         &conn,
         "preparation-catch-up",
+        &[],
         denomination_confirmations_required(),
         0,
     )
@@ -6347,6 +6348,7 @@ fn staged_split_progress_tracks_the_active_frontier_and_projects_future_rounds()
     )
     .unwrap();
     for (stage_index, txid) in stage_txids.iter().enumerate() {
+        let is_migration_output = stage_index + 1 == stage_txids.len();
         let (raw_tx, status) = if stage_index == 0 {
             (Some("raw"), "broadcasted")
         } else {
@@ -6376,15 +6378,16 @@ fn staged_split_progress_tracks_the_active_frontier_and_projects_future_rounds()
             "INSERT INTO vizor_migration_denomination_stage_outputs
              (run_id, stage_index, output_order, output_index,
               value_zatoshi, note_version, kind, part_index)
-             VALUES (?1, ?2, 0, 0, 99920000, 2, ?3, NULL)",
+             VALUES (?1, ?2, 0, 0, 99920000, 2, ?3, ?4)",
             params![
                 run_id,
                 stage_index as u32,
-                if stage_index + 1 == stage_txids.len() {
+                if is_migration_output {
                     "migration"
                 } else {
                     "continuation"
-                }
+                },
+                is_migration_output.then_some(0u32),
             ],
         )
         .unwrap();
@@ -6426,6 +6429,7 @@ fn staged_split_progress_tracks_the_active_frontier_and_projects_future_rounds()
         status.preparation_transactions[0].outputs[0],
         MigrationPreparationOutputStatus {
             value_zatoshi: 99_920_000,
+            target_value_zatoshi: None,
             kind: MigrationPreparationOutputKind::Continuation,
             next_round: Some(2),
         },
@@ -6433,6 +6437,10 @@ fn staged_split_progress_tracks_the_active_frontier_and_projects_future_rounds()
     assert_eq!(
         status.preparation_transactions[2].outputs[0].kind,
         MigrationPreparationOutputKind::Migration,
+    );
+    assert_eq!(
+        status.preparation_transactions[2].outputs[0].target_value_zatoshi,
+        Some(100_000_000),
     );
 
     let delayed_status = status_for_run(&conn, run.clone(), 30).unwrap();
@@ -6534,6 +6542,44 @@ fn staged_split_progress_tracks_the_active_frontier_and_projects_future_rounds()
     assert_eq!(status.denomination_confirmation_count, 0);
     assert_eq!(status.denomination_split_completed_count, 2);
     assert_eq!(status.denomination_split_total_count, 3);
+}
+
+#[test]
+fn preparation_output_targets_exclude_reserved_migration_fees() {
+    let targets = [50_000_000, 20_000_000];
+    let mut assigned = BTreeSet::new();
+    let output = |value_zatoshi, kind, part_index| DenominationStageOutputRef {
+        output_index: 0,
+        value_zatoshi,
+        note_version: 2,
+        kind,
+        part_index,
+    };
+
+    assert_eq!(
+        migration_preparation_output_target_value(
+            &output(50_015_000, DenominationStageOutputKind::Migration, Some(0),),
+            &targets,
+            &mut assigned,
+        ),
+        Some(50_000_000),
+    );
+    assert_eq!(
+        migration_preparation_output_target_value(
+            &output(20_010_000, DenominationStageOutputKind::Migration, None),
+            &targets,
+            &mut assigned,
+        ),
+        Some(20_000_000),
+    );
+    assert_eq!(
+        migration_preparation_output_target_value(
+            &output(10_000, DenominationStageOutputKind::Change, None),
+            &targets,
+            &mut assigned,
+        ),
+        None,
+    );
 }
 
 #[test]

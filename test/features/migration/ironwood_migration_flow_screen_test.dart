@@ -2681,7 +2681,8 @@ void main() {
               kind: rust_sync.MigrationPreparationOutputKind.change,
             ),
             rust_sync.MigrationPreparationOutputStatus(
-              valueZatoshi: BigInt.from(10_000),
+              valueZatoshi: BigInt.from(50_010_000),
+              targetValueZatoshi: BigInt.from(50_000_000),
               kind: rust_sync.MigrationPreparationOutputKind.migration,
             ),
           ],
@@ -2752,12 +2753,14 @@ void main() {
     expect(find.text('4. 3 ZEC'), findsOneWidget);
     expect(find.text('Used in round 2'), findsOneWidget);
     expect(find.text('Stays in Orchard'), findsOneWidget);
+    expect(find.text('0.5 ZEC'), findsOneWidget);
+    expect(find.text('0.5001 ZEC'), findsNothing);
     expect(find.text('For migration'), findsOneWidget);
     expect(
       find.bySemanticsLabel(
         RegExp(
           r'Outputs: 4 ZEC, used in round 2; .* ZEC, stays in Orchard; '
-          r'.* ZEC, for migration',
+          r'0.5 ZEC, for migration',
         ),
       ),
       findsOneWidget,

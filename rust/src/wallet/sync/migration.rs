@@ -320,7 +320,10 @@ pub(crate) enum MigrationPreparationOutputKind {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MigrationPreparationOutputStatus {
+    /// Actual Orchard note value, including any fee reserved for its migration.
     pub value_zatoshi: u64,
+    /// Canonical ZIP 318 value that will reach Ironwood for migration outputs.
+    pub target_value_zatoshi: Option<u64>,
     pub kind: MigrationPreparationOutputKind,
     pub next_round: Option<u32>,
 }
@@ -4618,6 +4621,7 @@ fn status_for_run(
     let preparation_transactions = migration_preparation_transactions_for_run(
         conn,
         &run.run_id,
+        &run.target_values_zatoshi,
         denomination_confirmation_target,
         current_scanned_height,
     )?;
@@ -4735,6 +4739,7 @@ fn status_for_run(
 fn migration_preparation_transactions_for_run(
     conn: &rusqlite::Connection,
     run_id: &str,
+    target_values_zatoshi: &[u64],
     confirmation_target: u32,
     current_scanned_height: u32,
 ) -> Result<Vec<MigrationPreparationTransactionStatus>, String> {
@@ -4813,6 +4818,7 @@ fn migration_preparation_transactions_for_run(
                 result
             });
     let mut projected_completion_by_stage = BTreeMap::<u32, u32>::new();
+    let mut assigned_target_parts = BTreeSet::<u32>::new();
     let mut transactions = Vec::new();
     for (stage_index, planned_height, effective_height, fee_zatoshi, approximate_value_zatoshi) in
         stage_rows
@@ -4895,6 +4901,11 @@ fn migration_preparation_transactions_for_run(
             .iter()
             .map(|output| MigrationPreparationOutputStatus {
                 value_zatoshi: output.value_zatoshi,
+                target_value_zatoshi: migration_preparation_output_target_value(
+                    output,
+                    target_values_zatoshi,
+                    &mut assigned_target_parts,
+                ),
                 kind: match output.kind {
                     DenominationStageOutputKind::Migration => {
                         MigrationPreparationOutputKind::Migration
@@ -4927,6 +4938,37 @@ fn migration_preparation_transactions_for_run(
         });
     }
     Ok(transactions)
+}
+
+fn migration_preparation_output_target_value(
+    output: &DenominationStageOutputRef,
+    target_values_zatoshi: &[u64],
+    assigned_target_parts: &mut BTreeSet<u32>,
+) -> Option<u64> {
+    if output.kind != DenominationStageOutputKind::Migration {
+        return None;
+    }
+
+    let part_index = output
+        .part_index
+        .filter(|index| {
+            (*index as usize) < target_values_zatoshi.len()
+                && !assigned_target_parts.contains(index)
+        })
+        .or_else(|| {
+            target_values_zatoshi
+                .iter()
+                .enumerate()
+                .filter_map(|(index, value)| {
+                    let index = u32::try_from(index).ok()?;
+                    (!assigned_target_parts.contains(&index) && *value <= output.value_zatoshi)
+                        .then_some((index, *value))
+                })
+                .max_by_key(|(_, value)| *value)
+                .map(|(index, _)| index)
+        })?;
+    assigned_target_parts.insert(part_index);
+    target_values_zatoshi.get(part_index as usize).copied()
 }
 
 pub(crate) fn select_migration_batch_signing_part_indices(

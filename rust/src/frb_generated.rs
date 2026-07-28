@@ -7973,11 +7973,13 @@ impl SseDecode for crate::api::sync::MigrationPreparationOutputStatus {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_targetValueZatoshi = <Option<u64>>::sse_decode(deserializer);
         let mut var_kind =
             <crate::api::sync::MigrationPreparationOutputKind>::sse_decode(deserializer);
         let mut var_nextRound = <Option<u32>>::sse_decode(deserializer);
         return crate::api::sync::MigrationPreparationOutputStatus {
             value_zatoshi: var_valueZatoshi,
+            target_value_zatoshi: var_targetValueZatoshi,
             kind: var_kind,
             next_round: var_nextRound,
         };
@@ -10587,6 +10589,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPreparationOut
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.value_zatoshi.into_into_dart().into_dart(),
+            self.target_value_zatoshi.into_into_dart().into_dart(),
             self.kind.into_into_dart().into_dart(),
             self.next_round.into_into_dart().into_dart(),
         ]
@@ -13101,6 +13104,7 @@ impl SseEncode for crate::api::sync::MigrationPreparationOutputStatus {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u64>::sse_encode(self.value_zatoshi, serializer);
+        <Option<u64>>::sse_encode(self.target_value_zatoshi, serializer);
         <crate::api::sync::MigrationPreparationOutputKind>::sse_encode(self.kind, serializer);
         <Option<u32>>::sse_encode(self.next_round, serializer);
     }

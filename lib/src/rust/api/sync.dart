@@ -1455,19 +1455,27 @@ class MigrationPartStatus {
 enum MigrationPreparationOutputKind { migration, change, continuation }
 
 class MigrationPreparationOutputStatus {
+  /// Actual Orchard note value, including any fee reserved for its migration.
   final BigInt valueZatoshi;
+
+  /// Canonical ZIP 318 value that will reach Ironwood for migration outputs.
+  final BigInt? targetValueZatoshi;
   final MigrationPreparationOutputKind kind;
   final int? nextRound;
 
   const MigrationPreparationOutputStatus({
     required this.valueZatoshi,
+    this.targetValueZatoshi,
     required this.kind,
     this.nextRound,
   });
 
   @override
   int get hashCode =>
-      valueZatoshi.hashCode ^ kind.hashCode ^ nextRound.hashCode;
+      valueZatoshi.hashCode ^
+      targetValueZatoshi.hashCode ^
+      kind.hashCode ^
+      nextRound.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1475,6 +1483,7 @@ class MigrationPreparationOutputStatus {
       other is MigrationPreparationOutputStatus &&
           runtimeType == other.runtimeType &&
           valueZatoshi == other.valueZatoshi &&
+          targetValueZatoshi == other.targetValueZatoshi &&
           kind == other.kind &&
           nextRound == other.nextRound;
 }

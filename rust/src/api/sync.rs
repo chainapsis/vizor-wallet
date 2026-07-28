@@ -774,7 +774,10 @@ pub enum MigrationPreparationOutputKind {
 }
 
 pub struct MigrationPreparationOutputStatus {
+    /// Actual Orchard note value, including any fee reserved for its migration.
     pub value_zatoshi: u64,
+    /// Canonical ZIP 318 value that will reach Ironwood for migration outputs.
+    pub target_value_zatoshi: Option<u64>,
     pub kind: MigrationPreparationOutputKind,
     pub next_round: Option<u32>,
 }
@@ -1345,6 +1348,7 @@ pub fn get_orchard_migration_status(
                             .into_iter()
                             .map(|output| MigrationPreparationOutputStatus {
                                 value_zatoshi: output.value_zatoshi,
+                                target_value_zatoshi: output.target_value_zatoshi,
                                 kind: match output.kind {
                                     wallet_sync::MigrationPreparationOutputKind::Migration => {
                                         MigrationPreparationOutputKind::Migration
