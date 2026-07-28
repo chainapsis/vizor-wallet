@@ -1563,6 +1563,63 @@ fn rerandomized_preparation_stage_waits_for_its_effective_height() {
 }
 
 #[test]
+fn legacy_zero_expiry_preparation_stage_remains_broadcastable() {
+    let (_temp_dir, db_path, run_id) =
+        create_denomination_expiry_test_run(migration::DenominationStageStatus::Pending);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        "UPDATE vizor_migration_denomination_stages
+         SET expiry_height = 0
+         WHERE run_id = ?1",
+        rusqlite::params![run_id],
+    )
+    .unwrap();
+    let stage = migration::pending_raw_denomination_stages(
+        &conn,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap()
+    .remove(0);
+
+    assert_eq!(
+        expired_denomination_stage_count(&conn, &run_id, u32::MAX).unwrap(),
+        0
+    );
+    assert!(
+        retire_expired_denomination_run(&db_path, WalletNetwork::Test, &run_id, u32::MAX,)
+            .unwrap()
+            .is_none()
+    );
+
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            &stage,
+            stage.scheduled_height - 1,
+        ),
+        DenominationStageBroadcastReadiness::AwaitingHeight,
+    );
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            &stage,
+            stage.scheduled_height,
+        ),
+        DenominationStageBroadcastReadiness::Ready,
+    );
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Immediate,
+            &stage,
+            0,
+        ),
+        DenominationStageBroadcastReadiness::Ready,
+    );
+}
+
+#[test]
 fn preparation_stage_expired_at_tip_waits_for_scanned_retirement() {
     let (_temp_dir, db_path, run_id) =
         create_denomination_expiry_test_run(migration::DenominationStageStatus::Pending);

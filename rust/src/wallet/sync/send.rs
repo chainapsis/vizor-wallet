@@ -4357,7 +4357,11 @@ fn denomination_stage_broadcast_readiness(
     stage: &super::migration::PendingRawDenominationStage,
     chain_tip_height: u32,
 ) -> DenominationStageBroadcastReadiness {
-    if stage.expiry_height <= chain_tip_height {
+    // Preparation stages created before canonical expiries were introduced
+    // persist zero as the transaction's no-expiry sentinel. Preserve that
+    // meaning so an in-flight legacy run can finish instead of waiting forever
+    // for an expiry scan that deliberately excludes zero-expiry stages.
+    if stage.expiry_height > 0 && stage.expiry_height <= chain_tip_height {
         DenominationStageBroadcastReadiness::AwaitingExpiryScan
     } else if preparation_timing_policy == super::migration::PreparationTimingPolicy::Immediate
         || stage.effective_broadcast_height() <= chain_tip_height
