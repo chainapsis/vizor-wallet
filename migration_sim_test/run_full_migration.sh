@@ -5,14 +5,17 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SIM_DIR="$ROOT_DIR/migration_sim_test"
 ARTIFACT_DIR="$SIM_DIR/artifacts"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
-RUN_LOG="$ARTIFACT_DIR/full-$RUN_ID.log"
-OS_LOG="$ARTIFACT_DIR/full-$RUN_ID-rust.log"
-DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/migration_sim_full_migration_test-driver.log"
+ARTIFACT_PREFIX="${E2E_MIGRATION_SIM_ARTIFACT_PREFIX:-full}"
+RUN_LOG="$ARTIFACT_DIR/$ARTIFACT_PREFIX-$RUN_ID.log"
+OS_LOG="$ARTIFACT_DIR/$ARTIFACT_PREFIX-$RUN_ID-rust.log"
+TEST_FILE="${E2E_TEST_FILE:-integration_test/migration_sim_full_migration_test.dart}"
+TEST_NAME="$(basename "$TEST_FILE" .dart)"
+DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/$TEST_NAME-driver.log"
 START_TIME="$(date '+%Y-%m-%d %H:%M:%S')"
 
 mkdir -p "$ARTIFACT_DIR"
 
-export E2E_TEST_FILE="integration_test/migration_sim_full_migration_test.dart"
+export E2E_TEST_FILE="$TEST_FILE"
 export E2E_FAST_TESTNET_MIGRATION=true
 export E2E_ORCHARD_FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-99.0002}"
 export E2E_ORCHARD_FUNDING_ZATOSHI="${E2E_ORCHARD_FUNDING_ZATOSHI:-9900020000}"
@@ -31,7 +34,7 @@ status="${PIPESTATUS[0]}"
 set -e
 
 if [[ -f "$DRIVER_LOG" ]]; then
-  cp "$DRIVER_LOG" "$ARTIFACT_DIR/full-$RUN_ID-driver.log"
+  cp "$DRIVER_LOG" "$ARTIFACT_DIR/$ARTIFACT_PREFIX-$RUN_ID-driver.log"
 fi
 
 /usr/bin/log show \
@@ -45,10 +48,10 @@ db_path="$(
     tail -1
 )"
 if [[ -n "$db_path" && -f "$db_path" ]]; then
-  sqlite3 "$db_path" ".timeout 5000" ".backup '$ARTIFACT_DIR/full-$RUN_ID.db'"
+  sqlite3 "$db_path" ".timeout 5000" ".backup '$ARTIFACT_DIR/$ARTIFACT_PREFIX-$RUN_ID.db'"
   "$SIM_DIR/inspect.sh" "$db_path" \
-    >"$ARTIFACT_DIR/full-$RUN_ID-state.txt" 2>&1 || true
+    >"$ARTIFACT_DIR/$ARTIFACT_PREFIX-$RUN_ID-state.txt" 2>&1 || true
 fi
 
-echo "artifacts: $ARTIFACT_DIR/full-$RUN_ID*"
+echo "artifacts: $ARTIFACT_DIR/$ARTIFACT_PREFIX-$RUN_ID*"
 exit "$status"

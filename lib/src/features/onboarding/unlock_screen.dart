@@ -100,8 +100,8 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
       body: SafeArea(
         child: OnboardingAuthShell(
           card: OnboardingAuthCard(
-            width: _UnlockContent.cardWidth,
-            height: _UnlockContent.cardHeight,
+            width: DesktopUnlockContent.cardWidth,
+            height: DesktopUnlockContent.cardHeight,
             borderRadius: AppSpacing.base,
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.sm,
@@ -109,7 +109,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
               AppSpacing.sm,
               AppSpacing.lg,
             ),
-            child: _UnlockContent(
+            child: DesktopUnlockContent(
               passwordController: _passwordController,
               canSubmit: _canSubmit,
               messageText: _errorText ?? _passwordPolicyMessage,
@@ -128,14 +128,18 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   }
 }
 
-class _UnlockContent extends StatelessWidget {
-  const _UnlockContent({
+class DesktopUnlockContent extends StatelessWidget {
+  const DesktopUnlockContent({
     required this.passwordController,
     required this.canSubmit,
     required this.messageText,
     required this.onChanged,
     required this.onSubmit,
-    required this.onForgotPassword,
+    this.onForgotPassword,
+    this.autofocus = false,
+    this.showForgotPassword = true,
+    this.reserveForgotPasswordSpace = false,
+    super.key,
   });
 
   final TextEditingController passwordController;
@@ -143,7 +147,10 @@ class _UnlockContent extends StatelessWidget {
   final String? messageText;
   final VoidCallback onChanged;
   final Future<void> Function() onSubmit;
-  final VoidCallback onForgotPassword;
+  final VoidCallback? onForgotPassword;
+  final bool autofocus;
+  final bool showForgotPassword;
+  final bool reserveForgotPasswordSpace;
 
   static const double cardWidth = 396;
   static const double cardHeight = 509;
@@ -210,7 +217,7 @@ class _UnlockContent extends StatelessWidget {
                 leadingSlotWidth: 32,
                 inputHorizontalPadding: AppSpacing.s,
                 controller: passwordController,
-                autofocus: false,
+                autofocus: autofocus,
                 showVisibilityToggle: false,
                 messageText: messageText,
                 tone: messageText == null
@@ -231,13 +238,18 @@ class _UnlockContent extends StatelessWidget {
                   minWidth: _buttonWidth,
                   child: const Text('Unlock Vizor'),
                 ),
-                const SizedBox(height: AppSpacing.s),
-                AppButton(
-                  onPressed: onForgotPassword,
-                  variant: AppButtonVariant.ghost,
-                  minWidth: _buttonWidth,
-                  child: const Text('Forgot password?'),
-                ),
+                if (showForgotPassword) ...[
+                  const SizedBox(height: AppSpacing.s),
+                  AppButton(
+                    onPressed: onForgotPassword,
+                    variant: AppButtonVariant.ghost,
+                    minWidth: _buttonWidth,
+                    child: const Text('Forgot password?'),
+                  ),
+                ] else if (reserveForgotPasswordSpace) ...[
+                  const SizedBox(height: AppSpacing.s),
+                  const SizedBox(height: AppButtonSizing.largeHeight),
+                ],
               ],
             ),
           ],
