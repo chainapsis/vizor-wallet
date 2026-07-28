@@ -118,12 +118,17 @@ struct MigrationPreparationTrackingCompletionPresentation: Equatable {
 
 enum MigrationPreparationTrackingPostBatchAction: Equatable {
   case continueTracking
-  case awaitForegroundHandoff(
+  case finishConfirmed(
     MigrationPreparationTrackingCompletionPresentation
   )
   case finish
 }
 
+/// The visible caption for a task that observed its whole wave confirm.
+///
+/// One continued-processing task tracks exactly one confirmation wave. Later
+/// preparation stages cannot exist until the foreground app syncs and advances
+/// the run, so the task says which step landed and stops.
 func migrationPreparationTrackingCompletionPresentation(
   _ batch: MigrationPreparationTrackingBatch
 ) -> MigrationPreparationTrackingCompletionPresentation? {
@@ -133,9 +138,16 @@ func migrationPreparationTrackingCompletionPresentation(
   else {
     return nil
   }
+  guard let progress = batch.progress else {
+    return MigrationPreparationTrackingCompletionPresentation(
+      title: "Preparation transactions confirmed",
+      subtitle: "Open Vizor to continue"
+    )
+  }
   return MigrationPreparationTrackingCompletionPresentation(
-    title: "Open Vizor to continue preparation",
-    subtitle: "Confirmed transactions are ready"
+    title:
+      "Preparation step \(progress.completedTransactionCount) of \(progress.totalTransactionCount) confirmed",
+    subtitle: "Open Vizor to continue"
   )
 }
 
@@ -149,7 +161,7 @@ func migrationPreparationTrackingPostBatchAction(
       batch
     )
   {
-    return .awaitForegroundHandoff(presentation)
+    return .finishConfirmed(presentation)
   }
   if batch.shouldContinue && !stopRequested {
     return .continueTracking
@@ -199,7 +211,9 @@ func migrationPreparationTrackingBatch(
       notificationEvents.append(
         MigrationPreparationNotificationEvent(
           scope: result.scope,
-          kind: .needsForegroundRecovery,
+          // A confirmed wave is the healthy outcome, not a recovery request.
+          // Its own kind keeps the alert copy distinct from real failures.
+          kind: .confirmedWaveReady,
           fingerprint:
             "confirmed-wave-\(progress.completedTransactionCount)-\(progress.confirmedUnitCount)"
         )
@@ -547,12 +561,42 @@ func migrationPreparationPendingTrackableScopes(
   confirmationTrackableScopes.subtracting(continuationScopes)
 }
 
+/// Whether a task the system just launched has anything left to observe.
+///
+/// A request stays queued after the wave it was armed for confirms. Without
+/// this guard the launch path starts tracking the already-recorded run again,
+/// re-posts its notification, and repeats the churn on every wake. The launch
+/// drops the request only when a recorded continuation explains the empty
+/// pending set: an empty pending set with no recorded continuation means the
+/// two launch-time inspections disagreed (a transient read failure), and the
+/// tracking pass's retry disposition absorbs that without discarding the
+/// queued request.
+func migrationPreparationShouldTrackOnLaunch(
+  disposition: BackgroundMigrationPreparationContinuedTaskDisposition,
+  pendingTrackableScopes: Set<String>,
+  recordedContinuationScopes: Set<String>
+) -> Bool {
+  guard disposition == .trackConfirmations else { return false }
+  if !pendingTrackableScopes.isEmpty { return true }
+  return recordedContinuationScopes.isEmpty
+}
+
 /// Report whether the continued-processing task ended without an observed
 /// migration failure.
 ///
-/// Expiration interrupts this one execution opportunity; it does not prove
-/// that the migration failed and BGContinuedProcessingTask does not retry work
-/// after `success: false`.
+/// Expiration interrupts one execution opportunity and is not a migration
+/// failure: the run is healthy, the OS simply reclaimed the slot, and the
+/// tracking pass re-arms itself. Reporting it as `success: false` put a red
+/// "Failed" presentation on a perfectly healthy migration.
+///
+/// The task reports failure only for an observed task failure — inspection
+/// failure, a forked transaction, or a notification that could not be
+/// submitted — or for a quiesced wallet mutation, where the wallet changed
+/// underneath the run.
+///
+/// `expired`, `handedOff`, and `notificationsDisabled` no longer influence the
+/// verdict. They stay in the signature because callers pass the whole runtime
+/// snapshot and the tests pin each of those combinations to "not a failure".
 func migrationPreparationTrackingTaskSucceeded(
   taskFailed: Bool,
   quiesced: Bool,
@@ -561,9 +605,14 @@ func migrationPreparationTrackingTaskSucceeded(
   notificationsDisabled: Bool
 ) -> Bool {
   !taskFailed && !quiesced
-    && (!expired || handedOff || notificationsDisabled)
 }
 
+/// Whether the manager should submit a replacement tracking request.
+///
+/// A mid-wave expiry (or a failed completion) still has confirmations left to
+/// observe, so it re-arms. A clean wave-confirm success does not: there is
+/// nothing left for a read-only task to watch, and the foreground app submits
+/// the next wave's task after it syncs and advances the run.
 func migrationPreparationTrackingShouldAttemptRearm(
   completionFailed: Bool,
   quiesced: Bool,
@@ -571,20 +620,8 @@ func migrationPreparationTrackingShouldAttemptRearm(
   handedOff: Bool,
   notificationsDisabled: Bool
 ) -> Bool {
-  completionFailed && !quiesced && !expired && !handedOff
+  (completionFailed || expired) && !quiesced && !handedOff
     && !notificationsDisabled
-}
-
-func migrationPreparationTrackingExpirationNotificationEvents(
-  scopes: Set<String>
-) -> [MigrationPreparationNotificationEvent] {
-  scopes.sorted().map {
-    MigrationPreparationNotificationEvent(
-      scope: $0,
-      kind: .needsForegroundRecovery,
-      fingerprint: "confirmation-tracking-expired"
-    )
-  }
 }
 
 func shouldMarkMigrationPreparationForegroundContinuation(
@@ -1281,9 +1318,10 @@ final class BackgroundMigrationPreparationManager {
     stateLock.withPreparationLock {
       submissionInFlight = false
     }
-    switch migrationPreparationContinuedTaskDisposition(
+    let disposition = migrationPreparationContinuedTaskDisposition(
       preparationResumeTarget()
-    ) {
+    )
+    switch disposition {
     case .trackConfirmations:
       break
     case .foregroundOnly:
@@ -1301,6 +1339,25 @@ final class BackgroundMigrationPreparationManager {
         taskRequestWithIdentifier: Self.taskIdentifier
       )
       recordSchedulingState("not_needed_on_launch")
+      cancelWatchdog()
+      task.setTaskCompleted(success: true)
+      return
+    }
+    // A request armed for a wave that has since confirmed is still queued when
+    // the system finally starts it. Re-tracking that run would re-observe the
+    // same transactions and re-post its notification, so drop the request
+    // instead and let the foreground app arm the next wave's task.
+    guard migrationPreparationShouldTrackOnLaunch(
+      disposition: disposition,
+      pendingTrackableScopes: pendingTrackableScopes(),
+      recordedContinuationScopes: stateLock.withPreparationLock {
+        foregroundContinuationScopes
+      }
+    ) else {
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      recordSchedulingState("no_trackable_run_on_launch")
       cancelWatchdog()
       task.setTaskCompleted(success: true)
       return
@@ -1364,16 +1421,15 @@ final class BackgroundMigrationPreparationManager {
             taskFailureObserved: taskFailureObserved,
             stopRequested: self.isTrackingStopRequested
           ) {
-          case .awaitForegroundHandoff(let presentation):
-            self.waitForForegroundHandoff(
-              task,
-              presentation: presentation,
-              cancellation: cancellation
-            )
+          case .finishConfirmed(let presentation):
+            // One task tracks one confirmation wave. The next wave cannot
+            // exist until the foreground app syncs and advances the run, so
+            // finish successfully now instead of idling until the OS expires
+            // the task and the expiry reads as a migration failure.
             self.finishConfirmationTrackingTask(
               task,
               taskFailed: false,
-              completionPresentation: nil
+              completionPresentation: presentation
             )
             return
           case .finish:
@@ -1451,6 +1507,13 @@ final class BackgroundMigrationPreparationManager {
       )
     }
 
+    // Snapshot once per pass. A run whose wave already confirmed was recorded
+    // by `applyTrackingBatch`, so it stops being observed here while the other
+    // accounts keep tracking. Its cached entry in `trackingProgressByScope`
+    // still contributes to the aggregate progress the activity displays.
+    let recordedContinuationScopes = stateLock.withPreparationLock {
+      foregroundContinuationScopes
+    }
     var results: [MigrationPreparationScopeTrackingResult] = []
     for manifest in manifests {
       guard let runId = manifest.expectedRunId else { continue }
@@ -1459,10 +1522,7 @@ final class BackgroundMigrationPreparationManager {
         accountUuid: manifest.accountUuid,
         runId: runId
       )
-      let alreadyHandedOff = stateLock.withPreparationLock {
-        foregroundContinuationScopes.contains(scope)
-      }
-      if alreadyHandedOff {
+      if recordedContinuationScopes.contains(scope) {
         continue
       }
       print(
@@ -1742,26 +1802,6 @@ final class BackgroundMigrationPreparationManager {
     return !isTrackingStopRequested && !cancellation.isCancelled
   }
 
-  private func waitForForegroundHandoff(
-    _ task: BGContinuedProcessingTask,
-    presentation: MigrationPreparationTrackingCompletionPresentation,
-    cancellation: BackgroundMigrationCancellation
-  ) {
-    task.updateTitle(
-      presentation.title,
-      subtitle: presentation.subtitle
-    )
-    recordSchedulingState("confirmation_step_ready_for_foreground")
-    while !isTrackingStopRequested {
-      if cancellation.waitUntilCancelled(
-        timeout: Self.progressHeartbeatInterval
-      ) {
-        return
-      }
-      advanceTrackingHeartbeat()
-    }
-  }
-
   private func applyTrackingBatch(
     _ batch: MigrationPreparationTrackingBatch
   ) -> Bool {
@@ -1867,24 +1907,21 @@ final class BackgroundMigrationPreparationManager {
         disabled: notificationAuthorization.isDisabled
       )
     }
-    if (runtime.handedOff || runtime.expired) && !runtime.quiesced {
+    // Only an explicit foreground handoff parks every eligible run as
+    // handed-off. Confirmed-wave scopes are already recorded incrementally by
+    // `applyTrackingBatch` once their notification is submitted, so blanket
+    // marking on a mid-wave expiry would park runs that never confirmed and
+    // block the background task from re-arming and resuming them.
+    if runtime.handedOff && !runtime.quiesced {
       markForegroundContinuationsReady()
     }
-    let expirationNotificationSubmitted: Bool
-    if runtime.expired && !runtime.quiesced && !runtime.disabled {
-      let scopes = stateLock.withPreparationLock {
-        foregroundContinuationScopes
-      }
-      expirationNotificationSubmitted = submitNotificationEvents(
-        migrationPreparationTrackingExpirationNotificationEvents(
-          scopes: scopes
-        )
-      )
-    } else {
-      expirationNotificationSubmitted = true
-    }
-    let completionFailed =
-      taskFailed || !expirationNotificationSubmitted
+    // Expiry posts no notification of its own. Every scope recorded in
+    // `foregroundContinuationScopes` here is a confirmed wave that already
+    // carried its `confirmedWaveReady` alert; re-alerting it with recovery
+    // copy paints "needs attention" over a healthy run. The interrupted wave
+    // is not in that set — it re-arms below instead, and a failed re-arm
+    // submission posts its own needs-action notification.
+    let completionFailed = taskFailed
 
     let visibleCompletionPresentation =
       !runtime.handedOff && !runtime.expired && !runtime.quiesced
@@ -1895,6 +1932,14 @@ final class BackgroundMigrationPreparationManager {
       task.updateTitle(
         visibleCompletionPresentation.title,
         subtitle: visibleCompletionPresentation.subtitle
+      )
+    } else if runtime.expired && !runtime.quiesced {
+      // The activity is still captioned "Checking transaction confirmations".
+      // The OS reclaimed this execution slot mid-wave; say that instead of
+      // leaving a caption that implies counting is still happening.
+      task.updateTitle(
+        "Confirmation tracking paused",
+        subtitle: "Open Vizor to continue"
       )
     } else if runtime.quiesced {
       // The activity is still captioned "Checking transaction confirmations".
@@ -1921,7 +1966,10 @@ final class BackgroundMigrationPreparationManager {
       handedOff: runtime.handedOff,
       notificationsDisabled: runtime.disabled
     )
-    if success {
+    // A mid-wave expiry now completes successfully, but it still has
+    // confirmations left to observe and re-arms below. Cancelling the pending
+    // request here would delete the very submission that re-arm depends on.
+    if success && !runtime.expired {
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )

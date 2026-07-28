@@ -16,15 +16,20 @@ protocol MigrationPreparationNotificationCenter: AnyObject {
 extension UNUserNotificationCenter: MigrationPreparationNotificationCenter {}
 
 enum MigrationPreparationNotificationKind: String, Codable, Equatable {
+  /// A confirmation wave finished on a healthy run. Nothing is wrong; the
+  /// foreground app just has to reopen to sync and advance the next wave.
+  case confirmedWaveReady
   case needsForegroundRecovery
   case terminalFailure
 
   fileprivate var priority: Int {
     switch self {
-    case .needsForegroundRecovery:
+    case .confirmedWaveReady:
       return 0
-    case .terminalFailure:
+    case .needsForegroundRecovery:
       return 1
+    case .terminalFailure:
+      return 2
     }
   }
 }
@@ -34,6 +39,10 @@ struct MigrationPreparationNotificationEvent: Codable, Equatable {
   let kind: MigrationPreparationNotificationKind
   let fingerprint: String
 
+  /// Dedupe identity is per scope *and* kind on purpose. A healthy
+  /// `confirmedWaveReady` fingerprint that was already accepted therefore
+  /// cannot suppress a later `needsForegroundRecovery` or `terminalFailure`
+  /// alert for the same run — the two carry different keys.
   fileprivate var key: String {
     "\(scope)|\(kind.rawValue)"
   }
@@ -136,14 +145,23 @@ struct MigrationPreparationNotificationBatchState: Codable, Equatable {
     let body: String
     if accountCount == 1 {
       switch highestPriority {
+      case .confirmedWaveReady:
+        title = "Migration step confirmed"
+        body = "Open Vizor to continue."
       case .needsForegroundRecovery, .terminalFailure:
         title = "Migration needs attention"
         body = "Open Vizor to continue."
       }
     } else {
       title = "Migration updates"
-      body =
-        "\(accountCount) accounts need attention. Open Vizor to continue."
+      switch highestPriority {
+      case .confirmedWaveReady:
+        body =
+          "\(accountCount) accounts are ready. Open Vizor to continue."
+      case .needsForegroundRecovery, .terminalFailure:
+        body =
+          "\(accountCount) accounts need attention. Open Vizor to continue."
+      }
     }
     return MigrationPreparationNotificationSummary(
       events: events,

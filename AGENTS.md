@@ -506,8 +506,8 @@ Swift BackgroundMigrationPreparationManager
     → native lightwalletd GetLatestBlock + GetTransaction queries
     → update system task progress until every executed preparation tx has
       3 confirmations
-    → persist a foreground-continuation token and notify the user
-    → keep the task visible as "Open Vizor" until foreground handoff or expiry
+    → record the foreground continuation and post a "step confirmed" alert
+    → complete the continued-processing task successfully for that wave
     → leave sync / migration advance to foreground
 ```
 
@@ -522,11 +522,13 @@ Swift BackgroundMigrationPreparationManager
   recovery signal, never a reason to repair the DB from the system task.
 - The iOS task treats `NotFound` and mempool as zero confirmations, derives
   mined confirmation depth from the queried chain tip, and waits until every
-  observable tx in the current wave reaches 3 confirmations. It then persists
-  the foreground handoff, notifies the user to open Vizor, and keeps the system
-  task visible without a completion presentation until foreground handoff or
-  OS expiration. Foreground reentry owns the wallet sync, denomination
-  advance, and submission of a fresh read-only task for the next wave.
+  observable tx in the current wave reaches 3 confirmations. It then records
+  the foreground continuation, posts a distinct "step confirmed" notification,
+  and completes the continued-processing task successfully. One task tracks one
+  wave; it never idles waiting for the user. Expiration of a mid-wave tracking
+  pass is reported as pause-and-re-arm, never as failure. Foreground reentry
+  owns the wallet sync, denomination advance, and submission of a fresh
+  read-only task for the next wave.
 - Android keeps its WorkManager foreground worker and native preparation path.
   The worker may run the existing mode-2 full sync, inspect proof readiness,
   advance denomination preparation, and enqueue a continuation.
@@ -570,13 +572,18 @@ while an executed denomination preparation waits for confirmations.
   `tip - minedHeight + 1`, capped at 3.
 - Reaching 3 confirmations finishes only the current observation wave. The
   manager stores a foreground-continuation token, posts an “Open Vizor”
-  notification, and completes that system task without opening the wallet DB
-  for sync or advance.
+  notification under its own `confirmedWaveReady` kind so healthy copy never
+  reuses failure copy, and immediately completes that system task successfully
+  without opening the wallet DB for sync or advance. It does not wait for the
+  user; a completed wave leaves nothing for a read-only task to observe.
 - Foreground reentry acknowledges the token before syncing and advancing the
   durable run. If another transaction wave is materialized, it submits a fresh
   read-only continued-processing task.
-- OS expiration is not reported as success and also hands the run back to the
-  foreground recovery path.
+- OS expiration is completed without a failure presentation and re-arms
+  background tracking, because it interrupts one execution opportunity rather
+  than proving the migration failed. Expiry posts no notification of its own:
+  scopes whose waves already confirmed keep their earlier step-confirmed
+  alert, and the interrupted wave resumes when the re-armed task runs.
 
 ### Send Flow
 

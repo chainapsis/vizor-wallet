@@ -390,13 +390,111 @@ class RunnerTests: XCTestCase {
         notificationsDisabled: false
       )
     )
-    XCTAssertFalse(
+  }
+
+  func testExpiredMidWaveTrackingRearmsInsteadOfStopping() {
+    // Expiration only interrupts one execution opportunity. The wave still has
+    // confirmations left to observe, so the manager submits a replacement.
+    XCTAssertTrue(
       migrationPreparationTrackingShouldAttemptRearm(
-        completionFailed: true,
+        completionFailed: false,
         quiesced: false,
         expired: true,
         handedOff: false,
         notificationsDisabled: false
+      )
+    )
+  }
+
+  func testExpiredTrackingDoesNotRearmAfterHandoffOrRevocation() {
+    XCTAssertFalse(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: false,
+        expired: true,
+        handedOff: true,
+        notificationsDisabled: false
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: false,
+        expired: true,
+        handedOff: false,
+        notificationsDisabled: true
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: true,
+        expired: true,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testConfirmedWaveSuccessDoesNotRearmTracking() {
+    // Nothing is left for a read-only task to watch. The foreground app arms
+    // the next wave's task after it syncs and advances the run.
+    XCTAssertFalse(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: false,
+        expired: false,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testLaunchWithoutATrackableRunDoesNotStartTracking() {
+    // The request armed for the previous wave is still queued once that wave
+    // confirms. Starting tracking again would re-observe the same
+    // transactions and re-post the same notification on every wake.
+    XCTAssertFalse(
+      migrationPreparationShouldTrackOnLaunch(
+        disposition: .trackConfirmations,
+        pendingTrackableScopes: [],
+        recordedContinuationScopes: ["test:account-a:run-1"]
+      )
+    )
+    XCTAssertTrue(
+      migrationPreparationShouldTrackOnLaunch(
+        disposition: .trackConfirmations,
+        pendingTrackableScopes: ["test:account-a:run-1"],
+        recordedContinuationScopes: []
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationShouldTrackOnLaunch(
+        disposition: .foregroundOnly,
+        pendingTrackableScopes: ["test:account-a:run-1"],
+        recordedContinuationScopes: []
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationShouldTrackOnLaunch(
+        disposition: .complete,
+        pendingTrackableScopes: ["test:account-a:run-1"],
+        recordedContinuationScopes: []
+      )
+    )
+  }
+
+  func testLaunchInspectionDisagreementStillTracks() {
+    // The disposition saw a state-0 run but the trackable-scope re-inspection
+    // came back empty with no recorded continuation to explain it. That is a
+    // transient read failure, not a handed-off wave; dropping the queued
+    // request here would kill background tracking until the next foreground
+    // launch. Track instead — the pass-level retry disposition absorbs it.
+    XCTAssertTrue(
+      migrationPreparationShouldTrackOnLaunch(
+        disposition: .trackConfirmations,
+        pendingTrackableScopes: [],
+        recordedContinuationScopes: []
       )
     )
   }
@@ -460,17 +558,21 @@ class RunnerTests: XCTestCase {
       batch.notificationEvents.map(\.scope),
       ["test:account-a:run-1", "test:account-b:run-2"]
     )
+    XCTAssertEqual(
+      batch.notificationEvents.map(\.kind),
+      [.confirmedWaveReady, .needsForegroundRecovery]
+    )
     XCTAssertNil(
       migrationPreparationTrackingCompletionPresentation(batch)
     )
   }
 
-  func testCompletedTrackingScopeHandsOffWithoutBackgroundWalletWork() {
+  func testCompletedTrackingScopeFinishesWithoutBackgroundWalletWork() {
     let completedProgress = MigrationPreparationConfirmationProgress(
-      confirmedUnitCount: 3,
-      totalUnitCount: 3,
-      completedTransactionCount: 1,
-      totalTransactionCount: 1,
+      confirmedUnitCount: 6,
+      totalUnitCount: 6,
+      completedTransactionCount: 2,
+      totalTransactionCount: 4,
       isComplete: true
     )
     let batch = migrationPreparationTrackingBatch(
@@ -493,20 +595,22 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(
       migrationPreparationTrackingCompletionPresentation(batch),
       MigrationPreparationTrackingCompletionPresentation(
-        title: "Open Vizor to continue preparation",
-        subtitle: "Confirmed transactions are ready"
+        title: "Preparation step 2 of 4 confirmed",
+        subtitle: "Open Vizor to continue"
       )
     )
+    // The task owns one wave. It reports that wave successfully instead of
+    // idling until the OS expires it and the expiry reads as "Failed".
     XCTAssertEqual(
       migrationPreparationTrackingPostBatchAction(
         batch,
         taskFailureObserved: false,
         stopRequested: false
       ),
-      .awaitForegroundHandoff(
+      .finishConfirmed(
         MigrationPreparationTrackingCompletionPresentation(
-          title: "Open Vizor to continue preparation",
-          subtitle: "Confirmed transactions are ready"
+          title: "Preparation step 2 of 4 confirmed",
+          subtitle: "Open Vizor to continue"
         )
       )
     )
@@ -515,9 +619,130 @@ class RunnerTests: XCTestCase {
       [
         MigrationPreparationNotificationEvent(
           scope: "test:account-a:run-1",
-          kind: .needsForegroundRecovery,
-          fingerprint: "confirmed-wave-1-3"
+          kind: .confirmedWaveReady,
+          fingerprint: "confirmed-wave-2-6"
         )
+      ]
+    )
+  }
+
+  func testObservedFailureOrStopRequestOverridesConfirmedWaveCompletion() {
+    let completedProgress = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 3,
+      totalUnitCount: 3,
+      completedTransactionCount: 1,
+      totalTransactionCount: 1,
+      isComplete: true
+    )
+    let batch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-a:run-1",
+          disposition: .completed(completedProgress)
+        )
+      ]
+    )
+
+    XCTAssertEqual(
+      migrationPreparationTrackingPostBatchAction(
+        batch,
+        taskFailureObserved: true,
+        stopRequested: false
+      ),
+      .finish
+    )
+    XCTAssertEqual(
+      migrationPreparationTrackingPostBatchAction(
+        batch,
+        taskFailureObserved: false,
+        stopRequested: true
+      ),
+      .finish
+    )
+  }
+
+  func testStillCountingBatchKeepsTracking() {
+    let waitingProgress = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 1,
+      totalUnitCount: 3,
+      completedTransactionCount: 0,
+      totalTransactionCount: 1,
+      isComplete: false
+    )
+    let batch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-a:run-1",
+          disposition: .progress(waitingProgress)
+        )
+      ]
+    )
+
+    XCTAssertTrue(batch.shouldContinue)
+    XCTAssertNil(
+      migrationPreparationTrackingCompletionPresentation(batch)
+    )
+    XCTAssertEqual(
+      migrationPreparationTrackingPostBatchAction(
+        batch,
+        taskFailureObserved: false,
+        stopRequested: false
+      ),
+      .continueTracking
+    )
+  }
+
+  func testConfirmedWavePresentationFallsBackWithoutProgress() {
+    // `progress` is nil when no scope reported any unit total, so the caption
+    // cannot name a step. It must still say the wave landed.
+    let batch = MigrationPreparationTrackingBatch(
+      progress: nil,
+      continuationReadyScopes: ["test:account-a:run-1"],
+      confirmedWaveScopes: ["test:account-a:run-1"],
+      notificationEvents: [],
+      shouldContinue: false,
+      hasTaskFailure: false
+    )
+
+    XCTAssertEqual(
+      migrationPreparationTrackingCompletionPresentation(batch),
+      MigrationPreparationTrackingCompletionPresentation(
+        title: "Preparation transactions confirmed",
+        subtitle: "Open Vizor to continue"
+      )
+    )
+  }
+
+  func testRecoveryAndTerminalDispositionsKeepTheirNotificationKinds() {
+    let batch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-a:run-1",
+          disposition: .needsForegroundRecovery(
+            fingerprint: "missing-transactions",
+            taskFailed: true
+          )
+        ),
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-b:run-2",
+          disposition: .terminalFailure(fingerprint: "invalid-state")
+        ),
+      ]
+    )
+
+    XCTAssertEqual(
+      batch.notificationEvents,
+      [
+        MigrationPreparationNotificationEvent(
+          scope: "test:account-a:run-1",
+          kind: .needsForegroundRecovery,
+          fingerprint: "missing-transactions"
+        ),
+        MigrationPreparationNotificationEvent(
+          scope: "test:account-b:run-2",
+          kind: .terminalFailure,
+          fingerprint: "invalid-state"
+        ),
       ]
     )
   }
@@ -747,12 +972,27 @@ class RunnerTests: XCTestCase {
     )
   }
 
-  func testRunningOutOfTimeWhileCountingDoesNotReportCompletion() {
-    XCTAssertFalse(
+  func testRunningOutOfTimeWhileCountingIsNotAMigrationFailure() {
+    // Expiration interrupts one execution opportunity on a healthy run. It
+    // used to complete with `success: false`, which painted "Failed" over a
+    // migration that was fine and re-armed itself moments later.
+    XCTAssertTrue(
       migrationPreparationTrackingTaskSucceeded(
         taskFailed: false,
         quiesced: false,
         expired: true,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testConfirmedWaveCompletionReportsSuccess() {
+    XCTAssertTrue(
+      migrationPreparationTrackingTaskSucceeded(
+        taskFailed: false,
+        quiesced: false,
+        expired: false,
         handedOff: false,
         notificationsDisabled: false
       )
@@ -1100,6 +1340,118 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testConfirmedWaveNotificationUsesHealthyCopy() {
+    var state = MigrationPreparationNotificationBatchState()
+    let confirmed = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .confirmedWaveReady,
+      fingerprint: "confirmed-wave-1-3"
+    )
+
+    XCTAssertTrue(state.enqueue(confirmed))
+
+    let summary = state.summary
+    XCTAssertEqual(summary?.accountCount, 1)
+    XCTAssertEqual(summary?.highestPriority, .confirmedWaveReady)
+    XCTAssertEqual(summary?.title, "Migration step confirmed")
+    XCTAssertEqual(summary?.body, "Open Vizor to continue.")
+  }
+
+  func testSingleAccountFailureKeepsTheAttentionCopy() {
+    var state = MigrationPreparationNotificationBatchState()
+    let failure = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .terminalFailure,
+      fingerprint: "invalid-state"
+    )
+
+    XCTAssertTrue(state.enqueue(failure))
+
+    XCTAssertEqual(state.summary?.title, "Migration needs attention")
+    XCTAssertEqual(state.summary?.body, "Open Vizor to continue.")
+  }
+
+  func testFailureOutranksAConfirmedWaveInTheSameBatch() {
+    // A healthy wave for one account must never soften the alert for another
+    // account whose run actually needs help.
+    var state = MigrationPreparationNotificationBatchState()
+    let confirmed = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .confirmedWaveReady,
+      fingerprint: "confirmed-wave-1-3"
+    )
+    let recovery = MigrationPreparationNotificationEvent(
+      scope: "test:account-b:run-2",
+      kind: .needsForegroundRecovery,
+      fingerprint: "missing-transactions"
+    )
+
+    XCTAssertTrue(state.enqueue(confirmed))
+    XCTAssertTrue(state.enqueue(recovery))
+
+    XCTAssertEqual(state.summary?.highestPriority, .needsForegroundRecovery)
+    XCTAssertEqual(state.summary?.title, "Migration updates")
+    XCTAssertEqual(
+      state.summary?.body,
+      "2 accounts need attention. Open Vizor to continue."
+    )
+  }
+
+  func testMultipleConfirmedWavesUseTheHealthyAggregateCopy() {
+    var state = MigrationPreparationNotificationBatchState()
+    XCTAssertTrue(
+      state.enqueue(
+        MigrationPreparationNotificationEvent(
+          scope: "test:account-a:run-1",
+          kind: .confirmedWaveReady,
+          fingerprint: "confirmed-wave-1-3"
+        )
+      )
+    )
+    XCTAssertTrue(
+      state.enqueue(
+        MigrationPreparationNotificationEvent(
+          scope: "test:account-b:run-2",
+          kind: .confirmedWaveReady,
+          fingerprint: "confirmed-wave-2-6"
+        )
+      )
+    )
+
+    XCTAssertEqual(state.summary?.highestPriority, .confirmedWaveReady)
+    XCTAssertEqual(state.summary?.title, "Migration updates")
+    XCTAssertEqual(
+      state.summary?.body,
+      "2 accounts are ready. Open Vizor to continue."
+    )
+  }
+
+  func testAcceptedConfirmedWaveDoesNotSuppressALaterFailure() {
+    // The dedupe key is `scope|kind`, so the healthy fingerprint accepted for
+    // a run cannot swallow a genuine failure alert for that same run.
+    var state = MigrationPreparationNotificationBatchState()
+    let confirmed = MigrationPreparationNotificationEvent(
+      scope: "test:account-a:run-1",
+      kind: .confirmedWaveReady,
+      fingerprint: "confirmed-wave-1-3"
+    )
+    _ = state.enqueue(confirmed)
+    state.markAccepted([confirmed])
+    state.beginNewBatch()
+
+    XCTAssertFalse(state.enqueue(confirmed))
+    XCTAssertTrue(
+      state.enqueue(
+        MigrationPreparationNotificationEvent(
+          scope: "test:account-a:run-1",
+          kind: .terminalFailure,
+          fingerprint: "invalid-state"
+        )
+      )
+    )
+    XCTAssertEqual(state.summary?.title, "Migration needs attention")
+  }
+
   func testMigrationNotificationBatchDeduplicatesAcceptedFingerprint() {
     var state = MigrationPreparationNotificationBatchState()
     let event = MigrationPreparationNotificationEvent(
@@ -1235,29 +1587,6 @@ class RunnerTests: XCTestCase {
     center.completeAdd(error: nil)
     wait(for: [enqueueCompleted], timeout: 1)
     XCTAssertEqual(submissionResult, true)
-  }
-
-  func testTrackingExpirationRequestsForegroundRecoveryNotifications() {
-    XCTAssertEqual(
-      migrationPreparationTrackingExpirationNotificationEvents(
-        scopes: [
-          "test:account-b:run-2",
-          "test:account-a:run-1",
-        ]
-      ),
-      [
-        MigrationPreparationNotificationEvent(
-          scope: "test:account-a:run-1",
-          kind: .needsForegroundRecovery,
-          fingerprint: "confirmation-tracking-expired"
-        ),
-        MigrationPreparationNotificationEvent(
-          scope: "test:account-b:run-2",
-          kind: .needsForegroundRecovery,
-          fingerprint: "confirmation-tracking-expired"
-        ),
-      ]
-    )
   }
 
   func testResolvingScopeRefreshesAnUndeliveredNotificationSummary() {
