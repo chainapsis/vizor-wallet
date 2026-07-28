@@ -1,5 +1,59 @@
 part of '../ironwood_migration_flow_screen.dart';
 
+const _migrationCarouselPurple = Color(0xFF9667E2);
+const _migrationCarouselGreen = Color(0xFF00A460);
+const _migrationCarouselCrimson = Color(0xFFB90A4A);
+
+const _migrationPreparationCarouselItems = [
+  AppCarouselItem.icon(
+    message:
+        'Once preparation finishes, your migration will begin automatically '
+        'after a long intentional delay.',
+    tileColor: _migrationCarouselPurple,
+    icon: AppIcons.history,
+    iconSize: 18,
+  ),
+  AppCarouselItem.icon(
+    message:
+        'We’re organizing your balance into common-sized parts. This makes '
+        'your migration harder to link.',
+    tileColor: _migrationCarouselGreen,
+    icon: AppIcons.wallet,
+  ),
+  AppCarouselItem.image(
+    message:
+        'We may have to do multiple rounds of note splitting depending on '
+        'your balance.',
+    tileColor: _migrationCarouselCrimson,
+    imageAsset: _ironwoodMigrationExpectationRunningAsset,
+  ),
+];
+
+final _migrationInProgressCarouselItems = [
+  const AppCarouselItem.icon(
+    message:
+        'You can close Vizor anytime. Migration will pause, and you can '
+        'restart it when you return.',
+    tileColor: _migrationCarouselPurple,
+    icon: AppIcons.pause,
+  ),
+  AppCarouselItem.icon(
+    message:
+        'Each Zcash block takes about $_migrationEstimatedSecondsPerBlock '
+        'seconds to create, but timing can vary with network conditions.',
+    tileColor: _migrationCarouselGreen,
+    icon: AppIcons.migrationTimer,
+    iconSize: 24,
+  ),
+  const AppCarouselItem.image(
+    message:
+        'Keep Vizor running and the migration will automatically run in the '
+        'background.',
+    tileColor: _migrationCarouselCrimson,
+    imageAsset: _ironwoodMigrationExpectationRunningAsset,
+  ),
+];
+
 int _compareMigrationPartsByExpectedProcessingOrder(
   rust_sync.MigrationPartStatus left,
   rust_sync.MigrationPartStatus right,
@@ -122,22 +176,25 @@ class _MigrationStatusContent extends StatelessWidget {
                 status.phase == kIronwoodMigrationReadyToMigratePhase &&
                 status.proofReady == false,
           );
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 680),
-      reverseDuration: const Duration(milliseconds: 360),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) => FadeTransition(
-        opacity: animation,
-        child: ScaleTransition(
-          scale: Tween<double>(
-            begin: 0.965,
-            end: 1,
-          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
-          child: child,
+    return SizedBox(
+      width: 560,
+      height: 656,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 680),
+        reverseDuration: const Duration(milliseconds: 360),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.965, end: 1).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOut),
+            ),
+            child: child,
+          ),
         ),
+        child: content,
       ),
-      child: content,
     );
   }
 }
@@ -309,6 +366,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
       width: 420,
       height: 656,
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           Stack(
             children: [
@@ -565,6 +623,25 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                 ),
             ],
           ),
+          if (action == _StatusAction.none)
+            Positioned(
+              left: -70,
+              bottom: 16,
+              width: 560,
+              height: 116,
+              child: AppCarousel(
+                key: ValueKey(
+                  'ironwood_migration_status_carousel_'
+                  '${isPreparing ? 'preparation' : 'migration'}',
+                ),
+                items: isPreparing
+                    ? _migrationPreparationCarouselItems
+                    : _migrationInProgressCarouselItems,
+                semanticLabel: isPreparing
+                    ? 'Migration preparation information'
+                    : 'Migration information',
+              ),
+            ),
         ],
       ),
     );
