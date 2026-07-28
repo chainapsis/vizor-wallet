@@ -63,7 +63,7 @@ void main() {
     final security = _FakeSecurityNotifier();
     final container = ProviderContainer(
       overrides: [
-        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appBootstrapProvider.overrideWithValue(_bootstrap(hasWallet: true)),
         appSecurityProvider.overrideWith(() => security),
         ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(
           true,
@@ -97,7 +97,7 @@ void main() {
     final security = _FakeSecurityNotifier();
     final container = ProviderContainer(
       overrides: [
-        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appBootstrapProvider.overrideWithValue(_bootstrap(hasWallet: true)),
         appSecurityProvider.overrideWith(() => security),
         ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(
           true,
@@ -130,6 +130,36 @@ void main() {
     expect(
       container.read(ironwoodMigrationPrivacyLockEligibleProvider),
       isTrue,
+    );
+  });
+
+  test('wallet reset disables eligibility for stale migration status', () {
+    final security = _FakeSecurityNotifier();
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap()),
+        appSecurityProvider.overrideWith(() => security),
+        ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(
+          true,
+        ),
+        ironwoodMigrationCoordinatorProvider.overrideWith(
+          () => _FakeMigrationCoordinator(
+            IronwoodMigrationCoordinatorState(
+              statuses: {
+                'deleted-account': _migrationStatus(
+                  'waiting_denom_confirmations',
+                ),
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(
+      container.read(ironwoodMigrationPrivacyLockEligibleProvider),
+      isFalse,
     );
   });
 
@@ -287,6 +317,36 @@ void main() {
     expect(find.text('Migration in progress'), findsOneWidget);
   });
 
+  testWidgets(
+    'Keystone signing suppression still locks after background timeout',
+    (tester) async {
+      final clock = _TestClock();
+      final container = ProviderContainer(
+        overrides: _overrides(_FakeSecurityNotifier()),
+      );
+      addTearDown(container.dispose);
+      container
+          .read(ironwoodMigrationPrivacyLockSuppressionProvider.notifier)
+          .acquire();
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: _themedHost(clock),
+        ),
+      );
+      await tester.pump();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      clock.elapse(const Duration(minutes: 1));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(find.text('Migration in progress'), findsOneWidget);
+    },
+  );
+
   testWidgets('confirmation only clears the virtual lock', (tester) async {
     final clock = _TestClock();
     final security = _FakeSecurityNotifier();
@@ -325,6 +385,23 @@ void main() {
 
     expect(find.text('Incorrect password. Try again.'), findsOneWidget);
     expect(find.text('Migration in progress'), findsOneWidget);
+  });
+
+  testWidgets('wallet password reset clears the active privacy lock', (
+    tester,
+  ) async {
+    final clock = _TestClock();
+    final security = _FakeSecurityNotifier();
+    await tester.pumpWidget(_app(clock: clock, security: security));
+    await tester.pump();
+    await _elapseIdleInterval(tester, clock);
+    expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsOneWidget);
+
+    security.reset();
+    await tester.pump();
+
+    expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsNothing);
+    expect(find.text('Protected content'), findsOneWidget);
   });
 
   testWidgets(
@@ -395,10 +472,8 @@ List<Override> _overrides(_FakeSecurityNotifier security) {
     appBootstrapProvider.overrideWithValue(_bootstrap()),
     appSecurityProvider.overrideWith(() => security),
     ironwoodMigrationPrivacyLockFeatureEnabledProvider.overrideWithValue(true),
-    ironwoodMigrationPrivacyLockEligibleProvider.overrideWith(
-      (ref) =>
-          ref.watch(_eligibilityProvider) &&
-          ref.watch(ironwoodMigrationPrivacyLockSuppressionProvider) == null,
+    ironwoodMigrationPrivacyLockRequiredProvider.overrideWith(
+      (ref) => ref.watch(_eligibilityProvider),
     ),
   ];
 }
@@ -440,10 +515,22 @@ Future<void> _elapseIdleInterval(WidgetTester tester, _TestClock clock) async {
   await tester.pump();
 }
 
-AppBootstrapState _bootstrap() {
+AppBootstrapState _bootstrap({bool hasWallet = false}) {
   return AppBootstrapState(
     initialLocation: '/home',
-    initialAccountState: const AccountState(),
+    initialAccountState: hasWallet
+        ? const AccountState(
+            accounts: [
+              AccountInfo(
+                uuid: 'active-account',
+                name: 'Account',
+                order: 0,
+                isSeedAnchor: true,
+              ),
+            ],
+            activeAccountUuid: 'active-account',
+          )
+        : const AccountState(),
     initialSyncSnapshot: AppSyncSnapshot.empty,
     network: kZcashDefaultNetworkName,
     rpcEndpointConfig: defaultRpcEndpointConfig(kZcashDefaultNetworkName),
