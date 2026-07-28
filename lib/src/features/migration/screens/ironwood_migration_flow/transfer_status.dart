@@ -727,9 +727,9 @@ List<rust_sync.MigrationPreparationTransactionStatus>
 _orderedPreparationTransactions(rust_sync.MigrationStatus status) {
   final transactions = [..._preparationTransactions(status)];
   transactions.sort((a, b) {
-    final heightCompare = (a.scheduledHeight ?? 0x7fffffff).compareTo(
-      b.scheduledHeight ?? 0x7fffffff,
-    );
+    final roundCompare = a.round.compareTo(b.round);
+    if (roundCompare != 0) return roundCompare;
+    final heightCompare = a.projectedHeight.compareTo(b.projectedHeight);
     return heightCompare != 0
         ? heightCompare
         : a.stageIndex.compareTo(b.stageIndex);
@@ -760,34 +760,11 @@ String _preparationCompletionEstimateDisplay(
     return _formatMigrationBlockDurationEstimate(remainingBlocks);
   }
 
-  var projectedHeight = currentHeight;
-  for (final transaction in transactions) {
-    final int transactionCompletionHeight = switch (transaction.state) {
-      rust_sync.MigrationPreparationTransactionState.awaitingInputs ||
-      rust_sync.MigrationPreparationTransactionState.completed => currentHeight,
-      rust_sync.MigrationPreparationTransactionState.scheduled =>
-        math.max(currentHeight, transaction.scheduledHeight ?? currentHeight) +
-            confirmationTarget,
-      rust_sync.MigrationPreparationTransactionState.broadcasted =>
-        currentHeight + confirmationTarget,
-      rust_sync.MigrationPreparationTransactionState.confirming =>
-        currentHeight +
-            math.max(
-              0,
-              transaction.confirmationTarget - transaction.confirmationCount,
-            ),
-    };
-    projectedHeight = math.max(projectedHeight, transactionCompletionHeight);
-  }
-
-  final awaitingInputCount = transactions
-      .where(
-        (item) =>
-            item.state ==
-            rust_sync.MigrationPreparationTransactionState.awaitingInputs,
-      )
-      .length;
-  projectedHeight += awaitingInputCount * (meanDelay + confirmationTarget);
+  final projectedHeight = transactions.fold<int>(
+    currentHeight,
+    (height, transaction) =>
+        math.max(height, transaction.projectedCompletionHeight),
+  );
   final remainingBlocks = math.max(1, projectedHeight - currentHeight);
   return _formatMigrationBlockDurationEstimate(remainingBlocks);
 }

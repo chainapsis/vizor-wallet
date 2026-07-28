@@ -311,10 +311,30 @@ pub(crate) enum MigrationPreparationTransactionState {
     Completed,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationPreparationOutputKind {
+    Migration,
+    Change,
+    Continuation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MigrationPreparationOutputStatus {
+    pub value_zatoshi: u64,
+    pub kind: MigrationPreparationOutputKind,
+    pub next_round: Option<u32>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MigrationPreparationTransactionStatus {
     pub stage_index: u32,
     pub approximate_value_zatoshi: u64,
+    pub round: u32,
+    pub fee_zatoshi: u64,
+    pub planned_height: u32,
+    pub projected_height: u32,
+    pub projected_completion_height: u32,
+    pub outputs: Vec<MigrationPreparationOutputStatus>,
     pub state: MigrationPreparationTransactionState,
     pub scheduled_height: Option<u32>,
     pub mined_height: Option<u32>,
@@ -408,16 +428,45 @@ pub(crate) fn migration_status(
     ironwood_spendable: u64,
     ironwood_pending: u64,
 ) -> Result<MigrationStatus, String> {
+    migration_status_with_projection_height(
+        db_path,
+        network,
+        account_uuid,
+        orchard_spendable,
+        orchard_pending,
+        ironwood_spendable,
+        ironwood_pending,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn migration_status_with_projection_height(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    orchard_spendable: u64,
+    orchard_pending: u64,
+    ironwood_spendable: u64,
+    ironwood_pending: u64,
+    projection_scanned_height: Option<u32>,
+) -> Result<MigrationStatus, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
 
     if let Some(run) = active_run(&conn, account_uuid, network)? {
-        return status_for_run(&conn, run);
+        let current_scanned_height = projection_scanned_height
+            .map(Ok)
+            .unwrap_or_else(|| migration_projection_scanned_height(db_path, network))?;
+        return status_for_run(&conn, run, current_scanned_height);
     }
 
     let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
     if orchard_pending == 0 && !orchard_migratable {
         if let Some(run) = latest_completed_run(&conn, account_uuid, network)? {
-            let mut status = status_for_run(&conn, run)?;
+            let current_scanned_height = projection_scanned_height
+                .map(Ok)
+                .unwrap_or_else(|| migration_projection_scanned_height(db_path, network))?;
+            let mut status = status_for_run(&conn, run, current_scanned_height)?;
             // Completed runs are receipts, not resumable work. Preserve their
             // target values for completion UI without exposing an active run.
             status.active_run_id = None;
@@ -474,6 +523,16 @@ pub(crate) fn migration_status(
         scheduled_broadcasts: Vec::new(),
         preparation_transactions: Vec::new(),
         parts: Vec::new(),
+    })
+}
+
+fn migration_projection_scanned_height(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<u32, String> {
+    super::get_sync_progress(db_path, network).and_then(|progress| {
+        u32::try_from(progress.scanned_height)
+            .map_err(|_| "Migration scanned height exceeds u32".to_string())
     })
 }
 
@@ -4518,7 +4577,11 @@ fn backfill_ready_migration_proof_retry_height(
     Ok(())
 }
 
-fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<MigrationStatus, String> {
+fn status_for_run(
+    conn: &rusqlite::Connection,
+    run: ActiveRun,
+    current_scanned_height: u32,
+) -> Result<MigrationStatus, String> {
     let network = conn
         .query_row(
             &format!("SELECT network FROM {RUNS_TABLE} WHERE run_id = ?1"),
@@ -4556,6 +4619,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         conn,
         &run.run_id,
         denomination_confirmation_target,
+        current_scanned_height,
     )?;
     // A private-migration draft is persisted before Keystone signs its
     // denomination PCZTs. It deliberately has no staged transactions yet;
@@ -4672,24 +4736,51 @@ fn migration_preparation_transactions_for_run(
     conn: &rusqlite::Connection,
     run_id: &str,
     confirmation_target: u32,
+    current_scanned_height: u32,
 ) -> Result<Vec<MigrationPreparationTransactionStatus>, String> {
     if !table_exists(conn, STAGES_TABLE)? {
         return Ok(Vec::new());
     }
 
     let chain_records = denomination_stage_chain_records(conn, run_id)?;
+    let stage_index_by_txid = chain_records
+        .iter()
+        .map(|record| {
+            (
+                record.expected_txid_hex.to_ascii_lowercase(),
+                record.stage_index,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut round_by_stage = BTreeMap::<u32, u32>::new();
+    for record in &chain_records {
+        let parent_round = record
+            .parent_txids
+            .iter()
+            .filter_map(|txid| stage_index_by_txid.get(&txid.to_ascii_lowercase()))
+            .filter_map(|stage_index| round_by_stage.get(stage_index))
+            .copied()
+            .max();
+        round_by_stage.insert(
+            record.stage_index,
+            parent_round.map_or(1, |round| round.saturating_add(1)),
+        );
+    }
+
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT s.stage_index,
+                    s.scheduled_height,
                     MAX(s.scheduled_height,
                         COALESCE(s.broadcast_not_before_height, 0)),
+                    s.fee_zatoshi,
                     COALESCE(SUM(i.value_zatoshi), 0)
              FROM {STAGES_TABLE} s
              LEFT JOIN {STAGE_INPUTS_TABLE} i
                ON i.run_id = s.run_id AND i.stage_index = s.stage_index
              WHERE s.run_id = ?1
              GROUP BY s.stage_index, s.scheduled_height,
-                      s.broadcast_not_before_height
+                      s.broadcast_not_before_height, s.fee_zatoshi
              ORDER BY s.stage_index ASC"
         ))
         .map_err(|e| format!("Prepare migration preparation schedule query: {e}"))?;
@@ -4698,15 +4789,34 @@ fn migration_preparation_transactions_for_run(
             Ok((
                 row.get::<_, u32>(0)?,
                 row.get::<_, u32>(1)?,
-                row.get::<_, u64>(2)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, u64>(3)?,
+                row.get::<_, u64>(4)?,
             ))
         })
         .map_err(|e| format!("Query migration preparation schedule: {e}"))?;
 
+    let stage_rows = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration preparation schedule: {e}"))?;
+    drop(stmt);
+
+    let planned_max_by_round =
+        stage_rows
+            .iter()
+            .fold(BTreeMap::<u32, u32>::new(), |mut result, row| {
+                let round = round_by_stage.get(&row.0).copied().unwrap_or(1);
+                result
+                    .entry(round)
+                    .and_modify(|height| *height = (*height).max(row.1))
+                    .or_insert(row.1);
+                result
+            });
+    let mut projected_completion_by_stage = BTreeMap::<u32, u32>::new();
     let mut transactions = Vec::new();
-    for row in rows {
-        let (stage_index, scheduled_height, approximate_value_zatoshi) =
-            row.map_err(|e| format!("Read migration preparation schedule: {e}"))?;
+    for (stage_index, planned_height, effective_height, fee_zatoshi, approximate_value_zatoshi) in
+        stage_rows
+    {
         let chain = chain_records
             .iter()
             .find(|record| record.stage_index == stage_index)
@@ -4737,13 +4847,80 @@ fn migration_preparation_transactions_for_run(
             None => local_denomination_chain_identity(conn, &chain.expected_txid_hex)?
                 .map(|identity| identity.mined_height),
         };
+        let round = round_by_stage.get(&stage_index).copied().unwrap_or(1);
+        let parent_projected_completion = chain
+            .parent_txids
+            .iter()
+            .filter_map(|txid| stage_index_by_txid.get(&txid.to_ascii_lowercase()))
+            .filter_map(|parent_stage| projected_completion_by_stage.get(parent_stage))
+            .copied()
+            .max();
+        let original_round_base = if round <= 1 {
+            0
+        } else {
+            planned_max_by_round
+                .get(&round.saturating_sub(1))
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(confirmation_target)
+        };
+        let planned_offset = planned_height.saturating_sub(original_round_base);
+        let dependency_projection = parent_projected_completion
+            .map(|height| height.saturating_add(planned_offset))
+            .unwrap_or(planned_height);
+        // A pending stage whose operational height has passed can broadcast at
+        // the current scanned tip. Once broadcast, keep this height stable
+        // because the UI uses it to preserve transaction order; only its
+        // completion forecast should continue moving until it is mined.
+        let projected_height = effective_height.max(dependency_projection).max(
+            (state == MigrationPreparationTransactionState::Scheduled)
+                .then_some(current_scanned_height)
+                .unwrap_or(0),
+        );
+        let projected_completion_height = mined_height.map_or_else(
+            || {
+                let projected_from_schedule = projected_height.saturating_add(confirmation_target);
+                if state == MigrationPreparationTransactionState::Broadcasted {
+                    projected_from_schedule
+                        .max(current_scanned_height.saturating_add(confirmation_target))
+                } else {
+                    projected_from_schedule
+                }
+            },
+            |height| height.saturating_add(confirmation_target.saturating_sub(1)),
+        );
+        projected_completion_by_stage.insert(stage_index, projected_completion_height);
+        let outputs = chain
+            .outputs
+            .iter()
+            .map(|output| MigrationPreparationOutputStatus {
+                value_zatoshi: output.value_zatoshi,
+                kind: match output.kind {
+                    DenominationStageOutputKind::Migration => {
+                        MigrationPreparationOutputKind::Migration
+                    }
+                    DenominationStageOutputKind::Change => MigrationPreparationOutputKind::Change,
+                    DenominationStageOutputKind::Continuation => {
+                        MigrationPreparationOutputKind::Continuation
+                    }
+                },
+                next_round: (output.kind == DenominationStageOutputKind::Continuation)
+                    .then_some(round.saturating_add(1)),
+            })
+            .collect();
         transactions.push(MigrationPreparationTransactionStatus {
             stage_index,
             approximate_value_zatoshi,
+            round,
+            fee_zatoshi,
+            planned_height,
+            projected_height,
+            projected_completion_height,
+            outputs,
             state,
             scheduled_height: (state != MigrationPreparationTransactionState::AwaitingInputs
-                && scheduled_height > 0)
-                .then_some(scheduled_height),
+                && effective_height > 0)
+                .then_some(effective_height),
             mined_height,
             confirmation_count,
             confirmation_target,

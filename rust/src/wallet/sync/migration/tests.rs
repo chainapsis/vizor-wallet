@@ -2008,7 +2008,7 @@ fn timing_projection_failure_does_not_block_migration_status() {
     let run = active_run(&conn, "account-1", WalletNetwork::Test)
         .unwrap()
         .unwrap();
-    let status = status_for_run(&conn, run).unwrap();
+    let status = status_for_run(&conn, run, 0).unwrap();
 
     assert_eq!(status.phase, PHASE_BROADCAST_SCHEDULED);
     assert_eq!(status.next_action_height, None);
@@ -2231,6 +2231,7 @@ fn late_preparation_broadcast_rerandomizes_remaining_effective_heights() {
         &conn,
         "preparation-catch-up",
         denomination_confirmations_required(),
+        0,
     )
     .unwrap()
     .into_iter()
@@ -3937,6 +3938,19 @@ fn migration_status_treats_non_migratable_residual_as_complete() {
 }
 
 #[test]
+fn projection_height_lookup_does_not_treat_wallet_db_errors_as_genesis() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    rusqlite::Connection::open(&db_path).unwrap();
+
+    assert!(migration_projection_scanned_height(
+        db_path.to_string_lossy().as_ref(),
+        WalletNetwork::Test,
+    )
+    .is_err(),);
+}
+
+#[test]
 fn migration_status_treats_sub_minimum_plan_value_as_complete() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
@@ -3988,7 +4002,7 @@ fn migration_status_keeps_completed_run_complete_with_residual_orchard() {
     .unwrap();
     mark_run_phase(&db_path, &run_id, PHASE_COMPLETE, None).unwrap();
 
-    let status = migration_status(
+    let status = migration_status_with_projection_height(
         &db_path,
         WalletNetwork::Test,
         "account-1",
@@ -3996,6 +4010,7 @@ fn migration_status_keeps_completed_run_complete_with_residual_orchard() {
         0,
         ZATOSHIS_PER_ZEC,
         0,
+        Some(0),
     )
     .unwrap();
 
@@ -4152,8 +4167,17 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
     );
     drop(conn);
 
-    let draft_status =
-        migration_status(&db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
+    let draft_status = migration_status_with_projection_height(
+        &db_path,
+        WalletNetwork::Test,
+        "account-1",
+        0,
+        0,
+        0,
+        0,
+        Some(0),
+    )
+    .unwrap();
     assert_eq!(draft_status.phase, PHASE_AWAITING_PREPARATION);
     assert_eq!(draft_status.denomination_split_total_count, 0);
     assert_eq!(draft_status.denomination_split_completed_count, 0);
@@ -4732,6 +4756,7 @@ fn confirmation_reconciliation_completes_run_and_releases_locks() {
             target_values_zatoshi: vec![100_000_000],
             last_error: None,
         },
+        0,
     )
     .unwrap();
 
@@ -4836,7 +4861,7 @@ fn confirmation_reconciliation_requeues_child_reorged_before_trusted_depth() {
     };
 
     reconcile_run_confirmations(&conn, run_id).unwrap();
-    let status = status_for_run(&conn, stale_run.clone()).unwrap();
+    let status = status_for_run(&conn, stale_run.clone(), 0).unwrap();
     assert_eq!(status.phase, PHASE_WAITING_MIGRATION_CONFIRMATIONS);
     assert_eq!(status.confirmed_tx_count, 1);
     assert_eq!(status.parts.len(), 1);
@@ -4872,7 +4897,7 @@ fn confirmation_reconciliation_requeues_child_reorged_before_trusted_depth() {
     assert_eq!(pending_status, "scheduled");
     assert!(scheduled_at_ms > 1);
 
-    let status = status_for_run(&conn, stale_run).unwrap();
+    let status = status_for_run(&conn, stale_run, 0).unwrap();
     assert_eq!(status.phase, PHASE_BROADCAST_SCHEDULED);
     assert_eq!(status.confirmed_tx_count, 0);
     assert_eq!(status.parts.len(), 1);
@@ -5366,7 +5391,7 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
         .unwrap();
     assert_eq!(retry_height, Some(290));
 
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 1);
     assert_eq!(status.next_action_height, Some(290));
@@ -5383,10 +5408,10 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
         params![run_id],
     )
     .unwrap();
-    let stale_status = status_for_run(&conn, run.clone()).unwrap();
+    let stale_status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(stale_status.next_action_height, None);
     backfill_ready_migration_proof_retry_height(&conn, run_id).unwrap();
-    let recovered_status = status_for_run(&conn, run).unwrap();
+    let recovered_status = status_for_run(&conn, run, 0).unwrap();
     assert_eq!(recovered_status.next_action_height, Some(290));
     let recovered_retry_height: Option<u32> = conn
         .query_row(
@@ -5487,7 +5512,7 @@ fn status_keeps_migration_stage_while_waiting_for_spend_metadata() {
         target_values_zatoshi: vec![100_000_000],
         last_error: None,
     };
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 0);
     assert_eq!(status.pending_split_stage_count, 0);
@@ -5513,7 +5538,7 @@ fn status_keeps_migration_stage_while_waiting_for_spend_metadata() {
     )
     .unwrap();
 
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 1);
     assert_eq!(status.pending_split_stage_count, 0);
@@ -5524,7 +5549,7 @@ fn status_keeps_migration_stage_while_waiting_for_spend_metadata() {
     )
     .unwrap();
 
-    let status = status_for_run(&conn, run).unwrap();
+    let status = status_for_run(&conn, run, 0).unwrap();
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.pending_split_stage_count, 0);
 }
@@ -5993,7 +6018,17 @@ fn status_reconciliation_preserves_reincluded_parent_and_resets_offchain_depende
     drop(conn);
 
     reconcile_wallet_locks_after_sync(db_path, WalletNetwork::Test).unwrap();
-    let status = migration_status(db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
+    let status = migration_status_with_projection_height(
+        db_path,
+        WalletNetwork::Test,
+        "account-1",
+        0,
+        0,
+        0,
+        0,
+        Some(0),
+    )
+    .unwrap();
     assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
 
     let conn = rusqlite::Connection::open(db_path).unwrap();
@@ -6278,13 +6313,13 @@ fn denomination_reconciliation_waits_for_trusted_confirmations() {
     assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
     assert!(nullifier_hex.is_none());
 
-    let status = status_for_run(&conn, run).unwrap();
+    let status = status_for_run(&conn, run, 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 2);
     assert_eq!(status.denomination_confirmation_target, 3);
 }
 
 #[test]
-fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
+fn staged_split_progress_tracks_the_active_frontier_and_projects_future_rounds() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     conn.execute_batch(
@@ -6337,6 +6372,22 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
             )
             .unwrap();
         }
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stage_outputs
+             (run_id, stage_index, output_order, output_index,
+              value_zatoshi, note_version, kind, part_index)
+             VALUES (?1, ?2, 0, 0, 99920000, 2, ?3, NULL)",
+            params![
+                run_id,
+                stage_index as u32,
+                if stage_index + 1 == stage_txids.len() {
+                    "migration"
+                } else {
+                    "continuation"
+                }
+            ],
+        )
+        .unwrap();
     }
     conn.execute(
         "UPDATE vizor_migration_denomination_stages
@@ -6352,11 +6403,63 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         target_values_zatoshi: vec![100_000_000],
         last_error: None,
     };
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 0);
     assert_eq!(status.denomination_split_completed_count, 0);
     assert_eq!(status.denomination_split_total_count, 3);
     assert_eq!(status.preparation_transactions[2].scheduled_height, None);
+    assert_eq!(
+        status
+            .preparation_transactions
+            .iter()
+            .map(|transaction| transaction.round)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3],
+    );
+    assert_eq!(status.preparation_transactions[2].planned_height, 19);
+    assert_eq!(status.preparation_transactions[2].projected_height, 22);
+    assert_eq!(
+        status.preparation_transactions[2].projected_completion_height,
+        25,
+    );
+    assert_eq!(
+        status.preparation_transactions[0].outputs[0],
+        MigrationPreparationOutputStatus {
+            value_zatoshi: 99_920_000,
+            kind: MigrationPreparationOutputKind::Continuation,
+            next_round: Some(2),
+        },
+    );
+    assert_eq!(
+        status.preparation_transactions[2].outputs[0].kind,
+        MigrationPreparationOutputKind::Migration,
+    );
+
+    let delayed_status = status_for_run(&conn, run.clone(), 30).unwrap();
+    assert_eq!(
+        delayed_status.preparation_transactions[0].state,
+        MigrationPreparationTransactionState::Broadcasted,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[0].projected_height,
+        status.preparation_transactions[0].projected_height,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[0].projected_completion_height,
+        33,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[1].projected_height,
+        33,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[2].projected_height,
+        52,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[2].projected_completion_height,
+        55,
+    );
 
     let mut stage_0_txid = hex::decode(&stage_txids[0]).unwrap();
     stage_0_txid.reverse();
@@ -6370,7 +6473,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         [],
     )
     .unwrap();
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 1);
     assert_eq!(status.denomination_split_completed_count, 0);
     assert_eq!(
@@ -6384,7 +6487,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         [],
     )
     .unwrap();
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 2);
     assert_eq!(status.denomination_split_completed_count, 0);
 
@@ -6393,7 +6496,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         [],
     )
     .unwrap();
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 0);
     assert_eq!(status.denomination_split_completed_count, 1);
     assert_eq!(status.denomination_split_total_count, 3);
@@ -6417,7 +6520,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         [],
     )
     .unwrap();
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 1);
     assert_eq!(status.denomination_split_completed_count, 1);
     assert_eq!(status.preparation_transactions[1].mined_height, Some(23));
@@ -6427,7 +6530,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
          INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (25);",
     )
     .unwrap();
-    let status = status_for_run(&conn, run).unwrap();
+    let status = status_for_run(&conn, run, 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 0);
     assert_eq!(status.denomination_split_completed_count, 2);
     assert_eq!(status.denomination_split_total_count, 3);

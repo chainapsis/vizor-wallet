@@ -2468,6 +2468,17 @@ void main() {
           0,
           500_000_000,
           rust_sync.MigrationPreparationTransactionState.completed,
+          outputs: [
+            rust_sync.MigrationPreparationOutputStatus(
+              valueZatoshi: BigInt.from(400_000_000),
+              kind: rust_sync.MigrationPreparationOutputKind.continuation,
+              nextRound: 2,
+            ),
+            rust_sync.MigrationPreparationOutputStatus(
+              valueZatoshi: BigInt.from(99_990_000),
+              kind: rust_sync.MigrationPreparationOutputKind.change,
+            ),
+          ],
           scheduledHeight: 980,
           minedHeight: 984,
           confirmationCount: 3,
@@ -2496,6 +2507,10 @@ void main() {
           4,
           100_000_000,
           rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+          round: 2,
+          plannedHeight: 1_171,
+          projectedHeight: 1_171,
+          projectedCompletionHeight: 1_174,
         ),
       ],
     );
@@ -2519,19 +2534,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preparation Schedule'), findsOneWidget);
-    expect(find.text('Splits remaining'), findsOneWidget);
-    expect(find.text('4 of 5'), findsOneWidget);
+    expect(find.text('Current round'), findsOneWidget);
+    expect(find.text('1 of 2'), findsOneWidget);
+    expect(find.text('Ready to migrate'), findsOneWidget);
     expect(find.text('Current block'), findsOneWidget);
     expect(find.text('1,000'), findsOneWidget);
-    expect(find.text('1,010'), findsOneWidget);
-    expect(find.text('1,144'), findsOneWidget);
-    expect(find.text('Pending'), findsOneWidget);
-    expect(find.text('3. ~2 ZEC'), findsOneWidget);
-    expect(find.text('4. ~3 ZEC'), findsOneWidget);
+    expect(find.text('#1,010'), findsOneWidget);
+    expect(find.text('Expected by #1,171'), findsOneWidget);
+    expect(find.text('Expected #1,171'), findsOneWidget);
+    expect(find.text('3. 2 ZEC'), findsOneWidget);
+    expect(find.text('4. 3 ZEC'), findsOneWidget);
+    expect(find.text('Used in round 2'), findsOneWidget);
+    expect(find.text('Stays in Orchard'), findsOneWidget);
     expect(
       find.bySemanticsLabel(
-        'Split 2, approximately 4 ZEC, confirming, '
-        '2 of 3 confirmations.',
+        RegExp(r'Outputs: 4 ZEC, used in round 2; .* ZEC, stays in Orchard'),
       ),
       findsOneWidget,
     );
@@ -2581,6 +2598,10 @@ void main() {
           1,
           400_000_000,
           rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+          round: 2,
+          plannedHeight: 1_024,
+          projectedHeight: 1_024,
+          projectedCompletionHeight: 1_027,
         ),
       ],
     );
@@ -2602,6 +2623,55 @@ void main() {
     expect(find.text('~34 mins'), findsOneWidget);
     expect(find.text('~2 mins'), findsNothing);
   });
+
+  testWidgets(
+    'preparation schedule hides an overdue awaiting-input projection',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        denominationConfirmationTarget: 3,
+        denominationSplitTotalCount: 1,
+        preparationTransactions: [
+          _preparationTransaction(
+            0,
+            400_000_000,
+            rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+            plannedHeight: 990,
+            projectedHeight: 990,
+            projectedCompletionHeight: 993,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          initialLocation: '/migration/private/preparation-schedule',
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 1_000,
+            chainTipHeight: 1_000,
+          ),
+          disableAnimations: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ready to migrate'), findsOneWidget);
+      expect(find.text('Calculating'), findsOneWidget);
+      expect(find.text('Recalculating'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'preparation ETA includes confirmation depth between dependent splits',
@@ -2631,11 +2701,19 @@ void main() {
             1,
             400_000_000,
             rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+            round: 2,
+            plannedHeight: 1_004,
+            projectedHeight: 1_004,
+            projectedCompletionHeight: 1_007,
           ),
           _preparationTransaction(
             2,
             300_000_000,
             rust_sync.MigrationPreparationTransactionState.awaitingInputs,
+            round: 3,
+            plannedHeight: 1_011,
+            projectedHeight: 1_011,
+            projectedCompletionHeight: 1_014,
           ),
         ],
       );
@@ -4339,6 +4417,12 @@ rust_sync.MigrationPreparationTransactionStatus _preparationTransaction(
   int stageIndex,
   int approximateValueZatoshi,
   rust_sync.MigrationPreparationTransactionState state, {
+  int round = 1,
+  int feeZatoshi = 10_000,
+  int? plannedHeight,
+  int? projectedHeight,
+  int? projectedCompletionHeight,
+  List<rust_sync.MigrationPreparationOutputStatus> outputs = const [],
   int? scheduledHeight,
   int? minedHeight,
   int confirmationCount = 0,
@@ -4346,6 +4430,15 @@ rust_sync.MigrationPreparationTransactionStatus _preparationTransaction(
 }) => rust_sync.MigrationPreparationTransactionStatus(
   stageIndex: stageIndex,
   approximateValueZatoshi: BigInt.from(approximateValueZatoshi),
+  round: round,
+  feeZatoshi: BigInt.from(feeZatoshi),
+  plannedHeight: plannedHeight ?? scheduledHeight ?? 0,
+  projectedHeight: projectedHeight ?? scheduledHeight ?? 0,
+  projectedCompletionHeight:
+      projectedCompletionHeight ??
+      (minedHeight ?? projectedHeight ?? scheduledHeight ?? 0) +
+          confirmationTarget,
+  outputs: outputs,
   state: state,
   scheduledHeight: scheduledHeight,
   minedHeight: minedHeight,

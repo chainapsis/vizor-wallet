@@ -1452,6 +1452,33 @@ class MigrationPartStatus {
           confirmationTarget == other.confirmationTarget;
 }
 
+enum MigrationPreparationOutputKind { migration, change, continuation }
+
+class MigrationPreparationOutputStatus {
+  final BigInt valueZatoshi;
+  final MigrationPreparationOutputKind kind;
+  final int? nextRound;
+
+  const MigrationPreparationOutputStatus({
+    required this.valueZatoshi,
+    required this.kind,
+    this.nextRound,
+  });
+
+  @override
+  int get hashCode =>
+      valueZatoshi.hashCode ^ kind.hashCode ^ nextRound.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationPreparationOutputStatus &&
+          runtimeType == other.runtimeType &&
+          valueZatoshi == other.valueZatoshi &&
+          kind == other.kind &&
+          nextRound == other.nextRound;
+}
+
 enum MigrationPreparationTransactionState {
   awaitingInputs,
   scheduled,
@@ -1463,6 +1490,12 @@ enum MigrationPreparationTransactionState {
 class MigrationPreparationTransactionStatus {
   final int stageIndex;
   final BigInt approximateValueZatoshi;
+  final int round;
+  final BigInt feeZatoshi;
+  final int plannedHeight;
+  final int projectedHeight;
+  final int projectedCompletionHeight;
+  final List<MigrationPreparationOutputStatus> outputs;
   final MigrationPreparationTransactionState state;
   final int? scheduledHeight;
   final int? minedHeight;
@@ -1472,6 +1505,12 @@ class MigrationPreparationTransactionStatus {
   const MigrationPreparationTransactionStatus({
     required this.stageIndex,
     required this.approximateValueZatoshi,
+    required this.round,
+    required this.feeZatoshi,
+    required this.plannedHeight,
+    required this.projectedHeight,
+    required this.projectedCompletionHeight,
+    required this.outputs,
     required this.state,
     this.scheduledHeight,
     this.minedHeight,
@@ -1483,6 +1522,12 @@ class MigrationPreparationTransactionStatus {
   int get hashCode =>
       stageIndex.hashCode ^
       approximateValueZatoshi.hashCode ^
+      round.hashCode ^
+      feeZatoshi.hashCode ^
+      plannedHeight.hashCode ^
+      projectedHeight.hashCode ^
+      projectedCompletionHeight.hashCode ^
+      outputs.hashCode ^
       state.hashCode ^
       scheduledHeight.hashCode ^
       minedHeight.hashCode ^
@@ -1496,6 +1541,12 @@ class MigrationPreparationTransactionStatus {
           runtimeType == other.runtimeType &&
           stageIndex == other.stageIndex &&
           approximateValueZatoshi == other.approximateValueZatoshi &&
+          round == other.round &&
+          feeZatoshi == other.feeZatoshi &&
+          plannedHeight == other.plannedHeight &&
+          projectedHeight == other.projectedHeight &&
+          projectedCompletionHeight == other.projectedCompletionHeight &&
+          outputs == other.outputs &&
           state == other.state &&
           scheduledHeight == other.scheduledHeight &&
           minedHeight == other.minedHeight &&
