@@ -1010,44 +1010,69 @@ void main() {
     },
   );
 
-  testWidgets('preparation ring rotates without repainting its segments', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1440, 900);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'preparation ring reshapes and spins without rebuilding the paint layer',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      _privateStatusHarness(status: _status(), disableAnimations: false),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpWidget(
+        _privateStatusHarness(status: _status(), disableAnimations: false),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-    final rotation = tester.widget<RotationTransition>(
-      find.byKey(
-        const ValueKey('ironwood_migration_preparation_ring_rotation'),
-      ),
-    );
-    final initialTurns = rotation.turns.value;
-    final initialPainter = tester
-        .widget<CustomPaint>(
-          find.byKey(const ValueKey('ironwood_migration_ring_paint')),
-        )
-        .painter;
+      final paintFinder = find.byKey(
+        const ValueKey('ironwood_migration_ring_paint'),
+      );
+      dynamic initialPainter;
+      for (var frame = 0; frame < 20; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        initialPainter = tester.widget<CustomPaint>(paintFinder).painter;
+        final fromWeights = initialPainter.fromWeights as List<double>;
+        final toWeights = initialPainter.toWeights as List<double>;
+        if (fromWeights.indexed.any(
+          (entry) => entry.$2 != toWeights[entry.$1],
+        )) {
+          break;
+        }
+      }
+      expect(
+        initialPainter.toWeights as List<double>,
+        isNot(equals(initialPainter.fromWeights as List<double>)),
+      );
+      final initialWeights = [
+        for (final dynamic segment in initialPainter.segments as List<dynamic>)
+          segment.weight as double,
+      ];
 
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 100));
 
-    expect(rotation.turns.value, greaterThan(initialTurns));
-    expect(
-      tester
-          .widget<CustomPaint>(
-            find.byKey(const ValueKey('ironwood_migration_ring_paint')),
-          )
-          .painter,
-      same(initialPainter),
-    );
-  });
+      final dynamic reshapedPainter = tester
+          .widget<CustomPaint>(paintFinder)
+          .painter;
+      final reshapedWeights = [
+        for (final dynamic segment in reshapedPainter.segments as List<dynamic>)
+          segment.weight as double,
+      ];
+      expect(reshapedPainter, same(initialPainter));
+      expect(reshapedWeights, isNot(equals(initialWeights)));
+
+      final rotation = tester.widget<RotationTransition>(
+        find.byKey(
+          const ValueKey('ironwood_migration_preparation_ring_rotation'),
+        ),
+      );
+      var observedSpin = rotation.turns.value > 0;
+      for (var frame = 0; frame < 50 && !observedSpin; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        observedSpin = rotation.turns.value > 0;
+      }
+      expect(observedSpin, isTrue);
+    },
+  );
 
   testWidgets('private preparing status does not expose note progress', (
     tester,
