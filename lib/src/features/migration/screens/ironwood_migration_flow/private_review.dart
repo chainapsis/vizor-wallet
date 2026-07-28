@@ -62,8 +62,14 @@ class _IronwoodMigrationPrivateReviewContentState
         accountUuid: accountUuid,
       );
       if (accountState.activeAccount?.isHardware ?? false) {
+        // A fully direct plan has no split stages, so the combined request
+        // would carry zero messages, which Rust rejects. It signs nothing up
+        // front: the legacy denomination completion accepts the empty set and
+        // the children are signed from the status screen.
         context.go(
-          '/migration/private/keystone/sign',
+          plan.denominationSplitStageCount > 0
+              ? '/migration/private/keystone/sign'
+              : '/migration/private/keystone/denominations/sign',
           extra: plan.scheduledTransfers,
         );
         return;

@@ -307,16 +307,22 @@ class _MobileMigrationNotificationPermissionScreenState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .savePrivateMigrationDraft(
-            accountUuid: accountUuid,
-            approvedSchedule: plan.scheduledTransfers,
-          );
-      draftSaved = true;
-      if (!mounted) return;
-      await _refreshPrivateMigrationDraftPresentation(ref);
-      if (!mounted) return;
+      final isHardware = accountState.activeAccount?.isHardware ?? false;
+      // Combined Keystone signing creates the durable run only at completion;
+      // a draft saved here would make the combined prepare reject the plan as
+      // an already-active run.
+      if (!isHardware || !_privatePlanUsesCombinedKeystoneSigning(plan)) {
+        await ref
+            .read(ironwoodMigrationServiceProvider)
+            .savePrivateMigrationDraft(
+              accountUuid: accountUuid,
+              approvedSchedule: plan.scheduledTransfers,
+            );
+        draftSaved = true;
+        if (!mounted) return;
+        await _refreshPrivateMigrationDraftPresentation(ref);
+        if (!mounted) return;
+      }
       final destination = await _continuePrivateMigrationAfterNotificationGate(
         ref,
         plan,

@@ -30,6 +30,31 @@ class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
   }
 }
 
+class MobileIronwoodMigrationKeystoneCombinedSignScreen
+    extends StatelessWidget {
+  const MobileIronwoodMigrationKeystoneCombinedSignScreen({
+    required this.approvedSchedule,
+    this.previewRequest,
+    this.previewUrParts = const [],
+    super.key,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
+  final List<String> previewUrParts;
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.combined,
+      approvedSchedule: approvedSchedule,
+      mobileLayout: true,
+      previewRequest: previewRequest,
+      previewUrParts: previewUrParts,
+    );
+  }
+}
+
 class IronwoodMigrationKeystoneImmediateSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneImmediateSignScreen({
     required this.approvedPlan,
@@ -981,6 +1006,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     if (!mounted) return;
     final previousRoute = switch ((widget.mobileLayout, widget.step)) {
       (true, _KeystonePrivateSignStep.immediate) => '/migration/fast/review',
+      // Combined signing creates the durable run only at completion, so a
+      // cancelled mobile session has no draft for the status screen to show.
+      (true, _KeystonePrivateSignStep.combined) => '/migration/options',
       (true, _KeystonePrivateSignStep.denominations) =>
         '/migration/private/status',
       _ => widget.step.previousRoute,
@@ -1826,15 +1854,50 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
   ];
 }
 
-List<List<T>> _keystoneSigningRounds<T>(List<T> messages, int limit) {
-  if (messages.isEmpty) return <List<T>>[];
+// The Keystone firmware enforces two independent caps on one signing round:
+// the message count (`signingBatchLimit`) and a 512 KiB ceiling that covers
+// both the canonical PCZT byte total and the request-id + Postcard envelope
+// (`ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES` in rust/src/wallet/keystone.rs). Rounds
+// must stay under both, or QR encoding rejects the round after the user has
+// already approved the migration.
+const _keystoneSigningRoundMaxTotalBytes = 512 * 1024;
+// Headroom for the request id and per-message Postcard framing, which the
+// firmware counts against the same ceiling as the raw PCZT payloads.
+const _keystoneSigningRoundByteBudget =
+    _keystoneSigningRoundMaxTotalBytes - 16 * 1024;
+
+@visibleForTesting
+List<List<rust_sync.KeystoneMigrationMessage>> keystoneSigningRoundsForTest(
+  List<rust_sync.KeystoneMigrationMessage> messages,
+  int limit,
+) => _keystoneSigningRounds(messages, limit);
+
+List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRounds(
+  List<rust_sync.KeystoneMigrationMessage> messages,
+  int limit,
+) {
+  if (messages.isEmpty) return const [];
   if (limit <= 0) {
     throw StateError('Keystone signing batch limit must be positive.');
   }
-  return [
-    for (var start = 0; start < messages.length; start += limit)
-      messages.sublist(start, math.min(start + limit, messages.length)),
-  ];
+  final rounds = <List<rust_sync.KeystoneMigrationMessage>>[];
+  var round = <rust_sync.KeystoneMigrationMessage>[];
+  var roundBytes = 0;
+  for (final message in messages) {
+    final messageBytes = message.redactedPczt.length + message.id.length;
+    final overflowsByteBudget =
+        round.isNotEmpty &&
+        roundBytes + messageBytes > _keystoneSigningRoundByteBudget;
+    if (round.length >= limit || overflowsByteBudget) {
+      rounds.add(round);
+      round = <rust_sync.KeystoneMigrationMessage>[];
+      roundBytes = 0;
+    }
+    round.add(message);
+    roundBytes += messageBytes;
+  }
+  if (round.isNotEmpty) rounds.add(round);
+  return rounds;
 }
 
 String _keystoneSigningRoundRequestId(

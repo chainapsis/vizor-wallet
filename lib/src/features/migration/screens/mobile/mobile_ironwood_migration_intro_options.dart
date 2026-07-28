@@ -189,6 +189,7 @@ class _MobileMigrationOptionsState
     });
     rust_sync.OrchardMigrationPrivatePlan? plan;
     String? accountUuid;
+    var isHardware = false;
     try {
       plan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
       if (!mounted) return;
@@ -201,7 +202,8 @@ class _MobileMigrationOptionsState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      if (accountState.activeAccount?.isHardware ?? false) {
+      isHardware = accountState.activeAccount?.isHardware ?? false;
+      if (isHardware) {
         if (!_keystoneTwoRoundPlanSupported(plan)) {
           throw StateError(
             'This migration needs more transactions than one Keystone '
@@ -242,16 +244,21 @@ class _MobileMigrationOptionsState
         context.go('/migration/private/notifications', extra: plan);
         return;
       }
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .savePrivateMigrationDraft(
-            accountUuid: accountUuid,
-            approvedSchedule: plan.scheduledTransfers,
-          );
-      draftSaved = true;
-      if (!mounted) return;
-      await _refreshPrivateMigrationDraftPresentation(ref);
-      if (!mounted) return;
+      // Combined Keystone signing creates the durable run only at completion;
+      // a draft saved here would make the combined prepare reject the plan as
+      // an already-active run.
+      if (!isHardware || !_privatePlanUsesCombinedKeystoneSigning(plan)) {
+        await ref
+            .read(ironwoodMigrationServiceProvider)
+            .savePrivateMigrationDraft(
+              accountUuid: accountUuid,
+              approvedSchedule: plan.scheduledTransfers,
+            );
+        draftSaved = true;
+        if (!mounted) return;
+        await _refreshPrivateMigrationDraftPresentation(ref);
+        if (!mounted) return;
+      }
       final continuation = await _continuePrivateMigrationAfterNotificationGate(
         ref,
         plan,
@@ -340,15 +347,14 @@ class _MobileMigrationOptionsState
             _MobileMigrationOptionCard(
               key: const ValueKey('mobile_ironwood_immediate_option'),
               title: 'Immediate',
-              body: widget.immediateEnabled
-                  ? 'Migrates your entire balance in one batch. '
-                        'Fast, but less private.'
-                  : 'Not available with Keystone.',
+              body:
+                  'Migrates your entire balance in one batch. '
+                  'Fast, but less private.',
               selected: immediateSelected,
               icon: _MigrationChoiceIcon.immediate,
-              onTap: widget.immediateEnabled && !_isContinuing
-                  ? () => _select(_MobileMigrationOption.immediate)
-                  : null,
+              onTap: _isContinuing
+                  ? null
+                  : () => _select(_MobileMigrationOption.immediate),
             ),
           ],
         ),
@@ -382,8 +388,20 @@ Future<bool> _hasDurablePrivateMigrationRun(WidgetRef ref) async {
 
 enum _PrivateMigrationContinuationDestination {
   status,
+  keystoneCombinedSigning,
   keystoneDenominationSigning,
 }
+
+/// Whether a hardware start signs this plan through the combined
+/// split-and-migration Keystone session.
+///
+/// Fully direct plans (no denomination split stages) stay on the legacy
+/// denomination completion: the combined request would carry zero messages,
+/// which Rust rejects, and there is nothing to sign up front anyway — the
+/// children are signed later from the status screen.
+bool _privatePlanUsesCombinedKeystoneSigning(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) => plan.denominationSplitStageCount > 0;
 
 void _openPrivateMigrationDestination(
   BuildContext context,
@@ -399,6 +417,12 @@ void _openPrivateMigrationDestination(
       context.go(
         '/migration/private/status',
         extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
+      );
+      return;
+    case _PrivateMigrationContinuationDestination.keystoneCombinedSigning:
+      context.go(
+        '/migration/private/keystone/sign',
+        extra: plan.scheduledTransfers,
       );
       return;
     case _PrivateMigrationContinuationDestination.keystoneDenominationSigning:
@@ -431,6 +455,21 @@ _continuePrivateMigrationAfterNotificationGate(
   }
 
   if (accountState.activeAccount?.isHardware ?? false) {
+    if (_privatePlanUsesCombinedKeystoneSigning(plan)) {
+      // The combined prepare rejects any existing run, so a draft left behind
+      // by the legacy two-session flow resumes on the status screen instead.
+      if (await _hasDurablePrivateMigrationRun(ref)) {
+        return (
+          destination: _PrivateMigrationContinuationDestination.status,
+          keystoneEntry: null,
+        );
+      }
+      return (
+        destination:
+            _PrivateMigrationContinuationDestination.keystoneCombinedSigning,
+        keystoneEntry: null,
+      );
+    }
     final service = ref.read(ironwoodMigrationServiceProvider);
     final request = await service.prepareKeystoneDenominationPrivateMigration(
       accountUuid: accountUuid,
