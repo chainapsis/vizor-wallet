@@ -337,6 +337,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MigrationPartStatus> dco_decode_list_migration_part_status(dynamic raw);
 
   @protected
+  List<MigrationPreparationOutputStatus>
+  dco_decode_list_migration_preparation_output_status(dynamic raw);
+
+  @protected
   List<MigrationPreparationTransactionStatus>
   dco_decode_list_migration_preparation_transaction_status(dynamic raw);
 
@@ -457,6 +461,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationPartStatus dco_decode_migration_part_status(dynamic raw);
+
+  @protected
+  MigrationPreparationOutputKind dco_decode_migration_preparation_output_kind(
+    dynamic raw,
+  );
+
+  @protected
+  MigrationPreparationOutputStatus
+  dco_decode_migration_preparation_output_status(dynamic raw);
 
   @protected
   MigrationPreparationTransactionState
@@ -1118,6 +1131,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MigrationPreparationOutputStatus>
+  sse_decode_list_migration_preparation_output_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<MigrationPreparationTransactionStatus>
   sse_decode_list_migration_preparation_transaction_status(
     SseDeserializer deserializer,
@@ -1268,6 +1287,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MigrationPartStatus sse_decode_migration_part_status(
     SseDeserializer deserializer,
   );
+
+  @protected
+  MigrationPreparationOutputKind sse_decode_migration_preparation_output_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationPreparationOutputStatus
+  sse_decode_migration_preparation_output_status(SseDeserializer deserializer);
 
   @protected
   MigrationPreparationTransactionState
@@ -2072,6 +2100,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_migration_preparation_output_status(
+    List<MigrationPreparationOutputStatus> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_migration_preparation_transaction_status(
     List<MigrationPreparationTransactionStatus> self,
     SseSerializer serializer,
@@ -2263,6 +2297,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_migration_part_status(
     MigrationPartStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_preparation_output_kind(
+    MigrationPreparationOutputKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_migration_preparation_output_status(
+    MigrationPreparationOutputStatus self,
     SseSerializer serializer,
   );
 

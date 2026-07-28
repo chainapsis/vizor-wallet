@@ -7501,6 +7501,20 @@ impl SseDecode for Vec<crate::api::sync::MigrationPartStatus> {
     }
 }
 
+impl SseDecode for Vec<crate::api::sync::MigrationPreparationOutputStatus> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = vec![];
+        for idx_ in 0..len_ {
+            ans_.push(
+                <crate::api::sync::MigrationPreparationOutputStatus>::sse_decode(deserializer),
+            );
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::sync::MigrationPreparationTransactionStatus> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7939,6 +7953,37 @@ impl SseDecode for crate::api::sync::MigrationPartStatus {
     }
 }
 
+impl SseDecode for crate::api::sync::MigrationPreparationOutputKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::sync::MigrationPreparationOutputKind::Migration,
+            1 => crate::api::sync::MigrationPreparationOutputKind::Change,
+            2 => crate::api::sync::MigrationPreparationOutputKind::Continuation,
+            _ => unreachable!(
+                "Invalid variant for MigrationPreparationOutputKind: {}",
+                inner
+            ),
+        };
+    }
+}
+
+impl SseDecode for crate::api::sync::MigrationPreparationOutputStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_valueZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_kind =
+            <crate::api::sync::MigrationPreparationOutputKind>::sse_decode(deserializer);
+        let mut var_nextRound = <Option<u32>>::sse_decode(deserializer);
+        return crate::api::sync::MigrationPreparationOutputStatus {
+            value_zatoshi: var_valueZatoshi,
+            kind: var_kind,
+            next_round: var_nextRound,
+        };
+    }
+}
+
 impl SseDecode for crate::api::sync::MigrationPreparationTransactionState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -7962,6 +8007,13 @@ impl SseDecode for crate::api::sync::MigrationPreparationTransactionStatus {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_stageIndex = <u32>::sse_decode(deserializer);
         let mut var_approximateValueZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_round = <u32>::sse_decode(deserializer);
+        let mut var_feeZatoshi = <u64>::sse_decode(deserializer);
+        let mut var_plannedHeight = <u32>::sse_decode(deserializer);
+        let mut var_projectedHeight = <u32>::sse_decode(deserializer);
+        let mut var_projectedCompletionHeight = <u32>::sse_decode(deserializer);
+        let mut var_outputs =
+            <Vec<crate::api::sync::MigrationPreparationOutputStatus>>::sse_decode(deserializer);
         let mut var_state =
             <crate::api::sync::MigrationPreparationTransactionState>::sse_decode(deserializer);
         let mut var_scheduledHeight = <Option<u32>>::sse_decode(deserializer);
@@ -7971,6 +8023,12 @@ impl SseDecode for crate::api::sync::MigrationPreparationTransactionStatus {
         return crate::api::sync::MigrationPreparationTransactionStatus {
             stage_index: var_stageIndex,
             approximate_value_zatoshi: var_approximateValueZatoshi,
+            round: var_round,
+            fee_zatoshi: var_feeZatoshi,
+            planned_height: var_plannedHeight,
+            projected_height: var_projectedHeight,
+            projected_completion_height: var_projectedCompletionHeight,
+            outputs: var_outputs,
             state: var_state,
             scheduled_height: var_scheduledHeight,
             mined_height: var_minedHeight,
@@ -10503,6 +10561,50 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::MigrationPartStatus>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPreparationOutputKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Migration => 0.into_dart(),
+            Self::Change => 1.into_dart(),
+            Self::Continuation => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::MigrationPreparationOutputKind
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::MigrationPreparationOutputKind>
+    for crate::api::sync::MigrationPreparationOutputKind
+{
+    fn into_into_dart(self) -> crate::api::sync::MigrationPreparationOutputKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPreparationOutputStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.value_zatoshi.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.next_round.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::sync::MigrationPreparationOutputStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::MigrationPreparationOutputStatus>
+    for crate::api::sync::MigrationPreparationOutputStatus
+{
+    fn into_into_dart(self) -> crate::api::sync::MigrationPreparationOutputStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPreparationTransactionState {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -10532,6 +10634,14 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationPreparationTra
         [
             self.stage_index.into_into_dart().into_dart(),
             self.approximate_value_zatoshi.into_into_dart().into_dart(),
+            self.round.into_into_dart().into_dart(),
+            self.fee_zatoshi.into_into_dart().into_dart(),
+            self.planned_height.into_into_dart().into_dart(),
+            self.projected_height.into_into_dart().into_dart(),
+            self.projected_completion_height
+                .into_into_dart()
+                .into_dart(),
+            self.outputs.into_into_dart().into_dart(),
             self.state.into_into_dart().into_dart(),
             self.scheduled_height.into_into_dart().into_dart(),
             self.mined_height.into_into_dart().into_dart(),
@@ -12631,6 +12741,16 @@ impl SseEncode for Vec<crate::api::sync::MigrationPartStatus> {
     }
 }
 
+impl SseEncode for Vec<crate::api::sync::MigrationPreparationOutputStatus> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::sync::MigrationPreparationOutputStatus>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::sync::MigrationPreparationTransactionStatus> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -12960,6 +13080,32 @@ impl SseEncode for crate::api::sync::MigrationPartStatus {
     }
 }
 
+impl SseEncode for crate::api::sync::MigrationPreparationOutputKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::sync::MigrationPreparationOutputKind::Migration => 0,
+                crate::api::sync::MigrationPreparationOutputKind::Change => 1,
+                crate::api::sync::MigrationPreparationOutputKind::Continuation => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::sync::MigrationPreparationOutputStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.value_zatoshi, serializer);
+        <crate::api::sync::MigrationPreparationOutputKind>::sse_encode(self.kind, serializer);
+        <Option<u32>>::sse_encode(self.next_round, serializer);
+    }
+}
+
 impl SseEncode for crate::api::sync::MigrationPreparationTransactionState {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -12984,6 +13130,15 @@ impl SseEncode for crate::api::sync::MigrationPreparationTransactionStatus {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <u32>::sse_encode(self.stage_index, serializer);
         <u64>::sse_encode(self.approximate_value_zatoshi, serializer);
+        <u32>::sse_encode(self.round, serializer);
+        <u64>::sse_encode(self.fee_zatoshi, serializer);
+        <u32>::sse_encode(self.planned_height, serializer);
+        <u32>::sse_encode(self.projected_height, serializer);
+        <u32>::sse_encode(self.projected_completion_height, serializer);
+        <Vec<crate::api::sync::MigrationPreparationOutputStatus>>::sse_encode(
+            self.outputs,
+            serializer,
+        );
         <crate::api::sync::MigrationPreparationTransactionState>::sse_encode(
             self.state, serializer,
         );

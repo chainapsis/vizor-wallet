@@ -767,9 +767,27 @@ pub enum MigrationPreparationTransactionState {
     Completed,
 }
 
+pub enum MigrationPreparationOutputKind {
+    Migration,
+    Change,
+    Continuation,
+}
+
+pub struct MigrationPreparationOutputStatus {
+    pub value_zatoshi: u64,
+    pub kind: MigrationPreparationOutputKind,
+    pub next_round: Option<u32>,
+}
+
 pub struct MigrationPreparationTransactionStatus {
     pub stage_index: u32,
     pub approximate_value_zatoshi: u64,
+    pub round: u32,
+    pub fee_zatoshi: u64,
+    pub planned_height: u32,
+    pub projected_height: u32,
+    pub projected_completion_height: u32,
+    pub outputs: Vec<MigrationPreparationOutputStatus>,
     pub state: MigrationPreparationTransactionState,
     pub scheduled_height: Option<u32>,
     pub mined_height: Option<u32>,
@@ -1317,6 +1335,30 @@ pub fn get_orchard_migration_status(
                     .map(|transaction| MigrationPreparationTransactionStatus {
                         stage_index: transaction.stage_index,
                         approximate_value_zatoshi: transaction.approximate_value_zatoshi,
+                        round: transaction.round,
+                        fee_zatoshi: transaction.fee_zatoshi,
+                        planned_height: transaction.planned_height,
+                        projected_height: transaction.projected_height,
+                        projected_completion_height: transaction.projected_completion_height,
+                        outputs: transaction
+                            .outputs
+                            .into_iter()
+                            .map(|output| MigrationPreparationOutputStatus {
+                                value_zatoshi: output.value_zatoshi,
+                                kind: match output.kind {
+                                    wallet_sync::MigrationPreparationOutputKind::Migration => {
+                                        MigrationPreparationOutputKind::Migration
+                                    }
+                                    wallet_sync::MigrationPreparationOutputKind::Change => {
+                                        MigrationPreparationOutputKind::Change
+                                    }
+                                    wallet_sync::MigrationPreparationOutputKind::Continuation => {
+                                        MigrationPreparationOutputKind::Continuation
+                                    }
+                                },
+                                next_round: output.next_round,
+                            })
+                            .collect(),
                         state: match transaction.state {
                             wallet_sync::MigrationPreparationTransactionState::AwaitingInputs => {
                                 MigrationPreparationTransactionState::AwaitingInputs
