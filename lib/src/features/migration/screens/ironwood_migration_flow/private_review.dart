@@ -473,7 +473,7 @@ class _MigrationReviewContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final preparationEstimate = migrationPlanNoteSplitDurationLabel(plan);
+    final completionEstimate = migrationPlanCompletionDurationLabel(plan);
     return SizedBox(
       key: const ValueKey('ironwood_migration_review_screen'),
       width: 420,
@@ -536,8 +536,8 @@ class _MigrationReviewContent extends StatelessWidget {
             top: 386,
             width: 396,
             child: _ImmediateReviewRow(
-              label: 'Est. preparation completion',
-              value: preparationEstimate,
+              label: 'Migration complete in',
+              value: completionEstimate,
             ),
           ),
           Positioned(

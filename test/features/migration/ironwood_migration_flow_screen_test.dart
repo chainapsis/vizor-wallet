@@ -321,7 +321,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Amount to migrate'), findsOneWidget);
-    expect(find.text('Est. preparation completion'), findsOneWidget);
+    expect(find.text('Migration complete in'), findsOneWidget);
+    expect(find.text('~7 hrs'), findsOneWidget);
+    expect(find.text('Est. preparation completion'), findsNothing);
     expect(find.text('Review shuffle'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
   });
