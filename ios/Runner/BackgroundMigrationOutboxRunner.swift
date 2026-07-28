@@ -97,6 +97,9 @@ enum BackgroundMigrationOutboxRunner {
         broadcastComplete: broadcastComplete
       )
     case .failure:
+      _ = try? store.update { snapshot in
+        snapshot.advanceLightwalletdEndpoints(afterPreflightFailure: endpoint)
+      }
       return BackgroundMigrationOutboxRunResult(
         transport: .temporarilyUnavailable,
         proofReady: nil,
@@ -269,7 +272,7 @@ enum BackgroundMigrationOutboxRunner {
                 at: now
               ) ?? broadcastComplete
           }
-          let nextHeight = snapshot.nextActionHeight(endpoint: endpoint)
+          let nextHeight = snapshot.nextActionHeight()
           return BackgroundMigrationOutboxRunResult(
             transport: .accepted(
               nextHeight: nextHeight,

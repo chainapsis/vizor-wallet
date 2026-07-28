@@ -2213,6 +2213,25 @@ class IronwoodMigrationService {
     }
   }
 
+  List<String> _migrationOutboxLightwalletdUrls(
+    _MigrationCredentialContext context,
+  ) {
+    final primaryUrl = context.lightwalletdUrl;
+    if (primaryUrl == null) return const [];
+    try {
+      final configured = getEndpoint();
+      if (configured.networkName != context.network ||
+          configured.normalizedLightwalletdUrl != primaryUrl) {
+        return [primaryUrl];
+      }
+      return migrationRpcEndpointRotationFor(configured)
+          .map((endpoint) => endpoint.normalizedLightwalletdUrl)
+          .toList(growable: false);
+    } catch (_) {
+      return [primaryUrl];
+    }
+  }
+
   Future<_MigrationCredential> _legacyCredential(
     _MigrationCredentialContext context,
   ) async {
@@ -2398,12 +2417,14 @@ class IronwoodMigrationService {
     }
 
     final batchId = _migrationOutboxBatchId(context, batch.runId);
+    final lightwalletdUrls = _migrationOutboxLightwalletdUrls(context);
     final stagePayload = <String, Object?>{
       'batchId': batchId,
       'network': context.network,
       'accountUuid': context.accountUuid,
       'runId': batch.runId,
       'lightwalletdUrl': lightwalletdUrl,
+      'lightwalletdUrls': lightwalletdUrls,
       'timingMeanBlocks': batch.timingMeanBlocks,
       'timingMaxBlocks': batch.timingMaxBlocks,
       'createdAtMs': DateTime.now().millisecondsSinceEpoch,

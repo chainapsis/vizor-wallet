@@ -193,6 +193,16 @@ enum BackgroundMigrationOutboxChannel {
 
   private static func decodeBatch(_ raw: Any?) throws -> BackgroundMigrationOutboxBatch {
     let arguments = try dictionary(raw)
+    let lightwalletdUrl = try string(arguments, "lightwalletdUrl")
+    let lightwalletdUrls: [String]
+    if let rawUrls = arguments["lightwalletdUrls"] {
+      guard let urls = rawUrls as? [String] else {
+        throw BackgroundMigrationOutboxChannelError.invalidArguments("lightwalletdUrls")
+      }
+      lightwalletdUrls = urls
+    } else {
+      lightwalletdUrls = [lightwalletdUrl]
+    }
     guard let rawItems = arguments["items"] as? [[String: Any]] else {
       throw BackgroundMigrationOutboxChannelError.invalidArguments("items")
     }
@@ -216,7 +226,9 @@ enum BackgroundMigrationOutboxChannel {
       network: try string(arguments, "network"),
       accountUuid: try string(arguments, "accountUuid"),
       runId: try string(arguments, "runId"),
-      lightwalletdUrl: try string(arguments, "lightwalletdUrl"),
+      lightwalletdUrl: lightwalletdUrl,
+      lightwalletdUrls: lightwalletdUrls,
+      nextLightwalletdIndex: 0,
       timingMeanBlocks: try uint64(arguments, "timingMeanBlocks"),
       timingMaxBlocks: try uint64(arguments, "timingMaxBlocks"),
       createdAt: Date(

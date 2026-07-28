@@ -84,6 +84,8 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   let accountUuid: String
   let runId: String
   var lightwalletdUrl: String
+  var lightwalletdUrls: [String]? = nil
+  var nextLightwalletdIndex: Int? = nil
   let timingMeanBlocks: UInt64
   let timingMaxBlocks: UInt64
   let createdAt: Date
@@ -104,6 +106,27 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   var items: [BackgroundMigrationOutboxItem]
 
   var scopeKey: String { "\(network):\(accountUuid)" }
+
+  var rotationUrls: [String] {
+    guard let lightwalletdUrls, !lightwalletdUrls.isEmpty else {
+      return [lightwalletdUrl]
+    }
+    return lightwalletdUrls
+  }
+
+  var activeLightwalletdUrl: String {
+    let urls = rotationUrls
+    let index = nextLightwalletdIndex ?? 0
+    guard index >= 0 else { return urls[0] }
+    return urls[index % urls.count]
+  }
+
+  mutating func advanceLightwalletdEndpoint() {
+    let urls = rotationUrls
+    guard urls.count > 1 else { return }
+    let index = nextLightwalletdIndex ?? 0
+    nextLightwalletdIndex = index < 0 ? 0 : (index + 1) % urls.count
+  }
 
   /// Whether this batch still owes the user a proof-ready announcement.
   ///
@@ -209,11 +232,18 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
   var announcedBroadcastCompleteBatchIds: [String]?
 
   mutating func stage(_ batch: BackgroundMigrationOutboxBatch) throws {
+    let rotationUrls = batch.rotationUrls
     guard !batch.batchId.isEmpty,
       !batch.network.isEmpty,
       !batch.accountUuid.isEmpty,
       !batch.runId.isEmpty,
       !batch.lightwalletdUrl.isEmpty,
+      batch.lightwalletdUrls?.isEmpty != true,
+      rotationUrls.first == batch.lightwalletdUrl,
+      rotationUrls.allSatisfy({ !$0.isEmpty }),
+      Set(rotationUrls).count == rotationUrls.count,
+      (batch.nextLightwalletdIndex ?? 0) >= 0,
+      (batch.nextLightwalletdIndex ?? 0) < rotationUrls.count,
       batch.timingMeanBlocks > 0,
       batch.timingMaxBlocks > 0,
       batch.timingMeanBlocks <= batch.timingMaxBlocks,
@@ -246,11 +276,19 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       else {
         throw BackgroundMigrationOutboxError.conflictingBatch
       }
-      if existing.lightwalletdUrl != batch.lightwalletdUrl {
+      if existing.lightwalletdUrls == nil && existing.lightwalletdUrl != batch.lightwalletdUrl {
         guard !existing.items.contains(where: { $0.status == .submitting }) else {
           throw BackgroundMigrationOutboxError.conflictingBatch
         }
         batches[batchIndex].lightwalletdUrl = batch.lightwalletdUrl
+      }
+      if existing.lightwalletdUrls == nil, batch.lightwalletdUrls != nil {
+        guard !existing.items.contains(where: { $0.status == .submitting }) else {
+          throw BackgroundMigrationOutboxError.conflictingBatch
+        }
+        batches[batchIndex].lightwalletdUrl = batch.lightwalletdUrl
+        batches[batchIndex].lightwalletdUrls = batch.lightwalletdUrls
+        batches[batchIndex].nextLightwalletdIndex = 0
       }
       var addedItem = false
       for incoming in batch.items {
@@ -360,7 +398,9 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       }
       batches[batchIndex].items[itemIndex] = item
     }
-    batches[batchIndex].lightwalletdUrl = lightwalletdUrl
+    if batches[batchIndex].lightwalletdUrls == nil {
+      batches[batchIndex].lightwalletdUrl = lightwalletdUrl
+    }
     if batches[batchIndex].items.contains(where: { $0.status == .armed }) {
       batches[batchIndex].armedAt = batches[batchIndex].armedAt ?? date
     }
@@ -414,13 +454,20 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     }
   }
 
+  mutating func advanceLightwalletdEndpoints(afterPreflightFailure endpoint: String) {
+    for batchIndex in batches.indices
+    where batches[batchIndex].activeLightwalletdUrl == endpoint {
+      batches[batchIndex].advanceLightwalletdEndpoint()
+    }
+  }
+
   mutating func nextEndpointForInspection() -> String? {
     let endpoints = Set(
       batches.filter { batch in
         batch.armedAt != nil
           && (batch.items.contains(where: { $0.status == .armed })
             || (batch.nextProofHeight != nil && batch.awaitsProofReadyAnnouncement))
-      }.map(\.lightwalletdUrl)
+      }.map(\.activeLightwalletdUrl)
     ).sorted()
     guard !endpoints.isEmpty else { return nil }
     let selected: String
@@ -435,13 +482,15 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     return selected
   }
 
-  func nextActionHeight(endpoint: String) -> UInt64? {
-    let transactionHeight = batches.filter { $0.lightwalletdUrl == endpoint }.flatMap(\.items)
+  func nextActionHeight(endpoint: String? = nil) -> UInt64? {
+    let transactionHeight = batches.filter {
+      endpoint == nil || $0.activeLightwalletdUrl == endpoint
+    }.flatMap(\.items)
       .filter { $0.status == .armed }
       .map(\.scheduledHeight)
       .min()
     let proofHeight = batches.filter {
-      $0.lightwalletdUrl == endpoint
+      (endpoint == nil || $0.activeLightwalletdUrl == endpoint)
         && $0.armedAt != nil
         && $0.awaitsProofReadyAnnouncement
         && $0.proofReadyNotificationPendingAt == nil
@@ -452,7 +501,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
   func nextActionAccountUuid(endpoint: String, height: UInt64) -> String? {
     return batches
       .filter { batch in
-        guard batch.lightwalletdUrl == endpoint else { return false }
+        guard batch.activeLightwalletdUrl == endpoint else { return false }
         let hasTransaction = batch.items.contains {
           $0.status == .armed && $0.scheduledHeight == height
         }
@@ -494,7 +543,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     batches
       .filter { batch in
         guard let nextProofHeight = batch.nextProofHeight else { return false }
-        return batch.lightwalletdUrl == endpoint
+        return batch.activeLightwalletdUrl == endpoint
           && batch.armedAt != nil
           && batch.awaitsProofReadyAnnouncement
           && nextProofHeight <= remoteHeight
@@ -707,7 +756,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
 
   mutating func expireItems(remoteHeight: UInt64, endpoint: String, at date: Date) {
     for batchIndex in batches.indices {
-      guard batches[batchIndex].lightwalletdUrl == endpoint else { continue }
+      guard batches[batchIndex].activeLightwalletdUrl == endpoint else { continue }
       var expiredAnyItem = false
       for itemIndex in batches[batchIndex].items.indices {
         let item = batches[batchIndex].items[itemIndex]
@@ -743,7 +792,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       return
     }
     for batchIndex in batches.indices {
-      guard batches[batchIndex].lightwalletdUrl == endpoint else { continue }
+      guard batches[batchIndex].activeLightwalletdUrl == endpoint else { continue }
       var foundNoncanonicalItem = false
       for itemIndex in batches[batchIndex].items.indices {
         let item = batches[batchIndex].items[itemIndex]
@@ -780,7 +829,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
   ) -> BackgroundMigrationOutboxSelection? {
     let candidates = batches.enumerated().compactMap {
       batchIndex, batch -> (Int, BackgroundMigrationOutboxBatch)? in
-      guard endpoint == nil || batch.lightwalletdUrl == endpoint,
+      guard endpoint == nil || batch.activeLightwalletdUrl == endpoint,
         batch.armedAt != nil,
         batch.items.contains(where: {
           $0.status == .armed && $0.scheduledHeight <= remoteHeight
@@ -819,7 +868,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       batchId: batch.batchId,
       accountUuid: batch.accountUuid,
       scopeKey: batch.scopeKey,
-      lightwalletdUrl: batch.lightwalletdUrl,
+      lightwalletdUrl: batch.activeLightwalletdUrl,
       item: item
     )
   }
@@ -910,6 +959,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
         at: date
       )
     )
+    batches[location.batch].advanceLightwalletdEndpoint()
   }
 
   mutating func recordRejected(

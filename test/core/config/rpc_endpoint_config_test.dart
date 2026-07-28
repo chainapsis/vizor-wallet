@@ -374,6 +374,49 @@ void main() {
     });
   });
 
+  group('migrationRpcEndpointRotationFor', () {
+    test('keeps one mainnet endpoint per operator', () {
+      final endpoints = migrationRpcEndpointRotationFor(
+        defaultRpcEndpointConfig('main'),
+      );
+
+      expect(endpoints.map((endpoint) => endpoint.presetId), [
+        kDefaultRpcEndpointPresetId,
+        'zec-rocks',
+        'z3-deepikaw',
+        'zprivacy',
+        'zcash-explorer',
+      ]);
+    });
+
+    test('starts with the selected managed endpoint', () {
+      final endpoints = migrationRpcEndpointRotationFor(
+        const RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: 'https://eu.zec.rocks:443',
+          presetId: 'eu-zec-rocks',
+        ),
+      );
+
+      expect(endpoints.first.presetId, 'eu-zec-rocks');
+      expect(
+        endpoints.map((endpoint) => endpoint.presetId),
+        isNot(contains('zec-rocks')),
+      );
+      expect(endpoints[1].presetId, kDefaultRpcEndpointPresetId);
+    });
+
+    test('keeps custom endpoints isolated', () {
+      const custom = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://custom.example:443',
+        presetId: kCustomRpcEndpointPresetId,
+      );
+
+      expect(migrationRpcEndpointRotationFor(custom), [custom]);
+    });
+  });
+
   group('rpcEndpointHostPort', () {
     test('keeps IPv6 brackets so custom endpoint fields can round-trip', () {
       expect(rpcEndpointHostPort('https://[::1]:9067'), '[::1]:9067');

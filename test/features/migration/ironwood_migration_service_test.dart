@@ -4159,7 +4159,7 @@ void main() {
             storage: const FlutterSecureStorage(),
           ),
           backgroundCredentialStore: _backgroundCredentialStore(),
-          getEndpoint: _testEndpoint,
+          getEndpoint: () => defaultRpcEndpointConfig('test'),
           getSessionPassword: () => throw StateError('session password used'),
           getMnemonicBytesForAccount: (_) async =>
               Uint8List.fromList([1, 2, 3]),
@@ -4230,6 +4230,14 @@ void main() {
         ]);
         expect(stagedPayload?['batchId'], 'test:account-1:run-1');
         expect(stagedPayload?['nextProofHeight'], 576);
+        expect(
+          stagedPayload?['lightwalletdUrl'],
+          'https://testnet.zec.rocks:443',
+        );
+        expect(stagedPayload?['lightwalletdUrls'], [
+          'https://testnet.zec.rocks:443',
+          'https://zcash.mysideoftheweb.com:19067',
+        ]);
         final items = stagedPayload?['items'] as List<Object?>;
         final item = items.single as Map<Object?, Object?>;
         expect(item['rawTransaction'], isA<Uint8List>());

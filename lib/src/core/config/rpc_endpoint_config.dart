@@ -49,6 +49,7 @@ class RpcEndpointPreset {
     required this.region,
     required this.label,
     required this.url,
+    this.operatorId,
     this.isDefault = false,
   });
 
@@ -56,9 +57,14 @@ class RpcEndpointPreset {
   final String region;
   final String label;
   final String url;
+
+  /// Groups regional replicas that share one lightwalletd operator.
+  final String? operatorId;
   final bool isDefault;
 
   String get hostPort => rpcEndpointHostPort(url);
+
+  String get effectiveOperatorId => operatorId ?? id;
 }
 
 // Public lightwalletd presets. Keep the mainnet default aligned with Zodl's
@@ -68,6 +74,7 @@ const kIronwoodMasqueradeRpcEndpointPreset = RpcEndpointPreset(
   region: 'Ironwood',
   label: 'Ironwood Masquerade',
   url: 'https://lwd.157.245.208.35.sslip.io:443',
+  operatorId: 'ironwood-masquerade',
   isDefault: true,
 );
 
@@ -77,6 +84,7 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Default',
     label: 'Stardust US',
     url: ZcashNetwork.mainnet.lightwalletdUrl,
+    operatorId: 'stardust',
     isDefault: true,
   ),
   const RpcEndpointPreset(
@@ -84,66 +92,77 @@ final kMainnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Europe',
     label: 'Stardust Europe',
     url: 'https://eu.zec.stardust.rest:443',
+    operatorId: 'stardust',
   ),
   const RpcEndpointPreset(
     id: 'eu2-zec-stardust',
     region: 'Europe',
     label: 'Stardust Europe 2',
     url: 'https://eu2.zec.stardust.rest:443',
+    operatorId: 'stardust',
   ),
   const RpcEndpointPreset(
     id: 'jp-zec-stardust',
     region: 'Asia Pacific',
     label: 'Stardust Japan',
     url: 'https://jp.zec.stardust.rest:443',
+    operatorId: 'stardust',
   ),
   const RpcEndpointPreset(
     id: 'zec-rocks',
     region: 'Global',
     label: 'Zec Rocks',
     url: 'https://zec.rocks:443',
+    operatorId: 'zec-rocks',
   ),
   const RpcEndpointPreset(
     id: 'na-zec-rocks',
     region: 'Americas',
     label: 'Zec Rocks North America',
     url: 'https://na.zec.rocks:443',
+    operatorId: 'zec-rocks',
   ),
   const RpcEndpointPreset(
     id: 'sa-zec-rocks',
     region: 'Americas',
     label: 'Zec Rocks South America',
     url: 'https://sa.zec.rocks:443',
+    operatorId: 'zec-rocks',
   ),
   const RpcEndpointPreset(
     id: 'eu-zec-rocks',
     region: 'Europe',
     label: 'Zec Rocks Europe',
     url: 'https://eu.zec.rocks:443',
+    operatorId: 'zec-rocks',
   ),
   const RpcEndpointPreset(
     id: 'ap-zec-rocks',
     region: 'Asia Pacific',
     label: 'Zec Rocks Asia Pacific',
     url: 'https://ap.zec.rocks:443',
+    operatorId: 'zec-rocks',
   ),
   const RpcEndpointPreset(
     id: 'z3-deepikaw',
     region: 'Community',
     label: 'Deepikaw Z3',
     url: 'https://z3.deepikaw.xyz:443',
+    operatorId: 'deepikaw',
   ),
   const RpcEndpointPreset(
     id: 'zprivacy',
     region: 'Community',
     label: 'ZPrivacy',
     url: 'https://zprivacy.online:443',
+    operatorId: 'zprivacy',
   ),
   const RpcEndpointPreset(
     id: 'zcash-explorer',
     region: 'Community',
     label: 'Zcash Explorer',
     url: 'https://lwd.zcashexplorer.app:9067',
+    operatorId: 'zcash-explorer',
   ),
 ]);
 
@@ -153,6 +172,7 @@ final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Testnet',
     label: 'Zec Rocks Testnet',
     url: 'https://testnet.zec.rocks:443',
+    operatorId: 'zec-rocks',
     isDefault: true,
   ),
   const RpcEndpointPreset(
@@ -160,6 +180,7 @@ final kTestnetRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Community',
     label: 'My Side of the Web Testnet',
     url: 'https://zcash.mysideoftheweb.com:19067',
+    operatorId: 'mysideoftheweb',
   ),
 ]);
 
@@ -169,6 +190,7 @@ final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Regtest',
     label: 'Local Regtest',
     url: ZcashNetwork.regtest.lightwalletdUrl,
+    operatorId: 'local-regtest',
     isDefault: true,
   ),
   const RpcEndpointPreset(
@@ -176,12 +198,14 @@ final kRegtestRpcEndpointPresets = List<RpcEndpointPreset>.unmodifiable([
     region: 'Regtest',
     label: 'Slow Regtest',
     url: 'http://127.0.0.1:19068',
+    operatorId: 'slow-regtest',
   ),
   const RpcEndpointPreset(
     id: kRegtestUnavailableRpcEndpointPresetId,
     region: 'Regtest',
     label: 'Unavailable Regtest',
     url: 'http://127.0.0.1:19067',
+    operatorId: 'unavailable-regtest',
   ),
 ]);
 
@@ -270,6 +294,30 @@ List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(
 RpcEndpointConfig? fallbackRpcEndpointConfigFor(RpcEndpointConfig primary) {
   final candidates = fallbackRpcEndpointCandidatesFor(primary);
   return candidates.isEmpty ? null : candidates.first;
+}
+
+/// Returns one managed endpoint per operator, beginning with [primary].
+///
+/// Custom endpoints intentionally remain a single-endpoint rotation.
+List<RpcEndpointConfig> migrationRpcEndpointRotationFor(
+  RpcEndpointConfig primary,
+) {
+  final primaryPreset = explicitRpcEndpointPresetFor(primary);
+  if (primaryPreset == null) return List.unmodifiable([primary]);
+
+  final seenOperators = <String>{};
+  final endpoints = <RpcEndpointConfig>[];
+  for (final endpoint in [
+    primary,
+    ...fallbackRpcEndpointCandidatesFor(primary),
+  ]) {
+    final preset = explicitRpcEndpointPresetFor(endpoint);
+    if (preset == null || !seenOperators.add(preset.effectiveOperatorId)) {
+      continue;
+    }
+    endpoints.add(endpoint);
+  }
+  return List.unmodifiable(endpoints);
 }
 
 RpcEndpointPreset? _selectedFallbackPrimaryPreset(RpcEndpointConfig primary) {

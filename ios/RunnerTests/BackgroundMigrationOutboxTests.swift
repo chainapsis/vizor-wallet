@@ -88,6 +88,19 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(snapshot.announcedBroadcastCompleteBatchIds)
   }
 
+  func testLegacyBatchDecodesAsSingleEndpointRotation() throws {
+    let batch = makeBatch(batchId: "batch-a", account: "account-a")
+    let encoded = try JSONEncoder().encode(batch)
+    let decoded = try JSONDecoder().decode(
+      BackgroundMigrationOutboxBatch.self,
+      from: encoded
+    )
+
+    XCTAssertNil(decoded.lightwalletdUrls)
+    XCTAssertEqual(decoded.rotationUrls, [batch.lightwalletdUrl])
+    XCTAssertEqual(decoded.activeLightwalletdUrl, batch.lightwalletdUrl)
+  }
+
   func testDiscardBatchRemovesAnIdleRecordButKeepsTheAccountScope() throws {
     var snapshot = BackgroundMigrationOutboxSnapshot()
     let batch = makeBatch(batchId: "batch-a", account: "account-a")
@@ -299,6 +312,23 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertThrowsError(try snapshot.stage(replacement)) { error in
       XCTAssertEqual(error as? BackgroundMigrationOutboxError, .conflictingBatch)
     }
+  }
+
+  func testRestagingDoesNotResetPersistedEndpointCursor() throws {
+    let endpoints = ["https://one.example:443", "https://two.example:443"]
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      lightwalletdUrls: endpoints
+    )
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    try snapshot.stage(batch)
+    snapshot.batches[0].nextLightwalletdIndex = 1
+
+    try snapshot.stage(batch)
+
+    XCTAssertEqual(snapshot.batches[0].nextLightwalletdIndex, 1)
+    XCTAssertEqual(snapshot.batches[0].activeLightwalletdUrl, endpoints[1])
   }
 
   func testWatchOnlyBatchIsValidButEmptyBatchWithoutWatchIsRejected() throws {
@@ -687,6 +717,137 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       (receipt["rawTransaction"] as? FlutterStandardTypedData)?.data,
       batch.items[0].rawTransaction
     )
+  }
+
+  func testRunnerRotatesEndpointAfterEachAcceptedTransaction() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let endpoints = ["https://one.example:443", "https://two.example:443"]
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100, 300],
+      lightwalletdUrls: endpoints
+    )
+    try stageAndArm(batch, in: harness.store)
+    var queriedEndpoints: [String] = []
+    var submissionEndpoints: [String] = []
+    var remoteHeight: UInt64 = 200
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { endpoint, _ in
+        queriedEndpoints.append(endpoint)
+        return .success(remoteHeight)
+      },
+      sendTransaction: { endpoint, _, _ in
+        submissionEndpoints.append(endpoint)
+        return .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    _ = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+    remoteHeight = 300
+    _ = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now.addingTimeInterval(60),
+      dependencies: dependencies
+    )
+
+    XCTAssertEqual(queriedEndpoints, endpoints)
+    XCTAssertEqual(submissionEndpoints, endpoints)
+  }
+
+  func testRunnerKeepsUncertainRetryOnTheSameEndpoint() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let endpoints = ["https://one.example:443", "https://two.example:443"]
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100],
+      lightwalletdUrls: endpoints
+    )
+    try stageAndArm(batch, in: harness.store)
+    var submissionEndpoints: [String] = []
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in .success(200) },
+      sendTransaction: { endpoint, _, _ in
+        submissionEndpoints.append(endpoint)
+        if submissionEndpoints.count == 1 { return .failure(.timedOut) }
+        return .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    _ = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+    _ = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now.addingTimeInterval(60),
+      dependencies: dependencies
+    )
+
+    XCTAssertEqual(submissionEndpoints, [endpoints[0], endpoints[0]])
+  }
+
+  func testRunnerAdvancesEndpointAfterPreflightFailure() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let endpoints = ["https://one.example:443", "https://two.example:443"]
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100],
+      lightwalletdUrls: endpoints
+    )
+    try stageAndArm(batch, in: harness.store)
+    var queriedEndpoints: [String] = []
+    var submissionEndpoints: [String] = []
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { endpoint, _ in
+        queriedEndpoints.append(endpoint)
+        return endpoint == endpoints[0] ? .failure(.timedOut) : .success(200)
+      },
+      sendTransaction: { endpoint, _, _ in
+        submissionEndpoints.append(endpoint)
+        return .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    let first = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+    let second = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now.addingTimeInterval(60),
+      dependencies: dependencies
+    )
+
+    XCTAssertEqual(first.transport, .temporarilyUnavailable)
+    guard case .accepted = second.transport else {
+      return XCTFail("Expected the fallback endpoint to submit the transaction")
+    }
+    XCTAssertEqual(queriedEndpoints, endpoints)
+    XCTAssertEqual(submissionEndpoints, [endpoints[1]])
   }
 
   func testRunnerReportsBroadcastCompleteAfterLastAcceptedEquivalentItem() throws {
@@ -1536,14 +1697,18 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     batchId: String,
     account: String,
     heights: [UInt64] = [100, 101, 102],
-    nextProofHeight: UInt64? = nil
+    nextProofHeight: UInt64? = nil,
+    lightwalletdUrls: [String]? = nil
   ) -> BackgroundMigrationOutboxBatch {
-    BackgroundMigrationOutboxBatch(
+    let lightwalletdUrl = lightwalletdUrls?.first ?? "https://testnet.zec.rocks:443"
+    return BackgroundMigrationOutboxBatch(
       batchId: batchId,
       network: "test",
       accountUuid: account,
       runId: "run-\(account)",
-      lightwalletdUrl: "https://testnet.zec.rocks:443",
+      lightwalletdUrl: lightwalletdUrl,
+      lightwalletdUrls: lightwalletdUrls,
+      nextLightwalletdIndex: lightwalletdUrls == nil ? nil : 0,
       timingMeanBlocks: 144,
       timingMaxBlocks: 576,
       createdAt: now,
