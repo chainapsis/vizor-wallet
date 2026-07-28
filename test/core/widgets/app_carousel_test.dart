@@ -87,6 +87,41 @@ void main() {
     );
   });
 
+  testWidgets('a single item is not duplicated or scrollable', (tester) async {
+    await tester.pumpWidget(
+      _harness(
+        items: const [
+          AppCarouselItem.icon(
+            message: 'Only carousel message.',
+            tileColor: Color(0xFF9667E2),
+            icon: AppIcons.history,
+          ),
+        ],
+        autoplay: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final pageView = tester.widget<PageView>(
+      find.byKey(const ValueKey('app_carousel_page_view')),
+    );
+    final delegate =
+        pageView.childrenDelegate as SliverChildBuilderDelegate;
+    expect(delegate.childCount, 1);
+    expect(pageView.physics, isA<NeverScrollableScrollPhysics>());
+    expect(find.byKey(const ValueKey('app_carousel_card_0')), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('app_carousel_page_view')),
+      const Offset(-415, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('app_carousel_indicator_0'))),
+      const Size(40, 6),
+    );
+  });
+
   testWidgets('autoplay advances after five seconds and loops', (tester) async {
     final pages = <int>[];
     await tester.pumpWidget(_harness(onPageChanged: pages.add));
@@ -204,6 +239,7 @@ Future<void> _advanceAutoplay(WidgetTester tester) async {
 }
 
 Widget _harness({
+  List<AppCarouselItem> items = _items,
   bool autoplay = true,
   bool disableAnimations = false,
   ValueChanged<int>? onPageChanged,
@@ -219,7 +255,7 @@ Widget _harness({
           color: AppThemeData.dark.colors.background.window,
           child: Center(
             child: AppCarousel(
-              items: _items,
+              items: items,
               autoplay: autoplay,
               semanticLabel: 'Migration information',
               onPageChanged: onPageChanged,

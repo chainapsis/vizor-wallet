@@ -309,7 +309,10 @@ class _AppCarouselState extends State<AppCarousel> with WidgetsBindingObserver {
                       child: PageView.builder(
                         key: const ValueKey('app_carousel_page_view'),
                         controller: _pageController,
-                        physics: const PageScrollPhysics(),
+                        physics: widget.items.length == 1
+                            ? const NeverScrollableScrollPhysics()
+                            : const PageScrollPhysics(),
+                        itemCount: widget.items.length == 1 ? 1 : null,
                         onPageChanged: (page) {
                           _absolutePage = page;
                           _pendingLogicalPage = _logicalPage(page);
