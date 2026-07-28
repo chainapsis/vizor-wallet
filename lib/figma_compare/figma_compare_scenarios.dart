@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
@@ -32,6 +33,36 @@ class FigmaCompareScenario {
 /// storage, network, wallet, and Rust state. Widgetbook fixtures are preferred
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
+  FigmaCompareScenario(
+    id: 'app-carousel-preparation-card-1',
+    description: 'Preparation information carousel with card 1 selected',
+    builder: buildCarouselPreparationCardOneUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-preparation-card-2',
+    description: 'Preparation information carousel with card 2 selected',
+    builder: buildCarouselPreparationCardTwoUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-preparation-card-3',
+    description: 'Preparation information carousel with card 3 selected',
+    builder: buildCarouselPreparationCardThreeUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-migration-card-1',
+    description: 'Migration information carousel with card 1 selected',
+    builder: buildCarouselMigrationCardOneUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-migration-card-2',
+    description: 'Migration information carousel with card 2 selected',
+    builder: buildCarouselMigrationCardTwoUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-migration-card-3',
+    description: 'Migration information carousel with card 3 selected',
+    builder: buildCarouselMigrationCardThreeUseCase,
+  ),
   FigmaCompareScenario(
     id: 'pay-recipient',
     description: 'Pay recipient selection with recent contacts',

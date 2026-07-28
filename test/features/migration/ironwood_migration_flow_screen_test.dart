@@ -760,6 +760,131 @@ void main() {
     expect(find.widgetWithText(AppButton, 'View Schedule'), findsOneWidget);
     expect(find.text('Note split'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Go home'), findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_status_carousel_preparation'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Once preparation finishes, your migration will begin automatically '
+        'after a long intentional delay.',
+      ),
+      findsOneWidget,
+    );
+
+    final statusSurface = find.byKey(
+      const ValueKey('ironwood_migration_active_status'),
+    );
+    final carousel = find.byKey(const ValueKey('app_carousel'));
+    expect(tester.getSize(statusSurface), const Size(420, 656));
+    expect(
+      tester.getTopLeft(carousel) - tester.getTopLeft(statusSurface),
+      const Offset(-70, 524),
+    );
+  });
+
+  testWidgets('passive migration status uses the progress carousel', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationBroadcastScheduledPhase,
+          activeRunId: 'run-1',
+          targetValuesZatoshi: const [10_000_000],
+          totalCount: 1,
+          parts: [
+            _migrationPart(
+              0,
+              10_000_000,
+              rust_sync.MigrationPartState.scheduled,
+              scheduledHeight: 800,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_status_carousel_migration'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'You can close Vizor anytime. Migration will pause, and you can '
+        'restart it when you return.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('changing carousel phase resets to the first card', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final harnessKey = GlobalKey<_MutablePrivateStatusHarnessState>();
+    await tester.pumpWidget(
+      _MutablePrivateStatusHarness(
+        key: harnessKey,
+        status: _status(),
+        syncState: _syncedSyncState,
+      ),
+    );
+    await tester.pump();
+
+    await tester.drag(
+      find.byKey(const ValueKey('app_carousel_page_view')),
+      const Offset(-415, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('app_carousel_indicator_1'))),
+      const Size(40, 6),
+    );
+
+    harnessKey.currentState!.setStatus(
+      _migrationStatus(
+        phase: kIronwoodMigrationBroadcastScheduledPhase,
+        activeRunId: 'run-1',
+        targetValuesZatoshi: const [10_000_000],
+        totalCount: 1,
+        parts: [
+          _migrationPart(
+            0,
+            10_000_000,
+            rust_sync.MigrationPartState.scheduled,
+            scheduledHeight: 800,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_migration_status_carousel_migration'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('app_carousel_indicator_0'))),
+      const Size(40, 6),
+    );
   });
 
   testWidgets(
@@ -2441,6 +2566,7 @@ void main() {
     expect(softwareContinued, isFalse);
     expect(find.text('Sign Batch #1'), findsOneWidget);
     expect(find.text('keystone-batch-sign-route'), findsNothing);
+    expect(find.byKey(const ValueKey('app_carousel')), findsNothing);
 
     await tester.tap(find.widgetWithText(AppButton, 'Sign Batch #1'));
     await tester.pumpAndSettle();
