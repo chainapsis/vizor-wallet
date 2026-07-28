@@ -761,20 +761,15 @@ int? _overallTransactionTotalCount(rust_sync.MigrationStatus status) {
   return _preparationTotalCount(status) + migrationTotal;
 }
 
-int _overallCompletedTransactionCount(rust_sync.MigrationStatus status) {
-  final completedMigrations = status.parts
-      .where((part) => part.state == rust_sync.MigrationPartState.completed)
-      .length;
-  return _preparationCompletedCount(status) + completedMigrations;
-}
-
 String _overallTransactionOrdinalDisplay(int ordinal, int? total) =>
     total == null ? 'Transaction $ordinal' : 'Transaction $ordinal of $total';
 
 String _overallPreparationProgressDisplay(rust_sync.MigrationStatus status) {
   final total = _overallTransactionTotalCount(status);
   if (total == null) return 'Calculating total';
-  final completed = math.min(total, _overallCompletedTransactionCount(status));
+  // During preparation, completed parts are prepared Orchard notes rather
+  // than completed Orchard-to-Ironwood transfers.
+  final completed = math.min(total, _preparationCompletedCount(status));
   return '$completed of $total complete';
 }
 

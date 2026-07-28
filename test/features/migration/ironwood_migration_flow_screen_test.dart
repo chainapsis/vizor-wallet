@@ -927,6 +927,42 @@ void main() {
   });
 
   testWidgets(
+    'preparation progress does not count prepared notes as migrated transactions',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+            activeRunId: 'run-1',
+            denominationSplitCompletedCount: 1,
+            denominationSplitTotalCount: 8,
+            totalCount: 12,
+            parts: List.generate(
+              4,
+              (index) => _migrationPart(
+                index,
+                1_000_000,
+                rust_sync.MigrationPartState.completed,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Transaction 2 of 20'), findsOneWidget);
+      expect(find.text('1 of 20 complete'), findsOneWidget);
+      expect(find.text('5 of 20 complete'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'private ready-to-migrate status does not treat prepared denominations as completed transfers',
     (tester) async {
       tester.view.devicePixelRatio = 1;
