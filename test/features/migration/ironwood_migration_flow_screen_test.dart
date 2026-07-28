@@ -1008,6 +1008,39 @@ void main() {
     },
   );
 
+  testWidgets('preparation ring stays still while the carousel is waiting', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(status: _status(), disableAnimations: false),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    List<double> ringWeights() {
+      final dynamic painter = tester
+          .widget<CustomPaint>(
+            find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+          )
+          .painter;
+      return [
+        for (final dynamic segment in painter.segments as List<dynamic>)
+          segment.weight as double,
+      ];
+    }
+
+    final initialWeights = ringWeights();
+    for (var frame = 0; frame < 20; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(ringWeights(), initialWeights);
+  });
+
   testWidgets('private preparing status does not expose note progress', (
     tester,
   ) async {
