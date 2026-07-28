@@ -29,7 +29,8 @@ pub(crate) use split_plan::{
 pub(crate) use stages::{
     all_denomination_stages_confirmed, denomination_stage_chain_records,
     denomination_stage_expected_txids, denomination_stage_status, denomination_stage_status_counts,
-    denomination_stages_for_run, insert_denomination_stages_with_tx,
+    denomination_stages_for_run, expired_broadcasted_denomination_stage_count,
+    expired_unbroadcast_denomination_stage_count, insert_denomination_stages_with_tx,
     locked_denomination_stage_input_outpoints, mark_denomination_stage_broadcasted,
     mark_denomination_stage_confirmed_at, pending_raw_denomination_stages,
     promote_awaiting_denomination_stage, replace_denomination_stage_confirmation_identity,
@@ -4575,13 +4576,16 @@ fn migration_preparation_transactions_for_run(
     let chain_records = denomination_stage_chain_records(conn, run_id)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT s.stage_index, s.scheduled_height,
+            "SELECT s.stage_index,
+                    MAX(s.scheduled_height,
+                        COALESCE(s.broadcast_not_before_height, 0)),
                     COALESCE(SUM(i.value_zatoshi), 0)
              FROM {STAGES_TABLE} s
              LEFT JOIN {STAGE_INPUTS_TABLE} i
                ON i.run_id = s.run_id AND i.stage_index = s.stage_index
              WHERE s.run_id = ?1
-             GROUP BY s.stage_index, s.scheduled_height
+             GROUP BY s.stage_index, s.scheduled_height,
+                      s.broadcast_not_before_height
              ORDER BY s.stage_index ASC"
         ))
         .map_err(|e| format!("Prepare migration preparation schedule query: {e}"))?;

@@ -655,6 +655,27 @@ fn insert_preparation_policy_test_run(
     }
 }
 
+fn preparation_catch_up_test_rows(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Vec<(u32, u32, Option<u32>, u32)> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT stage_index, scheduled_height,
+                    broadcast_not_before_height, expiry_height
+             FROM {STAGES_TABLE}
+             WHERE run_id = ?1
+             ORDER BY stage_index ASC"
+        ))
+        .unwrap();
+    stmt.query_map(params![run_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    })
+    .unwrap()
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap()
+}
+
 fn seed_account_migration_rows(
     conn: &rusqlite::Connection,
     run_id: &str,
@@ -2079,6 +2100,128 @@ fn preparation_delay_rounds_to_nearest_block() {
     assert!(delays
         .iter()
         .all(|delay| *delay <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS));
+}
+
+#[test]
+fn late_preparation_broadcast_rerandomizes_remaining_effective_heights() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    insert_preparation_policy_test_run(
+        &conn,
+        "preparation-catch-up",
+        PreparationTimingPolicy::Zip318Spaced,
+        4,
+        101,
+    );
+    conn.execute(
+        &format!(
+            "UPDATE {STAGES_TABLE}
+             SET scheduled_height = CASE stage_index
+                     WHEN 0 THEN 100
+                     WHEN 1 THEN 150
+                     WHEN 2 THEN 250
+                     ELSE 1000
+                 END,
+                 broadcast_not_before_height = CASE stage_index
+                     WHEN 2 THEN 275
+                     ELSE NULL
+                 END,
+                 expiry_height = 3490560
+             WHERE run_id = 'preparation-catch-up'"
+        ),
+        [],
+    )
+    .unwrap();
+    let before = preparation_catch_up_test_rows(&conn, "preparation-catch-up");
+    let tx = conn.unchecked_transaction().unwrap();
+    mark_denomination_stage_broadcasted(&tx, "preparation-catch-up", &format!("{:064x}", 1))
+        .unwrap();
+    let mut rng = StdRng::seed_from_u64(0x318);
+    assert_eq!(
+        rerandomize_remaining_preparation_broadcast_heights(
+            &tx,
+            "preparation-catch-up",
+            WalletNetwork::Test,
+            200,
+            &mut rng,
+        )
+        .unwrap(),
+        3,
+    );
+    tx.commit().unwrap();
+    let after = preparation_catch_up_test_rows(&conn, "preparation-catch-up");
+
+    assert_eq!(
+        before
+            .iter()
+            .map(|row| (row.0, row.1, row.3))
+            .collect::<Vec<_>>(),
+        after
+            .iter()
+            .map(|row| (row.0, row.1, row.3))
+            .collect::<Vec<_>>(),
+        "the expiry-derived schedule must stay immutable",
+    );
+    assert!(after[0].2.is_none(), "the broadcasted stage is unchanged");
+    assert!(after[1..].iter().all(|row| row.2.is_some()));
+
+    let effective_heights = after[1..]
+        .iter()
+        .map(|row| row.1.max(row.2.unwrap_or(0)))
+        .collect::<Vec<_>>();
+    assert!(effective_heights[0] >= 200);
+    assert!(effective_heights[0] <= 200 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
+    assert!(effective_heights[1] - effective_heights[0] <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
+    assert_eq!(effective_heights[2], 1000);
+    assert!(effective_heights.windows(2).all(|pair| pair[0] <= pair[1]));
+    for (before, after) in before[1..].iter().zip(&after[1..]) {
+        let old_effective = before.1.max(before.2.unwrap_or(0));
+        let new_effective = after.1.max(after.2.unwrap_or(0));
+        assert!(new_effective >= old_effective);
+    }
+    let displayed_heights = migration_preparation_transactions_for_run(
+        &conn,
+        "preparation-catch-up",
+        denomination_confirmations_required(),
+    )
+    .unwrap()
+    .into_iter()
+    .skip(1)
+    .map(|stage| stage.scheduled_height.unwrap())
+    .collect::<Vec<_>>();
+    assert_eq!(displayed_heights, effective_heights);
+}
+
+#[test]
+fn immediate_preparation_does_not_create_catch_up_schedule() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    insert_preparation_policy_test_run(
+        &conn,
+        "immediate-preparation-catch-up",
+        PreparationTimingPolicy::Immediate,
+        2,
+        101,
+    );
+    let tx = conn.unchecked_transaction().unwrap();
+    let mut rng = StdRng::seed_from_u64(0x318);
+    assert_eq!(
+        rerandomize_remaining_preparation_broadcast_heights(
+            &tx,
+            "immediate-preparation-catch-up",
+            WalletNetwork::Test,
+            200,
+            &mut rng,
+        )
+        .unwrap(),
+        0,
+    );
+    tx.commit().unwrap();
+    assert!(
+        preparation_catch_up_test_rows(&conn, "immediate-preparation-catch-up")
+            .iter()
+            .all(|row| row.2.is_none())
+    );
 }
 
 #[test]

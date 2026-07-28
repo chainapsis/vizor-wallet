@@ -126,6 +126,7 @@ pub(crate) struct DenominationStage {
     pub expected_txid_hex: String,
     pub target_height: u32,
     pub scheduled_height: u32,
+    pub broadcast_not_before_height: Option<u32>,
     pub expiry_height: u32,
     pub fee_zatoshi: u64,
     pub status: DenominationStageStatus,
@@ -145,8 +146,17 @@ pub(crate) struct PendingRawDenominationStage {
     pub raw_tx: Vec<u8>,
     pub target_height: u32,
     pub scheduled_height: u32,
+    pub broadcast_not_before_height: Option<u32>,
     pub expiry_height: u32,
     pub fee_zatoshi: u64,
+}
+
+impl PendingRawDenominationStage {
+    pub(crate) fn effective_broadcast_height(&self) -> u32 {
+        self.broadcast_not_before_height
+            .unwrap_or(0)
+            .max(self.scheduled_height)
+    }
 }
 
 /// Per-state counts for all denomination stages belonging to one run.
@@ -185,6 +195,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
             expected_txid_hex TEXT NOT NULL,
             target_height INTEGER NOT NULL,
             scheduled_height INTEGER NOT NULL DEFAULT 0,
+            broadcast_not_before_height INTEGER,
             expiry_height INTEGER NOT NULL,
             fee_zatoshi INTEGER NOT NULL,
             confirmed_mined_height INTEGER,
@@ -260,6 +271,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
         "scheduled_height",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
+    add_column_if_missing(conn, STAGES_TABLE, "broadcast_not_before_height", "INTEGER")?;
     add_column_if_missing(conn, STAGE_OUTPUTS_TABLE, "part_index", "INTEGER")?;
 
     Ok(())
@@ -533,8 +545,9 @@ pub(crate) fn denomination_stages_for_run(
         .prepare_cached(&format!(
             "SELECT stage_index, encrypted_base_pczt, encrypted_compact_sigs,
                     encrypted_raw_tx, expected_txid_hex, target_height,
-                    scheduled_height, expiry_height, fee_zatoshi, status,
-                    confirmed_mined_height, confirmed_block_hash
+                    scheduled_height, broadcast_not_before_height,
+                    expiry_height, fee_zatoshi, status, confirmed_mined_height,
+                    confirmed_block_hash
              FROM {STAGES_TABLE}
              WHERE run_id = ?1
              ORDER BY stage_index ASC"
@@ -550,11 +563,12 @@ pub(crate) fn denomination_stages_for_run(
                 row.get::<_, String>(4)?,
                 row.get::<_, u32>(5)?,
                 row.get::<_, u32>(6)?,
-                row.get::<_, u32>(7)?,
-                row.get::<_, u64>(8)?,
-                row.get::<_, String>(9)?,
-                row.get::<_, Option<u32>>(10)?,
-                row.get::<_, Option<Vec<u8>>>(11)?,
+                row.get::<_, Option<u32>>(7)?,
+                row.get::<_, u32>(8)?,
+                row.get::<_, u64>(9)?,
+                row.get::<_, String>(10)?,
+                row.get::<_, Option<u32>>(11)?,
+                row.get::<_, Option<Vec<u8>>>(12)?,
             ))
         })
         .map_err(|e| format!("Query migration denomination stages: {e}"))?;
@@ -569,6 +583,7 @@ pub(crate) fn denomination_stages_for_run(
             expected_txid_hex,
             target_height,
             scheduled_height,
+            broadcast_not_before_height,
             expiry_height,
             fee_zatoshi,
             status,
@@ -600,6 +615,7 @@ pub(crate) fn denomination_stages_for_run(
             expected_txid_hex,
             target_height,
             scheduled_height,
+            broadcast_not_before_height,
             expiry_height,
             fee_zatoshi,
             status: DenominationStageStatus::parse(&status)?,
@@ -679,6 +695,55 @@ fn stage_outputs(
     Ok(outputs)
 }
 
+/// Counts signed stages that have expired before they could be broadcast.
+/// Zero expiry is excluded because it is not part of the shipped stage format.
+pub(crate) fn expired_unbroadcast_denomination_stage_count(
+    conn: &Connection,
+    run_id: &str,
+    observed_height: u32,
+) -> Result<u32, String> {
+    ensure_schema(conn)?;
+    let count = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*)
+                 FROM {STAGES_TABLE}
+                 WHERE run_id = ?1
+                   AND status IN ('awaiting_inputs', 'pending')
+                   AND expiry_height > 0
+                   AND expiry_height <= ?2"
+            ),
+            params![run_id, observed_height],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| format!("Count expired unbroadcast denomination stages: {e}"))?;
+    count_to_u32(count)
+}
+
+/// Counts broadcasted stages that were not mined before their expiry height.
+pub(crate) fn expired_broadcasted_denomination_stage_count(
+    conn: &Connection,
+    run_id: &str,
+    observed_height: u32,
+) -> Result<u32, String> {
+    ensure_schema(conn)?;
+    let count = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*)
+                 FROM {STAGES_TABLE}
+                 WHERE run_id = ?1
+                   AND status = 'broadcasted'
+                   AND expiry_height > 0
+                   AND expiry_height <= ?2"
+            ),
+            params![run_id, observed_height],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| format!("Count expired broadcasted denomination stages: {e}"))?;
+    count_to_u32(count)
+}
+
 /// Lists decrypted raw transactions that are ready to broadcast, in stage
 /// order.
 pub(crate) fn pending_raw_denomination_stages(
@@ -693,10 +758,13 @@ pub(crate) fn pending_raw_denomination_stages(
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT stage_index, expected_txid_hex, encrypted_raw_tx,
-                    target_height, scheduled_height, expiry_height, fee_zatoshi
+                    target_height, scheduled_height,
+                    broadcast_not_before_height, expiry_height, fee_zatoshi
              FROM {STAGES_TABLE}
              WHERE run_id = ?1 AND status = 'pending' AND encrypted_raw_tx IS NOT NULL
-             ORDER BY scheduled_height ASC, stage_index ASC"
+             ORDER BY MAX(scheduled_height,
+                          COALESCE(broadcast_not_before_height, 0)) ASC,
+                      stage_index ASC"
         ))
         .map_err(|e| format!("Prepare pending migration denomination stages query: {e}"))?;
     let rows = stmt
@@ -707,8 +775,9 @@ pub(crate) fn pending_raw_denomination_stages(
                 row.get::<_, String>(2)?,
                 row.get::<_, u32>(3)?,
                 row.get::<_, u32>(4)?,
-                row.get::<_, u32>(5)?,
-                row.get::<_, u64>(6)?,
+                row.get::<_, Option<u32>>(5)?,
+                row.get::<_, u32>(6)?,
+                row.get::<_, u64>(7)?,
             ))
         })
         .map_err(|e| format!("Query pending migration denomination stages: {e}"))?;
@@ -720,6 +789,7 @@ pub(crate) fn pending_raw_denomination_stages(
             encrypted_raw_tx,
             target_height,
             scheduled_height,
+            broadcast_not_before_height,
             expiry_height,
             fee_zatoshi,
         ) = row.map_err(|e| format!("Read pending migration denomination stage: {e}"))?;
@@ -734,6 +804,7 @@ pub(crate) fn pending_raw_denomination_stages(
             raw_tx: raw_tx.to_vec(),
             target_height,
             scheduled_height,
+            broadcast_not_before_height,
             expiry_height,
             fee_zatoshi,
         });
@@ -1718,11 +1789,22 @@ mod tests {
             SALT_BASE64,
         )
         .unwrap();
+        conn.execute(
+            &format!(
+                "UPDATE {STAGES_TABLE}
+                 SET broadcast_not_before_height = 3000200
+                 WHERE run_id = 'run-1' AND stage_index = 0"
+            ),
+            [],
+        )
+        .unwrap();
         let pending =
             pending_raw_denomination_stages(&conn, "run-1", PASSWORD, SALT_BASE64).unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(pending[0].raw_tx, vec![1, 2, 3, 4]);
         assert_eq!(pending[0].scheduled_height, 3_000_123);
+        assert_eq!(pending[0].broadcast_not_before_height, Some(3_000_200));
+        assert_eq!(pending[0].effective_broadcast_height(), 3_000_200);
         assert_eq!(pending[0].expiry_height, 3_041_280);
 
         mark_denomination_stage_broadcasted(&conn, "run-1", &expected_txid).unwrap();

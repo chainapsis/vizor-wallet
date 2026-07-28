@@ -4295,6 +4295,56 @@ fn finalize_ready_denomination_stages(
     Ok(promoted_count)
 }
 
+fn retire_expired_denomination_run(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    observed_height: u32,
+) -> Result<Option<CreatedBroadcastResult>, String> {
+    let (expired_unbroadcast, expired_broadcasted) = {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        (
+            super::migration::expired_unbroadcast_denomination_stage_count(
+                &conn,
+                run_id,
+                observed_height,
+            )?,
+            super::migration::expired_broadcasted_denomination_stage_count(
+                &conn,
+                run_id,
+                observed_height,
+            )?,
+        )
+    };
+    let expired_count = expired_unbroadcast
+        .checked_add(expired_broadcasted)
+        .ok_or("Expired migration preparation count overflow")?;
+    if expired_count == 0 {
+        return Ok(None);
+    }
+
+    let message = format!(
+        "{expired_count} migration preparation transaction(s) expired before confirmation. Restart migration to rebuild the preparation schedule with fresh expiry heights."
+    );
+    super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
+    Ok(Some(CreatedBroadcastResult {
+        txids: String::new(),
+        status: super::migration::PHASE_FAILED_TERMINAL,
+        broadcasted_count: 0,
+        total_count: expired_count,
+        message: Some(message),
+    }))
+}
+
+fn denomination_stage_is_due(
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    stage: &super::migration::PendingRawDenominationStage,
+    observed_height: u32,
+) -> bool {
+    preparation_timing_policy == super::migration::PreparationTimingPolicy::Immediate
+        || stage.effective_broadcast_height() <= observed_height
+}
+
 async fn broadcast_pending_denomination_stages(
     db_path: &str,
     lightwalletd_url: &str,
@@ -4304,6 +4354,12 @@ async fn broadcast_pending_denomination_stages(
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<Option<CreatedBroadcastResult>, String> {
+    let observed_height = current_migration_scanned_height(db_path, network)?;
+    if let Some(result) =
+        retire_expired_denomination_run(db_path, network, run_id, observed_height)?
+    {
+        return Ok(Some(result));
+    }
     let pending = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
         super::migration::pending_raw_denomination_stages(
@@ -4318,12 +4374,10 @@ async fn broadcast_pending_denomination_stages(
     }
     let preparation_timing_policy =
         super::migration::preparation_timing_policy_for_run(db_path, run_id)?;
-    let observed_height = current_migration_scanned_height(db_path, network)?;
     let due = pending
         .iter()
         .filter(|stage| {
-            preparation_timing_policy == super::migration::PreparationTimingPolicy::Immediate
-                || stage.scheduled_height <= observed_height
+            denomination_stage_is_due(preparation_timing_policy, stage, observed_height)
         })
         .collect::<Vec<_>>();
     if due.is_empty() {
@@ -4369,6 +4423,7 @@ async fn broadcast_pending_denomination_stages(
             policy.limit(due.len())
         };
     for stage in due.into_iter().take(broadcast_limit) {
+        let stage_was_overdue = stage.effective_broadcast_height() < observed_height;
         if policy.is_cancelled() {
             break;
         }
@@ -4407,11 +4462,27 @@ async fn broadcast_pending_denomination_stages(
         }
 
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin migration denomination broadcast transition: {e}"))?;
         super::migration::mark_denomination_stage_broadcasted(
-            &conn,
+            &tx,
             run_id,
             &stage.expected_txid_hex,
         )?;
+        if preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
+            && stage_was_overdue
+        {
+            super::migration::rerandomize_remaining_preparation_broadcast_heights(
+                &tx,
+                run_id,
+                network,
+                observed_height,
+                &mut OsRng,
+            )?;
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit migration denomination broadcast transition: {e}"))?;
         broadcasted_count = broadcasted_count
             .checked_add(1)
             .ok_or("Broadcasted denomination stage count overflow")?;

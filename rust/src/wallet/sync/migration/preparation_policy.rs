@@ -143,6 +143,75 @@ pub(crate) fn planned_preparation_scheduled_heights<
     Ok(heights)
 }
 
+/// Re-randomizes the operational broadcast heights of every remaining stage
+/// after a preparation broadcast misses its planned height. The original
+/// schedule remains unchanged because it determines the signed expiry height.
+pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
+    R: RngCore + CryptoRng + ?Sized,
+>(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    network: WalletNetwork,
+    observed_height: u32,
+    rng: &mut R,
+) -> Result<u32, String> {
+    if preparation_timing_policy_for_run_with_conn(tx, run_id)?
+        == PreparationTimingPolicy::Immediate
+    {
+        return Ok(0);
+    }
+    let timing_policy = timing_policy_for_run_with_conn(tx, run_id, network)?;
+    let remaining = {
+        let mut stmt = tx
+            .prepare_cached(&format!(
+                "SELECT stage_index, scheduled_height,
+                        broadcast_not_before_height
+                 FROM {STAGES_TABLE}
+                 WHERE run_id = ?1
+                   AND status IN ('awaiting_inputs', 'pending')
+                 ORDER BY MAX(scheduled_height,
+                              COALESCE(broadcast_not_before_height, 0)) ASC,
+                          stage_index ASC"
+            ))
+            .map_err(|e| format!("Prepare remaining denomination catch-up query: {e}"))?;
+        let rows = stmt
+            .query_map(params![run_id], |row| {
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, Option<u32>>(2)?,
+                ))
+            })
+            .map_err(|e| format!("Query remaining denomination catch-up stages: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read remaining denomination catch-up stage: {e}"))?
+    };
+
+    let mut preceding_height = observed_height;
+    for (stage_index, scheduled_height, existing_not_before_height) in &remaining {
+        let randomized_height = preceding_height
+            .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
+            .ok_or("Migration preparation catch-up height overflow")?;
+        let effective_height = randomized_height
+            .max(*scheduled_height)
+            .max(existing_not_before_height.unwrap_or(0));
+        tx.execute(
+            &format!(
+                "UPDATE {STAGES_TABLE}
+                 SET broadcast_not_before_height = ?1
+                 WHERE run_id = ?2 AND stage_index = ?3
+                   AND status IN ('awaiting_inputs', 'pending')"
+            ),
+            params![effective_height, run_id, stage_index],
+        )
+        .map_err(|e| format!("Reschedule migration denomination catch-up stage: {e}"))?;
+        preceding_height = effective_height;
+    }
+
+    u32::try_from(remaining.len())
+        .map_err(|_| "Migration preparation catch-up count exceeds u32".to_string())
+}
+
 fn preparation_timing_policy_for_run_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
