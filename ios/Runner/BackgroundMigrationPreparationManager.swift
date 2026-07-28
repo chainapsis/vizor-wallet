@@ -561,6 +561,23 @@ func migrationPreparationPendingTrackableScopes(
   confirmationTrackableScopes.subtracting(continuationScopes)
 }
 
+/// Whether the tracking loop may run a confirmation query right now.
+///
+/// While the app is active the foreground coordinator's status poll and the
+/// foreground sync already own wave detection and advancing, so the system
+/// task's own lightwalletd queries are pure duplicate network traffic.
+///
+/// The first pass of a task run is exempt: it seeds `latestTrackingProgress`
+/// so the activity's progress bar reflects real confirmation counts instead of
+/// the nil-progress heartbeat creep. After that, queries pause until the app
+/// stops being active.
+func migrationPreparationConfirmationQueryMayRun(
+  appIsActive: Bool,
+  hasCompletedInitialQuery: Bool
+) -> Bool {
+  !appIsActive || !hasCompletedInitialQuery
+}
+
 /// Whether a task the system just launched has anything left to observe.
 ///
 /// A request stays queued after the wave it was armed for confirms. Without
@@ -799,12 +816,69 @@ final class BackgroundMigrationPreparationManager {
   private var displayedProgressUnits: Int64 = 0
   private var authorizationMonitor:
     IronwoodMigrationNotificationAuthorizationMonitor?
+  /// Cached `UIApplication.applicationState == .active`.
+  ///
+  /// `applicationState` is main-thread-only, and the tracking loop runs on
+  /// `queue`. So the loop reads this cache instead and the notification
+  /// observers (which fire on the main thread) keep it current.
+  private var appIsActive = false
+  private var appActiveObserversRegistered = false
+  private var appActiveObservers: [NSObjectProtocol] = []
   private init() {
     foregroundContinuationScopes = Set(
       UserDefaults.standard.stringArray(
         forKey: Self.foregroundContinuationScopesKey
       ) ?? []
     )
+    observeAppActiveState()
+  }
+
+  /// Registers the app-active observers exactly once and seeds the initial
+  /// value from the main thread.
+  ///
+  /// A headless background launch seeds `false`, which is correct: the app is
+  /// not active, so the task should query normally.
+  private func observeAppActiveState() {
+    let shouldRegister = stateLock.withPreparationLock { () -> Bool in
+      guard !appActiveObserversRegistered else { return false }
+      appActiveObserversRegistered = true
+      return true
+    }
+    guard shouldRegister else { return }
+    let center = NotificationCenter.default
+    let observers = [
+      center.addObserver(
+        forName: UIApplication.didBecomeActiveNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        self?.setAppIsActive(true)
+      },
+      center.addObserver(
+        forName: UIApplication.willResignActiveNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        self?.setAppIsActive(false)
+      },
+    ]
+    stateLock.withPreparationLock {
+      appActiveObservers = observers
+    }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.setAppIsActive(UIApplication.shared.applicationState == .active)
+    }
+  }
+
+  private func setAppIsActive(_ active: Bool) {
+    stateLock.withPreparationLock {
+      appIsActive = active
+    }
+  }
+
+  private var isAppActive: Bool {
+    stateLock.withPreparationLock { appIsActive }
   }
 
   func handoffPendingRequestForForegroundLaunch() {
@@ -1408,9 +1482,14 @@ final class BackgroundMigrationPreparationManager {
         cancellation: cancellation
       )
       var taskFailureObserved = false
+      // The pass above already ran, so the activity's progress bar is seeded
+      // from real confirmation counts even if the app is active. Every later
+      // pass is subject to the foreground pause.
+      var hasCompletedInitialQuery = false
       while true {
         switch pass {
         case .batch(let batch):
+          hasCompletedInitialQuery = true
           taskFailureObserved =
             taskFailureObserved || batch.hasTaskFailure
           let notificationSubmitted = self.applyTrackingBatch(batch)
@@ -1443,7 +1522,8 @@ final class BackgroundMigrationPreparationManager {
             break
           }
           guard self.waitForNextConfirmationQuery(
-            cancellation: cancellation
+            cancellation: cancellation,
+            hasCompletedInitialQuery: hasCompletedInitialQuery
           ) else {
             self.finishConfirmationTrackingTask(
               task,
@@ -1785,7 +1865,8 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func waitForNextConfirmationQuery(
-    cancellation: BackgroundMigrationCancellation
+    cancellation: BackgroundMigrationCancellation,
+    hasCompletedInitialQuery: Bool
   ) -> Bool {
     var remaining = Self.confirmationQueryInterval
     while remaining > 0 {
@@ -1797,6 +1878,24 @@ final class BackgroundMigrationPreparationManager {
         return false
       }
       remaining -= interval
+      advanceTrackingHeartbeat()
+    }
+    // The query is due, but while the app is active the foreground status poll
+    // and foreground sync already own wave detection. Hold here — still
+    // heartbeating so the activity stays alive — rather than duplicating their
+    // network work. Backgrounding releases this within one heartbeat slice.
+    while !migrationPreparationConfirmationQueryMayRun(
+      appIsActive: isAppActive,
+      hasCompletedInitialQuery: hasCompletedInitialQuery
+    ) {
+      if isTrackingStopRequested || cancellation.isCancelled {
+        return false
+      }
+      if cancellation.waitUntilCancelled(
+        timeout: Self.progressHeartbeatInterval
+      ) {
+        return false
+      }
       advanceTrackingHeartbeat()
     }
     return !isTrackingStopRequested && !cancellation.isCancelled

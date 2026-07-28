@@ -450,6 +450,38 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testForegroundPausesConfirmationQueriesAfterTheSeedingPass() {
+    // Backgrounded: the task owns wave detection, so it always queries.
+    XCTAssertTrue(
+      migrationPreparationConfirmationQueryMayRun(
+        appIsActive: false,
+        hasCompletedInitialQuery: false
+      )
+    )
+    XCTAssertTrue(
+      migrationPreparationConfirmationQueryMayRun(
+        appIsActive: false,
+        hasCompletedInitialQuery: true
+      )
+    )
+    // Foreground, nothing observed yet: the seeding pass is exempt so the
+    // activity's progress bar shows real counts, not heartbeat creep.
+    XCTAssertTrue(
+      migrationPreparationConfirmationQueryMayRun(
+        appIsActive: true,
+        hasCompletedInitialQuery: false
+      )
+    )
+    // Foreground with progress already seeded: the foreground status poll and
+    // foreground sync own wave detection, so the task stops querying.
+    XCTAssertFalse(
+      migrationPreparationConfirmationQueryMayRun(
+        appIsActive: true,
+        hasCompletedInitialQuery: true
+      )
+    )
+  }
+
   func testLaunchWithoutATrackableRunDoesNotStartTracking() {
     // The request armed for the previous wave is still queued once that wave
     // confirms. Starting tracking again would re-observe the same
