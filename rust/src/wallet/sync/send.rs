@@ -78,7 +78,7 @@ use zcash_client_sqlite::{wallet::commitment_tree, AccountUuid, ReceivedNoteId};
 use zcash_keys::{address::Address, keys::UnifiedSpendingKey};
 use zcash_primitives::transaction::TxVersion;
 use zcash_primitives::transaction::{
-    builder::{BuildConfig, Builder},
+    builder::{BuildConfig, Builder, BundlePadding},
     fees::{
         transparent::InputSize as TransparentInputSize,
         zip317::{P2PKH_STANDARD_INPUT_SIZE, P2PKH_STANDARD_OUTPUT_SIZE},
@@ -982,7 +982,7 @@ fn create_shield_transparent_pczt_with_expiry(
             OvkPolicy::Sender,
             &proposal,
             expiry_height,
-            orchard::builder::BundleType::DEFAULT,
+            BundlePadding::DEFAULT,
         )
         .map_err(|e| format!("Create shielding PCZT failed: {e}"))?;
         let pczt_bytes = pczt
@@ -2724,7 +2724,7 @@ pub(crate) fn retain_prepared_note_anchor_checkpoints_after_scan(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn make_orchard_split_builder_with_type(
+fn make_orchard_split_builder_with_padding(
     network: WalletNetwork,
     target_height: u32,
     orchard_anchor: orchard::Anchor,
@@ -2734,7 +2734,7 @@ fn make_orchard_split_builder_with_type(
     recipient: orchard::Address,
     outputs: &[u64],
     memo: &MemoBytes,
-    bundle_type: orchard::builder::BundleType,
+    bundle_padding: BundlePadding,
 ) -> Result<Builder<WalletNetwork, ()>, String> {
     let mut builder = Builder::new(
         network,
@@ -2745,8 +2745,8 @@ fn make_orchard_split_builder_with_type(
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
             // A denomination stage is an ordinary private Orchard-to-Orchard split;
             // keep it padded like regular sends.
-            orchard_bundle_type: bundle_type,
-            ironwood_bundle_type: orchard::builder::BundleType::DEFAULT,
+            orchard_padding: bundle_padding,
+            ironwood_padding: BundlePadding::DEFAULT,
         },
     )
     .with_expiry_height(BlockHeight::from(MIGRATION_NO_EXPIRY_HEIGHT));
