@@ -2687,7 +2687,7 @@ void main() {
           redactedPczt: Uint8List.fromList([2]),
         ),
       ],
-      signingBatchLimit: 50,
+      signingBatchLimit: 1,
     );
 
     await tester.pumpWidget(
@@ -2708,6 +2708,7 @@ void main() {
 
     expect(find.text('Step 1/2'), findsOneWidget);
     expect(find.text('Scan with Keystone'), findsOneWidget);
+    expect(find.text('Round 1 of 2'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
       findsOneWidget,
@@ -2728,8 +2729,21 @@ void main() {
 
     expect(find.text('Step 2/2'), findsOneWidget);
     expect(find.text('Confirm with Keystone'), findsOneWidget);
-    expect(find.textContaining('Scan the QR code'), findsOneWidget);
+    expect(find.text('Round 1 of 2'), findsOneWidget);
+    expect(
+      find.text('Scan the new signed QR shown on Keystone.'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Step 1/2'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('reuses the mobile Keystone flow for Immediate migration', (

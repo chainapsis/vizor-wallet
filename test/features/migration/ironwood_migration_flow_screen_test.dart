@@ -499,6 +499,118 @@ void main() {
     },
   );
 
+  test(
+    'Keystone migration explains a signed QR from another signing round',
+    () {
+      final message = ironwoodMigrationKeystoneSigningErrorMessage(
+        Exception(
+          'Keystone batch result request id does not match the request',
+        ),
+      );
+
+      expect(
+        message,
+        'This signed QR is from another round. Go back, scan the current '
+        'request with Keystone, then scan its new signed QR.',
+      );
+    },
+  );
+
+  testWidgets(
+    'desktop Keystone scanner back returns to the current request QR',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final request = rust_sync.KeystoneMigrationSigningRequest(
+        requestId: 'preview-request',
+        messages: [
+          rust_sync.KeystoneMigrationMessage(
+            id: 'split-1',
+            redactedPczt: Uint8List.fromList([1]),
+          ),
+          rust_sync.KeystoneMigrationMessage(
+            id: 'split-2',
+            redactedPczt: Uint8List.fromList([2]),
+          ),
+        ],
+        signingBatchLimit: 1,
+      );
+      await tester.pumpWidget(
+        _migrationOptionsHarness(
+          initialLocation: '/migration/private/keystone/sign',
+          activeAccountIsHardware: true,
+          previewCombinedSigningRequest: request,
+          previewCombinedSigningUrParts: const ['UR:ZCASH-SIGN-BATCH/PREVIEW'],
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Step 1 of 2'), findsNothing);
+      expect(find.text('Round 1 of 2'), findsOneWidget);
+      expect(find.text('Scan request with Keystone'), findsOneWidget);
+      expect(
+        find.text(
+          'Scan this request QR with Keystone. Keystone will show a new '
+          'signed QR when it finishes.',
+        ),
+        findsOneWidget,
+      );
+
+      final enlargeQr = find.byKey(
+        const ValueKey('keystone_migration_enlarge_qr'),
+      );
+      expect(enlargeQr, findsOneWidget);
+      await tester.tap(enlargeQr);
+      await tester.pumpAndSettle();
+
+      final enlargedQr = find.byKey(
+        const ValueKey('keystone_migration_enlarged_qr'),
+      );
+      expect(enlargedQr, findsOneWidget);
+      expect(tester.getSize(enlargedQr), const Size.square(520));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(enlargedQr, findsNothing);
+
+      await tester.tap(
+        find.widgetWithText(AppButton, 'Scan Keystone signature'),
+      );
+      await tester.pump();
+
+      expect(find.text('Step 2 of 2'), findsNothing);
+      expect(find.text('Round 1 of 2'), findsOneWidget);
+      expect(find.text('Scan Keystone signature'), findsOneWidget);
+      expect(
+        find.text('Scan the new signed QR shown on Keystone.'),
+        findsOneWidget,
+      );
+      expect(find.text('Back to QR'), findsNothing);
+
+      final back = find.bySemanticsLabel('Back to Review migration');
+      await tester.tap(back);
+      await tester.pump();
+
+      expect(find.text('Step 1 of 2'), findsNothing);
+      expect(find.text('Scan request with Keystone'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_review_screen')),
+        findsNothing,
+      );
+
+      await tester.tap(back);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_review_screen')),
+        findsOneWidget,
+      );
+    },
+  );
+
   test('Keystone migration proof helpers distinguish pending states', () {
     const pending = rust_sync.KeystoneMigrationProofStatus(
       readyCount: 1,
@@ -3245,6 +3357,8 @@ Widget _migrationOptionsHarness({
   Duration analyzingMinimumDuration = Duration.zero,
   bool disableAnimations = true,
   bool useImmediatePreview = true,
+  rust_sync.KeystoneMigrationSigningRequest? previewCombinedSigningRequest,
+  List<String> previewCombinedSigningUrParts = const [],
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -3315,6 +3429,14 @@ Widget _migrationOptionsHarness({
       GoRoute(
         path: '/migration/private/keystone/sign',
         builder: (_, state) {
+          final previewRequest = previewCombinedSigningRequest;
+          if (previewRequest != null) {
+            return IronwoodMigrationKeystoneCombinedSignScreen(
+              approvedSchedule: const [],
+              previewRequest: previewRequest,
+              previewUrParts: previewCombinedSigningUrParts,
+            );
+          }
           final schedule =
               state.extra! as List<rust_sync.MigrationScheduledTransfer>;
           return Text(
