@@ -1425,7 +1425,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 ? 'Preparing migration request'
                 : '${signingRound.length} ${widget.step.messageUnit}'
                       '${signingRound.length == 1 ? '' : 's'} to sign'
-                      ' · Click QR to enlarge',
+                      ' · click QR to enlarge',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,

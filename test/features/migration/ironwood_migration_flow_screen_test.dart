@@ -560,6 +560,10 @@ void main() {
         ),
         findsOneWidget,
       );
+      expect(
+        find.text('1 transaction to sign · click QR to enlarge'),
+        findsOneWidget,
+      );
 
       final enlargeQr = find.byKey(
         const ValueKey('keystone_migration_enlarge_qr'),
