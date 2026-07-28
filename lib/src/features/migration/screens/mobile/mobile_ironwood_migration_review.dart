@@ -36,12 +36,10 @@ class _MobileMigrationFastReview extends ConsumerStatefulWidget {
   const _MobileMigrationFastReview({
     required this.data,
     required this.previewPlan,
-    required this.privateMigrationEnabled,
   });
 
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationImmediatePlan? previewPlan;
-  final bool privateMigrationEnabled;
 
   @override
   ConsumerState<_MobileMigrationFastReview> createState() =>
@@ -123,27 +121,21 @@ class _MobileMigrationFastReviewState
         ? (planUnavailable ? 'Unavailable' : 'Calculating…')
         : '${ZecAmount.fromZatoshi(plan.migratedZatoshi).pretty(minFractionDigits: 2, maxFractionDigits: 2).amountText} ZEC';
     return _MobileMigrationReviewScaffold(
-      onBack: () => context.go(
-        widget.privateMigrationEnabled
-            ? '/migration/options'
-            : '/migration/how-it-works',
-      ),
+      onBack: () => context.go('/migration/options'),
       bottom: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.privateMigrationEnabled) ...[
-            AppButton(
-              variant: AppButtonVariant.secondary,
-              expand: true,
-              height: 50,
-              onPressed: _isBroadcasting
-                  ? null
-                  : () => context.go('/migration/options'),
-              leading: const AppIcon(AppIcons.chevronBackward, size: 20),
-              child: const Text('Consider another option'),
-            ),
-            const SizedBox(height: AppSpacing.s),
-          ],
+          AppButton(
+            variant: AppButtonVariant.secondary,
+            expand: true,
+            height: 50,
+            onPressed: _isBroadcasting
+                ? null
+                : () => context.go('/migration/options'),
+            leading: const AppIcon(AppIcons.chevronBackward, size: 20),
+            child: const Text('Consider another option'),
+          ),
+          const SizedBox(height: AppSpacing.s),
           if (_broadcastError != null) ...[
             Text(
               _broadcastError!,

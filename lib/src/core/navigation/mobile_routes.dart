@@ -301,7 +301,6 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/options',
-      redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationFlowScreen(

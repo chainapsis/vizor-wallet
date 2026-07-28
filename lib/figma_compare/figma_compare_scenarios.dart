@@ -225,6 +225,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-android-options',
+    description: 'Android Ironwood migration type screen',
+    builder: buildMobileIronwoodMigrationAndroidOptionsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-ironwood-migration-fast-review',
     description: 'Mobile immediate Ironwood migration review screen',
     builder: buildMobileIronwoodMigrationFastReviewUseCase,

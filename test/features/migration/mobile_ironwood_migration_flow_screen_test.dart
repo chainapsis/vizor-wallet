@@ -2149,27 +2149,86 @@ void main() {
     expect(find.text('Authorise anyway'), findsNothing);
   });
 
-  testWidgets(
-    'Android options force Immediate review with a viable back exit',
-    (tester) async {
-      await tester.pumpWidget(
-        _app(
-          step: MobileIronwoodMigrationStep.options,
-          privateMigrationSupported: false,
+  testWidgets('Android shows Private disabled and selects Immediate', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.options,
+        privateMigrationSupported: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final privateOption = find.byKey(
+      const ValueKey('mobile_ironwood_private_option'),
+    );
+    final immediateOption = find.byKey(
+      const ValueKey('mobile_ironwood_immediate_option'),
+    );
+    expect(find.text('Choose How to Migrate'), findsOneWidget);
+    expect(find.text('Private'), findsOneWidget);
+    expect(find.text('Immediate'), findsOneWidget);
+    expect(
+      find.text(
+        'Private migration is temporarily unavailable on Android. '
+        'Choose immediate to continue.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Not available on Android.'), findsOneWidget);
+    expect(find.text('Recommended'), findsNothing);
+    expect(
+      find.descendant(
+        of: privateOption,
+        matching: find.byKey(
+          const ValueKey('mobile_ironwood_unselected_radio'),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: immediateOption,
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
+      findsOneWidget,
+    );
 
-      expect(find.text('Fast Migration'), findsOneWidget);
-      expect(find.text('Consider another option'), findsNothing);
+    final privateGesture = find.descendant(
+      of: privateOption,
+      matching: find.byType(GestureDetector),
+    );
+    expect(tester.widget<GestureDetector>(privateGesture).onTap, isNull);
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(
+              const ValueKey('mobile_ironwood_private_option_opacity'),
+            ),
+          )
+          .opacity,
+      0.5,
+    );
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(
+              const ValueKey('mobile_ironwood_immediate_option_opacity'),
+            ),
+          )
+          .opacity,
+      1,
+    );
 
-      await tester.tap(find.bySemanticsLabel('Back'));
-      await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('How Migration Works'), findsOneWidget);
-      expect(find.text('Fast Migration'), findsNothing);
-    },
-  );
+    expect(find.text('Fast Migration'), findsOneWidget);
+    expect(find.text('Consider another option'), findsOneWidget);
+  });
 
   testWidgets(
     'shows the computed immediate completion estimate in production',
