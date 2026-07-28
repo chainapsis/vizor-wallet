@@ -419,11 +419,23 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   bool _requestCompleted = false;
   bool _showImmediateScanHelp = true;
   Future<void>? _completionOperation;
+  IronwoodMigrationPrivacyLockSuppressionNotifier?
+  _privacyLockSuppressionNotifier;
+  IronwoodMigrationPrivacyLockSuppression? _privacyLockSuppression;
 
   @override
   void initState() {
     super.initState();
     _migrationService = ref.read(ironwoodMigrationServiceProvider);
+    if (!widget.mobileLayout) {
+      _privacyLockSuppressionNotifier = ref.read(
+        ironwoodMigrationPrivacyLockSuppressionProvider.notifier,
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _privacyLockSuppression != null) return;
+        _privacyLockSuppression = _privacyLockSuppressionNotifier?.acquire();
+      });
+    }
     final previewRequest = widget.previewRequest;
     if (previewRequest != null) {
       _request = previewRequest;
@@ -454,6 +466,18 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   @override
   void dispose() {
     _stopProofPolling();
+    final privacyLockSuppression = _privacyLockSuppression;
+    final privacyLockSuppressionNotifier = _privacyLockSuppressionNotifier;
+    if (privacyLockSuppression != null &&
+        privacyLockSuppressionNotifier != null) {
+      // Riverpod disallows provider mutations while Flutter is finalizing this
+      // route. Release immediately after the current widget lifecycle pass.
+      scheduleMicrotask(() {
+        privacyLockSuppressionNotifier.release(privacyLockSuppression);
+      });
+    }
+    _privacyLockSuppression = null;
+    _privacyLockSuppressionNotifier = null;
     if (!_requestCompleted) {
       final requestId = _request?.requestId;
       final accountUuid = _accountUuid;
@@ -1008,7 +1032,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
     return _IronwoodMigrationFrame(
       toolbar: _keystoneDenominationToolbar(
-        label: widget.step.toolbarLabel,
+        label: _stage == _KeystoneDenominationSignStage.scanning
+            ? 'Request QR'
+            : widget.step.toolbarLabel,
         onBack: _handleBack,
       ),
       disableSidebarActions: true,
@@ -1466,7 +1492,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           AppButton(
             onPressed: () => unawaited(_returnToReview()),
             variant: AppButtonVariant.ghost,
-            height: 36,
+            height: 44,
             minWidth: 230,
             child: Text(widget.step.previousButtonLabel),
           ),

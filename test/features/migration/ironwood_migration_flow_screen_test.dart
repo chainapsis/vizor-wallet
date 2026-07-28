@@ -15,8 +15,6 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
-import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
-import 'package:zcash_wallet/src/core/widgets/app_loading_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -564,6 +562,12 @@ void main() {
         find.text('1 transaction to sign · click QR to enlarge'),
         findsOneWidget,
       );
+      final backToReviewButton = find.widgetWithText(
+        AppButton,
+        'Back to review',
+      );
+      expect(backToReviewButton, findsOneWidget);
+      expect(tester.getSize(backToReviewButton).height, 44);
 
       final enlargeQr = find.byKey(
         const ValueKey('keystone_migration_enlarge_qr'),
@@ -596,8 +600,9 @@ void main() {
       );
       expect(find.text('Back to QR'), findsNothing);
 
-      final back = find.bySemanticsLabel('Back to Review migration');
-      await tester.tap(back);
+      final backToRequestQr = find.bySemanticsLabel('Back to Request QR');
+      expect(backToRequestQr, findsOneWidget);
+      await tester.tap(backToRequestQr);
       await tester.pump();
 
       expect(find.text('Step 1 of 2'), findsNothing);
@@ -607,7 +612,9 @@ void main() {
         findsNothing,
       );
 
-      await tester.tap(back);
+      final backToReview = find.bySemanticsLabel('Back to Review migration');
+      expect(backToReview, findsOneWidget);
+      await tester.tap(backToReview);
       await tester.pumpAndSettle();
 
       expect(
@@ -789,11 +796,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.text('Next split'), findsOneWidget);
-      final loader = tester.widget<AppIcon>(
+      expect(
         find.byKey(const ValueKey('ironwood_migration_preparation_loader')),
+        findsNothing,
       );
-      expect(loader.name, AppIcons.loader);
-      expect(loader.size, AppIconSize.large);
       expect(find.text('Split 1 of 6'), findsOneWidget);
       expect(find.textContaining('confirmations'), findsNothing);
       expect(
@@ -849,32 +855,31 @@ void main() {
     expect(find.text('Schedule pending'), findsOneWidget);
   });
 
-  testWidgets('preparation ring remains available with reduced motion', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1440, 900);
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'detailed preparation ring omits the loader with reduced motion',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      _privateStatusHarness(status: _status(), disableAnimations: true),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpWidget(
+        _privateStatusHarness(status: _status(), disableAnimations: true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-    expect(
-      find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
-      findsOneWidget,
-    );
-    expect(find.text('Next split'), findsOneWidget);
-    final loader = find.descendant(
-      of: find.byKey(const ValueKey('ironwood_migration_preparation_loader')),
-      matching: find.byType(AppLoadingIcon),
-    );
-    expect(loader, findsOneWidget);
-    expect(MediaQuery.maybeDisableAnimationsOf(tester.element(loader)), isTrue);
-  });
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
+        findsOneWidget,
+      );
+      expect(find.text('Next split'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_preparation_loader')),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('private preparing status does not expose note progress', (
     tester,

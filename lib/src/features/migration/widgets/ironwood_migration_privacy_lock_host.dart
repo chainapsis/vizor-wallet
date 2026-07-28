@@ -65,14 +65,11 @@ class _IronwoodMigrationPrivacyLockHostState
       return widget.child;
     }
 
-    ref.listen(
-      appSecurityProvider.select((security) => security.requiresUnlock),
-      (_, requiresUnlock) {
-        if (!requiresUnlock) return;
-        _lastInteractionAt = _now();
-        ref.read(ironwoodMigrationPrivacyLockProvider.notifier).clear();
-      },
-    );
+    ref.listen(appSecurityProvider, (_, security) {
+      if (!security.requiresUnlock && security.isPasswordConfigured) return;
+      _lastInteractionAt = _now();
+      ref.read(ironwoodMigrationPrivacyLockProvider.notifier).clear();
+    });
     ref.listen(
       ironwoodMigrationPrivacyLockProvider.select((state) => state.isLocked),
       (wasLocked, isLocked) {
@@ -82,6 +79,9 @@ class _IronwoodMigrationPrivacyLockHostState
       },
     );
 
+    final privacyLockRequired = ref.watch(
+      ironwoodMigrationPrivacyLockRequiredProvider,
+    );
     final eligible = ref.watch(ironwoodMigrationPrivacyLockEligibleProvider);
     final locked = ref.watch(
       ironwoodMigrationPrivacyLockProvider.select((state) => state.isLocked),
@@ -106,7 +106,7 @@ class _IronwoodMigrationPrivacyLockHostState
               child: _PrivacyLockOverlay(
                 child: IronwoodMigrationVirtualUnlockScreen(
                   key: ironwoodMigrationVirtualUnlockScreenKey,
-                  showMigrationInProgress: eligible,
+                  showMigrationInProgress: privacyLockRequired,
                 ),
               ),
             ),
@@ -195,11 +195,17 @@ class _IronwoodMigrationPrivacyLockHostState
 
   void _evaluateIdleAfterResume() {
     if (!_featureEnabled ||
-        !ref.read(ironwoodMigrationPrivacyLockEligibleProvider) ||
+        !ref.read(ironwoodMigrationPrivacyLockRequiredProvider) ||
         ref.read(ironwoodMigrationPrivacyLockProvider).isLocked) {
       return;
     }
-    _lockIfStillIdle();
+    if (_now().difference(_lastInteractionAt) < widget.idleTimeout) {
+      if (ref.read(ironwoodMigrationPrivacyLockEligibleProvider)) {
+        _armTimer();
+      }
+      return;
+    }
+    _lock();
   }
 
   void _lockFromTimer() => _lockIfStillIdle(timerExpired: true);
@@ -216,6 +222,10 @@ class _IronwoodMigrationPrivacyLockHostState
       _armTimer();
       return;
     }
+    _lock();
+  }
+
+  void _lock() {
     FocusManager.instance.primaryFocus?.unfocus();
     ref.read(ironwoodMigrationPrivacyLockProvider.notifier).lock();
   }
