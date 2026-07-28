@@ -1010,6 +1010,45 @@ void main() {
     },
   );
 
+  testWidgets('preparation ring rotates without repainting its segments', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(status: _status(), disableAnimations: false),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final rotation = tester.widget<RotationTransition>(
+      find.byKey(
+        const ValueKey('ironwood_migration_preparation_ring_rotation'),
+      ),
+    );
+    final initialTurns = rotation.turns.value;
+    final initialPainter = tester
+        .widget<CustomPaint>(
+          find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+        )
+        .painter;
+
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(rotation.turns.value, greaterThan(initialTurns));
+    expect(
+      tester
+          .widget<CustomPaint>(
+            find.byKey(const ValueKey('ironwood_migration_ring_paint')),
+          )
+          .painter,
+      same(initialPainter),
+    );
+  });
+
   testWidgets('private preparing status does not expose note progress', (
     tester,
   ) async {

@@ -1342,23 +1342,11 @@ class _MigrationMorphingRing extends StatefulWidget {
 
 class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
     with TickerProviderStateMixin {
-  static const _minimumWeight = 0.035;
-  static const _maximumWeight = 0.22;
-  static const _stepDuration = Duration(milliseconds: 390);
-  static const _stepBreather = Duration(milliseconds: 105);
-  static const _spinDuration = Duration(milliseconds: 1800);
-  static const _restBetweenBlocks = Duration(milliseconds: 900);
+  static const _preparationRotationDuration = Duration(seconds: 8);
   static const _motionDuration = Duration(milliseconds: 1600);
 
-  final math.Random _random = math.Random(704075305);
-  late final AnimationController _stepController = AnimationController(
-    vsync: this,
-    duration: _stepDuration,
-  );
-  late final AnimationController _spinController = AnimationController(
-    vsync: this,
-    duration: _spinDuration,
-  );
+  late final AnimationController _preparationRotationController =
+      AnimationController(vsync: this, duration: _preparationRotationDuration);
   late final AnimationController _morphController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 920),
@@ -1367,10 +1355,6 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
     vsync: this,
     duration: _motionDuration,
   );
-  late List<double> _weights;
-  late List<double> _fromWeights;
-  late List<double> _toWeights;
-  Timer? _idleTimer;
   bool _reduceMotion = false;
   List<_MigrationRingVisualSegment> _morphFrom = const [];
   List<_MigrationRingVisualSegment> _morphTo = const [];
@@ -1380,14 +1364,12 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
   void initState() {
     super.initState();
     _morphController.addStatusListener(_handleMorphStatus);
-    _weights = List.of(_MigrationPreparationRingPainter.initialSegmentRatios);
-    _fromWeights = List.of(_weights);
-    _toWeights = List.of(_weights);
-    _lastPreparationSegments = _preparationSegments(_weights);
+    _lastPreparationSegments = _preparationSegments(
+      _MigrationPreparationRingPainter.initialSegmentRatios,
+    );
     if (widget.preparing) {
       _morphFrom = _lastPreparationSegments;
       _morphTo = _lastPreparationSegments;
-      _runIdleLoop();
     } else {
       _morphFrom = _liveSegments(
         values: widget.values,
@@ -1403,6 +1385,7 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
   @override
   void didUpdateWidget(covariant _MigrationMorphingRing oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _syncPreparationRotationController();
     if (widget.preparing) {
       _syncMotionController();
       return;
@@ -1428,9 +1411,6 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
           );
     _morphFrom = current;
     _morphTo = next;
-    _idleTimer?.cancel();
-    _stepController.stop();
-    _spinController.stop();
     if (_reduceMotion) {
       _morphController.value = 1;
     } else {
@@ -1443,6 +1423,7 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    _syncPreparationRotationController();
     _syncMotionController();
   }
 
@@ -1466,73 +1447,22 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
     }
   }
 
-  Future<void> _runIdleLoop() async {
-    // Keep the Figma-comparison first frame stable before starting idle motion.
-    await _wait(const Duration(milliseconds: 400));
-    try {
-      while (mounted) {
-        if (!widget.preparing) return;
-        if (_reduceMotion) {
-          await _wait(const Duration(seconds: 1));
-          continue;
-        }
-        for (var cycle = 0; cycle < 3 && mounted; cycle++) {
-          await _adjustSegmentWeights();
-          if (!mounted) return;
-          await _spinController.forward(from: 0);
-        }
-        await _wait(_restBetweenBlocks);
+  void _syncPreparationRotationController() {
+    final shouldRun = !_reduceMotion && widget.preparing;
+    if (shouldRun) {
+      if (!_preparationRotationController.isAnimating) {
+        _preparationRotationController.repeat();
       }
-    } on TickerCanceled {
-      // Disposal can stop either controller while an idle cycle is running.
+    } else {
+      _preparationRotationController
+        ..stop()
+        ..value = 0;
     }
-  }
-
-  Future<void> _adjustSegmentWeights() async {
-    final steps = 3 + _random.nextInt(3);
-    for (var step = 0; step < steps; step++) {
-      if (!mounted) return;
-      final fromIndex = _random.nextInt(_weights.length);
-      var toIndex = _random.nextInt(_weights.length - 1);
-      if (toIndex >= fromIndex) toIndex++;
-
-      final availableToGive = math.min(
-        _weights[fromIndex] - _minimumWeight,
-        _maximumWeight - _weights[toIndex],
-      );
-      final availableToTake = math.min(
-        _maximumWeight - _weights[fromIndex],
-        _weights[toIndex] - _minimumWeight,
-      );
-      final gives = availableToGive >= availableToTake;
-      final available = gives ? availableToGive : availableToTake;
-      if (available <= 0.005) continue;
-      final amount = available * (0.4 + _random.nextDouble() * 0.6);
-
-      setState(() {
-        _fromWeights = List.of(_weights);
-        _toWeights = List.of(_weights);
-        _toWeights[fromIndex] += gives ? -amount : amount;
-        _toWeights[toIndex] += gives ? amount : -amount;
-      });
-      await _stepController.forward(from: 0);
-      _weights = List.of(_toWeights);
-      await _wait(_stepBreather);
-    }
-  }
-
-  Future<void> _wait(Duration duration) {
-    final completer = Completer<void>();
-    _idleTimer?.cancel();
-    _idleTimer = Timer(duration, completer.complete);
-    return completer.future;
   }
 
   @override
   void dispose() {
-    _idleTimer?.cancel();
-    _stepController.dispose();
-    _spinController.dispose();
+    _preparationRotationController.dispose();
     _morphController.dispose();
     _motionController.dispose();
     super.dispose();
@@ -1553,53 +1483,55 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
       container: true,
       excludeSemantics: true,
       label: semanticsLabel,
-      child: AnimatedBuilder(
-        animation: Listenable.merge([
-          _stepController,
-          _spinController,
-          _morphController,
-          _motionController,
-        ]),
-        builder: (context, _) {
-          final eased = Curves.easeOutBack.transform(_stepController.value);
-          final weights = List.generate(
-            _weights.length,
-            (index) =>
-                _fromWeights[index] +
-                ((_toWeights[index] - _fromWeights[index]) * eased),
-          );
-          final preparationSegments = _preparationSegments(weights);
-          _lastPreparationSegments = preparationSegments;
-          final visualSegments = widget.preparing
-              ? preparationSegments
-              : _interpolateVisualSegments(
-                  _morphFrom,
-                  _morphTo,
-                  Curves.easeInOutCubic.transform(_morphController.value),
-                );
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              if (widget.preparing)
-                const SizedBox.shrink(
-                  key: ValueKey('ironwood_migration_preparation_ring'),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (widget.preparing)
+            RotationTransition(
+              key: const ValueKey(
+                'ironwood_migration_preparation_ring_rotation',
+              ),
+              turns: _preparationRotationController,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  key: const ValueKey('ironwood_migration_ring_paint'),
+                  size: const Size.square(256),
+                  painter: _MigrationRingVisualPainter(
+                    segments: _lastPreparationSegments,
+                    rotation: 0,
+                    motionPhase: 0,
+                    reduceMotion: _reduceMotion,
+                  ),
                 ),
-              CustomPaint(
+              ),
+            )
+          else
+            AnimatedBuilder(
+              animation: Listenable.merge([
+                _morphController,
+                _motionController,
+              ]),
+              builder: (context, _) => CustomPaint(
                 key: const ValueKey('ironwood_migration_ring_paint'),
                 size: const Size.square(256),
                 painter: _MigrationRingVisualPainter(
-                  segments: visualSegments,
-                  rotation: widget.preparing
-                      ? Curves.easeInOutCubic.transform(_spinController.value)
-                      : 0,
+                  segments: _interpolateVisualSegments(
+                    _morphFrom,
+                    _morphTo,
+                    Curves.easeInOutCubic.transform(_morphController.value),
+                  ),
+                  rotation: 0,
                   motionPhase: _motionController.value,
                   reduceMotion: _reduceMotion,
                 ),
               ),
-              widget.child,
-            ],
-          );
-        },
+            ),
+          if (widget.preparing)
+            const SizedBox.shrink(
+              key: ValueKey('ironwood_migration_preparation_ring'),
+            ),
+          widget.child,
+        ],
       ),
     );
   }
