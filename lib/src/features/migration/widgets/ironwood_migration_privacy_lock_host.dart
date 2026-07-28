@@ -15,6 +15,13 @@ import '../../onboarding/shared/onboarding_auth_shell.dart';
 import '../../onboarding/unlock_screen.dart';
 import '../providers/ironwood_migration_privacy_lock_provider.dart';
 
+const ironwoodMigrationVirtualUnlockScreenKey = ValueKey<String>(
+  'ironwood_migration_virtual_unlock_screen',
+);
+const ironwoodMigrationInProgressBadgeKey = ValueKey<String>(
+  'ironwood_migration_in_progress_badge',
+);
+
 class IronwoodMigrationPrivacyLockHost extends ConsumerStatefulWidget {
   const IronwoodMigrationPrivacyLockHost({
     required this.child,
@@ -96,8 +103,11 @@ class _IronwoodMigrationPrivacyLockHostState
           ),
           if (locked)
             Positioned.fill(
-              child: IronwoodMigrationVirtualUnlockScreen(
-                showMigrationInProgress: eligible,
+              child: _PrivacyLockOverlay(
+                child: IronwoodMigrationVirtualUnlockScreen(
+                  key: ironwoodMigrationVirtualUnlockScreenKey,
+                  showMigrationInProgress: eligible,
+                ),
               ),
             ),
         ],
@@ -211,6 +221,38 @@ class _IronwoodMigrationPrivacyLockHostState
   }
 
   DateTime _now() => widget.now?.call() ?? DateTime.now();
+}
+
+class _PrivacyLockOverlay extends StatefulWidget {
+  const _PrivacyLockOverlay({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PrivacyLockOverlay> createState() => _PrivacyLockOverlayState();
+}
+
+class _PrivacyLockOverlayState extends State<_PrivacyLockOverlay> {
+  late final OverlayEntry _entry = OverlayEntry(builder: (_) => widget.child);
+
+  @override
+  void didUpdateWidget(_PrivacyLockOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _entry.markNeedsBuild();
+  }
+
+  @override
+  void dispose() {
+    _entry
+      ..remove()
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Overlay(initialEntries: [_entry]);
+  }
 }
 
 class IronwoodMigrationVirtualUnlockScreen extends ConsumerStatefulWidget {
@@ -334,6 +376,7 @@ class _MigrationInProgressBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return DecoratedBox(
+      key: ironwoodMigrationInProgressBadgeKey,
       decoration: BoxDecoration(
         color: colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.full),

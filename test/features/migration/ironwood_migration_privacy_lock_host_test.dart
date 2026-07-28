@@ -136,6 +136,8 @@ void main() {
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Unlock Vizor'), findsOneWidget);
     expect(find.text('Forgot password?'), findsNothing);
+    expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsOneWidget);
+    expect(find.byKey(ironwoodMigrationInProgressBadgeKey), findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (widget) =>
@@ -144,6 +146,8 @@ void main() {
       ),
       findsOneWidget,
     );
+    await _focusVirtualUnlockPassword(tester);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('pointer interaction restarts the idle interval', (tester) async {
@@ -267,6 +271,11 @@ void main() {
       expect(find.text('Migration in progress'), findsNothing);
       expect(find.text('Welcome back'), findsOneWidget);
       expect(find.text('Unlock Vizor'), findsOneWidget);
+      expect(
+        find.byKey(ironwoodMigrationVirtualUnlockScreenKey),
+        findsOneWidget,
+      );
+      expect(find.byKey(ironwoodMigrationInProgressBadgeKey), findsNothing);
     },
   );
 
@@ -315,20 +324,33 @@ List<Override> _overrides(_FakeSecurityNotifier security) {
 
 Widget _themedHost(_TestClock clock, {VoidCallback? protectedTap}) {
   return MaterialApp(
-    builder: (_, child) => AppTheme(data: AppThemeData.dark, child: child!),
-    home: IronwoodMigrationPrivacyLockHost(
-      idleTimeout: const Duration(milliseconds: 50),
-      now: clock.now,
-      child: Scaffold(
-        body: GestureDetector(
-          key: const ValueKey('protected_content'),
-          behavior: HitTestBehavior.opaque,
-          onTap: protectedTap,
-          child: const Center(child: Text('Protected content')),
-        ),
+    builder: (_, child) => AppTheme(
+      data: AppThemeData.dark,
+      child: IronwoodMigrationPrivacyLockHost(
+        idleTimeout: const Duration(milliseconds: 50),
+        now: clock.now,
+        child: child!,
+      ),
+    ),
+    home: Scaffold(
+      body: GestureDetector(
+        key: const ValueKey('protected_content'),
+        behavior: HitTestBehavior.opaque,
+        onTap: protectedTap,
+        child: const Center(child: Text('Protected content')),
       ),
     ),
   );
+}
+
+Future<void> _focusVirtualUnlockPassword(WidgetTester tester) async {
+  await tester.tap(
+    find.descendant(
+      of: find.byKey(const ValueKey('unlock_password_field')),
+      matching: find.byType(EditableText),
+    ),
+  );
+  await tester.pump();
 }
 
 Future<void> _elapseIdleInterval(WidgetTester tester, _TestClock clock) async {
