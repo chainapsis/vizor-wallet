@@ -747,7 +747,7 @@ void main() {
       find.byKey(const ValueKey('ironwood_migration_preparation_ring')),
       findsOneWidget,
     );
-    expect(find.text('Splits remaining'), findsOneWidget);
+    expect(find.text('Overall progress'), findsOneWidget);
     expect(find.text('Est. completion'), findsOneWidget);
     expect(find.text('Current block'), findsOneWidget);
     expect(find.widgetWithText(AppButton, 'View Schedule'), findsOneWidget);
@@ -794,7 +794,8 @@ void main() {
       );
       expect(loader.name, AppIcons.loader);
       expect(loader.size, AppIconSize.large);
-      expect(find.text('Split 1 of 6'), findsOneWidget);
+      expect(find.text('Transaction 1 of 12'), findsOneWidget);
+      expect(find.text('0 of 12 complete'), findsOneWidget);
       expect(find.textContaining('confirmations'), findsNothing);
       expect(
         find.bySemanticsLabel('Preparing migration notes.'),
@@ -829,7 +830,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Split 3 of 8'), findsOneWidget);
+    expect(find.text('Transaction 3 of 16'), findsOneWidget);
+    expect(find.text('2 of 16 complete'), findsOneWidget);
     expect(find.textContaining('confirmations'), findsNothing);
 
     harnessKey.currentState!.setStatus(
@@ -845,7 +847,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Split 3 of 8'), findsOneWidget);
+    expect(find.text('Transaction 3 of 16'), findsOneWidget);
     expect(find.text('Schedule pending'), findsOneWidget);
   });
 
@@ -2567,7 +2569,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Split 3 of 5'), findsOneWidget);
+    expect(find.text('Transaction 3'), findsOneWidget);
   });
 
   testWidgets('preparation ETA starts unscheduled delays at current height', (

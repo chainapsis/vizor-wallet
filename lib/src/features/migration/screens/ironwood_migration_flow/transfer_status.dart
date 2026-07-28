@@ -374,12 +374,22 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              Text(
-                                preparationPresentation.splitLabel,
-                                textAlign: TextAlign.center,
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.primary,
-                                  fontWeight: FontWeight.w400,
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 208,
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    preparationPresentation.splitLabel,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.labelLarge.copyWith(
+                                      color: colors.text.primary,
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 6),
@@ -479,9 +489,8 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                     ? Column(
                         children: [
                           _MigrationSummaryMetric(
-                            label: 'Splits remaining',
-                            value:
-                                '${_preparationRemainingCount(status)} of ${_preparationTotalCount(status)}',
+                            label: 'Overall progress',
+                            value: _overallPreparationProgressDisplay(status),
                           ),
                           const SizedBox(height: 16),
                           _MigrationSummaryMetric(
@@ -616,7 +625,8 @@ _PreparationRingPresentation _preparationRingPresentation(
   rust_sync.MigrationStatus status,
 ) {
   final transactions = _orderedPreparationTransactions(status);
-  final total = _preparationTotalCount(status);
+  final preparationTotal = _preparationTotalCount(status);
+  final overallTotal = _overallTransactionTotalCount(status);
   final completed = _preparationCompletedCount(status);
   rust_sync.MigrationPreparationTransactionStatus? selected;
   for (final state in const [
@@ -642,14 +652,17 @@ _PreparationRingPresentation _preparationRingPresentation(
 
   if (selected == null) {
     return _PreparationRingPresentation(
-      label: completed >= total && total > 0
+      label: completed >= preparationTotal && preparationTotal > 0
           ? 'Preparation complete'
           : 'Next split',
-      splitLabel: total > 0
-          ? 'Split ${math.min(completed + 1, total)} of $total'
+      splitLabel: preparationTotal > 0
+          ? _overallTransactionOrdinalDisplay(
+              math.min(completed + 1, preparationTotal),
+              overallTotal,
+            )
           : 'Preparing schedule',
       amount: _sumTargetValues(status),
-      detail: completed >= total && total > 0
+      detail: completed >= preparationTotal && preparationTotal > 0
           ? 'All splits completed'
           : 'Schedule pending',
     );
@@ -661,7 +674,7 @@ _PreparationRingPresentation _preparationRingPresentation(
     rust_sync.MigrationPreparationTransactionState.scheduled =>
       _PreparationRingPresentation(
         label: 'Next split',
-        splitLabel: 'Split $ordinal of $total',
+        splitLabel: _overallTransactionOrdinalDisplay(ordinal, overallTotal),
         amount: amount,
         detail: selected.scheduledHeight == null ? 'Due now' : 'Scheduled',
         height: selected.scheduledHeight,
@@ -669,7 +682,7 @@ _PreparationRingPresentation _preparationRingPresentation(
     rust_sync.MigrationPreparationTransactionState.broadcasted =>
       _PreparationRingPresentation(
         label: 'Split in progress',
-        splitLabel: 'Split $ordinal of $total',
+        splitLabel: _overallTransactionOrdinalDisplay(ordinal, overallTotal),
         amount: amount,
         detail: 'Waiting for block',
         height: selected.scheduledHeight,
@@ -678,7 +691,7 @@ _PreparationRingPresentation _preparationRingPresentation(
     rust_sync.MigrationPreparationTransactionState.confirming =>
       _PreparationRingPresentation(
         label: 'Confirming split',
-        splitLabel: 'Split $ordinal of $total',
+        splitLabel: _overallTransactionOrdinalDisplay(ordinal, overallTotal),
         amount: amount,
         detail:
             '${selected.confirmationCount} of ${selected.confirmationTarget} confirmations',
@@ -688,14 +701,14 @@ _PreparationRingPresentation _preparationRingPresentation(
     rust_sync.MigrationPreparationTransactionState.awaitingInputs =>
       _PreparationRingPresentation(
         label: 'Next split',
-        splitLabel: 'Split $ordinal of $total',
+        splitLabel: _overallTransactionOrdinalDisplay(ordinal, overallTotal),
         amount: amount,
         detail: 'Waiting for previous split',
       ),
     rust_sync.MigrationPreparationTransactionState.completed =>
       _PreparationRingPresentation(
         label: 'Preparation complete',
-        splitLabel: 'Split $ordinal of $total',
+        splitLabel: _overallTransactionOrdinalDisplay(ordinal, overallTotal),
         amount: amount,
         detail: 'All splits completed',
         height: selected.minedHeight,
@@ -741,6 +754,29 @@ int _preparationRemainingCount(rust_sync.MigrationStatus status) => math.max(
   0,
   _preparationTotalCount(status) - _preparationCompletedCount(status),
 );
+
+int? _overallTransactionTotalCount(rust_sync.MigrationStatus status) {
+  final migrationTotal = status.totalCount;
+  if (migrationTotal <= 0) return null;
+  return _preparationTotalCount(status) + migrationTotal;
+}
+
+int _overallCompletedTransactionCount(rust_sync.MigrationStatus status) {
+  final completedMigrations = status.parts
+      .where((part) => part.state == rust_sync.MigrationPartState.completed)
+      .length;
+  return _preparationCompletedCount(status) + completedMigrations;
+}
+
+String _overallTransactionOrdinalDisplay(int ordinal, int? total) =>
+    total == null ? 'Transaction $ordinal' : 'Transaction $ordinal of $total';
+
+String _overallPreparationProgressDisplay(rust_sync.MigrationStatus status) {
+  final total = _overallTransactionTotalCount(status);
+  if (total == null) return 'Calculating total';
+  final completed = math.min(total, _overallCompletedTransactionCount(status));
+  return '$completed of $total complete';
+}
 
 String _preparationCompletionEstimateDisplay(
   rust_sync.MigrationStatus status,
@@ -1040,7 +1076,19 @@ class _MigrationSummaryMetric extends StatelessWidget {
           AppIcon(valueIcon!, size: 16, color: context.colors.icon.regular),
           const SizedBox(width: 4),
         ],
-        Text(value, textAlign: TextAlign.right, style: style),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Text(
+              value,
+              maxLines: 1,
+              softWrap: false,
+              textAlign: TextAlign.right,
+              style: style,
+            ),
+          ),
+        ),
       ],
     );
   }
