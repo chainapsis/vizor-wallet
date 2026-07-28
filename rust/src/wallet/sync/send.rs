@@ -24,15 +24,10 @@
 //! PCZT pipeline also consumes from it (see `sync/pczt.rs`) and
 //! keeping it in the parent avoids a cross-submodule cycle.
 //!
-//! **Sapling-proofs shortcut**: Orchard-only sends (recipient has an
-//! Orchard receiver) go through [`NoOpSpendProver`] /
-//! [`NoOpOutputProver`] so we don't have to ship the 50MB Sapling
-//! params with the app. `create_proposed_transactions` only touches
-//! the provers for Sapling spend/output circuits, so for an
-//! Orchard-only proposal these never get called — if they do get
-//! called it's a bug (the proposal contained unexpected Sapling
-//! components) and the provers log+fail loudly rather than produce a
-//! silently-invalid proof.
+//! Ordinary software payments use the local PCZT path so Vizor can
+//! apply the same explicit Orchard-family padding as hardware
+//! payments. Orchard-only payments still do not require the Sapling
+//! parameter files.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::convert::Infallible;
@@ -86,7 +81,6 @@ use zcash_primitives::transaction::{
     },
     TxId,
 };
-use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
     consensus::{self, BlockHeight, NetworkConstants, Parameters},
     memo::{Memo, MemoBytes},
@@ -559,8 +553,6 @@ impl<NoteRef> NoteRetention<NoteRef> for RetainAllNotes {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(in crate::wallet) struct ConservativeZip317FeeRule;
 
-pub(in crate::wallet) type WalletFeeRule = ConservativeZip317FeeRule;
-
 impl FeeRule for ConservativeZip317FeeRule {
     type Error = <StandardFeeRule as FeeRule>::Error;
 
@@ -603,6 +595,77 @@ impl Zip317FeeRule for ConservativeZip317FeeRule {
 
     fn grace_actions(&self) -> usize {
         StandardFeeRule::Zip317.grace_actions()
+    }
+}
+
+/// ZIP-317 fee rule for wallet proposals with an explicit Orchard-family
+/// padding policy.
+///
+/// The upstream change strategies count their default two-action floor before
+/// invoking [`FeeRule`]. This wrapper raises each non-empty Orchard or Ironwood
+/// bundle to the configured floor so proposal fees match transaction
+/// construction.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(in crate::wallet) struct WalletFeeRule {
+    orchard_pool_padding: BundlePadding,
+}
+
+impl WalletFeeRule {
+    const fn new(orchard_pool_padding: BundlePadding) -> Self {
+        Self {
+            orchard_pool_padding,
+        }
+    }
+
+    fn padded_action_count(&self, action_count: usize) -> usize {
+        if action_count == 0 && !self.orchard_pool_padding.bundle_required {
+            return 0;
+        }
+
+        let minimum = self
+            .orchard_pool_padding
+            .pad_to_minimum
+            .map(usize::from)
+            .unwrap_or_else(|| usize::from(self.orchard_pool_padding.bundle_required));
+        action_count.max(minimum)
+    }
+}
+
+impl FeeRule for WalletFeeRule {
+    type Error = <ConservativeZip317FeeRule as FeeRule>::Error;
+
+    #[allow(clippy::too_many_arguments)]
+    fn fee_required<P: consensus::Parameters>(
+        &self,
+        params: &P,
+        target_height: zcash_protocol::consensus::BlockHeight,
+        transparent_input_sizes: impl IntoIterator<Item = TransparentInputSize>,
+        transparent_output_sizes: impl IntoIterator<Item = usize>,
+        sapling_input_count: usize,
+        sapling_output_count: usize,
+        orchard_action_count: usize,
+        ironwood_action_count: usize,
+    ) -> Result<Zatoshis, Self::Error> {
+        ConservativeZip317FeeRule.fee_required(
+            params,
+            target_height,
+            transparent_input_sizes,
+            transparent_output_sizes,
+            sapling_input_count,
+            sapling_output_count,
+            self.padded_action_count(orchard_action_count),
+            self.padded_action_count(ironwood_action_count),
+        )
+    }
+}
+
+impl Zip317FeeRule for WalletFeeRule {
+    fn marginal_fee(&self) -> Zatoshis {
+        ConservativeZip317FeeRule.marginal_fee()
+    }
+
+    fn grace_actions(&self) -> usize {
+        ConservativeZip317FeeRule.grace_actions()
     }
 }
 
@@ -690,7 +753,6 @@ pub fn propose_send(
             &migration_locks,
             &spend_policy,
             proposed_tx_version,
-            false,
         )?;
         let (proposal, stored_tx_version) = propose_with_note_version_downgrade(
             pass1_proposal,
@@ -706,7 +768,6 @@ pub fn propose_send(
                     &migration_locks,
                     &spend_policy,
                     tx_version,
-                    false,
                 )
             },
         );
@@ -783,8 +844,6 @@ pub fn propose_send(
                 proposal_id: id,
                 proposal,
                 proposed_tx_version: stored_tx_version,
-                // Regular sends stay padded; only migration children opt in.
-                unpadded_orchard_pool_bundles: false,
                 network,
                 account_id,
                 send_flow_id: send_flow_id.to_string(),
@@ -828,7 +887,6 @@ pub fn estimate_fee(
         &migration_locks,
         &spend_policy,
         proposed_tx_version,
-        false,
     )?;
     // Same two-pass rule as `propose_send`, so the displayed estimate equals
     // the stored proposal's fee.
@@ -844,7 +902,6 @@ pub fn estimate_fee(
                 &migration_locks,
                 &spend_policy,
                 tx_version,
-                false,
             )
         });
 
@@ -1253,40 +1310,20 @@ async fn execute_stored_proposal(
                 .clone()
                 .with_proposed_version(stored.proposed_tx_version);
 
-            let txids = match (spend_params_path, output_params_path) {
-                (Some(sp), Some(op)) if !sp.is_empty() && !op.is_empty() => {
-                    let prover =
-                        LocalTxProver::new(std::path::Path::new(sp), std::path::Path::new(op));
-                    create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
-                        &mut db,
-                        &network,
-                        &prover,
-                        &prover,
-                        &wallet::SpendingKeys::from_unified_spending_key(usk),
-                        OvkPolicy::Sender,
-                        &proposal,
-                        Some(live_expiry_height),
-                    )
-                    .map_err(|e| format!("Create TX failed: {e}"))?
-                }
-                _ => {
-                    let spend_prover = NoOpSpendProver;
-                    let output_prover = NoOpOutputProver;
-                    create_proposed_transactions::<_, _, Infallible, _, Infallible, _>(
-                        &mut db,
-                        &network,
-                        &spend_prover,
-                        &output_prover,
-                        &wallet::SpendingKeys::from_unified_spending_key(usk),
-                        OvkPolicy::Sender,
-                        &proposal,
-                        Some(live_expiry_height),
-                    )
-                    .map_err(|e| format!("Create TX failed: {e}"))?
-                }
-            };
+            let spend_params_path = spend_params_path.filter(|path| !path.is_empty());
+            let output_params_path = output_params_path.filter(|path| !path.is_empty());
+            let txid = super::pczt::create_and_store_payment_transaction(
+                &mut db,
+                &network,
+                account_id,
+                &proposal,
+                &usk,
+                live_expiry_height,
+                spend_params_path,
+                output_params_path,
+            )?;
             // USK and derived spending keys dropped here, before broadcast.
-            Ok::<_, String>(txids)
+            Ok::<_, String>(vec![txid])
         });
     let txids = match create_result {
         Ok(txids) => {
@@ -1308,7 +1345,6 @@ async fn execute_stored_proposal(
         }
     };
 
-    let txids: Vec<TxId> = txids.iter().cloned().collect();
     Ok(
         broadcast_created_transactions(db_path, lightwalletd_url, &txids, "send")
             .await
@@ -2859,9 +2895,8 @@ fn build_shielding_proposal(
         .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
-    // Regular shielding transactions stay padded (`DEFAULT`); only migration
-    // children opt in to unpadded Orchard-pool bundles.
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, None, false);
+    let (change_strategy, input_selector) =
+        zip317_helper::<WalletDatabase>(None, None, BundlePadding::DEFAULT);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -2912,7 +2947,6 @@ fn propose_send_with_reserved_notes(
     migration_locks: &BTreeSet<(String, u32)>,
     spend_policy: &SpendPolicy,
     proposed_tx_version: Option<TxVersion>,
-    unpadded_orchard_pool_bundles: bool,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
     let confirmations_policy = ConfirmationsPolicy::default();
     let (target_height, anchor_height) = db
@@ -2927,7 +2961,7 @@ fn propose_send_with_reserved_notes(
     let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(
         None,
         proposed_tx_version,
-        unpadded_orchard_pool_bundles,
+        super::PAYMENT_BUNDLE_PADDING,
     );
 
     input_selector
@@ -3278,7 +3312,7 @@ fn build_send_max_proposal(
         }
         None => None,
     };
-    let fee_rule = ConservativeZip317FeeRule;
+    let fee_rule = WalletFeeRule::new(super::PAYMENT_BUNDLE_PADDING);
 
     if matches!(recipient_address, Address::Transparent(_)) {
         return build_transparent_recipient_send_max_proposal(
@@ -5521,13 +5555,13 @@ where
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
     proposed_tx_version: Option<TxVersion>,
-    unpadded_orchard_pool_bundles: bool,
+    orchard_pool_padding: BundlePadding,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
     GreedyInputSelector<DbT>,
 ) {
     let change_strategy = MultiOutputChangeStrategy::new(
-        ConservativeZip317FeeRule,
+        WalletFeeRule::new(orchard_pool_padding),
         change_memo,
         ShieldedPool::Orchard,
         DustOutputPolicy::default(),
@@ -5536,9 +5570,7 @@ fn zip317_helper<DbT: InputSource>(
             Zatoshis::const_from_u64(1000_0000),
         ),
     );
-    // Migration children only: count exactly the requested actions so the
-    // proposal's fee matches the unpadded bundle the PCZT builder produces.
-    let change_strategy = if unpadded_orchard_pool_bundles {
+    let change_strategy = if orchard_pool_padding == BundlePadding::UNPADDED {
         change_strategy.with_unpadded_orchard_pool_bundles()
     } else {
         change_strategy
@@ -5552,12 +5584,10 @@ fn zip317_helper<DbT: InputSource>(
 }
 
 // ======================== No-op Sapling Provers ========================
-// Used for Orchard-only transactions where Sapling params are not
-// available. `create_proposed_transactions` only invokes the
-// Sapling prover methods for proposals that actually contain a
-// Sapling bundle, so for an Orchard-only proposal these methods
-// should never be called. If they are called we log and fail noisily
-// rather than producing a silently-invalid all-zero proof.
+// Used for transparent shielding when Sapling params are unavailable.
+// Orchard/Ironwood-only proposals never invoke these methods. If one
+// is called, log and fail noisily rather than producing a silently
+// invalid all-zero proof.
 
 use sapling_crypto::{
     bundle::GrothProofBytes,

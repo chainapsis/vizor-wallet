@@ -986,7 +986,7 @@ fn fabricated_shielded_spend_proposal(
         recipient,
         None,
         ReceivedNotes::new(sapling_notes, orchard_notes, vec![]),
-        ConservativeZip317FeeRule,
+        WalletFeeRule::new(super::super::PAYMENT_BUNDLE_PADDING),
     )
     .expect("fabricated proposal should build")
 }
@@ -1047,8 +1047,8 @@ fn fabricated_proposal_with_payment_pool(payment_pool: PoolType) -> Proposal<Wal
 
     // No change: amount + fee must equal the single 100_000-zat input, or
     // `Proposal::single_step` rejects the unbalanced proposal.
-    let fee = Zatoshis::const_from_u64(10_000);
-    let amount = Zatoshis::const_from_u64(90_000);
+    let fee = Zatoshis::const_from_u64(20_000);
+    let amount = Zatoshis::const_from_u64(80_000);
     let payment = Payment::new(to, Some(amount), None, None, None, vec![]).unwrap();
     let request = TransactionRequest::new(vec![payment]).unwrap();
     // `ShieldedInputs` wants `ReceivedNote<_, wallet::Note>`; wrap the
@@ -1064,7 +1064,7 @@ fn fabricated_proposal_with_payment_pool(payment_pool: PoolType) -> Proposal<Wal
         Some(shielded_inputs),
         BlockHeight::from_u32(900),
         balance,
-        ConservativeZip317FeeRule,
+        WalletFeeRule::new(super::super::PAYMENT_BUNDLE_PADDING),
         TargetHeight::from(BlockHeight::from_u32(1_000)),
         ConfirmationsPolicy::default(),
         false,
@@ -1862,6 +1862,52 @@ fn migration_child_bundle_shape_and_fee_are_two_plus_one() {
 }
 
 #[test]
+fn payment_fee_rule_prices_four_actions_per_orchard_family_bundle() {
+    let fee_rule = WalletFeeRule::new(super::super::PAYMENT_BUNDLE_PADDING);
+    let fee_for_actions = |orchard_action_count, ironwood_action_count| {
+        fee_rule
+            .fee_required(
+                &WalletNetwork::Regtest,
+                BlockHeight::from_u32(120),
+                std::iter::empty::<TransparentInputSize>(),
+                std::iter::empty::<usize>(),
+                0,
+                0,
+                orchard_action_count,
+                ironwood_action_count,
+            )
+            .unwrap()
+    };
+
+    assert_eq!(u64::from(fee_for_actions(1, 0)), 20_000);
+    assert_eq!(u64::from(fee_for_actions(0, 1)), 20_000);
+    assert_eq!(u64::from(fee_for_actions(1, 1)), 40_000);
+    assert_eq!(u64::from(fee_for_actions(0, 0)), 10_000);
+}
+
+#[test]
+fn payment_padding_builds_four_orchard_and_ironwood_actions() {
+    let bundle_type = super::super::PAYMENT_BUNDLE_PADDING.bundle_type();
+    let orchard_actions = bundle_type
+        .num_actions(
+            orchard::bundle::BundleVersion::orchard_v2().default_flags(),
+            1,
+            1,
+        )
+        .unwrap();
+    let ironwood_actions = bundle_type
+        .num_actions(
+            orchard::bundle::BundleVersion::ironwood_v3().default_flags(),
+            1,
+            1,
+        )
+        .unwrap();
+
+    assert_eq!(orchard_actions, 4);
+    assert_eq!(ironwood_actions, 4);
+}
+
+#[test]
 fn conservative_zip317_fee_rule_clamps_known_transparent_inputs_to_p2pkh_size() {
     let network = WalletNetwork::Regtest;
     let height = BlockHeight::from_u32(1_000);
@@ -2122,7 +2168,7 @@ fn transparent_recipient_send_max_proposal_spends_shielded_notes() {
         recipient,
         None,
         ReceivedNotes::new(vec![received_note], vec![], vec![]),
-        ConservativeZip317FeeRule,
+        WalletFeeRule::new(super::super::PAYMENT_BUNDLE_PADDING),
     )
     .expect("transparent-recipient send-max should build from shielded notes");
 
@@ -2175,7 +2221,7 @@ fn transparent_recipient_send_max_supports_ironwood_only_inputs() {
         transparent_recipient,
         None,
         ReceivedNotes::new(vec![], vec![], vec![received_note]),
-        ConservativeZip317FeeRule,
+        WalletFeeRule::new(super::super::PAYMENT_BUNDLE_PADDING),
     )
     .expect("transparent-recipient send-max should build from Ironwood notes");
 

@@ -75,7 +75,7 @@ use std::convert::Infallible;
 use std::sync::OnceLock;
 
 use zcash_client_backend::data_api::WalletWrite;
-use zcash_primitives::transaction::{builder::BundlePadding, Transaction, TxId};
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_proofs::prover::LocalTxProver;
 
 use crate::wallet::db::with_wallet_db_write_lock;
@@ -308,14 +308,9 @@ pub async fn create_pczt_from_proposal(
         )
         .map_err(|e| format!("Revalidate hardware proposal input locks: {e:?}"))?;
         super::proposal_locks::update_expiry(db_path, current_lock.owner, live_expiry_height)?;
-        // Build with the padding policy the proposal was fee-counted against
-        // (see `StoredProposal::unpadded_orchard_pool_bundles`), so the
-        // builder's balance check matches the proposal's fee.
-        let bundle_padding = if stored.unpadded_orchard_pool_bundles {
-            BundlePadding::UNPADDED
-        } else {
-            BundlePadding::DEFAULT
-        };
+        // Normal hardware payments use the same four-action padding floor
+        // that the proposal fee was calculated against.
+        let bundle_padding = super::PAYMENT_BUNDLE_PADDING;
         // The transaction version rides on the proposal; expiry is pinned to
         // the live chain tip obtained immediately before this DB operation.
         let proposal_for_pczt = stored
@@ -440,6 +435,112 @@ pub fn add_proofs_to_pczt(
         .finish()
         .serialize()
         .map_err(|e| format!("Serialize PCZT with proofs: {e:?}"))
+}
+
+/// Builds, proves, signs, and stores one ordinary software payment with the
+/// wallet's payment padding policy.
+///
+/// The pinned librustzcash software-construction API always uses its default
+/// two-action padding. Its PCZT API accepts an explicit [`BundlePadding`], so
+/// software and hardware payments share this path when Vizor raises the
+/// privacy floor.
+///
+/// [`BundlePadding`]: zcash_primitives::transaction::builder::BundlePadding
+#[allow(clippy::too_many_arguments)]
+pub(super) fn create_and_store_payment_transaction(
+    wallet_db: &mut super::WalletDatabase,
+    network: &WalletNetwork,
+    account_id: zcash_client_sqlite::AccountUuid,
+    proposal: &zcash_client_backend::proposal::Proposal<
+        super::send::WalletFeeRule,
+        zcash_client_sqlite::ReceivedNoteId,
+    >,
+    usk: &zcash_keys::keys::UnifiedSpendingKey,
+    expiry_height: zcash_protocol::consensus::BlockHeight,
+    spend_params_path: Option<&str>,
+    output_params_path: Option<&str>,
+) -> Result<TxId, String> {
+    use zcash_client_backend::data_api::wallet::{
+        create_pczt_from_proposal as zcb_create_pczt, extract_and_store_transaction_from_pczt,
+    };
+    use zcash_client_backend::wallet::OvkPolicy;
+
+    let base = zcb_create_pczt::<_, _, Infallible, _, Infallible, _>(
+        wallet_db,
+        network,
+        account_id,
+        OvkPolicy::Sender,
+        proposal,
+        Some(expiry_height),
+        super::PAYMENT_BUNDLE_PADDING,
+    )
+    .map_err(|e| format!("Create payment PCZT: {e}"))?
+    .serialize()
+    .map_err(|e| format!("Serialize payment PCZT: {e:?}"))?;
+
+    let proofed = add_proofs_to_pczt(&base, spend_params_path, output_params_path)?;
+    let signed = sign_payment_pczt_with_usk(&proofed, usk)?;
+    let consensus_branch_id = *signed.global().consensus_branch_id();
+    let orchard_vk = orchard_verifying_key_for_consensus_branch(consensus_branch_id);
+    let sapling_vks = load_sapling_verifying_keys(spend_params_path, output_params_path);
+    let sapling_vk_pair = sapling_vks.as_ref().map(|(spend, output)| (spend, output));
+
+    extract_and_store_transaction_from_pczt::<_, zcash_client_sqlite::ReceivedNoteId>(
+        wallet_db,
+        signed,
+        sapling_vk_pair,
+        Some(&orchard_vk),
+    )
+    .map_err(|e| format!("Store payment PCZT: {e}"))
+}
+
+fn sign_payment_pczt_with_usk(
+    pczt_bytes: &[u8],
+    usk: &zcash_keys::keys::UnifiedSpendingKey,
+) -> Result<pczt::Pczt, String> {
+    use pczt::roles::signer::Signer;
+
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| format!("Parse payment PCZT: {e:?}"))?;
+    let orchard_indices = pczt
+        .orchard()
+        .actions()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, action)| action.spend().spend_auth_sig().is_none().then_some(index))
+        .collect::<Vec<_>>();
+    let ironwood_indices = pczt
+        .ironwood()
+        .actions()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, action)| action.spend().spend_auth_sig().is_none().then_some(index))
+        .collect::<Vec<_>>();
+
+    let mut signer = Signer::new(pczt).map_err(|e| format!("Create payment PCZT signer: {e:?}"))?;
+    for index in 0.. {
+        match signer.sign_sapling(index, &usk.sapling().expsk.ask) {
+            Err(pczt::roles::signer::Error::InvalidIndex) => break,
+            Ok(())
+            | Err(pczt::roles::signer::Error::SaplingSign(
+                sapling_crypto::pczt::SignerError::WrongSpendAuthorizingKey,
+            )) => {}
+            Err(e) => return Err(format!("Sign payment Sapling spend {index}: {e:?}")),
+        }
+    }
+
+    let orchard_ask = orchard::keys::SpendAuthorizingKey::from(usk.orchard());
+    for index in orchard_indices {
+        signer
+            .sign_orchard(index, &orchard_ask)
+            .map_err(|e| format!("Sign payment Orchard action {index}: {e:?}"))?;
+    }
+    for index in ironwood_indices {
+        signer
+            .sign_ironwood(index, &orchard_ask)
+            .map_err(|e| format!("Sign payment Ironwood action {index}: {e:?}"))?;
+    }
+
+    Ok(signer.finish())
 }
 
 /// Redact information from a PCZT that the signer role doesn't need

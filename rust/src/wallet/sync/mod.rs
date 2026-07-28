@@ -452,6 +452,16 @@ pub fn validate_address(address: &str) -> Result<String, String> {
 
 // ======================== Send ========================
 
+/// Privacy padding for ordinary Orchard-family payments.
+///
+/// Orchard-to-Ironwood migration transactions deliberately use
+/// `BundlePadding::UNPADDED` instead.
+const PAYMENT_BUNDLE_PADDING: zcash_primitives::transaction::builder::BundlePadding =
+    zcash_primitives::transaction::builder::BundlePadding {
+        bundle_required: false,
+        pad_to_minimum: Some(4),
+    };
+
 /// Propose a transfer. Returns (proposal_id, needs_sapling_params, fee_zatoshi).
 /// The proposal is stored internally and referenced by proposal_id for execute_proposal.
 // In-memory proposal store (proposals are short-lived, between
@@ -469,10 +479,6 @@ pub(super) struct StoredProposal {
         zcash_client_sqlite::ReceivedNoteId,
     >,
     pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
-    /// When `true`, the proposal was fee-counted with unpadded Orchard-pool
-    /// bundles (migration children only) and the PCZT must be built with
-    /// `BundlePadding::UNPADDED` to balance. See `zip317_helper`.
-    pub unpadded_orchard_pool_bundles: bool,
     pub network: WalletNetwork,
     pub account_id: AccountUuid,
     pub send_flow_id: String,
