@@ -317,11 +317,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? 'importing'
         : 'default';
     final backgroundTheme = isDark ? 'dark' : 'light';
-    final ironwoodAnnouncement = ref
-        .watch(ironwoodMigrationAnnouncementProvider)
-        .value;
+    final ironwoodAnnouncementAsync = ref.watch(
+      ironwoodMigrationAnnouncementProvider,
+    );
+    final ironwoodAnnouncement = ironwoodAnnouncementAsync.value;
     final latestVisibleIronwoodAnnouncement =
-        (ironwoodAnnouncement?.visible ?? false) ? ironwoodAnnouncement : null;
+        (ironwoodAnnouncement?.visible ?? false) &&
+            ironwoodAnnouncement?.accountUuid == activeAccountUuid
+        ? ironwoodAnnouncement
+        : null;
     if (_visibleIronwoodAnnouncement?.accountUuid != null &&
         _visibleIronwoodAnnouncement?.accountUuid != activeAccountUuid) {
       _visibleIronwoodAnnouncement = null;
@@ -332,6 +336,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (latestVisibleIronwoodAnnouncement != null &&
         latestIronwoodScope != _suppressedIronwoodAnnouncementScope) {
       _visibleIronwoodAnnouncement = latestVisibleIronwoodAnnouncement;
+    }
+    final announcementResolvedHidden = switch (ironwoodAnnouncementAsync) {
+      AsyncData(:final value) => !value.visible,
+      _ => false,
+    };
+    final preserveAnnouncementDuringRefresh =
+        !sync.hasAccountScopedData ||
+        sync.isSyncing ||
+        sync.isBackgroundMode ||
+        sync.failure != null ||
+        sync.error != null;
+    if (announcementResolvedHidden && !preserveAnnouncementDuringRefresh) {
+      _visibleIronwoodAnnouncement = null;
     }
     final visibleIronwoodAnnouncement = _visibleIronwoodAnnouncement;
     return AppDesktopBackdropShell(

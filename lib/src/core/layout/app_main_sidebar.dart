@@ -529,7 +529,11 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final needsInput = isHardware && status.phase == 'ready_to_migrate';
+    final signingPartIndices = status.currentSigningPartIndices;
+    final needsInput =
+        isHardware &&
+        status.phase == kIronwoodMigrationReadyToMigratePhase &&
+        (signingPartIndices == null || signingPartIndices.isNotEmpty);
     final orchardLabel = hideAmountIfPrivacyMode(
       '${ZecAmount.fromZatoshi(orchardBalance).balance.amountText} ZEC',
       privacyModeEnabled: privacyModeEnabled,

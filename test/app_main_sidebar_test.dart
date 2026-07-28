@@ -163,7 +163,7 @@ void main() {
     expect(find.textContaining('/3'), findsNothing);
   });
 
-  testWidgets('sidebar requests input only for Keystone migration', (
+  testWidgets('sidebar keeps Keystone migration automatic after signing', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -177,12 +177,52 @@ void main() {
     );
     await tester.pump();
 
+    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('Needs input'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('sidebar_migration_progress_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sidebar requests input for pending Keystone signing parts', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        accountState: _hardwareAccountState,
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationNeedsInputStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
     expect(find.text('Needs input'), findsOneWidget);
     expect(find.text('Migrating...'), findsNothing);
     expect(
       find.byKey(const ValueKey('sidebar_migration_progress_button')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('sidebar preserves legacy Keystone needs-input status', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        accountState: _hardwareAccountState,
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _legacyReadyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Needs input'), findsOneWidget);
+    expect(find.text('Migrating...'), findsNothing);
   });
 
   testWidgets('sidebar keeps Home active and clickable on send routes', (
@@ -1040,7 +1080,10 @@ const _hardwareAccountState = AccountState(
   activeAddress: 'u1accountsaddress',
 );
 
-final _readyMigrationStatus = rust_sync.MigrationStatus(
+rust_sync.MigrationStatus _buildReadyMigrationStatus({
+  int signedChildPcztCount = 6,
+  List<int>? currentSigningPartIndices = const [],
+}) => rust_sync.MigrationStatus(
   phase: 'ready_to_migrate',
   activeRunId: 'run-1',
   targetValuesZatoshi: frb.Uint64List.fromList([
@@ -1060,14 +1103,29 @@ final _readyMigrationStatus = rust_sync.MigrationStatus(
   broadcastedTxCount: 0,
   confirmedTxCount: 0,
   totalCount: 6,
-  signedChildPcztCount: 6,
+  signedChildPcztCount: signedChildPcztCount,
   pendingSplitStageCount: 0,
   canAbandon: false,
   signingBatchLimit: 50,
   scheduleMeanDelayBlocks: 144,
   scheduleMaxDelayBlocks: 576,
+  currentSigningPartIndices: currentSigningPartIndices == null
+      ? null
+      : frb.Uint32List.fromList(currentSigningPartIndices),
   scheduledBroadcasts: const [],
   parts: const [],
+);
+
+final _readyMigrationStatus = _buildReadyMigrationStatus();
+
+final _readyMigrationNeedsInputStatus = _buildReadyMigrationStatus(
+  signedChildPcztCount: 0,
+  currentSigningPartIndices: const [0, 1, 2, 3, 4, 5],
+);
+
+final _legacyReadyMigrationStatus = _buildReadyMigrationStatus(
+  signedChildPcztCount: 0,
+  currentSigningPartIndices: null,
 );
 
 final _mixedMigrationStatus = rust_sync.MigrationStatus(
