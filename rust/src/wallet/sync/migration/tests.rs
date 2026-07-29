@@ -1511,7 +1511,7 @@ fn planner_accepts_only_zip318_one_two_five_denominations() {
 }
 
 #[test]
-fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
+fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries() {
     assert_eq!(
         zip318_anchor_boundary_at_or_before(WalletNetwork::Test, 143),
         None
@@ -1527,15 +1527,15 @@ fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
 
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000),
-        vec![5472, 5328, 5184, 5040]
+        vec![5616, 5472, 5328, 5184, 5040]
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5600, 5000),
-        Vec::<u32>::new()
+        vec![5616]
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5900, 5600, 5000),
-        vec![5616]
+        vec![5760, 5616]
     );
 
     assert!(zip318_anchor_boundary_is_candidate(
@@ -1545,13 +1545,23 @@ fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
         5000,
         5000
     ));
-    assert!(!zip318_anchor_boundary_is_candidate(
+    assert!(zip318_anchor_boundary_is_candidate(
         WalletNetwork::Test,
         5616,
         5700,
         5000,
         5000
     ));
+    assert_eq!(
+        zip318_anchor_candidate_boundaries_with_policy(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            5700,
+            5000,
+            5000,
+        ),
+        vec![5472, 5328, 5184, 5040]
+    );
     assert!(!zip318_anchor_boundary_is_candidate(
         WalletNetwork::Test,
         4896,
@@ -1621,11 +1631,11 @@ fn proof_retry_waits_until_the_next_boundary_is_trusted() {
 fn proof_readiness_ages_the_boundary_containing_the_prepared_note() {
     assert_eq!(
         estimated_proof_ready_height(WalletNetwork::Main, 142).unwrap(),
-        290
+        146
     );
     assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Main, 142).unwrap(),
-        146
+        2
     );
     assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Regtest, 10).unwrap(),
@@ -1672,7 +1682,7 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
     }
     assert_eq!(
         zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5600, 5000),
-        None
+        Some(5616)
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Regtest, 503, 501, 500)[0],
@@ -2686,6 +2696,16 @@ fn legacy_and_ninety_minute_policies_keep_distinct_parameters() {
             ZIP318_TRANSFER_MAX_DELAY_BLOCKS
         )
     );
+    assert_eq!(
+        schedule_parameters_with_policy(
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+        ),
+        (
+            NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+            ZIP318_TRANSFER_MAX_DELAY_BLOCKS
+        )
+    );
 }
 
 #[test]
@@ -2716,7 +2736,7 @@ fn mainnet_run_reads_its_persisted_timing_policy() {
 }
 
 #[test]
-fn new_mainnet_draft_persists_ninety_minute_policy() {
+fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -2738,7 +2758,7 @@ fn new_mainnet_draft_persists_ninety_minute_policy() {
 
     assert_eq!(
         timing_policy_for_run(&db_path, &run_id, WalletNetwork::Main).unwrap(),
-        MigrationTimingPolicy::Standard90Minutes,
+        MigrationTimingPolicy::Standard90MinutesLatestAnchor,
     );
 }
 
@@ -2913,6 +2933,55 @@ fn fast_testnet_adoption_preserves_signed_preparation_schedule() {
         .unwrap();
     assert_eq!(heights.len(), 2);
     assert_eq!(heights, vec![150, 200]);
+}
+
+#[test]
+fn configured_latest_anchor_policy_does_not_retime_existing_runs() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    for (account_uuid, run_id, timing_policy, retry_height) in [
+        ("account-standard", "run-standard", "standard", 290),
+        (
+            "account-standard-90m",
+            "run-standard-90m",
+            "standard_90m",
+            434,
+        ),
+    ] {
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json,
+                  timing_policy, proof_retry_height)
+                 VALUES (?1, ?2, 'main', 'wallet.db', ?3, 1, 1, '[100]', ?4, ?5)"
+            ),
+            params![
+                run_id,
+                account_uuid,
+                PHASE_READY_TO_MIGRATE,
+                timing_policy,
+                retry_height,
+            ],
+        )
+        .unwrap();
+
+        adopt_configured_timing_policy_for_active_run(&conn, account_uuid, WalletNetwork::Main)
+            .unwrap();
+
+        let persisted: (String, u32) = conn
+            .query_row(
+                &format!(
+                    "SELECT timing_policy, proof_retry_height
+                     FROM {RUNS_TABLE}
+                     WHERE run_id = ?1"
+                ),
+                params![run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(persisted, (timing_policy.to_string(), retry_height));
+    }
 }
 
 #[test]

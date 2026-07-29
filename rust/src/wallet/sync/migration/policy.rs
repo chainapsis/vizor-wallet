@@ -29,6 +29,7 @@ static FAST_TESTNET_MIGRATION_ENABLED: AtomicBool = AtomicBool::new(false);
 pub(crate) enum MigrationTimingPolicy {
     Standard,
     Standard90Minutes,
+    Standard90MinutesLatestAnchor,
     FastTestnet,
 }
 
@@ -37,6 +38,7 @@ impl MigrationTimingPolicy {
         match self {
             Self::Standard => "standard",
             Self::Standard90Minutes => "standard_90m",
+            Self::Standard90MinutesLatestAnchor => "standard_90m_latest_anchor",
             Self::FastTestnet => "fast_testnet",
         }
     }
@@ -45,10 +47,12 @@ impl MigrationTimingPolicy {
         match value {
             "standard" => Ok(Self::Standard),
             "standard_90m" => Ok(Self::Standard90Minutes),
+            "standard_90m_latest_anchor" => Ok(Self::Standard90MinutesLatestAnchor),
             "fast_testnet" => Ok(Self::FastTestnet),
             _ => Err(format!("Unsupported migration timing policy: {value}")),
         }
     }
+
 }
 
 pub(crate) fn configure_fast_testnet_migration(enabled: bool) {
@@ -63,7 +67,7 @@ pub(crate) fn configured_timing_policy(network: WalletNetwork) -> MigrationTimin
     } else if network == WalletNetwork::Regtest {
         MigrationTimingPolicy::Standard
     } else {
-        MigrationTimingPolicy::Standard90Minutes
+        MigrationTimingPolicy::Standard90MinutesLatestAnchor
     }
 }
 
@@ -89,7 +93,11 @@ fn schedule_parameters_with_policy(
             FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS,
         ),
         WalletNetwork::Main | WalletNetwork::Test
-            if timing_policy == MigrationTimingPolicy::Standard90Minutes =>
+            if matches!(
+                timing_policy,
+                MigrationTimingPolicy::Standard90Minutes
+                    | MigrationTimingPolicy::Standard90MinutesLatestAnchor
+            ) =>
         {
             (
                 NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
