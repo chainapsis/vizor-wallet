@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import 'network_config.dart';
@@ -33,15 +31,8 @@ const kVizorZcashTransactionRelayUrlIronwoodMasquerade = String.fromEnvironment(
   kVizorZcashTransactionRelayUrlIronwoodMasqueradeEnvKey,
 );
 
-// TODO: Replace these temporary plaintext Zakura RPC endpoints with managed
-// HTTPS submission-only relay URLs.
-const kTemporaryZakuraMainnetTransactionRelayUrls = <String>[
-  'http://104.131.184.123:8232',
-  'http://64.227.44.93:8232',
-  'http://139.59.64.115:8232',
-];
-
-final _transactionRelayRandom = Random.secure();
+const kZakuraMainnetTransactionRelayUrl =
+    'https://zakura-broadcast.valargroup.dev';
 
 class RpcEndpointConfig {
   const RpcEndpointConfig({
@@ -253,7 +244,7 @@ bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
 ///
 /// Custom endpoint intent always keeps transaction submission on the selected
 /// lightwalletd, even when its URL happens to match a built-in preset. Mainnet
-/// falls back to the temporary Zakura pool when no build-time URL is supplied.
+/// falls back to the Zakura broadcast endpoint when no build URL is supplied.
 String? transactionRelayUrlForPrimaryEndpoint(
   RpcEndpointConfig primary, {
   String mainUrl = kVizorZcashTransactionRelayUrlMain,
@@ -292,8 +283,7 @@ String? transactionRelayUrlForPrimaryEndpoint(
   final trimmed = configured.trim();
   if (trimmed.isNotEmpty) return trimmed;
   if (!ironwoodMasquerade && primary.network == ZcashNetwork.mainnet) {
-    return kTemporaryZakuraMainnetTransactionRelayUrls[_transactionRelayRandom
-        .nextInt(kTemporaryZakuraMainnetTransactionRelayUrls.length)];
+    return kZakuraMainnetTransactionRelayUrl;
   }
   return null;
 }

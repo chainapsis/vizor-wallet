@@ -375,18 +375,13 @@ void main() {
       );
     });
 
-    test('uses the temporary Zakura pool when the main build URL is empty', () {
-      expect(kTemporaryZakuraMainnetTransactionRelayUrls, [
-        'http://104.131.184.123:8232',
-        'http://64.227.44.93:8232',
-        'http://139.59.64.115:8232',
-      ]);
+    test('uses the Zakura endpoint when the main build URL is empty', () {
       expect(
         transactionRelayUrlForPrimaryEndpoint(
           defaultRpcEndpointConfig('main'),
           mainUrl: '   ',
         ),
-        isIn(kTemporaryZakuraMainnetTransactionRelayUrls),
+        'https://zakura-broadcast.valargroup.dev',
       );
     });
 
