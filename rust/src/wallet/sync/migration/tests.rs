@@ -1512,6 +1512,8 @@ fn planner_accepts_only_zip318_one_two_five_denominations() {
 
 #[test]
 fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries() {
+    assert_eq!(ZIP318_ANCHOR_AGE_CAP, 4);
+
     assert_eq!(
         zip318_anchor_boundary_at_or_before(WalletNetwork::Test, 143),
         None
@@ -1575,6 +1577,23 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
         5700,
         1,
         5000
+    ));
+
+    let latest_boundary = ZIP318_ANCHOR_BUCKET_MODULUS * (ZIP318_ANCHOR_AGE_CAP.saturating_add(2));
+    let capped_candidates =
+        zip318_anchor_candidate_boundaries(WalletNetwork::Test, latest_boundary, 1, 0);
+    assert_eq!(capped_candidates.len(), ZIP318_ANCHOR_AGE_CAP as usize + 1);
+    assert_eq!(capped_candidates.first(), Some(&latest_boundary));
+    assert_eq!(
+        capped_candidates.last(),
+        Some(&(latest_boundary - ZIP318_ANCHOR_BUCKET_MODULUS * ZIP318_ANCHOR_AGE_CAP))
+    );
+    assert!(!zip318_anchor_boundary_is_candidate(
+        WalletNetwork::Test,
+        latest_boundary - ZIP318_ANCHOR_BUCKET_MODULUS * (ZIP318_ANCHOR_AGE_CAP + 1),
+        latest_boundary,
+        1,
+        0,
     ));
 }
 
