@@ -767,6 +767,30 @@ func migrationPreparationStateNeedsForegroundNotification(
   state == 2 || state == 3 || state == 5
 }
 
+func migrationPreparationForegroundRecoveryNotificationEvent(
+  scope: String,
+  preparationState: UInt8?
+) -> MigrationPreparationNotificationEvent? {
+  guard let preparationState else {
+    return MigrationPreparationNotificationEvent(
+      scope: scope,
+      kind: .needsForegroundRecovery,
+      fingerprint: "foreground-preparation-inspection-failed"
+    )
+  }
+  guard migrationPreparationStateNeedsForegroundNotification(
+    preparationState
+  ) else {
+    return nil
+  }
+  return MigrationPreparationNotificationEvent(
+    scope: scope,
+    kind: .needsForegroundRecovery,
+    fingerprint:
+      "foreground-preparation-required:state-\(preparationState)"
+  )
+}
+
 func shouldTryStoredTransactionIdByteOrder(
   after result: Result<
     NativeLightwalletdTransactionObservation,
@@ -1517,13 +1541,7 @@ final class BackgroundMigrationPreparationManager {
       break
     case .foregroundOnly:
       markForegroundContinuationsReady()
-      notifyPreparationNeedsForeground()
-      BGTaskScheduler.shared.cancel(
-        taskRequestWithIdentifier: Self.taskIdentifier
-      )
-      recordSchedulingState("waiting_for_foreground")
-      cancelWatchdog()
-      task.setTaskCompleted(success: true)
+      finishForegroundOnlyTask(task)
       return
     case .complete:
       BGTaskScheduler.shared.cancel(
@@ -1664,6 +1682,41 @@ final class BackgroundMigrationPreparationManager {
           return
         }
       }
+    }
+  }
+
+  private func finishForegroundOnlyTask(
+    _ task: BGContinuedProcessingTask
+  ) {
+    queue.async { [weak self] in
+      guard let self else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      let notificationsDisabled = self.stateLock.withPreparationLock {
+        self.notificationAuthorization.isDisabled
+      }
+      let notificationSubmitted =
+        !notificationsDisabled
+        && self.submitNotificationEvents(
+          self.foregroundRecoveryNotificationEvents(
+            ensureFallback: true
+          )
+        )
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
+      )
+      if notificationSubmitted {
+        self.recordSchedulingState("waiting_for_foreground")
+        self.cancelWatchdog()
+      } else {
+        // The watchdog was registered before this task launched. Keep it as a
+        // second recovery boundary when the immediate alert could not be
+        // registered, and report task failure instead of silently parking the
+        // migration.
+        self.recordSchedulingState("foreground_notification_failed")
+      }
+      task.setTaskCompleted(success: notificationSubmitted)
     }
   }
 
@@ -2305,10 +2358,35 @@ final class BackgroundMigrationPreparationManager {
   /// is scanning, so a stalled run is announced once and only speaks again when
   /// its progress actually changes.
   func notifyPreparationNeedsForeground() {
+    guard !stateLock.withPreparationLock({
+      notificationAuthorization.isDisabled
+    }) else {
+      return
+    }
+    let events = foregroundRecoveryNotificationEvents()
+    guard !events.isEmpty else { return }
+    notificationCoordinator.enqueue(events)
+  }
+
+  private func foregroundRecoveryNotificationEvents(
+    ensureFallback: Bool = false
+  ) -> [MigrationPreparationNotificationEvent] {
+    let fallback = MigrationPreparationNotificationEvent(
+      scope: "global",
+      kind: .needsForegroundRecovery,
+      fingerprint: "foreground-preparation-inspection-failed"
+    )
     guard let manifests = IronwoodMigrationBackgroundCredentialStore.loadAll()
-    else { return }
+    else {
+      return [fallback]
+    }
+    var events: [MigrationPreparationNotificationEvent] = []
     for manifest in manifests {
-      guard let runId = manifest.expectedRunId else { continue }
+      guard let runId = manifest.expectedRunId,
+        let scope = Self.preparationScope(for: manifest)
+      else {
+        continue
+      }
       var preparation = CMigrationPreparationProgress(
         state: 0,
         confirmation_count: 0,
@@ -2316,7 +2394,7 @@ final class BackgroundMigrationPreparationManager {
         completed_stage_count: 0,
         total_stage_count: 0
       )
-      guard
+      let inspectionSucceeded =
         zcash_inspect_migration_preparation(
           manifest.dbPath,
           manifest.network,
@@ -2324,18 +2402,17 @@ final class BackgroundMigrationPreparationManager {
           runId,
           &preparation
         ) == 0
-      else { continue }
-      // Recovery states are surfaced when read-only confirmation tracking
-      // cannot make progress without foreground wallet work.
-      guard migrationPreparationStateNeedsForegroundNotification(
-        preparation.state
-      ) else { continue }
-      postNeedsActionNotification(
-        reason: "foreground-preparation-required",
-        manifest: manifest,
-        progress: preparation
-      )
+      if let event = migrationPreparationForegroundRecoveryNotificationEvent(
+        scope: scope,
+        preparationState: inspectionSucceeded ? preparation.state : nil
+      ) {
+        events.append(event)
+      }
     }
+    if events.isEmpty && ensureFallback {
+      events.append(fallback)
+    }
+    return events
   }
 
   private func preparationResumeTarget()
