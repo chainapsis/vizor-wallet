@@ -146,10 +146,8 @@ fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
     BlockHeight::from_u32(current_tip.saturating_add(1))
 }
 
-fn should_resubmit_after_tip_refresh(_previous_tip_height: u64, _fresh_tip_height: u32) -> bool {
-    // This preserves the current behavior while giving the regression test a
-    // narrow seam for the post-batch ordering decision.
-    true
+fn should_resubmit_after_scan(pending_scan_blocks: u64) -> bool {
+    pending_scan_blocks == 0
 }
 
 fn scannable_batch_end(
@@ -1408,13 +1406,22 @@ async fn run_sync_impl(
 
     refresh_utxos(&mut client, db_data_path, &mut db, network, tip_height).await?;
 
+    let startup_pending_blocks = pending_scan_blocks(
+        &db.suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges before resubmit: {e}")))?,
+    );
+
     // 2.5. Resubmit any unmined, unexpired wallet txs now that we
-    // know the current tip. Matches the first of the three
-    // resubmit call sites in zcash-android-wallet-sdk's
-    // `processNewBlocks` (line 551). Best-effort: failures are
-    // logged inside the helper and must not abort the sync.
+    // know the current tip and have no pending scan ranges. Matches
+    // the first of the three resubmit call sites in
+    // zcash-android-wallet-sdk's `processNewBlocks` (line 551).
+    // Best-effort: failures are logged inside the helper and must not
+    // abort the sync.
     //
     // We reuse the same `client` instead of opening a fresh channel.
+    // When the wallet is behind, scanning must run first: a locally
+    // created transaction may already be mined in one of the pending
+    // blocks while its local `mined_height` is still `NULL`.
     //
     // Pre-flight cancel/mode check: `update_chain_tip` and
     // `open_lwd_channel` can take a couple of seconds under a
@@ -1423,6 +1430,12 @@ async fn run_sync_impl(
     // one more round of broadcasts after the UI asked us to quit.
     if !allow_resubmit {
         log::info!("[{}] sync: startup resubmit disabled", elapsed());
+    } else if !should_resubmit_after_scan(startup_pending_blocks) {
+        log::info!(
+            "[{}] sync: deferring startup resubmit until {} pending block(s) are scanned",
+            elapsed(),
+            startup_pending_blocks,
+        );
     } else if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
     {
         log::info!(
@@ -2053,9 +2066,12 @@ async fn run_sync_impl(
         // Enhancement
         run_enhancement(&mut client, &mut db, db_data_path, network).await?;
 
-        // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
-        // lines 593/701 call sites (end of verify batch / end of
-        // regular batch).
+        // Refresh the tip before deciding whether post-batch
+        // auto-resubmit is safe. This matches
+        // zcash-android-wallet-sdk's lines 593/701 call sites (end of
+        // verify batch / end of regular batch), with an additional
+        // ordering guard: resubmit only after all pending scan ranges
+        // are drained.
         //
         // We deliberately re-fetch the chain tip via
         // `get_latest_block` before each pass instead of reusing
@@ -2091,13 +2107,11 @@ async fn run_sync_impl(
             );
             return Ok(());
         }
-        match get_latest_block(&mut client)
+        let resubmit_tip_height = match get_latest_block(&mut client)
             .await
             .map(|tip| tip.height as u32)
         {
             Ok(fresh_tip_height) => {
-                let should_resubmit =
-                    should_resubmit_after_tip_refresh(current_tip_height, fresh_tip_height);
                 // Promote the fresh tip to the authoritative value
                 // so progress events and the final completion event
                 // use the latest chain height, not the one from
@@ -2131,28 +2145,18 @@ async fn run_sync_impl(
                         }
                     }
                 }
-                if allow_resubmit && should_resubmit {
-                    let _ = crate::wallet::sync::resubmit_pending_transactions(
-                        db_data_path,
-                        &mut client,
-                        fresh_tip_height,
-                        || {
-                            cancel.load(Ordering::Relaxed)
-                                || desired_mode.load(Ordering::SeqCst) != running_mode
-                        },
-                    )
-                    .await;
-                }
+                Some(fresh_tip_height)
             }
             Err(e) => {
                 log::warn!(
                     "[{}] sync: resubmit tip refresh failed, skipping pass: {e}",
                     elapsed(),
                 );
+                None
             }
-        }
+        };
         if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
-            log::info!("[{}] sync: exiting after resubmit pass", elapsed());
+            log::info!("[{}] sync: exiting after post-batch tip refresh", elapsed());
             return Ok(());
         }
 
@@ -2172,6 +2176,30 @@ async fn run_sync_impl(
                     as u64
             })
             .sum();
+        if allow_resubmit && should_resubmit_after_scan(remaining) {
+            if let Some(fresh_tip_height) = resubmit_tip_height {
+                let _ = crate::wallet::sync::resubmit_pending_transactions(
+                    db_data_path,
+                    &mut client,
+                    fresh_tip_height,
+                    || {
+                        cancel.load(Ordering::Relaxed)
+                            || desired_mode.load(Ordering::SeqCst) != running_mode
+                    },
+                )
+                .await;
+            }
+        } else if allow_resubmit {
+            log::debug!(
+                "[{}] sync: deferring post-batch resubmit until {} pending block(s) are scanned",
+                elapsed(),
+                remaining,
+            );
+        }
+        if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
+            log::info!("[{}] sync: exiting after resubmit pass", elapsed());
+            return Ok(());
+        }
         // Adjust initial_total if new ranges appeared (e.g. new account added mid-sync).
         // Use scanned + remaining as the true total, so progress never goes backward.
         let scanned_so_far = initial_total.saturating_sub(prev_remaining);
@@ -2498,13 +2526,12 @@ mod tests {
     }
 
     #[test]
-    fn post_batch_resubmit_runs_when_tip_did_not_advance() {
-        assert!(should_resubmit_after_tip_refresh(100, 100));
+    fn resubmit_runs_after_scan_catches_up() {
+        assert!(should_resubmit_after_scan(0));
     }
 
     #[test]
-    #[ignore = "known regression: resubmit runs before a newly discovered tip is scanned"]
-    fn post_batch_resubmit_waits_until_fresh_tip_is_scanned() {
+    fn resubmit_waits_until_fresh_tip_is_scanned() {
         // This is the ordering observed in the live wallet:
         //
         // 1. Enhancement checks transaction status against the previous tip.
@@ -2513,7 +2540,14 @@ mod tests {
         //
         // A transaction mined in block 101 therefore still has a local
         // `mined_height` of `NULL` when the resubmit query runs.
-        assert!(!should_resubmit_after_tip_refresh(100, 101));
+        assert!(!should_resubmit_after_scan(1));
+    }
+
+    #[test]
+    fn resubmit_waits_during_96_block_historical_batches() {
+        assert!(!should_resubmit_after_scan(
+            BATCH_SIZE_MIGRATION_ANCHOR_RETENTION as u64,
+        ));
     }
 
     #[test]
