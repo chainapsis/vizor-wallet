@@ -97,6 +97,15 @@ class WidgetbookApp extends StatelessWidget {
                   ],
                 ),
                 WidgetbookComponent(
+                  name: 'Mobile customise account',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Default',
+                      builder: buildMobileCustomiseAccountUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
                   name: 'Unlock',
                   useCases: [
                     WidgetbookUseCase(
