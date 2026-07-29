@@ -5,7 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rand::{rngs::OsRng, seq::SliceRandom, CryptoRng, Rng, RngCore};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
+use zcash_client_backend::data_api::{
+    anchor_retention::AnchorRetentionInterval, wallet::ConfirmationsPolicy,
+};
 use zeroize::Zeroizing;
 
 use crate::wallet::db::{
@@ -1478,19 +1480,36 @@ pub(crate) fn migration_anchor_retention_references_exist(
     .map_err(|e| format!("Check migration anchor retention references: {e}"))
 }
 
-/// Blocks between the checkpoints librustzcash keeps as durable anchors.
-///
-/// Mirrors `ANCHOR_RETENTION_INTERVAL` in
-/// `zcash_client_backend::data_api::ll::wallet`, which is private to that
-/// crate. The pinned revision uses 144; a released version of the crate used
-/// 288, so this must be re-checked whenever the librustzcash pin moves.
-const LIBRUSTZCASH_ANCHOR_RETENTION_INTERVAL: u32 = 144;
+pub(crate) fn migration_anchor_retention_references(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<BTreeSet<(String, u32)>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT run_id, checkpoint_height
+             FROM {RETAINED_ANCHORS_TABLE}
+             WHERE network = ?1 AND run_id != ?2
+             ORDER BY checkpoint_height, run_id"
+        ))
+        .map_err(|e| format!("Prepare migration anchor retention references: {e}"))?;
+    let references = stmt
+        .query_map(
+            params![network_name(network), RETENTION_RELEASE_SENTINEL_RUN_ID],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?)),
+        )
+        .map_err(|e| format!("Query migration anchor retention references: {e}"))?
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(|e| format!("Read migration anchor retention reference: {e}"))?;
+    Ok(references)
+}
 
 /// Whether librustzcash itself retains the checkpoint at `height` as a durable
-/// anchor, mirroring its `should_retain_anchor`.
+/// anchor under the production ZIP 318 grid.
 fn is_wallet_durable_anchor(height: u32, anchor_retention_floor: Option<BlockHeight>) -> bool {
     anchor_retention_floor.is_some_and(|floor| height >= u32::from(floor))
-        && height % LIBRUSTZCASH_ANCHOR_RETENTION_INTERVAL == 0
+        && height.is_multiple_of(AnchorRetentionInterval::ZIP_318.block_count().get())
 }
 
 pub(crate) fn stage_migration_anchor_retention_references(

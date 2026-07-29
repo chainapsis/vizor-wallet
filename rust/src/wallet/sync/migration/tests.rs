@@ -3708,6 +3708,10 @@ fn migration_anchor_retention_ownership_transfers_and_releases() {
     )
     .unwrap()
     .is_empty());
+    assert_eq!(
+        migration_anchor_retention_references(&db_path, WalletNetwork::Regtest).unwrap(),
+        desired,
+    );
 
     let desired = BTreeSet::from([
         ("run-2".to_string(), 101),
@@ -3733,6 +3737,11 @@ fn migration_anchor_retention_ownership_transfers_and_releases() {
     .unwrap();
     assert_eq!(released, vec![101]);
     assert!(migration_anchor_retention_references_exist(&db_path, WalletNetwork::Regtest).unwrap());
+    assert!(
+        migration_anchor_retention_references(&db_path, WalletNetwork::Regtest)
+            .unwrap()
+            .is_empty()
+    );
 
     finish_migration_anchor_retention_releases(&db_path, WalletNetwork::Regtest, &released)
         .unwrap();

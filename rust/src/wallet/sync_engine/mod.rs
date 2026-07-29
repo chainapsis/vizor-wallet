@@ -84,10 +84,6 @@ const BATCH_SIZE_FOREGROUND: u32 = 2000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 const BATCH_SIZE_FOREGROUND: u32 = 1000;
 const BATCH_SIZE_BACKGROUND: u32 = 300;
-// The wallet automatically keeps 100 recent checkpoints. Stay below that
-// pruning depth so the first checkpoint created in a scan batch is still
-// available for explicit migration retention after the batch completes.
-const BATCH_SIZE_MIGRATION_ANCHOR_RETENTION: u32 = 96;
 const TRANSPARENT_UTXO_RECENT_EXTERNAL_LIMIT: usize = 20;
 const TRANSPARENT_UTXO_SWEEP_EXTERNAL_LIMIT: usize = 20;
 
@@ -175,14 +171,6 @@ fn effective_base_batch_size(default_batch_size: u32) -> u32 {
     }
 
     default_batch_size
-}
-
-fn migration_anchor_retention_batch_size(base_batch_size: u32, required: bool) -> u32 {
-    if required {
-        base_batch_size.min(BATCH_SIZE_MIGRATION_ANCHOR_RETENTION)
-    } else {
-        base_batch_size
-    }
 }
 
 #[cfg(debug_assertions)]
@@ -1333,11 +1321,7 @@ async fn run_sync_impl(
     } else {
         BATCH_SIZE_FOREGROUND
     };
-    let unclamped_base_batch_size = effective_base_batch_size(default_batch_size);
-    let mut base_batch_size = migration_anchor_retention_batch_size(
-        unclamped_base_batch_size,
-        migration_anchor_retention_required,
-    );
+    let base_batch_size = effective_base_batch_size(default_batch_size);
     log::info!(
         "[{}] sync: starting (mode={}, base_batch={}, migration_anchor_retention={})",
         elapsed(),
@@ -1438,6 +1422,24 @@ async fn run_sync_impl(
 
     // 3. Download subtree roots (incremental)
     download_subtree_roots(&mut client, &mut db, network, tip_height).await?;
+
+    if migration_anchor_retention_required {
+        with_wallet_db_write_lock(
+            "sync_engine.reconcile_migration_anchor_checkpoints.initial",
+            || {
+                crate::wallet::sync::retain_prepared_note_anchor_checkpoints_after_scan(
+                    db_data_path,
+                    network,
+                    &mut db,
+                )
+            },
+        )
+        .map_err(|error| {
+            SyncError::other(format!(
+                "reconcile migration anchor checkpoints before scan: {error}"
+            ))
+        })?;
+    }
 
     // Rescue pass (VZR-89): demote orphaned scan ranges left below the surviving
     // accounts' birthday by a pre-fix account deletion, so a wallet bricked by
@@ -1670,6 +1672,9 @@ async fn run_sync_impl(
 
         let start = range.block_range().start;
         let range_end = range.block_range().end;
+        let frontier_height = u32::from(start)
+            .checked_sub(1)
+            .ok_or_else(|| SyncError::other("scan range starts before a usable frontier"))?;
         // Adaptive batch size: shrink to BATCH_SIZE_SANDBLASTING
         // when the current range overlaps the known Zcash mainnet
         // sandblasting attack window. These blocks contain an
@@ -1761,7 +1766,17 @@ async fn run_sync_impl(
             return Ok(());
         }
 
-        // Get tree state
+        if !block_source.contains_exact_range(u32::from(start), u32::from(end)) {
+            return Err(SyncError::other(format!(
+                "downloaded compact blocks do not exactly cover {}..{}",
+                u32::from(start),
+                u32::from(end),
+            )));
+        }
+
+        // Fetch and validate the frontier before projecting the checkpoints
+        // this batch will create. `update_tree` inserts this exact height as a
+        // checkpoint before any compact-block commitments.
         let from_state = if should_use_empty_chain_state(&network, start)? {
             chain::ChainState::empty(start - 1, BlockHash([0u8; 32]))
         } else {
@@ -1769,6 +1784,15 @@ async fn run_sync_impl(
             ts.to_chain_state()
                 .map_err(|e| SyncError::parse(format!("parse tree state: {e}")))?
         };
+        if u32::from(from_state.block_height()) != frontier_height {
+            return Err(SyncError::other(format!(
+                "downloaded tree state height {} does not match scan frontier {frontier_height}",
+                u32::from(from_state.block_height()),
+            )));
+        }
+
+        let incoming_orchard_checkpoint_heights =
+            migration_anchor_retention_required.then(|| block_source.orchard_checkpoint_heights());
 
         // Scan from memory. There are three reorg-adjacent signals from
         // librustzcash that all need to land on `SyncError::Continuity`
@@ -1790,14 +1814,36 @@ async fn run_sync_impl(
         // becomes `SyncError::Db` (Fatal). Everything else (non-scan,
         // non-wallet — e.g. block-source errors, unrecognised scan
         // variants) becomes `SyncError::Other` (retry-with-backoff).
-        let scan_result = with_wallet_db_write_lock("sync_engine.scan_cached_blocks", || {
+        let scan_result = with_wallet_db_write_lock("sync_engine.retain_and_scan_blocks", || {
+            if let Some(incoming_checkpoint_heights) = &incoming_orchard_checkpoint_heights {
+                let retained =
+                    crate::wallet::sync::retain_migration_anchor_checkpoints_before_scan(
+                        db_data_path,
+                        network,
+                        &mut db,
+                        frontier_height,
+                        u32::from(end),
+                        incoming_checkpoint_heights,
+                    )
+                    .map_err(|error| {
+                        SyncError::other(format!(
+                            "retain migration anchor checkpoints before scan: {error}"
+                        ))
+                    })?;
+                if retained > 0 {
+                    log::info!(
+                        "[{}] sync: ensured {retained} migration anchor checkpoint(s) retained",
+                        elapsed(),
+                    );
+                }
+            }
             scan_cached_blocks(
                 &network,
                 &block_source,
                 &mut db,
                 start,
                 &from_state,
-                batch_size as usize,
+                batch_blocks as usize,
             )
             .map_err(|e| match e {
                 ChainError::Scan(scan_err) if scan_err.is_continuity_error() => {
@@ -2016,21 +2062,15 @@ async fn run_sync_impl(
                     elapsed(),
                 );
             }
-            // Retention costs every remaining batch of this sync: the batch size
-            // stays below the checkpoint pruning depth and each batch runs this
-            // maintenance pass. Re-check so a run that finished, was abandoned,
-            // or released its last reference mid-sync stops paying for it. The
-            // check only runs while retention is already required, so a sync
-            // without a migration keeps its full batch size for free.
+            // Re-check so a run that finished, was abandoned, or released its
+            // last reference mid-sync stops paying for pre-scan inspection and
+            // post-scan reconciliation. A sync without a migration never enters
+            // either path.
             let still_required =
                 crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
                     .map_err(SyncError::db)?;
             if !still_required {
                 migration_anchor_retention_required = false;
-                base_batch_size = migration_anchor_retention_batch_size(
-                    unclamped_base_batch_size,
-                    migration_anchor_retention_required,
-                );
                 log::info!(
                     "[{}] sync: migration anchor retention released (base_batch={})",
                     elapsed(),
@@ -2487,13 +2527,6 @@ mod tests {
             ),
             None,
         );
-    }
-
-    #[test]
-    fn migration_anchor_retention_caps_batches_below_the_checkpoint_pruning_depth() {
-        assert_eq!(migration_anchor_retention_batch_size(1_000, true), 96);
-        assert_eq!(migration_anchor_retention_batch_size(80, true), 80);
-        assert_eq!(migration_anchor_retention_batch_size(1_000, false), 1_000);
     }
 
     #[test]

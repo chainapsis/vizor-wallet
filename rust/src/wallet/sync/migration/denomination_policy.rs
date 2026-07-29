@@ -107,7 +107,10 @@ fn largest_zip318_denomination_at_or_below(value_zatoshi: u64) -> Option<u64> {
     best
 }
 
-fn anchor_bucket_modulus(network: WalletNetwork, timing_policy: MigrationTimingPolicy) -> u32 {
+pub(crate) fn anchor_bucket_modulus(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+) -> u32 {
     match network {
         WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => {
             FAST_TESTNET_ANCHOR_BUCKET_MODULUS
