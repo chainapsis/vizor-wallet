@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_profile_picture.dart';
 import 'package:zcash_wallet/src/core/widgets/mobile_text_field.dart';
 import 'package:zcash_wallet/src/features/accounts/widgets/mobile/account_edit_sheets.dart'
     show MobileSheetCancel;
@@ -21,6 +22,7 @@ void main() {
     required Future<void> Function(String label, String picture) onSave,
     Size size = const Size(393, 852),
     double keyboardInset = 0,
+    String Function()? profilePictureIdGenerator,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -45,6 +47,7 @@ void main() {
                     address: _address,
                     onCancel: () {},
                     onSave: onSave,
+                    profilePictureIdGenerator: profilePictureIdGenerator,
                   ),
                 ),
               ],
@@ -58,8 +61,13 @@ void main() {
   testWidgets('saves a labelled payment recipient', (tester) async {
     String? savedLabel;
     String? savedPicture;
+    var generatorCalls = 0;
     await pumpCard(
       tester,
+      profilePictureIdGenerator: () {
+        generatorCalls += 1;
+        return 'pfp-07';
+      },
       onSave: (label, picture) async {
         savedLabel = label;
         savedPicture = picture;
@@ -72,6 +80,13 @@ void main() {
     );
     expect(find.text('Ethereum'), findsOneWidget);
     expect(find.textContaining('0x11111111111111'), findsOneWidget);
+    expect(generatorCalls, 1);
+    expect(
+      tester
+          .widget<AppProfilePicture>(find.byType(AppProfilePicture))
+          .profilePictureId,
+      'pfp-07',
+    );
 
     final saveButton = find.byKey(
       const ValueKey('mobile_pay_add_contact_save'),
@@ -89,7 +104,8 @@ void main() {
     await tester.pump();
 
     expect(savedLabel, 'Mike');
-    expect(savedPicture, isNotEmpty);
+    expect(savedPicture, 'pfp-07');
+    expect(generatorCalls, 1);
     expect(tester.takeException(), isNull);
   });
 

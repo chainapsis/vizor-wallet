@@ -67,11 +67,7 @@ void main() {
       await waitForShieldedBalance(tester, '1.25 $mobileE2eTicker');
       await waitForMempoolObserver();
 
-      await sendViaWizard(
-        tester,
-        address: secondAddress,
-        amountDigits: '0.25',
-      );
+      await sendViaWizard(tester, address: secondAddress, amountDigits: '0.25');
 
       await switchAccountTo(tester, secondUuid);
       await waitForHistoryEntry(
@@ -84,14 +80,14 @@ void main() {
       await expectActivityRow(
         tester,
         const ValueKey('mobile_home_activity_row_0'),
-        title: 'Receiving',
+        title: 'Receiving...',
         amount: '+0.25 $mobileE2eTicker',
       );
       await openActivityTab(tester);
       await expectActivityRow(
         tester,
         const ValueKey('mobile_activity_row_0'),
-        title: 'Receiving',
+        title: 'Receiving...',
         amount: '+0.25 $mobileE2eTicker',
       );
 
@@ -108,7 +104,7 @@ void main() {
       expectNoActivityRow(
         tester,
         rowKeyPrefix: 'mobile_home_activity',
-        title: 'Receiving',
+        title: 'Receiving...',
         amount: '+0.25 $mobileE2eTicker',
       );
       await openActivityTab(tester);
@@ -121,7 +117,7 @@ void main() {
       expectNoActivityRow(
         tester,
         rowKeyPrefix: 'mobile_activity',
-        title: 'Receiving',
+        title: 'Receiving...',
         amount: '+0.25 $mobileE2eTicker',
       );
       logE2e('second account received shielded funds');

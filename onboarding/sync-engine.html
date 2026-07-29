@@ -121,12 +121,12 @@ impl BlockSource for MemoryBlockSource {
   <li><strong>Generation counter:</strong> <code>stopSync()</code>가 <code>_syncGen</code>을 증가시키고, <code>startSync</code>의 <code>.then()</code> 콜백에서 체크하여 stop 후 pending 작업 무효화</li>
   <li><strong>Polling 겹침 방지:</strong> <code>_checkAndSync()</code> 진입 시 polling 중단, 완료 후 재시작</li>
   <li><strong>Polling 시작 경로 3곳만:</strong> <code>_onSyncDone</code>, <code>_checkAndSync</code>, 계정 생성 시</li>
-  <li><strong>Lifecycle:</strong> <code>onHide</code>에서 polling 중단, <code>onResume</code>에서 <code>delegate.onResume()</code> + <code>_checkAndSync()</code></li>
-  <li><strong>Background sync:</strong> <code>BackgroundSyncDelegate</code>에 위임 (Android/iOS/NoOp). <code>shouldSuppressPolling</code>으로 플랫폼별 polling 제어</li>
+  <li><strong>Lifecycle:</strong> <code>onHide</code>에서 polling 중단, <code>onResume</code>에서 <code>_checkAndSync()</code></li>
+  <li><strong>Native background work:</strong> 일반 sync가 아니라 Ironwood migration preparation만 별도 C FFI operation으로 실행</li>
   <li><strong>에러 복구:</strong> sync 에러 시 polling 유지 → 10초 후 자동 재시도</li>
 </ul>
 
-<p>Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 호출하여 balance를 갱신하고, <code>hasNewTx || isComplete</code>이면 <code>getTransactionHistory(limit: 10)</code>도 호출한다. iOS background sync에서는 C callback → <code>SyncProgressStreamHandler</code> → EventChannel로 전달되며, isSyncing, isComplete, hasNewTx 등 모든 필드가 포함된다.</p>
+<p>Dart의 <code>stream.listen()</code> 콜백에서 <code>getBalance()</code> FFI를 호출하여 balance를 갱신하고, <code>hasNewTx || isComplete</code>이면 <code>getTransactionHistory(limit: 10)</code>도 호출한다. Ironwood native preparation의 progress callback은 OS background task progress만 갱신하며 Dart sync stream으로 전달하지 않는다.</p>
 
 <div class="nav">
   <a href="dart-layer.html">&larr; 이전: Dart / Flutter 레이어</a>

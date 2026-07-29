@@ -14,8 +14,8 @@ import '../../../core/widgets/app_copy_feedback.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/sync_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../models/swap_activity_navigation.dart';
 import '../models/swap_fiat_amount.dart';
 import '../models/swap_fiat_value_formatting.dart';
@@ -127,20 +127,16 @@ class _SwapReviewScreenState extends ConsumerState<SwapReviewScreen> {
     }
     _hadReviewState = true;
 
-    final accountState = ref.watch(accountProvider).value;
-    // The balance gate is pinned to the account the quote was created for.
-    // The swap provider clears reviewVisible on account switch, so the two
-    // accounts are equal whenever this screen renders content — pinning the
-    // review account keeps the gate correct even if that invariant changes.
-    final sync = ref.watch(
-      syncProvider.select(
-        (value) => (value.value ?? SyncState()).scopedToAccount(
-          swapState.reviewAccountUuid ?? accountState?.activeAccountUuid,
-        ),
+    final activeAccountUuid = ref.watch(
+      accountProvider.select((value) => value.value?.activeAccountUuid),
+    );
+    final migrationSpendable = ref.watch(
+      ironwoodMigrationAwareDisplaySpendableProvider(
+        swapState.reviewAccountUuid ?? activeAccountUuid,
       ),
     );
     final startBlockedReason =
-        swapReviewQuoteExceedsAvailableZec(quote, sync.displaySpendableBalance)
+        swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
               ? "You don't have enough ZEC for this payment. Try a smaller amount."
               : "You don't have enough ZEC for this swap. Try a smaller amount."

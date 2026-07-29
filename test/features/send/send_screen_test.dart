@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -9,6 +13,7 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/address_book/models/address_book_contact.dart';
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/send/models/send_prefill_args.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -453,6 +458,81 @@ void main() {
     },
   );
 
+  testWidgets('active migration exposes only the Ironwood send balance', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _sendHarness(
+        spendableBalance: BigInt.from(500000000),
+        ironwoodBalance: BigInt.from(100000000),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: kZcashDefaultNetworkName,
+          accountUuid: 'account-1',
+          status: _migrationStatus('broadcast_scheduled'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_editableIn('send_amount_field'), '2');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Insufficient shielded balance'), findsOneWidget);
+  });
+
+  testWidgets(
+    'migration sync keeps Ironwood visible and Max waits for authority',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      final authoritativeReady = Completer<void>();
+      final syncNotifier = _FakeSyncNotifier(
+        spendableBalance: BigInt.zero,
+        displaySpendableBalance: BigInt.from(500000000),
+        ironwoodBalance: BigInt.zero,
+        displayIronwoodBalance: BigInt.from(100000000),
+        displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+        transparentBalance: BigInt.zero,
+        authoritativeSpendableReady: authoritativeReady.future,
+      );
+
+      await tester.pumpWidget(
+        _sendHarness(
+          syncNotifier: syncNotifier,
+          migrationCta: IronwoodHomeMigrationCtaState.resume(
+            network: kZcashDefaultNetworkName,
+            accountUuid: 'account-1',
+            status: _migrationStatus('broadcast_scheduled'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(_editableIn('send_amount_field'), '0.5');
+      await tester.pumpAndSettle();
+      expect(find.text('Insufficient shielded balance'), findsNothing);
+      await tester.enterText(_editableIn('send_amount_field'), '');
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        _editableIn('send_address_field'),
+        _shieldedAddress,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Use Max'));
+      await tester.pump();
+
+      expect(syncNotifier.authoritativeSpendableWaitCalls, 1);
+      expect(rustApi.estimateSendMaxCalls, 0);
+
+      authoritativeReady.complete();
+      await tester.pumpAndSettle();
+
+      expect(rustApi.estimateSendMaxCalls, 1);
+      expect(_fieldText(tester, 'send_amount_field'), isNotEmpty);
+    },
+  );
+
   testWidgets('hides imported memo controls for TEX recipients', (
     tester,
   ) async {
@@ -798,17 +878,47 @@ const _figmaModalSurfaceShadows = [
   BoxShadow(color: Color(0x0F000000), offset: Offset(0, 2), blurRadius: 8),
 ];
 
+MigrationStatus _migrationStatus(String phase) {
+  return MigrationStatus(
+    phase: phase,
+    activeRunId: 'run-1',
+    targetValuesZatoshi: frb.Uint64List(0),
+    preparedNoteCount: 0,
+    denominationConfirmationCount: 0,
+    denominationConfirmationTarget: 0,
+    denominationSplitCompletedCount: 0,
+    denominationSplitTotalCount: 0,
+    pendingTxCount: 1,
+    broadcastedTxCount: 0,
+    confirmedTxCount: 0,
+    totalCount: 1,
+    signedChildPcztCount: 1,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 0,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
+    scheduledBroadcasts: const [],
+    parts: const [],
+  );
+}
+
 Widget _sendHarness({
   SendPrefillArgs? prefill,
   AddressBookRepository? addressBookRepository,
   AppBootstrapState? bootstrap,
   BigInt? spendableBalance,
   BigInt? displaySpendableBalance,
+  BigInt? ironwoodBalance,
+  BigInt? displayIronwoodBalance,
   SpendableBalanceFreshness displaySpendableFreshness =
       SpendableBalanceFreshness.authoritative,
   BigInt? transparentBalance,
   double? zecUsdPrice = 70,
   NotifierProvider<_TestZecUsdPriceNotifier, double?>? zecUsdPriceProvider,
+  IronwoodHomeMigrationCtaState migrationCta =
+      const IronwoodHomeMigrationCtaState.hidden(),
+  _FakeSyncNotifier? syncNotifier,
 }) {
   final router = GoRouter(
     initialLocation: '/send',
@@ -825,18 +935,25 @@ Widget _sendHarness({
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
       sendWalletDbPathProvider.overrideWithValue(() async => '/tmp/test.db'),
+      ironwoodHomeMigrationCtaProvider.overrideWithValue(
+        AsyncValue.data(migrationCta),
+      ),
       zecUsdPriceProvider == null
           ? zecHomeUsdUnitPriceProvider.overrideWithValue(zecUsdPrice)
           : zecHomeUsdUnitPriceProvider.overrideWith(
               (ref) => ref.watch(zecUsdPriceProvider),
             ),
       syncProvider.overrideWith(
-        () => _FakeSyncNotifier(
-          spendableBalance: spendableBalance ?? BigInt.from(500000000),
-          displaySpendableBalance: displaySpendableBalance,
-          displaySpendableFreshness: displaySpendableFreshness,
-          transparentBalance: transparentBalance ?? BigInt.zero,
-        ),
+        () =>
+            syncNotifier ??
+            _FakeSyncNotifier(
+              spendableBalance: spendableBalance ?? BigInt.from(500000000),
+              displaySpendableBalance: displaySpendableBalance,
+              ironwoodBalance: ironwoodBalance ?? BigInt.zero,
+              displayIronwoodBalance: displayIronwoodBalance,
+              displaySpendableFreshness: displaySpendableFreshness,
+              transparentBalance: transparentBalance ?? BigInt.zero,
+            ),
       ),
       if (addressBookRepository != null)
         addressBookRepositoryProvider.overrideWithValue(addressBookRepository),
@@ -961,14 +1078,21 @@ class _FakeSyncNotifier extends SyncNotifier {
   _FakeSyncNotifier({
     required this.spendableBalance,
     required this.displaySpendableBalance,
+    required this.ironwoodBalance,
+    this.displayIronwoodBalance,
     required this.displaySpendableFreshness,
     required this.transparentBalance,
+    this.authoritativeSpendableReady,
   });
 
   final BigInt spendableBalance;
   final BigInt? displaySpendableBalance;
+  final BigInt ironwoodBalance;
+  final BigInt? displayIronwoodBalance;
   final SpendableBalanceFreshness displaySpendableFreshness;
   final BigInt transparentBalance;
+  final Future<void>? authoritativeSpendableReady;
+  int authoritativeSpendableWaitCalls = 0;
 
   @override
   Future<SyncState> build() async => SyncState(
@@ -976,10 +1100,21 @@ class _FakeSyncNotifier extends SyncNotifier {
     hasAccountScopedData: true,
     spendableBalance: spendableBalance,
     displaySpendableBalance: displaySpendableBalance,
+    ironwoodBalance: ironwoodBalance,
+    displayIronwoodBalance: displayIronwoodBalance,
     displaySpendableFreshness: displaySpendableFreshness,
     transparentBalance: transparentBalance,
     totalBalance: spendableBalance + transparentBalance,
   );
+
+  @override
+  Future<void> waitForAuthoritativeSpendable({
+    required String accountUuid,
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    authoritativeSpendableWaitCalls++;
+    await authoritativeSpendableReady;
+  }
 }
 
 class _TestZecUsdPriceNotifier extends Notifier<double?> {

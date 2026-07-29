@@ -23,7 +23,11 @@ use crate::wallet::{
     network::WalletNetwork,
 };
 
+mod broadcast;
+mod migration;
+mod migration_wallet_ops;
 mod pczt;
+mod proposal_locks;
 mod send;
 mod transactions;
 
@@ -36,20 +40,44 @@ mod transactions;
 // reachable from anywhere in the crate but not re-exported to
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
+pub(crate) use migration::{
+    configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
+    proof_retry_height, reconcile_wallet_locks_after_sync, MigrationPartState,
+    MigrationPreparationOutputKind, MigrationPreparationTransactionState, MigrationScheduleEntry,
+    MigrationStatus, PreparationTimingPolicy,
+};
+pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
     add_proofs_to_pczt, create_pczt_from_proposal, discard_proposal, extract_and_broadcast_pczt,
-    redact_pczt_for_signer, ExtractAndBroadcastPcztResult,
+    redact_pczt_for_signer, retain_proposal_lock_until_expiry, ExtractAndBroadcastPcztResult,
 };
+pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
+pub(crate) use send::{
+    advance_orchard_migration_preparation_for_run, complete_orchard_migration_batch_pczt,
+    complete_orchard_migration_denominations_pczt, complete_orchard_migration_immediate_pczt,
+    complete_orchard_migration_single_qr_pczt, create_or_resume_private_migration_draft,
+    discard_all_keystone_migration_requests, discard_keystone_migration_request,
+    discard_keystone_migration_requests_for_account, keystone_migration_proof_status,
+    migrate_orchard_to_ironwood, migrate_orchard_to_ironwood_immediately,
+    orchard_migration_proof_readiness, orchard_migration_proof_readiness_at_scanned_height,
+    prepare_orchard_migration_batch_pczt, prepare_orchard_migration_denominations_pczt,
+    prepare_orchard_migration_immediate_pczt, prepare_orchard_migration_single_qr_pczt,
+    retain_prepared_note_anchor_checkpoints_after_scan, retire_unbroadcast_orchard_migration,
+    KeystoneSignedMigrationMessage, OrchardMigrationImmediatePlan,
+};
+pub use send::{
+    broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
+    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
+    ExecuteProposalResult, IronwoodMigrationResult,
+};
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
 };
-pub use send::{
-    estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
-    ExecuteProposalResult,
-};
+pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
+pub(crate) use send::migration_anchor_retention_required;
 pub(crate) use send::resubmit_pending_transactions;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ProposalResult;
@@ -61,6 +89,8 @@ pub(crate) use send::ShieldTransparentPcztResult;
 pub(crate) use send::ShieldTransparentResult;
 #[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
 pub(crate) use send::ShieldTransparentStatus;
+#[allow(unused_imports)] // names reachable via `crate::wallet::sync::*`; pre-refactor surface
+pub(crate) use send::{KeystoneMigrationMessage, KeystoneMigrationSigningRequest};
 pub use transactions::{
     decrypt_and_store_transaction, get_next_available_address,
     get_previous_transaction_count_for_address, get_transaction_data_requests,
@@ -128,7 +158,7 @@ pub fn update_chain_tip(db_path: &str, network: WalletNetwork, height: u64) -> R
 pub fn get_next_subtree_indices(
     db_path: &str,
     network: WalletNetwork,
-) -> Result<(u64, u64), String> {
+) -> Result<(u64, u64, u64), String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let summary = db
         .get_wallet_summary(ConfirmationsPolicy::default())
@@ -137,8 +167,9 @@ pub fn get_next_subtree_indices(
         Some(s) => Ok((
             s.next_sapling_subtree_index(),
             s.next_orchard_subtree_index(),
+            s.next_ironwood_subtree_index(),
         )),
-        None => Ok((0, 0)),
+        None => Ok((0, 0, 0)),
     }
 }
 
@@ -151,7 +182,7 @@ pub fn put_sapling_subtree_roots(
     let parsed: Vec<_> = roots
         .iter()
         .map(|(h, bytes)| {
-            let arr: [u8; 32] = bytes[..32].try_into().map_err(|_| "bad hash len")?;
+            let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| "bad hash len")?;
             let node =
                 Option::from(sapling_crypto::Node::from_bytes(arr)).ok_or("bad sapling hash")?;
             Ok::<_, String>(CommitmentTreeRoot::from_parts(
@@ -180,7 +211,7 @@ pub fn put_orchard_subtree_roots(
     let parsed: Vec<_> = roots
         .iter()
         .map(|(h, bytes)| {
-            let arr: [u8; 32] = bytes[..32].try_into().map_err(|_| "bad hash len")?;
+            let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| "bad hash len")?;
             let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&arr))
                 .ok_or("bad orchard hash")?;
             Ok::<_, String>(CommitmentTreeRoot::from_parts(
@@ -195,6 +226,35 @@ pub fn put_orchard_subtree_roots(
         with_wallet_db_write_lock("sync.put_orchard_subtree_roots", || {
             let mut db = open_wallet_db(db_path, network)?;
             db.put_orchard_subtree_roots(start_index, parsed.as_slice())
+                .map_err(|e| format!("{e}"))
+        })
+    }
+}
+
+pub fn put_ironwood_subtree_roots(
+    db_path: &str,
+    network: WalletNetwork,
+    start_index: u64,
+    roots: &[(u64, Vec<u8>)],
+) -> Result<(), String> {
+    let parsed: Vec<_> = roots
+        .iter()
+        .map(|(h, bytes)| {
+            let arr: [u8; 32] = bytes.as_slice().try_into().map_err(|_| "bad hash len")?;
+            let node = Option::from(orchard::tree::MerkleHashOrchard::from_bytes(&arr))
+                .ok_or("bad ironwood hash")?;
+            Ok::<_, String>(CommitmentTreeRoot::from_parts(
+                BlockHeight::from_u32(*h as u32),
+                node,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if parsed.is_empty() {
+        Ok(())
+    } else {
+        with_wallet_db_write_lock("sync.put_ironwood_subtree_roots", || {
+            let mut db = open_wallet_db(db_path, network)?;
+            db.put_ironwood_subtree_roots(start_index, parsed.as_slice())
                 .map_err(|e| format!("{e}"))
         })
     }
@@ -266,6 +326,7 @@ pub fn scan_blocks(
     ts_time: u32,
     ts_sapling: &str,
     ts_orchard: &str,
+    ts_ironwood: &str,
     limit: u64,
 ) -> Result<u64, String> {
     let db_cache = open_block_cache(cache_path)?;
@@ -282,6 +343,7 @@ pub fn scan_blocks(
             time: ts_time,
             sapling_tree: ts_sapling.into(),
             orchard_tree: ts_orchard.into(),
+            ironwood_tree: ts_ironwood.into(),
         }
         .to_chain_state()
         .map_err(|e| format!("{e}"))?
@@ -401,12 +463,30 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 pub(super) struct StoredProposal {
+    pub proposal_id: u64,
+    pub proposal: zcash_client_backend::proposal::Proposal<
+        send::WalletFeeRule,
+        zcash_client_sqlite::ReceivedNoteId,
+    >,
+    pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
+    /// When `true`, the proposal was fee-counted with unpadded Orchard-pool
+    /// bundles (migration children only) and the PCZT must be built with
+    /// `BundlePadding::UNPADDED` to balance. See `zip317_helper`.
+    pub unpadded_orchard_pool_bundles: bool,
+    pub network: WalletNetwork,
+    pub account_id: AccountUuid,
+    pub send_flow_id: String,
+}
+
+#[derive(Clone)]
+pub(super) struct StoredProposalLock {
     pub proposal: zcash_client_backend::proposal::Proposal<
         send::WalletFeeRule,
         zcash_client_sqlite::ReceivedNoteId,
     >,
     pub network: WalletNetwork,
-    pub account_id: AccountUuid,
+    pub db_path: String,
+    pub owner: zcash_client_backend::wallet::LockOwner,
     pub send_flow_id: String,
 }
 
@@ -414,12 +494,14 @@ pub(super) static PROPOSAL_STORE: std::sync::LazyLock<Mutex<ProposalStore>> =
     std::sync::LazyLock::new(|| {
         Mutex::new(ProposalStore {
             proposals: HashMap::new(),
+            locks: HashMap::new(),
             next_id: 1,
         })
     });
 
 pub(super) struct ProposalStore {
     pub proposals: HashMap<u64, StoredProposal>,
+    pub locks: HashMap<u64, StoredProposalLock>,
     pub next_id: u64,
 }
 
@@ -447,23 +529,154 @@ pub(super) fn consume_stored_proposal(
         .ok_or_else(|| not_found_message.to_string())
 }
 
-pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) {
-    match PROPOSAL_STORE.lock() {
-        Ok(mut store) => match store.proposals.get(&proposal_id) {
+pub(super) fn stored_proposal_lock(
+    proposal_id: u64,
+    send_flow_id: &str,
+) -> Result<StoredProposalLock, String> {
+    let store = PROPOSAL_STORE
+        .lock()
+        .map_err(|e| format!("Lock error: {e}"))?;
+    match store.locks.get(&proposal_id) {
+        Some(lock) if lock.send_flow_id == send_flow_id => Ok(lock.clone()),
+        Some(_) => {
+            log::warn!("proposal store: lock send flow mismatch for proposal_id={proposal_id}");
+            Err("Send flow mismatch".to_string())
+        }
+        None => Err("Proposal input lock not found".to_string()),
+    }
+}
+
+fn unlock_stored_proposal(
+    proposal_id: u64,
+    send_flow_id: &str,
+    lock: StoredProposalLock,
+) -> Result<(), String> {
+    with_wallet_db_write_lock("sync.unlock_stored_proposal", || {
+        let mut db = open_wallet_db(&lock.db_path, lock.network)?;
+        // The wallet write lock is always acquired before the proposal-store
+        // mutex (the same order used while creating proposals). Re-checking
+        // here prevents a retain call that won the race from being followed by
+        // a stale DB unlock.
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store before DB unlock: {e}"))?;
+        let current = match store.locks.get(&proposal_id) {
+            Some(current) if current.send_flow_id == send_flow_id => current.clone(),
+            Some(_) => return Err("Send flow mismatch before DB unlock".to_string()),
+            None => return Ok(()),
+        };
+        zcash_client_backend::data_api::wallet::unlock_proposal_inputs(
+            &mut db,
+            &current.proposal,
+            current.owner,
+        )
+        .map_err(|e| format!("Unlock abandoned send proposal inputs: {e}"))?;
+        proposal_locks::remove(&current.db_path, current.owner)?;
+        store.locks.remove(&proposal_id);
+        Ok(())
+    })
+}
+
+pub(super) fn finish_stored_proposal(
+    proposal_id: u64,
+    send_flow_id: &str,
+    release_inputs: bool,
+) -> Result<(), String> {
+    let lock = {
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store for finish: {e}"))?;
+        let Some(lock) = store.locks.get(&proposal_id).cloned() else {
+            return Ok(());
+        };
+        if lock.send_flow_id != send_flow_id {
+            return Err("Send flow mismatch".to_string());
+        }
+        if !release_inputs {
+            store.locks.remove(&proposal_id);
+            drop(store);
+            return proposal_locks::remove(&lock.db_path, lock.owner);
+        }
+        lock.clone()
+    };
+
+    // The DB helper re-checks ownership while holding both locks. On DB
+    // failure the owner record remains in place, allowing an idempotent retry.
+    unlock_stored_proposal(proposal_id, send_flow_id, lock)
+}
+
+pub(super) fn discard_stored_proposal(proposal_id: u64, send_flow_id: &str) -> Result<(), String> {
+    let should_release = {
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store for discard: {e}"))?;
+        match store.proposals.get(&proposal_id) {
             Some(stored) if stored.send_flow_id == send_flow_id => {
                 store.proposals.remove(&proposal_id);
+                true
             }
-            Some(_) => {
-                log::warn!(
-                    "proposal store: discard ignored for send flow mismatch proposal_id={proposal_id}"
-                );
-            }
-            None => {}
-        },
-        Err(e) => {
-            log::warn!("proposal store: discard lock failed: {e}");
+            Some(_) => return Err("Send flow mismatch".to_string()),
+            None => match store.locks.get(&proposal_id) {
+                Some(lock) if lock.send_flow_id == send_flow_id => true,
+                Some(_) => return Err("Send flow mismatch".to_string()),
+                None => false,
+            },
         }
+    };
+    if should_release {
+        finish_stored_proposal(proposal_id, send_flow_id, true)?;
     }
+    Ok(())
+}
+
+/// Removes all in-memory capability to reuse or explicitly unlock a proposal,
+/// while leaving its wallet-level input lock to expire at its original height.
+///
+/// This is used when a broadcast may have reached the network but local
+/// transaction storage did not complete. Releasing the DB lock in that state
+/// could allow an immediate conflicting send.
+pub(super) fn retain_stored_proposal_lock_until_expiry(
+    proposal_id: u64,
+    send_flow_id: &str,
+) -> Result<(), String> {
+    let lock = {
+        let store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store to inspect retained DB lock: {e}"))?;
+        match store.locks.get(&proposal_id) {
+            Some(lock) if lock.send_flow_id == send_flow_id => Some(lock.clone()),
+            Some(_) => return Err("Send flow mismatch".to_string()),
+            None => None,
+        }
+    };
+    let Some(lock) = lock else {
+        return Ok(());
+    };
+
+    with_wallet_db_write_lock("sync.retain_stored_proposal_lock", || {
+        let mut store = PROPOSAL_STORE
+            .lock()
+            .map_err(|e| format!("Lock proposal store to retain DB lock: {e}"))?;
+        let Some(current) = store.locks.get(&proposal_id) else {
+            return Ok(());
+        };
+        if current.send_flow_id != send_flow_id || current.owner != lock.owner {
+            return Err("Send flow changed before retaining DB lock".to_string());
+        }
+        proposal_locks::mark_retain_until_expiry(&lock.db_path, lock.owner)?;
+        if let Some(proposal) = store.proposals.get(&proposal_id) {
+            if proposal.send_flow_id != send_flow_id {
+                return Err("Send flow mismatch".to_string());
+            }
+            store.proposals.remove(&proposal_id);
+        }
+        // Remove the unlock capability in the same critical section as the
+        // replayable proposal. A concurrent discard can therefore observe
+        // either the complete pre-retain state or the complete retained state,
+        // never the gap between them.
+        store.locks.remove(&proposal_id);
+        Ok(())
+    })
 }
 
 // ======================== Helpers ========================
@@ -547,12 +760,12 @@ mod tests {
     fn discard_proposal_is_idempotent_for_missing_id() {
         // Should not panic, should not poison the mutex.
         let id = unique_proposal_id();
-        discard_proposal(id, "missing-flow");
-        discard_proposal(id, "missing-flow"); // second call must also be a no-op
+        discard_proposal(id, "missing-flow").unwrap();
+        discard_proposal(id, "missing-flow").unwrap(); // second call must also be a no-op
     }
 
-    #[test]
-    fn create_pczt_from_proposal_errors_for_missing_id() {
+    #[tokio::test]
+    async fn create_pczt_from_proposal_errors_for_missing_id() {
         // A replay attempt (or a bogus ID from stale UI state) must surface
         // a clean "not found" error rather than panicking or creating a
         // bogus PCZT. We pass an invalid db_path because the "not found"
@@ -562,10 +775,12 @@ mod tests {
         let id = unique_proposal_id();
         let result = create_pczt_from_proposal(
             "/nonexistent/path/that/should/not/exist.db",
+            "https://unused.invalid",
             WalletNetwork::Main,
             id,
             "missing-flow",
-        );
+        )
+        .await;
 
         match result {
             Err(msg) => {
@@ -578,8 +793,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn discard_proposal_after_create_pczt_failure_is_still_noop() {
+    #[tokio::test]
+    async fn discard_proposal_after_create_pczt_failure_is_still_noop() {
         // Simulates the Dart `finally` cleanup path: after create_pczt
         // fails with "not found" (so the proposal was never there), the
         // finally block still calls discard_proposal. That call must be
@@ -587,10 +802,12 @@ mod tests {
         let id = unique_proposal_id();
         let _ = create_pczt_from_proposal(
             "/nonexistent/path/that/should/not/exist.db",
+            "https://unused.invalid",
             WalletNetwork::Main,
             id,
             "missing-flow",
-        );
-        discard_proposal(id, "missing-flow"); // cleanup must not panic
+        )
+        .await;
+        discard_proposal(id, "missing-flow").unwrap(); // cleanup must not panic
     }
 }

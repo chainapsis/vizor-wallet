@@ -52,6 +52,7 @@ const _iconNames = <String>[
   AppIcons.moneyBag,
   AppIcons.night,
   AppIcons.plane,
+  AppIcons.play,
   AppIcons.qr,
   AppIcons.renew,
   AppIcons.scroll,
@@ -70,6 +71,8 @@ const _iconNames = <String>[
   AppIcons.vizor,
   AppIcons.wallet,
   AppIcons.warning,
+  AppIcons.warningCircle,
+  AppIcons.wrench,
   AppIcons.zcash,
   AppIcons.zcashCurrency,
 ];

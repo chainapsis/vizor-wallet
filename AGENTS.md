@@ -8,6 +8,11 @@ fvm flutter run
 fvm flutter test      # mobile-tagged tests auto-skip (dart_test.yaml)
 fvm flutter analyze
 
+# Unless the task explicitly requires a visible window, run macOS E2E with the
+# app window hidden. The scripts do this by default; opt out only when the
+# window is needed for debugging or visual verification.
+VIZOR_E2E_HIDDEN_WINDOW=false scripts/e2e/flutter-macos-regtest-import-sync.sh
+
 # Mobile form factor: mobile-targeted runs and tests pass the token
 # define. Details in the "Design Token Form Factor" section below.
 fvm flutter run --dart-define=VIZOR_FORM_FACTOR=mobile
@@ -116,6 +121,62 @@ Untagged tests may run in either lane and must be lane-agnostic:
   mobile tokens on a desktop host is legitimate —
   `fvm flutter run -t lib/widgetbook.dart --dart-define=VIZOR_FORM_FACTOR=mobile`.
   Only `lib/main.dart` asserts the match.
+
+## Editing Figma
+
+When the user explicitly asks you to modify a Figma file or design, read
+`FIGMA-AI-FIX.md` completely before starting and use it as the instructions and
+reference for that work.
+
+## Figma Visual Verification
+
+Use the widget-test capture as the default visual-comparison path in both
+directions: when applying an existing Flutter implementation to Figma and when
+implementing a Figma design in Flutter, then capturing the result to find and
+correct differences from the design.
+
+- Represent the required screen and state as a deterministic scenario in
+  `lib/figma_compare/figma_compare_scenarios.dart`. Prefer reusing an existing
+  Widgetbook fixture. The scenario must not depend on production wallet data,
+  storage, network, or Rust state.
+- Match the Figma reference's form factor, logical viewport, theme, locale,
+  content, and component state. Use the widget-test renderer for normal
+  desktop and mobile iterations:
+
+  ```bash
+  scripts/figma-compare.sh widget \
+    --scenario <scenario> \
+    --theme <dark|light>
+
+  scripts/figma-compare.sh widget \
+    --form-factor mobile \
+    --scenario <mobile-scenario> \
+    --theme <dark|light>
+  ```
+
+- Compare `content.widget.png` with the corresponding Figma capture side by
+  side and, when practical, with an overlay or image diff. After implementing
+  from Figma, correct the Flutter code and repeat the widget capture until no
+  actionable visual difference remains. Do not use Widgetbook chrome as
+  comparison evidence.
+- For desktop typography, font weight can render differently across Figma,
+  macOS, Windows, and Linux because platform font rasterization differs. Treat
+  the weight as matching when Flutter's configured `fontWeight` value matches
+  Figma's weight setting; do not choose a different weight solely to force
+  pixel-level visual parity. Continue to verify font family, size, line height,
+  letter spacing, wrapping, and positioning normally.
+- If the required state is not registered, add a reusable deterministic
+  capture scenario before falling back to a running platform app. Temporary
+  production routes, bootstrap overrides, or provider changes are a last
+  resort and must be removed before completion.
+- Use native macOS or iOS Simulator captures only for a final check of behavior
+  the widget-test renderer cannot represent, such as operating-system chrome,
+  the real window shell, native insets, or a material platform-rendering
+  difference. Keep the widget capture as the primary app-content comparison.
+- A request to compare an implementation with Figma does not authorize any
+  Figma mutation. Do not copy, move, or edit Figma nodes unless the user
+  explicitly requests a Figma change. When they do, read `FIGMA-AI-FIX.md` in
+  full and follow its target-approval, copy-only, and visual-parity workflow.
 
 ## Figma Layer Interpretation
 
@@ -295,9 +356,7 @@ SyncProvider (sync_provider.dart)
   ├── `_sensitiveStateEpoch` discards late balance/progress updates after lock/sign-out
   ├── Passes activeAccountUuid to getBalance, getTransactionHistory
   ├── Sync itself is account-agnostic (covers all accounts)
-  ├── Delegates background sync to BackgroundSyncDelegate (Android/iOS/NoOp)
   ├── Polling pauses on app background (onHide), resumes on foreground (onResume)
-  ├── Background sync completion detected on resume via delegate.onResume()
   ├── refreshAfterSend() called after account switch for immediate update
   └── refreshAfterUnlock() refreshes balances/history before foreground sync recovery
 ```
@@ -375,12 +434,16 @@ rust/src/
 │                        # decode_accounts_ur. Keystone UX is QR-only.
 │                        # Re-exports KeystoneAccountInfo, UrDecodeResult from
 │                        # crate::wallet::keystone via `pub use`.
-├── ffi.rs              # C FFI for Swift: zcash_run_full_sync(), zcash_cancel_sync(),
-│                        # zcash_get/set_sync_mode(), zcash_is_sync_running()
-│                        # TX tracking: zcash_get_pending_txs(), zcash_check_tx_status()
-│                        # Validates C strings, logs all errors, checks mode before starting
-│                        # Uses current_thread tokio runtime (inherits iOS .utility QoS)
-│                        # Located outside api/ to avoid FRB codegen picking it up
+├── ffi.rs              # Thin C adapter for Swift Ironwood migration preparation.
+│                        # Validates native pointers, converts C values, preserves
+│                        # the iOS ABI, and delegates to migration_preparation.rs.
+├── migration_preparation.rs
+│                       # Platform-neutral mobile preparation execution core:
+│                       # operation begin/end/cancel, preparation-only sync,
+│                       # inspect/advance, progress state interpretation, and
+│                       # shared foreground-sync exclusion. Future Android JNI
+│                       # adapters must delegate here instead of duplicating it.
+│                       # Located outside api/ to avoid FRB codegen picking it up.
 ├── wallet/
 │   ├── mod.rs          # pub mod keys, sync, sync_engine, keystone
 │   ├── keys.rs         # Key derivation, mnemonic, account creation (Derived + Imported),
@@ -422,108 +485,49 @@ rust/src/
 └── frb_generated.rs    # Auto-generated by flutter_rust_bridge
 ```
 
-### Two FFI Paths
+### Foreground Sync and iOS Migration Preparation
+
+Normal wallet sync has one path: Dart calls `start_full_sync()` through
+`flutter_rust_bridge` and consumes `Stream<ApiSyncProgressEvent>`.
+`DESIRED_SYNC_MODE`, `SYNC_CANCEL`, and `SYNC_RUNNING` belong to that foreground
+path.
+
+iOS Ironwood denomination preparation has a separate native path because its
+`BGContinuedProcessingTask` must keep working without a Dart isolate:
 
 ```
-Dart (foreground)                    Swift (iOS background)
-    │                                    │
-    ▼                                    ▼
-api/sync.rs                          ffi.rs
-start_full_sync(mode=1, sink)        zcash_run_full_sync() [C FFI, mode=2]
-    │                                    │
-    ▼                                    ▼
-    └──── both call ────► sync_engine::run_sync_inner(running_mode, &DESIRED_MODE)
-                              │
-                              ▼
-                    gRPC + scan + enhancement
-                    (exits if DESIRED_MODE != running_mode)
+Swift BackgroundMigrationPreparationManager
+    → begin preparation operation
+    → wait until foreground sync releases SYNC_RUNNING
+    → thin C FFI adapter
+    → platform-neutral Rust preparation sync / inspect / advance
+    → end preparation operation
 ```
 
-- **Dart → Rust**: via `flutter_rust_bridge` (FRB). `start_full_sync()` returns `Stream<ApiSyncProgressEvent>`.
-- **Swift → Rust**: via C FFI (`#[no_mangle] pub extern "C"`). `ffi.rs` exposes sync functions. Swift calls through `zcash_sync.h` imported in `Runner-Bridging-Header.h`.
-
-`ffi.rs` is at `rust/src/ffi.rs` (NOT in `api/`) to prevent FRB codegen from generating Dart bindings for it.
-
-### Sync Mode Management
-
-Rust has a shared `DESIRED_SYNC_MODE` AtomicU8 (0=none, 1=foreground, 2=background).
-
-- `run_sync_inner` checks `DESIRED_MODE != running_mode` after each batch → graceful exit
-- Also checks after download and after scan (mid-batch) for faster response
-- `SYNC_RUNNING` AtomicBool prevents concurrent sync (shared between FRB and C FFI)
-- `SYNC_CANCEL` Arc<AtomicBool> unified — both `cancelFullSync()` (Dart) and `zcash_cancel_sync()` (Swift) set the same flag
-- FRB also exposes `is_sync_cancel_requested()` so Dart can tell "still running"
-  from "running but already cancelling"
-- C FFI checks `DESIRED_MODE == 2` before starting (does not force-set mode)
-
-### Foreground ↔ Background Sync Transitions
-
-**Android**: Foreground service (`flutter_foreground_task`) adds notification only. Sync continues via same Dart FRB stream. No mode switching needed.
-
-**iOS (26+)**: Mode switch triggers sync handoff.
-
-Foreground → Background:
-1. Dart: `setSyncMode(2)` → Rust fg sync exits at next batch
-2. Dart: `bg_sync.startBackgroundSync()` → Swift BGTask submit
-3. Swift handler (`using: nil`): dispatches to `.utility` syncQueue
-4. `runSync()` bails out immediately if `mode != 2`; otherwise it waits only for
-   any previous sync to finish, re-checking `mode == 2` while waiting
-5. `zcash_run_full_sync()`
-6. On completion with mode still 2: resubmits BGTask to continue
-
-Background → Foreground:
-1. Dart: `setSyncMode(1)` → Rust bg sync exits at next batch
-2. Dart: `stopBackgroundSync()` cancels queued iOS BGTask requests so a late task
-   launch cannot start one extra background sync after handoff
-3. Dart: waits for `isSyncRunning()==false` (timeout 120s) → `startSync()`
-
-Sign-out / Lock:
-1. Dart: `securityNotifier.lock()` clears the session password and routes to `/unlock`
-2. `AccountProvider.clearSensitiveStateForLock()` clears only in-memory address state
-3. `SyncProvider.clearSensitiveStateForLock()` clears balance/history/progress,
-   sends `setSyncMode(0)` + `cancelFullSync()`, then shuts background sync down
-4. iOS `shutdownForLock()` cancels queued BGTask requests instead of requesting
-   the normal foreground handoff (`mode=1`)
-5. Unlock recovery runs `restoreAfterUnlock()` + `refreshAfterUnlock()` +
-   `startSyncAnyway()` to recover from stale cancelled Rust work before
-   re-entering `/home`
-
-Expiration: `expirationHandler` cancels heartbeat + sets mode=0 + cancel → no resubmit → on app resume, detects mode=0 with backgroundMode=true → restarts foreground sync.
-
-### iOS Background Sync
-
-Uses `BGContinuedProcessingTask` (iOS 26+). Swift calls Rust directly via C FFI.
-
-```
-BGTaskScheduler.register(using: nil)  ← expirationHandler can run on different queue
-    │
-    ▼
-handleBackgroundTask()
-    ├── expirationHandler set (cancels heartbeat + sync)
-    ├── syncQueue.async { runSync() }  ← .utility QoS, Rust inherits this
-    └── semaphore.wait()               ← handler thread waits, doesn't block syncQueue
-
-runSync():
-    → if `mode != 2`, exit without work
-    → wait for any previous sync to finish (timeout 120s), aborting if mode changes away from 2
-    → re-check `mode == 2` after the wait loop before starting Rust
-    → heartbeat timer on .global(qos: .utility) — nudges completedUnitCount +1 every 5s
-    → zcash_run_full_sync() [C FFI, blocking, current_thread tokio]
-    → C callback: sets completedUnitCount = percentage * 10000 (scan-queue based)
-    → C callback → SyncProgressStreamHandler → EventChannel → Dart (if foreground)
-    → EventChannel forwards: scannedHeight, chainTipHeight, percentage, isSyncing, isComplete, hasNewTx
-    → on completion: if mode still 2, resubmit BGTask
-
-`stopBackgroundSync()` on iOS now calls `BGTaskScheduler.shared.cancel(taskRequestWithIdentifier:)`
-for the sync task identifier, so sign-out / foreground handoff cancels queued
-work instead of only clearing Dart-side bookkeeping.
-```
+- `rust/src/migration_preparation.rs` owns the operation's private cancel token
+  and desired mode for the whole native operation, including both sync and
+  advance calls. The same core is the required entry point for Android JNI.
+- Foreground `cancelFullSync()` cannot cancel migration preparation.
+- The two paths share only `SYNC_RUNNING` while the sync engine is actually
+  active, preventing concurrent access to the wallet sync pipeline.
+- Account DB mutations first quiesce and drain native migration work, then pause
+  foreground sync, mutate the DB, resume foreground sync, and finally resume
+  only still-active native preparation.
+- Ordinary migration status reads are side-effect free. Native scheduling is
+  performed only at explicit recovery points such as startup, unlock,
+  foreground return, or post-mutation resume.
+- The removed general iOS background-sync identifier
+  `com.keplr.vizor.sync` is cancelled once at launch as a tombstone for requests
+  submitted by older builds; no handler is registered for it.
 
 Key files:
-- `ios/Runner/BackgroundSyncManager.swift` — `@available(iOS 26.0, *)`, BGTask handling with semaphore pattern
-- `ios/Runner/AppDelegate.swift` — task registration, MethodChannel + EventChannel, simulator check
-- `ios/Runner/SyncProgressStreamHandler.swift` — bridges C callback → Dart EventChannel
-- `ios/Runner/zcash_sync.h` — C header for all FFI functions
+- `rust/src/migration_preparation.rs` — platform-neutral preparation core
+- `rust/src/ffi.rs` — migration-preparation-only iOS C adapter
+- `ios/Runner/zcash_sync.h` — matching C header
+- `ios/Runner/BackgroundMigrationPreparationManager.swift` — native task owner
+- `lib/src/providers/wallet_mutation_guard.dart` — mutation ordering fence
+- `lib/src/features/migration/services/ironwood_migration_service.dart` —
+  explicit preparation recovery and scheduling
 
 ### iOS TX Tracking
 
@@ -690,26 +694,16 @@ Seed-relevance rule:
 - `stopSync()`: increments `_syncGen` + `cancelFullSync()` + `_stopPolling()`. Polling does not restart until next `onResume`
 - `clearSensitiveStateForLock()`: increments `_syncGen`/`_sensitiveStateEpoch`,
   clears in-memory sync state, sends `setSyncMode(0)` + `cancelFullSync()`,
-  tears down background sync, and waits briefly for stale Rust sync / mempool work to stop
+  and waits briefly for stale Rust sync / mempool work to stop
 - `startSyncAnyway()`: unlock recovery path. If Rust is still running but already
   cancelling, waits for teardown before starting foreground sync; if teardown
   times out, it at least restores polling so a later retry can recover
-- `enableBackgroundSync()`: delegates to `BackgroundSyncDelegate`
-- `disableBackgroundSync()`: delegates to `BackgroundSyncDelegate`. `disable()` returns `bool` — iOS returns `true` (needs fg restart), Android returns `false`
-
-**BackgroundSyncDelegate** (`background_sync_delegate.dart`):
-- Abstract interface with Android/iOS/NoOp implementations
-- All `Platform.isAndroid`/`Platform.isIOS` checks isolated here (zero in sync_provider.dart)
-- `shouldSuppressPolling`: Android=`false` (notification only), iOS=`_active` (BGTask manages sync)
-- Android: `onSyncDone()` keeps `_active` true (notification persists across sync cycles)
-- iOS: `onResume()` detects bg sync completion/expiration, `onProgress()` detects EventChannel completion
 
 **Lifecycle:**
-- `onResume`: refreshes balance → `_bgDelegate.onResume()` → `_checkAndSync()` (which starts polling)
+- `onResume`: refreshes balance → `_checkAndSync()` (which starts polling)
 - `onHide`: stops polling (no wasted network in background)
 - `SyncState.recentTransactions`: latest 10 transactions, updated on `hasNewTx`, sync completion, and app resume
 - All balance/history queries pass `activeAccountUuid` from `AccountProvider`
-- `background_sync_service.dart`: platform abstraction (Android foreground service + iOS MethodChannel)
 
 ### Desktop Window Bootstrap
 
@@ -733,6 +727,34 @@ WidgetsFlutterBinding.ensureInitialized()
 → showDesktopWindow()
 → runApp()
 ```
+
+### Figma comparison tooling
+
+For deterministic code-to-Figma screenshots, use the widget-test capture as
+the normal iteration path. It renders the same `FigmaCompareApp` and registered
+scenario without building Rust, CocoaPods, Xcode, or a macOS app:
+
+```bash
+scripts/figma-compare.sh widget --scenario pay-recipient --theme dark
+```
+
+Use the native entry point only for final macOS window-shell and restoration
+verification:
+
+```bash
+scripts/figma-compare.sh native --scenario pay-recipient --theme dark
+```
+
+Registered states live in
+`lib/figma_compare/figma_compare_scenarios.dart` and must use deterministic
+dev-only mocks. Outputs go below the app sandbox's `vizor-figma-compare`
+temporary directory: `content.widget.png` is the fast app-content reference;
+`content.png` and `content.window.png` are the real-engine and native-window
+final evidence. The native entry point reuses production macOS window
+initialization without starting Rust, storage, sync, wallet, or network state,
+automatically restores a minimized window before capture, and returns it and
+the previously foreground app to their original states afterward. Full
+workflow, mobile capture, and cleanup rules are in `FIGMA-AI-FIX.md`.
 
 Important desktop design rule:
 

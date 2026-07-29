@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../../main.dart' show log;
+import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/navigation/mobile_tab_history.dart';
@@ -114,7 +115,47 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
     }
   }
 
-  void _openTransactionStatus(
+  Future<void> _openTransactionStatus(
+    BuildContext context,
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    rust_sync.TransactionDetail? detail;
+    try {
+      final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      detail = await rust_sync.getTransactionDetail(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+      );
+    } catch (e, st) {
+      log('MobileActivity: transaction detail load failed: $e\n$st');
+    }
+    if (!context.mounted ||
+        accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      return;
+    }
+
+    context.push(
+      Uri(
+        path: '/activity/tx/${transaction.txidHex}',
+        queryParameters: {'kind': transaction.txKind},
+      ).toString(),
+      extra: MobileTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+        initialTransaction: transaction,
+        initialDetail: detail,
+      ),
+    );
+  }
+
+  void _openLoadedTransactionStatus(
     BuildContext context,
     rust_sync.TransactionInfo transaction,
   ) {
@@ -129,6 +170,13 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         initialTransaction: transaction,
       ),
     );
+  }
+
+  String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
+    if (transaction == null) return null;
+    final amount = transaction.displayAmount;
+    if (amount == BigInt.zero) return null;
+    return ZecAmount.fromZatoshi(amount).signedActivity.toString();
   }
 
   String _recentSignature(SyncState? sync) {
@@ -165,19 +213,29 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(accountUuid)).value ??
               const <SwapActivityRowItem>[];
+    final transactions =
+        loadedTransactions ?? const <rust_sync.TransactionInfo>[];
+    final absorption = loadedTransactions == null
+        ? SwapActivityLegAbsorption.empty
+        : matchSwapActivityLegAbsorption(
+            swapItems: swapItems,
+            transactions: transactions,
+          );
+    final swapReceiveTxByIntent = absorption.receiveTxByIntent;
 
     final entries = <ActivityEntry>[
       if (loadedTransactions != null)
-        for (final tx in loadedTransactions)
-          ActivityEntry(
-            timestamp: transactionActivityTimestamp(tx),
-            row: buildTransactionActivityRow(
-              context: context,
-              transaction: tx,
-              privacyModeEnabled: privacyModeEnabled,
-              onTap: () => _openTransactionStatus(context, tx),
+        for (final tx in transactions)
+          if (!absorption.absorbs(tx))
+            ActivityEntry(
+              timestamp: transactionActivityTimestamp(tx),
+              row: buildTransactionActivityRow(
+                context: context,
+                transaction: tx,
+                privacyModeEnabled: privacyModeEnabled,
+                onTap: () => unawaited(_openTransactionStatus(context, tx)),
+              ),
             ),
-          ),
       for (final item in swapItems)
         ActivityEntry(
           timestamp: item.activityTimestamp,
@@ -193,6 +251,13 @@ class _MobileActivityScreenState extends ConsumerState<MobileActivityScreen> {
                 returnTarget: SwapActivityReturnTarget.activity,
               ).toString(),
             ),
+            receivedAmountText: _absorbedReceiveAmountText(
+              swapReceiveTxByIntent[item.intentId],
+            ),
+            onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
+              null => null,
+              final tx => () => _openLoadedTransactionStatus(context, tx),
+            },
           ),
         ),
     ];

@@ -100,7 +100,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('receive_preview_transparent_info_modal')),
       ),
-      const Size(312, 403),
+      const Size(312, 516),
     );
   });
 

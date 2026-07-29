@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
@@ -8,6 +9,13 @@ import 'package:window_manager/window_manager.dart';
 import 'app_form_factor.dart';
 
 export 'app_form_factor.dart';
+
+const bool kE2eHiddenDesktopWindow = bool.fromEnvironment(
+  'VIZOR_E2E_HIDDEN_WINDOW',
+);
+const _windowAppearanceChannel = MethodChannel(
+  'com.zcash.wallet/window_appearance',
+);
 
 /// Two fixed-aspect-ratio layouts the desktop app supports.
 ///
@@ -94,6 +102,19 @@ Future<void> initializeDesktopWindow({
 /// Show and focus the desktop window after all native bootstrap steps finish.
 Future<void> showDesktopWindow() async {
   if (!isDesktopLayoutPlatform) return;
+  if (kE2eHiddenDesktopWindow) {
+    // A fully transparent macOS window is treated as occluded and stops
+    // receiving the frame callbacks that integration-test pumps await.
+    await windowManager.setOpacity(0.001);
+    await windowManager.setIgnoreMouseEvents(true);
+    await windowManager.setAlwaysOnTop(true);
+    if (Platform.isMacOS) {
+      await _windowAppearanceChannel.invokeMethod<void>('showInactive');
+    } else {
+      await windowManager.show(inactive: true);
+    }
+    return;
+  }
   await windowManager.show();
   await windowManager.focus();
 }

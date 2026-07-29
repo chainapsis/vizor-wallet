@@ -9,7 +9,8 @@
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.keplr.vizor.sync</string>
+		<string>com.keplr.vizor.ironwood-migration</string>
+		<string>com.keplr.vizor.ironwood-preparation</string>
 		<string>com.pravera.flutter_foreground_task.refresh</string>
 	</array>
 	<key>NSSupportsLiveActivities</key>

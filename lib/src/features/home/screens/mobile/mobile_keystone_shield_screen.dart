@@ -104,6 +104,7 @@ class _MobileKeystoneShieldScreenState
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
       final shieldPczt = await rust_sync.createShieldTransparentPczt(
         dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
         accountUuid: accountUuid,
       );

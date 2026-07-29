@@ -366,7 +366,8 @@ Future<void> _openActivity(WidgetTester tester) async {
   await _tapWidget(tester, const ValueKey('sidebar_activity_button'));
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('activity_screen_row_0'))),
+    () =>
+        tester.any(_activityRowFinder(const ValueKey('activity_screen_row_0'))),
     description: 'activity screen rows to render',
     timeout: const Duration(minutes: 1),
   );
@@ -376,14 +377,19 @@ Future<void> _switchAccount(WidgetTester tester, int accountOrder) async {
   _log('switching to account order $accountOrder');
   final accountUuid = await _accountUuidAtOrder(accountOrder);
   await _tapWidget(tester, const ValueKey('sidebar_accounts_button'));
-  await _tapWidget(tester, ValueKey('sidebar_account_popover_row_$accountUuid'));
+  await _tapWidget(
+    tester,
+    ValueKey('sidebar_account_popover_row_$accountUuid'),
+  );
   await _waitForHome(tester);
 }
 
 Future<void> _waitForHome(WidgetTester tester) async {
   await _pumpUntil(
     tester,
-    () => tester.any(find.byKey(const ValueKey('home_desktop_balance_amount_text'))),
+    () => tester.any(
+      find.byKey(const ValueKey('home_desktop_balance_amount_text')),
+    ),
     description: 'home balance card to render',
     timeout: const Duration(minutes: 1),
   );
@@ -550,7 +556,7 @@ Future<void> _expectActivityRow(
   await _pumpUntil(
     tester,
     () => _activityRowMatches(
-      _textSetIn(tester, find.byKey(key)),
+      _textSetIn(tester, _activityRowFinder(key)),
       title,
       amount,
       status,
@@ -559,6 +565,22 @@ Future<void> _expectActivityRow(
     timeout: const Duration(minutes: 2),
   );
   _log('activity row matched: $title $amount $status');
+}
+
+Finder _activityRowFinder(Key key) {
+  if (key case ValueKey<String>(
+    value: final value,
+  ) when value.startsWith('activity_screen_row_')) {
+    final index = int.parse(value.substring('activity_screen_row_'.length));
+    return find
+        .byWidgetPredicate((widget) {
+          final widgetKey = widget.key;
+          return widgetKey is ValueKey<String> &&
+              widgetKey.value.startsWith('tx:');
+        })
+        .at(index);
+  }
+  return find.byKey(key);
 }
 
 void _expectNoActivityRow(
@@ -671,10 +693,7 @@ Future<void> _tapReceiveButton(WidgetTester tester) async {
     () => tester.any(find.byKey(regular)) || tester.any(find.byKey(first)),
     description: 'a home receive button to render',
   );
-  await _tapWidget(
-    tester,
-    tester.any(find.byKey(regular)) ? regular : first,
-  );
+  await _tapWidget(tester, tester.any(find.byKey(regular)) ? regular : first);
 }
 
 Future<void> _enterText(WidgetTester tester, Key key, String text) async {

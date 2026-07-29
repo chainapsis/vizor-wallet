@@ -12,6 +12,7 @@ import '../../core/widgets/app_icon.dart';
 import '../../providers/account_provider.dart';
 import '../../providers/device_owner_auth_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/wallet_mutation_guard.dart';
 import '../../services/device_owner_auth.dart';
 import 'shared/onboarding_auth_shell.dart';
 
@@ -157,12 +158,10 @@ class _LostPasswordScreenState extends ConsumerState<LostPasswordScreen> {
     final syncNotifier = ref.read(syncProvider.notifier);
     final accountNotifier = ref.read(accountProvider.notifier);
 
-    await syncNotifier.clearSensitiveStateForLock();
-    try {
+    await runWithSyncPausedForWalletReset(ref, () async {
+      await syncNotifier.clearSensitiveStateForLock();
       await accountNotifier.resetWallet();
-    } finally {
-      syncNotifier.clearCachedWalletDbPath();
-    }
+    });
   }
 
   @override

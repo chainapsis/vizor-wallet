@@ -7,6 +7,14 @@ import '../../features/accounts/screens/mobile/mobile_accounts_screen.dart';
 import '../../features/activity/screens/mobile/mobile_activity_screen.dart';
 import '../../features/home/screens/mobile/mobile_home_screen.dart';
 import '../../features/home/screens/mobile/mobile_keystone_shield_screen.dart';
+import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_screen.dart';
+import '../../features/migration/models/mobile_ironwood_migration_status_entry.dart';
+import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
+    show
+        MobileIronwoodMigrationKeystoneImmediateSignScreen,
+        MobileIronwoodMigrationKeystoneBatchSignScreen,
+        MobileIronwoodMigrationKeystoneDenominationSignEntry,
+        MobileIronwoodMigrationKeystoneDenominationSignScreen;
 import '../../features/pay/screens/mobile/mobile_pay_screen.dart';
 import '../../features/pay/screens/mobile/mobile_pay_submitted_screen.dart';
 import '../../features/receive/screens/mobile/mobile_receive_screen.dart';
@@ -21,6 +29,7 @@ import '../../features/send/services/send_flow.dart'
     show KeystoneBroadcastArgs, SendReviewArgs;
 import '../../features/send/screens/mobile/mobile_send_screen.dart';
 import '../../features/send/screens/mobile/mobile_send_status_screen.dart';
+import '../../rust/api/sync.dart' as rust_sync;
 import '../../features/about/screens/mobile/mobile_about_screens.dart';
 import '../../features/settings/screens/mobile/mobile_change_passcode_screen.dart';
 import '../../features/settings/screens/mobile/mobile_endpoint_screen.dart';
@@ -264,12 +273,146 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
           CupertinoPage(key: state.pageKey, child: const MobileReceiveScreen()),
     ),
     GoRoute(
+      path: '/migration',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.intro,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/intro',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.intro,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/how-it-works',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.howItWorks,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/options',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.options,
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/private/notifications',
+      redirect: _redirectUnsupportedPrivateMigration,
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.notifications,
+          previewPrivatePlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => null,
+          },
+        ),
+      ),
+    ),
+    // Completion has its own destination so home does not have to route
+    // through the status screen, whose entry refresh renders a progress
+    // surface before the finished phase resolves.
+    GoRoute(
+      path: '/migration/complete',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationCompleteScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/private/status',
+      pageBuilder: (context, state) {
+        final entry = switch (state.extra) {
+          MobileIronwoodMigrationStatusEntry value => value,
+          rust_sync.OrchardMigrationPrivatePlan plan =>
+            MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
+          _ => null,
+        };
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileIronwoodMigrationPrivateStatusScreen(
+            approvedPlan: entry?.approvedPlan,
+          ),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/migration/private/keystone/denominations/sign',
+      pageBuilder: (context, state) {
+        final entry = switch (state.extra) {
+          MobileIronwoodMigrationKeystoneDenominationSignEntry value => value,
+          _ => null,
+        };
+        final approvedSchedule = switch (state.extra) {
+          List<rust_sync.MigrationScheduledTransfer> schedule => schedule,
+          _ => entry?.approvedSchedule ?? const [],
+        };
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileIronwoodMigrationKeystoneDenominationSignScreen(
+            approvedSchedule: approvedSchedule,
+            initialRequest: entry?.request,
+            initialAccountUuid: entry?.accountUuid,
+          ),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/migration/private/keystone/batch/sign',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationKeystoneBatchSignScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/immediate/keystone/sign',
+      redirect: (_, state) =>
+          state.extra is rust_sync.OrchardMigrationImmediatePlan
+          ? null
+          : '/migration/fast/review',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileIronwoodMigrationKeystoneImmediateSignScreen(
+          approvedPlan: state.extra! as rust_sync.OrchardMigrationImmediatePlan,
+        ),
+      ),
+    ),
+    // Immediate migration skips notification setup and opens its review
+    // directly from the production option picker.
+    GoRoute(
+      path: '/migration/fast/review',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.fastReview,
+        ),
+      ),
+    ),
+    GoRoute(
       path: '/about',
       pageBuilder: (context, state) =>
           CupertinoPage(key: state.pageKey, child: const MobileAboutScreen()),
     ),
   ];
 }
+
+String? _redirectUnsupportedPrivateMigration(
+  BuildContext context,
+  GoRouterState state,
+) => supportsPrivateMobileIronwoodMigration() ? null : '/migration/fast/review';
 
 class _MobileTab {
   const _MobileTab({

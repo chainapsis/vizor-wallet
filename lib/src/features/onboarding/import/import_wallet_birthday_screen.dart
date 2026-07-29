@@ -14,6 +14,7 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
+import '../../../providers/router_refresh_provider.dart';
 import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_error_messages.dart';
@@ -34,10 +35,7 @@ enum _ImportWalletSubmitPhase {
 }
 
 class ImportWalletBirthdayScreen extends ConsumerStatefulWidget {
-  const ImportWalletBirthdayScreen({
-    required this.args,
-    super.key,
-  });
+  const ImportWalletBirthdayScreen({required this.args, super.key});
 
   final ImportBirthdayArgs args;
 
@@ -342,41 +340,44 @@ class _ImportWalletBirthdayScreenState
 
       final accountNotifier = ref.read(accountProvider.notifier);
       final router = GoRouter.of(context);
-      final imported = await runWithSyncPausedForAccountMutation(
-        ref,
-        () async {
-          final selectedAdditionalAccountIndices =
-              await _resolveAdditionalAccountIndices(
-                mnemonic: mnemonic,
-                birthdayHeight: birthdayHeight,
-              );
-          if (selectedAdditionalAccountIndices == null) return false;
-          if (!mounted) return false;
-          setState(() {
-            _submitPhase = _ImportWalletSubmitPhase.importing;
-          });
-          await accountNotifier.importAccount(
-            mnemonic: mnemonic,
-            birthdayHeight: birthdayHeight,
-            additionalAccountIndices: selectedAdditionalAccountIndices,
-          );
-          return true;
-        },
-        onStoppingSync: () {
-          if (!mounted) return;
-          setState(() {
-            _submitPhase = _ImportWalletSubmitPhase.stoppingSync;
-          });
-        },
-        onSyncPaused: () {
-          if (!mounted) return;
-          setState(() {
-            _submitPhase = _ImportWalletSubmitPhase.importing;
-          });
-        },
-      );
-      if (!imported || !mounted) return;
-      router.go('/home');
+      final routerRefresh = ref.read(routerRefreshProvider);
+      await routerRefresh.pauseWhile(() async {
+        final imported = await runWithSyncPausedForAccountMutation(
+          ref,
+          () async {
+            final selectedAdditionalAccountIndices =
+                await _resolveAdditionalAccountIndices(
+                  mnemonic: mnemonic,
+                  birthdayHeight: birthdayHeight,
+                );
+            if (selectedAdditionalAccountIndices == null) return false;
+            if (!mounted) return false;
+            setState(() {
+              _submitPhase = _ImportWalletSubmitPhase.importing;
+            });
+            await accountNotifier.importAccount(
+              mnemonic: mnemonic,
+              birthdayHeight: birthdayHeight,
+              additionalAccountIndices: selectedAdditionalAccountIndices,
+            );
+            return true;
+          },
+          onStoppingSync: () {
+            if (!mounted) return;
+            setState(() {
+              _submitPhase = _ImportWalletSubmitPhase.stoppingSync;
+            });
+          },
+          onSyncPaused: () {
+            if (!mounted) return;
+            setState(() {
+              _submitPhase = _ImportWalletSubmitPhase.importing;
+            });
+          },
+        );
+        if (!imported || !mounted) return;
+        router.go('/home');
+      });
     } catch (e, st) {
       log('ImportWalletBirthdayScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;

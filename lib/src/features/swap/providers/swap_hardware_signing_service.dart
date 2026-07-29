@@ -28,7 +28,13 @@ abstract interface class SwapHardwareSigningService {
     String? outputParamsPath,
   });
 
+  Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft});
+
+  /// Takes ownership of [draft]'s proposal lock on entry. The implementation
+  /// must release it for definite completion/failure or retain it through its
+  /// height expiry when broadcast acceptance is ambiguous.
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+    required SwapHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
@@ -41,11 +47,15 @@ class SwapHardwarePcztDraft {
     required this.pcztBytes,
     required this.needsSaplingParams,
     required this.feeZatoshi,
+    required this.proposalId,
+    required this.sendFlowId,
   });
 
   final List<int> pcztBytes;
   final bool needsSaplingParams;
   final BigInt feeZatoshi;
+  final BigInt proposalId;
+  final String sendFlowId;
 }
 
 class RustSwapHardwareSigningService implements SwapHardwareSigningService {
@@ -96,6 +106,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
               proposalId = proposal.proposalId;
               final pcztBytes = await rust_sync.createPcztFromProposal(
                 dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
                 network: endpoint.networkName,
                 proposalId: proposal.proposalId,
                 sendFlowId: sendFlowId,
@@ -110,6 +121,8 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
                 pcztBytes: pcztBytes,
                 needsSaplingParams: proposal.needsSaplingParams,
                 feeZatoshi: proposal.feeZatoshi,
+                proposalId: proposal.proposalId,
+                sendFlowId: sendFlowId,
               );
             } catch (e) {
               log(
@@ -163,23 +176,88 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
   }
 
   @override
+  Future<void> discardPcztDraft({required SwapHardwarePcztDraft draft}) async {
+    Object? lastError;
+    for (var attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await rust_sync.discardProposal(
+          proposalId: draft.proposalId,
+          sendFlowId: draft.sendFlowId,
+        );
+        log(
+          'SwapHardwareSigning: released deposit proposal '
+          'flow=${draft.sendFlowId} proposal=${draft.proposalId}',
+        );
+        return;
+      } catch (e) {
+        lastError = e;
+        log(
+          'SwapHardwareSigning: discard deposit proposal attempt $attempt '
+          'failed flow=${draft.sendFlowId} proposal=${draft.proposalId} '
+          'error=$e',
+        );
+        if (attempt < 3) {
+          await Future<void>.delayed(Duration(milliseconds: attempt * 100));
+        }
+      }
+    }
+    log(
+      'SwapHardwareSigning: deposit proposal cleanup remains pending '
+      'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$lastError',
+    );
+  }
+
+  Future<void> _retainPcztDraftLockUntilExpiry({
+    required SwapHardwarePcztDraft draft,
+  }) async {
+    try {
+      await rust_sync.retainProposalLockUntilExpiry(
+        proposalId: draft.proposalId,
+        sendFlowId: draft.sendFlowId,
+      );
+      log(
+        'SwapHardwareSigning: retained deposit input lock until expiry '
+        'flow=${draft.sendFlowId} proposal=${draft.proposalId}',
+      );
+    } catch (e) {
+      log(
+        'SwapHardwareSigning: retain deposit proposal lock failed '
+        'flow=${draft.sendFlowId} proposal=${draft.proposalId} error=$e',
+      );
+    }
+  }
+
+  @override
   Future<rust_sync.ExtractAndBroadcastPcztResult> broadcastSignedPczt({
+    required SwapHardwarePcztDraft draft,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
-    final dbPath = await getWalletDbPath();
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    final result = await rust_sync.extractAndBroadcastPczt(
-      dbPath: dbPath,
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      network: endpoint.networkName,
-      pcztWithProofsBytes: pcztWithProofsBytes,
-      pcztWithSignaturesBytes: pcztWithSignaturesBytes,
-      spendParamsPath: spendParamsPath,
-      outputParamsPath: outputParamsPath,
-    );
+    late final rust_sync.ExtractAndBroadcastPcztResult result;
+    try {
+      final dbPath = await getWalletDbPath();
+      final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+      result = await rust_sync.extractAndBroadcastPczt(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        pcztWithProofsBytes: pcztWithProofsBytes,
+        pcztWithSignaturesBytes: pcztWithSignaturesBytes,
+        spendParamsPath: spendParamsPath,
+        outputParamsPath: outputParamsPath,
+      );
+    } catch (_) {
+      await discardPcztDraft(draft: draft);
+      rethrow;
+    }
+    if (result.status == 'broadcast_unknown' ||
+        result.status == 'broadcasted_storage_failed') {
+      await _retainPcztDraftLockUntilExpiry(draft: draft);
+    } else {
+      await discardPcztDraft(draft: draft);
+    }
     try {
       await _ref.read(syncProvider.notifier).refreshAfterSend();
     } catch (e) {

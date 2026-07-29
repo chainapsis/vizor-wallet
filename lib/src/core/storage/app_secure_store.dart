@@ -31,6 +31,8 @@ const _passwordVerifierSaltKey = 'zcash_password_verifier_salt';
 const _passwordRotationInProgressKey = 'zcash_rotation_in_progress';
 const _passwordRotationRollbackFailedKind = 'rollbackFailed';
 const _accountMnemonicKeyPrefix = 'zcash_account_mnemonic_';
+const _ironwoodMigrationPendingTxSaltKeyPrefix =
+    'zcash_ironwood_migration_pending_salt_';
 const _accountMnemonicMigrationCompleteKey =
     'zcash_mnemonic_storage_migrated_v1';
 const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
@@ -141,6 +143,26 @@ class AppSecureStore {
     final dbName = 'zcash_wallet_$suffix.db';
     await writePlain(kWalletDbNameKey, dbName);
     return dbName;
+  }
+
+  Future<String> getOrCreateIronwoodMigrationPendingTxSaltBase64({
+    required String network,
+    required String accountUuid,
+  }) {
+    return _secretMutationLock.run(() async {
+      final key = ironwoodMigrationPendingTxSaltKey(
+        network: network,
+        accountUuid: accountUuid,
+      );
+      final existing = await readPlain(key);
+      if (existing != null && existing.isNotEmpty) {
+        return existing;
+      }
+
+      final generated = base64Encode(_randomBytes(16));
+      await writePlain(key, generated);
+      return generated;
+    });
   }
 
   Future<String?> readString(String key) async {
@@ -551,6 +573,13 @@ class AppSecureStore {
 
   static String _votingHotkeyAccountPrefix(String accountUuid) {
     return '$_votingHotkeyKeyPrefix${accountUuid}_';
+  }
+
+  static String ironwoodMigrationPendingTxSaltKey({
+    required String network,
+    required String accountUuid,
+  }) {
+    return '$_ironwoodMigrationPendingTxSaltKeyPrefix${network}_$accountUuid';
   }
 
   Future<void> recoverInterruptedPasswordRotation() async {

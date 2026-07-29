@@ -4,7 +4,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../../main.dart' show log;
 import '../../../../core/config/swap_feature_config.dart';
 import '../../../../core/feedback/app_haptics.dart';
 import '../../../../core/formatting/sync_status_label.dart';
@@ -15,15 +17,18 @@ import '../../../../core/layout/mobile/app_mobile_tab_bar.dart';
 import '../../../../core/layout/mobile/mobile_top_nav_account.dart';
 import '../../../../core/layout/mobile/mobile_top_scroll_fade.dart';
 import '../../../../core/privacy/privacy_mask.dart';
+import '../../../../core/storage/wallet_paths.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../providers/account_provider.dart';
 import '../../../../providers/privacy_mode_provider.dart';
+import '../../../../providers/rpc_endpoint_provider.dart';
 import '../../../../providers/sync_keep_awake_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/zec_price_change_provider.dart';
+import '../../../../rust/api/sync.dart' as rust_sync;
 import '../../../accounts/widgets/mobile/mobile_accounts_sheet.dart';
 import '../../../activity/activity_feed_sections.dart';
 import '../../../activity/activity_row_mapper.dart';
@@ -31,6 +36,12 @@ import '../../../activity/screens/mobile/mobile_transaction_status_screen.dart';
 import '../../../activity/swap_activity_row_items_provider.dart';
 import '../../../activity/swap_activity_row_mapper.dart';
 import '../../../activity/widgets/activity_feed.dart';
+import '../../../migration/models/mobile_ironwood_migration_status_entry.dart';
+import '../../../migration/models/mobile_ironwood_migration_attention_state.dart';
+import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
+import '../../../migration/widgets/mobile/mobile_ironwood_migration_attention.dart';
+import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
+import '../../../migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../../../swap/models/swap_activity_navigation.dart';
 import '../../../swap/providers/swap_state_provider.dart';
 import '../../../swap/widgets/swap_activity_status_auto_refresh.dart';
@@ -56,6 +67,10 @@ class MobileHomeScreen extends ConsumerWidget {
       activeAccountUuid,
     );
     final privacyModeEnabled = ref.watch(privacyModeProvider);
+    final ironwoodMigrationCta = ref.watch(
+      ironwoodHomeMigrationPresentationProvider,
+    );
+    final isCurrentHomeRoute = GoRouterState.of(context).uri.path == '/home';
 
     final isImporting =
         activeAccountUuid != null &&
@@ -71,6 +86,7 @@ class MobileHomeScreen extends ConsumerWidget {
             bottom: false,
             child: Column(
               children: [
+                const SizedBox(height: AppSpacing.s),
                 Builder(
                   builder: (context) => MobileTopNavAccount(
                     showSyncStatus: !isImporting,
@@ -87,6 +103,7 @@ class MobileHomeScreen extends ConsumerWidget {
                             sync: sync,
                             activeAccountUuid: activeAccountUuid,
                             privacyModeEnabled: privacyModeEnabled,
+                            ironwoodMigrationCta: ironwoodMigrationCta,
                             onTogglePrivacyMode: () =>
                                 ref.read(privacyModeProvider.notifier).toggle(),
                           ),
@@ -96,9 +113,400 @@ class MobileHomeScreen extends ConsumerWidget {
             ),
           ),
           const _SyncKeepAwakePromptHost(),
+          const _IronwoodMigrationAnnouncementHost(),
+          _IronwoodMigrationAttentionMountGate(
+            isHomeCurrent: isCurrentHomeRoute,
+          ),
         ],
       ),
     );
+  }
+}
+
+enum _IronwoodAttentionAction { openMigration, later }
+
+class _IronwoodMigrationAttentionMountGate extends StatefulWidget {
+  const _IronwoodMigrationAttentionMountGate({required this.isHomeCurrent});
+
+  final bool isHomeCurrent;
+
+  @override
+  State<_IronwoodMigrationAttentionMountGate> createState() =>
+      _IronwoodMigrationAttentionMountGateState();
+}
+
+class _IronwoodMigrationAttentionMountGateState
+    extends State<_IronwoodMigrationAttentionMountGate> {
+  bool _hasMountedHost = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isHomeCurrent) return const SizedBox.shrink();
+    final evaluateInitialEntry = !_hasMountedHost;
+    _hasMountedHost = true;
+    return Stack(
+      children: [
+        _IronwoodMigrationAttentionHost(
+          key: const ValueKey('mobile_home_migration_attention_host'),
+          evaluateInitialEntry: evaluateInitialEntry,
+        ),
+        const _IronwoodMigrationCompletionHost(
+          key: ValueKey('mobile_home_migration_completion_host'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Opens the migration completion screen once for a run that finished while
+/// the user was elsewhere.
+///
+/// A migration normally completes in the background, and the home CTA hides
+/// itself once the run is complete, so without this the result screen is only
+/// reachable by standing on the status screen at the moment the phase flips.
+/// The status screen records the run as seen when it renders, so this navigates
+/// at most once per completed run.
+class _IronwoodMigrationCompletionHost extends ConsumerStatefulWidget {
+  const _IronwoodMigrationCompletionHost({super.key});
+
+  @override
+  ConsumerState<_IronwoodMigrationCompletionHost> createState() =>
+      _IronwoodMigrationCompletionHostState();
+}
+
+/// Completions this session already routed to.
+///
+/// The host is unmounted whenever home is not the current route, so a
+/// widget-local guard forgets the moment the user returns from the completion
+/// screen. Keeping it in the provider scope bounds the routing to once per run
+/// per session even if recording the run as seen fails.
+final _ironwoodMigrationRoutedCompletionsProvider = Provider<Set<String>>(
+  (_) => <String>{},
+);
+
+class _IronwoodMigrationCompletionHostState
+    extends ConsumerState<_IronwoodMigrationCompletionHost> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _evaluate(ref.read(ironwoodMigrationCompletionProvider));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(ironwoodMigrationCompletionProvider, (_, next) {
+      _evaluate(next);
+    });
+    return const SizedBox.shrink();
+  }
+
+  void _evaluate(AsyncValue<IronwoodMigrationCompletionState> completionAsync) {
+    if (!mounted) return;
+    // A refresh keeps serving the previous value, and recording the run as seen
+    // triggers exactly such a refresh. Acting on that stale value would route
+    // back to a completion the user has already been shown.
+    if (completionAsync.isLoading || completionAsync.hasError) return;
+    final completion = completionAsync.value;
+    if (completion == null || !completion.visible) return;
+    final network = completion.network;
+    final accountUuid = completion.accountUuid;
+    final completionId = completion.completionId;
+    if (network == null || accountUuid == null || completionId == null) return;
+    // Only present the account the user is actually on. Switching accounts must
+    // not drag them into another account's result screen.
+    if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+      return;
+    }
+    if (!_isForeground) return;
+    final key = '$network:$accountUuid:$completionId';
+    final routed = ref.read(_ironwoodMigrationRoutedCompletionsProvider);
+    if (routed.contains(key)) return;
+    if (!_isOnHome()) return;
+    // A tap that is already opening another screen has not committed its route
+    // when this fires, which is how the completion screen ended up layered over
+    // whatever the user had just asked for. Re-check everything on the next
+    // frame and yield to that navigation if it happened.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || routed.contains(key) || !_isForeground) return;
+      if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+        return;
+      }
+      if (!_isOnHome()) return;
+      routed.add(key);
+      context.go('/migration/complete');
+    });
+  }
+
+  /// Whether home is the screen the user is actually looking at.
+  ///
+  /// `GoRouterState.of` resolves the nearest enclosing page, and this host
+  /// lives inside a `StatefulShellRoute.indexedStack` branch that stays mounted
+  /// behind other tabs and under pushed routes. It therefore keeps reporting
+  /// `/home` no matter where the user navigated, which made the guard vacuous.
+  /// The router's current configuration is the actual location.
+  bool _isOnHome() {
+    return GoRouter.of(context).routerDelegate.currentConfiguration.uri.path ==
+        '/home';
+  }
+
+  /// Routing is a foreground courtesy. A wake in the background must not move
+  /// the user's place in the app.
+  bool get _isForeground {
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return lifecycle == null || lifecycle == AppLifecycleState.resumed;
+  }
+}
+
+class _IronwoodMigrationAttentionHost extends ConsumerStatefulWidget {
+  const _IronwoodMigrationAttentionHost({
+    required this.evaluateInitialEntry,
+    super.key,
+  });
+
+  final bool evaluateInitialEntry;
+
+  @override
+  ConsumerState<_IronwoodMigrationAttentionHost> createState() =>
+      _IronwoodMigrationAttentionHostState();
+}
+
+class _IronwoodMigrationAttentionHostState
+    extends ConsumerState<_IronwoodMigrationAttentionHost> {
+  AppLifecycleListener? _lifecycleListener;
+  bool _showing = false;
+  bool _wasBackgrounded = false;
+  bool _resumeRefreshInProgress = false;
+  late bool _initialEvaluationPending;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialEvaluationPending = widget.evaluateInitialEntry;
+    _lifecycleListener = AppLifecycleListener(
+      onHide: _markBackgrounded,
+      onPause: _markBackgrounded,
+      onResume: _resumeIfNeeded,
+    );
+    if (_initialEvaluationPending) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _evaluateInitialEntry(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(syncProvider, (_, _) => _evaluateInitialEntry());
+    ref.listen(
+      ironwoodHomeMigrationPresentationProvider,
+      (_, _) => _evaluateInitialEntry(),
+    );
+    return const SizedBox.shrink();
+  }
+
+  void _evaluateInitialEntry() {
+    if (!mounted || !_initialEvaluationPending) return;
+    if (ref.read(syncProvider).value == null) return;
+    final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
+    if (!cta.visible &&
+        ref.read(ironwoodPostMigrationStateProvider).isLoading) {
+      return;
+    }
+    _initialEvaluationPending = false;
+    _evaluate();
+  }
+
+  void _evaluate() {
+    if (!mounted || _showing || _resumeRefreshInProgress) return;
+    if (GoRouterState.of(context).uri.path != '/home') return;
+    final cta = ref.read(ironwoodHomeMigrationPresentationProvider);
+    if (cta.mode != IronwoodHomeMigrationCtaMode.resume) return;
+    final accountUuid = cta.accountUuid;
+    final runId = cta.status?.activeRunId;
+    final sync = ref.read(syncProvider).value;
+    if (accountUuid == null || runId == null) return;
+    final attention = mobileIronwoodMigrationAttention(
+      cta.status,
+      currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
+      broadcastHeight: _mobileIronwoodObservedBroadcastHeight(sync),
+      isHardware: ref
+          .read(accountProvider.notifier)
+          .isHardwareAccount(accountUuid),
+    );
+    if (attention == null) return;
+    final fingerprint = mobileIronwoodMigrationAttentionFingerprint(
+      accountUuid: accountUuid,
+      runId: runId,
+      status: cta.status!,
+      attention: attention,
+    );
+    if (ref
+        .read(mobileIronwoodMigrationAttentionSessionProvider)
+        .contains(fingerprint)) {
+      return;
+    }
+    ref
+        .read(mobileIronwoodMigrationAttentionSessionProvider.notifier)
+        .markSeen(fingerprint);
+    unawaited(_show(attention));
+  }
+
+  void _markBackgrounded() {
+    _wasBackgrounded = true;
+  }
+
+  void _resumeIfNeeded() {
+    if (!_wasBackgrounded) return;
+    _wasBackgrounded = false;
+    unawaited(_refreshAfterResume());
+  }
+
+  Future<void> _refreshAfterResume() async {
+    if (_resumeRefreshInProgress) return;
+    _resumeRefreshInProgress = true;
+    var refreshed = false;
+    try {
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .synchronizeAndReconcileAfterReentry();
+      refreshed = true;
+    } catch (_) {
+      // Fail closed: do not re-present an attention modal from the status
+      // snapshot that existed before the app was backgrounded.
+    } finally {
+      _resumeRefreshInProgress = false;
+    }
+    if (!mounted || !refreshed) return;
+    _evaluate();
+  }
+
+  Future<void> _show(MobileIronwoodMigrationAttention attention) async {
+    _showing = true;
+    try {
+      final action = await showAppMobileSheet<_IronwoodAttentionAction>(
+        context: context,
+        builder: (sheetContext) {
+          return MobileIronwoodMigrationAttentionSheetBody(
+            kind: attention.kind,
+            count: attention.count,
+            onOpenMigration: () => Navigator.of(
+              sheetContext,
+            ).pop(_IronwoodAttentionAction.openMigration),
+            onLater: () =>
+                Navigator.of(sheetContext).pop(_IronwoodAttentionAction.later),
+          );
+        },
+      );
+      if (!mounted) return;
+      if (action == _IronwoodAttentionAction.openMigration) {
+        context.push(
+          '/migration/private/status',
+          extra: const MobileIronwoodMigrationStatusEntry(),
+        );
+      }
+    } finally {
+      _showing = false;
+    }
+  }
+}
+
+enum _IronwoodAnnouncementAction { startMigration }
+
+class _IronwoodMigrationAnnouncementHost extends ConsumerStatefulWidget {
+  const _IronwoodMigrationAnnouncementHost();
+
+  @override
+  ConsumerState<_IronwoodMigrationAnnouncementHost> createState() =>
+      _IronwoodMigrationAnnouncementHostState();
+}
+
+class _IronwoodMigrationAnnouncementHostState
+    extends ConsumerState<_IronwoodMigrationAnnouncementHost> {
+  bool _showing = false;
+  String? _shownFor;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _evaluate(ref.read(ironwoodMigrationAnnouncementProvider).value);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(ironwoodMigrationAnnouncementProvider, (_, next) {
+      _evaluate(next.value);
+    });
+    return const SizedBox.shrink();
+  }
+
+  void _evaluate(IronwoodMigrationAnnouncementState? announcement) {
+    if (announcement == null || !announcement.visible || _showing) return;
+    final network = announcement.network;
+    final accountUuid = announcement.accountUuid;
+    if (network == null || accountUuid == null) return;
+    final key = '$network:$accountUuid';
+    if (_shownFor == key) return;
+    _shownFor = key;
+    unawaited(_show(announcement));
+  }
+
+  Future<void> _show(IronwoodMigrationAnnouncementState announcement) async {
+    _showing = true;
+    try {
+      final action = await showAppMobileSheet<_IronwoodAnnouncementAction>(
+        context: context,
+        builder: (sheetContext) => MobileIronwoodMigrationAnnouncementSheet(
+          onStartMigration: () => Navigator.of(
+            sheetContext,
+          ).pop(_IronwoodAnnouncementAction.startMigration),
+          onOpenReleaseNotes: () => unawaited(_openReleaseNotes()),
+        ),
+      );
+      if (!mounted) return;
+      if (action == _IronwoodAnnouncementAction.startMigration) {
+        context.push('/migration/intro');
+      }
+      await _markSeen(announcement);
+    } finally {
+      _showing = false;
+    }
+  }
+
+  Future<void> _markSeen(
+    IronwoodMigrationAnnouncementState announcement,
+  ) async {
+    final network = announcement.network;
+    final accountUuid = announcement.accountUuid;
+    if (network == null || accountUuid == null) return;
+    try {
+      await ref
+          .read(ironwoodMigrationAnnouncementStoreProvider)
+          .markSeen(network: network, accountUuid: accountUuid);
+    } catch (_) {
+      return;
+    }
+    if (mounted) ref.invalidate(ironwoodMigrationAnnouncementProvider);
+  }
+
+  Future<void> _openReleaseNotes() async {
+    final uri = Uri.parse(kIronwoodMigrationReleaseNotesUrl);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // The announcement remains open so the user can retry.
+    }
   }
 }
 
@@ -385,12 +793,14 @@ class _HomeContent extends ConsumerStatefulWidget {
     required this.sync,
     required this.activeAccountUuid,
     required this.privacyModeEnabled,
+    required this.ironwoodMigrationCta,
     required this.onTogglePrivacyMode,
   });
 
   final SyncState sync;
   final String? activeAccountUuid;
   final bool privacyModeEnabled;
+  final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
   final VoidCallback onTogglePrivacyMode;
 
   @override
@@ -399,6 +809,62 @@ class _HomeContent extends ConsumerStatefulWidget {
 
 class _HomeContentState extends ConsumerState<_HomeContent> {
   bool _isShieldingBalance = false;
+
+  Future<void> _openTransactionStatus(
+    BuildContext context,
+    WidgetRef ref,
+    rust_sync.TransactionInfo transaction,
+  ) async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+
+    rust_sync.TransactionDetail? detail;
+    try {
+      final dbPath = await getWalletDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      detail = await rust_sync.getTransactionDetail(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+      );
+    } catch (e, st) {
+      log('MobileHome: transaction detail load failed: $e\n$st');
+    }
+    if (!mounted) return;
+    if (accountUuid != ref.read(accountProvider).value?.activeAccountUuid) {
+      return;
+    }
+    if (!context.mounted) return;
+
+    context.push(
+      Uri(
+        path: '/activity/tx/${transaction.txidHex}',
+        queryParameters: {'kind': transaction.txKind},
+      ).toString(),
+      extra: MobileTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+        initialTransaction: transaction,
+        initialDetail: detail,
+      ),
+    );
+  }
+
+  void _openLoadedTransactionStatus(rust_sync.TransactionInfo transaction) {
+    context.push(
+      Uri(
+        path: '/activity/tx/${transaction.txidHex}',
+        queryParameters: {'kind': transaction.txKind},
+      ).toString(),
+      extra: MobileTransactionStatusArgs(
+        txidHex: transaction.txidHex,
+        txKind: transaction.txKind,
+        initialTransaction: transaction,
+      ),
+    );
+  }
 
   Future<void> _openPay() async {
     final accountUuid = ref
@@ -486,22 +952,39 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     showAppToast(context, message, iconName: AppIcons.warning);
   }
 
+  String? _absorbedReceiveAmountText(rust_sync.TransactionInfo? transaction) {
+    if (transaction == null) return null;
+    final amount = transaction.displayAmount;
+    if (amount == BigInt.zero) return null;
+    return ZecAmount.fromZatoshi(amount).signedActivity.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     final sync = widget.sync;
     final activeAccountUuid = widget.activeAccountUuid;
     final privacyModeEnabled = widget.privacyModeEnabled;
-    final shieldedBalance =
-        sync.saplingBalance +
-        sync.orchardBalance +
-        sync.saplingPendingBalance +
-        sync.orchardPendingBalance;
+    final migrationRequired =
+        widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
+    final migrationInProgress =
+        widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
+    final sendDisabled =
+        migrationRequired ||
+        (migrationInProgress && sync.ironwoodBalance <= BigInt.zero);
+    final shieldedBalance = migrationRequired
+        ? sync.orchardBalance + sync.orchardPendingBalance
+        : sync.saplingBalance +
+              sync.orchardBalance +
+              sync.ironwoodBalance +
+              sync.saplingPendingBalance +
+              sync.orchardPendingBalance +
+              sync.ironwoodPendingBalance;
     final transparentBalance =
         sync.transparentBalance + sync.transparentPendingBalance;
     final hasBalance =
         shieldedBalance > BigInt.zero || transparentBalance > BigInt.zero;
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
-    final fiatBalanceText = fiatTextForZatoshi(
+    final fiatBalanceText = _mobileHomeFiatTextForZatoshi(
       shieldedBalance,
       zecUsdUnitPrice: zecUsdUnitPrice,
     );
@@ -515,34 +998,42 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         .watch(payIntroductionBadgeClickedProvider)
         .value;
     final showPayIntroduction = payEnabled && payIntroductionClicked == false;
+    final migrationAttention = mobileIronwoodMigrationAttention(
+      widget.ironwoodMigrationCta.status,
+      currentHeight: _mobileIronwoodSafelyObservedHeight(sync),
+      broadcastHeight: _mobileIronwoodObservedBroadcastHeight(sync),
+      isHardware:
+          activeAccountUuid != null &&
+          ref
+              .read(accountProvider.notifier)
+              .isHardwareAccount(activeAccountUuid),
+    );
 
     final uuid = activeAccountUuid;
     final swapItems = uuid == null
         ? const <SwapActivityRowItem>[]
         : ref.watch(swapActivityRowItemsProvider(uuid)).value ??
               const <SwapActivityRowItem>[];
+    final absorption = sync.recentTransactions.isEmpty
+        ? SwapActivityLegAbsorption.empty
+        : matchSwapActivityLegAbsorption(
+            swapItems: swapItems,
+            transactions: sync.recentTransactions,
+          );
+    final swapReceiveTxByIntent = absorption.receiveTxByIntent;
     final entries = <ActivityEntry>[
       for (final tx in sync.recentTransactions)
-        ActivityEntry(
-          timestamp: transactionActivityTimestamp(tx),
-          row: buildTransactionActivityRow(
-            context: context,
-            transaction: tx,
-            privacyModeEnabled: privacyModeEnabled,
-            dateOnlyTimestamp: true,
-            onTap: () => context.push(
-              Uri(
-                path: '/activity/tx/${tx.txidHex}',
-                queryParameters: {'kind': tx.txKind},
-              ).toString(),
-              extra: MobileTransactionStatusArgs(
-                txidHex: tx.txidHex,
-                txKind: tx.txKind,
-                initialTransaction: tx,
-              ),
+        if (!absorption.absorbs(tx))
+          ActivityEntry(
+            timestamp: transactionActivityTimestamp(tx),
+            row: buildTransactionActivityRow(
+              context: context,
+              transaction: tx,
+              privacyModeEnabled: privacyModeEnabled,
+              dateOnlyTimestamp: true,
+              onTap: () => unawaited(_openTransactionStatus(context, ref, tx)),
             ),
           ),
-        ),
       for (final item in swapItems)
         ActivityEntry(
           timestamp: item.activityTimestamp,
@@ -557,6 +1048,13 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 returnTarget: SwapActivityReturnTarget.home,
               ).toString(),
             ),
+            receivedAmountText: _absorbedReceiveAmountText(
+              swapReceiveTxByIntent[item.intentId],
+            ),
+            onReceivedLegTap: switch (swapReceiveTxByIntent[item.intentId]) {
+              null => null,
+              final tx => () => _openLoadedTransactionStatus(tx),
+            },
           ),
         ),
     ]..sort(compareActivityEntries);
@@ -568,7 +1066,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.sm,
-        AppSpacing.s,
+        AppSpacing.sm,
         AppSpacing.sm,
         kMobileTabBarHeight + AppSpacing.lg,
       ),
@@ -593,7 +1091,18 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   canShieldBalance: sync.canShieldTransparentBalance,
                   isShieldingBalance: _isShieldingBalance,
                   privacyModeEnabled: privacyModeEnabled,
+                  ironwoodMigrationCta: widget.ironwoodMigrationCta,
+                  balanceDisabled: migrationRequired,
                   onTogglePrivacyMode: widget.onTogglePrivacyMode,
+                  onIronwoodMigrationTap: () {
+                    final target = switch (widget.ironwoodMigrationCta.mode) {
+                      IronwoodHomeMigrationCtaMode.start => '/migration/intro',
+                      IronwoodHomeMigrationCtaMode.resume =>
+                        '/migration/private/status',
+                      IronwoodHomeMigrationCtaMode.hidden => null,
+                    };
+                    if (target != null) context.push(target);
+                  },
                   onShieldBalancePressed: () =>
                       unawaited(_shieldTransparentBalance()),
                 ),
@@ -606,7 +1115,9 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                           key: const ValueKey('mobile_home_send'),
                           expand: true,
                           constrainContent: true,
-                          onPressed: () => context.push('/send'),
+                          onPressed: sendDisabled
+                              ? null
+                              : () => context.push('/send'),
                           leading: const _ButtonIcon(AppIcons.plane),
                           height: _mobileHomeActionButtonHeight,
                           child: const Text(
@@ -637,7 +1148,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       // rides the swap engine, so a server-side swap disable
                       // hides the button and its callout, mirroring desktop's
                       // `onPay == null` gating.
-                      if (payEnabled) ...[
+                      if (payEnabled && !migrationRequired) ...[
                         const SizedBox(width: AppSpacing.xs),
                         DecoratedBox(
                           key: const ValueKey('mobile_home_pay_glow'),
@@ -694,9 +1205,26 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                if (widget.ironwoodMigrationCta.visible) ...[
+                  const SizedBox(height: AppSpacing.s),
+                  MobileIronwoodMigrationBanner(
+                    inProgress: migrationInProgress,
+                    attentionKind: migrationAttention?.kind,
+                    actionNeededCount: migrationAttention?.count ?? 0,
+                    remainingText: _mobileIronwoodRemainingAmountText(
+                      widget.ironwoodMigrationCta.status,
+                    ),
+                    onTap: () {
+                      final target = migrationRequired
+                          ? '/migration/intro'
+                          : '/migration/private/status';
+                      context.push(target);
+                    },
+                  ),
+                ],
               ],
             ),
-            if (hasBalance && showPayIntroduction) ...[
+            if (hasBalance && showPayIntroduction && !migrationRequired) ...[
               Positioned(
                 right: 41,
                 top: 172,
@@ -762,6 +1290,30 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
   }
 }
 
+String? _mobileHomeFiatTextForZatoshi(
+  BigInt zatoshi, {
+  required double? zecUsdUnitPrice,
+}) {
+  final compactText = fiatTextForZatoshi(
+    zatoshi,
+    zecUsdUnitPrice: zecUsdUnitPrice,
+  );
+  if (compactText == null || zecUsdUnitPrice == null) return compactText;
+
+  final zec = zatoshi.toDouble() / zatoshiPerZec.toDouble();
+  final value = zec * zecUsdUnitPrice;
+  if (!value.isFinite || value >= 1000000) return compactText;
+
+  final parts = value.toStringAsFixed(2).split('.');
+  final whole = parts.first;
+  final grouped = StringBuffer();
+  for (var index = 0; index < whole.length; index++) {
+    if (index > 0 && (whole.length - index) % 3 == 0) grouped.write(',');
+    grouped.write(whole[index]);
+  }
+  return '\$$grouped.${parts.last}';
+}
+
 /// The dark shielded-balance card — Figma `Full Width Card`
 /// (4394:88394): 200px tall, home-card surface, chip + privacy eye on
 /// top, fiat line and serif ZEC balance at the bottom.
@@ -775,7 +1327,10 @@ class _BalanceCard extends StatelessWidget {
     required this.canShieldBalance,
     required this.isShieldingBalance,
     required this.privacyModeEnabled,
+    required this.ironwoodMigrationCta,
+    required this.balanceDisabled,
     required this.onTogglePrivacyMode,
+    required this.onIronwoodMigrationTap,
     required this.onShieldBalancePressed,
   });
 
@@ -787,7 +1342,10 @@ class _BalanceCard extends StatelessWidget {
   final bool canShieldBalance;
   final bool isShieldingBalance;
   final bool privacyModeEnabled;
+  final IronwoodHomeMigrationCtaState ironwoodMigrationCta;
+  final bool balanceDisabled;
   final VoidCallback onTogglePrivacyMode;
+  final VoidCallback onIronwoodMigrationTap;
   final VoidCallback onShieldBalancePressed;
 
   @override
@@ -805,7 +1363,6 @@ class _BalanceCard extends StatelessWidget {
         : roundedPriceChangePct < 0
         ? colors.text.destructive
         : cardText;
-
     return Container(
       decoration: BoxDecoration(
         color: colors.background.ground,
@@ -819,7 +1376,6 @@ class _BalanceCard extends StatelessWidget {
           children: [
             Container(
               height: 200,
-              padding: const EdgeInsets.all(AppSpacing.sm),
               decoration: BoxDecoration(
                 color: colors.background.homeCard,
                 borderRadius: cardRadius,
@@ -828,84 +1384,109 @@ class _BalanceCard extends StatelessWidget {
                   width: 1.5,
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Row(
-                    children: [
-                      AppIcon(
-                        AppIcons.shieldKeyhole,
-                        size: 20,
-                        color: cardText,
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Expanded(
-                        child: Text(
-                          'Shielded balance',
-                          style: _mobileHomeLabelMStyle.copyWith(
-                            color: cardText,
-                          ),
-                        ),
-                      ),
-                      _PrivacyEyeButton(
-                        enabled: privacyModeEnabled,
-                        onTap: onTogglePrivacyMode,
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  if (fiatBalanceText != null) ...[
-                    Row(
+                  Padding(
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Flexible(
-                          child: Text(
-                            fiatBalanceText!,
-                            key: const ValueKey(
-                              'mobile_home_balance_fiat_text',
+                        Row(
+                          children: [
+                            if (ironwoodMigrationCta.mode ==
+                                IronwoodHomeMigrationCtaMode.start)
+                              Expanded(
+                                child: _MobileIronwoodMigrationPill(
+                                  onTap: onIronwoodMigrationTap,
+                                ),
+                              )
+                            else ...[
+                              AppIcon(
+                                AppIcons.shieldKeyhole,
+                                size: 20,
+                                color: cardText,
+                              ),
+                              const SizedBox(width: AppSpacing.s),
+                              Expanded(
+                                child: Text(
+                                  'Shielded balance',
+                                  style: _mobileHomeLabelMStyle.copyWith(
+                                    color: cardText,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            _PrivacyEyeButton(
+                              enabled: privacyModeEnabled,
+                              onTap: onTogglePrivacyMode,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: _mobileHomeLabelMStyle.copyWith(
-                              color: cardText.withValues(alpha: 0.8),
-                            ),
-                          ),
+                          ],
                         ),
-                        if (priceChangeColor != null) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          Text(
-                            formatZecPriceChange24hPct(priceChange24hPct!),
-                            key: const ValueKey(
-                              'mobile_home_balance_price_change_text',
-                            ),
-                            style: _mobileHomeLabelMStyle.copyWith(
-                              color: priceChangeColor,
-                            ),
+                        const Spacer(),
+                        if (fiatBalanceText != null) ...[
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  fiatBalanceText!,
+                                  key: const ValueKey(
+                                    'mobile_home_balance_fiat_text',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: _mobileHomeLabelMStyle.copyWith(
+                                    color: cardText.withValues(
+                                      alpha: balanceDisabled ? 0.4 : 0.8,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (priceChangeColor != null) ...[
+                                const SizedBox(width: AppSpacing.xs),
+                                Text(
+                                  formatZecPriceChange24hPct(
+                                    priceChange24hPct!,
+                                  ),
+                                  key: const ValueKey(
+                                    'mobile_home_balance_price_change_text',
+                                  ),
+                                  style: _mobileHomeLabelMStyle.copyWith(
+                                    color: priceChangeColor,
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
+                          const SizedBox(height: AppSpacing.xs),
                         ],
+                        Text.rich(
+                          key: const ValueKey('mobile_home_shielded_balance'),
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: '$balanceText ',
+                                style: _mobileHomeBalanceAmountStyle.copyWith(
+                                  color: cardText.withValues(
+                                    alpha: balanceDisabled ? 0.4 : 1,
+                                  ),
+                                ),
+                              ),
+                              TextSpan(
+                                text: kZcashDefaultCurrencyTicker,
+                                style: _mobileHomeBalanceTickerStyle.copyWith(
+                                  color: cardText.withValues(
+                                    alpha: balanceDisabled ? 0.4 : 1,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
-                    const SizedBox(height: AppSpacing.xs),
-                  ],
-                  Text.rich(
-                    key: const ValueKey('mobile_home_shielded_balance'),
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '$balanceText ',
-                          style: _mobileHomeBalanceAmountStyle.copyWith(
-                            color: cardText,
-                          ),
-                        ),
-                        TextSpan(
-                          text: kZcashDefaultCurrencyTicker,
-                          style: _mobileHomeBalanceTickerStyle.copyWith(
-                            color: cardText,
-                          ),
-                        ),
-                      ],
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -919,6 +1500,75 @@ class _BalanceCard extends StatelessWidget {
               onShieldBalancePressed: onShieldBalancePressed,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
+  if (status == null) return null;
+  final remaining = status.parts.isNotEmpty
+      ? status.parts
+            .where(
+              (part) => part.state != rust_sync.MigrationPartState.completed,
+            )
+            .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi)
+      : status.scheduledBroadcasts
+            .where((item) => item.status.toLowerCase() != 'confirmed')
+            .fold<BigInt>(BigInt.zero, (sum, item) => sum + item.valueZatoshi);
+  if (remaining == BigInt.zero) return null;
+  return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
+}
+
+int _mobileIronwoodSafelyObservedHeight(SyncState? sync) {
+  if (sync == null) return 0;
+  return mobileIronwoodSafelyObservedHeight(
+    scannedHeight: sync.scannedHeight,
+    chainTipHeight: sync.chainTipHeight,
+  );
+}
+
+int _mobileIronwoodObservedBroadcastHeight(SyncState? sync) {
+  if (sync == null) return 0;
+  return mobileIronwoodObservedBroadcastHeight(
+    scannedHeight: sync.scannedHeight,
+    chainTipHeight: sync.chainTipHeight,
+  );
+}
+
+class _MobileIronwoodMigrationPill extends StatelessWidget {
+  const _MobileIronwoodMigrationPill({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final contentColor = context.colors.text.homeCard;
+    return Semantics(
+      button: true,
+      label: 'Migration required',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          key: const ValueKey('mobile_home_ironwood_migration_required_pill'),
+          height: 40,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIcon(AppIcons.lock, size: 20, color: contentColor),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  'Migration required',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _mobileHomeLabelMStyle.copyWith(color: contentColor),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

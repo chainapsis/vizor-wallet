@@ -79,7 +79,8 @@ fvm flutter test \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
   --dart-define=ZCASH_E2E_DRIVER_URL="$DRIVER_URL" \
-  --dart-define=ZCASH_E2E_MEMPOOL_TEST_MODE=during-sync
+  --dart-define=ZCASH_E2E_MEMPOOL_TEST_MODE=during-sync \
+  --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
 status="$?"
 set -e
 

@@ -8474,6 +8474,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(sessionStore.savedIntents, isEmpty);
+    expect(hardwareSigningService.discardedDrafts, [BigInt.one]);
     expect(find.text('Sign ZEC deposit on Keystone'), findsNothing);
     expect(find.text('Deposit ZEC'), findsNothing);
   });

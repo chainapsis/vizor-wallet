@@ -2,7 +2,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
-import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_icon.dart';
@@ -12,6 +11,7 @@ import '../../../../core/widgets/app_tappable.dart';
 import '../../../../core/widgets/mobile_text_field.dart';
 import '../../../accounts/widgets/mobile/account_edit_sheets.dart'
     show MobileSheetCancel, showProfilePictureSheet;
+import '../../../address_book/contact_label_generator.dart';
 import '../../../address_book/models/address_book_contact.dart';
 import '../../../address_book/widgets/address_book_network_icon.dart';
 import '../../../swap/models/swap_address_formatting.dart';
@@ -32,6 +32,7 @@ class MobilePayAddContactCard extends StatefulWidget {
     required this.address,
     required this.onCancel,
     required this.onSave,
+    this.profilePictureIdGenerator,
     super.key,
   });
 
@@ -39,6 +40,9 @@ class MobilePayAddContactCard extends StatefulWidget {
   final String address;
   final VoidCallback onCancel;
   final Future<void> Function(String label, String profilePictureId) onSave;
+
+  /// Overrides the random picture generator for deterministic tests.
+  final String Function()? profilePictureIdGenerator;
 
   @override
   State<MobilePayAddContactCard> createState() =>
@@ -48,7 +52,7 @@ class MobilePayAddContactCard extends StatefulWidget {
 class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
   final _labelController = TextEditingController();
   final _labelFocusNode = FocusNode();
-  var _profilePictureId = kDefaultProfilePictureId;
+  late String _profilePictureId;
   var _saving = false;
   String? _saveError;
   var _lastLabelText = '';
@@ -56,6 +60,9 @@ class _MobilePayAddContactCardState extends State<MobilePayAddContactCard> {
   @override
   void initState() {
     super.initState();
+    _profilePictureId =
+        widget.profilePictureIdGenerator?.call() ??
+        randomContactProfilePictureId();
     _labelController.addListener(_onLabelChanged);
     _labelFocusNode.addListener(_refresh);
   }

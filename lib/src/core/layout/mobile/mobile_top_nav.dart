@@ -44,6 +44,7 @@ class MobileTopNav extends StatelessWidget {
        showBackButton = true,
        onBack = null,
        trailing = null,
+       foregroundColor = null,
        backIcon = AppIcons.chevronBackward;
 
   const MobileTopNav.steps({
@@ -65,6 +66,7 @@ class MobileTopNav extends StatelessWidget {
        titleStyle = null,
        height = kMobileTopNavHeight,
        trailing = null,
+       foregroundColor = null,
        backIcon = AppIcons.chevronBackward;
 
   const MobileTopNav.back({
@@ -73,6 +75,7 @@ class MobileTopNav extends StatelessWidget {
     this.trailing,
     this.backIcon = AppIcons.chevronBackward,
     this.titleStyle,
+    this.foregroundColor,
     this.height = kMobileTopNavHeight,
     super.key,
   }) : _variant = _MobileTopNavVariant.back,
@@ -121,6 +124,7 @@ class MobileTopNav extends StatelessWidget {
   /// Back variant: centered serif title.
   final String title;
   final TextStyle? titleStyle;
+  final Color? foregroundColor;
   final double height;
 
   /// Back variant: right-aligned widget (e.g. the swap composer's
@@ -275,7 +279,7 @@ class MobileTopNav extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: (titleStyle ?? AppTypography.headlineLarge).copyWith(
-                color: colors.text.accent,
+                color: foregroundColor ?? colors.text.accent,
               ),
             ),
           ),
@@ -287,6 +291,7 @@ class MobileTopNav extends StatelessWidget {
               size: _backButtonSize,
               onTap: onBack,
               iconName: backIcon,
+              color: foregroundColor,
             ),
           ),
         if (trailing != null) Positioned(right: AppSpacing.s, child: trailing!),
@@ -302,11 +307,13 @@ class _BackButton extends StatelessWidget {
     required this.size,
     this.onTap,
     this.iconName = AppIcons.chevronBackward,
+    this.color,
   });
 
   final double size;
   final VoidCallback? onTap;
   final String iconName;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -323,7 +330,7 @@ class _BackButton extends StatelessWidget {
             child: AppIcon(
               iconName,
               size: 24,
-              color: context.colors.icon.accent,
+              color: color ?? context.colors.icon.accent,
             ),
           ),
         ),

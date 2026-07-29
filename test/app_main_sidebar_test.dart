@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    as frb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -9,9 +11,12 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   const failureLabels = {
@@ -32,7 +37,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('99% Syncing...'), findsOneWidget);
-    expect(find.text('Vizor is synced'), findsNothing);
+    expect(find.text('Synced'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
 
   testWidgets('sidebar shows primary navigation', (tester) async {
@@ -61,6 +67,162 @@ void main() {
     expect(find.text('Receive'), findsNothing);
     expect(find.text('Address book'), findsNothing);
     expect(find.text('About Vizor'), findsNothing);
+  });
+
+  testWidgets('sidebar preserves completed holdings while sync reads zero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncing: true,
+          spendableBalance: BigInt.zero,
+          displaySpendableBalance: BigInt.from(4_200_000_000),
+          orchardBalance: BigInt.zero,
+          displayOrchardBalance: BigInt.from(3_000_000_000),
+          ironwoodBalance: BigInt.zero,
+          displayIronwoodBalance: BigInt.from(1_200_000_000),
+          displaySpendableFreshness:
+              SpendableBalanceFreshness.lastCompletedSync,
+          totalBalance: BigInt.zero,
+          displayTotalBalance: BigInt.from(4_200_000_000),
+        ),
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('42'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_orchard_balance')))
+          .data,
+      contains('30'),
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_ironwood_balance')))
+          .data,
+      contains('12'),
+    );
+  });
+
+  testWidgets(
+    'sidebar keeps software migration automatic while children await anchors',
+    (tester) async {
+      await tester.pumpWidget(
+        _sidebarHarness(
+          _syncedSyncState,
+          migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+            statuses: {'account-1': _readyMigrationStatus},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Migrating...'), findsOneWidget);
+      expect(find.text('Needs input'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('sidebar_orchard_home_row')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('sidebar_migration_progress_button')),
+        findsOneWidget,
+      );
+      expect(find.text('Ironwood'), findsOneWidget);
+    },
+  );
+
+  testWidgets('sidebar keeps migration home rows while parts complete', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _mixedMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Migrating...'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sidebar_orchard_balance')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('sidebar_ironwood_balance')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('/3'), findsNothing);
+  });
+
+  testWidgets('sidebar keeps Keystone migration automatic after signing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        accountState: _hardwareAccountState,
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Migrating...'), findsOneWidget);
+    expect(find.text('Needs input'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('sidebar_migration_progress_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sidebar requests input for pending Keystone signing parts', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        accountState: _hardwareAccountState,
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationNeedsInputStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Needs input'), findsOneWidget);
+    expect(find.text('Migrating...'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('sidebar_migration_progress_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('sidebar preserves legacy Keystone needs-input status', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        _syncedSyncState,
+        accountState: _hardwareAccountState,
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _legacyReadyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Needs input'), findsOneWidget);
+    expect(find.text('Migrating...'), findsNothing);
   });
 
   testWidgets('sidebar keeps Home active and clickable on send routes', (
@@ -411,6 +573,83 @@ void main() {
     expect(find.text('settings'), findsOneWidget);
   });
 
+  testWidgets(
+    'sidebar disables Swap and Vote while Ironwood migration is required',
+    (tester) async {
+      await tester.pumpWidget(
+        _sidebarHarness(
+          _syncedSyncState,
+          ironwoodHomeMigrationCtaState:
+              const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+          ironwoodPostMigrationState: const IronwoodPostMigrationState.required(
+            network: 'main',
+            accountUuid: 'account-1',
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final swap = _sidebarItemWithLabel(tester, 'Swap');
+      final vote = _sidebarItemWithLabel(tester, 'Vote');
+      final activity = _sidebarItemWithLabel(tester, 'Activity');
+      final settings = _sidebarItemWithLabel(tester, 'Settings');
+
+      expect(swap.onTap, isNull);
+      expect(vote.onTap, isNull);
+      expect(activity.onTap, isNotNull);
+      expect(settings.onTap, isNotNull);
+      expect(_opacityForText(tester, 'Swap'), 0.5);
+      expect(_opacityForText(tester, 'Vote'), 0.5);
+
+      await tester.tap(find.text('Swap'));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('swap'), findsNothing);
+
+      await tester.tap(find.text('Vote'));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('voting'), findsNothing);
+
+      await tester.tap(find.text('Activity'));
+      await tester.pumpAndSettle();
+      expect(find.text('activity'), findsOneWidget);
+
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('settings'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'sidebar restores ordinary actions once Ironwood migration is active',
+    (tester) async {
+      await tester.pumpWidget(
+        _sidebarHarness(
+          _syncedSyncState,
+          ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _mixedMigrationStatus,
+          ),
+          ironwoodPostMigrationState: IronwoodPostMigrationState.inProgress(
+            network: 'main',
+            accountUuid: 'account-1',
+            status: _mixedMigrationStatus,
+          ),
+          migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+            statuses: {'account-1': _mixedMigrationStatus},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(_sidebarItemWithLabel(tester, 'Swap').onTap, isNotNull);
+      expect(_sidebarItemWithLabel(tester, 'Vote').onTap, isNotNull);
+    },
+  );
+
   testWidgets('sidebar sync indicator is pinned to the sidebar edge', (
     tester,
   ) async {
@@ -466,10 +705,25 @@ void main() {
   testWidgets('sidebar shows synced state after sync completes', (
     tester,
   ) async {
-    await tester.pumpWidget(_sidebarHarness(SyncState()));
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          isSyncComplete: true,
+          percentage: 1,
+          displayPercentage: 1,
+          scannedHeight: 3_428_143,
+          chainTipHeight: 3_428_143,
+        ),
+      ),
+    );
     await tester.pump();
 
-    expect(find.text('Vizor is synced'), findsOneWidget);
+    expect(find.text('Synced'), findsOneWidget);
+    expect(find.text('3,428,143'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sidebar_sync_block_icon')),
+      findsOneWidget,
+    );
     expect(find.textContaining('Syncing'), findsNothing);
     final text = tester.widget<Text>(
       find.byKey(const ValueKey('sidebar_sync_text')),
@@ -480,6 +734,26 @@ void main() {
       AppThemeData.light.colors.sync.lightSuccess,
     );
     _expectSyncIndicatorGlow(tester, blurRadius: 12);
+  });
+
+  testWidgets('sidebar omits block height until sync completion is confirmed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          percentage: 1,
+          displayPercentage: 1,
+          scannedHeight: 3_428_143,
+          chainTipHeight: 3_428_143,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Synced'), findsOneWidget);
+    expect(find.text('3,428,143'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_sync_block_icon')), findsNothing);
   });
 
   testWidgets('sidebar treats complete background progress as synced', (
@@ -498,8 +772,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Vizor is synced'), findsOneWidget);
+    expect(find.text('Synced'), findsOneWidget);
     expect(find.text('99% Syncing...'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
   });
 
   testWidgets('sidebar keeps network sync failures visible', (tester) async {
@@ -518,7 +793,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Syncing failed. Network error...'), findsOneWidget);
-    expect(find.text('Vizor is synced'), findsNothing);
+    expect(find.text('Synced'), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_sync_height')), findsNothing);
     final text = tester.widget<Text>(
       find.byKey(const ValueKey('sidebar_sync_text')),
     );
@@ -633,9 +909,21 @@ MouseCursor _cursorForKey(WidgetTester tester, Key key) {
   return mouseRegion.cursor;
 }
 
+double _opacityForText(WidgetTester tester, String text) {
+  final opacity = tester.widget<Opacity>(
+    find.ancestor(of: find.text(text), matching: find.byType(Opacity)).first,
+  );
+  return opacity.opacity;
+}
+
 final _syncedSyncState = SyncState(
   accountUuid: 'account-1',
   hasAccountScopedData: true,
+  isSyncComplete: true,
+  percentage: 1,
+  displayPercentage: 1,
+  scannedHeight: 3_428_143,
+  chainTipHeight: 3_428_143,
 );
 
 Widget _sidebarHarness(
@@ -645,6 +933,12 @@ Widget _sidebarHarness(
   AccountState? accountState,
   String initialLocation = '/home',
   bool disableAnimations = true,
+  IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
+      const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodPostMigrationState ironwoodPostMigrationState =
+      const IronwoodPostMigrationState.unavailable(),
+  IronwoodMigrationCoordinatorState migrationCoordinatorState =
+      const IronwoodMigrationCoordinatorState(),
 }) {
   final bootstrap = _bootstrapFor(accountState ?? _singleAccountState);
   final router = GoRouter(
@@ -731,6 +1025,18 @@ Widget _sidebarHarness(
       appBootstrapProvider.overrideWithValue(bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(syncState)),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
+      ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
+        return ironwoodHomeMigrationCtaState;
+      }),
+      ironwoodHomeMigrationPresentationProvider.overrideWithValue(
+        ironwoodHomeMigrationCtaState,
+      ),
+      ironwoodPostMigrationStateProvider.overrideWith((ref) async {
+        return ironwoodPostMigrationState;
+      }),
+      ironwoodMigrationCoordinatorProvider.overrideWith(
+        () => _FakeMigrationCoordinator(migrationCoordinatorState),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -758,6 +1064,121 @@ const _singleAccountState = AccountState(
   ],
   activeAccountUuid: 'account-1',
   activeAddress: 'u1accountsaddress',
+);
+
+const _hardwareAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'account-1',
+      name: 'Keystone Vault',
+      order: 0,
+      isHardware: true,
+      profilePictureId: kDefaultProfilePictureId,
+    ),
+  ],
+  activeAccountUuid: 'account-1',
+  activeAddress: 'u1accountsaddress',
+);
+
+rust_sync.MigrationStatus _buildReadyMigrationStatus({
+  int signedChildPcztCount = 6,
+  List<int>? currentSigningPartIndices = const [],
+}) => rust_sync.MigrationStatus(
+  phase: 'ready_to_migrate',
+  activeRunId: 'run-1',
+  targetValuesZatoshi: frb.Uint64List.fromList([
+    1000000000,
+    200000000,
+    50000000,
+    20000000,
+    10000000,
+    2000000,
+  ]),
+  preparedNoteCount: 6,
+  denominationConfirmationCount: 3,
+  denominationConfirmationTarget: 3,
+  denominationSplitCompletedCount: 1,
+  denominationSplitTotalCount: 1,
+  pendingTxCount: 0,
+  broadcastedTxCount: 0,
+  confirmedTxCount: 0,
+  totalCount: 6,
+  signedChildPcztCount: signedChildPcztCount,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 50,
+  scheduleMeanDelayBlocks: 144,
+  scheduleMaxDelayBlocks: 576,
+  currentSigningPartIndices: currentSigningPartIndices == null
+      ? null
+      : frb.Uint32List.fromList(currentSigningPartIndices),
+  scheduledBroadcasts: const [],
+  parts: const [],
+);
+
+final _readyMigrationStatus = _buildReadyMigrationStatus();
+
+final _readyMigrationNeedsInputStatus = _buildReadyMigrationStatus(
+  signedChildPcztCount: 0,
+  currentSigningPartIndices: const [0, 1, 2, 3, 4, 5],
+);
+
+final _legacyReadyMigrationStatus = _buildReadyMigrationStatus(
+  signedChildPcztCount: 0,
+  currentSigningPartIndices: null,
+);
+
+final _mixedMigrationStatus = rust_sync.MigrationStatus(
+  phase: 'migrating',
+  activeRunId: 'run-1',
+  targetValuesZatoshi: frb.Uint64List.fromList([
+    1000000000,
+    200000000,
+    50000000,
+  ]),
+  preparedNoteCount: 3,
+  denominationConfirmationCount: 3,
+  denominationConfirmationTarget: 3,
+  denominationSplitCompletedCount: 1,
+  denominationSplitTotalCount: 1,
+  pendingTxCount: 1,
+  broadcastedTxCount: 0,
+  confirmedTxCount: 2,
+  totalCount: 3,
+  signedChildPcztCount: 3,
+  pendingSplitStageCount: 0,
+  canAbandon: false,
+  signingBatchLimit: 50,
+  scheduleMeanDelayBlocks: 144,
+  scheduleMaxDelayBlocks: 576,
+  scheduledBroadcasts: const [],
+  parts: [
+    rust_sync.MigrationPartStatus(
+      partIndex: 0,
+      valueZatoshi: BigInt.from(1000000000),
+      state: rust_sync.MigrationPartState.confirming,
+      txidHex: 'part-0',
+      confirmationCount: 1,
+      confirmationTarget: 3,
+    ),
+    rust_sync.MigrationPartStatus(
+      partIndex: 1,
+      valueZatoshi: BigInt.from(200000000),
+      state: rust_sync.MigrationPartState.completed,
+      txidHex: 'part-1',
+      confirmationCount: 3,
+      confirmationTarget: 3,
+    ),
+    rust_sync.MigrationPartStatus(
+      partIndex: 2,
+      valueZatoshi: BigInt.from(50000000),
+      state: rust_sync.MigrationPartState.scheduled,
+      txidHex: 'part-2',
+      scheduledHeight: 600,
+      confirmationCount: 0,
+      confirmationTarget: 3,
+    ),
+  ],
 );
 
 const _multiAccountState = AccountState(
@@ -854,4 +1275,13 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+}
+
+class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {
+  _FakeMigrationCoordinator(this.initialState);
+
+  final IronwoodMigrationCoordinatorState initialState;
+
+  @override
+  IronwoodMigrationCoordinatorState build() => initialState;
 }

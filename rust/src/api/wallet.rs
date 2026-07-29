@@ -5,7 +5,7 @@ use tonic::{transport::Channel, Request};
 use zcash_client_backend::proto::service::{
     self, compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_protocol::consensus::{NetworkUpgrade, Parameters};
+use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
 
 const SOFTWARE_ACCOUNT_DISCOVERY_MAX_INDEX: u32 = 20;
 const SOFTWARE_ACCOUNT_DISCOVERY_BATCHES: &[(u32, u32)] = &[(1, 4), (5, 9), (10, 14), (15, 20)];
@@ -73,6 +73,29 @@ pub struct AccountExportMetadata {
     pub seed_fingerprint: Option<Vec<u8>>,
 }
 
+/// Connected lightwalletd chain state relevant to Ironwood rollout decisions.
+pub struct ChainUpgradeStatus {
+    pub network: String,
+    pub lightwalletd_chain_name: String,
+    pub tip_height: u64,
+    pub lightwalletd_reported_height: u64,
+    pub lightwalletd_estimated_height: u64,
+    pub lightwalletd_consensus_branch_id: String,
+    pub lightwalletd_upgrade_name: String,
+    pub lightwalletd_upgrade_height: u64,
+    pub nu6_3_activation_height: Option<u64>,
+    pub ironwood_active_at_tip: bool,
+    pub endpoint_matches_network: bool,
+}
+
+/// Chain upgrade activation state computed from a known chain tip height.
+pub struct ChainUpgradeActivationStatus {
+    pub network: String,
+    pub tip_height: u64,
+    pub nu6_3_activation_height: Option<u64>,
+    pub ironwood_active_at_tip: bool,
+}
+
 /// Catches panics and converts them to Result<T, String>.
 fn catch<T>(f: impl FnOnce() -> Result<T, String> + panic::UnwindSafe) -> Result<T, String> {
     match panic::catch_unwind(f) {
@@ -94,6 +117,30 @@ fn parse_network_and_migrate(db_path: &str, network: &str) -> Result<WalletNetwo
     let network = keys::parse_network(network)?;
     keys::ensure_db_migrated_once(db_path, network)?;
     Ok(network)
+}
+
+fn network_name(network: WalletNetwork) -> &'static str {
+    match network {
+        WalletNetwork::Main => "main",
+        WalletNetwork::Test => "test",
+        WalletNetwork::Regtest => "regtest",
+    }
+}
+
+fn block_height_from_u64(height: u64) -> Result<BlockHeight, String> {
+    let height = u32::try_from(height)
+        .map_err(|_| format!("block height {height} exceeds supported range"))?;
+    Ok(BlockHeight::from_u32(height))
+}
+
+fn is_ironwood_active_at_height(network: WalletNetwork, height: u64) -> Result<bool, String> {
+    Ok(network.is_nu_active(NetworkUpgrade::Nu6_3, block_height_from_u64(height)?))
+}
+
+fn nu6_3_activation_height(network: WalletNetwork) -> Option<u64> {
+    network
+        .activation_height(NetworkUpgrade::Nu6_3)
+        .map(|height| u32::from(height) as u64)
 }
 
 /// Get the latest block height from lightwalletd.
@@ -133,6 +180,66 @@ pub fn get_lightwalletd_chain_name(lightwalletd_url: String) -> Result<String, S
             .into_inner();
 
             Ok(info.chain_name)
+        })
+    })
+}
+
+/// Get the connected chain upgrade state used to decide whether Ironwood is active.
+pub fn get_chain_upgrade_status(
+    lightwalletd_url: String,
+    network: String,
+) -> Result<ChainUpgradeStatus, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        rt.block_on(async {
+            use zcash_client_backend::proto::service::Empty;
+
+            let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+                .await
+                .map_err(|e| e.to_string())?;
+            let tip = crate::wallet::sync_engine::get_latest_block(&mut client)
+                .await
+                .map_err(|e| e.to_string())?;
+            let info = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                client.get_lightd_info(Empty {}),
+            )
+            .await
+            .map_err(|_| "get_lightd_info: timed out waiting for response".to_string())?
+            .map_err(|e| format!("get_lightd_info: {e}"))?
+            .into_inner();
+
+            let expected_network = network_name(network).to_string();
+            Ok(ChainUpgradeStatus {
+                network: expected_network.clone(),
+                endpoint_matches_network: info.chain_name == expected_network,
+                lightwalletd_chain_name: info.chain_name,
+                tip_height: tip.height,
+                lightwalletd_reported_height: info.block_height,
+                lightwalletd_estimated_height: info.estimated_height,
+                lightwalletd_consensus_branch_id: info.consensus_branch_id,
+                lightwalletd_upgrade_name: info.upgrade_name,
+                lightwalletd_upgrade_height: info.upgrade_height,
+                nu6_3_activation_height: nu6_3_activation_height(network),
+                ironwood_active_at_tip: is_ironwood_active_at_height(network, tip.height)?,
+            })
+        })
+    })
+}
+
+/// Compute chain upgrade activation state from a known chain tip height.
+pub fn get_chain_upgrade_status_at_height(
+    network: String,
+    tip_height: u64,
+) -> Result<ChainUpgradeActivationStatus, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        Ok(ChainUpgradeActivationStatus {
+            network: network_name(network).to_string(),
+            tip_height,
+            nu6_3_activation_height: nu6_3_activation_height(network),
+            ironwood_active_at_tip: is_ironwood_active_at_height(network, tip_height)?,
         })
     })
 }
@@ -952,6 +1059,45 @@ pub fn get_recent_transparent_receive_addresses(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ironwood_activation_status_follows_nu6_3_height() {
+        for network in [WalletNetwork::Main, WalletNetwork::Test] {
+            let activation = nu6_3_activation_height(network).expect("NU6.3 activation height");
+            assert!(activation > 0);
+            assert!(!is_ironwood_active_at_height(network, activation - 1).unwrap());
+            assert!(is_ironwood_active_at_height(network, activation).unwrap());
+            assert!(is_ironwood_active_at_height(network, activation + 1).unwrap());
+        }
+    }
+
+    #[test]
+    fn chain_upgrade_status_at_height_reports_ironwood_activation() {
+        let activation = nu6_3_activation_height(WalletNetwork::Main).unwrap();
+
+        let before =
+            get_chain_upgrade_status_at_height("main".to_string(), activation - 1).unwrap();
+        assert_eq!(before.network, "main");
+        assert_eq!(before.tip_height, activation - 1);
+        assert_eq!(before.nu6_3_activation_height, Some(activation));
+        assert!(!before.ironwood_active_at_tip);
+
+        let at_activation =
+            get_chain_upgrade_status_at_height("main".to_string(), activation).unwrap();
+        assert_eq!(at_activation.tip_height, activation);
+        assert!(at_activation.ironwood_active_at_tip);
+    }
+
+    #[test]
+    fn regtest_ironwood_activation_status_uses_local_activation_height() {
+        let activation = u32::MAX as u64;
+        assert_eq!(
+            nu6_3_activation_height(WalletNetwork::Regtest),
+            Some(activation)
+        );
+        assert!(!is_ironwood_active_at_height(WalletNetwork::Regtest, activation - 1).unwrap());
+        assert!(is_ironwood_active_at_height(WalletNetwork::Regtest, activation).unwrap());
+    }
 
     #[test]
     fn test_reimport_existing_mnemonic_adds_only_missing_higher_accounts() {

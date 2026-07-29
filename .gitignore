@@ -52,6 +52,8 @@ rust/build/
 /coverage/
 .regtest/
 .regtest-logs/
+.ironwood-regtest/
+.ironwood-regtest-snapshots/
 
 # Symbolication related
 app.*.symbols

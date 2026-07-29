@@ -5,6 +5,8 @@ import 'package:flutter/widgets.dart';
 
 import '../src/core/theme/app_theme.dart';
 import '../src/features/home/widgets/pay_floating_badge.dart';
+import 'screen_use_cases.dart'
+    show buildDesktopHomeIronwoodMigrationAnnouncementUseCase;
 
 Widget buildPayFloatingBadgeUseCase(BuildContext context) {
   return ColoredBox(
@@ -17,4 +19,8 @@ Widget buildPayFloatingBadgeUseCase(BuildContext context) {
       ),
     ),
   );
+}
+
+Widget buildIronwoodMigrationAnnouncementModalUseCase(BuildContext context) {
+  return buildDesktopHomeIronwoodMigrationAnnouncementUseCase(context);
 }

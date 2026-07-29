@@ -97,8 +97,8 @@ class BlockID extends $pb.GeneratedMessage {
 /// Both BlockIDs must be heights; specification by hash is not yet supported.
 ///
 /// If no pool types are specified, the server should default to the legacy
-/// behavior of returning only data relevant to the shielded (Sapling and
-/// Orchard) pools; otherwise, the server should prune `CompactBlock`s returned
+/// behavior of returning only data relevant to the shielded (Sapling, Orchard,
+/// and Ironwood) pools; otherwise, the server should prune `CompactBlock`s returned
 /// to include only data relevant to the requested pool types. Clients MUST
 /// verify that the version of the server they are connected to are capable
 /// of returning pruned and/or transparent data before setting `poolTypes`
@@ -1217,8 +1217,8 @@ class GetMempoolTxRequest extends $pb.GeneratedMessage {
 
   /// The server must prune `CompactTx`s returned to include only data
   /// relevant to the requested pool types. If no pool types are specified,
-  /// the server should default to the legacy behavior of returning only data
-  /// relevant to the shielded (Sapling and Orchard) pools.
+  /// the server should default to returning only data relevant to the shielded
+  /// (Sapling, Orchard, and Ironwood) pools.
   @$pb.TagNumber(3)
   $pb.PbList<PoolType> get poolTypes => $_getList(1);
 }
@@ -1232,6 +1232,7 @@ class TreeState extends $pb.GeneratedMessage {
     $core.int? time,
     $core.String? saplingTree,
     $core.String? orchardTree,
+    $core.String? ironwoodTree,
   }) {
     final result = create();
     if (network != null) result.network = network;
@@ -1240,6 +1241,7 @@ class TreeState extends $pb.GeneratedMessage {
     if (time != null) result.time = time;
     if (saplingTree != null) result.saplingTree = saplingTree;
     if (orchardTree != null) result.orchardTree = orchardTree;
+    if (ironwoodTree != null) result.ironwoodTree = ironwoodTree;
     return result;
   }
 
@@ -1264,6 +1266,7 @@ class TreeState extends $pb.GeneratedMessage {
     ..aI(4, _omitFieldNames ? '' : 'time', fieldType: $pb.PbFieldType.OU3)
     ..aOS(5, _omitFieldNames ? '' : 'saplingTree', protoName: 'saplingTree')
     ..aOS(6, _omitFieldNames ? '' : 'orchardTree', protoName: 'orchardTree')
+    ..aOS(7, _omitFieldNames ? '' : 'ironwoodTree', protoName: 'ironwoodTree')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -1337,6 +1340,15 @@ class TreeState extends $pb.GeneratedMessage {
   $core.bool hasOrchardTree() => $_has(5);
   @$pb.TagNumber(6)
   void clearOrchardTree() => $_clearField(6);
+
+  @$pb.TagNumber(7)
+  $core.String get ironwoodTree => $_getSZ(6);
+  @$pb.TagNumber(7)
+  set ironwoodTree($core.String value) => $_setString(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasIronwoodTree() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearIronwoodTree() => $_clearField(7);
 }
 
 class GetSubtreeRootsArg extends $pb.GeneratedMessage {

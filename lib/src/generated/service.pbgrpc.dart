@@ -46,7 +46,7 @@ class CompactTxStreamerClient extends $grpc.Client {
   /// The returned `CompactBlock` includes transaction data for all value
   /// pools, including transparent inputs (`vin`) and outputs (`vout`). This
   /// differs from `GetBlockRange`, which supports filtering by pool type and
-  /// defaults to returning only shielded (Sapling and Orchard) data. Clients
+  /// defaults to returning only shielded (Sapling, Orchard, and Ironwood) data. Clients
   /// that require only data for specific pools should use `GetBlockRange`
   /// with the appropriate `poolTypes` set.
   ///
@@ -61,9 +61,10 @@ class CompactTxStreamerClient extends $grpc.Client {
   }
 
   /// Return a compact block containing only nullifier information for the
-  /// shielded pools (Sapling spend nullifiers and Orchard action nullifiers).
-  /// Transparent transaction data, Sapling outputs, full Orchard action data,
-  /// and commitment tree sizes are not included.
+  /// shielded pools (Sapling spend nullifiers, Orchard action nullifiers, and
+  /// Ironwood action nullifiers). Transparent transaction data, Sapling
+  /// outputs, full Orchard/Ironwood action data, and commitment tree sizes are
+  /// not included.
   ///
   /// Note: this method is deprecated; use `GetBlockRange` with the
   /// appropriate `poolTypes` instead.
@@ -91,9 +92,10 @@ class CompactTxStreamerClient extends $grpc.Client {
 
   /// Return a stream of compact blocks for the specified range, where each
   /// block contains only nullifier information for the shielded pools
-  /// (Sapling spend nullifiers and Orchard action nullifiers). Transparent
-  /// transaction data, Sapling outputs, full Orchard action data, and
-  /// commitment tree sizes are not included. Implementations MUST ignore any
+  /// (Sapling spend nullifiers, Orchard action nullifiers, and Ironwood action
+  /// nullifiers). Transparent transaction data, Sapling outputs, full
+  /// Orchard/Ironwood action data, and commitment tree sizes are not included.
+  /// Implementations MUST ignore any
   /// `PoolType::TRANSPARENT` member of the `poolTypes` field of the request.
   ///
   /// Note: this method is deprecated; use `GetBlockRange` with the
@@ -215,7 +217,7 @@ class CompactTxStreamerClient extends $grpc.Client {
   }
 
   /// Returns a stream of information about roots of subtrees of the note commitment tree
-  /// for the specified shielded protocol (Sapling or Orchard).
+  /// for the specified shielded protocol (Sapling, Orchard, or Ironwood).
   $grpc.ResponseStream<$0.SubtreeRoot> getSubtreeRoots(
     $0.GetSubtreeRootsArg request, {
     $grpc.CallOptions? options,

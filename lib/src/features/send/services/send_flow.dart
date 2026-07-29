@@ -120,14 +120,41 @@ Future<void> discardSendProposal({
   required String sendFlowId,
   required String logContext,
 }) async {
+  Object? lastError;
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await rust_sync.discardProposal(
+        proposalId: proposalId,
+        sendFlowId: sendFlowId,
+      );
+      log('$logContext: released proposal $proposalId');
+      return;
+    } catch (e) {
+      lastError = e;
+      log('$logContext: discardProposal cleanup attempt $attempt failed: $e');
+      if (attempt < 3) {
+        await Future<void>.delayed(Duration(milliseconds: attempt * 100));
+      }
+    }
+  }
+  // Rust keeps the owner token when unlock fails, so another idempotent
+  // cleanup call can retry while height-based expiry remains the fallback.
+  log('$logContext: proposal cleanup remains pending: $lastError');
+}
+
+Future<void> retainSendProposalLockUntilExpiry({
+  required BigInt proposalId,
+  required String sendFlowId,
+  required String logContext,
+}) async {
   try {
-    await rust_sync.discardProposal(
+    await rust_sync.retainProposalLockUntilExpiry(
       proposalId: proposalId,
       sendFlowId: sendFlowId,
     );
-    log('$logContext: released proposal $proposalId');
+    log('$logContext: retained proposal input lock until expiry $proposalId');
   } catch (e) {
-    log('$logContext: discardProposal cleanup failed (non-critical): $e');
+    log('$logContext: retain proposal lock cleanup failed: $e');
   }
 }
 
@@ -255,8 +282,8 @@ String _pcztBroadcastStatusMessage(
 ///
 /// [confirmSaplingParamsDownload] asks the user to approve the ~50MB
 /// download; [shouldAbort] is polled around the long awaits (the
-/// desktop screen aborts when unmounted). On abort the proposal is
-/// released here when it was not consumed.
+/// desktop screen aborts when unmounted). On abort the proposal and any
+/// retained owner-scoped input lock are released here.
 Future<SendBroadcastOutcome> runSendBroadcast({
   required WidgetRef ref,
   required SendReviewArgs args,
@@ -265,16 +292,18 @@ Future<SendBroadcastOutcome> runSendBroadcast({
   Future<bool> Function()? shouldAbort,
 }) async {
   var proposalConsumed = keystone != null;
+  var proposalReleased = false;
 
   Future<bool> abortRequested() async {
     if (shouldAbort == null) return false;
     if (!await shouldAbort()) return false;
-    if (!proposalConsumed) {
+    if (!proposalReleased) {
       await discardSendProposal(
         proposalId: args.proposalId,
         sendFlowId: args.sendFlowId,
         logContext: 'SendBroadcast(abort)',
       );
+      proposalReleased = true;
       proposalConsumed = true;
     }
     return true;
@@ -296,6 +325,15 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         final downloadConfirmed = await confirmSaplingParamsDownload();
         if (!downloadConfirmed) {
           if (await abortRequested()) return aborted();
+          if (!proposalReleased) {
+            await discardSendProposal(
+              proposalId: args.proposalId,
+              sendFlowId: args.sendFlowId,
+              logContext: 'SendBroadcast(params-declined)',
+            );
+            proposalReleased = true;
+            proposalConsumed = true;
+          }
           return SendBroadcastOutcome(
             phase: SendBroadcastPhase.failed,
             proposalConsumed: proposalConsumed,
@@ -328,19 +366,45 @@ Future<SendBroadcastOutcome> runSendBroadcast({
         throw Exception('Missing Keystone transaction signature.');
       }
       proposalConsumed = true;
-      final result = await rust_sync.extractAndBroadcastPczt(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        pcztWithProofsBytes: keystone.pcztWithProofsBytes,
-        pcztWithSignaturesBytes: keystone.pcztWithSignaturesBytes,
-        spendParamsPath: args.needsSaplingParams
-            ? saplingParams.spendPath
-            : null,
-        outputParamsPath: args.needsSaplingParams
-            ? saplingParams.outputPath
-            : null,
-      );
+      late final rust_sync.ExtractAndBroadcastPcztResult result;
+      try {
+        result = await rust_sync.extractAndBroadcastPczt(
+          dbPath: dbPath,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          network: endpoint.networkName,
+          pcztWithProofsBytes: keystone.pcztWithProofsBytes,
+          pcztWithSignaturesBytes: keystone.pcztWithSignaturesBytes,
+          spendParamsPath: args.needsSaplingParams
+              ? saplingParams.spendPath
+              : null,
+          outputParamsPath: args.needsSaplingParams
+              ? saplingParams.outputPath
+              : null,
+        );
+      } catch (_) {
+        await discardSendProposal(
+          proposalId: args.proposalId,
+          sendFlowId: args.sendFlowId,
+          logContext: 'SendBroadcast(hardware-failure)',
+        );
+        proposalReleased = true;
+        rethrow;
+      }
+      if (result.status == 'broadcast_unknown' ||
+          result.status == 'broadcasted_storage_failed') {
+        await retainSendProposalLockUntilExpiry(
+          proposalId: args.proposalId,
+          sendFlowId: args.sendFlowId,
+          logContext: 'SendBroadcast(hardware-uncertain)',
+        );
+      } else {
+        await discardSendProposal(
+          proposalId: args.proposalId,
+          sendFlowId: args.sendFlowId,
+          logContext: 'SendBroadcast(hardware-finish)',
+        );
+      }
+      proposalReleased = true;
       txids = result.txid;
       broadcastComplete = result.status == 'broadcasted';
       pendingStatusMessage = broadcastComplete
@@ -442,6 +506,15 @@ Future<SendBroadcastOutcome> runSendBroadcast({
     log('SendBroadcast: ERROR: $e');
     final message = friendlyBroadcastError(e.toString());
     if (await abortRequested()) return aborted();
+    if (!proposalReleased) {
+      await discardSendProposal(
+        proposalId: args.proposalId,
+        sendFlowId: args.sendFlowId,
+        logContext: 'SendBroadcast(pre-broadcast-failure)',
+      );
+      proposalReleased = true;
+      proposalConsumed = true;
+    }
     return SendBroadcastOutcome(
       phase: SendBroadcastPhase.failed,
       proposalConsumed: proposalConsumed,

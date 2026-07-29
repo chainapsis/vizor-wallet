@@ -43,7 +43,6 @@ class SendReviewScreen extends ConsumerStatefulWidget {
 class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   bool _discardScheduled = false;
   bool _handoffToKeystone = false;
-  bool _keystoneProposalConsumed = false;
   bool _showSaplingParamsPrompt = false;
   bool _messageExpanded = false;
   bool _showVerifyAddress = false;
@@ -77,7 +76,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
   }
 
   void _scheduleDiscard() {
-    if (_keystoneProposalConsumed || _discardScheduled) return;
+    if (_discardScheduled) return;
     _discardScheduled = true;
     unawaited(
       discardSendProposal(
@@ -190,12 +189,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
 
       final pcztBytes = await rust_sync.createPcztFromProposal(
         dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
         proposalId: widget.args.proposalId,
         sendFlowId: widget.args.sendFlowId,
       );
-      _keystoneProposalConsumed = true;
-
       final redactedPczt = await rust_sync.redactPcztForSigner(
         pcztBytes: pcztBytes,
       );
@@ -226,9 +224,7 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       });
     } catch (e, st) {
       log('SendReview._prepareKeystonePczt: ERROR: $e\n$st');
-      if (!_keystoneProposalConsumed) {
-        _scheduleDiscard();
-      }
+      _scheduleDiscard();
       if (!mounted) return;
       setState(() {
         _keystonePhase = KeystoneSigningModalPhase.failed;

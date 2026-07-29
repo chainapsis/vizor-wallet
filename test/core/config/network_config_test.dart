@@ -2,6 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 
 void main() {
+  test('regtest Ironwood activation is opt-in by default', () {
+    expect(kZcashRegtestIronwoodActivationHeight, 0xFFFFFFFF);
+  });
+
+  test('fast Testnet migration is opt-in by default', () {
+    expect(kZcashFastTestnetMigration, isFalse);
+  });
+
   group('normalizeZcashNetworkName', () {
     test('accepts supported network names', () {
       expect(normalizeZcashNetworkName('main'), 'main');
@@ -48,7 +56,9 @@ void main() {
     test('keeps the existing mainnet service name', () {
       expect(
         secureStoreServiceForNetwork('main'),
-        'com.keplr.vizor.secure_store',
+        kZcashIronwoodMasquerade
+            ? 'com.keplr.vizor.ironwood.secure_store'
+            : 'com.keplr.vizor.secure_store',
       );
     });
 
@@ -66,7 +76,9 @@ void main() {
     test('normalizes unknown values before choosing the service', () {
       expect(
         secureStoreServiceForNetwork('unknown'),
-        'com.keplr.vizor.secure_store',
+        kZcashIronwoodMasquerade
+            ? 'com.keplr.vizor.ironwood.secure_store'
+            : 'com.keplr.vizor.secure_store',
       );
     });
   });

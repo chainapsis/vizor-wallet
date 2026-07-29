@@ -124,7 +124,7 @@ class _ActivityTransactionStatusScreenState
       rust_sync.TransactionDetail? detail;
       if (tx != null) {
         try {
-          detail = rust_sync.getTransactionDetail(
+          detail = await rust_sync.getTransactionDetail(
             dbPath: dbPath,
             network: endpoint.networkName,
             accountUuid: accountUuid,
@@ -504,6 +504,7 @@ class _ActivityTransactionStatusScreenState
       );
     }
 
+    final isMigration = tx.txKind == 'migration';
     final (statusValue, statusIconName, statusColor) = tx.expiredUnmined
         ? ('Failed', AppIcons.cancel, colors.text.destructive)
         : tx.minedHeight == BigInt.zero
@@ -519,7 +520,13 @@ class _ActivityTransactionStatusScreenState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Transaction',
+            isMigration
+                ? tx.expiredUnmined
+                      ? 'Migration failed'
+                      : tx.minedHeight == BigInt.zero
+                      ? 'Migrating to Ironwood'
+                      : 'Migrated to Ironwood'
+                : 'Transaction',
             textAlign: TextAlign.center,
             style: AppTypography.bodyLarge.copyWith(
               color: colors.text.accent,
@@ -530,7 +537,7 @@ class _ActivityTransactionStatusScreenState
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: ReviewInfoRow(
-              label: 'Amount',
+              label: isMigration ? 'Amount migrated' : 'Amount',
               value: _amountText(tx, privacyModeEnabled: privacyModeEnabled),
               leading: ClipOval(
                 child: Image.asset(
@@ -545,6 +552,19 @@ class _ActivityTransactionStatusScreenState
           const SizedBox(height: AppSpacing.base),
           ReviewWrapCard(
             children: [
+              if (isMigration) ...[
+                ReviewListRow(
+                  label: 'From',
+                  value: 'Orchard balance',
+                  leadingIconName: AppIcons.migrationSplit,
+                ),
+                ReviewListRow(
+                  label: 'To',
+                  value: 'Ironwood balance',
+                  leadingIconName: AppIcons.shieldKeyholeOutline,
+                ),
+                const ReviewWrapDivider(),
+              ],
               ReviewListRow(
                 label: 'Status',
                 value: statusValue,

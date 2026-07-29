@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/sync_provider.dart';
+import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../../providers/receive_address_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
@@ -30,9 +31,9 @@ class RustSwapMaxAmountEstimator implements SwapMaxAmountEstimator {
           operation: () async {
             final dbPath = await getWalletDbPath();
             final endpoint = _ref.read(rpcEndpointProvider);
-            final sync = (_ref.read(syncProvider).value ?? SyncState())
-                .scopedToAccount(accountUuid);
-            final spendableZatoshi = sync.displaySpendableBalance;
+            final spendableZatoshi = _ref.read(
+              ironwoodMigrationAwareDisplaySpendableProvider(accountUuid),
+            );
             final estimateAddress = await _ref
                 .read(receiveAddressServiceProvider)
                 .loadTransparentReceiveAddress(accountUuid: accountUuid);

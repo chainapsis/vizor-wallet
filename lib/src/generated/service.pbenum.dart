@@ -24,16 +24,19 @@ class PoolType extends $pb.ProtobufEnum {
       PoolType._(2, _omitEnumNames ? '' : 'SAPLING');
   static const PoolType ORCHARD =
       PoolType._(3, _omitEnumNames ? '' : 'ORCHARD');
+  static const PoolType IRONWOOD =
+      PoolType._(4, _omitEnumNames ? '' : 'IRONWOOD');
 
   static const $core.List<PoolType> values = <PoolType>[
     POOL_TYPE_INVALID,
     TRANSPARENT,
     SAPLING,
     ORCHARD,
+    IRONWOOD,
   ];
 
   static final $core.List<PoolType?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 3);
+      $pb.ProtobufEnum.$_initByValueList(values, 4);
   static PoolType? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 
@@ -45,14 +48,17 @@ class ShieldedProtocol extends $pb.ProtobufEnum {
       ShieldedProtocol._(0, _omitEnumNames ? '' : 'sapling');
   static const ShieldedProtocol orchard =
       ShieldedProtocol._(1, _omitEnumNames ? '' : 'orchard');
+  static const ShieldedProtocol ironwood =
+      ShieldedProtocol._(2, _omitEnumNames ? '' : 'ironwood');
 
   static const $core.List<ShieldedProtocol> values = <ShieldedProtocol>[
     sapling,
     orchard,
+    ironwood,
   ];
 
   static final $core.List<ShieldedProtocol?> _byValue =
-      $pb.ProtobufEnum.$_initByValueList(values, 1);
+      $pb.ProtobufEnum.$_initByValueList(values, 2);
   static ShieldedProtocol? valueOf($core.int value) =>
       value < 0 || value >= _byValue.length ? null : _byValue[value];
 

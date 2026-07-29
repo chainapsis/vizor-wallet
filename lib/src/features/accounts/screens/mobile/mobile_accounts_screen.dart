@@ -25,6 +25,8 @@ import '../../../../providers/biometric_unlock_provider.dart';
 import '../../../../providers/receive_address_provider.dart';
 import '../../../../providers/sync_provider.dart';
 import '../../../../providers/wallet_mutation_guard.dart';
+import '../../../migration/models/ironwood_migration_phases.dart';
+import '../../../migration/providers/ironwood_migration_coordinator_provider.dart';
 import '../../widgets/mobile/account_edit_sheets.dart';
 
 /// Mobile account management — Figma `Accounts` / `Accounts Edits` /
@@ -385,10 +387,20 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   Future<void> _showRemoveSheet(AccountInfo account) async {
     final accounts = ref.read(accountProvider).value?.accounts ?? const [];
     final isLastAccount = accounts.length == 1;
+    final migrationStatus = ref
+        .read(ironwoodMigrationCoordinatorProvider)
+        .statuses[account.uuid];
+    final hasActiveMigration =
+        migrationStatus != null &&
+        (migrationStatus.activeRunId != null ||
+            isIronwoodMigrationInProgressPhase(migrationStatus.phase));
     final confirmed = await showAppMobileSheet<bool>(
       context: context,
-      builder: (_) =>
-          _RemoveAccountSheet(account: account, isLastAccount: isLastAccount),
+      builder: (_) => _RemoveAccountSheet(
+        account: account,
+        isLastAccount: isLastAccount,
+        hasActiveMigration: hasActiveMigration,
+      ),
     );
     if (confirmed != true || !mounted) return;
 
@@ -618,10 +630,12 @@ class _RemoveAccountSheet extends StatelessWidget {
   const _RemoveAccountSheet({
     required this.account,
     required this.isLastAccount,
+    required this.hasActiveMigration,
   });
 
   final AccountInfo account;
   final bool isLastAccount;
+  final bool hasActiveMigration;
 
   static const _titleStyle = TextStyle(
     fontFamily: 'Geist',
@@ -645,6 +659,28 @@ class _RemoveAccountSheet extends StatelessWidget {
     letterSpacing: -0.06,
   );
 
+  String get _description {
+    if (hasActiveMigration) {
+      if (isLastAccount) {
+        return 'Resetting Vizor stops migrations on this device and deletes '
+            'every account and all local wallet data. Transactions already '
+            'submitted to the Zcash network may still complete. After '
+            're-importing, let each account fully sync before starting '
+            'migration again.';
+      }
+      return "This account's migration will no longer continue in Vizor. "
+          'Transactions already submitted to the Zcash network may still '
+          'complete. After re-importing, let the account fully sync before '
+          'starting migration again.';
+    }
+    if (isLastAccount) {
+      return 'Resetting Vizor deletes every account and all local wallet data. '
+          'Make sure you can re-import your accounts before continuing.';
+    }
+    return 'Removing this account deletes its local data from Vizor. Make '
+        'sure you can re-import it before continuing.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -662,14 +698,7 @@ class _RemoveAccountSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            isLastAccount
-                ? 'Removing this account will completely reset the Vizor app. '
-                      'This means deleting all accounts and requiring you to '
-                      'import accounts again.\n'
-                      'This cannot be undone.'
-                : "Are you sure you want to remove this account? This action "
-                      "can't be reverted.\n"
-                      'You will have to re-import your account.',
+            _description,
             style: _bodyStyle.copyWith(color: colors.text.accent),
           ),
           const SizedBox(height: AppSpacing.md),

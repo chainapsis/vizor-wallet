@@ -10,9 +10,9 @@ import '../../../../core/layout/mobile/mobile_top_nav.dart';
 import '../../../../core/profile_pictures.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../providers/account_provider.dart';
-import '../../../../providers/sync_provider.dart';
 import '../../../pay/widgets/mobile/mobile_pay_review_content.dart';
 import '../../../address_book/providers/address_book_provider.dart';
+import '../../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../domain/swap_direction.dart';
 import '../../domain/swap_quote.dart';
 import '../../models/swap_activity_navigation.dart';
@@ -277,11 +277,9 @@ class _MobileSwapReviewScreenState
     _hadReviewState = true;
 
     final accountState = ref.watch(accountProvider).value;
-    final sync = ref.watch(
-      syncProvider.select(
-        (value) => (value.value ?? SyncState()).scopedToAccount(
-          accountState?.activeAccountUuid,
-        ),
+    final migrationSpendable = ref.watch(
+      ironwoodMigrationAwareDisplaySpendableProvider(
+        swapState.reviewAccountUuid ?? accountState?.activeAccountUuid,
       ),
     );
     final accountLabel = _accountLabelFor(
@@ -293,7 +291,7 @@ class _MobileSwapReviewScreenState
       swapState.reviewAccountUuid,
     );
     final startBlockedReason =
-        swapReviewQuoteExceedsAvailableZec(quote, sync.displaySpendableBalance)
+        swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? widget.payMode
               ? "You don't have enough ZEC for this payment. Try a smaller amount."
               : "You don't have enough ZEC for this swap. Try a smaller amount."

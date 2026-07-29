@@ -4,9 +4,10 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import '../frb_generated.dart';
+import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `parse_network_and_migrate`, `run_full_sync_internal`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -118,6 +119,8 @@ Future<void> putSubtreeRoots({
   required List<SubtreeRoot> saplingRoots,
   required BigInt orchardStartIndex,
   required List<SubtreeRoot> orchardRoots,
+  required BigInt ironwoodStartIndex,
+  required List<SubtreeRoot> ironwoodRoots,
 }) => RustLib.instance.api.crateApiSyncPutSubtreeRoots(
   dbPath: dbPath,
   network: network,
@@ -125,6 +128,8 @@ Future<void> putSubtreeRoots({
   saplingRoots: saplingRoots,
   orchardStartIndex: orchardStartIndex,
   orchardRoots: orchardRoots,
+  ironwoodStartIndex: ironwoodStartIndex,
+  ironwoodRoots: ironwoodRoots,
 );
 
 Future<List<ScanRangeInfo>> suggestScanRanges({
@@ -154,6 +159,7 @@ Future<ScanResult> scanBlocks({
   required int treeStateTime,
   required String treeStateSaplingTree,
   required String treeStateOrchardTree,
+  required String treeStateIronwoodTree,
   required BigInt limit,
 }) => RustLib.instance.api.crateApiSyncScanBlocks(
   dbPath: dbPath,
@@ -166,6 +172,7 @@ Future<ScanResult> scanBlocks({
   treeStateTime: treeStateTime,
   treeStateSaplingTree: treeStateSaplingTree,
   treeStateOrchardTree: treeStateOrchardTree,
+  treeStateIronwoodTree: treeStateIronwoodTree,
   limit: limit,
 );
 
@@ -292,6 +299,376 @@ Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
   outputParamsPath: outputParamsPath,
 );
 
+Future<IronwoodMigrationResult> migrateOrchardToIronwood({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+  required String password,
+  required String saltBase64,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwood(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonicBytes: mnemonicBytes,
+  password: password,
+  saltBase64: saltBase64,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+);
+
+/// User-attended Immediate migration. This directly spends Orchard notes into
+/// Ironwood and intentionally does not create a staged migration run.
+Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+  required BigInt approvedTotalInputZatoshi,
+  required BigInt approvedFeeZatoshi,
+  required BigInt approvedMigratedZatoshi,
+  required int approvedInputNoteCount,
+}) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwoodImmediately(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonicBytes: mnemonicBytes,
+  approvedTotalInputZatoshi: approvedTotalInputZatoshi,
+  approvedFeeZatoshi: approvedFeeZatoshi,
+  approvedMigratedZatoshi: approvedMigratedZatoshi,
+  approvedInputNoteCount: approvedInputNoteCount,
+);
+
+Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationImmediatePczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required BigInt approvedTotalInputZatoshi,
+  required BigInt approvedFeeZatoshi,
+  required BigInt approvedMigratedZatoshi,
+  required int approvedInputNoteCount,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationImmediatePczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedTotalInputZatoshi: approvedTotalInputZatoshi,
+  approvedFeeZatoshi: approvedFeeZatoshi,
+  approvedMigratedZatoshi: approvedMigratedZatoshi,
+  approvedInputNoteCount: approvedInputNoteCount,
+);
+
+Future<IronwoodMigrationResult> completeOrchardMigrationImmediatePczt({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<KeystoneSignedMigrationMessage> signedMessages,
+}) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationImmediatePczt(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  requestId: requestId,
+  signedMessages: signedMessages,
+);
+
+Future<OrchardMigrationImmediatePlan?> getOrchardMigrationImmediatePlan({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncGetOrchardMigrationImmediatePlan(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
+Future<void> retireUnbroadcastOrchardMigration({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String expectedRunId,
+}) => RustLib.instance.api.crateApiSyncRetireUnbroadcastOrchardMigration(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  expectedRunId: expectedRunId,
+);
+
+Future<MigrationStatus> getOrchardMigrationStatus({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncGetOrchardMigrationStatus(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
+Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api.crateApiSyncGetOrchardMigrationPrivatePlan(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+);
+
+/// Foreground-only migration preparation for the Swift-owned outbox.
+/// Denomination stages may advance, and every currently provable signed child
+/// is materialized, but scheduled child transactions are never broadcast here.
+Future<IronwoodMigrationResult> prepareOrchardMigrationOutbox({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationOutbox(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+);
+
+Future<MigrationOutboxBatch?> exportOrchardMigrationOutbox({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncExportOrchardMigrationOutbox(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+);
+
+Future<void> reconcileOrchardMigrationOutboxReceipt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String runId,
+  required String txidHex,
+  required String outcome,
+  required int remoteHeight,
+  String? responseMessage,
+  required List<MigrationOutboxScheduleUpdate> scheduleUpdates,
+  Uint8List? acceptedRawTransaction,
+}) => RustLib.instance.api.crateApiSyncReconcileOrchardMigrationOutboxReceipt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  runId: runId,
+  txidHex: txidHex,
+  outcome: outcome,
+  remoteHeight: remoteHeight,
+  responseMessage: responseMessage,
+  scheduleUpdates: scheduleUpdates,
+  acceptedRawTransaction: acceptedRawTransaction,
+);
+
+Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncBroadcastDueOrchardMigrationTransactions(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+);
+
+Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) =>
+    RustLib.instance.api.crateApiSyncBroadcastOneDueOrchardMigrationTransaction(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      password: password,
+      saltBase64: saltBase64,
+    );
+
+/// Prepares denomination PCZTs with expiry heights derived from their planned
+/// broadcast heights.
+Future<KeystoneMigrationSigningRequest>
+prepareOrchardMigrationDenominationsPczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationDenominationsPczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+);
+
+Future<String> createOrResumePrivateMigrationDraft({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api.crateApiSyncCreateOrResumePrivateMigrationDraft(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+);
+
+Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<KeystoneSignedMigrationMessage> signedMessages,
+  required String password,
+  required String saltBase64,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+}) =>
+    RustLib.instance.api.crateApiSyncCompleteOrchardMigrationDenominationsPczt(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      requestId: requestId,
+      signedMessages: signedMessages,
+      password: password,
+      saltBase64: saltBase64,
+      approvedSchedule: approvedSchedule,
+    );
+
+/// Prepares the split and migration PCZTs for one Keystone signing session.
+///
+/// The approved schedule must still match the denomination plan when the
+/// signing request is created.
+Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationSingleQrPczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+);
+
+Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<KeystoneSignedMigrationMessage> signedMessages,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationSingleQrPczt(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  requestId: requestId,
+  signedMessages: signedMessages,
+  password: password,
+  saltBase64: saltBase64,
+);
+
+Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationBatchPczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationBatchPczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+);
+
+Future<KeystoneMigrationProofStatus> keystoneMigrationProofStatus({
+  required String requestId,
+}) => RustLib.instance.api.crateApiSyncKeystoneMigrationProofStatus(
+  requestId: requestId,
+);
+
+Future<void> discardKeystoneMigrationRequest({required String requestId}) =>
+    RustLib.instance.api.crateApiSyncDiscardKeystoneMigrationRequest(
+      requestId: requestId,
+    );
+
+Future<void> discardAllKeystoneMigrationRequests() =>
+    RustLib.instance.api.crateApiSyncDiscardAllKeystoneMigrationRequests();
+
+Future<IronwoodMigrationResult> completeOrchardMigrationBatchPczt({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String requestId,
+  required List<KeystoneSignedMigrationMessage> signedMessages,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationBatchPczt(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  requestId: requestId,
+  signedMessages: signedMessages,
+  password: password,
+  saltBase64: saltBase64,
+);
+
+Future<IronwoodMigrationResult>
+migrateOrchardToIronwoodWithMacosStoredMnemonic({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api
+    .crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      password: password,
+      saltBase64: saltBase64,
+      approvedSchedule: approvedSchedule,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
+    );
+
 /// Dry-run transparent shielding without creating or broadcasting a transaction.
 Future<ShieldTransparentStatus> getShieldTransparentStatus({
   required String dbPath,
@@ -303,20 +680,21 @@ Future<ShieldTransparentStatus> getShieldTransparentStatus({
   accountUuid: accountUuid,
 );
 
-/// Create a PCZT for shielding spendable transparent funds on a hardware account.
+/// Create a height-appropriate transparent-shielding PCZT for hardware accounts.
 Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
   required String dbPath,
+  required String lightwalletdUrl,
   required String network,
   required String accountUuid,
 }) => RustLib.instance.api.crateApiSyncCreateShieldTransparentPczt(
   dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
   network: network,
   accountUuid: accountUuid,
 );
 
 /// Shield spendable transparent funds into the account's shielded balance.
-/// Software-account only; hardware shielding uses `create_shield_transparent_pczt`
-/// followed by the PCZT QR signing flow.
+/// Software-account only.
 Future<ShieldTransparentResult> shieldTransparentBalance({
   required String dbPath,
   required String lightwalletdUrl,
@@ -436,7 +814,7 @@ Future<BigInt> getBlockTime({
   height: height,
 );
 
-TransactionDetail getTransactionDetail({
+Future<TransactionDetail> getTransactionDetail({
   required String dbPath,
   required String network,
   required String accountUuid,
@@ -456,11 +834,13 @@ String getBlocksDir({required String cachePath}) =>
 /// Create a PCZT from a stored proposal for hardware wallet signing.
 Future<Uint8List> createPcztFromProposal({
   required String dbPath,
+  required String lightwalletdUrl,
   required String network,
   required BigInt proposalId,
   required String sendFlowId,
 }) => RustLib.instance.api.crateApiSyncCreatePcztFromProposal(
   dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
   network: network,
   proposalId: proposalId,
   sendFlowId: sendFlowId,
@@ -473,6 +853,18 @@ Future<void> discardProposal({
   required BigInt proposalId,
   required String sendFlowId,
 }) => RustLib.instance.api.crateApiSyncDiscardProposal(
+  proposalId: proposalId,
+  sendFlowId: sendFlowId,
+);
+
+/// Remove the replayable proposal capability but keep its owner-scoped wallet
+/// input lock until the original expiry height. Use this when broadcast
+/// acceptance is uncertain or the accepted transaction could not be persisted
+/// locally, so a conflicting send cannot be created immediately.
+Future<void> retainProposalLockUntilExpiry({
+  required BigInt proposalId,
+  required String sendFlowId,
+}) => RustLib.instance.api.crateApiSyncRetainProposalLockUntilExpiry(
   proposalId: proposalId,
   sendFlowId: sendFlowId,
 );
@@ -746,6 +1138,787 @@ class ExtractAndBroadcastPcztResult {
           message == other.message;
 }
 
+class IronwoodMigrationResult {
+  final String txids;
+  final String status;
+  final int broadcastedCount;
+  final int totalCount;
+  final String? message;
+  final BigInt feeZatoshi;
+  final BigInt migratedZatoshi;
+
+  const IronwoodMigrationResult({
+    required this.txids,
+    required this.status,
+    required this.broadcastedCount,
+    required this.totalCount,
+    this.message,
+    required this.feeZatoshi,
+    required this.migratedZatoshi,
+  });
+
+  @override
+  int get hashCode =>
+      txids.hashCode ^
+      status.hashCode ^
+      broadcastedCount.hashCode ^
+      totalCount.hashCode ^
+      message.hashCode ^
+      feeZatoshi.hashCode ^
+      migratedZatoshi.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is IronwoodMigrationResult &&
+          runtimeType == other.runtimeType &&
+          txids == other.txids &&
+          status == other.status &&
+          broadcastedCount == other.broadcastedCount &&
+          totalCount == other.totalCount &&
+          message == other.message &&
+          feeZatoshi == other.feeZatoshi &&
+          migratedZatoshi == other.migratedZatoshi;
+}
+
+class KeystoneMigrationMessage {
+  final String id;
+  final Uint8List redactedPczt;
+
+  const KeystoneMigrationMessage({
+    required this.id,
+    required this.redactedPczt,
+  });
+
+  @override
+  int get hashCode => id.hashCode ^ redactedPczt.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneMigrationMessage &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          redactedPczt == other.redactedPczt;
+}
+
+class KeystoneMigrationProofStatus {
+  final int readyCount;
+  final int totalCount;
+  final bool isReady;
+  final bool isFailed;
+  final String? message;
+
+  const KeystoneMigrationProofStatus({
+    required this.readyCount,
+    required this.totalCount,
+    required this.isReady,
+    required this.isFailed,
+    this.message,
+  });
+
+  @override
+  int get hashCode =>
+      readyCount.hashCode ^
+      totalCount.hashCode ^
+      isReady.hashCode ^
+      isFailed.hashCode ^
+      message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneMigrationProofStatus &&
+          runtimeType == other.runtimeType &&
+          readyCount == other.readyCount &&
+          totalCount == other.totalCount &&
+          isReady == other.isReady &&
+          isFailed == other.isFailed &&
+          message == other.message;
+}
+
+class KeystoneMigrationSigningRequest {
+  final String requestId;
+  final List<KeystoneMigrationMessage> messages;
+  final int signingBatchLimit;
+
+  const KeystoneMigrationSigningRequest({
+    required this.requestId,
+    required this.messages,
+    required this.signingBatchLimit,
+  });
+
+  @override
+  int get hashCode =>
+      requestId.hashCode ^ messages.hashCode ^ signingBatchLimit.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneMigrationSigningRequest &&
+          runtimeType == other.runtimeType &&
+          requestId == other.requestId &&
+          messages == other.messages &&
+          signingBatchLimit == other.signingBatchLimit;
+}
+
+/// One signed message in the compact "signatures-only" Keystone response: the
+/// produced spend-authorization signatures for request message `id`. Replaces
+/// the prior full-signed-PCZT payload. Dart builds this from the decoded
+/// `KeystoneSigResult` and feeds it into the migration completion calls.
+class KeystoneSignedMigrationMessage {
+  final String id;
+  final List<KeystoneActionSig> sigs;
+
+  const KeystoneSignedMigrationMessage({required this.id, required this.sigs});
+
+  @override
+  int get hashCode => id.hashCode ^ sigs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is KeystoneSignedMigrationMessage &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          sigs == other.sigs;
+}
+
+class MigrationOutboxBatch {
+  final String runId;
+  final int timingMeanBlocks;
+  final int timingMaxBlocks;
+  final int? nextProofHeight;
+  final List<MigrationOutboxItem> items;
+
+  const MigrationOutboxBatch({
+    required this.runId,
+    required this.timingMeanBlocks,
+    required this.timingMaxBlocks,
+    this.nextProofHeight,
+    required this.items,
+  });
+
+  @override
+  int get hashCode =>
+      runId.hashCode ^
+      timingMeanBlocks.hashCode ^
+      timingMaxBlocks.hashCode ^
+      nextProofHeight.hashCode ^
+      items.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationOutboxBatch &&
+          runtimeType == other.runtimeType &&
+          runId == other.runId &&
+          timingMeanBlocks == other.timingMeanBlocks &&
+          timingMaxBlocks == other.timingMaxBlocks &&
+          nextProofHeight == other.nextProofHeight &&
+          items == other.items;
+}
+
+class MigrationOutboxItem {
+  /// Stable Swift outbox item identifier. This is the finalized txid.
+  final String itemId;
+  final int partIndex;
+  final String txidHex;
+  final Uint8List rawTransaction;
+  final int anchorBoundaryHeight;
+  final int scheduledHeight;
+  final int scheduleStartHeight;
+  final int expiryHeight;
+
+  const MigrationOutboxItem({
+    required this.itemId,
+    required this.partIndex,
+    required this.txidHex,
+    required this.rawTransaction,
+    required this.anchorBoundaryHeight,
+    required this.scheduledHeight,
+    required this.scheduleStartHeight,
+    required this.expiryHeight,
+  });
+
+  @override
+  int get hashCode =>
+      itemId.hashCode ^
+      partIndex.hashCode ^
+      txidHex.hashCode ^
+      rawTransaction.hashCode ^
+      anchorBoundaryHeight.hashCode ^
+      scheduledHeight.hashCode ^
+      scheduleStartHeight.hashCode ^
+      expiryHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationOutboxItem &&
+          runtimeType == other.runtimeType &&
+          itemId == other.itemId &&
+          partIndex == other.partIndex &&
+          txidHex == other.txidHex &&
+          rawTransaction == other.rawTransaction &&
+          anchorBoundaryHeight == other.anchorBoundaryHeight &&
+          scheduledHeight == other.scheduledHeight &&
+          scheduleStartHeight == other.scheduleStartHeight &&
+          expiryHeight == other.expiryHeight;
+}
+
+class MigrationOutboxScheduleUpdate {
+  final String itemId;
+  final int scheduledHeight;
+  final int scheduleStartHeight;
+
+  const MigrationOutboxScheduleUpdate({
+    required this.itemId,
+    required this.scheduledHeight,
+    required this.scheduleStartHeight,
+  });
+
+  @override
+  int get hashCode =>
+      itemId.hashCode ^ scheduledHeight.hashCode ^ scheduleStartHeight.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationOutboxScheduleUpdate &&
+          runtimeType == other.runtimeType &&
+          itemId == other.itemId &&
+          scheduledHeight == other.scheduledHeight &&
+          scheduleStartHeight == other.scheduleStartHeight;
+}
+
+enum MigrationPartState {
+  preparing,
+  scheduled,
+  migrating,
+  confirming,
+  completed,
+  needsInput,
+}
+
+class MigrationPartStatus {
+  final int partIndex;
+  final int? scheduleOrder;
+  final BigInt valueZatoshi;
+  final MigrationPartState state;
+  final String? txidHex;
+  final int? scheduleStartHeight;
+
+  /// Backward-compatible alias for `effective_scheduled_height`.
+  final int? scheduledHeight;
+
+  /// First absolute block height assigned to this logical migration part.
+  final int? originalScheduledHeight;
+
+  /// Current absolute block height after any catch-up rescheduling.
+  final int? effectiveScheduledHeight;
+
+  /// Actual block containing the transaction, once observed in the local chain.
+  final int? minedHeight;
+  final int confirmationCount;
+  final int confirmationTarget;
+
+  const MigrationPartStatus({
+    required this.partIndex,
+    this.scheduleOrder,
+    required this.valueZatoshi,
+    required this.state,
+    this.txidHex,
+    this.scheduleStartHeight,
+    this.scheduledHeight,
+    this.originalScheduledHeight,
+    this.effectiveScheduledHeight,
+    this.minedHeight,
+    required this.confirmationCount,
+    required this.confirmationTarget,
+  });
+
+  @override
+  int get hashCode =>
+      partIndex.hashCode ^
+      scheduleOrder.hashCode ^
+      valueZatoshi.hashCode ^
+      state.hashCode ^
+      txidHex.hashCode ^
+      scheduleStartHeight.hashCode ^
+      scheduledHeight.hashCode ^
+      originalScheduledHeight.hashCode ^
+      effectiveScheduledHeight.hashCode ^
+      minedHeight.hashCode ^
+      confirmationCount.hashCode ^
+      confirmationTarget.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationPartStatus &&
+          runtimeType == other.runtimeType &&
+          partIndex == other.partIndex &&
+          scheduleOrder == other.scheduleOrder &&
+          valueZatoshi == other.valueZatoshi &&
+          state == other.state &&
+          txidHex == other.txidHex &&
+          scheduleStartHeight == other.scheduleStartHeight &&
+          scheduledHeight == other.scheduledHeight &&
+          originalScheduledHeight == other.originalScheduledHeight &&
+          effectiveScheduledHeight == other.effectiveScheduledHeight &&
+          minedHeight == other.minedHeight &&
+          confirmationCount == other.confirmationCount &&
+          confirmationTarget == other.confirmationTarget;
+}
+
+enum MigrationPreparationOutputKind { migration, change, continuation }
+
+class MigrationPreparationOutputStatus {
+  /// Actual Orchard note value, including any fee reserved for its migration.
+  final BigInt valueZatoshi;
+
+  /// Canonical ZIP 318 value that will reach Ironwood for migration outputs.
+  final BigInt? targetValueZatoshi;
+  final MigrationPreparationOutputKind kind;
+  final int? nextRound;
+
+  const MigrationPreparationOutputStatus({
+    required this.valueZatoshi,
+    this.targetValueZatoshi,
+    required this.kind,
+    this.nextRound,
+  });
+
+  @override
+  int get hashCode =>
+      valueZatoshi.hashCode ^
+      targetValueZatoshi.hashCode ^
+      kind.hashCode ^
+      nextRound.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationPreparationOutputStatus &&
+          runtimeType == other.runtimeType &&
+          valueZatoshi == other.valueZatoshi &&
+          targetValueZatoshi == other.targetValueZatoshi &&
+          kind == other.kind &&
+          nextRound == other.nextRound;
+}
+
+enum MigrationPreparationTransactionState {
+  awaitingInputs,
+  scheduled,
+  broadcasted,
+  confirming,
+  completed,
+}
+
+class MigrationPreparationTransactionStatus {
+  final int stageIndex;
+  final BigInt approximateValueZatoshi;
+  final int round;
+  final BigInt feeZatoshi;
+  final int plannedHeight;
+  final int projectedHeight;
+  final int projectedCompletionHeight;
+  final List<MigrationPreparationOutputStatus> outputs;
+  final MigrationPreparationTransactionState state;
+  final int? scheduledHeight;
+  final int? minedHeight;
+  final int confirmationCount;
+  final int confirmationTarget;
+
+  const MigrationPreparationTransactionStatus({
+    required this.stageIndex,
+    required this.approximateValueZatoshi,
+    required this.round,
+    required this.feeZatoshi,
+    required this.plannedHeight,
+    required this.projectedHeight,
+    required this.projectedCompletionHeight,
+    required this.outputs,
+    required this.state,
+    this.scheduledHeight,
+    this.minedHeight,
+    required this.confirmationCount,
+    required this.confirmationTarget,
+  });
+
+  @override
+  int get hashCode =>
+      stageIndex.hashCode ^
+      approximateValueZatoshi.hashCode ^
+      round.hashCode ^
+      feeZatoshi.hashCode ^
+      plannedHeight.hashCode ^
+      projectedHeight.hashCode ^
+      projectedCompletionHeight.hashCode ^
+      outputs.hashCode ^
+      state.hashCode ^
+      scheduledHeight.hashCode ^
+      minedHeight.hashCode ^
+      confirmationCount.hashCode ^
+      confirmationTarget.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationPreparationTransactionStatus &&
+          runtimeType == other.runtimeType &&
+          stageIndex == other.stageIndex &&
+          approximateValueZatoshi == other.approximateValueZatoshi &&
+          round == other.round &&
+          feeZatoshi == other.feeZatoshi &&
+          plannedHeight == other.plannedHeight &&
+          projectedHeight == other.projectedHeight &&
+          projectedCompletionHeight == other.projectedCompletionHeight &&
+          outputs == other.outputs &&
+          state == other.state &&
+          scheduledHeight == other.scheduledHeight &&
+          minedHeight == other.minedHeight &&
+          confirmationCount == other.confirmationCount &&
+          confirmationTarget == other.confirmationTarget;
+}
+
+class MigrationScheduledBroadcast {
+  final String txidHex;
+  final BigInt valueZatoshi;
+  final PlatformInt64 scheduledAtMs;
+  final int? scheduleStartHeight;
+  final int scheduledHeight;
+  final String status;
+
+  const MigrationScheduledBroadcast({
+    required this.txidHex,
+    required this.valueZatoshi,
+    required this.scheduledAtMs,
+    this.scheduleStartHeight,
+    required this.scheduledHeight,
+    required this.status,
+  });
+
+  @override
+  int get hashCode =>
+      txidHex.hashCode ^
+      valueZatoshi.hashCode ^
+      scheduledAtMs.hashCode ^
+      scheduleStartHeight.hashCode ^
+      scheduledHeight.hashCode ^
+      status.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationScheduledBroadcast &&
+          runtimeType == other.runtimeType &&
+          txidHex == other.txidHex &&
+          valueZatoshi == other.valueZatoshi &&
+          scheduledAtMs == other.scheduledAtMs &&
+          scheduleStartHeight == other.scheduleStartHeight &&
+          scheduledHeight == other.scheduledHeight &&
+          status == other.status;
+}
+
+class MigrationScheduledTransfer {
+  final int partIndex;
+  final BigInt valueZatoshi;
+  final int blockOffset;
+
+  const MigrationScheduledTransfer({
+    required this.partIndex,
+    required this.valueZatoshi,
+    required this.blockOffset,
+  });
+
+  @override
+  int get hashCode =>
+      partIndex.hashCode ^ valueZatoshi.hashCode ^ blockOffset.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationScheduledTransfer &&
+          runtimeType == other.runtimeType &&
+          partIndex == other.partIndex &&
+          valueZatoshi == other.valueZatoshi &&
+          blockOffset == other.blockOffset;
+}
+
+class MigrationStatus {
+  final String phase;
+  final String? activeRunId;
+  final Uint64List targetValuesZatoshi;
+  final int preparedNoteCount;
+
+  /// Minimum confirmation depth across the active denomination split
+  /// frontier, including parallel split roots.
+  final int denominationConfirmationCount;
+  final int denominationConfirmationTarget;
+
+  /// Denomination split transactions that have reached the wallet's trusted
+  /// confirmation depth, rather than transactions that are merely mined.
+  final int denominationSplitCompletedCount;
+
+  /// Total denomination split transactions planned for this migration run.
+  final int denominationSplitTotalCount;
+  final int pendingTxCount;
+  final int broadcastedTxCount;
+  final int confirmedTxCount;
+  final int totalCount;
+  final int signedChildPcztCount;
+  final int pendingSplitStageCount;
+  final String? message;
+  final bool canAbandon;
+  final int signingBatchLimit;
+  final int scheduleMeanDelayBlocks;
+  final int scheduleMaxDelayBlocks;
+  final int? preparationMeanDelayBlocks;
+  final int? nextActionHeight;
+
+  /// Earliest chain height at which the next ZIP 318 proof window should be
+  /// retried. Kept separate from `next_action_height`, which may instead
+  /// describe an earlier scheduled broadcast.
+  final int? nextProofWindowHeight;
+
+  /// Migration parts expected to use that proof window.
+  final Uint32List? nextProofWindowPartIndices;
+
+  /// Exact foreground proof preflight. `None` means no signed proof action
+  /// is currently applicable; `Some(false)` keeps a height-due action gated
+  /// until its anchor checkpoint and witness are actually available.
+  final bool? proofReady;
+  final int? estimatedCompletionHeight;
+  final int? nextActionPartIndex;
+  final Uint32List? currentSigningPartIndices;
+  final List<MigrationScheduledBroadcast> scheduledBroadcasts;
+  final List<MigrationPreparationTransactionStatus>? preparationTransactions;
+  final List<MigrationPartStatus> parts;
+
+  const MigrationStatus({
+    required this.phase,
+    this.activeRunId,
+    required this.targetValuesZatoshi,
+    required this.preparedNoteCount,
+    required this.denominationConfirmationCount,
+    required this.denominationConfirmationTarget,
+    required this.denominationSplitCompletedCount,
+    required this.denominationSplitTotalCount,
+    required this.pendingTxCount,
+    required this.broadcastedTxCount,
+    required this.confirmedTxCount,
+    required this.totalCount,
+    required this.signedChildPcztCount,
+    required this.pendingSplitStageCount,
+    this.message,
+    required this.canAbandon,
+    required this.signingBatchLimit,
+    required this.scheduleMeanDelayBlocks,
+    required this.scheduleMaxDelayBlocks,
+    this.preparationMeanDelayBlocks,
+    this.nextActionHeight,
+    this.nextProofWindowHeight,
+    this.nextProofWindowPartIndices,
+    this.proofReady,
+    this.estimatedCompletionHeight,
+    this.nextActionPartIndex,
+    this.currentSigningPartIndices,
+    required this.scheduledBroadcasts,
+    this.preparationTransactions,
+    required this.parts,
+  });
+
+  @override
+  int get hashCode =>
+      phase.hashCode ^
+      activeRunId.hashCode ^
+      targetValuesZatoshi.hashCode ^
+      preparedNoteCount.hashCode ^
+      denominationConfirmationCount.hashCode ^
+      denominationConfirmationTarget.hashCode ^
+      denominationSplitCompletedCount.hashCode ^
+      denominationSplitTotalCount.hashCode ^
+      pendingTxCount.hashCode ^
+      broadcastedTxCount.hashCode ^
+      confirmedTxCount.hashCode ^
+      totalCount.hashCode ^
+      signedChildPcztCount.hashCode ^
+      pendingSplitStageCount.hashCode ^
+      message.hashCode ^
+      canAbandon.hashCode ^
+      signingBatchLimit.hashCode ^
+      scheduleMeanDelayBlocks.hashCode ^
+      scheduleMaxDelayBlocks.hashCode ^
+      preparationMeanDelayBlocks.hashCode ^
+      nextActionHeight.hashCode ^
+      nextProofWindowHeight.hashCode ^
+      nextProofWindowPartIndices.hashCode ^
+      proofReady.hashCode ^
+      estimatedCompletionHeight.hashCode ^
+      nextActionPartIndex.hashCode ^
+      currentSigningPartIndices.hashCode ^
+      scheduledBroadcasts.hashCode ^
+      preparationTransactions.hashCode ^
+      parts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationStatus &&
+          runtimeType == other.runtimeType &&
+          phase == other.phase &&
+          activeRunId == other.activeRunId &&
+          targetValuesZatoshi == other.targetValuesZatoshi &&
+          preparedNoteCount == other.preparedNoteCount &&
+          denominationConfirmationCount ==
+              other.denominationConfirmationCount &&
+          denominationConfirmationTarget ==
+              other.denominationConfirmationTarget &&
+          denominationSplitCompletedCount ==
+              other.denominationSplitCompletedCount &&
+          denominationSplitTotalCount == other.denominationSplitTotalCount &&
+          pendingTxCount == other.pendingTxCount &&
+          broadcastedTxCount == other.broadcastedTxCount &&
+          confirmedTxCount == other.confirmedTxCount &&
+          totalCount == other.totalCount &&
+          signedChildPcztCount == other.signedChildPcztCount &&
+          pendingSplitStageCount == other.pendingSplitStageCount &&
+          message == other.message &&
+          canAbandon == other.canAbandon &&
+          signingBatchLimit == other.signingBatchLimit &&
+          scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
+          scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
+          preparationMeanDelayBlocks == other.preparationMeanDelayBlocks &&
+          nextActionHeight == other.nextActionHeight &&
+          nextProofWindowHeight == other.nextProofWindowHeight &&
+          nextProofWindowPartIndices == other.nextProofWindowPartIndices &&
+          proofReady == other.proofReady &&
+          estimatedCompletionHeight == other.estimatedCompletionHeight &&
+          nextActionPartIndex == other.nextActionPartIndex &&
+          currentSigningPartIndices == other.currentSigningPartIndices &&
+          scheduledBroadcasts == other.scheduledBroadcasts &&
+          preparationTransactions == other.preparationTransactions &&
+          parts == other.parts;
+}
+
+class OrchardMigrationImmediatePlan {
+  final BigInt totalInputZatoshi;
+  final BigInt feeZatoshi;
+  final BigInt migratedZatoshi;
+  final int inputNoteCount;
+
+  const OrchardMigrationImmediatePlan({
+    required this.totalInputZatoshi,
+    required this.feeZatoshi,
+    required this.migratedZatoshi,
+    required this.inputNoteCount,
+  });
+
+  @override
+  int get hashCode =>
+      totalInputZatoshi.hashCode ^
+      feeZatoshi.hashCode ^
+      migratedZatoshi.hashCode ^
+      inputNoteCount.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OrchardMigrationImmediatePlan &&
+          runtimeType == other.runtimeType &&
+          totalInputZatoshi == other.totalInputZatoshi &&
+          feeZatoshi == other.feeZatoshi &&
+          migratedZatoshi == other.migratedZatoshi &&
+          inputNoteCount == other.inputNoteCount;
+}
+
+class OrchardMigrationPrivatePlan {
+  final Uint64List targetValuesZatoshi;
+  final BigInt totalInputZatoshi;
+  final BigInt totalMigratableZatoshi;
+  final BigInt? orchardChangeZatoshi;
+  final BigInt denominationSplitFeeZatoshi;
+  final BigInt migrationFeeZatoshi;
+  final BigInt estimatedTotalFeeZatoshi;
+  final int plannedBatchCount;
+  final int denominationSplitStageCount;
+  final int denominationSplitLayerCount;
+  final int signingBatchLimit;
+  final int scheduleMeanDelayBlocks;
+  final int scheduleMaxDelayBlocks;
+
+  /// Estimated preparation spacing plus the remaining blocks until every
+  /// funding note can use a valid migration anchor.
+  final int proofReadinessDelayBlocks;
+
+  /// Estimated absolute height at which the projected final prepared note
+  /// can first use a valid migration anchor.
+  final int? estimatedProofReadyHeight;
+  final List<MigrationScheduledTransfer> scheduledTransfers;
+
+  const OrchardMigrationPrivatePlan({
+    required this.targetValuesZatoshi,
+    required this.totalInputZatoshi,
+    required this.totalMigratableZatoshi,
+    this.orchardChangeZatoshi,
+    required this.denominationSplitFeeZatoshi,
+    required this.migrationFeeZatoshi,
+    required this.estimatedTotalFeeZatoshi,
+    required this.plannedBatchCount,
+    required this.denominationSplitStageCount,
+    required this.denominationSplitLayerCount,
+    required this.signingBatchLimit,
+    required this.scheduleMeanDelayBlocks,
+    required this.scheduleMaxDelayBlocks,
+    required this.proofReadinessDelayBlocks,
+    this.estimatedProofReadyHeight,
+    required this.scheduledTransfers,
+  });
+
+  @override
+  int get hashCode =>
+      targetValuesZatoshi.hashCode ^
+      totalInputZatoshi.hashCode ^
+      totalMigratableZatoshi.hashCode ^
+      orchardChangeZatoshi.hashCode ^
+      denominationSplitFeeZatoshi.hashCode ^
+      migrationFeeZatoshi.hashCode ^
+      estimatedTotalFeeZatoshi.hashCode ^
+      plannedBatchCount.hashCode ^
+      denominationSplitStageCount.hashCode ^
+      denominationSplitLayerCount.hashCode ^
+      signingBatchLimit.hashCode ^
+      scheduleMeanDelayBlocks.hashCode ^
+      scheduleMaxDelayBlocks.hashCode ^
+      proofReadinessDelayBlocks.hashCode ^
+      estimatedProofReadyHeight.hashCode ^
+      scheduledTransfers.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is OrchardMigrationPrivatePlan &&
+          runtimeType == other.runtimeType &&
+          targetValuesZatoshi == other.targetValuesZatoshi &&
+          totalInputZatoshi == other.totalInputZatoshi &&
+          totalMigratableZatoshi == other.totalMigratableZatoshi &&
+          orchardChangeZatoshi == other.orchardChangeZatoshi &&
+          denominationSplitFeeZatoshi == other.denominationSplitFeeZatoshi &&
+          migrationFeeZatoshi == other.migrationFeeZatoshi &&
+          estimatedTotalFeeZatoshi == other.estimatedTotalFeeZatoshi &&
+          plannedBatchCount == other.plannedBatchCount &&
+          denominationSplitStageCount == other.denominationSplitStageCount &&
+          denominationSplitLayerCount == other.denominationSplitLayerCount &&
+          signingBatchLimit == other.signingBatchLimit &&
+          scheduleMeanDelayBlocks == other.scheduleMeanDelayBlocks &&
+          scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
+          proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
+          estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
+          scheduledTransfers == other.scheduledTransfers;
+}
+
 class ProposalResult {
   final BigInt proposalId;
   final bool needsSaplingParams;
@@ -946,11 +2119,17 @@ class ShieldTransparentStatus {
 class SubtreeIndices {
   final BigInt nextSapling;
   final BigInt nextOrchard;
+  final BigInt nextIronwood;
 
-  const SubtreeIndices({required this.nextSapling, required this.nextOrchard});
+  const SubtreeIndices({
+    required this.nextSapling,
+    required this.nextOrchard,
+    required this.nextIronwood,
+  });
 
   @override
-  int get hashCode => nextSapling.hashCode ^ nextOrchard.hashCode;
+  int get hashCode =>
+      nextSapling.hashCode ^ nextOrchard.hashCode ^ nextIronwood.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -958,7 +2137,8 @@ class SubtreeIndices {
       other is SubtreeIndices &&
           runtimeType == other.runtimeType &&
           nextSapling == other.nextSapling &&
-          nextOrchard == other.nextOrchard;
+          nextOrchard == other.nextOrchard &&
+          nextIronwood == other.nextIronwood;
 }
 
 class SubtreeRoot {
@@ -1179,9 +2359,15 @@ class WalletBalance {
   final BigInt transparent;
   final BigInt sapling;
   final BigInt orchard;
+  final BigInt ironwood;
+  final BigInt transparentLocked;
+  final BigInt saplingLocked;
+  final BigInt orchardLocked;
+  final BigInt ironwoodLocked;
   final BigInt transparentPending;
   final BigInt saplingPending;
   final BigInt orchardPending;
+  final BigInt ironwoodPending;
 
   /// Wallet-created change that has not reached the trusted confirmation depth.
   final BigInt changePendingConfirmation;
@@ -1195,7 +2381,10 @@ class WalletBalance {
   /// Sum of spendable shielded balances. Use this for "available to send".
   final BigInt spendable;
 
-  /// Sum of spendable + pending balances across all pools. Use this for "total holdings".
+  /// Sum of owner-locked balances across all pools.
+  final BigInt locked;
+
+  /// Sum of spendable + locked + pending balances across all pools.
   final BigInt total;
 
   const WalletBalance({
@@ -1203,13 +2392,20 @@ class WalletBalance {
     required this.transparent,
     required this.sapling,
     required this.orchard,
+    required this.ironwood,
+    required this.transparentLocked,
+    required this.saplingLocked,
+    required this.orchardLocked,
+    required this.ironwoodLocked,
     required this.transparentPending,
     required this.saplingPending,
     required this.orchardPending,
+    required this.ironwoodPending,
     required this.changePendingConfirmation,
     required this.valuePendingSpendability,
     required this.uneconomicValue,
     required this.spendable,
+    required this.locked,
     required this.total,
   });
 
@@ -1219,13 +2415,20 @@ class WalletBalance {
       transparent.hashCode ^
       sapling.hashCode ^
       orchard.hashCode ^
+      ironwood.hashCode ^
+      transparentLocked.hashCode ^
+      saplingLocked.hashCode ^
+      orchardLocked.hashCode ^
+      ironwoodLocked.hashCode ^
       transparentPending.hashCode ^
       saplingPending.hashCode ^
       orchardPending.hashCode ^
+      ironwoodPending.hashCode ^
       changePendingConfirmation.hashCode ^
       valuePendingSpendability.hashCode ^
       uneconomicValue.hashCode ^
       spendable.hashCode ^
+      locked.hashCode ^
       total.hashCode;
 
   @override
@@ -1237,13 +2440,20 @@ class WalletBalance {
           transparent == other.transparent &&
           sapling == other.sapling &&
           orchard == other.orchard &&
+          ironwood == other.ironwood &&
+          transparentLocked == other.transparentLocked &&
+          saplingLocked == other.saplingLocked &&
+          orchardLocked == other.orchardLocked &&
+          ironwoodLocked == other.ironwoodLocked &&
           transparentPending == other.transparentPending &&
           saplingPending == other.saplingPending &&
           orchardPending == other.orchardPending &&
+          ironwoodPending == other.ironwoodPending &&
           changePendingConfirmation == other.changePendingConfirmation &&
           valuePendingSpendability == other.valuePendingSpendability &&
           uneconomicValue == other.uneconomicValue &&
           spendable == other.spendable &&
+          locked == other.locked &&
           total == other.total;
 }
 

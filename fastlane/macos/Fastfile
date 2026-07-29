@@ -48,6 +48,22 @@ MACOS_RELEASE_FLAVOR_CONFIGS = {
     sparkle_private_key_env: "SPARKLE_PRIVATE_ED_KEY_TESTNET",
     zcash_default_network: "test",
     volume_name: "Install Vizor Testnet Wallet"
+  },
+  "ironwood-masquerade" => {
+    app_name: "Ironwood Masquerade",
+    artifact_name: "Ironwood-Masquerade",
+    bundle_id: "com.keplr.vizor.ironwood-masquerade",
+    bundle_id_name: "Ironwood Masquerade",
+    app_icon_file: "IronwoodMasqueradeAppIcon",
+    sparkle_feed_asset_name: "appcast-ironwood-masquerade.xml",
+    sparkle_public_key_env: "SPARKLE_PUBLIC_ED_KEY_IRONWOOD_MASQUERADE",
+    sparkle_private_key_env: "SPARKLE_PRIVATE_ED_KEY_IRONWOOD_MASQUERADE",
+    zcash_default_network: "main",
+    dart_defines: {
+      "ZCASH_IRONWOOD_MASQUERADE" => "true"
+    },
+    rustflags: "--cfg ironwood_masquerade",
+    volume_name: "Install Ironwood Masquerade"
   }
 }.freeze
 
@@ -126,6 +142,8 @@ def release_metadata(flavor: "mainnet")
     bundle_id_name: flavor_config.fetch(:bundle_id_name),
     app_icon_file: flavor_config.fetch(:app_icon_file),
     zcash_default_network: flavor_config.fetch(:zcash_default_network),
+    dart_defines: flavor_config.fetch(:dart_defines, {}),
+    rustflags: flavor_config[:rustflags],
     volume_name: flavor_config.fetch(:volume_name),
     version: version,
     asset_version: asset_version,
@@ -1009,12 +1027,15 @@ platform :mac do
             "ZCASH_DEFAULT_NETWORK=#{metadata[:zcash_default_network]}",
             "VIZOR_RELEASE_VERSION=#{metadata[:asset_version]}",
             "VIZOR_COINGECKO_PRICE_BASE_URL=#{coingecko_price_base_url}",
-            "VIZOR_WALLET_LINK_BACKEND_URL=#{wallet_link_backend_url}"
+            "VIZOR_WALLET_LINK_BACKEND_URL=#{wallet_link_backend_url}",
+            *metadata[:dart_defines].map { |key, value| "#{key}=#{value}" }
           ]
+          rustflags = metadata[:rustflags].to_s.strip
+          build_environment = rustflags.empty? ? "" : "RUSTFLAGS=#{shell_escape(rustflags)} "
           sh(
             [
               "cd #{shell_escape(workspace_root)} &&",
-              "fvm flutter build macos --release --no-pub",
+              "#{build_environment}fvm flutter build macos --release --no-pub",
               *dart_defines.map { |dart_define| "--dart-define=#{shell_escape(dart_define)}" },
               "--build-name", shell_escape(metadata[:version]),
               "--build-number", shell_escape(metadata[:build_number])

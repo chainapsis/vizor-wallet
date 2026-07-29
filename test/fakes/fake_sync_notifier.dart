@@ -5,6 +5,7 @@ class FakeSyncNotifier extends SyncNotifier {
   FakeSyncNotifier([this.initialState]);
 
   final SyncState? initialState;
+  int balanceRefreshes = 0;
 
   @override
   Future<SyncState> build() async => initialState ?? SyncState();
@@ -15,5 +16,10 @@ class FakeSyncNotifier extends SyncNotifier {
 
   void setSyncState(SyncState nextState) {
     state = AsyncData(nextState);
+  }
+
+  @override
+  Future<void> refreshAfterSend() async {
+    balanceRefreshes++;
   }
 }

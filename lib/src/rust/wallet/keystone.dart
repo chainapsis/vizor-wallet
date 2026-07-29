@@ -61,3 +61,80 @@ class UrDecodeResult {
           data == other.data &&
           urType == other.urType;
 }
+
+class ZcashBatchMessageInput {
+  final String id;
+  final Uint8List pcztBytes;
+
+  const ZcashBatchMessageInput({required this.id, required this.pcztBytes});
+
+  @override
+  int get hashCode => id.hashCode ^ pcztBytes.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ZcashBatchMessageInput &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          pcztBytes == other.pcztBytes;
+}
+
+class ZcashBatchSignResult {
+  final int version;
+  final String requestId;
+  final List<ZcashBatchSignedMessage> results;
+
+  const ZcashBatchSignResult({
+    required this.version,
+    required this.requestId,
+    required this.results,
+  });
+
+  @override
+  int get hashCode => version.hashCode ^ requestId.hashCode ^ results.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ZcashBatchSignResult &&
+          runtimeType == other.runtimeType &&
+          version == other.version &&
+          requestId == other.requestId &&
+          results == other.results;
+}
+
+class ZcashBatchSignedMessage {
+  final String id;
+  final int status;
+  final int kind;
+  final Uint8List signedPcztBytes;
+  final String payloadDigestHex;
+
+  const ZcashBatchSignedMessage({
+    required this.id,
+    required this.status,
+    required this.kind,
+    required this.signedPcztBytes,
+    required this.payloadDigestHex,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      status.hashCode ^
+      kind.hashCode ^
+      signedPcztBytes.hashCode ^
+      payloadDigestHex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ZcashBatchSignedMessage &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          status == other.status &&
+          kind == other.kind &&
+          signedPcztBytes == other.signedPcztBytes &&
+          payloadDigestHex == other.payloadDigestHex;
+}

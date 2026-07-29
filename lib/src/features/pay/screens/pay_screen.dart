@@ -15,8 +15,8 @@ import '../../address_book/models/address_book_contact.dart';
 import '../../address_scan/widgets/address_qr_scan_modal.dart';
 import '../../send/widgets/verify_address_modal.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/sync_provider.dart';
 import '../../address_book/providers/address_book_provider.dart';
+import '../../migration/providers/ironwood_migration_announcement_provider.dart';
 import '../../swap/models/swap_activity_navigation.dart';
 import '../../swap/models/swap_intent_presentation_mapper.dart'
     show swapIntentsFromRecords;
@@ -233,12 +233,6 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     final swapNotifier = ref.read(swapStateProvider.notifier);
     final accountState = ref.watch(accountProvider).value;
     final activeAccountUuid = accountState?.activeAccountUuid;
-    final sync = ref.watch(
-      syncProvider.select(
-        (value) =>
-            (value.value ?? SyncState()).scopedToAccount(activeAccountUuid),
-      ),
-    );
     _syncController(
       _amountController,
       swapState.receiveAmountInputMode == SwapAmountInputMode.fiat
@@ -288,12 +282,12 @@ class _PayScreenState extends ConsumerState<PayScreen> {
     final recipientContact = network == null
         ? null
         : payContactForAddress(allContacts, network, recipientAddress);
+    final migrationSpendable = ref.watch(
+      ironwoodMigrationAwareDisplaySpendableProvider(activeAccountUuid),
+    );
     final startBlockedReason =
         quote != null &&
-            swapReviewQuoteExceedsAvailableZec(
-              quote,
-              sync.displaySpendableBalance,
-            )
+            swapReviewQuoteExceedsAvailableZec(quote, migrationSpendable)
         ? "You don't have enough ZEC for this payment. Try a smaller amount."
         : null;
 

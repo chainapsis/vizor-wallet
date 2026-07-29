@@ -14,7 +14,10 @@ import '../core/profile_pictures.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
+import '../features/migration/services/ironwood_migration_background_credential_store.dart';
+import '../features/migration/services/ironwood_migration_operation_registry.dart';
 import '../features/voting/voting_flow_models.dart';
+import '../rust/api/sync.dart' as rust_sync;
 import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
@@ -283,9 +286,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      final network = (state.value?.accounts ?? const <AccountInfo>[]).isEmpty
-          ? endpoint.networkName
-          : await _getNetwork();
+      final network =
+          (state.value?.accounts ?? const <AccountInfo>[]).isEmpty
+              ? endpoint.networkName
+              : await _getNetwork();
       final accounts = state.value?.accounts ?? [];
       final accountName = name ?? 'Account ${accounts.length + 1}';
       final isFirstWalletAccount = accounts.isEmpty;
@@ -298,9 +302,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       final result = await rust_wallet.importSoftwareWalletWithAccountDiscovery(
         mnemonic: mnemonic,
-        birthdayHeight: birthdayHeight != null
-            ? BigInt.from(birthdayHeight)
-            : null,
+        birthdayHeight:
+            birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
         network: network,
         dbPath: dbPath,
         firstAccountName: accountName,
@@ -330,12 +333,14 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       ];
       final updatedAccounts = [...accounts, ...importedAccounts];
       await _saveAccounts(updatedAccounts);
-      final activeAccountUuid = result.didImportPrimaryAccount
-          ? result.accounts.first.accountUuid
-          : previousActiveAccountUuid;
-      final activeAddress = result.didImportPrimaryAccount
-          ? result.accounts.first.unifiedAddress
-          : previousActiveAddress;
+      final activeAccountUuid =
+          result.didImportPrimaryAccount
+              ? result.accounts.first.accountUuid
+              : previousActiveAccountUuid;
+      final activeAddress =
+          result.didImportPrimaryAccount
+              ? result.accounts.first.unifiedAddress
+              : previousActiveAddress;
       if (activeAccountUuid == null) {
         await _storage.delete(_activeAccountKey);
       } else if (result.didImportPrimaryAccount) {
@@ -370,15 +375,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
-      final network = isFirstWalletAccount
-          ? endpoint.networkName
-          : await _getNetwork();
+      final network =
+          isFirstWalletAccount ? endpoint.networkName : await _getNetwork();
 
       return rust_wallet.discoverSoftwareWalletImportAccounts(
         mnemonic: mnemonic,
-        birthdayHeight: birthdayHeight != null
-            ? BigInt.from(birthdayHeight)
-            : null,
+        birthdayHeight:
+            birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
         network: network,
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -398,9 +401,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
-      final network = isFirstWalletAccount
-          ? endpoint.networkName
-          : await _getNetwork();
+      final network =
+          isFirstWalletAccount ? endpoint.networkName : await _getNetwork();
 
       return rust_wallet.previewSoftwareAccountTransparentBalance(
         mnemonic: mnemonic,
@@ -453,9 +455,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     validateAccountName(newName);
     final normalizedName = normalizeAccountName(newName);
     final prev = state.value ?? const AccountState();
-    final updated = prev.accounts
-        .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
-        .toList();
+    final updated =
+        prev.accounts
+            .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
+            .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('renameAccount: $uuid → $normalizedName');
@@ -478,13 +481,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     final prev = state.value ?? const AccountState();
-    final updated = prev.accounts
-        .map(
-          (a) => a.uuid == uuid
-              ? a.copyWith(profilePictureId: normalizedProfilePictureId)
-              : a,
-        )
-        .toList();
+    final updated =
+        prev.accounts
+            .map(
+              (a) =>
+                  a.uuid == uuid
+                      ? a.copyWith(profilePictureId: normalizedProfilePictureId)
+                      : a,
+            )
+            .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
@@ -511,17 +516,46 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     ];
     final dbPath = await _getDbPath();
     final network = await _getNetwork();
-    await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
-    final rustDeleteWatch = Stopwatch()..start();
-    await rust_wallet.deleteAccount(
-      dbPath: dbPath,
-      network: network,
-      accountUuid: uuid,
-    );
-    log(
-      'removeAccount: rust delete complete in '
-      '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
-    );
+    final migrationRevocation = await IronwoodMigrationOperationRegistry
+        .instance
+        .revokeAndWait(network: network, accountUuid: uuid);
+    final migrationLifecycle = IronwoodMigrationBackgroundLifecycle.instance;
+    final migrationQuiescenceManagedByCaller =
+        migrationLifecycle.isQuiescenceManagedByCaller;
+    try {
+      if (!migrationQuiescenceManagedByCaller) {
+        await migrationLifecycle.quiesce();
+      }
+      await _resetVotingProcessStateForAccount(uuid, dbPath: dbPath);
+      await migrationLifecycle.revokeAccount(
+        network: network,
+        accountUuid: uuid,
+      );
+      final rustDeleteWatch = Stopwatch()..start();
+      await rust_wallet.deleteAccount(
+        dbPath: dbPath,
+        network: network,
+        accountUuid: uuid,
+      );
+      migrationRevocation.commit();
+      log(
+        'removeAccount: rust delete complete in '
+        '${rustDeleteWatch.elapsedMilliseconds}ms uuid=$uuid',
+      );
+    } catch (_) {
+      migrationRevocation.rollback();
+      if (!migrationQuiescenceManagedByCaller) {
+        try {
+          await migrationLifecycle.resumeAfterFailedMutation();
+        } catch (e, st) {
+          log(
+            'removeAccount: failed to resume migration after keeping '
+            '$uuid: $e\n$st',
+          );
+        }
+      }
+      rethrow;
+    }
     try {
       await _deleteDurableVotingStateForAccount(uuid, dbPath: dbPath);
     } catch (e, st) {
@@ -581,6 +615,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         activeAddress: nextActiveAddress,
       ),
     );
+    if (!migrationQuiescenceManagedByCaller) {
+      try {
+        await migrationLifecycle.resumeAfterMutation();
+      } catch (e, st) {
+        log(
+          'removeAccount: failed to resume migration for remaining '
+          'accounts: $e\n$st',
+        );
+      }
+    }
     log('removeAccount: $uuid');
   }
 
@@ -589,11 +633,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// This also clears voting state held in this process for every account
   /// before the wallet DB and voting sidecar DB are deleted.
   ///
-  /// The wipe is best-effort: every deletion step is attempted even if an
-  /// earlier one throws, so a partial failure (e.g. a keychain error during
-  /// deleteAll) cannot strand secrets behind an already-deleted DB. The first
-  /// error is rethrown after all attempts so callers still see the failure
-  /// and can retry; every step is idempotent.
+  /// Migration work must first stop without deleting its credential. After
+  /// that fail-closed preflight, the wipe is best-effort: deletion steps remain
+  /// retryable and the first error is rethrown after all safe cleanup attempts.
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
@@ -610,6 +652,67 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // NOTHING deleted: wiping storage now would orphan the still-existing DB
     // file (a retry would generate a fresh name and never find the old one).
     final dbPath = await _getDbPath();
+    final network = await _getNetwork();
+    final migrationRevocations = <IronwoodMigrationAccountRevocation>[];
+    final migrationLifecycle = IronwoodMigrationBackgroundLifecycle.instance;
+    final migrationQuiescenceManagedByCaller =
+        migrationLifecycle.isQuiescenceManagedByCaller;
+    Future<void> rollbackMigrationPreflight() async {
+      for (final revocation in migrationRevocations) {
+        revocation.rollback();
+      }
+      if (migrationQuiescenceManagedByCaller) return;
+      try {
+        await migrationLifecycle.resumeAfterFailedMutation();
+      } catch (e, st) {
+        log('resetWallet: failed to resume retained migration: $e\n$st');
+      }
+    }
+
+    try {
+      for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
+        migrationRevocations.add(
+          await IronwoodMigrationOperationRegistry.instance.revokeAndWait(
+            network: network,
+            accountUuid: account.uuid,
+          ),
+        );
+      }
+    } catch (_) {
+      for (final revocation in migrationRevocations) {
+        revocation.rollback();
+      }
+      rethrow;
+    }
+
+    // Stop native work before changing the DB. The signed outbox is revoked
+    // below before the destructive step is allowed to begin.
+    try {
+      if (!migrationQuiescenceManagedByCaller) {
+        await migrationLifecycle.quiesce();
+      }
+    } catch (_) {
+      await rollbackMigrationPreflight();
+      rethrow;
+    }
+
+    // Full reset bypasses Rust's per-account delete path, so explicitly drop
+    // any unsigned or partially proved Keystone migration requests first.
+    try {
+      await rust_sync.discardAllKeystoneMigrationRequests();
+    } catch (_) {
+      await rollbackMigrationPreflight();
+      rethrow;
+    }
+
+    // A signed outbox transaction must not survive deletion of the wallet DB.
+    // Revoke native work first so a failed cleanup leaves the wallet intact.
+    try {
+      await migrationLifecycle.revokeAll();
+    } catch (_) {
+      await rollbackMigrationPreflight();
+      rethrow;
+    }
 
     // Best-effort internally; tolerates per-account failures.
     for (final account in state.value?.accounts ?? const <AccountInfo>[]) {
@@ -620,7 +723,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       await _deleteExistingDb(dbPath);
       dbDeleted = true;
+      for (final revocation in migrationRevocations) {
+        revocation.commit();
+      }
     } catch (e, st) {
+      await rollbackMigrationPreflight();
       recordError('wallet db deletion', e, st);
     }
     // Only wipe secure storage once the DB file is confirmed gone: the wipe
@@ -652,6 +759,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       ref.read(appSecurityProvider.notifier).reset();
     } catch (e, st) {
       log('resetWallet: app security reset failed: $e\n$st');
+    }
+    if (!migrationQuiescenceManagedByCaller) {
+      try {
+        await migrationLifecycle.resumeAfterMutation();
+      } catch (e, st) {
+        log('resetWallet: failed to leave migration quiescence: $e\n$st');
+      }
     }
     log('resetWallet: all data cleared');
   }
@@ -918,9 +1032,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       final updated = [...prev.accounts, ...importedAccounts];
       final activeAccountUuid = prev.activeAccountUuid ?? firstImportedUuid;
-      final activeAddress = prev.activeAccountUuid == null
-          ? firstImportedAddress
-          : prev.activeAddress;
+      final activeAddress =
+          prev.activeAccountUuid == null
+              ? firstImportedAddress
+              : prev.activeAddress;
       await _saveAccounts(updated);
       if (activeAccountUuid == null) {
         await _storage.delete(_activeAccountKey);
@@ -1183,9 +1298,8 @@ String? resolveNextActiveAccountUuidAfterRemoval({
       remainingAccounts.any((a) => a.uuid == previousState.activeAccountUuid)) {
     return previousState.activeAccountUuid;
   }
-  final nextIndex = removedAccount.order
-      .clamp(0, remainingAccounts.length - 1)
-      .toInt();
+  final nextIndex =
+      removedAccount.order.clamp(0, remainingAccounts.length - 1).toInt();
   return remainingAccounts[nextIndex].uuid;
 }
 

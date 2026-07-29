@@ -67,6 +67,17 @@ class _FakeSyncNotifier extends SyncNotifier {
   Future<SyncState> build() async => SyncState();
 
   @override
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async {
+    return const WalletMutationSyncPause(
+      hadActiveSync: false,
+      hadPolling: false,
+      hadMempoolObserver: false,
+    );
+  }
+
+  @override
   Future<void> clearSensitiveStateForLock() async {
     sensitiveClears += 1;
     state = AsyncData(SyncState());

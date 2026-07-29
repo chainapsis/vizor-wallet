@@ -26,6 +26,7 @@ abstract final class AppIcons {
   static const arrowTopRight = 'arrow_top_right';
   static const arrowUpward = 'arrow_upward';
   static const backspace = 'backspace';
+  static const bell = 'bell';
   static const block = 'block';
   static const book = 'book';
   static const calendar = 'calendar';
@@ -68,11 +69,19 @@ abstract final class AppIcons {
   static const logOut = 'log_out';
   static const monitor = 'monitor';
   static const moneyBag = 'money_bag';
+  static const migrationFast = 'migration_fast';
+  static const ironwoodMigrationLoader = 'ironwood_migration_loader';
+  static const migrationSign = 'migration_sign';
+  static const migrationSplit = 'migration_split';
+  static const migrationTimer = 'migration_timer';
   static const night = 'night';
+  static const notificationBell = 'notification_bell';
   static const options = 'options';
   static const paid = 'paid';
   static const paste = 'paste';
+  static const pause = 'pause';
   static const plane = 'plane';
+  static const play = 'play';
   static const plus = 'plus';
   static const qr = 'qr';
   static const qrCodeFill = 'qr_code_fill';
@@ -98,6 +107,8 @@ abstract final class AppIcons {
   static const vizor = 'vizor';
   static const wallet = 'wallet';
   static const warning = 'warning';
+  static const warningCircle = 'warning_circle';
+  static const wrench = 'wrench';
   static const zcash = 'zcash';
   static const zcashCurrency = 'zcash_currency';
 }

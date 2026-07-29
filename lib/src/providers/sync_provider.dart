@@ -1,19 +1,48 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
 import '../core/config/rpc_endpoint_config.dart';
+import '../core/layout/app_process_work_policy.dart';
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/sync.dart' as rust_sync;
-import '../services/background_sync_delegate.dart';
 import 'account_provider.dart';
 import 'app_security_provider.dart';
+import 'chain_upgrade_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'sync_failure.dart';
+
+class SyncProgressEvent {
+  final int scannedHeight;
+  final int chainTipHeight;
+  final double percentage;
+  final double displayTargetPercentage;
+  final int displayTargetBlocks;
+  final bool isSyncing;
+  final bool isComplete;
+  final bool hasNewTx;
+
+  /// Current sync phase from Rust: `"download"`, `"scan"`,
+  /// `"enhance"`, or `""` (unspecified / completion).
+  final String phase;
+
+  const SyncProgressEvent({
+    required this.scannedHeight,
+    required this.chainTipHeight,
+    required this.percentage,
+    required this.displayTargetPercentage,
+    required this.displayTargetBlocks,
+    required this.isSyncing,
+    required this.isComplete,
+    required this.hasNewTx,
+    this.phase = '',
+  });
+}
 
 enum SpendableBalanceFreshness { authoritative, lastCompletedSync }
 
@@ -48,9 +77,11 @@ class SyncState {
   final BigInt transparentBalance;
   final BigInt saplingBalance;
   final BigInt orchardBalance;
+  final BigInt ironwoodBalance;
   final BigInt transparentPendingBalance;
   final BigInt saplingPendingBalance;
   final BigInt orchardPendingBalance;
+  final BigInt ironwoodPendingBalance;
   final bool canShieldTransparentBalance;
   final BigInt shieldTransparentFee;
   final BigInt shieldTransparentAmount;
@@ -62,6 +93,28 @@ class SyncState {
   /// newly-polled chain tip. This never includes value that was pending in the
   /// last completed snapshot.
   final BigInt displaySpendableBalance;
+
+  /// Stable Ironwood spendable value shown while a previously-complete wallet
+  /// catches up. Active migration surfaces must use this instead of the
+  /// aggregate display balance so Orchard funds are never presented as
+  /// migration-sendable.
+  final BigInt displayIronwoodBalance;
+
+  /// Stable pending Ironwood value used by migration holdings surfaces while
+  /// an incremental sync is reconciling pool balances.
+  final BigInt displayIronwoodPendingBalance;
+
+  /// Stable Orchard spendable and pending values used by migration progress
+  /// surfaces while an incremental sync reconciles pool balances.
+  final BigInt displayOrchardBalance;
+  final BigInt displayOrchardPendingBalance;
+
+  /// Stable total-holdings value for account-level balance surfaces.
+  final BigInt displayTotalBalance;
+
+  /// Stable shielded holdings, including pending value, for Home while an
+  /// incremental sync is reconciling individual pool balances.
+  final BigInt displayShieldedBalance;
 
   /// Whether [displaySpendableBalance] is the current Rust value or the last
   /// completed sync snapshot. Rust remains authoritative for proposals.
@@ -87,7 +140,10 @@ class SyncState {
 
   /// Amount waiting for confirmations (e.g. change from a recently sent tx).
   BigInt get pendingBalance =>
-      transparentPendingBalance + saplingPendingBalance + orchardPendingBalance;
+      transparentPendingBalance +
+      saplingPendingBalance +
+      orchardPendingBalance +
+      ironwoodPendingBalance;
 
   bool get isSyncedToTip =>
       isSyncComplete &&
@@ -177,6 +233,9 @@ class SyncState {
       hasAuthoritativeBalance: hasAuthoritativeBalance,
       syncComplete: syncComplete,
     );
+    final preservePoolDisplay =
+        spendableDisplay.freshness ==
+        SpendableBalanceFreshness.lastCompletedSync;
 
     return copyWith(
       hasBalanceData: hasAuthoritativeBalance || hasBalanceData,
@@ -185,9 +244,11 @@ class SyncState {
       transparentBalance: balance?.transparent,
       saplingBalance: balance?.sapling,
       orchardBalance: balance?.orchard,
+      ironwoodBalance: balance?.ironwood,
       transparentPendingBalance: balance?.transparentPending,
       saplingPendingBalance: balance?.saplingPending,
       orchardPendingBalance: balance?.orchardPending,
+      ironwoodPendingBalance: balance?.ironwoodPending,
       canShieldTransparentBalance: hasAuthoritativeBalance
           ? canShieldTransparentBalance ?? this.canShieldTransparentBalance
           : this.canShieldTransparentBalance,
@@ -199,8 +260,33 @@ class SyncState {
           : this.shieldTransparentAmount,
       spendableBalance: nextSpendableBalance,
       displaySpendableBalance: spendableDisplay.balance,
+      displayIronwoodBalance: preservePoolDisplay
+          ? displayIronwoodBalance
+          : balance?.ironwood,
+      displayIronwoodPendingBalance: preservePoolDisplay
+          ? displayIronwoodPendingBalance
+          : balance?.ironwoodPending,
+      displayOrchardBalance: preservePoolDisplay
+          ? displayOrchardBalance
+          : balance?.orchard,
+      displayOrchardPendingBalance: preservePoolDisplay
+          ? displayOrchardPendingBalance
+          : balance?.orchardPending,
       displaySpendableFreshness: spendableDisplay.freshness,
       totalBalance: balance?.total,
+      displayTotalBalance: preservePoolDisplay
+          ? displayTotalBalance
+          : balance?.total,
+      displayShieldedBalance: preservePoolDisplay
+          ? displayShieldedBalance
+          : balance == null
+          ? null
+          : balance.sapling +
+                balance.orchard +
+                balance.ironwood +
+                balance.saplingPending +
+                balance.orchardPending +
+                balance.ironwoodPending,
       recentTransactions: fetchedRecentTransactions,
     );
   }
@@ -222,16 +308,24 @@ class SyncState {
     BigInt? transparentBalance,
     BigInt? saplingBalance,
     BigInt? orchardBalance,
+    BigInt? ironwoodBalance,
     BigInt? transparentPendingBalance,
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
+    BigInt? ironwoodPendingBalance,
     this.canShieldTransparentBalance = false,
     BigInt? shieldTransparentFee,
     BigInt? shieldTransparentAmount,
     BigInt? spendableBalance,
     BigInt? displaySpendableBalance,
+    BigInt? displayIronwoodBalance,
+    BigInt? displayIronwoodPendingBalance,
+    BigInt? displayOrchardBalance,
+    BigInt? displayOrchardPendingBalance,
     this.displaySpendableFreshness = SpendableBalanceFreshness.authoritative,
     BigInt? totalBalance,
+    BigInt? displayTotalBalance,
+    BigInt? displayShieldedBalance,
     this.failure,
     this.error,
     this.recentTransactions = const [],
@@ -247,14 +341,35 @@ class SyncState {
        transparentBalance = transparentBalance ?? BigInt.zero,
        saplingBalance = saplingBalance ?? BigInt.zero,
        orchardBalance = orchardBalance ?? BigInt.zero,
+       ironwoodBalance = ironwoodBalance ?? BigInt.zero,
        transparentPendingBalance = transparentPendingBalance ?? BigInt.zero,
        saplingPendingBalance = saplingPendingBalance ?? BigInt.zero,
        orchardPendingBalance = orchardPendingBalance ?? BigInt.zero,
+       ironwoodPendingBalance = ironwoodPendingBalance ?? BigInt.zero,
        shieldTransparentFee = shieldTransparentFee ?? BigInt.zero,
        shieldTransparentAmount = shieldTransparentAmount ?? BigInt.zero,
        spendableBalance = spendableBalance ?? BigInt.zero,
        displaySpendableBalance =
            displaySpendableBalance ?? spendableBalance ?? BigInt.zero,
+       displayIronwoodBalance =
+           displayIronwoodBalance ?? ironwoodBalance ?? BigInt.zero,
+       displayIronwoodPendingBalance =
+           displayIronwoodPendingBalance ??
+           ironwoodPendingBalance ??
+           BigInt.zero,
+       displayOrchardBalance =
+           displayOrchardBalance ?? orchardBalance ?? BigInt.zero,
+       displayOrchardPendingBalance =
+           displayOrchardPendingBalance ?? orchardPendingBalance ?? BigInt.zero,
+       displayTotalBalance = displayTotalBalance ?? totalBalance ?? BigInt.zero,
+       displayShieldedBalance =
+           displayShieldedBalance ??
+           (saplingBalance ?? BigInt.zero) +
+               (orchardBalance ?? BigInt.zero) +
+               (ironwoodBalance ?? BigInt.zero) +
+               (saplingPendingBalance ?? BigInt.zero) +
+               (orchardPendingBalance ?? BigInt.zero) +
+               (ironwoodPendingBalance ?? BigInt.zero),
        totalBalance = totalBalance ?? BigInt.zero;
 
   SyncState copyWith({
@@ -274,16 +389,24 @@ class SyncState {
     BigInt? transparentBalance,
     BigInt? saplingBalance,
     BigInt? orchardBalance,
+    BigInt? ironwoodBalance,
     BigInt? transparentPendingBalance,
     BigInt? saplingPendingBalance,
     BigInt? orchardPendingBalance,
+    BigInt? ironwoodPendingBalance,
     bool? canShieldTransparentBalance,
     BigInt? shieldTransparentFee,
     BigInt? shieldTransparentAmount,
     BigInt? spendableBalance,
     BigInt? displaySpendableBalance,
+    BigInt? displayIronwoodBalance,
+    BigInt? displayIronwoodPendingBalance,
+    BigInt? displayOrchardBalance,
+    BigInt? displayOrchardPendingBalance,
     SpendableBalanceFreshness? displaySpendableFreshness,
     BigInt? totalBalance,
+    BigInt? displayTotalBalance,
+    BigInt? displayShieldedBalance,
     SyncFailure? failure,
     bool clearFailure = false,
     String? error,
@@ -315,12 +438,15 @@ class SyncState {
       transparentBalance: transparentBalance ?? this.transparentBalance,
       saplingBalance: saplingBalance ?? this.saplingBalance,
       orchardBalance: orchardBalance ?? this.orchardBalance,
+      ironwoodBalance: ironwoodBalance ?? this.ironwoodBalance,
       transparentPendingBalance:
           transparentPendingBalance ?? this.transparentPendingBalance,
       saplingPendingBalance:
           saplingPendingBalance ?? this.saplingPendingBalance,
       orchardPendingBalance:
           orchardPendingBalance ?? this.orchardPendingBalance,
+      ironwoodPendingBalance:
+          ironwoodPendingBalance ?? this.ironwoodPendingBalance,
       canShieldTransparentBalance:
           canShieldTransparentBalance ?? this.canShieldTransparentBalance,
       shieldTransparentFee: shieldTransparentFee ?? this.shieldTransparentFee,
@@ -329,9 +455,20 @@ class SyncState {
       spendableBalance: spendableBalance ?? this.spendableBalance,
       displaySpendableBalance:
           displaySpendableBalance ?? this.displaySpendableBalance,
+      displayIronwoodBalance:
+          displayIronwoodBalance ?? this.displayIronwoodBalance,
+      displayIronwoodPendingBalance:
+          displayIronwoodPendingBalance ?? this.displayIronwoodPendingBalance,
+      displayOrchardBalance:
+          displayOrchardBalance ?? this.displayOrchardBalance,
+      displayOrchardPendingBalance:
+          displayOrchardPendingBalance ?? this.displayOrchardPendingBalance,
       displaySpendableFreshness:
           displaySpendableFreshness ?? this.displaySpendableFreshness,
       totalBalance: totalBalance ?? this.totalBalance,
+      displayTotalBalance: displayTotalBalance ?? this.displayTotalBalance,
+      displayShieldedBalance:
+          displayShieldedBalance ?? this.displayShieldedBalance,
       failure: clearFailure ? null : failure ?? this.failure,
       error: clearError ? null : error ?? this.error,
       recentTransactions: recentTransactions ?? this.recentTransactions,
@@ -382,24 +519,33 @@ class SyncState {
 class WalletMutationSyncPause {
   final bool hadActiveSync;
   final bool hadPolling;
-  final bool hadBackgroundSync;
   final bool hadMempoolObserver;
 
   const WalletMutationSyncPause({
     required this.hadActiveSync,
     required this.hadPolling,
-    required this.hadBackgroundSync,
     required this.hadMempoolObserver,
   });
 
-  bool get hadWorkToPause =>
-      hadActiveSync || hadPolling || hadBackgroundSync || hadMempoolObserver;
+  bool get hadWorkToPause => hadActiveSync || hadPolling || hadMempoolObserver;
 }
 
 @visibleForTesting
 bool shouldStartSyncForPolledTip(SyncState? current, int latestTipHeight) {
   return !(current?.isSyncComplete ?? false) ||
       latestTipHeight > (current?.chainTipHeight ?? 0);
+}
+
+@visibleForTesting
+bool shouldRestartSyncForMigrationEntry({
+  required bool hasAttachedSync,
+  required bool activeSyncStartedInForeground,
+  required int activeSyncForegroundEpoch,
+  required int currentForegroundEpoch,
+}) {
+  return hasAttachedSync &&
+      (!activeSyncStartedInForeground ||
+          activeSyncForegroundEpoch != currentForegroundEpoch);
 }
 
 class SyncNotifier extends AsyncNotifier<SyncState> {
@@ -417,12 +563,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   ];
 
   final Future<String> Function() _walletDbPathResolver;
-  late final BackgroundSyncDelegate _bgDelegate;
   bool _isSyncing = false;
   bool _isInForeground = true;
+  int _foregroundEpoch = 0;
+  int _activeSyncForegroundEpoch = 0;
+  bool _activeSyncStartedInForeground = true;
   int _lastLoggedHeight = 0;
   SyncProgressEvent? _lastForegroundSyncProgress;
   Future<void>? _lastForegroundProgressHandling;
+  Future<void>? _foregroundSyncRecovery;
   int _syncGen = 0; // incremented by stopSync to invalidate pending startSync
   String? _cachedDbPath;
   StreamSubscription? _syncSub;
@@ -453,30 +602,27 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   @override
   Future<SyncState> build() async {
     final bootstrap = ref.watch(appBootstrapProvider);
-    _bgDelegate = BackgroundSyncDelegate.create();
-    _bgDelegate.setupListeners(
-      onStopRequested: () => stopSync(),
-      onBackgroundProgress: (event) {
-        _onSyncProgress(event).catchError((e, st) {
-          log('SyncNotifier: background progress handling failed: $e');
-        });
-      },
-    );
-
+    unawaited(ref.read(chainUpgradeStatusProvider.future));
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
         _refreshBalance();
-        _bgDelegate.onResume();
         _checkAndSync();
       },
       onHide: () {
         _isInForeground = false;
-        _stopPolling();
+        _foregroundEpoch++;
+        if (!canRunAppProcessWork(isInForeground: _isInForeground)) {
+          _stopPolling();
+        }
       },
     );
 
     ref.onDispose(() {
+      ++_syncGen;
+      ++_progressEventVersion;
+      ++_balanceReadVersion;
+      _isSyncing = false;
       _syncStartDeferred = false;
       _deferredSyncLatestTipHeight = null;
       rust_sync.cancelFullSync();
@@ -487,7 +633,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       // subscription alone leaves the tonic stream task alive
       // until the Rust isolate pool tears it down.
       rust_sync.stopMempoolObserver();
-      _bgDelegate.disposeListeners();
       _lifecycleListener?.dispose();
       _pollTimer?.cancel();
     });
@@ -548,6 +693,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       orchardBalance: initialBelongsToActiveAccount
           ? initial.orchardBalance
           : BigInt.zero,
+      ironwoodBalance: initialBelongsToActiveAccount
+          ? initial.ironwoodBalance
+          : BigInt.zero,
       transparentPendingBalance: initialBelongsToActiveAccount
           ? initial.transparentPendingBalance
           : BigInt.zero,
@@ -556,6 +704,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           : BigInt.zero,
       orchardPendingBalance: initialBelongsToActiveAccount
           ? initial.orchardPendingBalance
+          : BigInt.zero,
+      ironwoodPendingBalance: initialBelongsToActiveAccount
+          ? initial.ironwoodPendingBalance
           : BigInt.zero,
       canShieldTransparentBalance: initialBelongsToActiveAccount
           ? initial.canShieldTransparentBalance
@@ -673,6 +824,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     ++_balanceReadVersion;
     _authoritativeBalanceRecovery = null;
     _isSyncing = true;
+    _activeSyncForegroundEpoch = _foregroundEpoch;
+    _activeSyncStartedInForeground = _isInForeground;
     _lastLoggedHeight = 0;
     _lastForegroundSyncProgress = null;
     _lastForegroundProgressHandling = null;
@@ -704,9 +857,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
+        ironwoodBalance: scopedPrev?.ironwoodBalance,
         transparentPendingBalance: scopedPrev?.transparentPendingBalance,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
@@ -715,10 +870,35 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         displaySpendableBalance: canPreserveCompletedSpendable
             ? scopedPrev?.displaySpendableBalance
             : scopedPrev?.spendableBalance,
+        displayIronwoodBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayIronwoodBalance
+            : scopedPrev?.ironwoodBalance,
+        displayIronwoodPendingBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayIronwoodPendingBalance
+            : scopedPrev?.ironwoodPendingBalance,
+        displayOrchardBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayOrchardBalance
+            : scopedPrev?.orchardBalance,
+        displayOrchardPendingBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayOrchardPendingBalance
+            : scopedPrev?.orchardPendingBalance,
         displaySpendableFreshness: canPreserveCompletedSpendable
             ? SpendableBalanceFreshness.lastCompletedSync
             : SpendableBalanceFreshness.authoritative,
         totalBalance: scopedPrev?.totalBalance,
+        displayTotalBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayTotalBalance
+            : scopedPrev?.totalBalance,
+        displayShieldedBalance: canPreserveCompletedSpendable
+            ? scopedPrev?.displayShieldedBalance
+            : scopedPrev == null
+            ? null
+            : scopedPrev.saplingBalance +
+                  scopedPrev.orchardBalance +
+                  scopedPrev.ironwoodBalance +
+                  scopedPrev.saplingPendingBalance +
+                  scopedPrev.orchardPendingBalance +
+                  scopedPrev.ironwoodPendingBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: startedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
@@ -731,9 +911,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         .then((dbPath) async {
           if (gen != _syncGen) return; // stopSync was called, abort
           try {
-            await ref
+            final tip = await ref
                 .read(rpcEndpointFailoverProvider.notifier)
                 .getLatestBlockHeight();
+            await ref
+                .read(chainUpgradeStatusProvider.notifier)
+                .refreshAtTip(tip);
           } catch (e) {
             if (gen != _syncGen) return;
             log('Sync: endpoint preflight failed: $e');
@@ -758,7 +941,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           );
           _syncSub = stream.listen(
             (event) {
-              if (gen != _syncGen) return;
+              if (!ref.mounted || gen != _syncGen) return;
               final progress = SyncProgressEvent(
                 scannedHeight: event.scannedHeight.toInt(),
                 chainTipHeight: event.chainTipHeight.toInt(),
@@ -782,7 +965,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               );
             },
             onDone: () async {
-              if (gen != _syncGen) {
+              if (!ref.mounted || gen != _syncGen) {
                 log('Sync: ignoring stale stream end');
                 return;
               }
@@ -791,9 +974,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // Normal completion (isComplete=true) is handled inside
               // _onSyncProgress, which clears _isSyncing and starts
               // polling. But the stream can also end WITHOUT an
-              // isComplete event — specifically when Rust exits because
-              // DESIRED_SYNC_MODE changed (foreground→background
-              // handoff via enableBackgroundSync). In that case
+              // isComplete event when Rust exits because cancellation or a
+              // sync-owner handoff changed DESIRED_SYNC_MODE. In that case
               // _isSyncing is still true and the mempool observer is
               // still running, both of which block future startSync()
               // calls. Clean up only when no final event arrived; otherwise
@@ -816,10 +998,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   'Sync: stream ended without applied isComplete, cleaning up',
                 );
                 _stopMempoolObserver();
+                final previousState = state.value;
+                if (previousState != null) {
+                  state = AsyncData(previousState.withSyncActivityStopped());
+                }
               }
             },
             onError: (e) {
-              if (gen != _syncGen) return;
+              if (!ref.mounted || gen != _syncGen) return;
               log('Sync: stream error: $e');
               _isSyncing = false;
               _stopDisplayProgressTimer();
@@ -828,7 +1014,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
               // a lightwalletd stream that keeps firing
               // `_refreshBalance()` callbacks with no owning sync.
               _stopMempoolObserver();
-              unawaited(
+              _trackForegroundSyncRecovery(
                 _recoverSyncOnFallbackOrRecordFailure(
                   e,
                   gen,
@@ -850,8 +1036,120 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           // `_stopMempoolObserver()` here; it is idempotent when
           // nothing is running.
           _stopMempoolObserver();
-          unawaited(_recoverSyncOnFallbackOrRecordFailure(e, gen));
+          _trackForegroundSyncRecovery(
+            _recoverSyncOnFallbackOrRecordFailure(e, gen),
+          );
         });
+  }
+
+  void _trackForegroundSyncRecovery(Future<void> recovery) {
+    _foregroundSyncRecovery = recovery;
+    unawaited(
+      recovery.whenComplete(() {
+        if (identical(_foregroundSyncRecovery, recovery)) {
+          _foregroundSyncRecovery = null;
+        }
+      }),
+    );
+  }
+
+  /// Starts (or joins) one foreground sync and resolves only after its
+  /// successful completion event has been applied to [state].
+  ///
+  /// Migration entry screens use this instead of observing [SyncState.isSyncing]
+  /// directly. That lets the route show a one-time entry/resume syncing surface
+  /// without turning later polling syncs into full-screen transitions.
+  ///
+  /// On iOS, `applicationWillEnterForeground` first asks native denomination
+  /// preparation to hand its sync ownership back. If that native operation is
+  /// still unwinding, wait for the shared Rust sync lane before attaching the
+  /// Dart foreground stream.
+  Future<SyncState> synchronizeForMigrationEntry() async {
+    if (_requiresUnlock) {
+      throw StateError('Wallet is locked.');
+    }
+
+    // This method is called only from a visible migration entry surface. Mark
+    // foreground eagerly because AppLifecycleListener callback ordering is not
+    // guaranteed across the status screen and this provider.
+    _isInForeground = true;
+    if (shouldRestartSyncForMigrationEntry(
+      hasAttachedSync: _isSyncing || _syncSub != null,
+      activeSyncStartedInForeground: _activeSyncStartedInForeground,
+      activeSyncForegroundEpoch: _activeSyncForegroundEpoch,
+      currentForegroundEpoch: _foregroundEpoch,
+    )) {
+      await restartSync();
+      if (!_isSyncing) {
+        throw StateError('Unable to restart wallet sync after app resume.');
+      }
+    }
+
+    if (!_isSyncing && _syncSub == null) {
+      const handoffPollInterval = Duration(milliseconds: 100);
+      const handoffTimeout = Duration(minutes: 2);
+      final handoffDeadline = DateTime.now().add(handoffTimeout);
+      while (rust_sync.isSyncRunning()) {
+        if (!ref.mounted || _requiresUnlock) {
+          throw StateError('Wallet sync was interrupted.');
+        }
+        if (DateTime.now().isAfter(handoffDeadline)) {
+          throw StateError(
+            'Background migration preparation is still finishing. Try again.',
+          );
+        }
+        await Future<void>.delayed(handoffPollInterval);
+      }
+
+      startSync();
+      if (!_isSyncing) {
+        if (_syncStartDeferred) {
+          throw StateError(
+            'Wallet sync is waiting for another wallet operation to finish.',
+          );
+        }
+        throw StateError('Unable to start wallet sync.');
+      }
+    }
+
+    var observedGeneration = _syncGen;
+    const completionPollInterval = Duration(milliseconds: 50);
+    while (true) {
+      if (!ref.mounted || _requiresUnlock) {
+        throw StateError('Wallet sync was interrupted.');
+      }
+
+      if (_syncGen != observedGeneration) {
+        // Endpoint fallback starts a replacement foreground run. Treat it as
+        // the same entry sync rather than completing the entry surface early.
+        if (_isSyncing) {
+          observedGeneration = _syncGen;
+        } else {
+          throw StateError('Wallet sync was interrupted.');
+        }
+      }
+
+      final current = state.value;
+      if (!_isSyncing) {
+        final recovery = _foregroundSyncRecovery;
+        if (recovery != null) {
+          await recovery;
+          continue;
+        }
+        if (current?.isSyncComplete == true &&
+            current?.failure == null &&
+            current?.error == null) {
+          return current!;
+        }
+        final message =
+            current?.failure?.rawMessage ??
+            current?.error ??
+            'Wallet sync ended before completion.';
+        throw StateError(message);
+      }
+
+      await Future<void>.delayed(completionPollInterval);
+    }
   }
 
   Future<void> _recoverSyncOnFallbackOrRecordFailure(
@@ -895,17 +1193,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
+        ironwoodBalance: scopedPrev?.ironwoodBalance,
         transparentPendingBalance: scopedPrev?.transparentPendingBalance,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
         shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
         spendableBalance: scopedPrev?.spendableBalance,
         displaySpendableBalance: spendableDisplay.balance,
+        displayIronwoodBalance: scopedPrev?.displayIronwoodBalance,
+        displayIronwoodPendingBalance:
+            scopedPrev?.displayIronwoodPendingBalance,
+        displayOrchardBalance: scopedPrev?.displayOrchardBalance,
+        displayOrchardPendingBalance: scopedPrev?.displayOrchardPendingBalance,
         displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: scopedPrev?.totalBalance,
+        displayTotalBalance: scopedPrev?.displayTotalBalance,
+        displayShieldedBalance: scopedPrev?.displayShieldedBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
@@ -977,15 +1284,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // loop and the observer have independent Rust cancel flags
     // (SYNC_CANCEL / MEMPOOL_CANCEL), but Dart pairs them so the
     // UX invariant "no sync running → no mempool stream running"
-    // holds, which is what the iOS background-sync / battery
-    // budget story expects.
+    // holds.
     _stopMempoolObserver();
     _isSyncing = false;
     _stopDisplayProgressTimer();
     _stopPolling();
-    if (_bgDelegate.isActive) {
-      unawaited(_bgDelegate.disable());
-    }
     final prev = state.value;
     final accountUuid = _getActiveAccountUuid();
     final scopedPrev = _previousScopedState(prev, accountUuid);
@@ -1006,17 +1309,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: scopedPrev?.transparentBalance,
         saplingBalance: scopedPrev?.saplingBalance,
         orchardBalance: scopedPrev?.orchardBalance,
+        ironwoodBalance: scopedPrev?.ironwoodBalance,
         transparentPendingBalance: scopedPrev?.transparentPendingBalance,
         saplingPendingBalance: scopedPrev?.saplingPendingBalance,
         orchardPendingBalance: scopedPrev?.orchardPendingBalance,
+        ironwoodPendingBalance: scopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance:
             scopedPrev?.canShieldTransparentBalance ?? false,
         shieldTransparentFee: scopedPrev?.shieldTransparentFee,
         shieldTransparentAmount: scopedPrev?.shieldTransparentAmount,
         spendableBalance: scopedPrev?.spendableBalance,
         displaySpendableBalance: spendableDisplay.balance,
+        displayIronwoodBalance: scopedPrev?.displayIronwoodBalance,
+        displayIronwoodPendingBalance:
+            scopedPrev?.displayIronwoodPendingBalance,
+        displayOrchardBalance: scopedPrev?.displayOrchardBalance,
+        displayOrchardPendingBalance: scopedPrev?.displayOrchardPendingBalance,
         displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: scopedPrev?.totalBalance,
+        displayTotalBalance: scopedPrev?.displayTotalBalance,
+        displayShieldedBalance: scopedPrev?.displayShieldedBalance,
         recentTransactions: scopedPrev?.recentTransactions ?? const [],
         lastSyncStartedAt: prev?.lastSyncStartedAt,
         lastSyncCompletedAt: prev?.lastSyncCompletedAt,
@@ -1029,7 +1341,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return WalletMutationSyncPause(
       hadActiveSync: _isSyncing || rust_sync.isSyncRunning(),
       hadPolling: _pollTimer != null || _pollCheckInFlight,
-      hadBackgroundSync: _bgDelegate.isActive,
       hadMempoolObserver: rust_sync.isMempoolObserverRunning(),
     );
   }
@@ -1067,16 +1378,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     await _syncSub?.cancel();
     _syncSub = null;
 
-    if (_bgDelegate.isActive) {
-      try {
-        await _bgDelegate.shutdownForLock();
-      } catch (e) {
-        log(
-          'SyncNotifier: background shutdown before wallet mutation failed: $e',
-        );
-      }
-    }
-
     final prev = state.value;
     if (prev != null) {
       state = AsyncData(prev.withSyncActivityStopped());
@@ -1102,11 +1403,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
     if (_requiresUnlock) return;
 
-    if (pause.hadActiveSync || pause.hadBackgroundSync) {
+    if (pause.hadActiveSync) {
       log('SyncNotifier: resuming sync after wallet DB mutation');
       startSync();
     }
-    if (pause.hadPolling || pause.hadActiveSync || pause.hadBackgroundSync) {
+    if (pause.hadPolling || pause.hadActiveSync) {
       _startPolling();
     }
   }
@@ -1128,20 +1429,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _mempoolRefreshQueued = false;
     state = AsyncData(SyncState());
 
-    // Sign-out should cancel the current Rust run immediately.
-    // Waiting for the iOS background delegate's normal
-    // foreground-handoff path (`setSyncMode(1)`) leaves a window
-    // where unlock can race with a still-running old sync.
+    // Sign-out should cancel the current Rust run immediately so unlock
+    // cannot race with a still-running old sync.
     rust_sync.setSyncMode(mode: 0);
     rust_sync.cancelFullSync();
-
-    if (_bgDelegate.isActive) {
-      try {
-        await _bgDelegate.shutdownForLock();
-      } catch (e) {
-        log('SyncNotifier: background shutdown during sign-out failed: $e');
-      }
-    }
 
     await _waitForRustTasksToStop(
       timeoutMs: 5000,
@@ -1153,22 +1444,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
   }
 
-  Future<void> enableBackgroundSync() async {
-    if (_bgDelegate.isActive) return;
-    await _bgDelegate.enable(endpoint: _endpointConfig);
-    _stopDisplayProgressTimer();
-    log('SyncNotifier: background sync enabled');
-  }
-
-  Future<void> disableBackgroundSync() async {
-    if (!_bgDelegate.isActive) return;
-    final needsResync = await _bgDelegate.disable();
-    log('SyncNotifier: background sync disabled');
-    if (needsResync) {
-      startSync();
-    }
-  }
-
   /// Cancels the current sync (if any), waits for the Rust loop to
   /// finish its teardown so `isSyncRunning()` returns `false`, then
   /// starts a fresh sync and restarts the polling loop. This is the
@@ -1178,7 +1453,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// silent for the rest of the session if the toggle fires while
   /// sync is already idle.
   Future<void> restartSync() async {
-    final hadBackgroundSync = _bgDelegate.isActive;
     ++_syncGen;
     ++_progressEventVersion;
     ++_balanceReadVersion;
@@ -1188,13 +1462,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopMempoolObserver();
     _isSyncing = false;
     _stopPolling();
-    if (hadBackgroundSync) {
-      try {
-        await _bgDelegate.disable();
-      } catch (e) {
-        log('SyncNotifier: background disable before restart failed: $e');
-      }
-    }
     final prev = state.value;
     if (prev != null) {
       state = AsyncData(prev.withSyncActivityStopped());
@@ -1233,29 +1500,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     );
     startSync();
     _startPolling();
-    if (hadBackgroundSync) {
-      try {
-        await _bgDelegate.enable(endpoint: _endpointConfig);
-      } catch (e) {
-        log('SyncNotifier: background re-enable after restart failed: $e');
-      }
-    }
-  }
-
-  static Future<bool> isBackgroundSyncAvailable() async {
-    try {
-      return await BackgroundSyncDelegate.create().isAvailable();
-    } catch (e) {
-      log('SyncNotifier: background sync availability check failed: $e');
-      return false;
-    }
   }
 
   // ======================== Polling ========================
 
   void _startPolling() {
     _pollTimer?.cancel();
-    if (!_isInForeground || _bgDelegate.shouldSuppressPolling) return;
+    if (!canRunAppProcessWork(isInForeground: _isInForeground)) return;
     _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       try {
         await _checkAndSync();
@@ -1277,8 +1528,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (_pollCheckInFlight ||
         _isSyncing ||
         _requiresUnlock ||
-        _bgDelegate.shouldSuppressPolling ||
-        !_isInForeground ||
+        !canRunAppProcessWork(isInForeground: _isInForeground) ||
         !hasAccounts) {
       return;
     }
@@ -1288,6 +1538,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final tip = await ref
           .read(rpcEndpointFailoverProvider.notifier)
           .getLatestBlockHeight();
+      await ref.read(chainUpgradeStatusProvider.notifier).refreshAtTip(tip);
       final current = state.value;
       final lastSynced = current?.chainTipHeight ?? 0;
       final syncComplete = current?.isSyncComplete ?? false;
@@ -1479,10 +1730,12 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     }
 
     _displayProgressTimer = Timer.periodic(_displayBlockDuration, (timer) {
+      if (!ref.mounted) {
+        timer.cancel();
+        return;
+      }
       final current = state.value;
-      if (current == null ||
-          _bgDelegate.isActive ||
-          (!current.isSyncing && !current.isBackgroundMode)) {
+      if (current == null || !current.isSyncing) {
         _stopDisplayProgressTimer();
         return;
       }
@@ -1506,7 +1759,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // ======================== Progress Handling ========================
 
   Future<void> _onSyncProgress(SyncProgressEvent event) async {
-    if (_requiresUnlock) {
+    if (!ref.mounted || _requiresUnlock) {
       return;
     }
     final progressEventVersion = ++_progressEventVersion;
@@ -1520,6 +1773,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
     final prev = state.value;
     final dbPath = await _getDbPath();
+    if (!ref.mounted) return;
     final network = _endpointConfig.networkName;
     final accountUuid = _getActiveAccountUuid();
     if (accountUuid == null) {
@@ -1533,9 +1787,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? transparent;
     BigInt? sapling;
     BigInt? orchard;
+    BigInt? ironwood;
     BigInt? transparentPending;
     BigInt? saplingPending;
     BigInt? orchardPending;
+    BigInt? ironwoodPending;
     BigInt? spendable;
     BigInt? total;
     bool? canShieldTransparentBalance;
@@ -1561,9 +1817,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           transparent = balance.transparent;
           sapling = balance.sapling;
           orchard = balance.orchard;
+          ironwood = balance.ironwood;
           transparentPending = balance.transparentPending;
           saplingPending = balance.saplingPending;
           orchardPending = balance.orchardPending;
+          ironwoodPending = balance.ironwoodPending;
           spendable = balance.spendable;
           total = balance.total;
           hasAuthoritativeBalance = true;
@@ -1574,6 +1832,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       } catch (e) {
         log('SyncNotifier: balance fetch failed: $e');
       }
+      if (!ref.mounted) return;
       try {
         recentTxs = await rust_sync.getTransactionHistory(
           dbPath: dbPath,
@@ -1585,6 +1844,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       } catch (e) {
         log('SyncNotifier: tx history fetch failed: $e');
       }
+      if (!ref.mounted) return;
       final shieldStatus = await _getShieldTransparentStatus(
         dbPath: dbPath,
         network: network,
@@ -1599,7 +1859,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       }
     }
 
-    if (epoch != _sensitiveStateEpoch || _requiresUnlock) {
+    if (!ref.mounted || epoch != _sensitiveStateEpoch || _requiresUnlock) {
       log(
         'SyncNotifier: discarding sync progress update after lock transition',
       );
@@ -1645,9 +1905,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       );
     }
 
-    // Update delegate BEFORE state so isActive reflects completion
-    _bgDelegate.onProgress(event);
-
     final syncStartedAt =
         prev?.lastSyncStartedAt ??
         (event.isSyncing || event.isComplete ? DateTime.now() : null);
@@ -1670,6 +1927,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       hasAuthoritativeBalance: useFetchedBalance,
       syncComplete: event.isComplete,
     );
+    final preservePoolDisplay =
+        spendableDisplay.freshness ==
+        SpendableBalanceFreshness.lastCompletedSync;
 
     state = AsyncData(
       SyncState(
@@ -1677,8 +1937,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         hasBalanceData: hasBalanceData,
         hasRecentTransactionsData: hasRecentTransactionsData,
         isSyncing: event.isSyncing && !event.isComplete,
-        isBackgroundMode:
-            (!event.isComplete && event.isBackground) || _bgDelegate.isActive,
+        isBackgroundMode: false,
         isSyncComplete: event.isComplete,
         percentage: actualPercentage,
         displayPercentage: displayPercentage,
@@ -1695,6 +1954,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         orchardBalance: useFetchedBalance
             ? orchard
             : stateScopedPrev?.orchardBalance,
+        ironwoodBalance: useFetchedBalance
+            ? ironwood
+            : stateScopedPrev?.ironwoodBalance,
         transparentPendingBalance: useFetchedBalance
             ? transparentPending
             : stateScopedPrev?.transparentPendingBalance,
@@ -1704,6 +1966,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         orchardPendingBalance: useFetchedBalance
             ? orchardPending
             : stateScopedPrev?.orchardPendingBalance,
+        ironwoodPendingBalance: useFetchedBalance
+            ? ironwoodPending
+            : stateScopedPrev?.ironwoodPendingBalance,
         canShieldTransparentBalance: useFetchedBalance
             ? canShieldTransparentBalance ??
                   stateScopedPrev?.canShieldTransparentBalance ??
@@ -1718,8 +1983,43 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             : stateScopedPrev?.shieldTransparentAmount,
         spendableBalance: nextSpendableBalance,
         displaySpendableBalance: spendableDisplay.balance,
+        displayIronwoodBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayIronwoodBalance
+            : useFetchedBalance
+            ? ironwood
+            : stateScopedPrev?.ironwoodBalance,
+        displayIronwoodPendingBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayIronwoodPendingBalance
+            : useFetchedBalance
+            ? ironwoodPending
+            : stateScopedPrev?.ironwoodPendingBalance,
+        displayOrchardBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayOrchardBalance
+            : useFetchedBalance
+            ? orchard
+            : stateScopedPrev?.orchardBalance,
+        displayOrchardPendingBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayOrchardPendingBalance
+            : useFetchedBalance
+            ? orchardPending
+            : stateScopedPrev?.orchardPendingBalance,
         displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: useFetchedBalance ? total : stateScopedPrev?.totalBalance,
+        displayTotalBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayTotalBalance
+            : useFetchedBalance
+            ? total
+            : stateScopedPrev?.totalBalance,
+        displayShieldedBalance: preservePoolDisplay
+            ? stateScopedPrev?.displayShieldedBalance
+            : useFetchedBalance
+            ? (sapling ?? BigInt.zero) +
+                  (orchard ?? BigInt.zero) +
+                  (ironwood ?? BigInt.zero) +
+                  (saplingPending ?? BigInt.zero) +
+                  (orchardPending ?? BigInt.zero) +
+                  (ironwoodPending ?? BigInt.zero)
+            : stateScopedPrev?.displayShieldedBalance,
         recentTransactions: useFetchedRecentTxs
             ? recentTxs
             : stateScopedPrev?.recentTransactions ?? const [],
@@ -1730,7 +2030,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       ),
     );
 
-    if (event.isComplete || !event.isSyncing || _bgDelegate.isActive) {
+    if (event.isComplete || !event.isSyncing) {
       _stopDisplayProgressTimer();
     } else {
       _startDisplayProgressSmoothing(
@@ -1743,7 +2043,6 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // Handle sync completion here (not in onDone) to avoid race with async state update.
     if (event.isComplete) {
       _isSyncing = false;
-      _bgDelegate.onSyncDone();
       _startPolling();
       if (!useFetchedBalance) {
         unawaited(_ensureAuthoritativeBalanceRecovery());
@@ -1766,7 +2065,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (balance != null) {
       ++_authoritativeBalanceVersion;
     }
-    final syncComplete = current.isSyncedToTip && !_bgDelegate.isActive;
+    final syncComplete = current.isSyncedToTip;
     state = AsyncData(
       current.withFetchedAccountData(
         balance: balance,
@@ -1947,9 +2246,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? transparent;
     BigInt? sapling;
     BigInt? orchard;
+    BigInt? ironwood;
     BigInt? transparentPending;
     BigInt? saplingPending;
     BigInt? orchardPending;
+    BigInt? ironwoodPending;
     BigInt? spendable;
     BigInt? total;
     bool? canShieldTransparentBalance;
@@ -1968,9 +2269,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparent = balance.transparent;
         sapling = balance.sapling;
         orchard = balance.orchard;
+        ironwood = balance.ironwood;
         transparentPending = balance.transparentPending;
         saplingPending = balance.saplingPending;
         orchardPending = balance.orchardPending;
+        ironwoodPending = balance.ironwoodPending;
         spendable = balance.spendable;
         total = balance.total;
         hasAuthoritativeBalance = true;
@@ -2041,8 +2344,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     final accountFallback = currentScoped ?? scopedPrev;
     final nextSpendableBalance =
         spendable ?? accountFallback?.spendableBalance ?? BigInt.zero;
-    final syncComplete =
-        (current?.isSyncedToTip ?? false) && !_bgDelegate.isActive;
+    final syncComplete = current?.isSyncedToTip ?? false;
     final spendableDisplay = SyncState.resolveSpendableDisplay(
       previous: accountFallback,
       authoritativeSpendable: nextSpendableBalance,
@@ -2051,6 +2353,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       releaseSnapshotOnAuthoritativeBalance:
           releaseSnapshotOnAuthoritativeBalance,
     );
+    final preservePoolDisplay =
+        spendableDisplay.freshness ==
+        SpendableBalanceFreshness.lastCompletedSync;
 
     state = AsyncData(
       SyncState(
@@ -2062,7 +2367,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             didFetchRecentTxs ||
             (accountFallback?.hasRecentTransactionsData ?? false),
         isSyncing: current?.isSyncing ?? false,
-        isBackgroundMode: current?.isBackgroundMode ?? _bgDelegate.isActive,
+        isBackgroundMode: current?.isBackgroundMode ?? false,
         isSyncComplete: current?.isSyncComplete ?? false,
         percentage: current?.percentage ?? 0.0,
         displayPercentage:
@@ -2075,12 +2380,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         transparentBalance: transparent ?? accountFallback?.transparentBalance,
         saplingBalance: sapling ?? accountFallback?.saplingBalance,
         orchardBalance: orchard ?? accountFallback?.orchardBalance,
+        ironwoodBalance: ironwood ?? accountFallback?.ironwoodBalance,
         transparentPendingBalance:
             transparentPending ?? accountFallback?.transparentPendingBalance,
         saplingPendingBalance:
             saplingPending ?? accountFallback?.saplingPendingBalance,
         orchardPendingBalance:
             orchardPending ?? accountFallback?.orchardPendingBalance,
+        ironwoodPendingBalance:
+            ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
         canShieldTransparentBalance:
             canShieldTransparentBalance ??
             accountFallback?.canShieldTransparentBalance ??
@@ -2091,8 +2399,33 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             shieldTransparentAmount ?? accountFallback?.shieldTransparentAmount,
         spendableBalance: nextSpendableBalance,
         displaySpendableBalance: spendableDisplay.balance,
+        displayIronwoodBalance: preservePoolDisplay
+            ? accountFallback?.displayIronwoodBalance
+            : ironwood ?? accountFallback?.ironwoodBalance,
+        displayIronwoodPendingBalance: preservePoolDisplay
+            ? accountFallback?.displayIronwoodPendingBalance
+            : ironwoodPending ?? accountFallback?.ironwoodPendingBalance,
+        displayOrchardBalance: preservePoolDisplay
+            ? accountFallback?.displayOrchardBalance
+            : orchard ?? accountFallback?.orchardBalance,
+        displayOrchardPendingBalance: preservePoolDisplay
+            ? accountFallback?.displayOrchardPendingBalance
+            : orchardPending ?? accountFallback?.orchardPendingBalance,
         displaySpendableFreshness: spendableDisplay.freshness,
         totalBalance: total ?? accountFallback?.totalBalance,
+        displayTotalBalance: preservePoolDisplay
+            ? accountFallback?.displayTotalBalance
+            : total ?? accountFallback?.totalBalance,
+        displayShieldedBalance: preservePoolDisplay
+            ? accountFallback?.displayShieldedBalance
+            : hasAuthoritativeBalance
+            ? (sapling ?? BigInt.zero) +
+                  (orchard ?? BigInt.zero) +
+                  (ironwood ?? BigInt.zero) +
+                  (saplingPending ?? BigInt.zero) +
+                  (orchardPending ?? BigInt.zero) +
+                  (ironwoodPending ?? BigInt.zero)
+            : accountFallback?.displayShieldedBalance,
         failure: current?.failure,
         error: current?.error,
         recentTransactions: didFetchRecentTxs
@@ -2114,7 +2447,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     rust_sync.WalletBalance balance,
     SyncState? previous,
   ) {
-    if (balance.spendable != BigInt.zero ||
+    if (!kDebugMode ||
+        balance.spendable != BigInt.zero ||
         (previous?.displaySpendableBalance ?? BigInt.zero) <= BigInt.zero) {
       return;
     }
@@ -2123,7 +2457,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       '(changePending=${balance.changePendingConfirmation}, '
       'valuePending=${balance.valuePendingSpendability}, '
       'uneconomic=${balance.uneconomicValue}, '
-      'display=${previous?.displaySpendableBalance})',
+      'ironwood=${balance.ironwood}, '
+      'display=${previous?.displaySpendableBalance}, '
+      'displayIronwood=${previous?.displayIronwoodBalance})',
     );
   }
 
@@ -2131,6 +2467,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     rust_sync.WalletBalanceAvailability availability,
     String accountUuid,
   ) {
+    if (!kDebugMode) return;
+
     log(
       'SyncNotifier: wallet balance is temporarily unavailable '
       '(availability=${availability.name}, account=$accountUuid)',
@@ -2193,6 +2531,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _cachedDbPath = await _walletDbPathResolver();
     return _cachedDbPath!;
   }
+
+  @visibleForTesting
+  Future<void> handleSyncProgressForTesting(SyncProgressEvent event) =>
+      _onSyncProgress(event);
 
   bool get _requiresUnlock {
     return ref.read(appSecurityProvider).requiresUnlock;

@@ -2258,7 +2258,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-bundles").unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
 
@@ -2297,7 +2302,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), "wallet-api-witness").unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2333,7 +2343,12 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let account_uuid = "wallet-api-round-reset";
         let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2372,10 +2387,16 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let account_uuid = "wallet-api-round-scope-reset";
         let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         let mut other_round_params = test_api_round_params();
         other_round_params.vote_round_id = OTHER_ROUND_ID.to_string();
-        db.init_round(&other_round_params, None).unwrap();
+        db.init_round(zcash_voting::Network::Regtest, &other_round_params, None)
+            .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         db.ensure_bundles(OTHER_ROUND_ID, &[test_note_info(0)])
@@ -2434,7 +2455,12 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let account_uuid = "wallet-api-account-reset";
         let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         db.store_van_position(ROUND_ID, 0, 0).unwrap();
         let server = start_tree_server(1, vec![fp_one_base64()], 3);
@@ -2470,7 +2496,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
 
@@ -2494,7 +2525,12 @@ mod tests {
         let db_path = temp_dir.path().join("voting.sqlite");
         let account_uuid = "wallet-api-recovery";
         let db = db::open_voting_db(db_path.to_str().unwrap(), account_uuid).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         let notes: Vec<_> = (0..6).map(test_note_info).collect();
         db.ensure_bundles(ROUND_ID, &notes).unwrap();
         db.store_delegation_tx_hash(ROUND_ID, 0, "delegation-tx-0")
@@ -2608,14 +2644,24 @@ mod tests {
 
         let target_db = db::open_voting_db(db_path.to_str().unwrap(), target_account_uuid).unwrap();
         target_db
-            .init_round(&test_api_round_params(), None)
+            .init_round(
+                zcash_voting::Network::Regtest,
+                &test_api_round_params(),
+                None,
+            )
             .unwrap();
         target_db
             .ensure_bundles(ROUND_ID, &[test_note_info(0)])
             .unwrap();
 
         let other_db = db::open_voting_db(db_path.to_str().unwrap(), other_account_uuid).unwrap();
-        other_db.init_round(&test_api_round_params(), None).unwrap();
+        other_db
+            .init_round(
+                zcash_voting::Network::Regtest,
+                &test_api_round_params(),
+                None,
+            )
+            .unwrap();
         other_db
             .ensure_bundles(ROUND_ID, &[test_note_info(1)])
             .unwrap();
@@ -2641,7 +2687,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
         store_keystone_signature(
@@ -2683,7 +2734,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
 
         set_ballot_intent(
             db_path.to_str().unwrap().to_string(),
@@ -2724,7 +2780,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
 
         let plan = get_round_plan(
             db_path.to_str().unwrap().to_string(),
@@ -2743,7 +2804,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
 
         mark_delegation_submitted(
@@ -2773,7 +2839,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("voting.sqlite");
         let db = db::open_voting_db(db_path.to_str().unwrap(), TEST_ACCOUNT_UUID).unwrap();
-        db.init_round(&test_api_round_params(), None).unwrap();
+        db.init_round(
+            zcash_voting::Network::Regtest,
+            &test_api_round_params(),
+            None,
+        )
+        .unwrap();
         db.ensure_bundles(ROUND_ID, &[test_note_info(0)]).unwrap();
         seed_recovery_vote(&db, TEST_ACCOUNT_UUID, 0, 7, 1, 88);
 
@@ -2971,6 +3042,7 @@ mod tests {
             time: 0,
             sapling_tree: String::new(),
             orchard_tree: String::new(),
+            ironwood_tree: String::new(),
         }
     }
 

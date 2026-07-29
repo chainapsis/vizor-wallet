@@ -45,7 +45,7 @@ String generateContactLabel({
   }
 }
 
-/// Picks a random avatar for an auto-named contact.
+/// Picks a random avatar for a newly created contact.
 String randomContactProfilePictureId({Random? random}) {
   final rng = random ?? Random();
   return kProfilePictureOptions[rng.nextInt(kProfilePictureOptions.length)].id;

@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'src/app_bootstrap.dart';
 import 'src/core/config/swap_feature_config.dart';
+import 'src/core/config/network_config.dart';
 import 'src/core/layout/app_layout.dart';
 import 'src/core/navigation/mobile_exit_back_guard.dart';
 import 'src/core/navigation/mobile_onboarding_routes.dart';
@@ -30,6 +31,10 @@ import 'src/features/activity/screens/swap_activity_detail_screen.dart';
 import 'src/features/accounts/screens/accounts_screen.dart';
 import 'src/features/address_book/screens/address_book_screen.dart';
 import 'src/features/home/screens/home_screen.dart';
+import 'src/features/migration/providers/ironwood_migration_announcement_provider.dart';
+import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/about/screens/mobile/mobile_about_screens.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
@@ -85,7 +90,9 @@ import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
 import 'src/providers/windows_update_provider.dart';
+import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/frb_generated.dart';
+import 'src/rust/api/simple.dart' as rust_simple;
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -93,6 +100,15 @@ Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   log('runtime: initializing RustLib');
   await RustLib.init();
+  await rust_simple.configureFastTestnetMigration(
+    enabled: kZcashFastTestnetMigration,
+  );
+  if (kZcashDefaultNetworkName == ZcashNetwork.regtest.name &&
+      kZcashRegtestIronwoodActivationHeight > 1) {
+    await rust_simple.configureRegtestIronwoodActivationHeight(
+      height: kZcashRegtestIronwoodActivationHeight,
+    );
+  }
 
   // Order matters: window_manager creates and shows the NSWindow inside
   // `initializeDesktopWindow`; the acrylic setup is only effective once
@@ -193,6 +209,7 @@ Future<void> runZcashWalletApp() async {
 final _routerProvider = Provider<_AppRouter>((ref) {
   final bootstrap = ref.watch(appBootstrapProvider);
   final refresh = ref.watch(routerRefreshProvider);
+  late final GoRouter router;
   ref.listen(walletProvider, (_, _) {
     refresh.requestRefresh();
   });
@@ -202,11 +219,16 @@ final _routerProvider = Provider<_AppRouter>((ref) {
   ref.listen(swapFeatureEnabledProvider, (_, _) {
     refresh.requestRefresh();
   });
+  ref.listen(ironwoodPostMigrationStateProvider, (_, _) {
+    final path = router.routerDelegate.currentConfiguration.uri.path;
+    if (_isIronwoodMigrationRestrictedRoute(path)) {
+      refresh.requestRefresh();
+    }
+  });
   log('router: initialized');
 
   final navigatorKey = GlobalKey<NavigatorState>();
   final mobileExitBackGuard = MobileExitBackGuard();
-  late final GoRouter router;
   final mobileExitBackDispatcher = MobileExitBackDispatcher(
     exitBackGuard: mobileExitBackGuard,
     navigatorKey: navigatorKey,
@@ -345,8 +367,29 @@ String? appRedirect({
   if (hasWallet && state.matchedLocation == '/welcome') {
     return requiresUnlock ? '/unlock' : '/home';
   }
+  final locksIronwoodNavigation = kAppFormFactor == AppFormFactor.mobile
+      ? ref.read(ironwoodHomeMigrationPresentationProvider).mode ==
+            IronwoodHomeMigrationCtaMode.start
+      : ref.read(ironwoodPostMigrationStateProvider).value?.locksNavigation ==
+            true;
+  if (locksIronwoodNavigation &&
+      _isIronwoodMigrationRestrictedRoute(state.matchedLocation)) {
+    return '/migration';
+  }
   if (!swapFeatureEnabled && isSwap) return '/home';
   return null;
+}
+
+bool _isIronwoodMigrationRestrictedRoute(String matchedLocation) {
+  return _matchesRoutePrefix(matchedLocation, '/send') ||
+      _matchesRoutePrefix(matchedLocation, '/receive') ||
+      _matchesRoutePrefix(matchedLocation, '/pay') ||
+      _matchesRoutePrefix(matchedLocation, '/swap');
+}
+
+bool _matchesRoutePrefix(String matchedLocation, String routePath) {
+  return matchedLocation == routePath ||
+      matchedLocation.startsWith('$routePath/');
 }
 
 /// Entry, onboarding, and auth routes shared by the desktop and mobile
@@ -696,6 +739,106 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes() => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+  GoRoute(
+    path: '/migration',
+    builder: (_, _) => const IronwoodMigrationEntryScreen(),
+  ),
+  GoRoute(
+    path: '/migration/prepare',
+    builder: (_, _) => const IronwoodMigrationPrepareScreen(),
+  ),
+  GoRoute(
+    path: '/migration/intro',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.intro,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/how-it-works',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.howItWorks,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/what-to-expect',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.whatToExpect,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/options',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.options,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/review',
+    redirect: (_, _) => '/migration/private/review',
+  ),
+  GoRoute(
+    path: '/migration/private/review',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.review,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/immediate/review',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.immediateReview,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/immediate/keystone/sign',
+    redirect: (_, state) =>
+        state.extra is rust_sync.OrchardMigrationImmediatePlan
+        ? null
+        : '/migration/immediate/review',
+    builder: (_, state) => IronwoodMigrationKeystoneImmediateSignScreen(
+      approvedPlan: state.extra! as rust_sync.OrchardMigrationImmediatePlan,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/fast/review',
+    redirect: (_, _) => '/migration/immediate/review',
+  ),
+  GoRoute(
+    path: '/migration/private/status',
+    builder: (_, _) => const IronwoodMigrationPrivateStatusScreen(),
+  ),
+  GoRoute(
+    path: '/migration/private/schedule',
+    builder: (_, _) => const IronwoodMigrationScheduleScreen(),
+  ),
+  GoRoute(
+    path: '/migration/private/preparation-schedule',
+    builder: (_, _) => const IronwoodMigrationPreparationScheduleScreen(),
+  ),
+  GoRoute(
+    path: '/migration/private/keystone/sign',
+    redirect: (_, state) =>
+        state.extra is List<rust_sync.MigrationScheduledTransfer>
+        ? null
+        : '/migration/private/review',
+    builder: (_, state) => IronwoodMigrationKeystoneCombinedSignScreen(
+      approvedSchedule:
+          state.extra! as List<rust_sync.MigrationScheduledTransfer>,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/private/keystone/denominations/sign',
+    redirect: (_, state) =>
+        state.extra is List<rust_sync.MigrationScheduledTransfer>
+        ? null
+        : '/migration/private/review',
+    builder: (_, state) => IronwoodMigrationKeystoneDenominationSignScreen(
+      approvedSchedule:
+          state.extra! as List<rust_sync.MigrationScheduledTransfer>,
+    ),
+  ),
+  GoRoute(
+    path: '/migration/private/keystone/batch/sign',
+    builder: (_, _) => const IronwoodMigrationKeystoneBatchSignScreen(),
+  ),
   GoRoute(path: '/about', builder: (_, _) => const AboutScreen()),
   GoRoute(path: '/address-book', builder: (_, _) => const AddressBookScreen()),
   GoRoute(path: '/activity', builder: (_, _) => const ActivityScreen()),
@@ -928,25 +1071,29 @@ class ZcashWalletApp extends ConsumerWidget {
                 router: router,
                 child: _RpcEndpointFailoverToastListener(
                   child: _DesktopOpaqueWindowBackground(
-                    child: SyncKeepAwakeNativeHost(
-                      child: SyncKeepAwakePrivacyLockHost(
-                        child: SyncKeepAwakeInteractionListener(
-                          child: GestureDetector(
-                            onTap: () {
-                              // Leaf-only: skip when the primary focus is a
-                              // `FocusScopeNode` rather than a concrete `FocusNode`.
-                              // Unfocusing the scope itself strips the scope's
-                              // "most-recently-focused child" memory, which leaves the
-                              // next Tab with no deterministic starting point.
-                              final primary =
-                                  FocusManager.instance.primaryFocus;
-                              if (primary != null &&
-                                  primary is! FocusScopeNode) {
-                                primary.unfocus();
-                              }
-                            },
-                            behavior: HitTestBehavior.translucent,
-                            child: child!,
+                    child: IronwoodMigrationCoordinatorHost(
+                      child: IronwoodMigrationPrivacyLockHost(
+                        child: SyncKeepAwakeNativeHost(
+                          child: SyncKeepAwakePrivacyLockHost(
+                            child: SyncKeepAwakeInteractionListener(
+                              child: GestureDetector(
+                                onTap: () {
+                                  // Leaf-only: skip when the primary focus is a
+                                  // `FocusScopeNode` rather than a concrete `FocusNode`.
+                                  // Unfocusing the scope itself strips the scope's
+                                  // "most-recently-focused child" memory, which leaves the
+                                  // next Tab with no deterministic starting point.
+                                  final primary =
+                                      FocusManager.instance.primaryFocus;
+                                  if (primary != null &&
+                                      primary is! FocusScopeNode) {
+                                    primary.unfocus();
+                                  }
+                                },
+                                behavior: HitTestBehavior.translucent,
+                                child: child!,
+                              ),
+                            ),
                           ),
                         ),
                       ),

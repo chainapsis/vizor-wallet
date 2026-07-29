@@ -225,6 +225,7 @@ class AppSidebarItem extends StatelessWidget {
     required this.label,
     this.iconName,
     this.leading,
+    this.trailing,
     this.active = false,
     this.onTap,
     this.leadingGap = AppSpacing.sm,
@@ -236,6 +237,7 @@ class AppSidebarItem extends StatelessWidget {
   final String label;
   final String? iconName;
   final Widget? leading;
+  final Widget? trailing;
   final bool active;
   final VoidCallback? onTap;
   final double leadingGap;
@@ -246,15 +248,11 @@ class AppSidebarItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final disabled = onTap == null && !active;
-    final itemOpacity = active || disabled ? 1.0 : inactiveOpacity;
-    final iconColor = disabled
-        ? colors.icon.disabled
-        : active
+    final itemOpacity = active ? 1.0 : inactiveOpacity;
+    final iconColor = active
         ? colors.navPanel.activeIcon
         : colors.icon.accent.withValues(alpha: itemOpacity);
-    final textColor = disabled
-        ? colors.text.disabled
-        : active
+    final textColor = active
         ? colors.navPanel.activeLabel
         : colors.text.accent.withValues(alpha: itemOpacity);
     final row = AnimatedContainer(
@@ -283,18 +281,21 @@ class AppSidebarItem extends StatelessWidget {
               style: AppTypography.labelLarge.copyWith(color: textColor),
             ),
           ),
+          ?trailing,
         ],
       ),
     );
 
+    final styledRow = disabled ? Opacity(opacity: 0.5, child: row) : row;
+
     return onTap == null
-        ? row
+        ? styledRow
         : MouseRegion(
             cursor: SystemMouseCursors.click,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onTap,
-              child: row,
+              child: styledRow,
             ),
           );
   }

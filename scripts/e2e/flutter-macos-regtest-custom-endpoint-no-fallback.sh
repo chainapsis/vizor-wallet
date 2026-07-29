@@ -26,4 +26,5 @@ echo "running Flutter macOS custom endpoint no-fallback integration test"
 fvm flutter test \
   integration_test/regtest_custom_endpoint_no_fallback_test.dart \
   -d "$FLUTTER_DEVICE" \
-  --dart-define=ZCASH_DEFAULT_NETWORK=regtest
+  --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
+  --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"
