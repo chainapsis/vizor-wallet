@@ -1531,17 +1531,15 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::configured_timing_policy(network),
         ),
     };
-    let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
-        prepare_software_migration_run(
-            db_path,
-            network,
-            account_uuid,
-            seed,
-            &signing_schedule,
-            preparation_policy_for_build,
-            migration_policy_for_build,
-        )
-    })?;
+    let prepared = prepare_software_migration_run(
+        db_path,
+        network,
+        account_uuid,
+        seed,
+        &signing_schedule,
+        preparation_policy_for_build,
+        migration_policy_for_build,
+    )?;
 
     let Some(prepared) = prepared else {
         return Err(
@@ -4676,16 +4674,24 @@ fn finalize_ready_denomination_stages(
                 stage.stage_index
             ));
         }
-
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        super::migration::promote_awaiting_denomination_stage(
-            &conn,
-            run_id,
-            stage.stage_index,
-            &stage.expected_txid_hex,
+        let prepared_raw_tx = super::migration::prepare_denomination_raw_tx(
             extracted.raw_tx,
             pending_password,
             pending_salt_base64,
+        )?;
+
+        super::migration::with_migration_write_conn(
+            db_path,
+            "send.migration.promote_denomination_stage",
+            |conn| {
+                super::migration::promote_awaiting_denomination_stage(
+                    conn,
+                    run_id,
+                    stage.stage_index,
+                    &stage.expected_txid_hex,
+                    prepared_raw_tx,
+                )
+            },
         )?;
         promoted_count = promoted_count
             .checked_add(1)
@@ -4961,28 +4967,34 @@ async fn broadcast_pending_denomination_stages(
             }));
         }
 
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        let tx = conn
-            .unchecked_transaction()
-            .map_err(|e| format!("Begin migration denomination broadcast transition: {e}"))?;
-        super::migration::mark_denomination_stage_broadcasted(
-            &tx,
-            run_id,
-            &stage.expected_txid_hex,
+        super::migration::with_migration_write_conn(
+            db_path,
+            "send.migration.mark_denomination_broadcasted",
+            |conn| {
+                let tx = conn.unchecked_transaction().map_err(|e| {
+                    format!("Begin migration denomination broadcast transition: {e}")
+                })?;
+                super::migration::mark_denomination_stage_broadcasted(
+                    &tx,
+                    run_id,
+                    &stage.expected_txid_hex,
+                )?;
+                if preparation_timing_policy
+                    == super::migration::PreparationTimingPolicy::Zip318Spaced
+                    && stage_was_overdue
+                {
+                    super::migration::rerandomize_remaining_preparation_broadcast_heights(
+                        &tx,
+                        run_id,
+                        network,
+                        chain_tip_height,
+                        &mut OsRng,
+                    )?;
+                }
+                tx.commit()
+                    .map_err(|e| format!("Commit migration denomination broadcast transition: {e}"))
+            },
         )?;
-        if preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
-            && stage_was_overdue
-        {
-            super::migration::rerandomize_remaining_preparation_broadcast_heights(
-                &tx,
-                run_id,
-                network,
-                chain_tip_height,
-                &mut OsRng,
-            )?;
-        }
-        tx.commit()
-            .map_err(|e| format!("Commit migration denomination broadcast transition: {e}"))?;
         broadcasted_count = broadcasted_count
             .checked_add(1)
             .ok_or("Broadcasted denomination stage count overflow")?;

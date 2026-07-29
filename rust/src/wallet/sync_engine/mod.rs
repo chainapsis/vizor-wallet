@@ -728,6 +728,45 @@ pub(crate) fn completed_sync_height_for_status(
     }
 }
 
+/// Invalidates a previously completed sync snapshot before an account import.
+///
+/// Adding an account can enqueue historical scan ranges without moving the
+/// chain tip or the wallet's fully-scanned height. Keeping the old completion
+/// marker would therefore let bootstrap and same-tip polling report the
+/// expanded wallet as complete before those new ranges have been scanned.
+///
+/// The caller must hold the process-global wallet DB write lock so this update
+/// remains ordered with the account import it protects.
+pub(crate) fn invalidate_sync_completion(db_data_path: &str) -> Result<(), String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
+    ensure_sync_meta_table(&conn)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("begin sync invalidation transaction: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![
+            SYNC_COMPLETION_POLICY_VERSION_KEY,
+            SYNC_COMPLETION_POLICY_VERSION.to_string()
+        ],
+    )
+    .map_err(|e| format!("write sync invalidation policy version: {e}"))?;
+    tx.execute(
+        "DELETE FROM ext_vizor_sync_meta WHERE key = ?1",
+        params![LAST_COMPLETED_SYNC_HEIGHT_KEY],
+    )
+    .map_err(|e| format!("clear completed sync height: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '0')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![SYNC_IN_PROGRESS_KEY],
+    )
+    .map_err(|e| format!("clear sync in-progress marker after invalidation: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("commit sync invalidation transaction: {e}"))
+}
+
 fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
     let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
     ensure_sync_meta_table(&conn)?;

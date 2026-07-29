@@ -78,6 +78,20 @@ fn open_wallet_db_for_read(
     open_wallet_db_for_read_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)
 }
 
+fn invalidate_sync_completion_before_account_growth(
+    db_path: &str,
+    db: &WalletDatabase,
+) -> Result<(), String> {
+    let has_existing_account = !db
+        .get_account_ids()
+        .map_err(|e| format!("Failed to inspect accounts before import: {e}"))?
+        .is_empty();
+    if has_existing_account {
+        crate::wallet::sync_engine::invalidate_sync_completion(db_path)?;
+    }
+    Ok(())
+}
+
 /// Generate a new 24-word BIP-39 mnemonic phrase.
 pub fn generate_mnemonic() -> String {
     let mnemonic = Mnemonic::<English>::generate(Count::Words24);
@@ -317,6 +331,10 @@ fn import_ufvk_account(
 
     let account_id = with_wallet_db_write_lock("keys.import_ufvk_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        // Invalidate before the durable account import. If the import fails,
+        // the only side effect is a safe extra sync; if it succeeds, bootstrap
+        // can never reuse the previous account set's completion marker.
+        invalidate_sync_completion_before_account_growth(db_path, &db)?;
         let account = db
             .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
             .map_err(|e| {
@@ -399,6 +417,7 @@ pub fn import_hardware_account(
 
     let account_id = with_wallet_db_write_lock("keys.import_hardware_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        invalidate_sync_completion_before_account_growth(db_path, &db)?;
 
         let account = db
             .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
@@ -480,6 +499,7 @@ pub fn import_derived_account_at_index(
 
     let account = with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        invalidate_sync_completion_before_account_growth(db_path, &db)?;
         db.import_account_hd(name, seed, account_id, &birthday, None)
             .map(|(account, _usk)| account)
             .map_err(|e| format!("Failed to import derived account: {e}"))
@@ -1657,6 +1677,162 @@ mod tests {
             .expect_err("duplicate seed import should fail");
 
         assert_eq!(error, DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE);
+    }
+
+    #[test]
+    fn adding_software_account_invalidates_completed_sync_marker() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let first_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(db_path_str, WalletNetwork::Main, &first_seed, None, "first")
+            .unwrap();
+        assert_eq!(
+            crate::wallet::sync_engine::completed_sync_height_for_status(db_path_str, 100, 100,)
+                .unwrap(),
+            Some(100),
+        );
+
+        let second_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        add_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "second",
+            &second_seed,
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(
+            crate::wallet::sync_engine::completed_sync_height_for_status(db_path_str, 100, 100,)
+                .unwrap(),
+            None,
+        );
+    }
+
+    #[test]
+    fn adding_same_seed_derived_account_invalidates_completed_sync_marker() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+
+        init_db_and_create_account(db_path_str, WalletNetwork::Main, &seed, None, "first").unwrap();
+        assert_eq!(
+            crate::wallet::sync_engine::completed_sync_height_for_status(db_path_str, 100, 100,)
+                .unwrap(),
+            Some(100),
+        );
+
+        import_derived_account_at_index(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            Some(1),
+            "second",
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(
+            crate::wallet::sync_engine::completed_sync_height_for_status(db_path_str, 100, 100,)
+                .unwrap(),
+            None,
+        );
+    }
+
+    #[test]
+    fn adding_hardware_account_invalidates_completed_sync_marker() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+
+        let first_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        init_db_and_create_account(db_path_str, WalletNetwork::Main, &first_seed, None, "first")
+            .unwrap();
+        assert_eq!(
+            crate::wallet::sync_engine::completed_sync_height_for_status(db_path_str, 100, 100,)
+                .unwrap(),
+            Some(100),
+        );
+
+        let hardware_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let account_index = zip32::AccountId::ZERO;
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            hardware_seed.expose_secret(),
+            account_index,
+        )
+        .unwrap();
+        let ufvk_string = usk
+            .to_unified_full_viewing_key()
+            .encode(&WalletNetwork::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(hardware_seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+
+        import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone",
+            &ufvk_string,
+            &seed_fingerprint,
+            u32::from(account_index),
+            Some(1),
+        )
+        .unwrap();
+
+        assert_eq!(
+            crate::wallet::sync_engine::completed_sync_height_for_status(db_path_str, 100, 100,)
+                .unwrap(),
+            None,
+        );
+    }
+
+    #[test]
+    fn first_hardware_account_does_not_create_sync_completion_metadata() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let hardware_seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let account_index = zip32::AccountId::ZERO;
+        let usk = UnifiedSpendingKey::from_seed(
+            &WalletNetwork::Main,
+            hardware_seed.expose_secret(),
+            account_index,
+        )
+        .unwrap();
+        let ufvk_string = usk
+            .to_unified_full_viewing_key()
+            .encode(&WalletNetwork::Main);
+        let seed_fingerprint = SeedFingerprint::from_seed(hardware_seed.expose_secret())
+            .unwrap()
+            .to_bytes();
+
+        import_hardware_account(
+            db_path_str,
+            WalletNetwork::Main,
+            "Keystone",
+            &ufvk_string,
+            &seed_fingerprint,
+            u32::from(account_index),
+            Some(1),
+        )
+        .unwrap();
+
+        let conn = rusqlite::Connection::open(db_path_str).unwrap();
+        let sync_meta_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM sqlite_schema
+                     WHERE type = 'table' AND name = 'ext_vizor_sync_meta'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!sync_meta_exists);
     }
 
     #[test]

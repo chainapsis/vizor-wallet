@@ -492,14 +492,17 @@ class SyncState {
     return withoutAccountScopedData(accountUuid: accountUuid);
   }
 
-  SyncState withoutAccountScopedData({String? accountUuid}) {
+  SyncState withoutAccountScopedData({
+    String? accountUuid,
+    bool invalidateCompletion = false,
+  }) {
     return SyncState(
       accountUuid: accountUuid,
       hasBalanceData: false,
       hasRecentTransactionsData: false,
       isSyncing: isSyncing,
       isBackgroundMode: isBackgroundMode,
-      isSyncComplete: isSyncComplete,
+      isSyncComplete: invalidateCompletion ? false : isSyncComplete,
       percentage: percentage,
       displayPercentage: displayPercentage,
       displayTargetPercentage: displayTargetPercentage,
@@ -652,10 +655,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final nextCount = next.value?.accounts.length ?? 0;
       final prevAccountUuid = prev?.value?.activeAccountUuid;
       final nextAccountUuid = next.value?.activeAccountUuid;
+      final accountAdded = nextCount > prevCount;
       if (prevAccountUuid != nextAccountUuid) {
-        _clearAccountScopedStateFor(nextAccountUuid);
+        _clearAccountScopedStateFor(
+          nextAccountUuid,
+          invalidateCompletion: accountAdded,
+        );
+      } else if (accountAdded) {
+        _invalidateCompletionForAccountSetChange();
       }
-      if (nextCount > prevCount) {
+      if (accountAdded) {
         startSync();
         _startPolling();
       }
@@ -740,12 +749,26 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return prev;
   }
 
-  void _clearAccountScopedStateFor(String? accountUuid) {
+  void _clearAccountScopedStateFor(
+    String? accountUuid, {
+    bool invalidateCompletion = false,
+  }) {
     ++_balanceReadVersion;
     _authoritativeBalanceRecovery = null;
     final prev = state.value;
     if (prev == null) return;
-    state = AsyncData(prev.withoutAccountScopedData(accountUuid: accountUuid));
+    state = AsyncData(
+      prev.withoutAccountScopedData(
+        accountUuid: accountUuid,
+        invalidateCompletion: invalidateCompletion,
+      ),
+    );
+  }
+
+  void _invalidateCompletionForAccountSetChange() {
+    final prev = state.value;
+    if (prev == null || !prev.isSyncComplete) return;
+    state = AsyncData(prev.copyWith(isSyncComplete: false));
   }
 
   // ======================== Sync Control ========================

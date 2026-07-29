@@ -108,6 +108,27 @@ void main() {
     );
   });
 
+  test('adding an account invalidates the previous completed snapshot', () {
+    final completed = SyncState(
+      accountUuid: 'account-a',
+      hasAccountScopedData: true,
+      isSyncComplete: true,
+      percentage: 1.0,
+      scannedHeight: 100,
+      chainTipHeight: 100,
+    );
+
+    final addedAccount = completed.withoutAccountScopedData(
+      accountUuid: 'account-b',
+      invalidateCompletion: true,
+    );
+
+    expect(addedAccount.accountUuid, 'account-b');
+    expect(addedAccount.hasAccountScopedData, isFalse);
+    expect(addedAccount.isSyncComplete, isFalse);
+    expect(shouldStartSyncForPolledTip(addedAccount, 100), isTrue);
+  });
+
   test('sync failure preserves the completed spendable snapshot', () {
     final syncing = SyncState(
       spendableBalance: BigInt.zero,
