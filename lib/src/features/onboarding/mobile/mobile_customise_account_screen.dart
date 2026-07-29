@@ -92,24 +92,15 @@ class _MobileCustomiseAccountScreenState
   Future<void> _goBack() async {
     if (_isSubmitting) return;
     final args = widget.args;
+    if (!args.configuresPassword) return;
     final router = GoRouter.maybeOf(context);
-    if (args.configuresPassword) {
-      if (router != null) {
-        router.go(
-          '/onboarding/set-passcode',
-          extra: SetPasswordScreenArgs.create(mnemonic: args.mnemonic),
-        );
-      } else {
-        await Navigator.of(context).maybePop();
-      }
-      return;
-    }
-    final popped = await Navigator.of(context).maybePop();
-    if (!popped && mounted && router != null) {
+    if (router != null) {
       router.go(
-        '/onboarding/secret-passphrase',
-        extra: CreateSecretPassphraseArgs(mnemonic: args.mnemonic),
+        '/onboarding/set-passcode',
+        extra: SetPasswordScreenArgs.create(mnemonic: args.mnemonic),
       );
+    } else {
+      await Navigator.of(context).maybePop();
     }
   }
 
@@ -220,7 +211,7 @@ class _MobileCustomiseAccountScreenState
   Widget build(BuildContext context) {
     final content = MobileOnboardingStepScaffold(
       progress: mobileCreateProgress(8),
-      onBack: _isSubmitting ? null : _goBack,
+      onBack: _isSubmitting || !widget.args.configuresPassword ? null : _goBack,
       title: 'Customise Account',
       subtitle:
           'Add personality to your account by setting an account name and '

@@ -51,7 +51,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Customise Account'), findsOneWidget);
-    expect(find.text('Veiled Wardbearer'), findsOneWidget);
+    expect(find.text('Windborne Wardbearer'), findsOneWidget);
     expect(_stepsProgress(tester), closeTo(mobileCreateProgress(8), 0.0001));
     expect(random.nextIntCallCount, 3);
     expect(
@@ -90,14 +90,14 @@ void main() {
 
     await tester.binding.setSurfaceSize(const Size(430, 932));
     await tester.pump();
-    expect(find.text('Veiled Wardbearer'), findsOneWidget);
+    expect(find.text('Windborne Wardbearer'), findsOneWidget);
     expect(random.nextIntCallCount, 3);
 
     await tester.tap(
       find.byKey(const ValueKey('mobile_customise_account_continue')),
     );
     await tester.pump();
-    expect(submittedName, 'Veiled Wardbearer');
+    expect(submittedName, 'Windborne Wardbearer');
     expect(submittedProfilePictureId, 'pfp-03');
   });
 
@@ -344,7 +344,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(accountNotifier.createdMnemonic, _mnemonic);
-    expect(accountNotifier.createdName, 'Veiled Wardbearer');
+    expect(accountNotifier.createdName, 'Windborne Wardbearer');
     expect(accountNotifier.createdProfilePictureId, 'pfp-03');
     expect(find.text('home route'), findsOneWidget);
   });

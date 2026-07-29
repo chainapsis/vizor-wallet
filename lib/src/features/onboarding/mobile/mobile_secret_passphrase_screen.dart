@@ -17,6 +17,7 @@ import '../../../providers/app_security_provider.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../create/onboarding_split_view.dart'
     show
+        clearCreateOnboardingSecretState,
         createOnboardingMnemonicProvider,
         onboardingSecretPassphraseRevealedProvider;
 import '../shared/onboarding_error_messages.dart';
@@ -139,15 +140,16 @@ class _MobileSecretPassphraseScreenState
     }
 
     final security = ref.read(appSecurityProvider);
+    clearCreateOnboardingSecretState(ref.read);
     if (!security.isPasswordConfigured) {
-      context.push(
+      context.go(
         '/onboarding/set-passcode',
         extra: SetPasswordScreenArgs.create(mnemonic: mnemonic),
       );
       return;
     }
 
-    context.push(
+    context.go(
       '/onboarding/customise-account',
       extra: CustomiseAccountArgs(mnemonic: mnemonic),
     );

@@ -55,6 +55,12 @@ void main() {
     );
 
     await tester.pumpWidget(_routerHarness(router));
+    expect(
+      tester
+          .widget<OnboardingTrailingPane>(find.byType(OnboardingTrailingPane))
+          .backTarget,
+      isNull,
+    );
     await tester.enterText(find.byType(TextField).at(0), 'Password1!');
     await tester.enterText(find.byType(TextField).at(1), 'Password1!');
     await tester.pump();
@@ -91,7 +97,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Customise Account'), findsOneWidget);
-    expect(find.text('Veiled Wardbearer'), findsOneWidget);
+    expect(find.text('Windborne Wardbearer'), findsOneWidget);
     expect(find.text('Finish setup'), findsOneWidget);
     expect(random.nextIntCallCount, 3);
     expect(
@@ -101,7 +107,7 @@ void main() {
 
     await tester.binding.setSurfaceSize(const Size(1279, 900));
     await tester.pump();
-    expect(find.text('Veiled Wardbearer'), findsOneWidget);
+    expect(find.text('Windborne Wardbearer'), findsOneWidget);
     expect(random.nextIntCallCount, 3);
 
     await tester.tap(
@@ -109,8 +115,38 @@ void main() {
     );
     await tester.pump();
 
-    expect(submittedName, 'Veiled Wardbearer');
+    expect(submittedName, 'Windborne Wardbearer');
     expect(submittedProfilePictureId, 'pfp-03');
+    expect(
+      tester
+          .widget<OnboardingTrailingPane>(find.byType(OnboardingTrailingPane))
+          .backTarget,
+      isNull,
+    );
+  });
+
+  testWidgets('submits the trimmed edited account name', (tester) async {
+    await _setDesktopViewport(tester);
+    String? submittedName;
+    await tester.pumpWidget(
+      _screenHarness(
+        CustomiseAccountScreen(
+          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          onFinish: (name, _) async => submittedName = name,
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('customise_account_name_field')),
+      '  My spending account  ',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('customise_account_finish_button')),
+    );
+    await tester.pump();
+
+    expect(submittedName, 'My spending account');
   });
 
   testWidgets('blocks empty and overlong names with the shared policy', (
@@ -189,7 +225,10 @@ void main() {
     await tester.pumpWidget(
       _screenHarness(
         CustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            mnemonic: _mnemonic,
+            pendingPassword: 'Password1!',
+          ),
           onFinish: (_, _) => finish.future,
         ),
       ),

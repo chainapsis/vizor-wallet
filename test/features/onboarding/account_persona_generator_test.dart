@@ -13,7 +13,7 @@ void main() {
         random: _SequenceRandom([0, 1, 2]),
       );
 
-      expect(suggestion.name, 'Veiled Wardbearer');
+      expect(suggestion.name, 'Windborne Wardbearer');
       expect(suggestion.profilePictureId, 'pfp-03');
     },
   );
@@ -72,7 +72,8 @@ void main() {
     expect(second.profilePictureId, first.profilePictureId);
   });
 
-  test('every generated name follows the account-name policy', () {
+  test('every generated name follows the policy and neutral vocabulary', () {
+    // Auto-assigned names should avoid faith, ritual, or occult associations.
     const avoidedTerms = {
       'vault',
       'keep',
@@ -86,11 +87,20 @@ void main() {
       'anonymous',
       'dark',
       'secret cash',
+      'veiled',
+      'arcane',
+      'oracle',
+      'shieldmage',
+      'spellguard',
+      'oathbound',
+      'oathbearer',
     };
+    final generatedNames = <String>{};
 
     for (final adjective in kAccountPersonaAdjectives) {
       for (final archetype in kAccountPersonaArchetypes) {
         final name = '$adjective $archetype';
+        generatedNames.add(name);
         expect(isAccountNameLengthValid(name), isTrue, reason: name);
         expect(
           avoidedTerms.any(name.toLowerCase().contains),
@@ -99,6 +109,12 @@ void main() {
         );
       }
     }
+    expect(
+      generatedNames,
+      hasLength(
+        kAccountPersonaAdjectives.length * kAccountPersonaArchetypes.length,
+      ),
+    );
   });
 
   test('every generated profile id belongs to the existing catalog', () {

@@ -188,7 +188,7 @@ class _CustomiseAccountScreenState
     });
   }
 
-  OnboardingBackTarget get _backTarget {
+  OnboardingBackTarget? get _backTarget {
     final args = widget.args;
     if (args.configuresPassword) {
       return OnboardingBackTarget.route(
@@ -197,11 +197,7 @@ class _CustomiseAccountScreenState
         routeExtra: SetPasswordScreenArgs.create(mnemonic: args.mnemonic),
       );
     }
-    return OnboardingBackTarget.route(
-      label: OnboardingStep.secretPassphrase.label,
-      routePath: OnboardingStep.secretPassphrase.routePath,
-      routeExtra: CreateSecretPassphraseArgs(mnemonic: args.mnemonic),
-    );
+    return null;
   }
 
   @override

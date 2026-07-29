@@ -4,11 +4,11 @@ import '../../../core/account_name_policy.dart';
 import '../../../core/profile_pictures.dart';
 
 const kAccountPersonaAdjectives = <String>[
-  'Veiled',
+  'Windborne',
   'Steadfast',
   'Dutiful',
   'Valiant',
-  'Arcane',
+  'Clever',
   'Radiant',
   'Resolute',
   'Gentle',
@@ -16,7 +16,7 @@ const kAccountPersonaAdjectives = <String>[
   'Vigilant',
   'Dawnlit',
   'Moonlit',
-  'Oathbound',
+  'Trailwise',
   'Silver',
   'Emerald',
   'Amber',
@@ -37,16 +37,16 @@ const kAccountPersonaArchetypes = <String>[
   'Herald',
   'Falconer',
   'Castellan',
-  'Oracle',
+  'Observer',
   'Envoy',
   'Voyager',
   'Scholar',
   'Artificer',
   'Caretaker',
   'Captain',
-  'Shieldmage',
-  'Spellguard',
-  'Oathbearer',
+  'Smith',
+  'Trailguard',
+  'Pioneer',
 ];
 
 class AccountPersonaSuggestion {

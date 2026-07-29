@@ -203,6 +203,7 @@ void main() {
 
     expect(find.text('Create Passcode'), findsOneWidget);
     expect(find.text('Setting up your wallet...'), findsNothing);
+    expect(router.canPop(), isFalse);
   });
 
   testWidgets('import flow forwards selected additional ZIP32 accounts', (

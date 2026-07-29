@@ -216,11 +216,13 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
           ? 'Set password & continue'
           : 'Set password & finish',
     );
-    final backTarget = onboarding_chrome.OnboardingBackTarget.route(
-      label: _backLabel(args.flow),
-      routePath: args.backRoutePath,
-      routeExtra: args.backRouteExtra,
-    );
+    final backTarget = args.flow == SetPasswordFlow.create
+        ? null
+        : onboarding_chrome.OnboardingBackTarget.route(
+            label: _backLabel(args.flow),
+            routePath: args.backRoutePath,
+            routeExtra: args.backRouteExtra,
+          );
 
     return switch (args.flow) {
       SetPasswordFlow.create => OnboardingTrailingPane(

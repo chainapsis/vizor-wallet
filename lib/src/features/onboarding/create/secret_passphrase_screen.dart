@@ -117,6 +117,7 @@ class _SecretPassphraseScreenState
     final mnemonic = _mnemonic;
     if (mnemonic == null) return;
     final security = ref.read(appSecurityProvider);
+    clearCreateOnboardingSecretState(ref.read);
 
     if (!security.isPasswordConfigured) {
       context.go(

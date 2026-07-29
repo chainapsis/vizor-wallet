@@ -291,7 +291,7 @@ void main() {
     ]);
   });
 
-  testWidgets('does not show screenshot warning after pushing passcode route', (
+  testWidgets('leaving the phrase replaces it with the passcode route', (
     tester,
   ) async {
     final screenshots = StreamController<void>();
@@ -321,6 +321,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('set passcode route'), findsOneWidget);
+    final passcodeContext = tester.element(find.text('set passcode route'));
+    expect(GoRouter.of(passcodeContext).canPop(), isFalse);
+    final container = ProviderScope.containerOf(passcodeContext);
+    expect(container.read(createOnboardingMnemonicProvider), isNull);
+    expect(container.read(onboardingSecretPassphraseRevealedProvider), isFalse);
 
     screenshots.add(null);
     await tester.pumpAndSettle();
@@ -339,6 +344,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('customise $_mnemonic'), findsOneWidget);
+    final customiseContext = tester.element(find.text('customise $_mnemonic'));
+    expect(GoRouter.of(customiseContext).canPop(), isFalse);
   });
 
   testWidgets(
