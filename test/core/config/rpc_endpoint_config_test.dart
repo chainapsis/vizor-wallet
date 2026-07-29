@@ -375,11 +375,33 @@ void main() {
       );
     });
 
-    test('keeps managed routing disabled when the build URL is empty', () {
+    test('uses the temporary Zakura pool when the main build URL is empty', () {
+      expect(kTemporaryZakuraMainnetTransactionRelayUrls, [
+        'http://104.131.184.123:8232',
+        'http://64.227.44.93:8232',
+        'http://139.59.64.115:8232',
+      ]);
       expect(
         transactionRelayUrlForPrimaryEndpoint(
           defaultRpcEndpointConfig('main'),
           mainUrl: '   ',
+        ),
+        isIn(kTemporaryZakuraMainnetTransactionRelayUrls),
+      );
+    });
+
+    test('keeps non-mainnet routing disabled when build URLs are empty', () {
+      expect(
+        transactionRelayUrlForPrimaryEndpoint(
+          defaultRpcEndpointConfig('test'),
+          testUrl: '   ',
+        ),
+        isNull,
+      );
+      expect(
+        transactionRelayUrlForPrimaryEndpoint(
+          defaultRpcEndpointConfig('regtest'),
+          regtestUrl: '   ',
         ),
         isNull,
       );

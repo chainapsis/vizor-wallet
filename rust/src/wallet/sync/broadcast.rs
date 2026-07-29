@@ -8,6 +8,13 @@ use zcash_client_backend::proto::service::SendResponse;
 
 const TRANSACTION_RELAY_TIMEOUT: Duration = Duration::from_secs(15);
 const TRANSACTION_RELAY_MAX_RESPONSE_BYTES: usize = 64 * 1024;
+// TODO: Remove these temporary plaintext exceptions after the Zakura relays
+// are replaced with managed HTTPS submission-only endpoints.
+const TEMPORARY_ZAKURA_HTTP_RELAY_URLS: [&str; 3] = [
+    "http://104.131.184.123:8232/",
+    "http://64.227.44.93:8232/",
+    "http://139.59.64.115:8232/",
+];
 
 pub(super) struct TransactionRelayClient {
     client: reqwest::Client,
@@ -133,15 +140,17 @@ pub(super) fn validate_transaction_relay_url(endpoint: &str) -> Result<Url, Stri
 
     match url.scheme() {
         "https" => {}
-        "http" if relay_host_is_loopback(&url) => {}
+        "http" if relay_host_is_loopback(&url) || is_temporary_zakura_http_relay(&url) => {}
         "http" => {
-            return Err(
-                "Transaction relay URL must use HTTPS unless it targets loopback".to_string(),
-            )
+            return Err("Transaction relay URL must use HTTPS unless it targets loopback or an allowed temporary Zakura endpoint".to_string())
         }
         _ => return Err("Transaction relay URL must use HTTPS".to_string()),
     }
     Ok(url)
+}
+
+fn is_temporary_zakura_http_relay(url: &Url) -> bool {
+    TEMPORARY_ZAKURA_HTTP_RELAY_URLS.contains(&url.as_str())
 }
 
 fn relay_host_is_loopback(url: &Url) -> bool {
@@ -440,9 +449,12 @@ mod tests {
     }
 
     #[test]
-    fn relay_url_requires_https_except_for_loopback_and_rejects_credentials() {
+    fn relay_url_allows_only_pinned_zakura_endpoints_over_public_http() {
         for url in [
             "http://example.com",
+            "http://104.131.184.123:8233",
+            "http://104.131.184.124:8232",
+            "http://104.131.184.123:8232/other",
             "ftp://example.com",
             "https://user@example.com",
             "https://user:secret@example.com",
@@ -455,6 +467,9 @@ mod tests {
             "http://localhost:18232",
             "http://127.0.0.1:18232",
             "http://[::1]:18232",
+            "http://104.131.184.123:8232",
+            "http://64.227.44.93:8232",
+            "http://139.59.64.115:8232",
         ] {
             TransactionRelayClient::new(url).unwrap_or_else(|error| panic!("{url}: {error}"));
         }

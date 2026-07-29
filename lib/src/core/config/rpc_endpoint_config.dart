@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import 'network_config.dart';
@@ -30,6 +32,16 @@ const kVizorZcashTransactionRelayUrlRegtest = String.fromEnvironment(
 const kVizorZcashTransactionRelayUrlIronwoodMasquerade = String.fromEnvironment(
   kVizorZcashTransactionRelayUrlIronwoodMasqueradeEnvKey,
 );
+
+// TODO: Replace these temporary plaintext Zakura RPC endpoints with managed
+// HTTPS submission-only relay URLs.
+const kTemporaryZakuraMainnetTransactionRelayUrls = <String>[
+  'http://104.131.184.123:8232',
+  'http://64.227.44.93:8232',
+  'http://139.59.64.115:8232',
+];
+
+final _transactionRelayRandom = Random.secure();
 
 class RpcEndpointConfig {
   const RpcEndpointConfig({
@@ -237,11 +249,11 @@ bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
   return config.effectivePresetId == kCustomRpcEndpointPresetId;
 }
 
-/// Returns the build-configured transaction relay for a managed endpoint.
+/// Returns the transaction relay for a managed endpoint.
 ///
 /// Custom endpoint intent always keeps transaction submission on the selected
-/// lightwalletd, even when its URL happens to match a built-in preset. An empty
-/// build-time URL leaves relay routing disabled for that network.
+/// lightwalletd, even when its URL happens to match a built-in preset. Mainnet
+/// falls back to the temporary Zakura pool when no build-time URL is supplied.
 String? transactionRelayUrlForPrimaryEndpoint(
   RpcEndpointConfig primary, {
   String mainUrl = kVizorZcashTransactionRelayUrlMain,
@@ -278,7 +290,12 @@ String? transactionRelayUrlForPrimaryEndpoint(
           ZcashNetwork.regtest => regtestUrl,
         };
   final trimmed = configured.trim();
-  return trimmed.isEmpty ? null : trimmed;
+  if (trimmed.isNotEmpty) return trimmed;
+  if (!ironwoodMasquerade && primary.network == ZcashNetwork.mainnet) {
+    return kTemporaryZakuraMainnetTransactionRelayUrls[_transactionRelayRandom
+        .nextInt(kTemporaryZakuraMainnetTransactionRelayUrls.length)];
+  }
+  return null;
 }
 
 bool isRpcEndpointAllowedForBuild(String lightwalletdUrl) {
