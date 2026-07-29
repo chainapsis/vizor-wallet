@@ -146,6 +146,12 @@ fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
     BlockHeight::from_u32(current_tip.saturating_add(1))
 }
 
+fn should_resubmit_after_tip_refresh(_previous_tip_height: u64, _fresh_tip_height: u32) -> bool {
+    // This preserves the current behavior while giving the regression test a
+    // narrow seam for the post-batch ordering decision.
+    true
+}
+
 fn scannable_batch_end(
     base_batch_size: u32,
     start: BlockHeight,
@@ -2090,6 +2096,8 @@ async fn run_sync_impl(
             .map(|tip| tip.height as u32)
         {
             Ok(fresh_tip_height) => {
+                let should_resubmit =
+                    should_resubmit_after_tip_refresh(current_tip_height, fresh_tip_height);
                 // Promote the fresh tip to the authoritative value
                 // so progress events and the final completion event
                 // use the latest chain height, not the one from
@@ -2123,7 +2131,7 @@ async fn run_sync_impl(
                         }
                     }
                 }
-                if allow_resubmit {
+                if allow_resubmit && should_resubmit {
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
                         &mut client,
@@ -2487,6 +2495,25 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn post_batch_resubmit_runs_when_tip_did_not_advance() {
+        assert!(should_resubmit_after_tip_refresh(100, 100));
+    }
+
+    #[test]
+    #[ignore = "known regression: resubmit runs before a newly discovered tip is scanned"]
+    fn post_batch_resubmit_waits_until_fresh_tip_is_scanned() {
+        // This is the ordering observed in the live wallet:
+        //
+        // 1. Enhancement checks transaction status against the previous tip.
+        // 2. The post-batch refresh discovers the next block.
+        // 3. The transaction is resubmitted before that block is scanned.
+        //
+        // A transaction mined in block 101 therefore still has a local
+        // `mined_height` of `NULL` when the resubmit query runs.
+        assert!(!should_resubmit_after_tip_refresh(100, 101));
     }
 
     #[test]
