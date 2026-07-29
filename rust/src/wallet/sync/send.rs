@@ -4691,6 +4691,15 @@ async fn broadcast_due_scheduled_migration_txs(
             ),
         ));
     }
+    // Retry local store for already-accepted parts before selecting the next due
+    // broadcast. These rows are `broadcasted`, so they must not win due selection.
+    retry_store_broadcasted_migration_txs_missing_local(
+        db_path,
+        network,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
     let due = super::migration::due_pending_txs(
         db_path,
         run_id,
@@ -5116,33 +5125,63 @@ where
         let message =
             migration_storage_retry_message("Migration transaction", &pending.txid_hex, &e);
         log::warn!("migration: {message}");
-        super::migration::mark_run_phase(
-            db_path,
-            run_id,
-            super::migration::PHASE_BROADCAST_SCHEDULED,
-            Some(&message),
-        )?;
+        // Network accepted: promote out of `scheduled` so due selection cannot
+        // HOL-block later parts as "Due now". Local store is retried separately
+        // from the encrypted pending raw (see retry_store_broadcasted…).
+        super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)?;
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, Some(&message))?;
         let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-        let mut result = migration_result_from_pending_totals(
+        let result = migration_result_from_pending_totals(
             totals,
-            super::migration::PHASE_BROADCAST_SCHEDULED,
+            &phase,
             Some(message),
             fallback_total_count,
             fallback_migrated_zatoshi,
         );
-        // The operation result reports network acceptance even though the
-        // durable pending row remains scheduled for local storage recovery.
-        // Callers can therefore enforce one accepted transfer per wallet-open
-        // epoch without parsing the human-readable recovery message.
-        result.broadcasted_count = result
-            .broadcasted_count
-            .checked_add(1)
-            .ok_or("Accepted migration transaction count overflow")?;
+        // Callers can still enforce one accepted transfer per wallet-open epoch
+        // from the accepted txid / broadcasted_count without parsing the message.
         return Ok(Some(result));
     }
 
     super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)?;
     Ok(None)
+}
+
+fn retry_store_broadcasted_migration_txs_missing_local(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<(), String> {
+    let missing = super::migration::broadcasted_pending_txs_missing_local_identity(
+        db_path,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    for pending in missing {
+        match decrypt_and_store_migration_tx(db_path, network, &pending.raw_tx) {
+            Ok(()) => {
+                log::info!(
+                    "migration: recorded previously accepted tx {} after local store retry",
+                    pending.txid_hex
+                );
+            }
+            Err(error) => {
+                let message = migration_storage_retry_message(
+                    "Migration transaction",
+                    &pending.txid_hex,
+                    &error,
+                );
+                log::warn!("migration: {message}");
+                let phase = super::migration::run_phase(db_path, run_id)?;
+                super::migration::mark_run_phase(db_path, run_id, &phase, Some(&message))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn migration_result_from_pending_totals(

@@ -3853,6 +3853,52 @@ pub(crate) fn mark_pending_broadcasted(
         .map_err(|e| format!("Commit pending migration broadcast update: {e}"))
 }
 
+/// Pending rows already accepted on the network (`broadcasted`) whose raw tx is
+/// not yet present in the local wallet DB. Used to retry local storage without
+/// re-selecting them as due broadcasts.
+pub(crate) fn broadcasted_pending_txs_missing_local_identity(
+    db_path: &str,
+    run_id: &str,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Vec<DuePendingMigrationTx>, String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT txid_hex, encrypted_raw_tx
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status = 'broadcasted'
+             ORDER BY scheduled_height ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare broadcasted migration store-retry query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| format!("Query broadcasted migration store-retry txs: {e}"))?;
+
+    let mut missing = Vec::new();
+    for row in rows {
+        let (txid_hex, encrypted_raw_tx) =
+            row.map_err(|e| format!("Read broadcasted migration store-retry tx: {e}"))?;
+        if local_denomination_chain_identity(&conn, &txid_hex)?.is_some() {
+            continue;
+        }
+        let raw_tx = secret_payload::decrypt_payload(
+            encrypted_raw_tx.as_bytes(),
+            password,
+            salt.as_slice(),
+        )?;
+        missing.push(DuePendingMigrationTx {
+            txid_hex,
+            raw_tx: raw_tx.to_vec(),
+        });
+    }
+    Ok(missing)
+}
+
 fn update_run_after_pending_broadcast(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,
