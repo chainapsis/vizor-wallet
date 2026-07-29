@@ -573,6 +573,17 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_signed_child_run
             ON {SIGNED_CHILD_PCZTS_TABLE}(run_id, child_index);
+        CREATE TABLE IF NOT EXISTS {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE} (
+            run_id TEXT PRIMARY KEY,
+            txid_hex TEXT NOT NULL,
+            encrypted_raw_tx TEXT NOT NULL,
+            expiry_height INTEGER NOT NULL,
+            fee_zatoshi INTEGER NOT NULL,
+            migrated_zatoshi INTEGER NOT NULL,
+            input_note_count INTEGER NOT NULL,
+            previous_phase TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS {RETAINED_ANCHORS_TABLE} (
             network TEXT NOT NULL,
             run_id TEXT NOT NULL,

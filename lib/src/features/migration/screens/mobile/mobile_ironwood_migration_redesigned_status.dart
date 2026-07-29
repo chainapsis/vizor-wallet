@@ -483,6 +483,34 @@ class _MobileMigrationRedesignedStatusState
       );
     }
 
+    if (widget.status.phase == kIronwoodMigrationImmediatePendingPhase) {
+      final batchProgress = _batchProgress(widget.status);
+      return _MigrationProgressPreview(
+        state: _MigrationProgressState.needsInput,
+        onBack: () => context.go('/home'),
+        completedParts: _completedParts(widget.status),
+        totalParts: _totalParts(widget.status),
+        segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
+        completedBatches: batchProgress.completedBatches,
+        totalBatches: batchProgress.totalBatches,
+        completedRingSegments: _completedRingSegments(widget.status),
+        awaitingRingSegments: _awaitingRingSegments(widget.status),
+        migratedAmountText: _migratedAmountText(widget.status),
+        totalAmountText: _totalAmountText(widget.status),
+        availableAmountText: _availableAmountText(accountUuid),
+        actionMessage:
+            widget.status.message ??
+            'The Immediate migration transaction is saved. Retry Finish '
+                'immediately when the wallet is online.',
+        actionLabel: _actionRunning
+            ? 'Finishing...'
+            : 'Retry Finish immediately',
+        onAction: accountUuid == null || _actionRunning
+            ? null
+            : () => unawaited(_retryImmediateCompletion(accountUuid)),
+      );
+    }
+
     if (coordinatorError != null &&
         widget.status.phase ==
             kIronwoodMigrationWaitingDenomConfirmationsPhase) {
@@ -797,6 +825,39 @@ class _MobileMigrationRedesignedStatusState
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
           .retry(accountUuid);
+    } finally {
+      if (mounted) setState(() => _actionRunning = false);
+    }
+  }
+
+  Future<void> _retryImmediateCompletion(String accountUuid) async {
+    if (_actionRunning) return;
+    final runId = widget.status.activeRunId;
+    if (runId == null) return;
+    setState(() => _actionRunning = true);
+    try {
+      final plan = await ref
+          .read(ironwoodMigrationServiceProvider)
+          .immediatePlan(
+            network: ref.read(ironwoodMigrationInputsProvider).network,
+            accountUuid: accountUuid,
+          );
+      if (plan == null) {
+        throw StateError(
+          'No remaining Orchard balance is available to migrate.',
+        );
+      }
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .finishImmediately(
+            accountUuid: accountUuid,
+            runId: runId,
+            approvedPlan: plan,
+          );
+    } catch (error) {
+      ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .reportAccountError(accountUuid: accountUuid, error: error);
     } finally {
       if (mounted) setState(() => _actionRunning = false);
     }

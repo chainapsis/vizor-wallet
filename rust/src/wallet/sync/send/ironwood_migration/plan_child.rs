@@ -239,14 +239,36 @@ pub(crate) fn get_orchard_migration_immediate_plan(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<Option<OrchardMigrationImmediatePlan>, String> {
+    let active_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
+    if let Some(run) = &active_run {
+        if let Some(attempt) =
+            super::migration::immediate_conversion_attempt_plan(db_path, &run.run_id)?
+        {
+            return Ok(Some(OrchardMigrationImmediatePlan {
+                total_input_zatoshi: attempt
+                    .migrated_zatoshi
+                    .checked_add(attempt.fee_zatoshi)
+                    .ok_or("Stored Immediate migration plan total overflow")?,
+                fee_zatoshi: attempt.fee_zatoshi,
+                migrated_zatoshi: attempt.migrated_zatoshi,
+                input_note_count: attempt.input_note_count,
+            }));
+        }
+    }
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let (target_height, anchor_height) = db
         .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
         .map_err(|e| format!("Failed to read anchor height: {e}"))?
         .ok_or("Wallet must sync before estimating Immediate migration")?;
-    let orchard_notes =
-        select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?;
+    let orchard_notes = select_immediate_migration_inputs(
+        db_path,
+        &db,
+        account_id,
+        BlockHeight::from(anchor_height),
+        target_height,
+        active_run.as_ref().map(|run| run.run_id.as_str()),
+    )?;
     let input_values = orchard_notes
         .iter()
         .map(|note| note.note_value().map(u64::from).map_err(|e| format!("{e}")))

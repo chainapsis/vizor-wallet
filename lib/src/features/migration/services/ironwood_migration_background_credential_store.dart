@@ -588,6 +588,28 @@ class IronwoodMigrationBackgroundLifecycle {
     }
   }
 
+  /// Removes this account's durable native outbox without deleting the
+  /// credential that can reconstruct it from the wallet DB.
+  ///
+  /// Immediate conversion uses this while native work is quiesced. If the
+  /// process exits before Rust durably pauses the source run, the retained
+  /// credential lets the next status recovery restore the old outbox.
+  Future<void> discardAccountOutbox({
+    required String network,
+    required String accountUuid,
+  }) async {
+    if (!_isIOS) return;
+    final discarded = await _channel.invokeMethod<bool>(
+      'discardAccountOutbox',
+      {'network': network, 'accountUuid': accountUuid},
+    );
+    if (discarded != true) {
+      throw StateError(
+        'Failed to discard the native Ironwood migration outbox.',
+      );
+    }
+  }
+
   Future<void> revokeAll() async {
     if (_isIOS) {
       final revoked = await _channel.invokeMethod<bool>('revokeAll');

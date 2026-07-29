@@ -674,8 +674,13 @@ pub(crate) fn prepare_orchard_migration_immediate_pczt(
         ensure_no_live_immediate_migration_request(&mut store, account_uuid, network)?;
     }
 
-    let built =
-        build_orchard_migration_immediate_pczt(db_path, network, account_uuid, approved_plan)?;
+    let built = build_orchard_migration_immediate_pczt(
+        db_path,
+        network,
+        account_uuid,
+        approved_plan,
+        None,
+    )?;
     let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built.base_pczt)?;
     let request_id = new_keystone_migration_request_id("immediate");
     let message_id = format!("{request_id}-transaction");
@@ -701,7 +706,7 @@ pub(crate) fn prepare_orchard_migration_immediate_pczt(
             pczt_with_proofs: None,
             fee_zatoshi: built.fee_zatoshi,
             migrated_zatoshi: built.migrated_zatoshi,
-            input_lock: Some(built.input_lock),
+            input_lock: built.input_lock,
         },
     );
     drop(store);

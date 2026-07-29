@@ -635,6 +635,31 @@ final class BackgroundMigrationManager {
     }
   }
 
+  func discardAccountOutbox(
+    network: String,
+    accountUuid: String,
+    completion: @escaping (Bool) -> Void
+  ) {
+    stopActiveWork(quiesceForMutation: true)
+    queue.async { [weak self] in
+      let batchIds = self?.batchIds(network: network, accountUuid: accountUuid) ?? []
+      let discarded =
+        (try? BackgroundMigrationOutboxChannel.revoke(
+          network: network,
+          accountUuid: accountUuid
+        )) != nil
+      if discarded {
+        // Keep the Keychain credential: it reconstructs the source outbox if
+        // the process exits before Rust durably records the replacement.
+        BackgroundMigrationNotification.remove(
+          batchIds: batchIds,
+          includeNeedsAction: false
+        )
+      }
+      DispatchQueue.main.async { completion(discarded) }
+    }
+  }
+
   func revokeAll(completion: @escaping (Bool) -> Void) {
     stopActiveWork(quiesceForMutation: true)
     queue.async { [weak self] in

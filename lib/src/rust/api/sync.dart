@@ -345,6 +345,38 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
   approvedInputNoteCount: approvedInputNoteCount,
 );
 
+/// Finishes the remaining inputs of an active private migration as one
+/// user-attended Immediate transaction.
+Future<IronwoodMigrationResult> finishOrchardMigrationImmediately({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String expectedRunId,
+  required List<String> nativeAttemptedTxids,
+  required List<int> mnemonicBytes,
+  required String password,
+  required String saltBase64,
+  required BigInt approvedTotalInputZatoshi,
+  required BigInt approvedFeeZatoshi,
+  required BigInt approvedMigratedZatoshi,
+  required int approvedInputNoteCount,
+}) => RustLib.instance.api.crateApiSyncFinishOrchardMigrationImmediately(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  expectedRunId: expectedRunId,
+  nativeAttemptedTxids: nativeAttemptedTxids,
+  mnemonicBytes: mnemonicBytes,
+  password: password,
+  saltBase64: saltBase64,
+  approvedTotalInputZatoshi: approvedTotalInputZatoshi,
+  approvedFeeZatoshi: approvedFeeZatoshi,
+  approvedMigratedZatoshi: approvedMigratedZatoshi,
+  approvedInputNoteCount: approvedInputNoteCount,
+);
+
 Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationImmediatePczt({
   required String dbPath,
   required String network,

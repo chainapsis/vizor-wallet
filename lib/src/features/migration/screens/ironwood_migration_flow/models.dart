@@ -136,6 +136,64 @@ final ironwoodMigrationImmediatePlanProvider =
           );
     });
 
+typedef IronwoodActiveMigrationImmediatePlanRequest = ({
+  String network,
+  String accountUuid,
+  String runId,
+  int observedHeight,
+  String revision,
+});
+
+IronwoodActiveMigrationImmediatePlanRequest
+ironwoodActiveMigrationImmediatePlanRequest({
+  required String network,
+  required String accountUuid,
+  required rust_sync.MigrationStatus status,
+  required int observedHeight,
+}) {
+  return (
+    network: network,
+    accountUuid: accountUuid,
+    runId: status.activeRunId ?? '',
+    observedHeight: observedHeight,
+    revision: [
+      status.phase,
+      status.denominationConfirmationCount,
+      status.denominationSplitCompletedCount,
+      status.pendingTxCount,
+      status.broadcastedTxCount,
+      status.confirmedTxCount,
+      for (final broadcast in status.scheduledBroadcasts)
+        '${broadcast.txidHex}:${broadcast.status}',
+      for (final part in status.parts)
+        '${part.partIndex}:${part.state.name}:${part.txidHex}:'
+            '${part.confirmationCount}',
+    ].join('|'),
+  );
+}
+
+/// Re-evaluates Immediate conversion availability for the current active-run
+/// snapshot.
+///
+/// This is intentionally separate from [ironwoodMigrationImmediatePlanProvider]:
+/// the review provider can retain a plan calculated before the private run
+/// locked or spent its inputs. The run progress revision makes meaningful
+/// coordinator/status changes re-check the run-scoped spendable notes without
+/// keying on an unstable FFI object identity.
+final ironwoodActiveMigrationImmediatePlanProvider = FutureProvider.autoDispose
+    .family<
+      rust_sync.OrchardMigrationImmediatePlan?,
+      IronwoodActiveMigrationImmediatePlanRequest
+    >((ref, request) async {
+      if (request.runId.isEmpty) return null;
+      return ref
+          .watch(ironwoodMigrationServiceProvider)
+          .immediatePlan(
+            network: request.network,
+            accountUuid: request.accountUuid,
+          );
+    });
+
 BigInt _sumTargetValues(rust_sync.MigrationStatus? status) {
   if (status == null) return BigInt.zero;
   BigInt total = BigInt.zero;

@@ -308,6 +308,39 @@ void main() {
     },
   );
 
+  test('iOS can discard only the durable account outbox', () async {
+    const channel = MethodChannel(
+      'test/background_migration/discard_account_outbox',
+    );
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final lifecycle = IronwoodMigrationBackgroundLifecycle(
+      channel: channel,
+      isIOS: true,
+      isAndroid: false,
+    );
+
+    await lifecycle.discardAccountOutbox(
+      network: 'test',
+      accountUuid: 'account-1',
+    );
+
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'discardAccountOutbox');
+    expect(calls.single.arguments, {
+      'network': 'test',
+      'accountUuid': 'account-1',
+    });
+  });
+
   test('iOS quiesce and resume use separate native lifecycle steps', () async {
     const channel = MethodChannel('test/background_migration/quiesce');
     final calls = <MethodCall>[];

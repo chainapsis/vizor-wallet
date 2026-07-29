@@ -250,6 +250,43 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testHasBatchAcceptsProofOnlyWatch() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let batch = makeBatch(
+      batchId: "batch-proof",
+      account: "account-a",
+      heights: [],
+      nextProofHeight: 288
+    )
+    try snapshot.stage(batch)
+
+    XCTAssertFalse(
+      try snapshot.hasBatch(
+        batchId: batch.batchId,
+        network: batch.network,
+        accountUuid: batch.accountUuid,
+        runId: batch.runId,
+        expectedTxids: [],
+        requiredTxids: []
+      )
+    )
+    try snapshot.armBatch(
+      batchId: batch.batchId,
+      expectedDigests: [:],
+      at: now
+    )
+    XCTAssertTrue(
+      try snapshot.hasBatch(
+        batchId: batch.batchId,
+        network: batch.network,
+        accountUuid: batch.accountUuid,
+        runId: batch.runId,
+        expectedTxids: [],
+        requiredTxids: []
+      )
+    )
+  }
+
   func testRestagingMovesAnIdleBatchToTheCurrentEndpoint() throws {
     let original = makeBatch(
       batchId: "batch-a",

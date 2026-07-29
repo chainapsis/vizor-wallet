@@ -160,6 +160,7 @@ class IronwoodMigrationCoordinatorState {
     this.errors = const {},
     this.advancingAccounts = const {},
     this.stoppingAccounts = const {},
+    this.finishingImmediatelyAccounts = const {},
     this.foregroundProgressPermits = const {},
     this.childProofBatchPermits = const {},
   });
@@ -168,6 +169,7 @@ class IronwoodMigrationCoordinatorState {
   final Map<String, String> errors;
   final Set<String> advancingAccounts;
   final Set<String> stoppingAccounts;
+  final Set<String> finishingImmediatelyAccounts;
 
   /// Accounts whose migration may continue in the current foreground session.
   ///
@@ -185,6 +187,7 @@ class IronwoodMigrationCoordinatorState {
     Map<String, String>? errors,
     Set<String>? advancingAccounts,
     Set<String>? stoppingAccounts,
+    Set<String>? finishingImmediatelyAccounts,
     Set<String>? foregroundProgressPermits,
     Set<String>? childProofBatchPermits,
   }) {
@@ -193,6 +196,8 @@ class IronwoodMigrationCoordinatorState {
       errors: errors ?? this.errors,
       advancingAccounts: advancingAccounts ?? this.advancingAccounts,
       stoppingAccounts: stoppingAccounts ?? this.stoppingAccounts,
+      finishingImmediatelyAccounts:
+          finishingImmediatelyAccounts ?? this.finishingImmediatelyAccounts,
       foregroundProgressPermits:
           foregroundProgressPermits ?? this.foregroundProgressPermits,
       childProofBatchPermits:
@@ -220,6 +225,8 @@ class IronwoodMigrationCoordinator
   _stopOperations = {};
   final Map<String, Future<void>> _stopOperationTails = {};
   final Set<String> _stoppingAccounts = {};
+  final Map<String, Future<void>> _finishImmediatelyOperations = {};
+  final Set<String> _finishingImmediatelyAccounts = {};
 
   @override
   IronwoodMigrationCoordinatorState build() {
@@ -589,6 +596,102 @@ class IronwoodMigrationCoordinator
     return tracked;
   }
 
+  Future<void> finishImmediately({
+    required String accountUuid,
+    required String runId,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) {
+    final existing = _finishImmediatelyOperations[accountUuid];
+    if (existing != null) return existing;
+
+    _finishingImmediatelyAccounts.add(accountUuid);
+    state = state.copyWith(
+      advancingAccounts: {...state.advancingAccounts, accountUuid},
+      finishingImmediatelyAccounts: {
+        ...state.finishingImmediatelyAccounts,
+        accountUuid,
+      },
+      foregroundProgressPermits: {...state.foregroundProgressPermits}
+        ..remove(accountUuid),
+      childProofBatchPermits: {...state.childProofBatchPermits}
+        ..remove(accountUuid),
+    );
+    late final Future<void> tracked;
+    tracked =
+        _runFinishImmediately(
+          accountUuid: accountUuid,
+          runId: runId,
+          approvedPlan: approvedPlan,
+        ).whenComplete(() {
+          if (identical(_finishImmediatelyOperations[accountUuid], tracked)) {
+            _finishImmediatelyOperations.remove(accountUuid);
+            _finishingImmediatelyAccounts.remove(accountUuid);
+          }
+          if (ref.mounted) {
+            state = state.copyWith(
+              advancingAccounts: {...state.advancingAccounts}
+                ..remove(accountUuid),
+              finishingImmediatelyAccounts: {
+                ...state.finishingImmediatelyAccounts,
+              }..remove(accountUuid),
+            );
+          }
+        });
+    _finishImmediatelyOperations[accountUuid] = tracked;
+    return tracked;
+  }
+
+  void reportAccountError({
+    required String accountUuid,
+    required Object error,
+  }) {
+    state = state.copyWith(
+      errors: {...state.errors, accountUuid: error.toString()},
+    );
+  }
+
+  Future<void> _runFinishImmediately({
+    required String accountUuid,
+    required String runId,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) async {
+    try {
+      final inFlight = _advanceOperations[accountUuid];
+      if (inFlight != null) {
+        try {
+          await inFlight;
+        } catch (_) {
+          // Immediate completion takes over after foreground work exits.
+        }
+      }
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .finishSoftwarePrivateMigrationImmediately(
+            accountUuid: accountUuid,
+            expectedRunId: runId,
+            approvedPlan: approvedPlan,
+          );
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errors: Map<String, String>.from(state.errors)..remove(accountUuid),
+      );
+      try {
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (error) {
+        log('Ironwood migration post-completion refresh failed: $error');
+      }
+      if (!ref.mounted) return;
+      await refreshNow();
+    } catch (error) {
+      if (ref.mounted) {
+        state = state.copyWith(
+          errors: {...state.errors, accountUuid: error.toString()},
+        );
+      }
+      rethrow;
+    }
+  }
+
   Future<void> _runStopAfter(
     Future<void>? previous, {
     required String accountUuid,
@@ -840,6 +943,7 @@ class IronwoodMigrationCoordinator
         state.statuses.isNotEmpty ||
         state.errors.isNotEmpty ||
         state.advancingAccounts.isNotEmpty ||
+        state.finishingImmediatelyAccounts.isNotEmpty ||
         state.foregroundProgressPermits.isNotEmpty ||
         state.childProofBatchPermits.isNotEmpty ||
         _lastAdvanceAt.isNotEmpty ||
@@ -900,7 +1004,11 @@ class IronwoodMigrationCoordinator
     required bool usesNativeOutbox,
     required String accountUuid,
   }) {
-    if (_stoppingAccounts.contains(accountUuid)) return false;
+    if (_stoppingAccounts.contains(accountUuid) ||
+        _finishingImmediatelyAccounts.contains(accountUuid) ||
+        status.phase == kIronwoodMigrationImmediatePendingPhase) {
+      return false;
+    }
     final due =
         kAppFormFactor == AppFormFactor.mobile &&
         usesNativeOutbox &&
@@ -933,6 +1041,7 @@ class IronwoodMigrationCoordinator
   /// applies its own height gate before it submits, so an unknown height resolves
   /// to recovery whenever a scheduled broadcast exists.
   bool _manualRetryNeedsOutboxRecovery(rust_sync.MigrationStatus status) {
+    if (status.phase == kIronwoodMigrationImmediatePendingPhase) return false;
     final currentHeight = _safelyObservedProofHeight();
     if (currentHeight > 0) {
       return migrationHasDueScheduledBroadcast(
@@ -1021,7 +1130,10 @@ class IronwoodMigrationCoordinator
     required bool force,
     required String accountUuid,
   }) {
-    if (_stoppingAccounts.contains(accountUuid)) return false;
+    if (_stoppingAccounts.contains(accountUuid) ||
+        _finishingImmediatelyAccounts.contains(accountUuid)) {
+      return false;
+    }
     if (status.activeRunId == null) return false;
     if (kAppFormFactor == AppFormFactor.desktop &&
         !_desktopOpenFallbackGate.allows(status)) {

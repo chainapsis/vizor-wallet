@@ -144,6 +144,11 @@ typedef IronwoodMigrationAccountRevoker =
       required String network,
       required String accountUuid,
     });
+typedef IronwoodMigrationAccountOutboxDiscarder =
+    Future<void> Function({
+      required String network,
+      required String accountUuid,
+    });
 typedef IronwoodMigrationOutboxBatchDiscarder =
     Future<bool> Function({required String batchId});
 typedef IronwoodMigrationNotificationAuthorizationRequester =
@@ -214,6 +219,22 @@ typedef IronwoodMigrationImmediateStarter =
       required String network,
       required String accountUuid,
       required List<int> mnemonicBytes,
+      required BigInt approvedTotalInputZatoshi,
+      required BigInt approvedFeeZatoshi,
+      required BigInt approvedMigratedZatoshi,
+      required int approvedInputNoteCount,
+    });
+typedef IronwoodMigrationImmediateFinisher =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required String expectedRunId,
+      required List<String> nativeAttemptedTxids,
+      required List<int> mnemonicBytes,
+      required String password,
+      required String saltBase64,
       required BigInt approvedTotalInputZatoshi,
       required BigInt approvedFeeZatoshi,
       required BigInt approvedMigratedZatoshi,
@@ -614,6 +635,7 @@ class IronwoodMigrationService {
     IronwoodMigrationPreparationForegroundContinuationAcknowledger?
     acknowledgePreparationForegroundContinuation,
     IronwoodMigrationAccountRevoker? revokeMigrationAccount,
+    IronwoodMigrationAccountOutboxDiscarder? discardMigrationAccountOutbox,
     IronwoodMigrationOutboxBatchDiscarder? discardMigrationOutboxBatch,
     IronwoodMigrationNotificationAuthorizationRequester?
     requestNotificationAuthorization,
@@ -623,6 +645,7 @@ class IronwoodMigrationService {
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
     IronwoodMigrationImmediatePlanGetter? getImmediatePlan,
     IronwoodMigrationImmediateStarter? startImmediateMigration,
+    IronwoodMigrationImmediateFinisher? finishImmediateMigration,
     IronwoodMigrationUnbroadcastRetirer? retireUnbroadcastMigration,
     IronwoodMigrationStopper? stopMigrationRun,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
@@ -697,6 +720,9 @@ class IronwoodMigrationService {
        revokeMigrationAccount =
            revokeMigrationAccount ??
            IronwoodMigrationBackgroundLifecycle.instance.revokeAccount,
+       discardMigrationAccountOutbox =
+           discardMigrationAccountOutbox ??
+           IronwoodMigrationBackgroundLifecycle.instance.discardAccountOutbox,
        discardMigrationOutboxBatch =
            discardMigrationOutboxBatch ?? _defaultDiscardMigrationOutboxBatch,
        _requestNotificationAuthorization =
@@ -714,6 +740,9 @@ class IronwoodMigrationService {
        startImmediateMigration =
            startImmediateMigration ??
            rust_sync.migrateOrchardToIronwoodImmediately,
+       finishImmediateMigration =
+           finishImmediateMigration ??
+           rust_sync.finishOrchardMigrationImmediately,
        retireUnbroadcastMigration =
            retireUnbroadcastMigration ??
            rust_sync.retireUnbroadcastOrchardMigration,
@@ -810,6 +839,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationPreparationForegroundContinuationAcknowledger
   acknowledgePreparationForegroundContinuation;
   final IronwoodMigrationAccountRevoker revokeMigrationAccount;
+  final IronwoodMigrationAccountOutboxDiscarder discardMigrationAccountOutbox;
   final IronwoodMigrationOutboxBatchDiscarder discardMigrationOutboxBatch;
   final IronwoodMigrationNotificationAuthorizationRequester
   _requestNotificationAuthorization;
@@ -818,6 +848,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationNotificationSettingsOpener _openNotificationSettings;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationImmediateStarter startImmediateMigration;
+  final IronwoodMigrationImmediateFinisher finishImmediateMigration;
   final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
   final IronwoodMigrationStopper stopMigrationRun;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
@@ -962,7 +993,9 @@ class IronwoodMigrationService {
 
         return _serializeCredentialState(context, () async {
           var status = await _getStatusForContext(context);
-          if (_usesNativeMigrationOutbox && status.activeRunId != null) {
+          if (_usesNativeMigrationOutbox &&
+              status.activeRunId != null &&
+              status.phase != kIronwoodMigrationImmediatePendingPhase) {
             final manifest = await backgroundCredentialStore.read(
               network: context.network,
               accountUuid: context.accountUuid,
@@ -973,6 +1006,31 @@ class IronwoodMigrationService {
                   status: status,
                 )) {
               status = await _getStatusForContext(context);
+            } else if (manifest != null &&
+                _requiresPersistedMigrationOutbox(status) &&
+                !await _hasPersistedMigrationOutboxBatch(
+                  context: _contextWithCurrentEndpoint(context),
+                  status: status,
+                )) {
+              // Immediate conversion deletes the native copy before Rust
+              // mutates the wallet DB. If the process exits before Rust
+              // persists `immediate_pending`, the old run is still
+              // authoritative and its retained credential must restore the
+              // deleted outbox.
+              final resolvedManifest = await _resolveManifestContext(
+                manifest,
+                context,
+              );
+              await _stagePersistedMigrationOutbox(
+                context: _contextWithCurrentEndpoint(context),
+                credential: _MigrationCredential(
+                  password: resolvedManifest.credentialHex,
+                  saltBase64: resolvedManifest.saltBase64,
+                ),
+                expectedRunId: status.activeRunId,
+                requiredTxids: _scheduledBroadcastTxids(status),
+                statusForStaleBatchDiscard: status,
+              );
             }
           }
           await _reconcileBackgroundCredential(
@@ -1159,6 +1217,12 @@ class IronwoodMigrationService {
       operation: () => _serializeCredentialState(context, () async {
         await _reconcileMigrationOutboxReceipts(context: context);
         final status = await _getStatusForContext(context);
+        if (status.phase == kIronwoodMigrationImmediatePendingPhase) {
+          throw StateError(
+            'Immediate migration submission is awaiting reconciliation; '
+            'the previous migration outbox cannot be recovered.',
+          );
+        }
         if (status.scheduledBroadcasts.any(
           (broadcast) => broadcast.status.toLowerCase() == 'scheduled',
         )) {
@@ -1456,6 +1520,221 @@ class IronwoodMigrationService {
     } catch (_) {
       rethrow;
     }
+  }
+
+  /// Converts the remaining inputs reserved by an active private migration
+  /// into one user-attended Immediate transaction.
+  Future<rust_sync.IronwoodMigrationResult>
+  finishSoftwarePrivateMigrationImmediately({
+    required String accountUuid,
+    required String expectedRunId,
+    required rust_sync.OrchardMigrationImmediatePlan approvedPlan,
+  }) async {
+    if (isHardwareAccount(accountUuid)) {
+      throw UnsupportedError(
+        'Finish immediately is not yet available for Keystone accounts.',
+      );
+    }
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+
+    return operationRegistry.run(
+      network: context.network,
+      accountUuid: context.accountUuid,
+      operation: () => _serializeCredentialState(context, () async {
+        var quiesceAttempted = false;
+        var mayResumeBackgroundWork = true;
+        var nativeOutboxDiscarded = false;
+        _MigrationCredential? discardedOutboxCredential;
+        try {
+          if (_usesNativeMigrationLifecycle) {
+            quiesceAttempted = true;
+            await quiesceBackgroundMigration();
+          }
+
+          final currentStatus = await _getStatusForContext(context);
+          if (currentStatus.activeRunId != expectedRunId) {
+            throw StateError(
+              'The active migration changed. Review the remaining balance '
+              'and try again.',
+            );
+          }
+
+          var nativeAttemptedTxids = const <String>[];
+          final isPersistedImmediateRetry =
+              currentStatus.phase == kIronwoodMigrationImmediatePendingPhase;
+          if (_usesNativeMigrationOutbox && !isPersistedImmediateRetry) {
+            final receipts = await _reconcileMigrationOutboxReceipts(
+              context: context,
+            );
+            if (receipts.unreconciledCount > 0) {
+              throw StateError(
+                'Migration cannot finish immediately until submitted '
+                'transactions are reconciled.',
+              );
+            }
+            nativeAttemptedTxids = await listMigrationOutboxAttemptedTxids(
+              network: context.network,
+              accountUuid: context.accountUuid,
+              runId: expectedRunId,
+            );
+            final manifest = await backgroundCredentialStore.read(
+              network: context.network,
+              accountUuid: context.accountUuid,
+            );
+            if (manifest == null) {
+              throw StateError(
+                'The private migration credential is missing. Restore '
+                'background migration before finishing immediately.',
+              );
+            }
+            final resolvedManifest = await _resolveManifestContext(
+              manifest,
+              context,
+            );
+            discardedOutboxCredential = _MigrationCredential(
+              password: resolvedManifest.credentialHex,
+              saltBase64: resolvedManifest.saltBase64,
+            );
+          }
+
+          final immediateCredential = await _legacyCredential(context);
+          final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
+          if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
+            throw StateError('Mnemonic not found for the migration account.');
+          }
+          rust_sync.IronwoodMigrationResult result;
+          try {
+            if (_usesNativeMigrationOutbox && !isPersistedImmediateRetry) {
+              // This deletion is durable while `quiesce` is only process-local.
+              // It must precede the Rust mutation so a process exit can never
+              // leave both the replacement and the old native outbox runnable.
+              nativeOutboxDiscarded = true;
+              try {
+                await discardMigrationAccountOutbox(
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                );
+              } catch (error, stackTrace) {
+                final credential = discardedOutboxCredential;
+                if (credential == null) {
+                  mayResumeBackgroundWork = false;
+                } else {
+                  await resumeBackgroundMigration();
+                  quiesceAttempted = false;
+                  await _stagePersistedMigrationOutbox(
+                    context: context,
+                    credential: credential,
+                    expectedRunId: expectedRunId,
+                    requiredTxids: _scheduledBroadcastTxids(currentStatus),
+                    statusForStaleBatchDiscard: currentStatus,
+                  );
+                }
+                Error.throwWithStackTrace(error, stackTrace);
+              }
+            }
+
+            try {
+              result = await finishImmediateMigration(
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                expectedRunId: expectedRunId,
+                nativeAttemptedTxids: nativeAttemptedTxids,
+                mnemonicBytes: mnemonicBytes,
+                password: immediateCredential.password,
+                saltBase64: immediateCredential.saltBase64,
+                approvedTotalInputZatoshi: approvedPlan.totalInputZatoshi,
+                approvedFeeZatoshi: approvedPlan.feeZatoshi,
+                approvedMigratedZatoshi: approvedPlan.migratedZatoshi,
+                approvedInputNoteCount: approvedPlan.inputNoteCount,
+              );
+            } catch (error, stackTrace) {
+              // Rust persists `immediate_pending` before network submission. A
+              // lost FFI reply after that point must not restart the private
+              // outbox.
+              late final rust_sync.MigrationStatus afterFailure;
+              try {
+                afterFailure = await _getStatusForContext(context);
+              } catch (_) {
+                // The replacement may already have been submitted. Without a
+                // durable status projection it is unsafe to restart the old
+                // native outbox, which could submit a conflicting transaction.
+                mayResumeBackgroundWork = false;
+                Error.throwWithStackTrace(error, stackTrace);
+              }
+              if (_usesNativeMigrationLifecycle &&
+                  (afterFailure.activeRunId == null ||
+                      afterFailure.phase ==
+                          kIronwoodMigrationImmediatePendingPhase)) {
+                try {
+                  await revokeMigrationAccount(
+                    network: context.network,
+                    accountUuid: context.accountUuid,
+                  );
+                } catch (_) {
+                  mayResumeBackgroundWork = false;
+                }
+              } else if (nativeOutboxDiscarded &&
+                  afterFailure.activeRunId == expectedRunId) {
+                // Rust failed before persisting the replacement attempt (or
+                // explicitly rejected it and restored the source phase). Resume
+                // scheduling first, then reconstruct the deleted native batch
+                // from the still-active DB run and retained credential.
+                final credential = discardedOutboxCredential;
+                if (credential == null) {
+                  mayResumeBackgroundWork = false;
+                } else {
+                  await resumeBackgroundMigration();
+                  quiesceAttempted = false;
+                  await _stagePersistedMigrationOutbox(
+                    context: context,
+                    credential: credential,
+                    expectedRunId: expectedRunId,
+                    requiredTxids: _scheduledBroadcastTxids(afterFailure),
+                    statusForStaleBatchDiscard: afterFailure,
+                  );
+                }
+              }
+              Error.throwWithStackTrace(error, stackTrace);
+            }
+          } finally {
+            mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
+          }
+
+          if (_usesNativeMigrationLifecycle) {
+            try {
+              await revokeMigrationAccount(
+                network: context.network,
+                accountUuid: context.accountUuid,
+              );
+            } catch (error, stackTrace) {
+              mayResumeBackgroundWork = false;
+              Error.throwWithStackTrace(error, stackTrace);
+            }
+          }
+          return result;
+        } finally {
+          if (quiesceAttempted && mayResumeBackgroundWork) {
+            try {
+              await resumeBackgroundMigration();
+            } catch (error) {
+              debugPrint(
+                'Failed to resume Ironwood background work after Immediate '
+                'completion: $error',
+              );
+            }
+          }
+        }
+      }),
+    );
   }
 
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
@@ -2291,7 +2570,11 @@ class IronwoodMigrationService {
     final requiredTxids = _scheduledBroadcastTxids(
       status,
     ).toList(growable: false);
-    if (expectedTxids.isEmpty || requiredTxids.isEmpty) return false;
+    final requiresProofWatch = _requiresProofWatchOutbox(status);
+    if (!requiresProofWatch &&
+        (expectedTxids.isEmpty || requiredTxids.isEmpty)) {
+      return false;
+    }
     try {
       return await hasMigrationOutboxBatch(
         batchId: _migrationOutboxBatchId(context, runId),
@@ -2305,6 +2588,18 @@ class IronwoodMigrationService {
       if (!_isConflictingOutboxBatchError(error)) rethrow;
       return false;
     }
+  }
+
+  bool _requiresPersistedMigrationOutbox(rust_sync.MigrationStatus status) {
+    return _scheduledBroadcastTxids(status).isNotEmpty ||
+        _requiresProofWatchOutbox(status);
+  }
+
+  bool _requiresProofWatchOutbox(rust_sync.MigrationStatus status) {
+    // The timing projection is best-effort and can omit the next height even
+    // when Rust can still export the durable proof watch. Signed children are
+    // the authoritative indication that this native work may exist.
+    return status.signedChildPcztCount > 0;
   }
 
   Set<String> _scheduledBroadcastTxids(rust_sync.MigrationStatus status) {

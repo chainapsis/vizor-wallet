@@ -658,6 +658,7 @@ Widget _productionApp({
   bool realKeystoneDenominationRoute = false,
   bool realKeystoneBatchRoute = false,
   bool disableAnimations = true,
+  bool activeImmediatePlanAvailable = true,
   VoidCallback? onKeystoneDenominationRouteBuilt,
   List<Override> extraOverrides = const [],
 }) {
@@ -778,6 +779,10 @@ Widget _productionApp({
       ),
       ironwoodMigrationImmediatePlanProvider.overrideWith(
         (ref) => Future.value(_immediatePlan),
+      ),
+      ironwoodActiveMigrationImmediatePlanProvider.overrideWith(
+        (ref, request) async =>
+            activeImmediatePlanAvailable ? _immediatePlan : null,
       ),
       ironwoodMigrationRouteCtaProvider.overrideWith((ref) async {
         if (ctaLoader != null) return ctaLoader();
@@ -2456,6 +2461,33 @@ void main() {
     expect(find.text('Go home'), findsOneWidget);
   });
 
+  testWidgets(
+    'preparing status hides Finish when the active run has no Immediate plan',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/preparing',
+          migrationService: _migrationService(
+            onContinue: (_) async => _migrationResult(),
+          ),
+          status: _status(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+          ),
+          activeImmediatePlanAvailable: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('mobile_ironwood_finish_migration_immediately_button'),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('animates the preparing confirmation loader', (tester) async {
     _useMobileViewport(tester);
     await tester.pumpWidget(
@@ -4019,6 +4051,36 @@ void main() {
       await tester.pump();
     }
   });
+
+  testWidgets(
+    'Immediate submission pending exposes only the reconciliation action',
+    (tester) async {
+      _useMobileViewport(tester);
+
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          status: _status(
+            phase: kIronwoodMigrationImmediatePendingPhase,
+            message:
+                'The Immediate migration transaction is awaiting reconciliation.',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'The Immediate migration transaction is awaiting reconciliation.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Retry Finish immediately'), findsOneWidget);
+      expect(find.text('Resume'), findsNothing);
+      expect(find.text('Stop migration'), findsNothing);
+    },
+  );
 
   testWidgets('marks the displayed account seen, not a stale published one', (
     tester,

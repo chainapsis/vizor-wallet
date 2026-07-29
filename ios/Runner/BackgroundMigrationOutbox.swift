@@ -375,11 +375,23 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     expectedTxids: Set<String>,
     requiredTxids: Set<String>
   ) throws -> Bool {
-    guard !expectedTxids.isEmpty, !requiredTxids.isEmpty else {
-      throw BackgroundMigrationOutboxError.invalidArmRequest
-    }
     guard let batch = batches.first(where: { $0.batchId == batchId }) else {
       return false
+    }
+    let isProofOnlyRequest = requiredTxids.isEmpty
+    if isProofOnlyRequest {
+      guard batch.network == network,
+        batch.accountUuid == accountUuid,
+        batch.runId == runId,
+        batch.items.isEmpty,
+        batch.nextProofHeight != nil
+      else {
+        throw BackgroundMigrationOutboxError.conflictingBatch
+      }
+      return batch.armedAt != nil
+    }
+    guard !expectedTxids.isEmpty else {
+      throw BackgroundMigrationOutboxError.invalidArmRequest
     }
     let normalizedExpectedTxids = Set(expectedTxids.map { $0.lowercased() })
     let normalizedRequiredTxids = Set(requiredTxids.map { $0.lowercased() })

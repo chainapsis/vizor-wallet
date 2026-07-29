@@ -13,6 +13,28 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn immediate_conversion_source_filter_excludes_unreserved_inputs() {
+    let reserved = HashSet::from([("aa".repeat(32), 0), ("bb".repeat(32), 2)]);
+
+    assert!(immediate_source_allows_outpoint(
+        Some(&reserved),
+        &"AA".repeat(32),
+        0,
+    ));
+    assert!(immediate_source_allows_outpoint(
+        Some(&reserved),
+        &"bb".repeat(32),
+        2,
+    ));
+    assert!(!immediate_source_allows_outpoint(
+        Some(&reserved),
+        &"cc".repeat(32),
+        0,
+    ));
+    assert!(immediate_source_allows_outpoint(None, &"cc".repeat(32), 0,));
+}
+
+#[test]
 fn send_proposal_expires_at_its_lock_boundary() {
     let min_target = BlockHeight::from_u32(1_000);
     assert!(!send_proposal_is_expired(

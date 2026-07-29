@@ -288,6 +288,25 @@ import UIKit
             result(success)
           }
         )
+      case "discardAccountOutbox":
+        guard let arguments = call.arguments as? [String: Any],
+          let network = arguments["network"] as? String,
+          let accountUuid = arguments["accountUuid"] as? String
+        else {
+          result(
+            FlutterError(
+              code: "invalid_arguments",
+              message: "Missing Ironwood migration account scope.",
+              details: nil
+            )
+          )
+          return
+        }
+        BackgroundMigrationManager.shared.discardAccountOutbox(
+          network: network,
+          accountUuid: accountUuid,
+          completion: { success in result(success) }
+        )
       case "revokeAll":
         BackgroundMigrationManager.shared.revokeAll {
           success in

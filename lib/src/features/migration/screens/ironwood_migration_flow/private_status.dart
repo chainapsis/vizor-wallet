@@ -35,6 +35,44 @@ class _IronwoodMigrationPrivateStatusContentState
     }
   }
 
+  Future<void> _confirmFinishImmediately() async {
+    final accountUuid = widget.accountUuid;
+    final runId = widget.status.activeRunId;
+    if (accountUuid == null || runId == null) return;
+    try {
+      final network = ref.read(ironwoodMigrationInputsProvider).network;
+      final plan = await ref
+          .read(ironwoodMigrationServiceProvider)
+          .immediatePlan(network: network, accountUuid: accountUuid);
+      if (plan == null) {
+        throw StateError(
+          'No remaining Orchard balance is available to migrate.',
+        );
+      }
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => _DesktopMigrationFinishImmediatelyDialog(plan: plan),
+      );
+      if (confirmed != true || !mounted) return;
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .finishImmediately(
+            accountUuid: accountUuid,
+            runId: runId,
+            approvedPlan: plan,
+          );
+      if (mounted) context.go('/home');
+    } catch (e) {
+      if (mounted) {
+        ref
+            .read(ironwoodMigrationCoordinatorProvider.notifier)
+            .reportAccountError(accountUuid: accountUuid, error: e);
+      }
+      log('Immediate migration completion failed: $e');
+    }
+  }
+
   Future<void> _handleAction(_StatusAction action) async {
     final accountUuid = widget.accountUuid;
     if (accountUuid == null) return;
@@ -80,6 +118,27 @@ class _IronwoodMigrationPrivateStatusContentState
     final isStopping =
         widget.accountUuid != null &&
         coordinator.stoppingAccounts.contains(widget.accountUuid);
+    final isFinishingImmediately =
+        widget.accountUuid != null &&
+        coordinator.finishingImmediatelyAccounts.contains(widget.accountUuid);
+    final immediatePlan = !isHardware && widget.accountUuid != null
+        ? ref
+              .watch(
+                ironwoodActiveMigrationImmediatePlanProvider(
+                  ironwoodActiveMigrationImmediatePlanRequest(
+                    network: ref.watch(ironwoodMigrationInputsProvider).network,
+                    accountUuid: widget.accountUuid!,
+                    status: status,
+                    observedHeight: syncState?.scannedHeight ?? 0,
+                  ),
+                ),
+              )
+              .value
+        : null;
+    final canFinishImmediately =
+        !isHardware &&
+        (status.phase == kIronwoodMigrationImmediatePendingPhase ||
+            immediatePlan != null);
     final actionLabel = isAdvancing
         ? action.busyLabel
         : switch (action) {
@@ -119,6 +178,8 @@ class _IronwoodMigrationPrivateStatusContentState
           onAction: actionCallback,
         ),
         isStopping: isStopping,
+        isFinishingImmediately: isFinishingImmediately,
+        canFinishImmediately: canFinishImmediately,
       );
     }
 
@@ -263,11 +324,19 @@ class _IronwoodMigrationPrivateStatusContentState
         ),
       ),
       isStopping: isStopping,
+      isFinishingImmediately: isFinishingImmediately,
+      canFinishImmediately: canFinishImmediately,
     );
   }
 
-  Widget _withStopAction(Widget child, {required bool isStopping}) {
-    if (widget.status.activeRunId == null || !widget.status.canAbandon) {
+  Widget _withStopAction(
+    Widget child, {
+    required bool isStopping,
+    required bool isFinishingImmediately,
+    required bool canFinishImmediately,
+  }) {
+    if (widget.status.activeRunId == null ||
+        (!canFinishImmediately && !widget.status.canAbandon)) {
       return child;
     }
     return Stack(
@@ -276,16 +345,100 @@ class _IronwoodMigrationPrivateStatusContentState
         Positioned(
           top: 8,
           right: 8,
-          child: AppButton(
-            key: const ValueKey('ironwood_stop_migration_button'),
-            height: 32,
-            expand: false,
-            variant: AppButtonVariant.ghost,
-            onPressed: isStopping ? null : () => unawaited(_confirmStop()),
-            child: Text(isStopping ? 'Stopping...' : 'Stop migration'),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (canFinishImmediately) ...[
+                AppButton(
+                  key: const ValueKey(
+                    'ironwood_finish_migration_immediately_button',
+                  ),
+                  height: 32,
+                  expand: false,
+                  onPressed: isStopping || isFinishingImmediately
+                      ? null
+                      : () => unawaited(_confirmFinishImmediately()),
+                  child: Text(
+                    isFinishingImmediately
+                        ? 'Finishing...'
+                        : 'Finish immediately',
+                  ),
+                ),
+                if (widget.status.canAbandon)
+                  const SizedBox(width: AppSpacing.xxs),
+              ],
+              if (widget.status.canAbandon)
+                AppButton(
+                  key: const ValueKey('ironwood_stop_migration_button'),
+                  height: 32,
+                  expand: false,
+                  variant: AppButtonVariant.ghost,
+                  onPressed: isStopping || isFinishingImmediately
+                      ? null
+                      : () => unawaited(_confirmStop()),
+                  child: Text(isStopping ? 'Stopping...' : 'Stop migration'),
+                ),
+            ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DesktopMigrationFinishImmediatelyDialog extends StatelessWidget {
+  const _DesktopMigrationFinishImmediatelyDialog({required this.plan});
+
+  final rust_sync.OrchardMigrationImmediatePlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.background.ground,
+      child: SizedBox(
+        width: 380,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Finish migration immediately?',
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'The remaining ${_formatZecAmountCompact(plan.migratedZatoshi)} '
+                'ZEC will move in one transaction with an estimated fee of '
+                '${_formatZecAmountCompact(plan.feeZatoshi)} ZEC. This is '
+                'faster, but reveals the remaining amount and timing together.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                key: const ValueKey(
+                  'ironwood_confirm_finish_migration_immediately_button',
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Finish immediately'),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              AppButton(
+                variant: AppButtonVariant.ghost,
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Keep private migration'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -536,6 +689,14 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
           'resumed.',
       buttonLabel: 'Paused',
     ),
+    kIronwoodMigrationImmediatePendingPhase => const _StatusPresentation(
+      title: 'Finishing migration',
+      body:
+          'The Immediate migration transaction is saved and awaiting network '
+          'reconciliation.',
+      footer: 'Retry Finish immediately when the wallet is online.',
+      buttonLabel: 'Awaiting submission',
+    ),
     kIronwoodMigrationFailedRecoverablePhase => const _StatusPresentation(
       title: 'Migration Needs Attention',
       body:
@@ -559,7 +720,8 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
 
 double? _statusProgress(rust_sync.MigrationStatus status) {
   if (status.phase == kIronwoodMigrationFailedRecoverablePhase ||
-      status.phase == kIronwoodMigrationPausedPhase) {
+      status.phase == kIronwoodMigrationPausedPhase ||
+      status.phase == kIronwoodMigrationImmediatePendingPhase) {
     return null;
   }
   if (status.phase == kIronwoodMigrationCompletePhase) return 1;

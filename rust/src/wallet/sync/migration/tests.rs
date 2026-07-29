@@ -146,6 +146,318 @@ fn create_outbox_test_run(
 }
 
 #[test]
+fn immediate_conversion_attempt_pauses_and_can_restore_source_run() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-convert", &[10], &[None]);
+
+    record_immediate_conversion_attempt(
+        &db_path,
+        "run-convert",
+        &"aa".repeat(32),
+        &[1, 2, 3],
+        123,
+        10_000,
+        90_000,
+        1,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let encrypted_raw_tx: String = conn
+        .query_row(
+            &format!(
+                "SELECT encrypted_raw_tx
+                 FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params!["run-convert"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!encrypted_raw_tx.contains("[1,2,3]"));
+    assert!(immediate_conversion_attempt(
+        &db_path,
+        "run-convert",
+        b"wrong-password",
+        TEST_SALT_BASE64,
+    )
+    .is_err());
+
+    let stored =
+        immediate_conversion_attempt(&db_path, "run-convert", TEST_PASSWORD, TEST_SALT_BASE64)
+            .unwrap()
+            .unwrap();
+    assert_eq!(stored.txid_hex, "aa".repeat(32));
+    assert_eq!(stored.raw_tx, [1, 2, 3]);
+    assert_eq!(stored.expiry_height, 123);
+    assert_eq!(stored.input_note_count, 1);
+    assert_eq!(stored.previous_phase, PHASE_BROADCAST_SCHEDULED);
+    let run = active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.phase, PHASE_IMMEDIATE_PENDING);
+    let status = migration_status_with_projection_height(
+        &db_path,
+        WalletNetwork::Regtest,
+        "account-1",
+        0,
+        0,
+        0,
+        0,
+        Some(0),
+    )
+    .unwrap();
+    assert!(!status.can_abandon);
+    assert!(ensure_no_immediate_conversion_attempt(
+        &db_path,
+        "run-convert",
+        "private migration cannot resume",
+    )
+    .unwrap_err()
+    .contains("cannot resume"));
+    assert!(
+        abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-convert",)
+            .unwrap_err()
+            .contains("must be reconciled")
+    );
+
+    clear_immediate_conversion_attempt(&db_path, "run-convert", true).unwrap();
+    assert!(
+        immediate_conversion_attempt(&db_path, "run-convert", TEST_PASSWORD, TEST_SALT_BASE64,)
+            .unwrap()
+            .is_none()
+    );
+    let run = active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.phase, PHASE_BROADCAST_SCHEDULED);
+}
+
+#[test]
+fn immediate_conversion_attempt_freezes_source_reconciliation_after_phase_drift() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-convert", &[10], &[None]);
+    record_immediate_conversion_attempt(
+        &db_path,
+        "run-convert",
+        &"aa".repeat(32),
+        &[1, 2, 3],
+        123,
+        10_000,
+        90_000,
+        1,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    // Simulate a phase projection written by an older reconciliation path.
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+        params![PHASE_BROADCAST_SCHEDULED, "run-convert"],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(immediate_conversion_freezes_source_reconciliation(&db_path, "run-convert").unwrap());
+    clear_immediate_conversion_attempt(&db_path, "run-convert", true).unwrap();
+    assert!(!immediate_conversion_freezes_source_reconciliation(&db_path, "run-convert").unwrap());
+}
+
+#[test]
+fn clearing_finalized_immediate_conversion_does_not_restore_source_run() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-convert-final", &[10], &[None]);
+    record_immediate_conversion_attempt(
+        &db_path,
+        "run-convert-final",
+        &"bb".repeat(32),
+        &[4, 5, 6],
+        123,
+        10_000,
+        90_000,
+        1,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    clear_immediate_conversion_attempt(&db_path, "run-convert-final", false).unwrap();
+    let run = active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.phase, PHASE_IMMEDIATE_PENDING);
+}
+
+#[test]
+fn finalizing_immediate_conversion_is_atomic_and_idempotent() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-convert-atomic", &[10], &[None]);
+    record_immediate_conversion_attempt(
+        &db_path,
+        "run-convert-atomic",
+        &"cc".repeat(32),
+        &[7, 8, 9],
+        123,
+        10_000,
+        90_000,
+        1,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(&format!(
+        "CREATE TRIGGER fail_immediate_attempt_delete
+         BEFORE DELETE ON {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE}
+         BEGIN
+             SELECT RAISE(ABORT, 'forced Immediate cleanup failure');
+         END;"
+    ))
+    .unwrap();
+    drop(conn);
+
+    assert!(finalize_immediate_conversion_run(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-convert-atomic",
+    )
+    .is_err());
+    let run = active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.phase, PHASE_IMMEDIATE_PENDING);
+    assert!(immediate_conversion_attempt(
+        &db_path,
+        "run-convert-atomic",
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap()
+    .is_some());
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch("DROP TRIGGER fail_immediate_attempt_delete;")
+        .unwrap();
+    drop(conn);
+
+    finalize_immediate_conversion_run(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-convert-atomic",
+    )
+    .unwrap();
+    finalize_immediate_conversion_run(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-convert-atomic",
+    )
+    .unwrap();
+    assert!(
+        active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
+            .unwrap()
+            .is_none()
+    );
+    assert!(immediate_conversion_attempt(
+        &db_path,
+        "run-convert-atomic",
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn failed_persisted_immediate_conversion_retires_the_unusable_source_run() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-convert-failed", &[10], &[None]);
+    record_immediate_conversion_attempt(
+        &db_path,
+        "run-convert-failed",
+        &"dd".repeat(32),
+        &[10, 11, 12],
+        123,
+        10_000,
+        90_000,
+        1,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    retire_failed_immediate_conversion_run(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-convert-failed",
+    )
+    .unwrap();
+
+    assert!(
+        active_migration_run(&db_path, "account-1", WalletNetwork::Regtest)
+            .unwrap()
+            .is_none()
+    );
+    assert!(immediate_conversion_attempt(
+        &db_path,
+        "run-convert-failed",
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap()
+    .is_none());
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let (phase, last_error, pending_count): (String, String, u32) = conn
+        .query_row(
+            &format!(
+                "SELECT phase, last_error,
+                        (SELECT COUNT(*) FROM {PENDING_TXS_TABLE} WHERE run_id = ?1)
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params!["run-convert-failed"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_ABANDONED);
+    assert!(last_error.contains("review a new plan"));
+    assert_eq!(pending_count, 0);
+}
+
+#[test]
 fn stopping_a_run_discards_only_unsubmitted_work() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir

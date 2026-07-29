@@ -48,6 +48,7 @@ const RUNS_TABLE: &str = "vizor_migration_runs";
 const PREPARED_NOTES_TABLE: &str = "vizor_migration_prepared_notes";
 const PENDING_TXS_TABLE: &str = "vizor_migration_pending_txs";
 const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
+const IMMEDIATE_CONVERSION_ATTEMPTS_TABLE: &str = "vizor_migration_immediate_conversion_attempts";
 const RETAINED_ANCHORS_TABLE: &str = "vizor_migration_retained_orchard_anchors";
 const RETENTION_RELEASE_SENTINEL_RUN_ID: &str = "";
 pub(crate) fn delete_account_migration_rows_with_tx(
@@ -65,6 +66,7 @@ pub(crate) fn delete_account_migration_rows_with_tx(
         PREPARED_NOTES_TABLE,
         PENDING_TXS_TABLE,
         SIGNED_CHILD_PCZTS_TABLE,
+        IMMEDIATE_CONVERSION_ATTEMPTS_TABLE,
     ] {
         if table_exists(tx, table)? {
             tx.execute(
@@ -105,6 +107,7 @@ pub(crate) const PHASE_BROADCASTING: &str = "broadcasting";
 pub(crate) const PHASE_WAITING_MIGRATION_CONFIRMATIONS: &str = "waiting_migration_confirmations";
 pub(crate) const PHASE_COMPLETE: &str = "complete";
 pub(crate) const PHASE_PAUSED: &str = "paused";
+pub(crate) const PHASE_IMMEDIATE_PENDING: &str = "immediate_pending";
 pub(crate) const PHASE_FAILED_RECOVERABLE: &str = "failed_recoverable";
 pub(crate) const PHASE_FAILED_TERMINAL: &str = "failed_terminal";
 pub(crate) const PHASE_ABANDONED: &str = "abandoned";
@@ -292,6 +295,24 @@ pub(crate) struct MigrationStopCandidate {
     pub broadcast_height: u32,
     pub expiry_height: u32,
     pub attempt_state: MigrationBroadcastAttemptState,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ImmediateConversionAttempt {
+    pub txid_hex: String,
+    pub raw_tx: Vec<u8>,
+    pub expiry_height: u32,
+    pub fee_zatoshi: u64,
+    pub migrated_zatoshi: u64,
+    pub input_note_count: u32,
+    pub previous_phase: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ImmediateConversionAttemptPlan {
+    pub fee_zatoshi: u64,
+    pub migrated_zatoshi: u64,
+    pub input_note_count: u32,
 }
 
 pub(crate) struct PendingMigrationTotals {
@@ -858,6 +879,15 @@ fn wallet_lock_candidates_with_conn(
     Ok(candidates.into_iter().collect())
 }
 
+pub(crate) fn immediate_conversion_input_outpoints(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Vec<(String, u32)>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    wallet_lock_candidates_with_conn(&conn, run_id)
+}
+
 /// Reconciles Vizor's durable migration state with librustzcash's generic,
 /// owner-scoped output locks.
 ///
@@ -979,6 +1009,15 @@ pub(crate) fn reconcile_wallet_locks_after_sync(
     drop(conn);
 
     for run in active_runs {
+        // The persisted replacement attempt is authoritative even if a stale
+        // build or an interrupted operation left the source phase projected
+        // as something other than `immediate_pending`. Reorg/confirmation
+        // reconciliation below may rewrite the source phase and make its old
+        // transactions runnable again, so freeze the entire source state until
+        // the replacement is either finalized or explicitly rejected.
+        if immediate_conversion_freezes_source_reconciliation(db_path, &run.run_id)? {
+            continue;
+        }
         reconcile_denomination_stage_chain_state(db_path, &run.run_id)?;
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
         ensure_schema(&conn)?;
@@ -1038,6 +1077,7 @@ pub(crate) fn reconcile_wallet_locks_after_sync(
         // or visible during an earlier sync, so process-lifetime caching would
         // leave them unlocked when a later scan finally discovers them.
         reconcile_wallet_locks_for_run_with_outcome(db_path, network, &run_id)?;
+        cleanup_abandoned_run_after_lock_reconciliation(db_path, &run_id)?;
     }
     Ok(())
 }
@@ -1415,7 +1455,7 @@ pub(crate) fn prepared_anchor_retention_candidates(
              FROM {RUNS_TABLE} r
              INNER JOIN {PREPARED_NOTES_TABLE} p ON p.run_id = r.run_id
              WHERE r.network = ?1
-               AND r.phase IN (?2, ?3, ?4, ?5, ?6, ?7)
+               AND r.phase IN (?2, ?3, ?4, ?5, ?6, ?7, ?8)
                AND p.note_version = 2
              ORDER BY r.account_uuid, p.txid_hex, p.output_index"
         ))
@@ -1434,6 +1474,7 @@ pub(crate) fn prepared_anchor_retention_candidates(
                 PHASE_BROADCASTING,
                 PHASE_FAILED_RECOVERABLE,
                 PHASE_PAUSED,
+                PHASE_IMMEDIATE_PENDING,
             ],
             |row| {
                 Ok((
@@ -1471,6 +1512,7 @@ pub(crate) fn prepared_anchor_retention_candidates(
                 | PHASE_BROADCASTING
                 | PHASE_FAILED_RECOVERABLE
                 | PHASE_PAUSED
+                | PHASE_IMMEDIATE_PENDING
         ) {
             let remaining = match remaining_by_run.entry(run_id.clone()) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -2903,6 +2945,10 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
                            '{PHASE_COMPLETE}',
                            '{PHASE_FAILED_TERMINAL}',
                            '{PHASE_ABANDONED}'
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE}
+                           WHERE run_id = ?3
                        )"
                 ),
                 params![PHASE_WAITING_DENOM_CONFIRMATIONS, now, run_id],
@@ -3322,6 +3368,259 @@ pub(crate) fn clear_denomination_broadcast_attempted(
     )
     .map_err(|e| format!("Clear rejected denomination broadcast attempt: {e}"))?;
     Ok(())
+}
+
+pub(crate) fn immediate_conversion_attempt(
+    db_path: &str,
+    run_id: &str,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Option<ImmediateConversionAttempt>, String> {
+    let salt =
+        secret_payload::decode_base64(salt_base64.as_bytes(), "Immediate conversion attempt salt")?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let stored = conn
+        .query_row(
+            &format!(
+                "SELECT txid_hex, encrypted_raw_tx, expiry_height, fee_zatoshi,
+                    migrated_zatoshi, input_note_count, previous_phase
+             FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE}
+             WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, u64>(3)?,
+                    row.get::<_, u64>(4)?,
+                    row.get::<_, u32>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read Immediate conversion attempt: {e}"))?;
+    stored
+        .map(
+            |(
+                txid_hex,
+                encrypted_raw_tx,
+                expiry_height,
+                fee_zatoshi,
+                migrated_zatoshi,
+                input_note_count,
+                previous_phase,
+            )| {
+                let raw_tx = secret_payload::decrypt_payload(
+                    encrypted_raw_tx.as_bytes(),
+                    password,
+                    salt.as_slice(),
+                )?;
+                Ok(ImmediateConversionAttempt {
+                    txid_hex,
+                    raw_tx: raw_tx.to_vec(),
+                    expiry_height,
+                    fee_zatoshi,
+                    migrated_zatoshi,
+                    input_note_count,
+                    previous_phase,
+                })
+            },
+        )
+        .transpose()
+}
+
+pub(crate) fn immediate_conversion_attempt_plan(
+    db_path: &str,
+    run_id: &str,
+) -> Result<Option<ImmediateConversionAttemptPlan>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.query_row(
+        &format!(
+            "SELECT fee_zatoshi, migrated_zatoshi, input_note_count
+             FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE}
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+        |row| {
+            Ok(ImmediateConversionAttemptPlan {
+                fee_zatoshi: row.get(0)?,
+                migrated_zatoshi: row.get(1)?,
+                input_note_count: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| format!("Read Immediate conversion attempt plan: {e}"))
+}
+
+pub(crate) fn has_immediate_conversion_attempt(
+    db_path: &str,
+    run_id: &str,
+) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    immediate_conversion_attempt_exists_with_conn(&conn, run_id)
+}
+
+fn immediate_conversion_freezes_source_reconciliation(
+    db_path: &str,
+    run_id: &str,
+) -> Result<bool, String> {
+    has_immediate_conversion_attempt(db_path, run_id)
+}
+
+pub(crate) fn ensure_no_immediate_conversion_attempt(
+    db_path: &str,
+    run_id: &str,
+    operation: &str,
+) -> Result<(), String> {
+    if has_immediate_conversion_attempt(db_path, run_id)? {
+        return Err(format!(
+            "Immediate migration submission is awaiting reconciliation; {operation}"
+        ));
+    }
+    Ok(())
+}
+
+fn immediate_conversion_attempt_exists_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<bool, String> {
+    conn.query_row(
+        &format!(
+            "SELECT EXISTS(
+                SELECT 1 FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE} WHERE run_id = ?1
+             )"
+        ),
+        params![run_id],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Check Immediate conversion attempt: {e}"))
+}
+
+pub(crate) fn record_immediate_conversion_attempt(
+    db_path: &str,
+    run_id: &str,
+    txid_hex: &str,
+    raw_tx: &[u8],
+    expiry_height: u32,
+    fee_zatoshi: u64,
+    migrated_zatoshi: u64,
+    input_note_count: u32,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    let salt =
+        secret_payload::decode_base64(salt_base64.as_bytes(), "Immediate conversion attempt salt")?;
+    let encrypted_raw_tx = secret_payload::encrypt_payload(
+        Zeroizing::new(raw_tx.to_vec()),
+        password,
+        salt.as_slice(),
+    )?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin Immediate conversion attempt: {e}"))?;
+    let previous_phase = tx
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration phase before Immediate conversion: {e}"))?;
+    if migration_phase_releases_wallet_locks(&previous_phase) {
+        return Err("Migration run became terminal before Immediate conversion".to_string());
+    }
+    tx.execute(
+        &format!(
+            "INSERT INTO {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE} (
+                run_id, txid_hex, encrypted_raw_tx, expiry_height, fee_zatoshi,
+                migrated_zatoshi, input_note_count, previous_phase, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(run_id) DO UPDATE SET
+                txid_hex = excluded.txid_hex,
+                encrypted_raw_tx = excluded.encrypted_raw_tx,
+                expiry_height = excluded.expiry_height,
+                fee_zatoshi = excluded.fee_zatoshi,
+                migrated_zatoshi = excluded.migrated_zatoshi,
+                input_note_count = excluded.input_note_count,
+                previous_phase = excluded.previous_phase,
+                created_at_ms = excluded.created_at_ms"
+        ),
+        params![
+            run_id,
+            txid_hex,
+            encrypted_raw_tx,
+            expiry_height,
+            fee_zatoshi,
+            migrated_zatoshi,
+            input_note_count,
+            previous_phase,
+            now_ms()?
+        ],
+    )
+    .map_err(|e| format!("Persist Immediate conversion attempt: {e}"))?;
+    tx.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET phase = ?1, updated_at_ms = ?2,
+                 last_error = 'Immediate migration transaction is awaiting reconciliation'
+             WHERE run_id = ?3"
+        ),
+        params![PHASE_IMMEDIATE_PENDING, now_ms()?, run_id],
+    )
+    .map_err(|e| format!("Pause private migration for Immediate conversion: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit Immediate conversion attempt: {e}"))
+}
+
+pub(crate) fn clear_immediate_conversion_attempt(
+    db_path: &str,
+    run_id: &str,
+    restore_previous_phase: bool,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin Immediate conversion attempt cleanup: {e}"))?;
+    let previous_phase = tx
+        .query_row(
+            &format!(
+                "SELECT previous_phase FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read Immediate conversion recovery phase: {e}"))?;
+    tx.execute(
+        &format!("DELETE FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE} WHERE run_id = ?1"),
+        params![run_id],
+    )
+    .map_err(|e| format!("Delete Immediate conversion attempt: {e}"))?;
+    if restore_previous_phase {
+        if let Some(previous_phase) = previous_phase {
+            tx.execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                     WHERE run_id = ?3 AND phase = ?4"
+                ),
+                params![previous_phase, now_ms()?, run_id, PHASE_IMMEDIATE_PENDING],
+            )
+            .map_err(|e| format!("Restore private migration after conversion failure: {e}"))?;
+        }
+    }
+    tx.commit()
+        .map_err(|e| format!("Commit Immediate conversion attempt cleanup: {e}"))
 }
 
 pub(crate) fn due_pending_txs(
@@ -3902,6 +4201,95 @@ pub(crate) fn abandon_run(
     network: WalletNetwork,
     expected_run_id: &str,
 ) -> Result<(), String> {
+    transition_run_to_abandoned(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+        false,
+        "Migration stopped by the user.",
+    )?;
+    // Keep stage inputs until generic wallet locks have been released: those
+    // rows can be the only durable outpoint list for later split rounds.
+    reconcile_wallet_locks_for_run(db_path, network, expected_run_id)?;
+    discard_unsubmitted_preparation_stages(db_path, expected_run_id)
+}
+
+pub(crate) fn finalize_immediate_conversion_run(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<(), String> {
+    conclude_immediate_conversion_run(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+        "Remaining Orchard notes were submitted immediately.",
+    )
+}
+
+/// Retires a source private run after its persisted Immediate replacement
+/// definitively expires or is rejected.
+///
+/// The native source outbox credential is deleted as soon as the replacement
+/// becomes durable, so restoring the old phase would create a run whose signed
+/// transactions can no longer be opened. Retiring it releases the source locks
+/// and lets the user review a fresh plan from current wallet state.
+pub(crate) fn retire_failed_immediate_conversion_run(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<(), String> {
+    conclude_immediate_conversion_run(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+        "Immediate migration transaction expired or was rejected; review a new plan.",
+    )
+}
+
+fn conclude_immediate_conversion_run(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+    terminal_message: &str,
+) -> Result<(), String> {
+    transition_run_to_abandoned(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+        true,
+        terminal_message,
+    )?;
+
+    // The durable source-run transition and Immediate-attempt deletion above
+    // are the authoritative completion boundary. Wallet locks live behind a
+    // separate API and therefore cannot share that SQLite transaction. Keep
+    // cleanup idempotent and let post-sync reconciliation retry it.
+    if let Err(error) = reconcile_wallet_locks_for_run(db_path, network, expected_run_id)
+        .and_then(|_| discard_unsubmitted_preparation_stages(db_path, expected_run_id))
+    {
+        log::warn!(
+            "Immediate migration finalized, but source-run cleanup will retry after sync: {error}"
+        );
+    }
+    Ok(())
+}
+
+fn transition_run_to_abandoned(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+    clear_immediate_attempt: bool,
+    terminal_message: &str,
+) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let run = conn
@@ -3926,10 +4314,23 @@ pub(crate) fn abandon_run(
     if run.0 != account_uuid || run.1 != network_name(network) {
         return Err("Migration run does not belong to this wallet account".to_string());
     }
+    if !clear_immediate_attempt
+        && immediate_conversion_attempt_exists_with_conn(&conn, expected_run_id)?
+    {
+        return Err(
+            "Immediate migration submission must be reconciled before stopping the source run"
+                .to_string(),
+        );
+    }
     if run.2 == PHASE_ABANDONED {
-        drop(conn);
-        reconcile_wallet_locks_for_run(db_path, network, expected_run_id)?;
-        return discard_unsubmitted_preparation_stages(db_path, expected_run_id);
+        if clear_immediate_attempt {
+            conn.execute(
+                &format!("DELETE FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE} WHERE run_id = ?1"),
+                params![expected_run_id],
+            )
+            .map_err(|e| format!("Delete finalized Immediate conversion attempt: {e}"))?;
+        }
+        return Ok(());
     }
     if matches!(run.2.as_str(), PHASE_COMPLETE | PHASE_FAILED_TERMINAL) {
         return Err(format!("Migration run is already terminal ({})", run.2));
@@ -3949,7 +4350,7 @@ pub(crate) fn abandon_run(
             params![
                 PHASE_ABANDONED,
                 now,
-                "Migration stopped by the user.",
+                terminal_message,
                 expected_run_id,
                 run.2
             ],
@@ -3984,14 +4385,37 @@ pub(crate) fn abandon_run(
         params![expected_run_id],
     )
     .map_err(|e| format!("Release stopped migration note locks: {e}"))?;
+    if clear_immediate_attempt {
+        tx.execute(
+            &format!("DELETE FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE} WHERE run_id = ?1"),
+            params![expected_run_id],
+        )
+        .map_err(|e| format!("Delete finalized Immediate conversion attempt: {e}"))?;
+    }
     tx.commit()
         .map_err(|e| format!("Commit migration stop transition: {e}"))?;
-    drop(conn);
+    Ok(())
+}
 
-    // Keep stage inputs until generic wallet locks have been released: those
-    // rows can be the only durable outpoint list for later split rounds.
-    reconcile_wallet_locks_for_run(db_path, network, expected_run_id)?;
-    discard_unsubmitted_preparation_stages(db_path, expected_run_id)
+fn cleanup_abandoned_run_after_lock_reconciliation(
+    db_path: &str,
+    run_id: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration phase before terminal cleanup: {e}"))?;
+    if phase.as_deref() == Some(PHASE_ABANDONED) {
+        drop(conn);
+        discard_unsubmitted_preparation_stages(db_path, run_id)?;
+    }
+    Ok(())
 }
 
 fn discard_unsubmitted_preparation_stages(db_path: &str, run_id: &str) -> Result<(), String> {
@@ -5063,10 +5487,9 @@ fn status_for_run(
     } else {
         0
     };
-    // Stop is available for every active phase. The caller first drains native
-    // preparation/outbox work, while the Rust operation guard excludes
-    // concurrent foreground proof or broadcast work.
-    let can_abandon = true;
+    // Once an Immediate replacement exists, only its reconciliation path may
+    // decide whether the source inputs are safe to release.
+    let can_abandon = phase != PHASE_IMMEDIATE_PENDING;
     let mut parts = migration_parts_for_run(
         conn,
         &run.run_id,
@@ -5962,6 +6385,10 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                        '{PHASE_COMPLETE}',
                        '{PHASE_FAILED_TERMINAL}',
                        '{PHASE_ABANDONED}'
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE}
+                       WHERE run_id = ?3
                    )"
             ),
             params![PHASE_BROADCAST_SCHEDULED, now, run_id],
@@ -6049,6 +6476,10 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                        '{PHASE_COMPLETE}',
                        '{PHASE_FAILED_TERMINAL}',
                        '{PHASE_ABANDONED}'
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1 FROM {IMMEDIATE_CONVERSION_ATTEMPTS_TABLE}
+                       WHERE run_id = ?3
                    )"
                 ),
                 params![PHASE_COMPLETE, now, run_id],

@@ -274,6 +274,7 @@ bool _hasMobileMigrationStatusDesign(String phase) {
       phase == kIronwoodMigrationBroadcastingPhase ||
       phase == kIronwoodMigrationWaitingConfirmationsPhase ||
       phase == kIronwoodMigrationPausedPhase ||
+      phase == kIronwoodMigrationImmediatePendingPhase ||
       phase == kIronwoodMigrationFailedRecoverablePhase ||
       phase == kIronwoodMigrationCompletePhase;
 }

@@ -16,6 +16,7 @@ const kIronwoodMigrationWaitingConfirmationsPhase =
     'waiting_migration_confirmations';
 const kIronwoodMigrationCompletePhase = 'complete';
 const kIronwoodMigrationPausedPhase = 'paused';
+const kIronwoodMigrationImmediatePendingPhase = 'immediate_pending';
 const kIronwoodMigrationFailedRecoverablePhase = 'failed_recoverable';
 const kIronwoodMigrationFailedTerminalPhase = 'failed_terminal';
 const kIronwoodMigrationAbandonedPhase = 'abandoned';
@@ -37,6 +38,7 @@ const kIronwoodMigrationContinuePhases = {
   kIronwoodMigrationBroadcastingPhase,
   kIronwoodMigrationWaitingConfirmationsPhase,
   kIronwoodMigrationPausedPhase,
+  kIronwoodMigrationImmediatePendingPhase,
   kIronwoodMigrationFailedRecoverablePhase,
 };
 

@@ -1169,6 +1169,60 @@ pub fn migrate_orchard_to_ironwood_immediately(
     })
 }
 
+/// Finishes the remaining inputs of an active private migration as one
+/// user-attended Immediate transaction.
+#[allow(clippy::too_many_arguments)]
+pub fn finish_orchard_migration_immediately(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    expected_run_id: String,
+    native_attempted_txids: Vec<String>,
+    mnemonic_bytes: Vec<u8>,
+    password: String,
+    salt_base64: String,
+    approved_total_input_zatoshi: u64,
+    approved_fee_zatoshi: u64,
+    approved_migrated_zatoshi: u64,
+    approved_input_note_count: u32,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+        let password = Zeroizing::new(password.into_bytes());
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+        drop(mnemonic_bytes);
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::finish_orchard_migration_immediately(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            &expected_run_id,
+            &native_attempted_txids,
+            seed,
+            password,
+            &salt_base64,
+            wallet_sync::OrchardMigrationImmediatePlan {
+                total_input_zatoshi: approved_total_input_zatoshi,
+                fee_zatoshi: approved_fee_zatoshi,
+                migrated_zatoshi: approved_migrated_zatoshi,
+                input_note_count: approved_input_note_count,
+            },
+        ))?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
 pub fn prepare_orchard_migration_immediate_pczt(
     db_path: String,
     network: String,

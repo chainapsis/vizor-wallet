@@ -145,6 +145,11 @@ async fn advance_staged_denomination_run(
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<StagedDenominationAdvance, String> {
+    super::migration::ensure_no_immediate_conversion_attempt(
+        db_path,
+        &run.run_id,
+        "private migration cannot resume",
+    )?;
     let stages = reconcile_mined_denomination_stages(
         db_path,
         &run.run_id,

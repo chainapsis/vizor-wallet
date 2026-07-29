@@ -761,6 +761,40 @@ void main() {
   );
 
   test(
+    'Immediate pending never recovers the superseded native outbox',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('immediate_pending', scheduledHeight: 1_000),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final outboxRecoveries = <String>[];
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+        outboxRecoveries: outboxRecoveries,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_000),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow();
+
+      expect(outboxRecoveries, isEmpty);
+      expect(broadcasts, isEmpty);
+    },
+  );
+
+  test(
     'global outbox acceptance for another account retries the due account',
     () async {
       final statuses = {

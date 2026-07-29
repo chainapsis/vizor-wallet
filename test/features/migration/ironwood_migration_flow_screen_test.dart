@@ -787,6 +787,68 @@ void main() {
     );
   });
 
+  testWidgets(
+    'Immediate submission pending hides stop and keeps Finish available',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationImmediatePendingPhase,
+            activeRunId: 'run-immediate',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('Finishing migration'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey('ironwood_finish_migration_immediately_button'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('ironwood_stop_migration_button')),
+        findsNothing,
+      );
+      expect(find.text('Retry migration'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'private status hides Finish when the active run has no Immediate plan',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+            activeRunId: 'run-1',
+          ),
+          activeImmediatePlanAvailable: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('ironwood_finish_migration_immediately_button'),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('passive migration status uses the progress carousel', (
     tester,
   ) async {
@@ -3416,6 +3478,7 @@ void main() {
       kIronwoodMigrationBroadcastingPhase,
       kIronwoodMigrationWaitingConfirmationsPhase,
       kIronwoodMigrationPausedPhase,
+      kIronwoodMigrationImmediatePendingPhase,
       kIronwoodMigrationFailedRecoverablePhase,
     ];
 
@@ -4147,6 +4210,7 @@ Widget _privateStatusHarness({
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
   bool disableAnimations = false,
+  bool activeImmediatePlanAvailable = true,
 }) {
   return _migrationEntryHarness(
     ctaState: IronwoodHomeMigrationCtaState.resume(
@@ -4163,6 +4227,7 @@ Widget _privateStatusHarness({
     coordinatorStatus: coordinatorStatus,
     syncState: syncState,
     disableAnimations: disableAnimations,
+    activeImmediatePlanAvailable: activeImmediatePlanAvailable,
   );
 }
 
@@ -4299,6 +4364,7 @@ Widget _migrationEntryHarness({
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
   bool disableAnimations = false,
+  bool activeImmediatePlanAvailable = true,
 }) {
   final network = ctaState.network ?? 'test';
   final accountUuid = ctaState.accountUuid ?? 'account-1';
@@ -4367,6 +4433,10 @@ Widget _migrationEntryHarness({
           ironwoodBalance: BigInt.zero,
           ironwoodPendingBalance: BigInt.zero,
         ),
+      ),
+      ironwoodActiveMigrationImmediatePlanProvider.overrideWith(
+        (ref, request) async =>
+            activeImmediatePlanAvailable ? _immediatePlan() : null,
       ),
       walletDbPathGetterProvider.overrideWithValue(
         () async => '/tmp/wallet.db',

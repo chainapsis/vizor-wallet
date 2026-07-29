@@ -390,26 +390,115 @@ class _MobileMigrationStopButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final accountState = ref.watch(accountProvider).value;
+    final accountUuid = accountState?.activeAccountUuid;
+    final isHardware = accountState?.activeAccount?.isHardware ?? false;
     final runId = status?.activeRunId;
+    final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     final isStopping =
         accountUuid != null &&
-        ref
-            .watch(ironwoodMigrationCoordinatorProvider)
-            .stoppingAccounts
-            .contains(accountUuid);
-    if (accountUuid == null || runId == null || status?.canAbandon != true) {
+        coordinator.stoppingAccounts.contains(accountUuid);
+    final isFinishing =
+        accountUuid != null &&
+        coordinator.finishingImmediatelyAccounts.contains(accountUuid);
+    final canStop = status?.canAbandon == true;
+    final observedHeight = ref.watch(syncProvider).value?.scannedHeight ?? 0;
+    final immediatePlan = !isHardware && accountUuid != null && status != null
+        ? ref
+              .watch(
+                ironwoodActiveMigrationImmediatePlanProvider(
+                  ironwoodActiveMigrationImmediatePlanRequest(
+                    network: ref.watch(ironwoodMigrationInputsProvider).network,
+                    accountUuid: accountUuid,
+                    status: status!,
+                    observedHeight: observedHeight,
+                  ),
+                ),
+              )
+              .value
+        : null;
+    final canFinishImmediately =
+        !isHardware &&
+        (status?.phase == kIronwoodMigrationImmediatePendingPhase ||
+            immediatePlan != null);
+    if (accountUuid == null || runId == null || (isHardware && !canStop)) {
       return const SizedBox.shrink();
     }
-    return AppButton(
-      key: const ValueKey('mobile_ironwood_stop_migration_button'),
-      expand: true,
-      variant: AppButtonVariant.ghost,
-      onPressed: isStopping
-          ? null
-          : () => unawaited(_confirmAndStop(context, ref, accountUuid, runId)),
-      child: Text(isStopping ? 'Stopping...' : 'Stop migration'),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (canFinishImmediately) ...[
+          AppButton(
+            key: const ValueKey(
+              'mobile_ironwood_finish_migration_immediately_button',
+            ),
+            expand: true,
+            onPressed: isStopping || isFinishing
+                ? null
+                : () => unawaited(
+                    _confirmAndFinish(context, ref, accountUuid, runId),
+                  ),
+            child: Text(isFinishing ? 'Finishing...' : 'Finish immediately'),
+          ),
+          if (canStop) const SizedBox(height: AppSpacing.xs),
+        ],
+        if (canStop)
+          AppButton(
+            key: const ValueKey('mobile_ironwood_stop_migration_button'),
+            expand: true,
+            variant: AppButtonVariant.ghost,
+            onPressed: isStopping || isFinishing
+                ? null
+                : () => unawaited(
+                    _confirmAndStop(context, ref, accountUuid, runId),
+                  ),
+            child: Text(isStopping ? 'Stopping...' : 'Stop migration'),
+          ),
+      ],
     );
+  }
+
+  Future<void> _confirmAndFinish(
+    BuildContext context,
+    WidgetRef ref,
+    String accountUuid,
+    String runId,
+  ) async {
+    try {
+      final network = ref.read(ironwoodMigrationInputsProvider).network;
+      final plan = await ref
+          .read(ironwoodMigrationServiceProvider)
+          .immediatePlan(network: network, accountUuid: accountUuid);
+      if (plan == null) {
+        throw StateError(
+          'No remaining Orchard balance is available to migrate.',
+        );
+      }
+      if (!context.mounted) return;
+      final appTheme = AppTheme.of(context);
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AppTheme(
+          data: appTheme,
+          child: _MobileMigrationFinishImmediatelyDialog(plan: plan),
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .finishImmediately(
+            accountUuid: accountUuid,
+            runId: runId,
+            approvedPlan: plan,
+          );
+      if (context.mounted) context.go('/home');
+    } catch (error) {
+      if (context.mounted) {
+        ref
+            .read(ironwoodMigrationCoordinatorProvider.notifier)
+            .reportAccountError(accountUuid: accountUuid, error: error);
+      }
+    }
   }
 
   Future<void> _confirmAndStop(
@@ -433,6 +522,67 @@ class _MobileMigrationStopButton extends ConsumerWidget {
     } catch (_) {
       // The coordinator retains the account-scoped error for presentation.
     }
+  }
+}
+
+class _MobileMigrationFinishImmediatelyDialog extends StatelessWidget {
+  const _MobileMigrationFinishImmediatelyDialog({required this.plan});
+
+  final rust_sync.OrchardMigrationImmediatePlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.background.ground,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Finish migration immediately?',
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'The remaining '
+                '${ZecAmount.fromZatoshi(plan.migratedZatoshi).compactBalance.amountText} '
+                'ZEC will move in one transaction with an estimated fee of '
+                '${ZecAmount.fromZatoshi(plan.feeZatoshi).compactBalance.amountText} '
+                'ZEC. This is '
+                'faster, but reveals the remaining amount and timing together.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                key: const ValueKey(
+                  'mobile_ironwood_confirm_finish_migration_immediately_button',
+                ),
+                expand: true,
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Finish immediately'),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              AppButton(
+                expand: true,
+                variant: AppButtonVariant.ghost,
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Keep private migration'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

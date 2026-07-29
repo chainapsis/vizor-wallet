@@ -105,7 +105,7 @@ use crate::wallet::sync_engine;
 
 use super::migration::MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI;
 use super::migration_wallet_ops::{
-    migration_locked_input_policy, select_spendable_orchard_v2_notes,
+    migration_locked_input_policy, select_spendable_orchard_v2_notes, OrchardReceivedNote,
 };
 use super::{
     consume_stored_proposal, finish_stored_proposal, open_readonly_conn, open_wallet_db,
@@ -228,7 +228,8 @@ struct BuiltImmediateMigration {
     orchard_spend_action_indices: Vec<usize>,
     fee_zatoshi: u64,
     migrated_zatoshi: u64,
-    input_lock: ImmediateMigrationInputLock,
+    expiry_height: u32,
+    input_lock: Option<ImmediateMigrationInputLock>,
 }
 
 #[derive(Clone, Copy)]
@@ -1581,17 +1582,79 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     ))
 }
 
+fn select_immediate_migration_inputs(
+    db_path: &str,
+    db: &WalletDatabase,
+    account_id: AccountUuid,
+    anchor_height: BlockHeight,
+    target_height: TargetHeight,
+    source_run_id: Option<&str>,
+) -> Result<Vec<OrchardReceivedNote>, String> {
+    let source_outpoints = source_run_id
+        .map(|run_id| {
+            super::migration::immediate_conversion_input_outpoints(db_path, run_id).map(
+                |outpoints| {
+                    outpoints
+                        .into_iter()
+                        .map(|(txid, output_index)| (txid.to_ascii_lowercase(), output_index))
+                        .collect::<HashSet<_>>()
+                },
+            )
+        })
+        .transpose()?;
+    let migration_lock_policy = source_run_id.map(migration_locked_input_policy);
+    let input_policy = migration_lock_policy
+        .as_ref()
+        .unwrap_or(&LockedInputPolicy::Exclude);
+
+    select_spendable_orchard_v2_notes(db, account_id, anchor_height)?
+        .into_iter()
+        .filter(|note| {
+            immediate_source_allows_outpoint(
+                source_outpoints.as_ref(),
+                &note.txid().to_string(),
+                note.output_index() as u32,
+            )
+        })
+        .map(|note| {
+            db.get_spendable_note(
+                note.txid(),
+                ShieldedPool::Orchard,
+                note.output_index() as u32,
+                target_height,
+                LockFilter::Policy(input_policy),
+            )
+            .map_err(|e| format!("Revalidate Immediate migration input: {e}"))
+            .map(|spendable| spendable.map(|_| note))
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map(|notes| notes.into_iter().flatten().collect())
+}
+
+fn immediate_source_allows_outpoint(
+    source_outpoints: Option<&HashSet<(String, u32)>>,
+    txid: &str,
+    output_index: u32,
+) -> bool {
+    match source_outpoints {
+        Some(outpoints) => outpoints.contains(&(txid.to_ascii_lowercase(), output_index)),
+        None => true,
+    }
+}
+
 fn build_orchard_migration_immediate_pczt(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     approved_plan: OrchardMigrationImmediatePlan,
+    source_run_id: Option<&str>,
 ) -> Result<BuiltImmediateMigration, String> {
     let (
         base_pczt,
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
+        expiry_height,
         input_lock_owner,
         locked_outputs,
     ) = with_wallet_db_write_lock("send.immediate_migration.build", || {
@@ -1615,24 +1678,14 @@ fn build_orchard_migration_immediate_pczt(
             .get_target_and_anchor_heights(ConfirmationsPolicy::default().trusted())
             .map_err(|e| format!("Failed to read anchor height: {e}"))?
             .ok_or("Wallet must sync before migrating")?;
-        let orchard_notes =
-            select_spendable_orchard_v2_notes(&db, account_id, BlockHeight::from(anchor_height))?
-                .into_iter()
-                .map(|note| {
-                    db.get_spendable_note(
-                        note.txid(),
-                        ShieldedPool::Orchard,
-                        note.output_index() as u32,
-                        target_height,
-                        LockFilter::Policy(&LockedInputPolicy::Exclude),
-                    )
-                    .map_err(|e| format!("Revalidate Immediate migration input: {e}"))
-                    .map(|spendable| spendable.map(|_| note))
-                })
-                .collect::<Result<Vec<_>, String>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
+        let orchard_notes = select_immediate_migration_inputs(
+            db_path,
+            &db,
+            account_id,
+            BlockHeight::from(anchor_height),
+            target_height,
+            source_run_id,
+        )?;
         let valued_notes = orchard_notes
             .into_iter()
             .map(|note| {
@@ -1726,17 +1779,17 @@ fn build_orchard_migration_immediate_pczt(
             0,
         )?;
         let input_lock_owner = LockOwner::random(&mut OsRng);
-        db.lock_outputs(
-            &locked_outputs,
-            input_lock_owner,
-            immediate_migration_lock_expiry(BlockHeight::from(target_height))?,
-        )
-        .map_err(|e| format!("Lock Immediate migration inputs: {e:?}"))?;
+        let expiry_height = immediate_migration_lock_expiry(BlockHeight::from(target_height))?;
+        if source_run_id.is_none() {
+            db.lock_outputs(&locked_outputs, input_lock_owner, expiry_height)
+                .map_err(|e| format!("Lock Immediate migration inputs: {e:?}"))?;
+        }
         Ok::<_, String>((
             built.bytes,
             built.orchard_spend_action_indices,
             plan.fee_zatoshi,
             plan.migrated_zatoshi,
+            u32::from(expiry_height),
             input_lock_owner,
             locked_outputs,
         ))
@@ -1746,12 +1799,10 @@ fn build_orchard_migration_immediate_pczt(
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
-        input_lock: ImmediateMigrationInputLock::new(
-            db_path,
-            network,
-            input_lock_owner,
-            locked_outputs,
-        ),
+        expiry_height,
+        input_lock: source_run_id.is_none().then(|| {
+            ImmediateMigrationInputLock::new(db_path, network, input_lock_owner, locked_outputs)
+        }),
     })
 }
 
@@ -1775,8 +1826,16 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
         orchard_spend_action_indices,
         fee_zatoshi,
         migrated_zatoshi,
-        mut input_lock,
-    } = build_orchard_migration_immediate_pczt(db_path, network, account_uuid, approved_plan)?;
+        input_lock,
+        ..
+    } = build_orchard_migration_immediate_pczt(
+        db_path,
+        network,
+        account_uuid,
+        approved_plan,
+        None,
+    )?;
+    let mut input_lock = input_lock.ok_or("Immediate migration input lock is missing")?;
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
     let signed =
         sign_orchard_migration_pczt_with_usk(&base_pczt, &orchard_spend_action_indices, &usk)?;
@@ -1857,6 +1916,320 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
         fee_zatoshi,
         migrated_zatoshi,
     })
+}
+
+fn immediate_conversion_result(
+    attempt: &super::migration::ImmediateConversionAttempt,
+    status: &str,
+    message: Option<String>,
+    broadcasted_count: u32,
+) -> IronwoodMigrationResult {
+    IronwoodMigrationResult {
+        txids: attempt.txid_hex.clone(),
+        status: status.to_string(),
+        broadcasted_count,
+        total_count: 1,
+        message,
+        fee_zatoshi: attempt.fee_zatoshi,
+        migrated_zatoshi: attempt.migrated_zatoshi,
+    }
+}
+
+fn finalize_immediate_conversion(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    attempt: &super::migration::ImmediateConversionAttempt,
+) -> Result<IronwoodMigrationResult, String> {
+    super::migration::finalize_immediate_conversion_run(db_path, account_uuid, network, run_id)?;
+    Ok(immediate_conversion_result(
+        attempt,
+        super::migration::PHASE_BROADCASTING,
+        Some("Remaining Orchard notes were submitted immediately.".to_string()),
+        1,
+    ))
+}
+
+async fn reconcile_immediate_conversion_attempt(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    run_id: &str,
+    attempt: super::migration::ImmediateConversionAttempt,
+) -> Result<IronwoodMigrationResult, String> {
+    let mut client = match sync_engine::open_lwd_channel(lightwalletd_url).await {
+        Ok(client) => client,
+        Err(error) => {
+            return Ok(immediate_conversion_result(
+                &attempt,
+                super::migration::PHASE_IMMEDIATE_PENDING,
+                Some(format!(
+                    "Immediate migration submission is awaiting network reconciliation: {error}"
+                )),
+                0,
+            ));
+        }
+    };
+    let chain_tip = match sync_engine::get_latest_block(&mut client).await {
+        Ok(tip) => {
+            u32::try_from(tip.height).map_err(|_| "Immediate conversion chain tip exceeds u32")?
+        }
+        Err(error) => {
+            return Ok(immediate_conversion_result(
+                &attempt,
+                super::migration::PHASE_IMMEDIATE_PENDING,
+                Some(format!(
+                    "Immediate migration submission is awaiting chain-tip reconciliation: {error}"
+                )),
+                0,
+            ));
+        }
+    };
+    let txid = parse_txid_hex(&attempt.txid_hex)?;
+    match sync_engine::get_transaction(&mut client, txid.as_ref().to_vec()).await {
+        Ok(raw_tx) => match decrypt_and_store_migration_tx(db_path, network, &raw_tx.data) {
+            Ok(()) => {
+                finalize_immediate_conversion(db_path, network, account_uuid, run_id, &attempt)
+            }
+            Err(error) => Ok(immediate_conversion_result(
+                &attempt,
+                super::migration::PHASE_IMMEDIATE_PENDING,
+                Some(format!(
+                    "Immediate migration reached the network but local tracking is still pending: {error}"
+                )),
+                0,
+            )),
+        },
+        Err(status) if status.code() == Code::NotFound && chain_tip >= attempt.expiry_height => {
+            super::migration::retire_failed_immediate_conversion_run(
+                db_path,
+                account_uuid,
+                network,
+                run_id,
+            )?;
+            Err(
+                "The previous Immediate migration transaction expired. Review the updated plan and try again."
+                    .to_string(),
+            )
+        }
+        Err(status) if status.code() == Code::NotFound => {
+            let response =
+                match sync_engine::send_transaction_with_status(&mut client, &attempt.raw_tx).await {
+                    Ok(response) => response,
+                    Err(status) => {
+                        return match decrypt_and_store_migration_tx(
+                            db_path,
+                            network,
+                            &attempt.raw_tx,
+                        ) {
+                            Ok(()) => finalize_immediate_conversion(
+                                db_path,
+                                network,
+                                account_uuid,
+                                run_id,
+                                &attempt,
+                            ),
+                            Err(error) => Ok(immediate_conversion_result(
+                                &attempt,
+                                super::migration::PHASE_IMMEDIATE_PENDING,
+                                Some(format!(
+                                    "Immediate migration resubmission was inconclusive ({status}) and local tracking is pending: {error}"
+                                )),
+                                0,
+                            )),
+                        };
+                    }
+                };
+            if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
+                super::migration::retire_failed_immediate_conversion_run(
+                    db_path,
+                    account_uuid,
+                    network,
+                    run_id,
+                )?;
+                return Err(error);
+            }
+            match decrypt_and_store_migration_tx(db_path, network, &attempt.raw_tx) {
+                Ok(()) => {
+                    finalize_immediate_conversion(db_path, network, account_uuid, run_id, &attempt)
+                }
+                Err(error) => Ok(immediate_conversion_result(
+                    &attempt,
+                    super::migration::PHASE_IMMEDIATE_PENDING,
+                    Some(format!(
+                        "The Immediate migration was resubmitted, but local tracking is pending: {error}"
+                    )),
+                    1,
+                )),
+            }
+        }
+        Err(status) => Ok(immediate_conversion_result(
+            &attempt,
+            super::migration::PHASE_IMMEDIATE_PENDING,
+            Some(format!(
+                "Immediate migration submission could not be reconciled yet: {status}"
+            )),
+            0,
+        )),
+    }
+}
+
+/// Converts the remaining inputs of an active private migration into one
+/// user-attended Immediate transaction. The source run keeps its wallet locks
+/// until the replacement transaction is stored locally.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn finish_orchard_migration_immediately(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+    native_attempted_txids: &[String],
+    seed: SecretVec<u8>,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+    approved_plan: OrchardMigrationImmediatePlan,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    if let Some(attempt) = super::migration::immediate_conversion_attempt(
+        db_path,
+        expected_run_id,
+        pending_password.as_slice(),
+        pending_salt_base64,
+    )? {
+        return reconcile_immediate_conversion_attempt(
+            db_path,
+            lightwalletd_url,
+            network,
+            account_uuid,
+            expected_run_id,
+            attempt,
+        )
+        .await;
+    }
+
+    let active = super::migration::active_migration_run(db_path, account_uuid, network)?
+        .ok_or("No active private migration is available to finish immediately")?;
+    if active.run_id != expected_run_id {
+        return Err(format!(
+            "Migration run changed before Immediate completion: expected {expected_run_id}, got {}",
+            active.run_id
+        ));
+    }
+    reconcile_scheduled_migration_txs_before_abandon(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        expected_run_id,
+        native_attempted_txids,
+    )
+    .await?;
+
+    let BuiltImmediateMigration {
+        base_pczt,
+        orchard_spend_action_indices,
+        fee_zatoshi,
+        migrated_zatoshi,
+        expiry_height,
+        input_lock,
+    } = build_orchard_migration_immediate_pczt(
+        db_path,
+        network,
+        account_uuid,
+        approved_plan,
+        Some(expected_run_id),
+    )?;
+    debug_assert!(input_lock.is_none());
+    let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
+    let signed =
+        sign_orchard_migration_pczt_with_usk(&base_pczt, &orchard_spend_action_indices, &usk)?;
+    let sigs = super::pczt::extract_required_compact_sigs_from_signed_pczt(&base_pczt, &signed)?;
+    super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
+    let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
+    let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
+    let attempt = super::migration::ImmediateConversionAttempt {
+        txid_hex: extracted.txid.to_string(),
+        raw_tx: extracted.raw_tx.clone(),
+        expiry_height,
+        fee_zatoshi,
+        migrated_zatoshi,
+        input_note_count: approved_plan.input_note_count,
+        previous_phase: active.phase,
+    };
+    super::migration::record_immediate_conversion_attempt(
+        db_path,
+        expected_run_id,
+        &attempt.txid_hex,
+        &attempt.raw_tx,
+        expiry_height,
+        fee_zatoshi,
+        migrated_zatoshi,
+        approved_plan.input_note_count,
+        pending_password.as_slice(),
+        pending_salt_base64,
+    )?;
+
+    let mut client = match sync_engine::open_lwd_channel(lightwalletd_url).await {
+        Ok(client) => client,
+        Err(error) => {
+            return Ok(immediate_conversion_result(
+                &attempt,
+                super::migration::PHASE_IMMEDIATE_PENDING,
+                Some(format!(
+                    "Immediate migration is saved and will be submitted when the network is available: {error}"
+                )),
+                0,
+            ));
+        }
+    };
+    let response = match sync_engine::send_transaction_with_status(&mut client, &extracted.raw_tx)
+        .await
+    {
+        Ok(response) => response,
+        Err(status) => {
+            return match decrypt_and_store_migration_tx(
+                    db_path,
+                    network,
+                    &extracted.raw_tx,
+                ) {
+                    Ok(()) => finalize_immediate_conversion(
+                        db_path,
+                        network,
+                        account_uuid,
+                        expected_run_id,
+                        &attempt,
+                    ),
+                    Err(error) => Ok(immediate_conversion_result(
+                        &attempt,
+                        super::migration::PHASE_IMMEDIATE_PENDING,
+                        Some(format!(
+                            "The Immediate migration response was unavailable ({status}) and local tracking is pending: {error}"
+                        )),
+                        0,
+                    )),
+                };
+        }
+    };
+    if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
+        super::migration::clear_immediate_conversion_attempt(db_path, expected_run_id, true)?;
+        return Err(error);
+    }
+    match decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx) {
+        Ok(()) => {
+            finalize_immediate_conversion(db_path, network, account_uuid, expected_run_id, &attempt)
+        }
+        Err(error) => Ok(immediate_conversion_result(
+            &attempt,
+            super::migration::PHASE_IMMEDIATE_PENDING,
+            Some(format!(
+                "The Immediate migration was accepted, but local tracking is pending: {error}"
+            )),
+            0,
+        )),
+    }
 }
 
 fn validate_unbroadcast_migration_recovery_candidates(
@@ -2055,6 +2428,11 @@ pub(crate) async fn abandon_orchard_migration(
     native_attempted_txids: &[String],
 ) -> Result<(), String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    super::migration::ensure_no_immediate_conversion_attempt(
+        db_path,
+        expected_run_id,
+        "the source migration cannot be stopped",
+    )?;
     reconcile_scheduled_migration_txs_before_abandon(
         db_path,
         lightwalletd_url,
@@ -2396,6 +2774,11 @@ async fn broadcast_due_orchard_migration_transactions_inner(
             },
         ));
     };
+    super::migration::ensure_no_immediate_conversion_attempt(
+        db_path,
+        &run.run_id,
+        "scheduled private transactions cannot be broadcast",
+    )?;
     if policy.is_cancelled() {
         return Ok(MigrationBroadcastAdvance::without_acceptance(
             cancelled_migration_result(&run),

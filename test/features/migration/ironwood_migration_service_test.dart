@@ -9,6 +9,7 @@ import 'package:flutter/services.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
+import 'package:zcash_wallet/src/features/migration/models/ironwood_migration_phases.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_background_credential_store.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_operation_registry.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
@@ -191,6 +192,378 @@ void main() {
 
     expect(events, ['quiesce', 'receipts', 'stop', 'revoke', 'resume']);
   });
+
+  test(
+    'finish immediately reconciles native attempts before converting the run',
+    () async {
+      final events = <String>[];
+      final mnemonic = <int>[1, 2, 3, 4];
+      final credentialStore = _backgroundCredentialStore();
+      await credentialStore.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      await credentialStore.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final plan = rust_sync.OrchardMigrationImmediatePlan(
+        totalInputZatoshi: BigInt.from(110000),
+        feeZatoshi: BigInt.from(10000),
+        migratedZatoshi: BigInt.from(100000),
+        inputNoteCount: 1,
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(activeRunId: 'run-1'),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: credentialStore,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'wallet-password',
+        getMnemonicBytesForAccount: (_) async => mnemonic,
+        isIOS: () => true,
+        isAndroid: () => false,
+        quiesceBackgroundMigration: () async => events.add('quiesce'),
+        resumeBackgroundMigration: () async => events.add('resume'),
+        listMigrationOutboxReceipts: () async {
+          events.add('receipts');
+          return const [];
+        },
+        listMigrationOutboxAttemptedTxids:
+            ({required network, required accountUuid, required runId}) async {
+              events.add('attempts');
+              return const ['attempted-txid'];
+            },
+        discardMigrationAccountOutbox:
+            ({required network, required accountUuid}) async =>
+                events.add('discard'),
+        finishImmediateMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+              required approvedTotalInputZatoshi,
+              required approvedFeeZatoshi,
+              required approvedMigratedZatoshi,
+              required approvedInputNoteCount,
+            }) async {
+              expect(expectedRunId, 'run-1');
+              expect(nativeAttemptedTxids, ['attempted-txid']);
+              expect(mnemonicBytes, [1, 2, 3, 4]);
+              expect(password, 'wallet-password');
+              expect(saltBase64, isNotEmpty);
+              expect(approvedTotalInputZatoshi, plan.totalInputZatoshi);
+              events.add('finish');
+              return _migrationResult();
+            },
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async =>
+                events.add('revoke'),
+      );
+
+      await service.finishSoftwarePrivateMigrationImmediately(
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+        approvedPlan: plan,
+      );
+
+      expect(events, [
+        'quiesce',
+        'receipts',
+        'attempts',
+        'discard',
+        'finish',
+        'revoke',
+        'resume',
+      ]);
+      expect(mnemonic, [0, 0, 0, 0]);
+    },
+  );
+
+  test(
+    'finish immediately keeps native work quiesced when failure status is unknown',
+    () async {
+      var statusCalls = 0;
+      var resumed = false;
+      final credentialStore = _backgroundCredentialStore();
+      await credentialStore.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      await credentialStore.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async {
+              statusCalls++;
+              if (statusCalls > 1) {
+                throw StateError('status unavailable');
+              }
+              return _migrationStatus(activeRunId: 'run-1');
+            },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: credentialStore,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'wallet-password',
+        getMnemonicBytesForAccount: (_) async => <int>[1, 2, 3, 4],
+        isIOS: () => true,
+        isAndroid: () => false,
+        quiesceBackgroundMigration: () async {},
+        resumeBackgroundMigration: () async => resumed = true,
+        listMigrationOutboxReceipts: () async => const [],
+        listMigrationOutboxAttemptedTxids:
+            ({required network, required accountUuid, required runId}) async =>
+                const [],
+        discardMigrationAccountOutbox:
+            ({required network, required accountUuid}) async {},
+        finishImmediateMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+              required approvedTotalInputZatoshi,
+              required approvedFeeZatoshi,
+              required approvedMigratedZatoshi,
+              required approvedInputNoteCount,
+            }) async => throw StateError('FFI response lost'),
+      );
+
+      await expectLater(
+        service.finishSoftwarePrivateMigrationImmediately(
+          accountUuid: 'account-1',
+          expectedRunId: 'run-1',
+          approvedPlan: rust_sync.OrchardMigrationImmediatePlan(
+            totalInputZatoshi: BigInt.from(110000),
+            feeZatoshi: BigInt.from(10000),
+            migratedZatoshi: BigInt.from(100000),
+            inputNoteCount: 1,
+          ),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'FFI response lost',
+          ),
+        ),
+      );
+      expect(resumed, isFalse);
+    },
+  );
+
+  test(
+    'pending Immediate retry reaches Rust without a deleted native credential',
+    () async {
+      final events = <String>[];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: kIronwoodMigrationImmediatePendingPhase,
+                  activeRunId: 'run-1',
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: _backgroundCredentialStore(),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'wallet-password',
+        getMnemonicBytesForAccount: (_) async => <int>[1, 2, 3, 4],
+        isIOS: () => true,
+        isAndroid: () => false,
+        quiesceBackgroundMigration: () async => events.add('quiesce'),
+        resumeBackgroundMigration: () async => events.add('resume'),
+        listMigrationOutboxReceipts: () async =>
+            throw StateError('pending retry read native receipts'),
+        discardMigrationAccountOutbox:
+            ({required network, required accountUuid}) async =>
+                throw StateError('pending retry discarded native outbox'),
+        finishImmediateMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+              required approvedTotalInputZatoshi,
+              required approvedFeeZatoshi,
+              required approvedMigratedZatoshi,
+              required approvedInputNoteCount,
+            }) async {
+              expect(nativeAttemptedTxids, isEmpty);
+              expect(password, 'wallet-password');
+              expect(saltBase64, isNotEmpty);
+              events.add('finish');
+              return _migrationResult();
+            },
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async =>
+                events.add('revoke'),
+      );
+
+      await service.finishSoftwarePrivateMigrationImmediately(
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+        approvedPlan: rust_sync.OrchardMigrationImmediatePlan(
+          totalInputZatoshi: BigInt.from(110000),
+          feeZatoshi: BigInt.from(10000),
+          migratedZatoshi: BigInt.from(100000),
+          inputNoteCount: 1,
+        ),
+      );
+
+      expect(events, ['quiesce', 'finish', 'revoke', 'resume']);
+    },
+  );
+
+  test(
+    'finish immediately restores the discarded outbox when Rust keeps the source run active',
+    () async {
+      final events = <String>[];
+      final credentialStore = _backgroundCredentialStore();
+      await credentialStore.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://lwd.example:443',
+      );
+      await credentialStore.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: credentialStore,
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'wallet-password',
+        getMnemonicBytesForAccount: (_) async => <int>[1, 2, 3, 4],
+        isIOS: () => true,
+        isAndroid: () => false,
+        quiesceBackgroundMigration: () async => events.add('quiesce'),
+        resumeBackgroundMigration: () async => events.add('resume'),
+        listMigrationOutboxReceipts: () async => const [],
+        listMigrationOutboxAttemptedTxids:
+            ({required network, required accountUuid, required runId}) async =>
+                const [],
+        discardMigrationAccountOutbox:
+            ({required network, required accountUuid}) async =>
+                events.add('discard'),
+        finishImmediateMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+              required approvedTotalInputZatoshi,
+              required approvedFeeZatoshi,
+              required approvedMigratedZatoshi,
+              required approvedInputNoteCount,
+            }) async {
+              events.add('finish');
+              throw StateError('build failed');
+            },
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(),
+        stageMigrationOutboxBatch: (_) async {
+          events.add('stage');
+          return const {'txid-1': 'digest-1'};
+        },
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async {
+              events.add('arm');
+              return true;
+            },
+      );
+
+      await expectLater(
+        service.finishSoftwarePrivateMigrationImmediately(
+          accountUuid: 'account-1',
+          expectedRunId: 'run-1',
+          approvedPlan: rust_sync.OrchardMigrationImmediatePlan(
+            totalInputZatoshi: BigInt.from(110000),
+            feeZatoshi: BigInt.from(10000),
+            migratedZatoshi: BigInt.from(100000),
+            inputNoteCount: 1,
+          ),
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(events, [
+        'quiesce',
+        'discard',
+        'finish',
+        'resume',
+        'stage',
+        'arm',
+      ]);
+    },
+  );
 
   test(
     'Android stop bypasses unavailable native migration lifecycle',
@@ -760,6 +1133,55 @@ void main() {
   );
 
   test(
+    'foreground recovery rejects an Immediate-pending source outbox',
+    () async {
+      var nativeRunCount = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: kIronwoodMigrationImmediatePendingPhase,
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'tx-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'tx-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        listMigrationOutboxReceipts: () async => const [],
+        runMigrationOutboxOnceNow: () async {
+          nativeRunCount++;
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.accepted,
+          );
+        },
+      );
+
+      await expectLater(
+        service.recoverDueMigrationOutbox(
+          network: 'test',
+          accountUuid: 'account-1',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('previous migration outbox cannot be recovered'),
+          ),
+        ),
+      );
+      expect(nativeRunCount, 0);
+    },
+  );
+
+  test(
     'foreground recovery rebuilds a missing outbox batch from persisted transactions',
     () async {
       final events = <String>[];
@@ -877,6 +1299,80 @@ void main() {
         'receipt',
         'ack',
       ]);
+    },
+  );
+
+  test(
+    'status rebuilds a missing proof-only outbox after an interrupted conversion',
+    () async {
+      final events = <String>[];
+      final store = await _boundBackgroundCredentialStore();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'ready_to_migrate',
+                  activeRunId: 'run-1',
+                  signedChildPcztCount: 1,
+                  nextProofWindowHeight: 576,
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        hasMigrationOutboxBatch:
+            ({
+              required batchId,
+              required network,
+              required accountUuid,
+              required runId,
+              required expectedTxids,
+              required requiredTxids,
+            }) async {
+              events.add('has');
+              expect(expectedTxids, isEmpty);
+              expect(requiredTxids, isEmpty);
+              return false;
+            },
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              events.add('export');
+              return _outboxBatch(txids: const []);
+            },
+        stageMigrationOutboxBatch: (batch) async {
+          events.add('stage');
+          expect(batch['items'], isEmpty);
+          expect(batch['nextProofHeight'], 576);
+          return const {};
+        },
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async {
+              events.add('arm');
+              expect(expectedDigests, isEmpty);
+              return true;
+            },
+      );
+
+      final status = await service.status(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+
+      expect(status.activeRunId, 'run-1');
+      expect(events, ['has', 'export', 'stage', 'arm']);
     },
   );
 
@@ -5080,8 +5576,10 @@ rust_sync.MigrationStatus _migrationStatus({
   String phase = 'ready_to_prepare',
   String? activeRunId,
   int broadcastedTxCount = 0,
+  int signedChildPcztCount = 0,
   bool? proofReady,
   int? nextActionHeight,
+  int? nextProofWindowHeight,
   List<rust_sync.MigrationPartStatus> parts = const [],
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
 }) {
@@ -5098,13 +5596,14 @@ rust_sync.MigrationStatus _migrationStatus({
     broadcastedTxCount: broadcastedTxCount,
     confirmedTxCount: 0,
     totalCount: 0,
-    signedChildPcztCount: 0,
+    signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    nextProofWindowHeight: nextProofWindowHeight,
     proofReady: proofReady,
     scheduledBroadcasts: scheduledBroadcasts,
     parts: parts,
