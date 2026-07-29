@@ -55,6 +55,7 @@ enum OnboardingStep {
   thingsToKnow,
   secretPassphrase,
   setPassword,
+  customiseAccount,
 }
 
 extension OnboardingStepX on OnboardingStep {
@@ -66,6 +67,7 @@ extension OnboardingStepX on OnboardingStep {
     OnboardingStep.thingsToKnow => 'Things to know',
     OnboardingStep.secretPassphrase => 'Secret Passphrase',
     OnboardingStep.setPassword => 'Set Password',
+    OnboardingStep.customiseAccount => 'Customise wallet',
   };
 
   String get iconName => switch (this) {
@@ -74,6 +76,7 @@ extension OnboardingStepX on OnboardingStep {
     OnboardingStep.thingsToKnow => AppIcons.crystalBall,
     OnboardingStep.secretPassphrase => AppIcons.key,
     OnboardingStep.setPassword => AppIcons.lock,
+    OnboardingStep.customiseAccount => AppIcons.user,
   };
 
   String get routePath => switch (this) {
@@ -82,10 +85,14 @@ extension OnboardingStepX on OnboardingStep {
     OnboardingStep.thingsToKnow => '/onboarding/things-to-know',
     OnboardingStep.secretPassphrase => '/onboarding/secret-passphrase',
     OnboardingStep.setPassword => '/onboarding/set-password',
+    OnboardingStep.customiseAccount => '/onboarding/customise-account',
   };
 }
 
 OnboardingStep onboardingStepFromLocation(String location) {
+  if (location.startsWith(OnboardingStep.customiseAccount.routePath)) {
+    return OnboardingStep.customiseAccount;
+  }
   if (location.startsWith(OnboardingStep.setPassword.routePath)) {
     return OnboardingStep.setPassword;
   }
@@ -190,18 +197,21 @@ class OnboardingTrailingPane extends StatelessWidget {
   const OnboardingTrailingPane({
     required this.child,
     this.backTarget,
+    this.overlay,
     this.bodyPadding = const EdgeInsets.fromLTRB(12, 16, 12, 16),
     super.key,
   });
 
   final Widget child;
   final OnboardingBackTarget? backTarget;
+  final Widget? overlay;
   final EdgeInsetsGeometry bodyPadding;
 
   @override
   Widget build(BuildContext context) {
     return OnboardingPaneChrome(
       backTarget: backTarget,
+      overlay: overlay,
       bodyPadding: bodyPadding,
       child: child,
     );
@@ -253,6 +263,7 @@ class _Sidebar extends StatelessWidget {
     OnboardingStep.thingsToKnow,
     OnboardingStep.secretPassphrase,
     if (showPasswordStep) OnboardingStep.setPassword,
+    OnboardingStep.customiseAccount,
   ];
 
   Widget _fadeTransition(Widget child, Animation<double> animation) {
@@ -288,6 +299,8 @@ class _SidebarIllustration extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
             : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
+      OnboardingStep.customiseAccount =>
+        'assets/illustrations/onboarding_customise_account_sidebar.png',
       OnboardingStep.thingsToKnow =>
         isDark
             ? 'assets/illustrations/onboarding_things_to_know_sidebar_dark.png'

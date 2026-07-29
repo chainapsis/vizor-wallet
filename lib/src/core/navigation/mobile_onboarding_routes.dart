@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:go_router/go_router.dart';
 
 import '../../features/onboarding/mobile/mobile_biometrics_screen.dart';
+import '../../features/onboarding/mobile/mobile_customise_account_screen.dart';
 import '../../features/onboarding/mobile/mobile_create_steps.dart';
 import '../../features/onboarding/mobile/mobile_import_birthday_screen.dart';
 import '../../features/onboarding/mobile/mobile_import_manual_screen.dart';
@@ -82,6 +83,17 @@ List<RouteBase> mobileOnboardingRoutes() => [
     pageBuilder: (context, state) => CupertinoPage(
       key: state.pageKey,
       child: MobilePasscodeScreen(args: state.extra as SetPasswordScreenArgs),
+    ),
+  ),
+  GoRoute(
+    path: '/onboarding/customise-account',
+    redirect: (_, state) =>
+        state.extra is CustomiseAccountArgs ? null : '/welcome',
+    pageBuilder: (context, state) => CupertinoPage(
+      key: state.pageKey,
+      child: MobileCustomiseAccountScreen(
+        args: state.extra as CustomiseAccountArgs,
+      ),
     ),
   ),
   GoRoute(

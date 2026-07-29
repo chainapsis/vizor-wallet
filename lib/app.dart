@@ -38,6 +38,7 @@ import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/about/screens/mobile/mobile_about_screens.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
+import 'src/features/onboarding/create/customise_account_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
 import 'src/features/onboarding/create/onboarding_split_view.dart';
 import 'src/features/onboarding/create/secret_passphrase_screen.dart';
@@ -550,6 +551,21 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           transitionDuration: kOnboardingForwardDuration,
           reverseTransitionDuration: kOnboardingReverseDuration,
           child: SetPasswordScreen(args: state.extra as SetPasswordScreenArgs),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding/customise-account',
+        redirect: (_, state) => state.extra is CustomiseAccountArgs
+            ? null
+            : OnboardingStep.secretPassphrase.routePath,
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: CustomiseAccountScreen(
+            args: state.extra as CustomiseAccountArgs,
+          ),
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),

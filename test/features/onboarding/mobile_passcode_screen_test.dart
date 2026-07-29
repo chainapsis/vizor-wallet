@@ -59,6 +59,38 @@ Widget _importApp({required _RecordingAccountNotifier accountNotifier}) {
   );
 }
 
+Widget _createRouterApp({
+  required _RecordingAccountNotifier accountNotifier,
+  ValueChanged<GoRouter>? onRouter,
+}) {
+  final router = GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (_, _) => const MobilePasscodeScreen(
+          args: SetPasswordScreenArgs.create(mnemonic: 'stub mnemonic words'),
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding/customise-account',
+        builder: (_, state) {
+          final args = state.extra! as CustomiseAccountArgs;
+          return Text('customise ${args.mnemonic} ${args.pendingPassword}');
+        },
+      ),
+    ],
+  );
+  onRouter?.call(router);
+
+  return ProviderScope(
+    overrides: [accountProvider.overrideWith(() => accountNotifier)],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
 Future<void> _enter(WidgetTester tester, String digits) async {
   for (final d in digits.split('')) {
     await tester.tap(find.bySemanticsLabel('Digit $d'));
@@ -132,6 +164,48 @@ void main() {
     expect(find.text("Passcodes didn't match. Try again."), findsOneWidget);
   });
 
+  testWidgets('create flow forwards the passcode without creating a wallet', (
+    tester,
+  ) async {
+    final accountNotifier = _RecordingAccountNotifier();
+    await tester.pumpWidget(_createRouterApp(accountNotifier: accountNotifier));
+    await tester.pump();
+
+    await _enter(tester, '123456');
+    await _enter(tester, '123456');
+    await tester.pumpAndSettle();
+
+    expect(find.text('customise stub mnemonic words 123456'), findsOneWidget);
+    expect(accountNotifier.createdMnemonic, isNull);
+  });
+
+  testWidgets('create customisation preserves a back route to passcode', (
+    tester,
+  ) async {
+    late final GoRouter router;
+    await tester.pumpWidget(
+      _createRouterApp(
+        accountNotifier: _RecordingAccountNotifier(),
+        onRouter: (value) => router = value,
+      ),
+    );
+    await tester.pump();
+
+    await _enter(tester, '123456');
+    await _enter(tester, '123456');
+    await tester.pumpAndSettle();
+
+    expect(find.text('customise stub mnemonic words 123456'), findsOneWidget);
+    expect(router.canPop(), isTrue);
+
+    router.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create Passcode'), findsOneWidget);
+    expect(find.text('Setting up your wallet...'), findsNothing);
+    expect(router.canPop(), isFalse);
+  });
+
   testWidgets('import flow forwards selected additional ZIP32 accounts', (
     tester,
   ) async {
@@ -152,6 +226,7 @@ void main() {
 }
 
 class _RecordingAccountNotifier extends AccountNotifier {
+  String? createdMnemonic;
   String? importedMnemonic;
   int? importedBirthdayHeight;
   List<int>? importedAdditionalAccountIndices;
@@ -169,6 +244,15 @@ class _RecordingAccountNotifier extends AccountNotifier {
     importedMnemonic = mnemonic;
     importedBirthdayHeight = birthdayHeight;
     importedAdditionalAccountIndices = additionalAccountIndices;
+  }
+
+  @override
+  Future<void> createAccountFromMnemonic({
+    required String mnemonic,
+    String? name,
+    String profilePictureId = 'pfp-01',
+  }) async {
+    createdMnemonic = mnemonic;
   }
 }
 
