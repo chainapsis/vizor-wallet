@@ -125,6 +125,8 @@ typedef IronwoodMigrationMnemonicBytesGetter =
 typedef IronwoodMigrationPlatformCheck = bool Function();
 typedef IronwoodMigrationBackgroundScheduler = Future<bool> Function();
 typedef IronwoodMigrationBackgroundCanceler = Future<void> Function();
+typedef IronwoodMigrationBackgroundQuiescer = Future<void> Function();
+typedef IronwoodMigrationBackgroundResumer = Future<void> Function();
 typedef IronwoodMigrationPreparationRuntimeStateGetter =
     Future<IronwoodMigrationPreparationRuntimeState> Function({
       required String network,
@@ -225,6 +227,15 @@ typedef IronwoodMigrationUnbroadcastRetirer =
       required String accountUuid,
       required String expectedRunId,
     });
+typedef IronwoodMigrationStopper =
+    Future<void> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required String expectedRunId,
+      required List<String> nativeAttemptedTxids,
+    });
 typedef IronwoodMigrationMacosSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
@@ -293,6 +304,12 @@ typedef IronwoodMigrationOutboxBatchChecker =
     });
 typedef IronwoodMigrationOutboxReceiptLister =
     Future<List<Map<Object?, Object?>>> Function();
+typedef IronwoodMigrationOutboxAttemptedTxidLister =
+    Future<List<String>> Function({
+      required String network,
+      required String accountUuid,
+      required String runId,
+    });
 typedef IronwoodMigrationOutboxReceiptAcknowledger =
     Future<void> Function(List<String> receiptIds);
 typedef IronwoodMigrationOutboxForegroundRunner =
@@ -591,6 +608,8 @@ class IronwoodMigrationService {
     IronwoodMigrationBackgroundScheduler? scheduleBackgroundMigration,
     IronwoodMigrationBackgroundScheduler? startBackgroundPreparation,
     IronwoodMigrationBackgroundCanceler? cancelBackgroundMigration,
+    IronwoodMigrationBackgroundQuiescer? quiesceBackgroundMigration,
+    IronwoodMigrationBackgroundResumer? resumeBackgroundMigration,
     IronwoodMigrationPreparationRuntimeStateGetter? getPreparationRuntimeState,
     IronwoodMigrationPreparationForegroundContinuationAcknowledger?
     acknowledgePreparationForegroundContinuation,
@@ -605,6 +624,7 @@ class IronwoodMigrationService {
     IronwoodMigrationImmediatePlanGetter? getImmediatePlan,
     IronwoodMigrationImmediateStarter? startImmediateMigration,
     IronwoodMigrationUnbroadcastRetirer? retireUnbroadcastMigration,
+    IronwoodMigrationStopper? stopMigrationRun,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
     IronwoodMigrationOutboxPreparer? prepareMigrationOutbox,
@@ -615,6 +635,8 @@ class IronwoodMigrationService {
     IronwoodMigrationOutboxBatchRecoverer? recoverMigrationOutboxBatch,
     IronwoodMigrationOutboxBatchChecker? hasMigrationOutboxBatch,
     IronwoodMigrationOutboxReceiptLister? listMigrationOutboxReceipts,
+    IronwoodMigrationOutboxAttemptedTxidLister?
+    listMigrationOutboxAttemptedTxids,
     IronwoodMigrationOutboxReceiptAcknowledger?
     acknowledgeMigrationOutboxReceipts,
     IronwoodMigrationOutboxForegroundRunner? runMigrationOutboxOnceNow,
@@ -661,6 +683,12 @@ class IronwoodMigrationService {
            startBackgroundPreparation ?? _defaultStartBackgroundPreparation,
        cancelBackgroundMigration =
            cancelBackgroundMigration ?? _defaultCancelBackgroundMigration,
+       quiesceBackgroundMigration =
+           quiesceBackgroundMigration ??
+           IronwoodMigrationBackgroundLifecycle.instance.quiesce,
+       resumeBackgroundMigration =
+           resumeBackgroundMigration ??
+           IronwoodMigrationBackgroundLifecycle.instance.resumeAfterMutation,
        getPreparationRuntimeState =
            getPreparationRuntimeState ?? _defaultGetPreparationRuntimeState,
        acknowledgePreparationForegroundContinuation =
@@ -689,6 +717,7 @@ class IronwoodMigrationService {
        retireUnbroadcastMigration =
            retireUnbroadcastMigration ??
            rust_sync.retireUnbroadcastOrchardMigration,
+       stopMigrationRun = stopMigrationRun ?? rust_sync.abandonOrchardMigration,
        startMacosSoftwareMigration =
            startMacosSoftwareMigration ?? _defaultStartMacosSoftwareMigration,
        broadcastDueMigration =
@@ -711,6 +740,9 @@ class IronwoodMigrationService {
            hasMigrationOutboxBatch ?? _defaultHasMigrationOutboxBatch,
        listMigrationOutboxReceipts =
            listMigrationOutboxReceipts ?? _defaultListMigrationOutboxReceipts,
+       listMigrationOutboxAttemptedTxids =
+           listMigrationOutboxAttemptedTxids ??
+           _defaultListMigrationOutboxAttemptedTxids,
        acknowledgeMigrationOutboxReceipts =
            acknowledgeMigrationOutboxReceipts ??
            _defaultAcknowledgeMigrationOutboxReceipts,
@@ -771,6 +803,8 @@ class IronwoodMigrationService {
   final IronwoodMigrationBackgroundScheduler scheduleBackgroundMigration;
   final IronwoodMigrationBackgroundScheduler startBackgroundPreparation;
   final IronwoodMigrationBackgroundCanceler cancelBackgroundMigration;
+  final IronwoodMigrationBackgroundQuiescer quiesceBackgroundMigration;
+  final IronwoodMigrationBackgroundResumer resumeBackgroundMigration;
   final IronwoodMigrationPreparationRuntimeStateGetter
   getPreparationRuntimeState;
   final IronwoodMigrationPreparationForegroundContinuationAcknowledger
@@ -785,6 +819,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
   final IronwoodMigrationImmediateStarter startImmediateMigration;
   final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
+  final IronwoodMigrationStopper stopMigrationRun;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
   final IronwoodMigrationOutboxPreparer prepareMigrationOutbox;
@@ -796,6 +831,8 @@ class IronwoodMigrationService {
   final IronwoodMigrationOutboxBatchRecoverer recoverMigrationOutboxBatch;
   final IronwoodMigrationOutboxBatchChecker hasMigrationOutboxBatch;
   final IronwoodMigrationOutboxReceiptLister listMigrationOutboxReceipts;
+  final IronwoodMigrationOutboxAttemptedTxidLister
+  listMigrationOutboxAttemptedTxids;
   final IronwoodMigrationOutboxReceiptAcknowledger
   acknowledgeMigrationOutboxReceipts;
   final IronwoodMigrationOutboxForegroundRunner runMigrationOutboxOnceNow;
@@ -831,6 +868,8 @@ class IronwoodMigrationService {
 
   bool get _usesNativeMigrationOutbox => isIOS() && !isAndroid();
   bool get _usesNativePreparation => isIOS() && !isAndroid();
+  bool get _usesNativeMigrationLifecycle =>
+      _usesNativeMigrationOutbox || _usesNativePreparation;
 
   /// Reads durable migration state without credential or outbox reconciliation.
   ///
@@ -941,6 +980,145 @@ class IronwoodMigrationService {
             status: status,
           );
           return status;
+        });
+      },
+    );
+  }
+
+  Future<void> stop({
+    required String accountUuid,
+    required String expectedRunId,
+  }) async {
+    final endpoint = getEndpoint();
+    await operationRegistry.run(
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      operation: () async {
+        final context = _MigrationCredentialContext(
+          dbPath: await getWalletDbPath(),
+          network: endpoint.networkName,
+          accountUuid: accountUuid,
+          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        );
+        await _serializeCredentialState(context, () async {
+          var quiesceAttempted = false;
+          var mayResumeBackgroundWork = true;
+          try {
+            // Native may already have acquired its mutation lease even if the
+            // MethodChannel reply is lost, so every attempt gets a matching
+            // best-effort resume.
+            if (_usesNativeMigrationLifecycle) {
+              quiesceAttempted = true;
+              await quiesceBackgroundMigration();
+            }
+            final currentStatus = await _getStatusForContext(context);
+            if (currentStatus.activeRunId == null) {
+              // This is a cleanup retry after the durable run became
+              // terminal. Revoke the stale native batch before retrying
+              // idempotent Rust cleanup, so a cleanup error can never resume
+              // abandoned work.
+              if (_usesNativeMigrationLifecycle) {
+                mayResumeBackgroundWork = false;
+                await revokeMigrationAccount(
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                );
+                mayResumeBackgroundWork = true;
+              }
+              await stopMigrationRun(
+                dbPath: context.dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: context.network,
+                accountUuid: context.accountUuid,
+                expectedRunId: expectedRunId,
+                nativeAttemptedTxids: const [],
+              );
+              return;
+            }
+
+            var nativeAttemptedTxids = const <String>[];
+            if (_usesNativeMigrationOutbox) {
+              final receipts = await _reconcileMigrationOutboxReceipts(
+                context: context,
+              );
+              if (receipts.unreconciledCount > 0) {
+                throw StateError(
+                  'Migration cannot stop until submitted transactions are '
+                  'reconciled.',
+                );
+              }
+              nativeAttemptedTxids = await listMigrationOutboxAttemptedTxids(
+                network: context.network,
+                accountUuid: context.accountUuid,
+                runId: expectedRunId,
+              );
+            }
+            if (currentStatus.activeRunId != expectedRunId) {
+              // A retry after the Rust transaction committed must still finish
+              // wallet-lock reconciliation, but a stale UI must never revoke
+              // the native credential/outbox belonging to a newer run.
+              await stopMigrationRun(
+                dbPath: context.dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: context.network,
+                accountUuid: context.accountUuid,
+                expectedRunId: expectedRunId,
+                nativeAttemptedTxids: nativeAttemptedTxids,
+              );
+              return;
+            }
+
+            try {
+              await stopMigrationRun(
+                dbPath: context.dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: context.network,
+                accountUuid: context.accountUuid,
+                expectedRunId: expectedRunId,
+                nativeAttemptedTxids: nativeAttemptedTxids,
+              );
+            } catch (stopError, stopStackTrace) {
+              // A local FFI response can be lost after Rust committed. Re-read
+              // the durable projection before deciding whether native work may
+              // resume or still needs to be revoked.
+              try {
+                final afterFailure = await _getStatusForContext(context);
+                if (afterFailure.activeRunId == expectedRunId ||
+                    afterFailure.activeRunId != null) {
+                  Error.throwWithStackTrace(stopError, stopStackTrace);
+                }
+              } catch (statusError) {
+                if (identical(statusError, stopError)) rethrow;
+                Error.throwWithStackTrace(stopError, stopStackTrace);
+              }
+            }
+
+            if (_usesNativeMigrationLifecycle) {
+              try {
+                // Rust has already made the run terminal. If this reply is
+                // lost, leave native quiesced; a later idempotent stop retries
+                // only this cleanup and cannot submit the abandoned batch.
+                await revokeMigrationAccount(
+                  network: context.network,
+                  accountUuid: context.accountUuid,
+                );
+              } catch (error, stackTrace) {
+                mayResumeBackgroundWork = false;
+                Error.throwWithStackTrace(error, stackTrace);
+              }
+            }
+          } finally {
+            if (quiesceAttempted && mayResumeBackgroundWork) {
+              try {
+                await resumeBackgroundMigration();
+              } catch (error) {
+                debugPrint(
+                  'Failed to resume Ironwood background work after stop: '
+                  '$error',
+                );
+              }
+            }
+          }
         });
       },
     );
@@ -2854,6 +3032,19 @@ _defaultListMigrationOutboxReceipts() async {
   return result
       .map((receipt) => receipt as Map<Object?, Object?>)
       .toList(growable: false);
+}
+
+Future<List<String>> _defaultListMigrationOutboxAttemptedTxids({
+  required String network,
+  required String accountUuid,
+  required String runId,
+}) async {
+  final result = await _backgroundMigrationChannel.invokeMethod<List<Object?>>(
+    'listOutboxAttemptedTxids',
+    {'network': network, 'accountUuid': accountUuid, 'runId': runId},
+  );
+  if (result == null) return const [];
+  return result.cast<String>();
 }
 
 Future<void> _defaultAcknowledgeMigrationOutboxReceipts(

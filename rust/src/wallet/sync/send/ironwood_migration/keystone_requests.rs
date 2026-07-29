@@ -495,6 +495,34 @@ pub(crate) fn discard_keystone_migration_requests_for_account(
     Ok(())
 }
 
+pub(crate) fn discard_keystone_migration_requests_for_run(
+    account_uuid: &str,
+    network: WalletNetwork,
+    run_id: &str,
+) -> Result<(), String> {
+    // Denomination and migration-batch requests are the only in-memory
+    // requests that carry a durable run identity. Do not clear the
+    // account-scoped single-QR or immediate stores here: a delayed retry for
+    // an old run must not discard newer work for the same account.
+    keystone_denomination_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone denomination request store: {e}"))?
+        .retain(|_, stored| {
+            stored.account_uuid != account_uuid
+                || stored.network != network
+                || stored.draft_run_id.as_deref() != Some(run_id)
+        });
+    keystone_migration_requests()
+        .lock()
+        .map_err(|e| format!("Lock Keystone migration request store: {e}"))?
+        .retain(|_, stored| {
+            stored.account_uuid != account_uuid
+                || stored.network != network
+                || stored.run_id != run_id
+        });
+    Ok(())
+}
+
 pub(crate) fn discard_all_keystone_migration_requests() -> Result<(), String> {
     keystone_immediate_migration_requests()
         .lock()
