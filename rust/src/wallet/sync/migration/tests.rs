@@ -2646,7 +2646,7 @@ fn schedule_validation_keeps_legacy_positive_first_offsets_compatible() {
 }
 
 #[test]
-fn regtest_schedule_is_short_but_still_requires_blocks() {
+fn configured_schedule_uses_ninety_minute_mean_without_changing_regtest() {
     assert_eq!(
         schedule_parameters(WalletNetwork::Regtest),
         (1, REGTEST_TRANSFER_MAX_DELAY_BLOCKS)
@@ -2654,10 +2654,110 @@ fn regtest_schedule_is_short_but_still_requires_blocks() {
     assert_eq!(
         schedule_parameters(WalletNetwork::Test),
         (
+            NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+            ZIP318_TRANSFER_MAX_DELAY_BLOCKS
+        )
+    );
+    assert_eq!(
+        schedule_parameters(WalletNetwork::Main),
+        (
+            NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+            ZIP318_TRANSFER_MAX_DELAY_BLOCKS
+        )
+    );
+}
+
+#[test]
+fn legacy_and_ninety_minute_policies_keep_distinct_parameters() {
+    assert_eq!(
+        schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard),
+        (
             ZIP318_TRANSFER_MEAN_DELAY_BLOCKS,
             ZIP318_TRANSFER_MAX_DELAY_BLOCKS
         )
     );
+    assert_eq!(
+        schedule_parameters_with_policy(
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard90Minutes,
+        ),
+        (
+            NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+            ZIP318_TRANSFER_MAX_DELAY_BLOCKS
+        )
+    );
+}
+
+#[test]
+fn mainnet_run_reads_its_persisted_timing_policy() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    for (run_id, timing_policy) in [("legacy", "standard"), ("shorter", "standard_90m")] {
+        conn.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase,
+                  created_at_ms, updated_at_ms, target_values_json, timing_policy)
+                 VALUES (?1, ?1, 'main', 'wallet.db', ?2, 1, 1, '[100]', ?3)"
+            ),
+            params![run_id, PHASE_READY_TO_MIGRATE, timing_policy],
+        )
+        .unwrap();
+    }
+
+    assert_eq!(
+        timing_policy_for_run_with_conn(&conn, "legacy", WalletNetwork::Main).unwrap(),
+        MigrationTimingPolicy::Standard,
+    );
+    assert_eq!(
+        timing_policy_for_run_with_conn(&conn, "shorter", WalletNetwork::Main).unwrap(),
+        MigrationTimingPolicy::Standard90Minutes,
+    );
+}
+
+#[test]
+fn new_mainnet_draft_persists_ninety_minute_policy() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let schedule = [MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100,
+        block_offset: NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+    }];
+
+    let run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Main,
+        &[100],
+        &schedule,
+        PreparationTimingPolicy::Zip318Spaced,
+    )
+    .unwrap();
+
+    assert_eq!(
+        timing_policy_for_run(&db_path, &run_id, WalletNetwork::Main).unwrap(),
+        MigrationTimingPolicy::Standard90Minutes,
+    );
+}
+
+#[test]
+fn ninety_minute_schedule_samples_the_truncated_distribution() {
+    let count = 20_000;
+    let mut rng = StdRng::seed_from_u64(0x90);
+    let offsets = random_schedule_block_offsets_with_rng(
+        count,
+        NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+        ZIP318_TRANSFER_MAX_DELAY_BLOCKS,
+        &mut rng,
+    );
+    let total_delay = u64::from(*offsets.last().unwrap());
+
+    // Redrawing samples above the 12-hour cap makes the realized mean
+    // slightly lower than the untruncated 72-block parameter.
+    assert!(total_delay > count as u64 * 70);
+    assert!(total_delay < count as u64 * 74);
 }
 
 #[test]

@@ -621,11 +621,8 @@ pub(crate) struct ActiveRun {
 fn timing_policy_for_run_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
-    network: WalletNetwork,
+    _network: WalletNetwork,
 ) -> Result<MigrationTimingPolicy, String> {
-    if !matches!(network, WalletNetwork::Test | WalletNetwork::Regtest) {
-        return Ok(MigrationTimingPolicy::Standard);
-    }
     let value = conn
         .query_row(
             &format!("SELECT timing_policy FROM {RUNS_TABLE} WHERE run_id = ?1"),
@@ -689,7 +686,7 @@ fn adopt_timing_policy_for_active_run(
         &format!(
             "UPDATE {RUNS_TABLE}
              SET timing_policy = ?1, schedule_json = ?2, updated_at_ms = ?3
-             WHERE run_id = ?4 AND timing_policy = 'standard'"
+             WHERE run_id = ?4 AND timing_policy != 'fast_testnet'"
         ),
         params![
             MigrationTimingPolicy::FastTestnet.as_str(),
@@ -1871,11 +1868,7 @@ fn insert_pending_txs_with_tx(
         .map_err(|e| format!("Read migration run policy: {e}"))?;
     let network = WalletNetwork::from_str(&network)
         .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
-    let timing_policy = if matches!(network, WalletNetwork::Test | WalletNetwork::Regtest) {
-        MigrationTimingPolicy::from_str(&timing_policy)?
-    } else {
-        MigrationTimingPolicy::Standard
-    };
+    let timing_policy = MigrationTimingPolicy::from_str(&timing_policy)?;
     let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
         .map_err(|e| format!("Decode migration run target values: {e}"))?;
     let schedule_json = tx
