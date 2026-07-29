@@ -74,12 +74,51 @@ enum StagedDenominationAdvance {
     Ready,
 }
 
+fn restore_observed_separate_relay_transactions<F>(
+    conn: &rusqlite::Connection,
+    stages: &[super::migration::DenominationStage],
+    mut store: F,
+) -> Result<u32, String>
+where
+    F: FnMut(&[u8], u32) -> Result<(), String>,
+{
+    let mut restored = 0u32;
+    for stage in stages {
+        let Some(raw_tx) = stage.raw_tx.as_deref() else {
+            continue;
+        };
+        let Some(identity) =
+            super::migration::local_denomination_chain_identity(conn, &stage.expected_txid_hex)?
+        else {
+            continue;
+        };
+        if super::migration::local_transaction_raw(conn, &stage.expected_txid_hex)?.is_some() {
+            continue;
+        }
+        store(raw_tx, identity.mined_height).map_err(|error| {
+            format!(
+                "Restore observed separate-relay denomination transaction {}: {error}",
+                stage.expected_txid_hex
+            )
+        })?;
+        restored = restored
+            .checked_add(1)
+            .ok_or("Restored denomination transaction count overflow")?;
+    }
+    Ok(restored)
+}
+
 fn reconcile_mined_denomination_stages(
     db_path: &str,
+    network: WalletNetwork,
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
 ) -> Result<Vec<super::migration::DenominationStage>, String> {
+    let uses_separate_relay = matches!(
+        super::migration::denomination_submission_policy(db_path, run_id)?,
+        super::migration::MigrationDenominationSubmissionPolicy::SeparateRelay(_)
+    );
     super::migration::reconcile_denomination_stage_chain_state(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     let stages = super::migration::denomination_stages_for_run(
@@ -88,6 +127,25 @@ fn reconcile_mined_denomination_stages(
         pending_password,
         pending_salt_base64,
     )?;
+    if uses_separate_relay {
+        let restored = restore_observed_separate_relay_transactions(
+            &conn,
+            &stages,
+            |raw_tx, mined_height| {
+                super::transactions::decrypt_and_store_transaction(
+                    db_path,
+                    network,
+                    raw_tx,
+                    Some(u64::from(mined_height)),
+                )
+            },
+        )?;
+        if restored > 0 {
+            log::info!(
+                "migration: restored {restored} observed separate-relay denomination transaction(s) from retained local bytes"
+            );
+        }
+    }
     let mut recovered_included_stage = false;
     for stage in stages
         .iter()
@@ -147,6 +205,7 @@ async fn advance_staged_denomination_run(
 ) -> Result<StagedDenominationAdvance, String> {
     let stages = reconcile_mined_denomination_stages(
         db_path,
+        network,
         &run.run_id,
         pending_password,
         pending_salt_base64,

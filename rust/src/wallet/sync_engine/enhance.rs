@@ -19,9 +19,12 @@
 //! `TransactionsInvolvingAddress`. Locally complete transactions submitted
 //! through the separate relay are instead serviced from their durable local
 //! bytes and compact-block scan state, so lightwalletd never receives their
-//! transaction IDs. The loop retries up to three times because servicing one
-//! request can legally populate new requests (e.g. a newly-decrypted
-//! transaction may reveal additional parent transactions to enhance).
+//! transaction IDs. If relay acceptance raced a crash before wallet storage,
+//! enhancement waits for the credentialed migration worker to restore those
+//! bytes instead of failing sync or falling through to lightwalletd. The loop
+//! retries up to three times because servicing one request can legally populate
+//! new requests (e.g. a newly-decrypted transaction may reveal additional
+//! parent transactions to enhance).
 
 use std::{
     collections::{BTreeMap, HashSet},
@@ -43,9 +46,7 @@ use zcash_protocol::value::{BalanceError, Zatoshis};
 
 use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync::{
-    separate_relay_denomination_transaction, SeparateRelayDenominationTransaction,
-};
+use crate::wallet::sync::separate_relay_denomination_transaction;
 
 use super::{lwd, SyncError, WalletDatabase};
 
@@ -97,9 +98,20 @@ pub(super) async fn run_enhancement(
                     if let Some(local) = separate_relay_denomination_transaction(db_path, *txid)
                         .map_err(SyncError::db)?
                     {
-                        let tx = parse_separate_relay_transaction(*txid, &local)?;
+                        let tx = local
+                            .raw_tx
+                            .as_deref()
+                            .map(|raw_tx| {
+                                parse_separate_relay_transaction(*txid, raw_tx, local.expiry_height)
+                            })
+                            .transpose()?;
                         match req {
                             TransactionDataRequest::Enhancement(_) => {
+                                let Some(tx) = tx else {
+                                    // The migration worker retains an encrypted copy and restores
+                                    // wallet storage on its next credentialed advance.
+                                    continue;
+                                };
                                 let mined_height = db.get_tx_height(*txid).map_err(|e| {
                                     SyncError::db(format!(
                                         "get_tx_height for separate-relay transaction {txid}: {e}"
@@ -331,12 +343,13 @@ pub(super) async fn run_enhancement(
 
 fn parse_separate_relay_transaction(
     txid: TxId,
-    local: &SeparateRelayDenominationTransaction,
+    raw_tx: &[u8],
+    expiry_height: u32,
 ) -> Result<Transaction, SyncError> {
-    let mut reader = Cursor::new(local.raw_tx.as_slice());
+    let mut reader = Cursor::new(raw_tx);
     let tx = Transaction::read(&mut reader, BranchId::Sapling)
         .map_err(|e| SyncError::parse(format!("parse separate-relay transaction {txid}: {e}")))?;
-    if reader.position() != local.raw_tx.len() as u64 {
+    if reader.position() != raw_tx.len() as u64 {
         return Err(SyncError::parse(format!(
             "separate-relay transaction {txid} has trailing bytes"
         )));
@@ -346,7 +359,7 @@ fn parse_separate_relay_transaction(
             "separate-relay transaction marker does not match {txid}"
         )));
     }
-    if u32::from(tx.expiry_height()) != local.expiry_height {
+    if u32::from(tx.expiry_height()) != expiry_height {
         return Err(SyncError::parse(format!(
             "separate-relay transaction {txid} has inconsistent expiry height"
         )));
@@ -670,7 +683,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn separate_relay_get_status_never_contacts_lightwalletd() {
+    async fn separate_relay_missing_raw_neither_fails_sync_nor_contacts_lightwalletd() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_str().unwrap();
@@ -688,14 +701,14 @@ mod tests {
         crate::wallet::sync::update_chain_tip(db_path, network, 3_000_000).unwrap();
 
         let expiry_height = 3_000_100;
-        let (tx, raw) = marked_status_test_tx(expiry_height);
+        let (tx, _) = marked_status_test_tx(expiry_height);
         let txid = tx.txid();
         let conn = rusqlite::Connection::open(db_path).unwrap();
         conn.execute(
             "INSERT INTO transactions
-             (txid, expiry_height, raw, min_observed_height)
-             VALUES (?1, ?2, ?3, 1)",
-            rusqlite::params![txid.as_ref(), expiry_height, raw],
+             (txid, expiry_height, min_observed_height)
+             VALUES (?1, ?2, 1)",
+            rusqlite::params![txid.as_ref(), expiry_height],
         )
         .unwrap();
         conn.execute_batch(

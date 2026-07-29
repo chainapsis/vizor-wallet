@@ -45,7 +45,6 @@ pub(crate) use migration::{
     proof_retry_height, reconcile_wallet_locks_after_sync, separate_relay_denomination_transaction,
     MigrationPartState, MigrationPreparationOutputKind, MigrationPreparationTransactionState,
     MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
-    SeparateRelayDenominationTransaction,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{

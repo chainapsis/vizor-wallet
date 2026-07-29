@@ -1468,6 +1468,45 @@ fn create_denomination_expiry_test_run(
 }
 
 #[test]
+fn observed_separate_relay_stage_restores_missing_wallet_raw() {
+    let (_temp_dir, db_path, run_id) =
+        create_denomination_expiry_test_run(migration::DenominationStageStatus::Pending);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             mined_height INTEGER,
+             raw BLOB
+         );",
+    )
+    .unwrap();
+    let stages = migration::denomination_stages_for_run(
+        &conn,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    let stage = &stages[0];
+    conn.execute(
+        "INSERT INTO transactions (txid, mined_height, raw) VALUES (?1, 105, NULL)",
+        params![hex::decode(&stage.expected_txid_hex).unwrap()],
+    )
+    .unwrap();
+
+    let mut stored = Vec::new();
+    let restored =
+        restore_observed_separate_relay_transactions(&conn, &stages, |raw_tx, mined_height| {
+            stored.push((raw_tx.to_vec(), mined_height));
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(restored, 1);
+    assert_eq!(stored, vec![(vec![1, 2, 3, 4], 105)]);
+}
+
+#[test]
 fn expired_unbroadcast_preparation_stages_retire_at_scanned_expiry() {
     for status in [
         migration::DenominationStageStatus::AwaitingInputs,

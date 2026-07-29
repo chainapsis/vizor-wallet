@@ -301,7 +301,9 @@ pub(crate) fn denomination_submission_policy(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SeparateRelayDenominationTransaction {
-    pub(crate) raw_tx: Vec<u8>,
+    /// `None` is the recoverable window after relay acceptance but before the
+    /// migration worker stores the transaction in the wallet database.
+    pub(crate) raw_tx: Option<Vec<u8>>,
     pub(crate) expiry_height: u32,
 }
 
@@ -384,12 +386,7 @@ pub(crate) fn separate_relay_denomination_transaction(
         )
         .optional()
         .map_err(|e| format!("Read separate-relay denomination transaction {txid}: {e}"))?
-        .flatten()
-        .ok_or_else(|| {
-            format!(
-                "Separate-relay denomination transaction {txid} in run {run_id} has no local raw bytes"
-            )
-        })?;
+        .flatten();
     Ok(Some(SeparateRelayDenominationTransaction {
         raw_tx,
         expiry_height,
