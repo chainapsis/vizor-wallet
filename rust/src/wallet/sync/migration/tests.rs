@@ -477,6 +477,7 @@ fn schema_backfills_only_recoverable_original_schedule_heights() {
         &[100],
         PHASE_BROADCAST_SCHEDULED,
         3,
+        None,
     )
     .unwrap();
     assert_eq!(unknown_parts[0].original_scheduled_height, None);
@@ -2821,6 +2822,7 @@ fn late_preparation_broadcast_rerandomizes_remaining_effective_heights() {
         &[],
         denomination_confirmations_required(),
         0,
+        None,
     )
     .unwrap()
     .into_iter()
@@ -2854,6 +2856,7 @@ fn recovered_pending_preparation_stage_uses_chain_tip_and_rerandomizes_once() {
         db_path,
         run_id,
         Some(chain_tip_height),
+        true,
         &mut rng,
     )
     .unwrap();
@@ -2894,8 +2897,14 @@ fn recovered_pending_preparation_stage_uses_chain_tip_and_rerandomizes_once() {
 
     let first_recovery = after.iter().map(|row| row.2).collect::<Vec<Option<u32>>>();
     let mut second_rng = StdRng::seed_from_u64(0x123);
-    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(600), &mut second_rng)
-        .unwrap();
+    reconcile_denomination_stage_chain_state_with_rng(
+        db_path,
+        run_id,
+        Some(600),
+        true,
+        &mut second_rng,
+    )
+    .unwrap();
     let conn = rusqlite::Connection::open(db_path).unwrap();
     assert_eq!(
         preparation_catch_up_test_rows(&conn, run_id)
@@ -2919,7 +2928,7 @@ fn recovered_pending_preparation_stage_conservatively_delays_near_future_peers()
     drop(conn);
 
     let mut rng = StdRng::seed_from_u64(0x318);
-    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), &mut rng)
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), true, &mut rng)
         .unwrap();
 
     let conn = rusqlite::Connection::open(db_path).unwrap();
@@ -2963,9 +2972,14 @@ fn recovered_pending_preparation_stage_rolls_back_if_rescheduling_fails() {
     drop(conn);
 
     let mut rng = StdRng::seed_from_u64(0x318);
-    let error =
-        reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), &mut rng)
-            .unwrap_err();
+    let error = reconcile_denomination_stage_chain_state_with_rng(
+        db_path,
+        run_id,
+        Some(250),
+        true,
+        &mut rng,
+    )
+    .unwrap_err();
     assert!(error.contains("Unsupported migration timing policy"));
 
     let conn = rusqlite::Connection::open(db_path).unwrap();
@@ -3019,6 +3033,137 @@ fn recovered_pending_immediate_stage_does_not_require_catch_up_context() {
         )
         .unwrap();
     assert_eq!(status, "confirmed");
+}
+
+#[test]
+fn account_growth_catchup_does_not_misclassify_missing_history_as_a_reorg() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);
+         CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             block INTEGER,
+             mined_height INTEGER
+         );",
+    )
+    .unwrap();
+
+    let run_id = "account-growth-catchup";
+    let denomination_txid = "11".repeat(32);
+    let block_hash = [0xabu8; 32];
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES (?1, 'account-1', 'test', ?2, ?3, 1, 1,
+                     '[100000000]')"
+        ),
+        params![run_id, db_path, PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {STAGES_TABLE}
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height,
+              scheduled_height, expiry_height, fee_zatoshi,
+              confirmed_mined_height, confirmed_block_hash, status)
+             VALUES (?1, 0, 'base', 'sigs', 'raw', ?2, 10, 10, 30, 80000,
+                     20, ?3, 'confirmed')"
+        ),
+        params![run_id, denomination_txid, block_hash.as_slice()],
+    )
+    .unwrap();
+    let catchup_anchor_height = 20u32
+        .saturating_add(denomination_confirmations_required())
+        .saturating_sub(1);
+    conn.execute_batch(
+        "CREATE TABLE ext_vizor_sync_meta (
+            key TEXT PRIMARY KEY NOT NULL,
+            value TEXT NOT NULL
+         );",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value)
+         VALUES ('last_completed_sync_height', ?1)",
+        params![catchup_anchor_height],
+    )
+    .unwrap();
+    drop(conn);
+
+    crate::wallet::sync_engine::invalidate_sync_completion(db_path).unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let frozen_status = status_for_run(
+        &conn,
+        ActiveRun {
+            run_id: run_id.to_string(),
+            phase: PHASE_BROADCAST_SCHEDULED.to_string(),
+            target_values_zatoshi: vec![100_000_000],
+            last_error: None,
+        },
+        1,
+    )
+    .unwrap();
+    assert_eq!(
+        frozen_status.denomination_confirmation_count,
+        denomination_confirmations_required()
+    );
+    assert_eq!(frozen_status.denomination_split_completed_count, 1);
+    assert_eq!(
+        frozen_status.preparation_transactions[0].state,
+        MigrationPreparationTransactionState::Completed
+    );
+    assert_eq!(
+        frozen_status.preparation_transactions[0].confirmation_count,
+        denomination_confirmations_required()
+    );
+    drop(conn);
+
+    reconcile_denomination_stage_chain_state(db_path, run_id).unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let preserved: (String, Option<u32>, Option<Vec<u8>>) = conn
+        .query_row(
+            &format!(
+                "SELECT status, confirmed_mined_height, confirmed_block_hash
+                 FROM {STAGES_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(preserved.0, "confirmed");
+    assert_eq!(preserved.1, Some(20));
+    assert_eq!(preserved.2, Some(block_hash.to_vec()));
+
+    conn.execute(
+        "UPDATE ext_vizor_sync_meta
+         SET value = '0' WHERE key = 'account_growth_catchup_pending'",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    reconcile_denomination_stage_chain_state(db_path, run_id).unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let resumed: (String, Option<u32>, Option<Vec<u8>>) = conn
+        .query_row(
+            &format!(
+                "SELECT status, confirmed_mined_height, confirmed_block_hash
+                 FROM {STAGES_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(resumed, ("awaiting_inputs".to_string(), None, None));
 }
 
 #[test]
@@ -5942,7 +6087,7 @@ fn create_run_with_direct_funding_notes_starts_ready_without_split_stages() {
             .is_empty()
     );
     assert_eq!(
-        denomination_split_progress_for_run(&conn, &run_id).unwrap(),
+        denomination_split_progress_for_run(&conn, &run_id, None).unwrap(),
         DenominationSplitProgress::default()
     );
     assert_eq!(
@@ -6553,6 +6698,7 @@ fn migration_parts_report_exact_mixed_states_and_trusted_depth() {
         &[100, 100, 100, 100],
         PHASE_WAITING_MIGRATION_CONFIRMATIONS,
         3,
+        None,
     )
     .unwrap();
 
@@ -6629,6 +6775,7 @@ fn denomination_parts_report_independent_split_stage_states() {
         &[10_000_000, 20_000_000],
         PHASE_WAITING_DENOM_CONFIRMATIONS,
         3,
+        None,
     )
     .unwrap();
 
@@ -6662,8 +6809,15 @@ fn ready_to_migrate_does_not_report_denomination_parts_as_completed_transfers() 
     tx.commit().unwrap();
     mark_denomination_stage_confirmed_at(&conn, run_id, &txid, 20, &[0xabu8; 32]).unwrap();
 
-    let parts =
-        migration_parts_for_run(&conn, run_id, &[100_000_000], PHASE_READY_TO_MIGRATE, 3).unwrap();
+    let parts = migration_parts_for_run(
+        &conn,
+        run_id,
+        &[100_000_000],
+        PHASE_READY_TO_MIGRATE,
+        3,
+        None,
+    )
+    .unwrap();
 
     assert_eq!(parts.len(), 1);
     assert_eq!(parts[0].part_index, 0);
@@ -8284,7 +8438,7 @@ fn staged_split_progress_uses_the_slowest_parallel_root_not_future_descendants()
     )
     .unwrap();
 
-    let progress = denomination_split_progress_for_run(&conn, run_id).unwrap();
+    let progress = denomination_split_progress_for_run(&conn, run_id, None).unwrap();
     assert_eq!(progress.frontier_confirmation_count, 1);
     assert_eq!(progress.completed_count, 0);
     assert_eq!(progress.total_count, 3);

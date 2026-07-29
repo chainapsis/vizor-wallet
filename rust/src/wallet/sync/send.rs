@@ -1394,6 +1394,13 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
     let active_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
+    if let Some(run) = active_run.as_ref() {
+        if sync_engine::account_growth_catchup_pending(db_path)? {
+            drop(seed);
+            drop(migration_guard);
+            return Ok(account_growth_catchup_waiting_result(run));
+        }
+    }
     if active_run.is_none()
         && super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?
     {
@@ -2293,6 +2300,13 @@ pub(crate) fn orchard_migration_proof_readiness(
     {
         return Ok(None);
     }
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        // The wallet-global scanned height temporarily describes the newly
+        // imported account's historical catch-up, not a loss of the existing
+        // migration account's proof window. Report "unknown" instead of
+        // flipping a previously-ready proof back to false.
+        return Ok(None);
+    }
     let run_id = status
         .active_run_id
         .as_deref()
@@ -2441,6 +2455,9 @@ pub(crate) async fn advance_orchard_migration_preparation_for_run(
     if run.run_id != expected_run_id {
         return Err("Ironwood migration preparation run changed".to_string());
     }
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        return Ok(account_growth_catchup_waiting_result(&run));
+    }
 
     if run.phase != super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS {
         return Ok(IronwoodMigrationResult {
@@ -2559,6 +2576,11 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     if policy.is_cancelled() {
         return Ok(MigrationBroadcastAdvance::without_acceptance(
             cancelled_migration_result(&run),
+        ));
+    }
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            account_growth_catchup_waiting_result(&run),
         ));
     }
 

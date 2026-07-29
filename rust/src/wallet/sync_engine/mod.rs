@@ -105,6 +105,8 @@ const SYNC_COMPLETION_POLICY_VERSION: u32 = 1;
 const SYNC_COMPLETION_POLICY_VERSION_KEY: &str = "sync_completion_policy_version";
 const LAST_COMPLETED_SYNC_HEIGHT_KEY: &str = "last_completed_sync_height";
 const SYNC_IN_PROGRESS_KEY: &str = "sync_in_progress";
+const ACCOUNT_GROWTH_CATCHUP_PENDING_KEY: &str = "account_growth_catchup_pending";
+const ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY: &str = "account_growth_catchup_anchor_height";
 const WITNESS_CHECK_POLICY_VERSION_KEY: &str = "witness_check_policy_version";
 const WITNESS_CHECK_LAST_CLEAN_HEIGHT_KEY: &str = "witness_check_last_clean_height";
 // Witness repair is finalization work after the main scan drains. Cap its
@@ -753,6 +755,18 @@ pub(crate) fn invalidate_sync_completion(db_data_path: &str) -> Result<(), Strin
     )
     .map_err(|e| format!("write sync invalidation policy version: {e}"))?;
     tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value)
+         SELECT ?1, value
+         FROM ext_vizor_sync_meta
+         WHERE key = ?2
+         ON CONFLICT(key) DO NOTHING",
+        params![
+            ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY,
+            LAST_COMPLETED_SYNC_HEIGHT_KEY
+        ],
+    )
+    .map_err(|e| format!("preserve account-growth catch-up anchor height: {e}"))?;
+    tx.execute(
         "DELETE FROM ext_vizor_sync_meta WHERE key = ?1",
         params![LAST_COMPLETED_SYNC_HEIGHT_KEY],
     )
@@ -763,8 +777,56 @@ pub(crate) fn invalidate_sync_completion(db_data_path: &str) -> Result<(), Strin
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("clear sync in-progress marker after invalidation: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '1')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![ACCOUNT_GROWTH_CATCHUP_PENDING_KEY],
+    )
+    .map_err(|e| format!("mark account-growth catch-up pending: {e}"))?;
     tx.commit()
         .map_err(|e| format!("commit sync invalidation transaction: {e}"))
+}
+
+/// Whether an account import has expanded the wallet's viewing-key set and the
+/// resulting historical scan has not completed yet.
+///
+/// This is deliberately narrower than `sync_in_progress`: ordinary tip
+/// catch-up should not pause scheduled migration work, while account growth
+/// temporarily makes the wallet-global scanned height non-authoritative for
+/// already-running migration transactions.
+pub(crate) fn account_growth_catchup_pending(db_data_path: &str) -> Result<bool, String> {
+    let conn = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
+    account_growth_catchup_pending_with_conn(&conn)
+}
+
+pub(crate) fn account_growth_catchup_pending_with_conn(
+    conn: &rusqlite::Connection,
+) -> Result<bool, String> {
+    if !sync_meta_table_exists(conn)? {
+        return Ok(false);
+    }
+    Ok(parse_sync_meta_u32(
+        ACCOUNT_GROWTH_CATCHUP_PENDING_KEY,
+        read_sync_meta_value(conn, ACCOUNT_GROWTH_CATCHUP_PENDING_KEY)?,
+    )
+    .is_some_and(|value| value != 0))
+}
+
+/// The last fully-authoritative scan height from before the wallet's account
+/// set expanded. Status projection can use this watermark while the new
+/// account is catching up, instead of interpreting the deliberately
+/// incomplete live scan as a reorg or a loss of confirmations.
+pub(crate) fn account_growth_catchup_anchor_height_with_conn(
+    conn: &rusqlite::Connection,
+) -> Result<Option<u32>, String> {
+    if !account_growth_catchup_pending_with_conn(conn)? {
+        return Ok(None);
+    }
+    Ok(parse_sync_meta_u64(
+        ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY,
+        read_sync_meta_value(conn, ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY)?,
+    )
+    .and_then(|height| u32::try_from(height).ok()))
 }
 
 fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
@@ -822,6 +884,17 @@ fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("clear sync in-progress marker: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '0')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![ACCOUNT_GROWTH_CATCHUP_PENDING_KEY],
+    )
+    .map_err(|e| format!("clear account-growth catch-up marker: {e}"))?;
+    tx.execute(
+        "DELETE FROM ext_vizor_sync_meta WHERE key = ?1",
+        params![ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY],
+    )
+    .map_err(|e| format!("clear account-growth catch-up anchor height: {e}"))?;
     tx.commit()
         .map_err(|e| format!("commit completed sync transaction: {e}"))
 }
@@ -3084,6 +3157,42 @@ mod tests {
                 Some(3_364_777),
                 Some(false)
             ),
+        );
+    }
+
+    #[test]
+    fn account_growth_catchup_marker_survives_sync_start_until_completion() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+
+        assert!(!account_growth_catchup_pending(db_path).unwrap());
+        mark_sync_completed(db_path, 100).unwrap();
+        assert!(!account_growth_catchup_pending(db_path).unwrap());
+
+        invalidate_sync_completion(db_path).unwrap();
+        assert!(account_growth_catchup_pending(db_path).unwrap());
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        assert_eq!(
+            account_growth_catchup_anchor_height_with_conn(&conn).unwrap(),
+            Some(100)
+        );
+        drop(conn);
+
+        mark_sync_started(db_path).unwrap();
+        assert!(account_growth_catchup_pending(db_path).unwrap());
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        assert_eq!(
+            account_growth_catchup_anchor_height_with_conn(&conn).unwrap(),
+            Some(100)
+        );
+        drop(conn);
+
+        mark_sync_completed(db_path, 101).unwrap();
+        assert!(!account_growth_catchup_pending(db_path).unwrap());
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        assert_eq!(
+            account_growth_catchup_anchor_height_with_conn(&conn).unwrap(),
+            None
         );
     }
 
