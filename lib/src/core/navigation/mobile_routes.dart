@@ -11,6 +11,7 @@ import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_s
 import '../../features/migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
     show
+        MobileIronwoodMigrationKeystoneCombinedSignScreen,
         MobileIronwoodMigrationKeystoneImmediateSignScreen,
         MobileIronwoodMigrationKeystoneBatchSignScreen,
         MobileIronwoodMigrationKeystoneDenominationSignEntry,
@@ -374,6 +375,20 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
         child: const MobileIronwoodMigrationPreparationScheduleScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/private/keystone/sign',
+      redirect: (_, state) =>
+          state.extra is List<rust_sync.MigrationScheduledTransfer>
+          ? null
+          : '/migration/options',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileIronwoodMigrationKeystoneCombinedSignScreen(
+          approvedSchedule:
+              state.extra! as List<rust_sync.MigrationScheduledTransfer>,
+        ),
       ),
     ),
     GoRoute(

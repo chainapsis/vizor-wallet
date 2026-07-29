@@ -135,13 +135,9 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
 enum _MobileMigrationOption { private, immediate }
 
 class _MobileMigrationOptions extends ConsumerStatefulWidget {
-  const _MobileMigrationOptions({
-    required this.privateEnabled,
-    required this.immediateEnabled,
-  });
+  const _MobileMigrationOptions({required this.privateEnabled});
 
   final bool privateEnabled;
-  final bool immediateEnabled;
 
   @override
   ConsumerState<_MobileMigrationOptions> createState() =>
@@ -167,9 +163,7 @@ class _MobileMigrationOptionsState
     // draft, and routes on. Switching underneath that would apply one option's
     // work to the other's screen.
     if (_isContinuing) return;
-    if ((option == _MobileMigrationOption.private && !widget.privateEnabled) ||
-        (option == _MobileMigrationOption.immediate &&
-            !widget.immediateEnabled)) {
+    if (option == _MobileMigrationOption.private && !widget.privateEnabled) {
       return;
     }
     if (_selectedOption == option) return;
@@ -281,15 +275,14 @@ class _MobileMigrationOptionsState
             _MobileMigrationOptionCard(
               key: const ValueKey('mobile_ironwood_immediate_option'),
               title: 'Immediate',
-              body: widget.immediateEnabled
-                  ? 'Migrates your entire balance in one batch. '
-                        'Fast, but less private.'
-                  : 'Not available with Keystone.',
+              body:
+                  'Migrates your entire balance in one batch. '
+                  'Fast, but less private.',
               selected: immediateSelected,
               icon: _MigrationChoiceIcon.immediate,
-              onTap: widget.immediateEnabled && !_isContinuing
-                  ? () => _select(_MobileMigrationOption.immediate)
-                  : null,
+              onTap: _isContinuing
+                  ? null
+                  : () => _select(_MobileMigrationOption.immediate),
             ),
           ],
         ),

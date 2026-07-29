@@ -2,7 +2,7 @@ use super::super::migration;
 use super::*;
 
 use incrementalmerkletree::Position;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use transparent::bundle::{OutPoint, TxOut};
 use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
 use zcash_keys::keys::{ReceiverRequirement, UnifiedSpendingKey};
@@ -65,6 +65,41 @@ fn immediate_migration_lock_matches_zip318_transaction_expiry() {
                 > target_height + SEND_PROPOSAL_LOCK_BLOCKS
         );
     }
+}
+
+#[test]
+fn immediate_migration_marks_restart_retention_before_broadcast() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let owner = LockOwner::new([7; 32]);
+    let output = OutputRef::new(TxId::from_bytes([9; 32]), PoolType::ORCHARD, 0);
+    super::super::proposal_locks::persist(
+        db_path,
+        owner,
+        std::slice::from_ref(&output),
+        BlockHeight::from_u32(100),
+    )
+    .unwrap();
+
+    {
+        let mut input_lock =
+            ImmediateMigrationInputLock::new(db_path, WalletNetwork::Regtest, owner, vec![output]);
+        input_lock.mark_broadcast_started().unwrap();
+        assert!(input_lock.retain_on_drop);
+    }
+
+    let conn = Connection::open(db_path).unwrap();
+    let retained: bool = conn
+        .query_row(
+            "SELECT retain_until_expiry
+             FROM vizor_send_proposal_locks
+             WHERE owner = ?1",
+            params![owner.as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(retained);
 }
 
 #[test]

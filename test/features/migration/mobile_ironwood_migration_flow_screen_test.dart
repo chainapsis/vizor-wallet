@@ -695,9 +695,11 @@ Widget _productionApp({
   SyncState? syncState,
   FakeSyncNotifier? syncNotifier,
   IronwoodMigrationCoordinator Function()? migrationCoordinator,
+  bool realKeystoneCombinedRoute = false,
   bool realKeystoneDenominationRoute = false,
   bool realKeystoneBatchRoute = false,
   bool disableAnimations = true,
+  VoidCallback? onKeystoneCombinedRouteBuilt,
   VoidCallback? onKeystoneDenominationRouteBuilt,
   List<Override> extraOverrides = const [],
 }) {
@@ -781,6 +783,21 @@ Widget _productionApp({
         builder: (_, _) => MobileIronwoodMigrationPreparationScheduleScreen(
           previewStatus: status,
         ),
+      ),
+      GoRoute(
+        path: '/migration/private/keystone/sign',
+        builder: (_, state) {
+          onKeystoneCombinedRouteBuilt?.call();
+          final schedule = switch (state.extra) {
+            List<rust_sync.MigrationScheduledTransfer> value => value,
+            _ => const <rust_sync.MigrationScheduledTransfer>[],
+          };
+          return realKeystoneCombinedRoute
+              ? MobileIronwoodMigrationKeystoneCombinedSignScreen(
+                  approvedSchedule: schedule,
+                )
+              : Text('keystone combined sign route:${schedule.length}');
+        },
       ),
       GoRoute(
         path: '/migration/private/keystone/denominations/sign',
@@ -915,6 +932,16 @@ IronwoodMigrationService _migrationService({
     List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   )?
   onCompleteKeystoneDenominations,
+  Future<rust_sync.KeystoneMigrationSigningRequest> Function(
+    String accountUuid,
+    List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  )?
+  onPrepareKeystoneSingleQr,
+  Future<rust_sync.IronwoodMigrationResult> Function(
+    String accountUuid,
+    String requestId,
+  )?
+  onCompleteKeystoneSingleQr,
   Future<String> Function(
     String accountUuid,
     List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
@@ -990,6 +1017,28 @@ IronwoodMigrationService _migrationService({
               accountUuid,
               approvedSchedule,
             ) ??
+            Future.value(_migrationResult()),
+    prepareKeystoneSingleQrMigration:
+        ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+        }) =>
+            onPrepareKeystoneSingleQr?.call(accountUuid, approvedSchedule) ??
+            Future.value(_keystoneDenominationRequest()),
+    completeKeystoneSingleQrMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required requestId,
+          required signedMessages,
+          required password,
+          required saltBase64,
+        }) =>
+            onCompleteKeystoneSingleQr?.call(accountUuid, requestId) ??
             Future.value(_migrationResult()),
     createPrivateMigrationDraft:
         ({
@@ -1541,7 +1590,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('keystone denomination sign route'), findsOneWidget);
+    expect(
+      find.text(
+        'keystone combined sign route:${_plan.scheduledTransfers.length}',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Review Migration Plan'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -1936,11 +1990,13 @@ void main() {
     },
   );
 
-  testWidgets('reuses the prepared Keystone split request on the QR route', (
+  testWidgets('prepares the combined Keystone request on the QR route', (
     tester,
   ) async {
     _useMobileViewport(tester);
     var prepareCount = 0;
+    var draftCount = 0;
+    var denominationPrepareCount = 0;
 
     await tester.pumpWidget(
       _productionApp(
@@ -1949,14 +2005,24 @@ void main() {
           ios: true,
           getNotificationAuthorizationStatus: () async =>
               IronwoodMigrationNotificationAuthorizationStatus.authorized,
-          onPrepareKeystoneDenominations: (_) async {
+          onPrepareKeystoneSingleQr: (accountUuid, approvedSchedule) async {
             prepareCount += 1;
+            expect(accountUuid, 'account-1');
+            expect(approvedSchedule, _plan.scheduledTransfers);
             return _keystoneDenominationRequest();
+          },
+          onPrepareKeystoneDenominations: (_) async {
+            denominationPrepareCount += 1;
+            return _keystoneDenominationRequest();
+          },
+          onCreatePrivateDraft: (_, _) async {
+            draftCount += 1;
+            return 'private-draft-run';
           },
         ),
         hardware: true,
         privatePlan: _plan,
-        realKeystoneDenominationRoute: true,
+        realKeystoneCombinedRoute: true,
       ),
     );
     await tester.pumpAndSettle();
@@ -1973,6 +2039,11 @@ void main() {
 
     expect(prepareCount, 1);
     expect(find.text('Ready to sign'), findsOneWidget);
+    // Combined signing must not save a draft first: the combined prepare
+    // rejects any already-active run, and the legacy denomination prepare is
+    // not part of this flow.
+    expect(draftCount, 0);
+    expect(denominationPrepareCount, 0);
     await tester.tap(
       find.byKey(
         const ValueKey('mobile_ironwood_migration_start_continue_button'),
@@ -3474,10 +3545,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('keystone denomination sign route'), findsOneWidget);
+    expect(find.text('keystone combined sign route:12'), findsOneWidget);
   });
 
-  testWidgets('accepts exactly 50 transactions in each Keystone round', (
+  testWidgets('accepts exactly 40 transactions in each Keystone round', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -3491,9 +3562,9 @@ void main() {
         ),
         hardware: true,
         privatePlan: _planWith(
-          denominationSplitStageCount: 50,
-          plannedBatchCount: 50,
-          signingBatchLimit: 50,
+          denominationSplitStageCount: 40,
+          plannedBatchCount: 40,
+          signingBatchLimit: 40,
         ),
       ),
     );
@@ -3514,23 +3585,23 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('keystone denomination sign route'), findsOneWidget);
+    expect(find.text('keystone combined sign route:40'), findsOneWidget);
   });
 
-  testWidgets('supports 51 Keystone transactions across signing requests', (
+  testWidgets('supports 41 Keystone transactions across signing requests', (
     tester,
   ) async {
     _useMobileViewport(tester);
     for (final plan in [
       _planWith(
-        denominationSplitStageCount: 51,
-        plannedBatchCount: 50,
-        signingBatchLimit: 50,
+        denominationSplitStageCount: 41,
+        plannedBatchCount: 40,
+        signingBatchLimit: 40,
       ),
       _planWith(
-        denominationSplitStageCount: 50,
-        plannedBatchCount: 51,
-        signingBatchLimit: 50,
+        denominationSplitStageCount: 40,
+        plannedBatchCount: 41,
+        signingBatchLimit: 40,
       ),
     ]) {
       await tester.pumpWidget(
@@ -3562,7 +3633,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('keystone denomination sign route'), findsOneWidget);
+      expect(
+        find.text(
+          'keystone combined sign route:${plan.scheduledTransfers.length}',
+        ),
+        findsOneWidget,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
     }

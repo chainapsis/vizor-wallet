@@ -173,6 +173,7 @@ struct ImmediateMigrationInputLock {
     owner: LockOwner,
     outputs: Vec<OutputRef>,
     active: bool,
+    retain_on_drop: bool,
 }
 
 impl ImmediateMigrationInputLock {
@@ -188,13 +189,23 @@ impl ImmediateMigrationInputLock {
             owner,
             outputs,
             active: true,
+            retain_on_drop: false,
         }
+    }
+
+    fn mark_broadcast_started(&mut self) -> Result<(), String> {
+        super::proposal_locks::mark_retain_until_expiry(&self.db_path, self.owner)?;
+        self.retain_on_drop = true;
+        Ok(())
     }
 
     fn release(&mut self) -> Result<(), String> {
         if !self.active {
             return Ok(());
         }
+        // A definite rejection or successful local store makes it safe to
+        // retry release from Drop if this explicit attempt fails.
+        self.retain_on_drop = false;
         with_wallet_db_write_lock("send.immediate_migration.unlock", || {
             let mut db = open_wallet_db(&self.db_path, self.network)?;
             for output in &self.outputs {
@@ -203,17 +214,34 @@ impl ImmediateMigrationInputLock {
             }
             Ok::<(), String>(())
         })?;
+        super::proposal_locks::remove(&self.db_path, self.owner)?;
         self.active = false;
         Ok(())
     }
 
     fn retain_until_expiry(&mut self) {
+        if !self.retain_on_drop {
+            // Best effort: the transaction may already be on the network, so
+            // an ambiguity outcome must not surface as a new failure.
+            if let Err(error) =
+                super::proposal_locks::mark_retain_until_expiry(&self.db_path, self.owner)
+            {
+                log::warn!(
+                    "Immediate migration failed to retain its input lock for the \
+                     ambiguous broadcast window: {error}"
+                );
+            }
+        }
+        self.retain_on_drop = true;
         self.active = false;
     }
 }
 
 impl Drop for ImmediateMigrationInputLock {
     fn drop(&mut self) {
+        if self.retain_on_drop {
+            return;
+        }
         if let Err(error) = self.release() {
             log::warn!(
                 "Immediate migration failed to release reserved inputs; \
@@ -1726,12 +1754,29 @@ fn build_orchard_migration_immediate_pczt(
             0,
         )?;
         let input_lock_owner = LockOwner::random(&mut OsRng);
-        db.lock_outputs(
-            &locked_outputs,
+        let lock_expiry_height = immediate_migration_lock_expiry(BlockHeight::from(target_height))?;
+        // Persist the owner and output references before taking the DB locks,
+        // exactly like ephemeral send-proposal locks. A Keystone Immediate
+        // migration holds this lock across a QR signing session; if the
+        // process dies before completion, the next process must release these
+        // inputs instead of leaving them locked until the ZIP 318 canonical
+        // expiry (weeks away).
+        super::proposal_locks::persist(
+            db_path,
             input_lock_owner,
-            immediate_migration_lock_expiry(BlockHeight::from(target_height))?,
-        )
-        .map_err(|e| format!("Lock Immediate migration inputs: {e:?}"))?;
+            &locked_outputs,
+            lock_expiry_height,
+        )?;
+        if let Err(error) = db.lock_outputs(&locked_outputs, input_lock_owner, lock_expiry_height) {
+            let cleanup = super::proposal_locks::remove(db_path, input_lock_owner);
+            return Err(match cleanup {
+                Ok(()) => format!("Lock Immediate migration inputs: {error:?}"),
+                Err(cleanup_error) => format!(
+                    "Lock Immediate migration inputs: {error:?}; \
+                     also failed to remove recovery rows: {cleanup_error}"
+                ),
+            });
+        }
         Ok::<_, String>((
             built.bytes,
             built.orchard_spend_action_indices,
@@ -1787,6 +1832,10 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
+    // From this point a cancelled future or terminated process cannot prove
+    // that lightwalletd rejected the transaction. Persist the conservative
+    // restart policy before starting SendTransaction.
+    input_lock.mark_broadcast_started()?;
     let response = match crate::wallet::sync_engine::send_transaction_with_status(
         &mut client,
         &extracted.raw_tx,
@@ -1835,7 +1884,13 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
         }
     };
     if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
-        return Err(error);
+        return match input_lock.release() {
+            Ok(()) => Err(error),
+            Err(release_error) => Err(format!(
+                "{error}; additionally failed to release Immediate migration inputs: \
+                 {release_error}"
+            )),
+        };
     }
     let storage_error = decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx).err();
     if storage_error.is_some() {
