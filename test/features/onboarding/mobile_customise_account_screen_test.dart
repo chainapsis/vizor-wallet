@@ -165,6 +165,35 @@ void main() {
     expect(submittedProfilePictureId, 'pfp-02');
   });
 
+  testWidgets('blocks route pops while account creation is in flight', (
+    tester,
+  ) async {
+    final finish = Completer<void>();
+    await tester.pumpWidget(
+      _harness(
+        MobileCustomiseAccountScreen(
+          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          onFinish: (_, _) => finish.future,
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_customise_account_continue')),
+    );
+    await tester.pump();
+
+    final popScope = find.byWidgetPredicate(
+      (widget) => widget is PopScope<void>,
+    );
+    expect(tester.widget<PopScope<void>>(popScope).canPop, isFalse);
+
+    finish.complete();
+    await tester.pump();
+
+    expect(tester.widget<PopScope<void>>(popScope).canPop, isTrue);
+  });
+
   testWidgets('back is safe in the router-free Widgetbook preview', (
     tester,
   ) async {

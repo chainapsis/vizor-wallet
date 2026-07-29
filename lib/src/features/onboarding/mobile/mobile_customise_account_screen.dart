@@ -218,7 +218,7 @@ class _MobileCustomiseAccountScreenState
 
   @override
   Widget build(BuildContext context) {
-    return MobileOnboardingStepScaffold(
+    final content = MobileOnboardingStepScaffold(
       progress: mobileCreateProgress(8),
       onBack: _isSubmitting ? null : _goBack,
       title: 'Customise Account',
@@ -254,6 +254,7 @@ class _MobileCustomiseAccountScreenState
         ],
       ),
     );
+    return PopScope<void>(canPop: !_isSubmitting, child: content);
   }
 }
 
