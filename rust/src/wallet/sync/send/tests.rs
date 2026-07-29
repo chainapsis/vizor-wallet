@@ -336,6 +336,64 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
 }
 
 #[test]
+fn stopping_stale_run_discards_only_its_keystone_migration_requests() {
+    const ACCOUNT: &str = "keystone-stop-account";
+    const OLD_RUN: &str = "keystone-old-run";
+    const NEW_RUN: &str = "keystone-new-run";
+    let plan = migration::plan_denominations(1_000_000, 10_000, 15_000, 1).unwrap();
+
+    for (request_id, run_id) in [
+        ("old-denomination-request", OLD_RUN),
+        ("new-denomination-request", NEW_RUN),
+    ] {
+        keystone_denomination_requests().lock().unwrap().insert(
+            request_id.to_string(),
+            StoredDenominationPczt {
+                account_uuid: ACCOUNT.to_string(),
+                network: WalletNetwork::Test,
+                preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
+                state: KeystoneMigrationRequestState::ProofReady,
+                proof_error: None,
+                draft_run_id: Some(run_id.to_string()),
+                split_stages: vec![],
+                direct_prepared_refs: vec![],
+                total_migratable_zatoshi: plan.total_migratable_zatoshi,
+                plan: plan.clone(),
+            },
+        );
+    }
+    for (request_id, run_id) in [
+        ("old-batch-request", OLD_RUN),
+        ("new-batch-request", NEW_RUN),
+    ] {
+        keystone_migration_requests().lock().unwrap().insert(
+            request_id.to_string(),
+            StoredMigrationPcztBatch {
+                account_uuid: ACCOUNT.to_string(),
+                network: WalletNetwork::Test,
+                run_id: run_id.to_string(),
+                fallback_total_count: 0,
+                fallback_migrated_zatoshi: 0,
+                recovery_old_txids: vec![],
+                state: KeystoneMigrationRequestState::ProofReady,
+                proof_error: None,
+                messages: vec![],
+            },
+        );
+    }
+
+    discard_keystone_migration_requests_for_run(ACCOUNT, WalletNetwork::Test, OLD_RUN).unwrap();
+
+    for request_id in ["old-denomination-request", "old-batch-request"] {
+        assert!(keystone_migration_proof_status(request_id).is_err());
+    }
+    for request_id in ["new-denomination-request", "new-batch-request"] {
+        assert!(keystone_migration_proof_status(request_id).is_ok());
+        discard_keystone_migration_request(request_id).unwrap();
+    }
+}
+
+#[test]
 fn foreground_migration_policy_keeps_existing_batch_behavior() {
     assert_eq!(MigrationBroadcastPolicy::FOREGROUND.limit(500), 500);
     assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(500), 500);
@@ -675,6 +733,63 @@ fn migration_rebuilds_only_after_explicit_server_rejection() {
     ));
     assert!(!migration_broadcast_failure_requires_rebuild(
         "SendTransaction gRPC failed: connection unavailable"
+    ));
+}
+
+#[test]
+fn stop_skips_network_for_transactions_that_were_never_attempted() {
+    let (_temp_dir, db_path, run_id, _) = create_outbox_receipt_test_run(69_120);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    runtime
+        .block_on(reconcile_scheduled_migration_txs_before_abandon(
+            &db_path,
+            "not-a-lightwalletd-url",
+            WalletNetwork::Test,
+            MIGRATION_TEST_ACCOUNT,
+            &run_id,
+            &[],
+        ))
+        .unwrap();
+}
+
+#[test]
+fn native_attempt_state_requires_network_reconciliation() {
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    let error = runtime
+        .block_on(reconcile_scheduled_migration_txs_before_abandon(
+            &db_path,
+            "not-a-lightwalletd-url",
+            WalletNetwork::Test,
+            MIGRATION_TEST_ACCOUNT,
+            &run_id,
+            &[pending_txid],
+        ))
+        .unwrap_err();
+
+    assert!(error.starts_with("Open migration stop reconciliation endpoint:"));
+}
+
+#[test]
+fn legacy_attempt_state_reconciles_only_after_its_broadcast_height() {
+    let candidate = migration::MigrationStopCandidate {
+        kind: migration::MigrationStopCandidateKind::MigrationTransaction,
+        txid_hex: "10".repeat(32),
+        broadcast_height: 200,
+        expiry_height: 69_120,
+        attempt_state: migration::MigrationBroadcastAttemptState::UnknownLegacy,
+    };
+
+    assert!(!migration_stop_candidate_requires_reconciliation(
+        &candidate, false, 199,
+    ));
+    assert!(migration_stop_candidate_requires_reconciliation(
+        &candidate, false, 200,
+    ));
+    assert!(migration_stop_candidate_requires_reconciliation(
+        &candidate, true, 199,
     ));
 }
 

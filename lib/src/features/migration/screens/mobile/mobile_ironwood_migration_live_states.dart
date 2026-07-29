@@ -118,6 +118,8 @@ class _MobileMigrationPreparing extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
+          _MobileMigrationStopButton(status: status),
+          const SizedBox(height: AppSpacing.xs),
           _MobileStatusBackHomeButton(
             label: 'Go home',
             onPressed: () => context.go('/home'),
@@ -315,6 +317,8 @@ class _MobileMigrationMigratingState
           ),
           const SizedBox(height: AppSpacing.xs),
         ],
+        _MobileMigrationStopButton(status: status),
+        const SizedBox(height: AppSpacing.xs),
         _MobileStatusBackHomeButton(
           key: const ValueKey('mobile_ironwood_status_back_home_button'),
           label: 'Go home',
@@ -376,6 +380,116 @@ class _MobileMigrationMigratingState
     } catch (_) {
       // The coordinator retains the account-scoped error for presentation.
     }
+  }
+}
+
+class _MobileMigrationStopButton extends ConsumerWidget {
+  const _MobileMigrationStopButton({required this.status});
+
+  final rust_sync.MigrationStatus? status;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final runId = status?.activeRunId;
+    final isStopping =
+        accountUuid != null &&
+        ref
+            .watch(ironwoodMigrationCoordinatorProvider)
+            .stoppingAccounts
+            .contains(accountUuid);
+    if (accountUuid == null || runId == null || status?.canAbandon != true) {
+      return const SizedBox.shrink();
+    }
+    return AppButton(
+      key: const ValueKey('mobile_ironwood_stop_migration_button'),
+      expand: true,
+      variant: AppButtonVariant.ghost,
+      onPressed: isStopping
+          ? null
+          : () => unawaited(_confirmAndStop(context, ref, accountUuid, runId)),
+      child: Text(isStopping ? 'Stopping...' : 'Stop migration'),
+    );
+  }
+
+  Future<void> _confirmAndStop(
+    BuildContext context,
+    WidgetRef ref,
+    String accountUuid,
+    String runId,
+  ) async {
+    final appTheme = AppTheme.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) =>
+          AppTheme(data: appTheme, child: const _MobileMigrationStopDialog()),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .stop(accountUuid: accountUuid, runId: runId);
+      if (context.mounted) context.go('/home');
+    } catch (_) {
+      // The coordinator retains the account-scoped error for presentation.
+    }
+  }
+}
+
+class _MobileMigrationStopDialog extends StatelessWidget {
+  const _MobileMigrationStopDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.background.ground,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Stop migration?',
+                style: AppTypography.bodyLarge.copyWith(
+                  color: colors.text.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Vizor will discard work that has not been submitted. '
+                'Transactions already sent to the network cannot be cancelled '
+                'and will remain in your wallet history.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                key: const ValueKey(
+                  'mobile_ironwood_confirm_stop_migration_button',
+                ),
+                expand: true,
+                variant: AppButtonVariant.destructive,
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Stop migration'),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              AppButton(
+                expand: true,
+                variant: AppButtonVariant.ghost,
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Keep migrating'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
