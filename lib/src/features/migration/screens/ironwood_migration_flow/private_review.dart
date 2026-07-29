@@ -3,11 +3,13 @@ part of '../ironwood_migration_flow_screen.dart';
 class _IronwoodMigrationPrivateReviewContent extends ConsumerStatefulWidget {
   const _IronwoodMigrationPrivateReviewContent({
     required this.data,
+    required this.strategy,
     this.previewPlan,
     this.forceAnalyzing = false,
   });
 
   final IronwoodMigrationFlowData data;
+  final rust_sync.OrchardMigrationStrategy strategy;
   final rust_sync.OrchardMigrationPrivatePlan? previewPlan;
   final bool forceAnalyzing;
 
@@ -64,16 +66,20 @@ class _IronwoodMigrationPrivateReviewContentState
       if (accountState.activeAccount?.isHardware ?? false) {
         context.go(
           '/migration/private/keystone/sign',
-          extra: plan.scheduledTransfers,
+          extra: IronwoodMigrationPrivateApproval(
+            plan: plan,
+            strategy: widget.strategy,
+          ),
         );
         return;
       }
       softwareStartAttempted = true;
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .startSoftwareMigration(
+          .startSoftwareMigrationWithStrategy(
             accountUuid: accountUuid,
             approvedSchedule: plan.scheduledTransfers,
+            strategy: widget.strategy,
           );
       if (!mounted) return;
       await _refreshMigrationStatusBestEffort(statusRequest);
@@ -142,7 +148,13 @@ class _IronwoodMigrationPrivateReviewContentState
     final planAsync = widget.forceAnalyzing
         ? const AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.loading()
         : previewPlan == null
-        ? ref.watch(ironwoodMigrationPrivatePlanProvider)
+        ? widget.strategy == rust_sync.OrchardMigrationStrategy.balanced
+              ? ref.watch(ironwoodMigrationPrivatePlanProvider)
+              : ref.watch(
+                  ironwoodMigrationPrivatePlanForStrategyProvider(
+                    widget.strategy,
+                  ),
+                )
         : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
     if (planAsync.isLoading) return const _MigrationAnalyzingContent();

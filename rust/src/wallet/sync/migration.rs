@@ -1028,6 +1028,37 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     password: &[u8],
     salt_base64: &str,
 ) -> Result<String, String> {
+    create_run_with_staged_denominations_and_signed_children_with_timing_policy(
+        db_path,
+        account_uuid,
+        network,
+        plan,
+        prepared_notes,
+        signed_children,
+        denomination_stages,
+        approved_schedule,
+        preparation_timing_policy,
+        configured_timing_policy(network),
+        password,
+        salt_base64,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_run_with_staged_denominations_and_signed_children_with_timing_policy(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    plan: &DenominationPlan,
+    prepared_notes: &[PreparedOrchardNoteRef],
+    signed_children: Vec<SignedMigrationPcztInsert>,
+    denomination_stages: Vec<DenominationStageInsert>,
+    approved_schedule: Option<&[MigrationScheduleEntry]>,
+    preparation_timing_policy: PreparationTimingPolicy,
+    timing_policy: MigrationTimingPolicy,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<String, String> {
     if denomination_stages.is_empty() && prepared_notes.is_empty() {
         return Err("Migration run has no prepared funding notes".to_string());
     }
@@ -1057,7 +1088,6 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let now = now_ms()?;
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
-    let timing_policy = configured_timing_policy(network);
     let initial_phase = if denomination_stages.is_empty() {
         PHASE_READY_TO_MIGRATE
     } else {
@@ -1145,6 +1175,26 @@ pub(crate) fn create_or_resume_private_migration_draft(
     approved_schedule: &[MigrationScheduleEntry],
     preparation_timing_policy: PreparationTimingPolicy,
 ) -> Result<String, String> {
+    create_or_resume_private_migration_draft_with_timing_policy(
+        db_path,
+        account_uuid,
+        network,
+        target_values_zatoshi,
+        approved_schedule,
+        preparation_timing_policy,
+        configured_timing_policy(network),
+    )
+}
+
+pub(crate) fn create_or_resume_private_migration_draft_with_timing_policy(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    target_values_zatoshi: &[u64],
+    approved_schedule: &[MigrationScheduleEntry],
+    preparation_timing_policy: PreparationTimingPolicy,
+    timing_policy: MigrationTimingPolicy,
+) -> Result<String, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let tx = conn
@@ -1157,6 +1207,11 @@ pub(crate) fn create_or_resume_private_migration_draft(
                     "Saved private migration plan no longer matches this balance".to_string(),
                 );
             }
+            if timing_policy_for_run_with_conn(&tx, &run.run_id, network)? != timing_policy {
+                return Err(
+                    "Saved private migration strategy no longer matches this selection".to_string(),
+                );
+            }
             return Ok(run.run_id);
         }
         return Err(format!("Migration already active: {}", run.run_id));
@@ -1165,7 +1220,6 @@ pub(crate) fn create_or_resume_private_migration_draft(
         return Err("Migration recovery must complete before creating another run".to_string());
     }
 
-    let timing_policy = configured_timing_policy(network);
     validate_schedule_with_policy(
         approved_schedule,
         target_values_zatoshi,

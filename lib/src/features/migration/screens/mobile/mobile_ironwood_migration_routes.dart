@@ -10,6 +10,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewParts,
     this.previewSurface,
     this.privateMigrationSupported,
+    this.privateStrategy = rust_sync.OrchardMigrationStrategy.balanced,
     super.key,
   });
 
@@ -21,6 +22,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final MobileIronwoodMigrationPreviewSurface? previewSurface;
   final bool? privateMigrationSupported;
+  final rust_sync.OrchardMigrationStrategy privateStrategy;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -41,6 +43,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         previewImmediatePlan: previewImmediatePlan,
         previewParts: previewParts,
         privateMigrationSupported: privateMigrationSupported,
+        privateStrategy: privateStrategy,
         status: previewStatus,
       );
     }
@@ -55,6 +58,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       previewImmediatePlan: previewImmediatePlan,
       previewParts: previewParts,
       privateMigrationSupported: privateMigrationSupported,
+      privateStrategy: privateStrategy,
       status: null,
     );
   }
@@ -69,6 +73,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.previewImmediatePlan,
     required this.previewParts,
     required this.privateMigrationSupported,
+    required this.privateStrategy,
     this.status,
   });
 
@@ -79,6 +84,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final bool? privateMigrationSupported;
+  final rust_sync.OrchardMigrationStrategy privateStrategy;
   final rust_sync.MigrationStatus? status;
 
   @override
@@ -107,6 +113,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
       MobileIronwoodMigrationStep.notifications =>
         _MobileMigrationNotificationPermissionScreen(
           privatePlan: previewPrivatePlan,
+          strategy: privateStrategy,
         ),
       MobileIronwoodMigrationStep.fastReview => _MobileMigrationFastReview(
         data: data,

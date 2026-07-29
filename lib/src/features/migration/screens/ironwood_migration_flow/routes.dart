@@ -3,6 +3,7 @@ part of '../ironwood_migration_flow_screen.dart';
 class IronwoodMigrationFlowScreen extends ConsumerWidget {
   const IronwoodMigrationFlowScreen({
     required this.step,
+    this.privateStrategy = rust_sync.OrchardMigrationStrategy.balanced,
     this.previewData,
     this.previewPrivatePlan,
     this.previewImmediatePlan,
@@ -12,6 +13,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
   });
 
   final IronwoodMigrationFlowStep step;
+  final rust_sync.OrchardMigrationStrategy privateStrategy;
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
@@ -27,6 +29,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
     return _IronwoodMigrationShell(
       step: step,
       data: data,
+      privateStrategy: privateStrategy,
       previewPrivatePlan: previewPrivatePlan,
       previewImmediatePlan: previewImmediatePlan,
       previewReviewStage: previewReviewStage,

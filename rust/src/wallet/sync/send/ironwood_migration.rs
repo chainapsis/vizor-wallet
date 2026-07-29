@@ -4,6 +4,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
     account_uuid: &str,
     approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<String, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let plan = get_orchard_migration_private_plan(
@@ -11,15 +12,17 @@ pub(crate) fn create_or_resume_private_migration_draft(
         network,
         account_uuid,
         preparation_timing_policy,
+        migration_timing_policy,
     )?
     .ok_or("Migration plan is unavailable")?;
-    super::migration::create_or_resume_private_migration_draft(
+    super::migration::create_or_resume_private_migration_draft_with_timing_policy(
         db_path,
         account_uuid,
         network,
         &plan.target_values_zatoshi,
         &approved_schedule,
         preparation_timing_policy,
+        migration_timing_policy,
     )
 }
 
@@ -28,6 +31,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     network: WalletNetwork,
     account_uuid: &str,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let draft_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
@@ -66,7 +70,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
         ),
         None => (
             preparation_timing_policy,
-            super::migration::configured_timing_policy(network),
+            migration_timing_policy,
         ),
     };
     let split = with_wallet_db_write_lock("send.migration.prepare_denominations_pczt", || {
@@ -125,6 +129,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             account_uuid: account_uuid.to_string(),
             network,
             preparation_timing_policy: preparation_policy_for_build,
+            migration_timing_policy: migration_policy_for_build,
             state: request_state,
             proof_error: None,
             draft_run_id: draft_run.map(|run| run.run_id),
@@ -209,6 +214,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
         StoredDenominationCompletion {
             draft_run_id: stored.draft_run_id.clone(),
             preparation_timing_policy: stored.preparation_timing_policy,
+            migration_timing_policy: stored.migration_timing_policy,
             split_stages: stored.split_stages.clone(),
             direct_prepared_refs: stored.direct_prepared_refs.clone(),
             total_migratable_zatoshi: stored.total_migratable_zatoshi,
@@ -244,7 +250,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             )?;
             Ok(run_id.to_string())
         } else {
-            super::migration::create_run_with_staged_denominations_and_signed_children(
+            super::migration::create_run_with_staged_denominations_and_signed_children_with_timing_policy(
                 db_path,
                 account_uuid,
                 network,
@@ -254,6 +260,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
                 denomination_stages,
                 Some(&approved_schedule),
                 stored.preparation_timing_policy,
+                stored.migration_timing_policy,
                 pending_password,
                 pending_salt_base64,
             )
@@ -318,6 +325,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     account_uuid: &str,
     approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     if super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)? {
@@ -342,7 +350,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
             network,
             account_uuid,
             preparation_timing_policy,
-            super::migration::configured_timing_policy(network),
+            migration_timing_policy,
         )
     })?;
     let Some(split) = split else {
@@ -357,10 +365,11 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         .len()
         .checked_add(split.stages.len())
         .ok_or("Keystone migration message count overflow")?;
-    super::migration::validate_schedule(
+    super::migration::validate_schedule_with_policy(
         &approved_schedule,
         &split.plan.migration_outputs,
         network,
+        migration_timing_policy,
     )?;
     let mut child_messages = Vec::with_capacity(split.predicted_notes.len());
     for (index, predicted) in split.predicted_notes.iter().enumerate() {
@@ -424,6 +433,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
             account_uuid: account_uuid.to_string(),
             network,
             preparation_timing_policy,
+            migration_timing_policy,
             state: request_state,
             proof_error: None,
             split_stages: split.stages,
@@ -512,6 +522,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         stored.state = KeystoneMigrationRequestState::Completing;
         StoredSingleQrMigrationCompletion {
             preparation_timing_policy: stored.preparation_timing_policy,
+            migration_timing_policy: stored.migration_timing_policy,
             split_stages: stored.split_stages.clone(),
             direct_prepared_refs: stored.direct_prepared_refs.clone(),
             total_migratable_zatoshi: stored.total_migratable_zatoshi,
@@ -572,7 +583,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
-        super::migration::create_run_with_staged_denominations_and_signed_children(
+        super::migration::create_run_with_staged_denominations_and_signed_children_with_timing_policy(
             db_path,
             account_uuid,
             network,
@@ -582,6 +593,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             denomination_stages,
             Some(&stored.approved_schedule),
             stored.preparation_timing_policy,
+            stored.migration_timing_policy,
             pending_password,
             pending_salt_base64,
         )

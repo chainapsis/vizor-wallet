@@ -559,6 +559,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  OrchardMigrationStrategy dco_decode_orchard_migration_strategy(dynamic raw);
+
+  @protected
   ParsedSignedVotingPczt dco_decode_parsed_signed_voting_pczt(dynamic raw);
 
   @protected
@@ -1399,6 +1402,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   OrchardMigrationPrivatePlan sse_decode_orchard_migration_private_plan(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OrchardMigrationStrategy sse_decode_orchard_migration_strategy(
     SseDeserializer deserializer,
   );
 
@@ -2427,6 +2435,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_orchard_migration_private_plan(
     OrchardMigrationPrivatePlan self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_orchard_migration_strategy(
+    OrchardMigrationStrategy self,
     SseSerializer serializer,
   );
 

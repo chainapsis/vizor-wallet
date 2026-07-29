@@ -780,6 +780,25 @@ pub enum MigrationPreparationOutputKind {
     Continuation,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrchardMigrationStrategy {
+    Balanced,
+    Zip318Canonical,
+}
+
+fn migration_timing_policy(
+    network: WalletNetwork,
+    strategy: OrchardMigrationStrategy,
+) -> wallet_sync::MigrationTimingPolicy {
+    let strategy = match strategy {
+        OrchardMigrationStrategy::Balanced => wallet_sync::MigrationStrategy::Balanced,
+        OrchardMigrationStrategy::Zip318Canonical => {
+            wallet_sync::MigrationStrategy::Zip318Canonical
+        }
+    };
+    wallet_sync::timing_policy_for_strategy(network, strategy)
+}
+
 pub struct MigrationPreparationOutputStatus {
     /// Actual Orchard note value, including any fee reserved for its migration.
     pub value_zatoshi: u64,
@@ -1092,36 +1111,123 @@ pub fn migrate_orchard_to_ironwood(
     approved_schedule: Vec<MigrationScheduledTransfer>,
     space_preparation_broadcasts: bool,
 ) -> Result<IronwoodMigrationResult, String> {
-    catch(|| {
-        let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
-        let password = Zeroizing::new(password.into_bytes());
-        let network = parse_network_and_migrate(&db_path, &network)?;
-        let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
-        drop(mnemonic_bytes);
+    migrate_orchard_to_ironwood_with_strategy(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        mnemonic_bytes,
+        password,
+        salt_base64,
+        approved_schedule,
+        space_preparation_broadcasts,
+        OrchardMigrationStrategy::Balanced,
+    )
+}
 
-        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
-        let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood(
-            &db_path,
-            &lightwalletd_url,
+pub fn migrate_orchard_to_ironwood_with_strategy(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    mnemonic_bytes: Vec<u8>,
+    password: String,
+    salt_base64: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
+    space_preparation_broadcasts: bool,
+    strategy: OrchardMigrationStrategy,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let migration_timing_policy = migration_timing_policy(network, strategy);
+        migrate_orchard_to_ironwood_with_timing_policy(
+            db_path,
+            lightwalletd_url,
             network,
-            &account_uuid,
-            seed,
+            account_uuid,
+            mnemonic_bytes,
             password,
-            &salt_base64,
-            to_wallet_migration_schedule(approved_schedule),
-            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
-                space_preparation_broadcasts,
-            ),
-        ))?;
-        Ok(IronwoodMigrationResult {
-            txids: r.txids,
-            status: r.status,
-            broadcasted_count: r.broadcasted_count,
-            total_count: r.total_count,
-            message: r.message,
-            fee_zatoshi: r.fee_zatoshi,
-            migrated_zatoshi: r.migrated_zatoshi,
-        })
+            salt_base64,
+            approved_schedule,
+            space_preparation_broadcasts,
+            migration_timing_policy,
+        )
+    })
+}
+
+/// Rebuilds a retired private migration while preserving the exact timing
+/// policy stored by the source run. This deliberately accepts a run ID instead
+/// of a user-facing strategy so policies created by older releases remain
+/// byte-for-byte equivalent after credential recovery.
+pub fn migrate_orchard_to_ironwood_reusing_timing_policy(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    mnemonic_bytes: Vec<u8>,
+    password: String,
+    salt_base64: String,
+    source_run_id: String,
+    space_preparation_broadcasts: bool,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let migration_timing_policy =
+            wallet_sync::timing_policy_for_run(&db_path, &source_run_id, network)?;
+        migrate_orchard_to_ironwood_with_timing_policy(
+            db_path,
+            lightwalletd_url,
+            network,
+            account_uuid,
+            mnemonic_bytes,
+            password,
+            salt_base64,
+            Vec::new(),
+            space_preparation_broadcasts,
+            migration_timing_policy,
+        )
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn migrate_orchard_to_ironwood_with_timing_policy(
+    db_path: String,
+    lightwalletd_url: String,
+    network: WalletNetwork,
+    account_uuid: String,
+    mnemonic_bytes: Vec<u8>,
+    password: String,
+    salt_base64: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
+    space_preparation_broadcasts: bool,
+    migration_timing_policy: wallet_sync::MigrationTimingPolicy,
+) -> Result<IronwoodMigrationResult, String> {
+    let mnemonic_bytes = Zeroizing::new(mnemonic_bytes);
+    let password = Zeroizing::new(password.into_bytes());
+    let seed = keys::mnemonic_bytes_to_seed(mnemonic_bytes.as_slice())?;
+    drop(mnemonic_bytes);
+
+    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+    let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood(
+        &db_path,
+        &lightwalletd_url,
+        network,
+        &account_uuid,
+        seed,
+        password,
+        &salt_base64,
+        to_wallet_migration_schedule(approved_schedule),
+        wallet_sync::PreparationTimingPolicy::from_spacing_enabled(space_preparation_broadcasts),
+        migration_timing_policy,
+    ))?;
+    Ok(IronwoodMigrationResult {
+        txids: r.txids,
+        status: r.status,
+        broadcasted_count: r.broadcasted_count,
+        total_count: r.total_count,
+        message: r.message,
+        fee_zatoshi: r.fee_zatoshi,
+        migrated_zatoshi: r.migrated_zatoshi,
     })
 }
 
@@ -1433,8 +1539,25 @@ pub fn get_orchard_migration_private_plan(
     account_uuid: String,
     space_preparation_broadcasts: bool,
 ) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    get_orchard_migration_private_plan_with_strategy(
+        db_path,
+        network,
+        account_uuid,
+        space_preparation_broadcasts,
+        OrchardMigrationStrategy::Balanced,
+    )
+}
+
+pub fn get_orchard_migration_private_plan_with_strategy(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    space_preparation_broadcasts: bool,
+    strategy: OrchardMigrationStrategy,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let migration_timing_policy = migration_timing_policy(network, strategy);
         wallet_sync::get_orchard_migration_private_plan(
             &db_path,
             network,
@@ -1442,6 +1565,7 @@ pub fn get_orchard_migration_private_plan(
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),
+            migration_timing_policy,
         )
         .map(|plan| {
             plan.map(|plan| OrchardMigrationPrivatePlan {
@@ -1665,8 +1789,25 @@ pub fn prepare_orchard_migration_denominations_pczt(
     account_uuid: String,
     space_preparation_broadcasts: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
+    prepare_orchard_migration_denominations_pczt_with_strategy(
+        db_path,
+        network,
+        account_uuid,
+        space_preparation_broadcasts,
+        OrchardMigrationStrategy::Balanced,
+    )
+}
+
+pub fn prepare_orchard_migration_denominations_pczt_with_strategy(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    space_preparation_broadcasts: bool,
+    strategy: OrchardMigrationStrategy,
+) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let migration_timing_policy = migration_timing_policy(network, strategy);
         let request = wallet_sync::prepare_orchard_migration_denominations_pczt(
             &db_path,
             network,
@@ -1674,6 +1815,7 @@ pub fn prepare_orchard_migration_denominations_pczt(
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),
+            migration_timing_policy,
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,
@@ -1697,8 +1839,27 @@ pub fn create_or_resume_private_migration_draft(
     approved_schedule: Vec<MigrationScheduledTransfer>,
     space_preparation_broadcasts: bool,
 ) -> Result<String, String> {
+    create_or_resume_private_migration_draft_with_strategy(
+        db_path,
+        network,
+        account_uuid,
+        approved_schedule,
+        space_preparation_broadcasts,
+        OrchardMigrationStrategy::Balanced,
+    )
+}
+
+pub fn create_or_resume_private_migration_draft_with_strategy(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
+    space_preparation_broadcasts: bool,
+    strategy: OrchardMigrationStrategy,
+) -> Result<String, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let migration_timing_policy = migration_timing_policy(network, strategy);
         wallet_sync::create_or_resume_private_migration_draft(
             &db_path,
             network,
@@ -1707,6 +1868,7 @@ pub fn create_or_resume_private_migration_draft(
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),
+            migration_timing_policy,
         )
     })
 }
@@ -1811,8 +1973,27 @@ pub fn prepare_orchard_migration_single_qr_pczt(
     approved_schedule: Vec<MigrationScheduledTransfer>,
     space_preparation_broadcasts: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
+    prepare_orchard_migration_single_qr_pczt_with_strategy(
+        db_path,
+        network,
+        account_uuid,
+        approved_schedule,
+        space_preparation_broadcasts,
+        OrchardMigrationStrategy::Balanced,
+    )
+}
+
+pub fn prepare_orchard_migration_single_qr_pczt_with_strategy(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
+    space_preparation_broadcasts: bool,
+    strategy: OrchardMigrationStrategy,
+) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let migration_timing_policy = migration_timing_policy(network, strategy);
         let request = wallet_sync::prepare_orchard_migration_single_qr_pczt(
             &db_path,
             network,
@@ -1821,6 +2002,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),
+            migration_timing_policy,
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,
@@ -1963,8 +2145,33 @@ pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
     approved_schedule: Vec<MigrationScheduledTransfer>,
     space_preparation_broadcasts: bool,
 ) -> Result<IronwoodMigrationResult, String> {
+    migrate_orchard_to_ironwood_with_macos_stored_mnemonic_and_strategy(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        password,
+        salt_base64,
+        approved_schedule,
+        space_preparation_broadcasts,
+        OrchardMigrationStrategy::Balanced,
+    )
+}
+
+pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic_and_strategy(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+    salt_base64: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
+    space_preparation_broadcasts: bool,
+    strategy: OrchardMigrationStrategy,
+) -> Result<IronwoodMigrationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let migration_timing_policy = migration_timing_policy(network, strategy);
         let password_bytes = password.into_bytes();
         let seed = secret_store::seed_from_macos_stored_mnemonic(
             network,
@@ -1985,6 +2192,7 @@ pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),
+            migration_timing_policy,
         ))?;
         Ok(IronwoodMigrationResult {
             txids: r.txids,

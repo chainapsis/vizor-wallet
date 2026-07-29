@@ -55,7 +55,7 @@ where
     )
 }
 
-fn planned_transfer_schedule_with_policy<R, I>(
+pub(crate) fn planned_transfer_schedule_with_policy<R, I>(
     values: I,
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
@@ -122,7 +122,7 @@ pub(crate) fn validate_schedule(
     )
 }
 
-fn validate_schedule_with_policy(
+pub(crate) fn validate_schedule_with_policy(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],
     network: WalletNetwork,

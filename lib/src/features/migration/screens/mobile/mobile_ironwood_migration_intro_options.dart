@@ -132,7 +132,7 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
   }
 }
 
-enum _MobileMigrationOption { private, immediate }
+enum _MobileMigrationOption { balanced, immediate, zip318Canonical }
 
 class _MobileMigrationOptions extends ConsumerStatefulWidget {
   const _MobileMigrationOptions({
@@ -158,7 +158,7 @@ class _MobileMigrationOptionsState
   void initState() {
     super.initState();
     _selectedOption = widget.privateEnabled
-        ? _MobileMigrationOption.private
+        ? _MobileMigrationOption.balanced
         : _MobileMigrationOption.immediate;
   }
 
@@ -167,7 +167,8 @@ class _MobileMigrationOptionsState
     // draft, and routes on. Switching underneath that would apply one option's
     // work to the other's screen.
     if (_isContinuing) return;
-    if ((option == _MobileMigrationOption.private && !widget.privateEnabled) ||
+    if ((option != _MobileMigrationOption.immediate &&
+            !widget.privateEnabled) ||
         (option == _MobileMigrationOption.immediate &&
             !widget.immediateEnabled)) {
       return;
@@ -182,6 +183,9 @@ class _MobileMigrationOptionsState
       context.go('/migration/fast/review');
       return;
     }
+    final strategy = _selectedOption == _MobileMigrationOption.zip318Canonical
+        ? rust_sync.OrchardMigrationStrategy.zip318Canonical
+        : rust_sync.OrchardMigrationStrategy.balanced;
 
     setState(() {
       _isContinuing = true;
@@ -190,7 +194,11 @@ class _MobileMigrationOptionsState
     rust_sync.OrchardMigrationPrivatePlan? plan;
     String? accountUuid;
     try {
-      plan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
+      plan = await ref.read(
+        strategy == rust_sync.OrchardMigrationStrategy.balanced
+            ? ironwoodMigrationPrivatePlanProvider.future
+            : ironwoodMigrationPrivatePlanForStrategyProvider(strategy).future,
+      );
       if (!mounted) return;
       if (plan == null) {
         throw StateError('Migration plan is unavailable.');
@@ -231,7 +239,10 @@ class _MobileMigrationOptionsState
       if (!mounted) return;
       // Permission status is fail-closed: if native status cannot be read,
       // show the explanation screen and keep background work disabled.
-      context.go('/migration/private/notifications', extra: plan);
+      context.go(
+        '/migration/private/notifications',
+        extra: IronwoodMigrationPrivateApproval(plan: plan, strategy: strategy),
+      );
       return;
     }
 
@@ -239,7 +250,13 @@ class _MobileMigrationOptionsState
     try {
       if (!mounted) return;
       if (!authorization.allowsBackgroundMigration) {
-        context.go('/migration/private/notifications', extra: plan);
+        context.go(
+          '/migration/private/notifications',
+          extra: IronwoodMigrationPrivateApproval(
+            plan: plan,
+            strategy: strategy,
+          ),
+        );
         return;
       }
       await ref
@@ -247,6 +264,7 @@ class _MobileMigrationOptionsState
           .savePrivateMigrationDraft(
             accountUuid: accountUuid,
             approvedSchedule: plan.scheduledTransfers,
+            strategy: strategy,
           );
       draftSaved = true;
       if (!mounted) return;
@@ -255,6 +273,7 @@ class _MobileMigrationOptionsState
       final continuation = await _continuePrivateMigrationAfterNotificationGate(
         ref,
         plan,
+        strategy,
       );
       if (!mounted) return;
       _openPrivateMigrationDestination(context, continuation, plan);
@@ -279,7 +298,7 @@ class _MobileMigrationOptionsState
 
   @override
   Widget build(BuildContext context) {
-    final privateSelected = _selectedOption == _MobileMigrationOption.private;
+    final balancedSelected = _selectedOption == _MobileMigrationOption.balanced;
     final immediateSelected =
         _selectedOption == _MobileMigrationOption.immediate;
     return PopScope(
@@ -291,8 +310,8 @@ class _MobileMigrationOptionsState
             ? () {}
             : () => context.go('/migration/how-it-works'),
         navTitle: 'How to Migrate',
-        topGap: 91,
-        childGap: 24,
+        topGap: 31,
+        childGap: 16,
         title: 'Choose How to Migrate',
         subtitle: widget.privateEnabled
             ? 'Choose between more privacy over time or a faster migration. '
@@ -324,17 +343,18 @@ class _MobileMigrationOptionsState
           children: [
             _MobileMigrationOptionCard(
               key: const ValueKey('mobile_ironwood_private_option'),
-              title: 'Private',
+              title: 'Balanced',
               body: widget.privateEnabled
-                  ? 'Splits transactions into multiple parts to minimize '
-                        'traceability, but takes longer.'
+                  ? 'Uses the same core privacy mechanisms of ZIP-318, but '
+                        'with a more pragmatic timeline. Will take hours - '
+                        'couple days.'
                   : 'Not available on Android.',
-              selected: privateSelected,
+              selected: balancedSelected,
               icon: _MigrationChoiceIcon.private,
               recommended: widget.privateEnabled,
               onTap: _isContinuing || !widget.privateEnabled
                   ? null
-                  : () => _select(_MobileMigrationOption.private),
+                  : () => _select(_MobileMigrationOption.balanced),
             ),
             const SizedBox(height: AppSpacing.sm),
             _MobileMigrationOptionCard(
@@ -342,13 +362,28 @@ class _MobileMigrationOptionsState
               title: 'Immediate',
               body: widget.immediateEnabled
                   ? 'Migrates your entire balance in one batch. '
-                        'Fast, but less private.'
+                        'Done in less than 10 minutes but less private.'
                   : 'Not available with Keystone.',
               selected: immediateSelected,
               icon: _MigrationChoiceIcon.immediate,
               onTap: widget.immediateEnabled && !_isContinuing
                   ? () => _select(_MobileMigrationOption.immediate)
                   : null,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MobileMigrationOptionCard(
+              key: const ValueKey('mobile_ironwood_zip318_canonical_option'),
+              title: 'ZIP-318 Canonical',
+              body:
+                  'Same method as recommended, but 2x slower as defined in '
+                  'the ZIP. Balanced is more pragmatic without real privacy '
+                  'leakage, but we offer the precise ZIP in case you want it.',
+              selected:
+                  _selectedOption == _MobileMigrationOption.zip318Canonical,
+              icon: _MigrationChoiceIcon.zip318Canonical,
+              onTap: _isContinuing || !widget.privateEnabled
+                  ? null
+                  : () => _select(_MobileMigrationOption.zip318Canonical),
             ),
           ],
         ),
@@ -423,6 +458,7 @@ Future<
 _continuePrivateMigrationAfterNotificationGate(
   WidgetRef ref,
   rust_sync.OrchardMigrationPrivatePlan plan,
+  rust_sync.OrchardMigrationStrategy strategy,
 ) async {
   final accountState = await ref.read(accountProvider.future);
   final accountUuid = accountState.activeAccountUuid;
@@ -434,6 +470,7 @@ _continuePrivateMigrationAfterNotificationGate(
     final service = ref.read(ironwoodMigrationServiceProvider);
     final request = await service.prepareKeystoneDenominationPrivateMigration(
       accountUuid: accountUuid,
+      strategy: strategy,
     );
     if (request.messages.isEmpty) {
       await service.completeKeystoneDenominationPrivateMigration(
@@ -461,9 +498,10 @@ _continuePrivateMigrationAfterNotificationGate(
 
   await ref
       .read(ironwoodMigrationCoordinatorProvider.notifier)
-      .startSoftwareMigration(
+      .startSoftwareMigrationWithStrategy(
         accountUuid: accountUuid,
         approvedSchedule: plan.scheduledTransfers,
+        strategy: strategy,
       );
 
   _invalidateStartedPrivateMigration(ref);

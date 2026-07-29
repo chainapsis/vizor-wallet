@@ -182,9 +182,13 @@ class _MigrationPreviewPage extends StatelessWidget {
 
 class _MobileMigrationNotificationPermissionScreen
     extends ConsumerStatefulWidget {
-  const _MobileMigrationNotificationPermissionScreen({this.privatePlan});
+  const _MobileMigrationNotificationPermissionScreen({
+    this.privatePlan,
+    this.strategy = rust_sync.OrchardMigrationStrategy.balanced,
+  });
 
   final rust_sync.OrchardMigrationPrivatePlan? privatePlan;
+  final rust_sync.OrchardMigrationStrategy strategy;
 
   @override
   ConsumerState<_MobileMigrationNotificationPermissionScreen> createState() =>
@@ -312,6 +316,7 @@ class _MobileMigrationNotificationPermissionScreenState
           .savePrivateMigrationDraft(
             accountUuid: accountUuid,
             approvedSchedule: plan.scheduledTransfers,
+            strategy: widget.strategy,
           );
       draftSaved = true;
       if (!mounted) return;
@@ -320,6 +325,7 @@ class _MobileMigrationNotificationPermissionScreenState
       final destination = await _continuePrivateMigrationAfterNotificationGate(
         ref,
         plan,
+        widget.strategy,
       );
       if (!mounted) return;
       _openPrivateMigrationDestination(context, destination, plan);

@@ -694,8 +694,13 @@ Widget _productionApp({
         builder: (_, state) => MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.notifications,
           previewPrivatePlan: switch (state.extra) {
+            IronwoodMigrationPrivateApproval approval => approval.plan,
             rust_sync.OrchardMigrationPrivatePlan plan => plan,
             _ => privatePlan,
+          },
+          privateStrategy: switch (state.extra) {
+            IronwoodMigrationPrivateApproval approval => approval.strategy,
+            _ => rust_sync.OrchardMigrationStrategy.balanced,
           },
         ),
       ),
@@ -1157,7 +1162,7 @@ void main() {
     expect(find.text('Choose How to Migrate'), findsOneWidget);
     expect(find.text('How to Migrate'), findsOneWidget);
     expect(find.textContaining('/3'), findsNothing);
-    expect(find.text('Private'), findsOneWidget);
+    expect(find.text('Balanced'), findsOneWidget);
     expect(find.text('Recommended'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ironwood_recommended_badge')),
@@ -1165,8 +1170,8 @@ void main() {
     );
     expect(
       find.text(
-        'Splits transactions into multiple parts to minimize traceability, '
-        'but takes longer.',
+        'Uses the same core privacy mechanisms of ZIP-318, but with a more '
+        'pragmatic timeline. Will take hours - couple days.',
       ),
       findsOneWidget,
     );
@@ -1177,7 +1182,8 @@ void main() {
     );
     expect(
       find.text(
-        'Migrates your entire balance in one batch. Fast, but less private.',
+        'Migrates your entire balance in one batch. Done in less than 10 '
+        'minutes but less private.',
       ),
       findsOneWidget,
     );
@@ -1200,7 +1206,7 @@ void main() {
           .widget<Text>(
             find.text(
               'Migrates your entire balance in one batch. '
-              'Fast, but less private.',
+              'Done in less than 10 minutes but less private.',
             ),
           )
           .style
@@ -1228,7 +1234,7 @@ void main() {
     );
 
     final unselectedRadio = tester.widget<Container>(
-      find.byKey(const ValueKey('mobile_ironwood_unselected_radio')),
+      find.byKey(const ValueKey('mobile_ironwood_unselected_radio')).first,
     );
     expect(
       (unselectedRadio.decoration! as BoxDecoration).color,
@@ -2167,7 +2173,7 @@ void main() {
       const ValueKey('mobile_ironwood_immediate_option'),
     );
     expect(find.text('Choose How to Migrate'), findsOneWidget);
-    expect(find.text('Private'), findsOneWidget);
+    expect(find.text('Balanced'), findsOneWidget);
     expect(find.text('Immediate'), findsOneWidget);
     expect(
       find.text(

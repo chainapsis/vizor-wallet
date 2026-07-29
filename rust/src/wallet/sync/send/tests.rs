@@ -237,6 +237,8 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 account_uuid: account_uuid.to_string(),
                 network: WalletNetwork::Test,
                 preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
+                migration_timing_policy:
+                    migration::MigrationTimingPolicy::Standard90MinutesLatestAnchor,
                 state: KeystoneMigrationRequestState::ProofReady,
                 proof_error: None,
                 draft_run_id: None,
@@ -279,6 +281,8 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                     account_uuid: account_uuid.to_string(),
                     network: WalletNetwork::Test,
                     preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
+                    migration_timing_policy:
+                        migration::MigrationTimingPolicy::Standard90MinutesLatestAnchor,
                     state: KeystoneMigrationRequestState::ProofReady,
                     proof_error: None,
                     split_stages: vec![],

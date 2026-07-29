@@ -58,6 +58,7 @@ struct StoredDenominationPczt {
     account_uuid: String,
     network: WalletNetwork,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
     state: KeystoneMigrationRequestState,
     proof_error: Option<String>,
     draft_run_id: Option<String>,
@@ -70,6 +71,7 @@ struct StoredDenominationPczt {
 struct StoredDenominationCompletion {
     draft_run_id: Option<String>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
     split_stages: Vec<CreatedDenominationStagePczt>,
     direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,
@@ -117,6 +119,7 @@ struct StoredSingleQrMigrationPczt {
     account_uuid: String,
     network: WalletNetwork,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
     state: KeystoneMigrationRequestState,
     proof_error: Option<String>,
     split_stages: Vec<CreatedDenominationStagePczt>,
@@ -129,6 +132,7 @@ struct StoredSingleQrMigrationPczt {
 
 struct StoredSingleQrMigrationCompletion {
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
     split_stages: Vec<CreatedDenominationStagePczt>,
     direct_prepared_refs: Vec<super::migration::PreparedOrchardNoteRef>,
     total_migratable_zatoshi: u64,

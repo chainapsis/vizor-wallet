@@ -12,6 +12,7 @@ import '../../features/migration/models/mobile_ironwood_migration_status_entry.d
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
     show
         MobileIronwoodMigrationKeystoneImmediateSignScreen,
+        IronwoodMigrationPrivateApproval,
         MobileIronwoodMigrationKeystoneBatchSignScreen,
         MobileIronwoodMigrationKeystoneDenominationSignEntry,
         MobileIronwoodMigrationKeystoneDenominationSignScreen;
@@ -316,8 +317,13 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         child: MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.notifications,
           previewPrivatePlan: switch (state.extra) {
+            IronwoodMigrationPrivateApproval approval => approval.plan,
             rust_sync.OrchardMigrationPrivatePlan plan => plan,
             _ => null,
+          },
+          privateStrategy: switch (state.extra) {
+            IronwoodMigrationPrivateApproval approval => approval.strategy,
+            _ => rust_sync.OrchardMigrationStrategy.balanced,
           },
         ),
       ),

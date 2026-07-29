@@ -2736,6 +2736,22 @@ fn mainnet_run_reads_its_persisted_timing_policy() {
 }
 
 #[test]
+fn migration_strategy_selects_balanced_or_canonical_mainnet_policy() {
+    assert_eq!(
+        timing_policy_for_strategy(WalletNetwork::Main, MigrationStrategy::Balanced),
+        MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+    );
+    assert_eq!(
+        timing_policy_for_strategy(WalletNetwork::Main, MigrationStrategy::Zip318Canonical,),
+        MigrationTimingPolicy::Standard,
+    );
+    assert_eq!(
+        timing_policy_for_strategy(WalletNetwork::Regtest, MigrationStrategy::Zip318Canonical,),
+        MigrationTimingPolicy::Standard,
+    );
+}
+
+#[test]
 fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
@@ -4581,6 +4597,92 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
             .len(),
         1
     );
+}
+
+#[test]
+fn private_migration_draft_rejects_a_different_selected_strategy() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let target_values = vec![100_000_000];
+    let approved_schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: target_values[0],
+        block_offset: 1,
+    }];
+
+    create_or_resume_private_migration_draft_with_timing_policy(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &target_values,
+        &approved_schedule,
+        PreparationTimingPolicy::Immediate,
+        MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+    )
+    .unwrap();
+
+    let error = create_or_resume_private_migration_draft_with_timing_policy(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &target_values,
+        &approved_schedule,
+        PreparationTimingPolicy::Immediate,
+        MigrationTimingPolicy::Standard,
+    )
+    .unwrap_err();
+    assert!(error.contains("strategy no longer matches"));
+}
+
+#[test]
+fn retired_migration_policy_remains_available_for_exact_rebuild() {
+    for (index, policy) in [
+        MigrationTimingPolicy::Standard,
+        MigrationTimingPolicy::Standard90Minutes,
+        MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir
+            .path()
+            .join(format!("wallet-{index}.db"))
+            .to_string_lossy()
+            .to_string();
+        let schedule = [MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100_000_000,
+            block_offset: 1,
+        }];
+        let run_id = create_or_resume_private_migration_draft_with_timing_policy(
+            &db_path,
+            "account-1",
+            WalletNetwork::Main,
+            &[100_000_000],
+            &schedule,
+            PreparationTimingPolicy::Immediate,
+            policy,
+        )
+        .unwrap();
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute(
+            &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+            params![PHASE_FAILED_TERMINAL, run_id],
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(
+            timing_policy_for_run(&db_path, &run_id, WalletNetwork::Main).unwrap(),
+            policy,
+        );
+    }
 }
 
 #[test]

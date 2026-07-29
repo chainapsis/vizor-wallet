@@ -964,7 +964,7 @@ class _SpendAsFundsArriveCard extends StatelessWidget {
   }
 }
 
-enum _MigrationMode { private, fast }
+enum _MigrationMode { balanced, immediate, zip318Canonical }
 
 class _MigrationOptionCard extends StatelessWidget {
   const _MigrationOptionCard({
@@ -993,8 +993,8 @@ class _MigrationOptionCard extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: SizedBox(
-          height: 104,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 104),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: colors.background.ground,
@@ -1046,16 +1046,12 @@ class _MigrationOptionCard extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Flexible(
-                              child: Text(
-                                body,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.bodyMedium.copyWith(
-                                  color: enabled
-                                      ? colors.text.secondary
-                                      : colors.text.muted,
-                                ),
+                            Text(
+                              body,
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: enabled
+                                    ? colors.text.secondary
+                                    : colors.text.muted,
                               ),
                             ),
                           ],
@@ -1103,52 +1099,16 @@ class _OptionIcon extends StatelessWidget {
     return SizedBox(
       width: 16,
       height: 16,
-      child: CustomPaint(
-        painter: _OptionIconPainter(mode: mode, color: color),
+      child: AppIcon(
+        switch (mode) {
+          _MigrationMode.balanced => AppIcons.trophy,
+          _MigrationMode.immediate => AppIcons.migrationFast,
+          _MigrationMode.zip318Canonical => AppIcons.time,
+        },
+        size: 16,
+        color: color,
       ),
     );
-  }
-}
-
-class _OptionIconPainter extends CustomPainter {
-  const _OptionIconPainter({required this.mode, required this.color});
-
-  final _MigrationMode mode;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.7
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    if (mode == _MigrationMode.private) {
-      final path = Path()
-        ..moveTo(8, 1.5)
-        ..lineTo(14, 4)
-        ..lineTo(13, 10)
-        ..quadraticBezierTo(11, 14, 8, 15)
-        ..quadraticBezierTo(5, 14, 3, 10)
-        ..lineTo(2, 4)
-        ..close();
-      canvas.drawPath(path, paint);
-      canvas.drawLine(const Offset(8, 6), const Offset(8, 10), paint);
-      canvas.drawLine(const Offset(6, 8), const Offset(10, 8), paint);
-    } else {
-      canvas.drawLine(const Offset(3, 5), const Offset(11, 5), paint);
-      canvas.drawLine(const Offset(8, 2), const Offset(12, 5), paint);
-      canvas.drawLine(const Offset(8, 8), const Offset(12, 5), paint);
-      canvas.drawLine(const Offset(5, 11), const Offset(13, 11), paint);
-      canvas.drawLine(const Offset(8, 8), const Offset(5, 11), paint);
-      canvas.drawLine(const Offset(8, 14), const Offset(5, 11), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _OptionIconPainter oldDelegate) {
-    return oldDelegate.mode != mode || oldDelegate.color != color;
   }
 }
 

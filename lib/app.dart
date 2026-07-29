@@ -777,8 +777,12 @@ List<RouteBase> _desktopRoutes() => [
   ),
   GoRoute(
     path: '/migration/private/review',
-    builder: (_, _) => const IronwoodMigrationFlowScreen(
+    builder: (_, state) => IronwoodMigrationFlowScreen(
       step: IronwoodMigrationFlowStep.review,
+      privateStrategy:
+          state.uri.queryParameters['strategy'] == 'zip318Canonical'
+          ? rust_sync.OrchardMigrationStrategy.zip318Canonical
+          : rust_sync.OrchardMigrationStrategy.balanced,
     ),
   ),
   GoRoute(
@@ -815,13 +819,11 @@ List<RouteBase> _desktopRoutes() => [
   ),
   GoRoute(
     path: '/migration/private/keystone/sign',
-    redirect: (_, state) =>
-        state.extra is List<rust_sync.MigrationScheduledTransfer>
+    redirect: (_, state) => state.extra is IronwoodMigrationPrivateApproval
         ? null
         : '/migration/private/review',
     builder: (_, state) => IronwoodMigrationKeystoneCombinedSignScreen(
-      approvedSchedule:
-          state.extra! as List<rust_sync.MigrationScheduledTransfer>,
+      approval: state.extra! as IronwoodMigrationPrivateApproval,
     ),
   ),
   GoRoute(

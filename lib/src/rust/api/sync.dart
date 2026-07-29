@@ -7,8 +7,9 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migrate_orchard_to_ironwood_with_timing_policy`, `migration_timing_policy`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_receiver_is_total_eq`, `clone`, `eq`, `fmt`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
 /// The running sync loop checks this each batch and exits if mismatched.
@@ -321,6 +322,57 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
+Future<IronwoodMigrationResult> migrateOrchardToIronwoodWithStrategy({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+  required String password,
+  required String saltBase64,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+  required OrchardMigrationStrategy strategy,
+}) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwoodWithStrategy(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonicBytes: mnemonicBytes,
+  password: password,
+  saltBase64: saltBase64,
+  approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+  strategy: strategy,
+);
+
+/// Rebuilds a retired private migration while preserving the exact timing
+/// policy stored by the source run. This deliberately accepts a run ID instead
+/// of a user-facing strategy so policies created by older releases remain
+/// byte-for-byte equivalent after credential recovery.
+Future<IronwoodMigrationResult> migrateOrchardToIronwoodReusingTimingPolicy({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+  required String password,
+  required String saltBase64,
+  required String sourceRunId,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api
+    .crateApiSyncMigrateOrchardToIronwoodReusingTimingPolicy(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      mnemonicBytes: mnemonicBytes,
+      password: password,
+      saltBase64: saltBase64,
+      sourceRunId: sourceRunId,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
+    );
+
 /// User-attended Immediate migration. This directly spends Orchard notes into
 /// Ironwood and intentionally does not create a staged migration run.
 Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
@@ -424,6 +476,22 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
   accountUuid: accountUuid,
   spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
+
+Future<OrchardMigrationPrivatePlan?>
+getOrchardMigrationPrivatePlanWithStrategy({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required bool spacePreparationBroadcasts,
+  required OrchardMigrationStrategy strategy,
+}) =>
+    RustLib.instance.api.crateApiSyncGetOrchardMigrationPrivatePlanWithStrategy(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
+      strategy: strategy,
+    );
 
 /// Foreground-only migration preparation for the Swift-owned outbox.
 /// Denomination stages may advance, and every currently provable signed child
@@ -530,6 +598,22 @@ prepareOrchardMigrationDenominationsPczt({
   spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
+Future<KeystoneMigrationSigningRequest>
+prepareOrchardMigrationDenominationsPcztWithStrategy({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required bool spacePreparationBroadcasts,
+  required OrchardMigrationStrategy strategy,
+}) => RustLib.instance.api
+    .crateApiSyncPrepareOrchardMigrationDenominationsPcztWithStrategy(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
+      strategy: strategy,
+    );
+
 Future<String> createOrResumePrivateMigrationDraft({
   required String dbPath,
   required String network,
@@ -543,6 +627,23 @@ Future<String> createOrResumePrivateMigrationDraft({
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
+
+Future<String> createOrResumePrivateMigrationDraftWithStrategy({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+  required OrchardMigrationStrategy strategy,
+}) => RustLib.instance.api
+    .crateApiSyncCreateOrResumePrivateMigrationDraftWithStrategy(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      approvedSchedule: approvedSchedule,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
+      strategy: strategy,
+    );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required String dbPath,
@@ -584,6 +685,24 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
+
+Future<KeystoneMigrationSigningRequest>
+prepareOrchardMigrationSingleQrPcztWithStrategy({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+  required OrchardMigrationStrategy strategy,
+}) => RustLib.instance.api
+    .crateApiSyncPrepareOrchardMigrationSingleQrPcztWithStrategy(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      approvedSchedule: approvedSchedule,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
+      strategy: strategy,
+    );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   required String dbPath,
@@ -667,6 +786,30 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
       saltBase64: saltBase64,
       approvedSchedule: approvedSchedule,
       spacePreparationBroadcasts: spacePreparationBroadcasts,
+    );
+
+Future<IronwoodMigrationResult>
+migrateOrchardToIronwoodWithMacosStoredMnemonicAndStrategy({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required bool spacePreparationBroadcasts,
+  required OrchardMigrationStrategy strategy,
+}) => RustLib.instance.api
+    .crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonicAndStrategy(
+      dbPath: dbPath,
+      lightwalletdUrl: lightwalletdUrl,
+      network: network,
+      accountUuid: accountUuid,
+      password: password,
+      saltBase64: saltBase64,
+      approvedSchedule: approvedSchedule,
+      spacePreparationBroadcasts: spacePreparationBroadcasts,
+      strategy: strategy,
     );
 
 /// Dry-run transparent shielding without creating or broadcasting a transaction.
@@ -1918,6 +2061,8 @@ class OrchardMigrationPrivatePlan {
           estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
           scheduledTransfers == other.scheduledTransfers;
 }
+
+enum OrchardMigrationStrategy { balanced, zip318Canonical }
 
 class ProposalResult {
   final BigInt proposalId;

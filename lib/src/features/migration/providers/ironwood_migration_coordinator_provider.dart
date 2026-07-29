@@ -392,12 +392,23 @@ class IronwoodMigrationCoordinator
   Future<void> startSoftwareMigration({
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  }) => startSoftwareMigrationWithStrategy(
+    accountUuid: accountUuid,
+    approvedSchedule: approvedSchedule,
+    strategy: rust_sync.OrchardMigrationStrategy.balanced,
+  );
+
+  Future<void> startSoftwareMigrationWithStrategy({
+    required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    required rust_sync.OrchardMigrationStrategy strategy,
   }) async {
     await ref
         .read(ironwoodMigrationServiceProvider)
         .startSoftwarePrivateMigration(
           accountUuid: accountUuid,
           approvedSchedule: approvedSchedule,
+          strategy: strategy,
         );
     if (!ref.mounted) return;
     grantForegroundProgressPermit(accountUuid);

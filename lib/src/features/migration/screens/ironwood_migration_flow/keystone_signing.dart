@@ -6,13 +6,15 @@ const _keystoneMigrationQrFrameInterval = Duration(milliseconds: 200);
 
 class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneCombinedSignScreen({
-    required this.approvedSchedule,
+    this.approval,
+    this.approvedSchedule = const [],
     this.previewRequest,
     this.previewUrParts = const [],
     this.previewStartScanning = false,
     super.key,
   });
 
+  final IronwoodMigrationPrivateApproval? approval;
   final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
   final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
   final List<String> previewUrParts;
@@ -22,7 +24,9 @@ class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return _IronwoodMigrationKeystonePrivateSignScreen(
       step: _KeystonePrivateSignStep.combined,
-      approvedSchedule: approvedSchedule,
+      approvedSchedule: approval?.approvedSchedule ?? approvedSchedule,
+      strategy:
+          approval?.strategy ?? rust_sync.OrchardMigrationStrategy.balanced,
       previewRequest: previewRequest,
       previewUrParts: previewUrParts,
       previewStartScanning: previewStartScanning,
@@ -186,6 +190,7 @@ class _IronwoodMigrationKeystonePrivateSignScreen
     required this.step,
     required this.approvedSchedule,
     this.approvedImmediatePlan,
+    this.strategy = rust_sync.OrchardMigrationStrategy.balanced,
     this.mobileLayout = false,
     this.initialRequest,
     this.initialAccountUuid,
@@ -197,6 +202,7 @@ class _IronwoodMigrationKeystonePrivateSignScreen
   final _KeystonePrivateSignStep step;
   final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
   final rust_sync.OrchardMigrationImmediatePlan? approvedImmediatePlan;
+  final rust_sync.OrchardMigrationStrategy strategy;
   final bool mobileLayout;
   final rust_sync.KeystoneMigrationSigningRequest? initialRequest;
   final String? initialAccountUuid;
@@ -328,6 +334,7 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     IronwoodMigrationService service, {
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    required rust_sync.OrchardMigrationStrategy strategy,
     rust_sync.OrchardMigrationImmediatePlan? approvedImmediatePlan,
   }) {
     return switch (this) {
@@ -342,10 +349,12 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
         service.prepareKeystoneSingleQrPrivateMigration(
           accountUuid: accountUuid,
           approvedSchedule: approvedSchedule,
+          strategy: strategy,
         ),
       _KeystonePrivateSignStep.denominations =>
         service.prepareKeystoneDenominationPrivateMigration(
           accountUuid: accountUuid,
+          strategy: strategy,
         ),
       _KeystonePrivateSignStep.batch =>
         service.prepareKeystoneBatchPrivateMigration(accountUuid: accountUuid),
@@ -533,6 +542,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             _migrationService,
             accountUuid: accountUuid,
             approvedSchedule: widget.approvedSchedule,
+            strategy: widget.strategy,
             approvedImmediatePlan: widget.approvedImmediatePlan,
           );
       requestIdToDiscard = request.requestId;
@@ -983,6 +993,14 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       (true, _KeystonePrivateSignStep.immediate) => '/migration/fast/review',
       (true, _KeystonePrivateSignStep.denominations) =>
         '/migration/private/status',
+      (
+        false,
+        _KeystonePrivateSignStep.combined ||
+            _KeystonePrivateSignStep.denominations,
+      )
+          when widget.strategy ==
+              rust_sync.OrchardMigrationStrategy.zip318Canonical =>
+        '/migration/private/review?strategy=zip318Canonical',
       _ => widget.step.previousRoute,
     };
     context.go(previousRoute);

@@ -41,6 +41,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
   const _IronwoodMigrationShell({
     required this.step,
     required this.data,
+    required this.privateStrategy,
     this.previewPrivatePlan,
     this.previewImmediatePlan,
     this.previewReviewStage = IronwoodMigrationReviewPreviewStage.review,
@@ -49,6 +50,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
 
   final IronwoodMigrationFlowStep step;
   final IronwoodMigrationFlowData data;
+  final rust_sync.OrchardMigrationStrategy privateStrategy;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final IronwoodMigrationReviewPreviewStage previewReviewStage;
@@ -76,6 +78,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
       IronwoodMigrationFlowStep.review =>
         _IronwoodMigrationPrivateReviewContent(
           data: data,
+          strategy: privateStrategy,
           previewPlan:
               previewReviewStage ==
                   IronwoodMigrationReviewPreviewStage.analyzing
@@ -679,14 +682,16 @@ class _IronwoodMigrationOptionsContent extends StatefulWidget {
 
 class _IronwoodMigrationOptionsContentState
     extends State<_IronwoodMigrationOptionsContent> {
-  var _selected = _MigrationMode.private;
+  var _selected = _MigrationMode.balanced;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final selected = widget.immediateEnabled
         ? _selected
-        : _MigrationMode.private;
+        : _selected == _MigrationMode.immediate
+        ? _MigrationMode.balanced
+        : _selected;
     return SizedBox(
       width: 420,
       height: 656,
@@ -723,35 +728,54 @@ class _IronwoodMigrationOptionsContentState
           ),
           Positioned(
             left: 12,
-            top: 193,
+            top: 185,
             width: 396,
             child: Column(
               children: [
                 _MigrationOptionCard(
-                  key: const ValueKey('ironwood_migration_private_option'),
-                  mode: _MigrationMode.private,
-                  selected: selected == _MigrationMode.private,
-                  title: 'Private',
+                  key: const ValueKey('ironwood_migration_balanced_option'),
+                  mode: _MigrationMode.balanced,
+                  selected: selected == _MigrationMode.balanced,
+                  title: 'Balanced',
                   badge: 'Recommended',
                   body:
-                      'Splits transactions into multiple parts to minimize '
-                      'traceability, but will take longer.',
+                      'Uses the same core privacy mechanisms of ZIP-318, but '
+                      'with a more pragmatic timeline. Will take hours - '
+                      'couple days.',
                   onTap: () =>
-                      setState(() => _selected = _MigrationMode.private),
+                      setState(() => _selected = _MigrationMode.balanced),
                 ),
                 const SizedBox(height: 12),
                 _MigrationOptionCard(
-                  key: const ValueKey('ironwood_migration_fast_option'),
-                  mode: _MigrationMode.fast,
-                  selected: selected == _MigrationMode.fast,
+                  key: const ValueKey('ironwood_migration_immediate_option'),
+                  mode: _MigrationMode.immediate,
+                  selected: selected == _MigrationMode.immediate,
                   title: 'Immediate',
                   body: widget.immediateEnabled
-                      ? 'Migrates your entire balance in one batch. Fast but '
-                            'less private.'
+                      ? 'Migrates your entire balance in one batch. Done in '
+                            'less than 10 minutes but less private.'
                       : 'Immediate migration is not available with Keystone.',
                   onTap: widget.immediateEnabled
-                      ? () => setState(() => _selected = _MigrationMode.fast)
+                      ? () =>
+                            setState(() => _selected = _MigrationMode.immediate)
                       : null,
+                ),
+                const SizedBox(height: 12),
+                _MigrationOptionCard(
+                  key: const ValueKey(
+                    'ironwood_migration_zip318_canonical_option',
+                  ),
+                  mode: _MigrationMode.zip318Canonical,
+                  selected: selected == _MigrationMode.zip318Canonical,
+                  title: 'ZIP-318 Canonical',
+                  body:
+                      'Same method as recommended, but 2x slower as defined '
+                      'in the ZIP. Balanced is more pragmatic without real '
+                      'privacy leakage, but we offer the precise ZIP in case '
+                      'you want it.',
+                  onTap: () => setState(
+                    () => _selected = _MigrationMode.zip318Canonical,
+                  ),
                 ),
               ],
             ),
@@ -765,12 +789,17 @@ class _IronwoodMigrationOptionsContentState
               onPressed: () {
                 final selectedAtTap = widget.immediateEnabled
                     ? _selected
-                    : _MigrationMode.private;
-                context.go(
-                  selectedAtTap == _MigrationMode.private
-                      ? '/migration/private/review'
-                      : '/migration/immediate/review',
-                );
+                    : _selected == _MigrationMode.immediate
+                    ? _MigrationMode.balanced
+                    : _selected;
+                final route = switch (selectedAtTap) {
+                  _MigrationMode.balanced =>
+                    '/migration/private/review?strategy=balanced',
+                  _MigrationMode.zip318Canonical =>
+                    '/migration/private/review?strategy=zip318Canonical',
+                  _MigrationMode.immediate => '/migration/immediate/review',
+                };
+                context.go(route);
               },
               height: 44,
               minWidth: 230,

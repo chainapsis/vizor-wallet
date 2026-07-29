@@ -205,6 +205,17 @@ typedef IronwoodMigrationSoftwareStarter =
       required String saltBase64,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
+typedef IronwoodMigrationPolicyPreservingSoftwareStarter =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required List<int> mnemonicBytes,
+      required String password,
+      required String saltBase64,
+      required String sourceRunId,
+    });
 typedef IronwoodMigrationImmediateStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
@@ -450,32 +461,37 @@ typedef IronwoodMigrationKeystoneRequestDiscarder =
     Future<void> Function({required String requestId});
 
 Future<rust_sync.KeystoneMigrationSigningRequest>
-_defaultPrepareKeystoneDenominationMigration({
+_defaultPrepareKeystoneDenominationMigrationWithStrategy({
   required String dbPath,
   required String network,
   required String accountUuid,
-}) => rust_sync.prepareOrchardMigrationDenominationsPczt(
+  required rust_sync.OrchardMigrationStrategy strategy,
+}) => rust_sync.prepareOrchardMigrationDenominationsPcztWithStrategy(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  strategy: strategy,
 );
 
 Future<rust_sync.KeystoneMigrationSigningRequest>
-_defaultPrepareKeystoneSingleQrMigration({
+_defaultPrepareKeystoneSingleQrMigrationWithStrategy({
   required String dbPath,
   required String network,
   required String accountUuid,
   required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
-}) => rust_sync.prepareOrchardMigrationSingleQrPczt(
+  required rust_sync.OrchardMigrationStrategy strategy,
+}) => rust_sync.prepareOrchardMigrationSingleQrPcztWithStrategy(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  strategy: strategy,
 );
 
-Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
+Future<rust_sync.IronwoodMigrationResult>
+_defaultStartSoftwareMigrationWithStrategy({
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
@@ -484,7 +500,8 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
   required String password,
   required String saltBase64,
   required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
-}) => rust_sync.migrateOrchardToIronwood(
+  required rust_sync.OrchardMigrationStrategy strategy,
+}) => rust_sync.migrateOrchardToIronwoodWithStrategy(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
@@ -494,9 +511,11 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
   saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  strategy: strategy,
 );
 
-Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
+Future<rust_sync.IronwoodMigrationResult>
+_defaultStartMacosSoftwareMigrationWithStrategy({
   required String dbPath,
   required String lightwalletdUrl,
   required String network,
@@ -504,7 +523,8 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
   required String password,
   required String saltBase64,
   required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
-}) => rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic(
+  required rust_sync.OrchardMigrationStrategy strategy,
+}) => rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonicAndStrategy(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
   network: network,
@@ -513,6 +533,7 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
   saltBase64: saltBase64,
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  strategy: strategy,
 );
 
 Future<rust_sync.IronwoodMigrationResult>
@@ -559,17 +580,145 @@ _defaultCompleteKeystoneSingleQrMigration({
   saltBase64: saltBase64,
 );
 
-Future<String> _defaultCreatePrivateMigrationDraft({
+Future<String> _defaultCreatePrivateMigrationDraftWithStrategy({
   required String dbPath,
   required String network,
   required String accountUuid,
   required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
-}) => rust_sync.createOrResumePrivateMigrationDraft(
+  required rust_sync.OrchardMigrationStrategy strategy,
+}) => rust_sync.createOrResumePrivateMigrationDraftWithStrategy(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  strategy: strategy,
+);
+
+Future<rust_sync.KeystoneMigrationSigningRequest>
+_defaultPrepareKeystoneDenominationMigration({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+}) => _defaultPrepareKeystoneDenominationMigrationWithStrategy(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  strategy: rust_sync.OrchardMigrationStrategy.balanced,
+);
+
+Future<rust_sync.KeystoneMigrationSigningRequest>
+_defaultPrepareKeystoneSingleQrMigration({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+}) => _defaultPrepareKeystoneSingleQrMigrationWithStrategy(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
+  strategy: rust_sync.OrchardMigrationStrategy.balanced,
+);
+
+Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+  required String password,
+  required String saltBase64,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+}) => _defaultStartSoftwareMigrationWithStrategy(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonicBytes: mnemonicBytes,
+  password: password,
+  saltBase64: saltBase64,
+  approvedSchedule: approvedSchedule,
+  strategy: rust_sync.OrchardMigrationStrategy.balanced,
+);
+
+Future<rust_sync.IronwoodMigrationResult>
+_defaultStartSoftwareMigrationPreservingPolicy({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required List<int> mnemonicBytes,
+  required String password,
+  required String saltBase64,
+  required String sourceRunId,
+}) => rust_sync.migrateOrchardToIronwoodReusingTimingPolicy(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  mnemonicBytes: mnemonicBytes,
+  password: password,
+  saltBase64: saltBase64,
+  sourceRunId: sourceRunId,
+  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+);
+
+IronwoodMigrationPolicyPreservingSoftwareStarter
+_adaptLegacySoftwareStarterForPolicyRecovery(
+  IronwoodMigrationSoftwareStarter starter,
+) {
+  return ({
+    required dbPath,
+    required lightwalletdUrl,
+    required network,
+    required accountUuid,
+    required mnemonicBytes,
+    required password,
+    required saltBase64,
+    required sourceRunId,
+  }) => starter(
+    dbPath: dbPath,
+    lightwalletdUrl: lightwalletdUrl,
+    network: network,
+    accountUuid: accountUuid,
+    mnemonicBytes: mnemonicBytes,
+    password: password,
+    saltBase64: saltBase64,
+    approvedSchedule: const [],
+  );
+}
+
+Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+}) => _defaultStartMacosSoftwareMigrationWithStrategy(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+  approvedSchedule: approvedSchedule,
+  strategy: rust_sync.OrchardMigrationStrategy.balanced,
+);
+
+Future<String> _defaultCreatePrivateMigrationDraft({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+}) => _defaultCreatePrivateMigrationDraftWithStrategy(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
+  strategy: rust_sync.OrchardMigrationStrategy.balanced,
 );
 
 class IronwoodMigrationService {
@@ -602,6 +751,8 @@ class IronwoodMigrationService {
     getNotificationAuthorizationStatus,
     IronwoodMigrationNotificationSettingsOpener? openNotificationSettings,
     IronwoodMigrationSoftwareStarter? startSoftwareMigration,
+    IronwoodMigrationPolicyPreservingSoftwareStarter?
+    startSoftwareMigrationPreservingPolicy,
     IronwoodMigrationImmediatePlanGetter? getImmediatePlan,
     IronwoodMigrationImmediateStarter? startImmediateMigration,
     IronwoodMigrationUnbroadcastRetirer? retireUnbroadcastMigration,
@@ -681,6 +832,13 @@ class IronwoodMigrationService {
            openNotificationSettings ?? _defaultOpenNotificationSettings,
        startSoftwareMigration =
            startSoftwareMigration ?? _defaultStartSoftwareMigration,
+       startSoftwareMigrationPreservingPolicy =
+           startSoftwareMigrationPreservingPolicy ??
+           (startSoftwareMigration == null
+               ? _defaultStartSoftwareMigrationPreservingPolicy
+               : _adaptLegacySoftwareStarterForPolicyRecovery(
+                   startSoftwareMigration,
+                 )),
        getImmediatePlan =
            getImmediatePlan ?? rust_sync.getOrchardMigrationImmediatePlan,
        startImmediateMigration =
@@ -783,6 +941,8 @@ class IronwoodMigrationService {
   _getNotificationAuthorizationStatus;
   final IronwoodMigrationNotificationSettingsOpener _openNotificationSettings;
   final IronwoodMigrationSoftwareStarter startSoftwareMigration;
+  final IronwoodMigrationPolicyPreservingSoftwareStarter
+  startSoftwareMigrationPreservingPolicy;
   final IronwoodMigrationImmediateStarter startImmediateMigration;
   final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
@@ -1130,16 +1290,27 @@ class IronwoodMigrationService {
   Future<rust_sync.OrchardMigrationPrivatePlan?> privatePlan({
     required String network,
     required String accountUuid,
+    rust_sync.OrchardMigrationStrategy strategy =
+        rust_sync.OrchardMigrationStrategy.balanced,
   }) async {
     return operationRegistry.run(
       network: network,
       accountUuid: accountUuid,
       operation: () async {
         final dbPath = await getWalletDbPath();
-        return getPrivatePlan(
+        if (strategy == rust_sync.OrchardMigrationStrategy.balanced) {
+          return getPrivatePlan(
+            dbPath: dbPath,
+            network: network,
+            accountUuid: accountUuid,
+          );
+        }
+        return rust_sync.getOrchardMigrationPrivatePlanWithStrategy(
           dbPath: dbPath,
           network: network,
           accountUuid: accountUuid,
+          spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+          strategy: strategy,
         );
       },
     );
@@ -1176,6 +1347,8 @@ class IronwoodMigrationService {
   Future<rust_sync.IronwoodMigrationResult> startSoftwarePrivateMigration({
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    rust_sync.OrchardMigrationStrategy strategy =
+        rust_sync.OrchardMigrationStrategy.balanced,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -1190,15 +1363,27 @@ class IronwoodMigrationService {
       return _runCredentialOperation(
         context: context,
         mayCreateRun: true,
-        operation: (credential) => startMacosSoftwareMigration(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          accountUuid: accountUuid,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
-          approvedSchedule: approvedSchedule,
-        ),
+        operation: (credential) =>
+            strategy == rust_sync.OrchardMigrationStrategy.balanced
+            ? startMacosSoftwareMigration(
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                password: credential.password,
+                saltBase64: credential.saltBase64,
+                approvedSchedule: approvedSchedule,
+              )
+            : _defaultStartMacosSoftwareMigrationWithStrategy(
+                dbPath: dbPath,
+                lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                network: endpoint.networkName,
+                accountUuid: accountUuid,
+                password: credential.password,
+                saltBase64: credential.saltBase64,
+                approvedSchedule: approvedSchedule,
+                strategy: strategy,
+              ),
       );
     }
 
@@ -1214,16 +1399,28 @@ class IronwoodMigrationService {
 
         late final Future<rust_sync.IronwoodMigrationResult> resultFuture;
         try {
-          resultFuture = startSoftwareMigration(
-            dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            network: endpoint.networkName,
-            accountUuid: accountUuid,
-            mnemonicBytes: mnemonicBytes,
-            password: credential.password,
-            saltBase64: credential.saltBase64,
-            approvedSchedule: approvedSchedule,
-          );
+          resultFuture = strategy == rust_sync.OrchardMigrationStrategy.balanced
+              ? startSoftwareMigration(
+                  dbPath: dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                  network: endpoint.networkName,
+                  accountUuid: accountUuid,
+                  mnemonicBytes: mnemonicBytes,
+                  password: credential.password,
+                  saltBase64: credential.saltBase64,
+                  approvedSchedule: approvedSchedule,
+                )
+              : _defaultStartSoftwareMigrationWithStrategy(
+                  dbPath: dbPath,
+                  lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+                  network: endpoint.networkName,
+                  accountUuid: accountUuid,
+                  mnemonicBytes: mnemonicBytes,
+                  password: credential.password,
+                  saltBase64: credential.saltBase64,
+                  approvedSchedule: approvedSchedule,
+                  strategy: strategy,
+                );
         } finally {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
@@ -1617,7 +1814,7 @@ class IronwoodMigrationService {
           Object? startError;
           StackTrace? startStackTrace;
           try {
-            await startSoftwareMigration(
+            await startSoftwareMigrationPreservingPolicy(
               dbPath: context.dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
               network: context.network,
@@ -1625,7 +1822,7 @@ class IronwoodMigrationService {
               mnemonicBytes: mnemonicBytes,
               password: credential.password,
               saltBase64: credential.saltBase64,
-              approvedSchedule: const [],
+              sourceRunId: oldRunId,
             );
           } catch (error, stackTrace) {
             startError = error;
@@ -1664,35 +1861,54 @@ class IronwoodMigrationService {
   prepareKeystoneSingleQrPrivateMigration({
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    rust_sync.OrchardMigrationStrategy strategy =
+        rust_sync.OrchardMigrationStrategy.balanced,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     return operationRegistry.run(
       network: endpoint.networkName,
       accountUuid: accountUuid,
-      operation: () => prepareKeystoneSingleQrMigration(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        approvedSchedule: approvedSchedule,
-      ),
+      operation: () => strategy == rust_sync.OrchardMigrationStrategy.balanced
+          ? prepareKeystoneSingleQrMigration(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              approvedSchedule: approvedSchedule,
+            )
+          : _defaultPrepareKeystoneSingleQrMigrationWithStrategy(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              approvedSchedule: approvedSchedule,
+              strategy: strategy,
+            ),
     );
   }
 
   Future<rust_sync.KeystoneMigrationSigningRequest>
   prepareKeystoneDenominationPrivateMigration({
     required String accountUuid,
+    rust_sync.OrchardMigrationStrategy strategy =
+        rust_sync.OrchardMigrationStrategy.balanced,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
     return operationRegistry.run(
       network: endpoint.networkName,
       accountUuid: accountUuid,
-      operation: () => prepareKeystoneDenominationMigration(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-      ),
+      operation: () => strategy == rust_sync.OrchardMigrationStrategy.balanced
+          ? prepareKeystoneDenominationMigration(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+            )
+          : _defaultPrepareKeystoneDenominationMigrationWithStrategy(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              strategy: strategy,
+            ),
     );
   }
 
@@ -1743,6 +1959,8 @@ class IronwoodMigrationService {
   Future<String> savePrivateMigrationDraft({
     required String accountUuid,
     required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    rust_sync.OrchardMigrationStrategy strategy =
+        rust_sync.OrchardMigrationStrategy.balanced,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -1756,12 +1974,20 @@ class IronwoodMigrationService {
       context: context,
       mayCreateRun: true,
       prepareOutboxAfterOperation: false,
-      operation: (_) => createPrivateMigrationDraft(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        approvedSchedule: approvedSchedule,
-      ),
+      operation: (_) => strategy == rust_sync.OrchardMigrationStrategy.balanced
+          ? createPrivateMigrationDraft(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              approvedSchedule: approvedSchedule,
+            )
+          : _defaultCreatePrivateMigrationDraftWithStrategy(
+              dbPath: dbPath,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              approvedSchedule: approvedSchedule,
+              strategy: strategy,
+            ),
     );
   }
 

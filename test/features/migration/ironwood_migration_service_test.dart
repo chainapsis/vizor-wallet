@@ -3182,7 +3182,7 @@ void main() {
             }) async {
               events.add('retire:$expectedRunId');
             },
-        startSoftwareMigration:
+        startSoftwareMigrationPreservingPolicy:
             ({
               required dbPath,
               required lightwalletdUrl,
@@ -3191,13 +3191,13 @@ void main() {
               required mnemonicBytes,
               required password,
               required saltBase64,
-              required approvedSchedule,
+              required sourceRunId,
             }) async {
               events.add('start');
               startedPassword = password;
               startedSalt = saltBase64;
               expect(mnemonicBytes, [1, 2, 3, 4]);
-              expect(approvedSchedule, isEmpty);
+              expect(sourceRunId, 'old-run');
               return _migrationResult();
             },
         startBackgroundPreparation: () async {

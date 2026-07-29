@@ -3,6 +3,7 @@ pub(crate) fn get_orchard_migration_private_plan(
     network: WalletNetwork,
     account_uuid: &str,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
@@ -88,9 +89,10 @@ pub(crate) fn get_orchard_migration_private_plan(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let (proof_readiness_delay_blocks, estimated_proof_ready_height) =
-        private_plan_proof_timing(
+        private_plan_proof_timing_with_policy(
             network,
             preparation_timing_policy,
+            migration_timing_policy,
             u32::from(target_height),
             u32::from(anchor_height),
             denomination_split_stage_count,
@@ -105,11 +107,14 @@ pub(crate) fn get_orchard_migration_private_plan(
         .split_fee_zatoshi
         .checked_add(migration_fee_zatoshi)
         .ok_or("Migration total fee estimate overflow")?;
-    let scheduled_transfers = super::migration::planned_transfer_schedule(
+    let scheduled_transfers = super::migration::planned_transfer_schedule_with_policy(
         padded_plan.denominations.migration_outputs.iter().copied(),
         network,
+        migration_timing_policy,
         &mut OsRng,
     );
+    let schedule_parameters =
+        super::migration::schedule_parameters_with_policy(network, migration_timing_policy);
 
     Ok(Some(OrchardMigrationPrivatePlan {
         target_values_zatoshi: padded_plan.denominations.migration_outputs,
@@ -123,8 +128,8 @@ pub(crate) fn get_orchard_migration_private_plan(
         denomination_split_stage_count,
         denomination_split_layer_count,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
-        schedule_mean_delay_blocks: super::migration::schedule_parameters(network).0,
-        schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
+        schedule_mean_delay_blocks: schedule_parameters.0,
+        schedule_max_delay_blocks: schedule_parameters.1,
         proof_readiness_delay_blocks,
         estimated_proof_ready_height,
         scheduled_transfers,
@@ -140,6 +145,28 @@ fn private_plan_proof_timing(
     layer_count: u32,
     direct_note_mined_heights: &[u32],
 ) -> Result<(u32, Option<u32>), String> {
+    private_plan_proof_timing_with_policy(
+        network,
+        preparation_timing_policy,
+        super::migration::configured_timing_policy(network),
+        target_height,
+        trusted_height,
+        stage_count,
+        layer_count,
+        direct_note_mined_heights,
+    )
+}
+
+fn private_plan_proof_timing_with_policy(
+    network: WalletNetwork,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
+    target_height: u32,
+    trusted_height: u32,
+    stage_count: u32,
+    layer_count: u32,
+    direct_note_mined_heights: &[u32],
+) -> Result<(u32, Option<u32>), String> {
     let spacing_delay = super::migration::estimated_preparation_spacing_delay_blocks(
         network,
         preparation_timing_policy,
@@ -149,7 +176,13 @@ fn private_plan_proof_timing(
 
     let mut final_ready_height = direct_note_mined_heights
         .iter()
-        .map(|height| super::migration::estimated_proof_ready_height(network, *height))
+        .map(|height| {
+            super::migration::proof_ready_height_for_note_mined_height(
+                network,
+                migration_timing_policy,
+                *height,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .max();
@@ -165,8 +198,11 @@ fn private_plan_proof_timing(
             )
             .and_then(|height| height.checked_add(spacing_delay))
             .ok_or("Migration preparation height overflow")?;
-        let generated_ready_height =
-            super::migration::estimated_proof_ready_height(network, final_mined_height)?;
+        let generated_ready_height = super::migration::proof_ready_height_for_note_mined_height(
+            network,
+            migration_timing_policy,
+            final_mined_height,
+        )?;
         final_ready_height = Some(
             final_ready_height
                 .map_or(generated_ready_height, |height| height.max(generated_ready_height)),

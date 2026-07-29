@@ -1,6 +1,6 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
-enum _MigrationChoiceIcon { private, immediate }
+enum _MigrationChoiceIcon { private, immediate, zip318Canonical }
 
 class _MobileMigrationOptionCard extends StatelessWidget {
   const _MobileMigrationOptionCard({
@@ -55,10 +55,11 @@ class _MobileMigrationOptionCard extends StatelessWidget {
                       child: Center(
                         child: AppIcon(
                           switch (icon) {
-                            _MigrationChoiceIcon.private =>
-                              AppIcons.shieldKeyhole,
+                            _MigrationChoiceIcon.private => AppIcons.trophy,
                             _MigrationChoiceIcon.immediate =>
                               AppIcons.migrationFast,
+                            _MigrationChoiceIcon.zip318Canonical =>
+                              AppIcons.time,
                           },
                           key: ValueKey('mobile_ironwood_${icon.name}_icon'),
                           size: 20,
@@ -80,11 +81,15 @@ class _MobileMigrationOptionCard extends StatelessWidget {
                             height: 24,
                             child: Row(
                               children: [
-                                Text(
-                                  title,
-                                  style: AppTypography.bodyLarge.copyWith(
-                                    color: colors.text.accent,
-                                    fontWeight: FontWeight.w600,
+                                Flexible(
+                                  child: Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.bodyLarge.copyWith(
+                                      color: colors.text.accent,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                                 if (recommended) ...[

@@ -82,8 +82,9 @@ void main() {
 
     await tester.tap(find.widgetWithText(AppButton, 'Next'));
     await tester.pumpAndSettle();
-    expect(find.text('Private'), findsOneWidget);
+    expect(find.text('Balanced'), findsOneWidget);
     expect(find.text('Immediate'), findsOneWidget);
+    expect(find.text('ZIP-318 Canonical'), findsOneWidget);
   });
 
   testWidgets('option selection does not move card content', (tester) async {
@@ -95,7 +96,7 @@ void main() {
     await tester.pumpWidget(_migrationOptionsHarness());
     await tester.pumpAndSettle();
 
-    final privateTitle = find.text('Private');
+    final privateTitle = find.text('Balanced');
     final fastTitle = find.text('Immediate');
     expect(privateTitle, findsOneWidget);
     expect(fastTitle, findsOneWidget);
@@ -169,7 +170,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final immediateOption = find.byKey(
-      const ValueKey('ironwood_migration_fast_option'),
+      const ValueKey('ironwood_migration_immediate_option'),
     );
     final immediateGesture = find.descendant(
       of: immediateOption,
@@ -3836,8 +3837,8 @@ Widget _migrationOptionsHarness({
               previewUrParts: previewCombinedSigningUrParts,
             );
           }
-          final schedule =
-              state.extra! as List<rust_sync.MigrationScheduledTransfer>;
+          final approval = state.extra! as IronwoodMigrationPrivateApproval;
+          final schedule = approval.approvedSchedule;
           return Text(
             'keystone-combined-sign-route:${schedule.length}:'
             '${schedule.first.blockOffset}',

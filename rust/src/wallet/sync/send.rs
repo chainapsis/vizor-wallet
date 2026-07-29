@@ -1326,6 +1326,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     pending_salt_base64: &str,
     approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<IronwoodMigrationResult, String> {
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
@@ -1458,10 +1459,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::preparation_timing_policy_for_run(db_path, &run.run_id)?,
             super::migration::timing_policy_for_run(db_path, &run.run_id, network)?,
         ),
-        None => (
-            preparation_timing_policy,
-            super::migration::configured_timing_policy(network),
-        ),
+        None => (preparation_timing_policy, migration_timing_policy),
     };
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
         prepare_software_migration_run(
@@ -1508,7 +1506,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         )?;
         draft.run_id
     } else {
-        super::migration::create_run_with_staged_denominations_and_signed_children(
+        super::migration::create_run_with_staged_denominations_and_signed_children_with_timing_policy(
             db_path,
             account_uuid,
             network,
@@ -1518,6 +1516,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             denomination_stages,
             Some(&approved_schedule),
             preparation_timing_policy,
+            migration_timing_policy,
             pending_password.as_slice(),
             pending_salt_base64,
         )?

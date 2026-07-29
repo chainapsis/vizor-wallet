@@ -98,10 +98,12 @@ final ironwoodMigrationFlowDataProvider =
       );
     });
 
-final ironwoodMigrationPrivatePlanProvider =
-    FutureProvider.autoDispose<rust_sync.OrchardMigrationPrivatePlan?>((
-      ref,
-    ) async {
+final ironwoodMigrationPrivatePlanForStrategyProvider = FutureProvider
+    .autoDispose
+    .family<
+      rust_sync.OrchardMigrationPrivatePlan?,
+      rust_sync.OrchardMigrationStrategy
+    >((ref, strategy) async {
       final request = ref.watch(
         ironwoodMigrationInputsProvider.select(
           (inputs) => inputs.statusRequest,
@@ -114,8 +116,30 @@ final ironwoodMigrationPrivatePlanProvider =
           .privatePlan(
             network: request.network,
             accountUuid: request.accountUuid,
+            strategy: strategy,
           );
     });
+
+final ironwoodMigrationPrivatePlanProvider =
+    FutureProvider.autoDispose<rust_sync.OrchardMigrationPrivatePlan?>((ref) {
+      return ref.watch(
+        ironwoodMigrationPrivatePlanForStrategyProvider(
+          rust_sync.OrchardMigrationStrategy.balanced,
+        ).future,
+      );
+    });
+
+class IronwoodMigrationPrivateApproval {
+  const IronwoodMigrationPrivateApproval({
+    required this.plan,
+    required this.strategy,
+  });
+
+  final rust_sync.OrchardMigrationPrivatePlan plan;
+  List<rust_sync.MigrationScheduledTransfer> get approvedSchedule =>
+      plan.scheduledTransfers;
+  final rust_sync.OrchardMigrationStrategy strategy;
+}
 
 final ironwoodMigrationImmediatePlanProvider =
     FutureProvider.autoDispose<rust_sync.OrchardMigrationImmediatePlan?>((

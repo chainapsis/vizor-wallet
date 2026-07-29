@@ -33,6 +33,12 @@ pub(crate) enum MigrationTimingPolicy {
     FastTestnet,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationStrategy {
+    Balanced,
+    Zip318Canonical,
+}
+
 impl MigrationTimingPolicy {
     const fn as_str(self) -> &'static str {
         match self {
@@ -71,11 +77,26 @@ pub(crate) fn configured_timing_policy(network: WalletNetwork) -> MigrationTimin
     }
 }
 
+pub(crate) fn timing_policy_for_strategy(
+    network: WalletNetwork,
+    strategy: MigrationStrategy,
+) -> MigrationTimingPolicy {
+    let configured = configured_timing_policy(network);
+    if configured == MigrationTimingPolicy::FastTestnet || network == WalletNetwork::Regtest {
+        return configured;
+    }
+
+    match strategy {
+        MigrationStrategy::Balanced => MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+        MigrationStrategy::Zip318Canonical => MigrationTimingPolicy::Standard,
+    }
+}
+
 pub(crate) fn schedule_parameters(network: WalletNetwork) -> (u32, u32) {
     schedule_parameters_with_policy(network, configured_timing_policy(network))
 }
 
-fn schedule_parameters_with_policy(
+pub(crate) fn schedule_parameters_with_policy(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
 ) -> (u32, u32) {
