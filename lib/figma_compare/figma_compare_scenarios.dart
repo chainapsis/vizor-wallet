@@ -84,6 +84,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildPayCompletedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'customise-account',
+    description: 'Desktop account personalisation onboarding screen',
+    builder: buildCustomiseAccountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-customise-account',
+    description: 'Mobile account personalisation onboarding screen',
+    builder: buildMobileCustomiseAccountUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-home-default',
     description: 'Mobile home with deterministic balance and activity',
     builder: buildMobileHomeDefaultUseCase,

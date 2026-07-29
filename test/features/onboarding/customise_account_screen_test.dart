@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -178,6 +179,43 @@ void main() {
     );
     await tester.pump();
     expect(submittedProfilePictureId, 'pfp-02');
+  });
+
+  testWidgets('disables the back target while wallet creation is in flight', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final finish = Completer<void>();
+    await tester.pumpWidget(
+      _screenHarness(
+        CustomiseAccountScreen(
+          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          onFinish: (_, _) => finish.future,
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('customise_account_finish_button')),
+    );
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<OnboardingTrailingPane>(find.byType(OnboardingTrailingPane))
+          .backTarget,
+      isNull,
+    );
+
+    finish.complete();
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<OnboardingTrailingPane>(find.byType(OnboardingTrailingPane))
+          .backTarget,
+      isNotNull,
+    );
   });
 }
 

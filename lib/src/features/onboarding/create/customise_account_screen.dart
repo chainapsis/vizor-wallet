@@ -224,7 +224,7 @@ class _CustomiseAccountScreenState
             : null;
 
     return OnboardingTrailingPane(
-      backTarget: _backTarget,
+      backTarget: _isSubmitting ? null : _backTarget,
       overlay: profilePictureOverlay,
       child: _CustomiseAccountContent(
         nameController: _nameController,
