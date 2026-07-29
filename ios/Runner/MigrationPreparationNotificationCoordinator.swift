@@ -154,19 +154,20 @@ struct MigrationPreparationNotificationBatchState: Codable, Equatable {
     if accountCount == 1 {
       switch highestPriority {
       case .confirmedWaveReady:
-        title = "Migration step confirmed"
-        body = "Open Vizor to continue."
+        title = "Preparation transactions confirmed"
+        body = "Open Vizor to start the next step."
       case .needsForegroundRecovery, .terminalFailure:
         title = "Migration needs attention"
         body = "Open Vizor to continue."
       }
     } else {
-      title = "Migration updates"
       switch highestPriority {
       case .confirmedWaveReady:
+        title = "Migration preparation updates"
         body =
-          "\(accountCount) accounts are ready. Open Vizor to continue."
+          "\(accountCount) accounts are ready for the next step. Open Vizor to continue."
       case .needsForegroundRecovery, .terminalFailure:
+        title = "Migration updates"
         body =
           "\(accountCount) accounts need attention. Open Vizor to continue."
       }

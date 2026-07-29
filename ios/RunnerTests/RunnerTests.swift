@@ -750,8 +750,8 @@ class RunnerTests: XCTestCase {
     XCTAssertEqual(
       migrationPreparationTrackingCompletionPresentation(batch),
       MigrationPreparationTrackingCompletionPresentation(
-        title: "Preparation step 2 of 4 confirmed",
-        subtitle: "Open Vizor to continue"
+        title: "2 of 4 preparation transactions confirmed",
+        subtitle: "Open Vizor to start the next step"
       )
     )
     // The task owns one wave. It reports that wave successfully instead of
@@ -764,8 +764,8 @@ class RunnerTests: XCTestCase {
       ),
       .finishConfirmed(
         MigrationPreparationTrackingCompletionPresentation(
-          title: "Preparation step 2 of 4 confirmed",
-          subtitle: "Open Vizor to continue"
+          title: "2 of 4 preparation transactions confirmed",
+          subtitle: "Open Vizor to start the next step"
         )
       )
     )
@@ -863,7 +863,7 @@ class RunnerTests: XCTestCase {
       migrationPreparationTrackingCompletionPresentation(batch),
       MigrationPreparationTrackingCompletionPresentation(
         title: "Preparation transactions confirmed",
-        subtitle: "Open Vizor to continue"
+        subtitle: "Open Vizor to start the next step"
       )
     )
   }
@@ -1454,6 +1454,68 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testTrackingProgressPresentationExplainsTheConfirmationCount() {
+    let progress = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 7,
+      totalUnitCount: 12,
+      completedTransactionCount: 2,
+      totalTransactionCount: 4,
+      isComplete: false
+    )
+
+    XCTAssertEqual(
+      migrationPreparationTrackingProgressPresentation(progress),
+      MigrationPreparationTrackingCompletionPresentation(
+        title: "Preparing your migration",
+        subtitle: "2 of 4 preparation transactions confirmed"
+      )
+    )
+  }
+
+  func testTrackingProgressPresentationAvoidsAnUnknownZeroOfZeroCount() {
+    let progress = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 0,
+      totalUnitCount: 1,
+      completedTransactionCount: 0,
+      totalTransactionCount: 0,
+      isComplete: false
+    )
+
+    XCTAssertEqual(
+      migrationPreparationTrackingProgressPresentation(progress),
+      MigrationPreparationTrackingCompletionPresentation(
+        title: "Preparing your migration",
+        subtitle: "Checking transaction confirmations"
+      )
+    )
+  }
+
+  func testFinalPreparationWaveUsesCompletionCopy() {
+    let completedProgress = MigrationPreparationConfirmationProgress(
+      confirmedUnitCount: 12,
+      totalUnitCount: 12,
+      completedTransactionCount: 4,
+      totalTransactionCount: 4,
+      isComplete: true
+    )
+    let batch = migrationPreparationTrackingBatch(
+      results: [
+        MigrationPreparationScopeTrackingResult(
+          scope: "test:account-a:run-1",
+          disposition: .completed(completedProgress)
+        )
+      ]
+    )
+
+    XCTAssertEqual(
+      migrationPreparationTrackingCompletionPresentation(batch),
+      MigrationPreparationTrackingCompletionPresentation(
+        title: "Migration preparation complete",
+        subtitle: "Open Vizor to continue your migration"
+      )
+    )
+  }
+
   func testMigrationPreparationConfirmationProgressDoesNotCountForkedTransaction() {
     let progress = migrationPreparationConfirmationProgress(
       observations: [
@@ -1508,8 +1570,8 @@ class RunnerTests: XCTestCase {
     let summary = state.summary
     XCTAssertEqual(summary?.accountCount, 1)
     XCTAssertEqual(summary?.highestPriority, .confirmedWaveReady)
-    XCTAssertEqual(summary?.title, "Migration step confirmed")
-    XCTAssertEqual(summary?.body, "Open Vizor to continue.")
+    XCTAssertEqual(summary?.title, "Preparation transactions confirmed")
+    XCTAssertEqual(summary?.body, "Open Vizor to start the next step.")
   }
 
   func testSingleAccountFailureKeepsTheAttentionCopy() {
@@ -1574,10 +1636,10 @@ class RunnerTests: XCTestCase {
     )
 
     XCTAssertEqual(state.summary?.highestPriority, .confirmedWaveReady)
-    XCTAssertEqual(state.summary?.title, "Migration updates")
+    XCTAssertEqual(state.summary?.title, "Migration preparation updates")
     XCTAssertEqual(
       state.summary?.body,
-      "2 accounts are ready. Open Vizor to continue."
+      "2 accounts are ready for the next step. Open Vizor to continue."
     )
   }
 

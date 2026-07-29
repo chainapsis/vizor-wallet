@@ -124,6 +124,22 @@ enum MigrationPreparationTrackingPostBatchAction: Equatable {
   case finish
 }
 
+func migrationPreparationTrackingProgressPresentation(
+  _ progress: MigrationPreparationConfirmationProgress
+) -> MigrationPreparationTrackingCompletionPresentation {
+  guard progress.totalTransactionCount > 0 else {
+    return MigrationPreparationTrackingCompletionPresentation(
+      title: "Preparing your migration",
+      subtitle: "Checking transaction confirmations"
+    )
+  }
+  return MigrationPreparationTrackingCompletionPresentation(
+    title: "Preparing your migration",
+    subtitle:
+      "\(progress.completedTransactionCount) of \(progress.totalTransactionCount) preparation transactions confirmed"
+  )
+}
+
 /// The visible caption for a task that observed its whole wave confirm.
 ///
 /// One continued-processing task tracks exactly one confirmation wave. Later
@@ -141,13 +157,21 @@ func migrationPreparationTrackingCompletionPresentation(
   guard let progress = batch.progress else {
     return MigrationPreparationTrackingCompletionPresentation(
       title: "Preparation transactions confirmed",
-      subtitle: "Open Vizor to continue"
+      subtitle: "Open Vizor to start the next step"
+    )
+  }
+  if progress.totalTransactionCount > 0
+    && progress.completedTransactionCount >= progress.totalTransactionCount
+  {
+    return MigrationPreparationTrackingCompletionPresentation(
+      title: "Migration preparation complete",
+      subtitle: "Open Vizor to continue your migration"
     )
   }
   return MigrationPreparationTrackingCompletionPresentation(
     title:
-      "Preparation step \(progress.completedTransactionCount) of \(progress.totalTransactionCount) confirmed",
-    subtitle: "Open Vizor to continue"
+      "\(progress.completedTransactionCount) of \(progress.totalTransactionCount) preparation transactions confirmed",
+    subtitle: "Open Vizor to start the next step"
   )
 }
 
@@ -1285,8 +1309,8 @@ final class BackgroundMigrationPreparationManager {
       self.scheduleWatchdog()
       let request = BGContinuedProcessingTaskRequest(
         identifier: Self.taskIdentifier,
-        title: "Checking preparation transactions",
-        subtitle: "Waiting for confirmations"
+        title: "Preparing your migration",
+        subtitle: "Checking transaction confirmations"
       )
       request.strategy = .fail
       let submission = self.stateLock.withPreparationLock {
@@ -1585,7 +1609,10 @@ final class BackgroundMigrationPreparationManager {
           hasCompletedInitialQuery = true
           taskFailureObserved =
             taskFailureObserved || batch.hasTaskFailure
-          let notificationSubmitted = self.applyTrackingBatch(batch)
+          let notificationSubmitted = self.applyTrackingBatch(
+            batch,
+            task: task
+          )
           taskFailureObserved =
             taskFailureObserved || !notificationSubmitted
           switch migrationPreparationTrackingPostBatchAction(
@@ -1995,13 +2022,14 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func applyTrackingBatch(
-    _ batch: MigrationPreparationTrackingBatch
+    _ batch: MigrationPreparationTrackingBatch,
+    task: BGContinuedProcessingTask
   ) -> Bool {
     guard !stateLock.withPreparationLock({ mutationQuiesced }) else {
       return true
     }
     if let progress = batch.progress {
-      updateTrackingProgress(progress)
+      updateTrackingProgress(progress, task: task)
     }
     let notificationsDisabled = stateLock.withPreparationLock {
       notificationAuthorization.isDisabled
@@ -2051,8 +2079,11 @@ final class BackgroundMigrationPreparationManager {
   }
 
   private func updateTrackingProgress(
-    _ progress: MigrationPreparationConfirmationProgress
+    _ progress: MigrationPreparationConfirmationProgress,
+    task: BGContinuedProcessingTask
   ) {
+    let presentation =
+      migrationPreparationTrackingProgressPresentation(progress)
     stateLock.withPreparationLock {
       guard let taskProgress else { return }
       latestTrackingProgress = progress
@@ -2064,6 +2095,10 @@ final class BackgroundMigrationPreparationManager {
       taskProgress.totalUnitCount = Self.progressDisplayUnitCount
       taskProgress.completedUnitCount = displayedProgressUnits
     }
+    task.updateTitle(
+      presentation.title,
+      subtitle: presentation.subtitle
+    )
   }
 
   private func advanceTrackingHeartbeat() {
@@ -2131,16 +2166,16 @@ final class BackgroundMigrationPreparationManager {
       // The OS reclaimed this execution slot mid-wave; say that instead of
       // leaving a caption that implies counting is still happening.
       task.updateTitle(
-        "Confirmation tracking paused",
-        subtitle: "Open Vizor to continue"
+        "Preparation tracking paused",
+        subtitle: "Open Vizor to resume"
       )
     } else if runtime.quiesced {
       // The activity is still captioned "Checking transaction confirmations".
       // Leaving that text on a wallet the user just changed reads as a verdict
       // on their migration; say what actually happened instead.
       task.updateTitle(
-        "Migration preparation stopped",
-        subtitle: "Wallet accounts changed"
+        "Preparation stopped",
+        subtitle: "Your wallet accounts changed"
       )
     }
 
@@ -2628,8 +2663,8 @@ final class BackgroundMigrationPreparationManager {
       return
     }
     let content = UNMutableNotificationContent()
-    content.title = "Migration preparation paused"
-    content.body = "Open Vizor to continue preparing your migration."
+    content.title = "Preparation tracking paused"
+    content.body = "Open Vizor to resume migration preparation."
     content.sound = .default
     let request = UNNotificationRequest(
       identifier: Self.watchdogIdentifier,
