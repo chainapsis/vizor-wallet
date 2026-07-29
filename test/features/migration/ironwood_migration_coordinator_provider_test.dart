@@ -1392,6 +1392,91 @@ void main() {
     );
   });
 
+  test('wallet reset clears process-local migration state', () async {
+    final container = _container(
+      statuses: {
+        _softwareUuid: _status('waiting_denom_confirmations'),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      },
+      softwareStarts: [],
+      broadcasts: [],
+      mutableAccounts: true,
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    coordinator.grantChildProofBatchPermit(_softwareUuid);
+    await coordinator.refreshNow();
+    expect(
+      container.read(ironwoodMigrationCoordinatorProvider).statuses,
+      isNotEmpty,
+    );
+
+    (container.read(accountProvider.notifier) as _MutableAccountNotifier)
+        .clearAccounts();
+    await coordinator.refreshNow();
+
+    final state = container.read(ironwoodMigrationCoordinatorProvider);
+    expect(state.statuses, isEmpty);
+    expect(state.errors, isEmpty);
+    expect(state.advancingAccounts, isEmpty);
+    expect(state.foregroundProgressPermits, isEmpty);
+    expect(state.childProofBatchPermits, isEmpty);
+  });
+
+  test('wallet reset discards an in-flight status refresh', () async {
+    final statuses = {
+      _softwareUuid: _status('waiting_denom_confirmations'),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final statusStarted = Completer<void>();
+    final releaseStatus = Completer<void>();
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      mutableAccounts: true,
+      loadStatus: (accountUuid) async {
+        if (!statusStarted.isCompleted) {
+          statusStarted.complete();
+          await releaseStatus.future;
+        }
+        return statuses[accountUuid]!;
+      },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    final refresh = coordinator.refreshNow();
+    await statusStarted.future;
+    (container.read(accountProvider.notifier) as _MutableAccountNotifier)
+        .clearAccounts();
+    releaseStatus.complete();
+    await refresh;
+
+    expect(
+      container.read(ironwoodMigrationCoordinatorProvider).statuses,
+      isEmpty,
+    );
+  });
+
   testWidgets(
     'initial status refresh does not restart bound background preparation',
     (tester) async {
@@ -1727,6 +1812,10 @@ class _MutableAccountNotifier extends AccountNotifier {
     state = AsyncData(
       current.copyWith(accounts: List<AccountInfo>.of(current.accounts)),
     );
+  }
+
+  void clearAccounts() {
+    state = const AsyncData(AccountState());
   }
 }
 

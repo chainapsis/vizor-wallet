@@ -153,6 +153,7 @@ fn pending_test_stage(expected_txid_hex: &str, raw_tx: Vec<u8>) -> DenominationS
         raw_tx: Some(raw_tx),
         expected_txid_hex: expected_txid_hex.to_string(),
         target_height: 3_000_000,
+        scheduled_height: 0,
         expiry_height: 0,
         fee_zatoshi: 80_000,
         status: DenominationStageStatus::Pending,
@@ -187,6 +188,106 @@ fn pending_test_stage_for_part(
     stage.outputs[0].value_zatoshi = value_zatoshi;
     stage.outputs[0].part_index = part_index;
     stage
+}
+
+#[test]
+fn schema_backfills_only_recoverable_original_schedule_heights() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    let schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100,
+        block_offset: 5,
+    }];
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              signed_schedule_origin_height)
+             VALUES ('run-original', 'account-1', 'regtest', 'db', ?1, 1, 1,
+                     '[100]', ?2, 100)"
+        ),
+        params![
+            PHASE_BROADCAST_SCHEDULED,
+            serde_json::to_string(&schedule).unwrap()
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PENDING_TXS_TABLE}
+             (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+              expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+              selected_note_output_index, selected_note_value, scheduled_at_ms,
+              schedule_start_height, scheduled_height, status, metadata_json)
+             VALUES ('run-original', ?1, 0, 'raw', 101, 69120, 100, 0, ?2,
+                     0, 100, 1, 109, 110, 'scheduled', '{{}}')"
+        ),
+        params!["11".repeat(32), "22".repeat(32)],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('run-unknown-original', 'account-1', 'regtest', 'db', ?1,
+                     1, 1, '[100]', '[]')"
+        ),
+        params![PHASE_BROADCAST_SCHEDULED],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {PENDING_TXS_TABLE}
+             (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+              expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+              selected_note_output_index, selected_note_value, scheduled_at_ms,
+              schedule_start_height, scheduled_height, status, metadata_json)
+             VALUES ('run-unknown-original', ?1, 0, 'raw', 101, 69120, 100, 0,
+                     ?2, 0, 100, 1, 109, 110, 'scheduled', '{{}}')"
+        ),
+        params!["33".repeat(32), "44".repeat(32)],
+    )
+    .unwrap();
+
+    ensure_schema(&conn).unwrap();
+
+    let heights = conn
+        .query_row(
+            &format!(
+                "SELECT original_scheduled_height, scheduled_height
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'run-original'"
+            ),
+            [],
+            |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)),
+        )
+        .unwrap();
+    assert_eq!(heights, (105, 110));
+    let unknown_original = conn
+        .query_row(
+            &format!(
+                "SELECT original_scheduled_height
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'run-unknown-original'"
+            ),
+            [],
+            |row| row.get::<_, Option<u32>>(0),
+        )
+        .unwrap();
+    assert_eq!(unknown_original, None);
+    let unknown_parts = migration_parts_for_run(
+        &conn,
+        "run-unknown-original",
+        &[100],
+        PHASE_BROADCAST_SCHEDULED,
+        3,
+    )
+    .unwrap();
+    assert_eq!(unknown_parts[0].original_scheduled_height, None);
+    assert_eq!(unknown_parts[0].effective_scheduled_height, Some(110));
 }
 
 #[test]
@@ -774,6 +875,71 @@ fn insert_preparation_policy_test_run(
     }
 }
 
+fn preparation_catch_up_test_rows(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Vec<(u32, u32, Option<u32>, u32)> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT stage_index, scheduled_height,
+                    broadcast_not_before_height, expiry_height
+             FROM {STAGES_TABLE}
+             WHERE run_id = ?1
+             ORDER BY stage_index ASC"
+        ))
+        .unwrap();
+    stmt.query_map(params![run_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    })
+    .unwrap()
+    .collect::<Result<Vec<_>, _>>()
+    .unwrap()
+}
+
+fn insert_recovered_pending_preparation_test_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    scheduled_heights: [u32; 3],
+    mined_height: u32,
+) {
+    conn.execute_batch(
+        "CREATE TABLE blocks (height INTEGER PRIMARY KEY, hash BLOB NOT NULL);
+         CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             block INTEGER,
+             mined_height INTEGER
+         );",
+    )
+    .unwrap();
+    insert_preparation_policy_test_run(conn, run_id, PreparationTimingPolicy::Zip318Spaced, 3, 101);
+    for (stage_index, scheduled_height) in scheduled_heights.into_iter().enumerate() {
+        conn.execute(
+            &format!(
+                "UPDATE {STAGES_TABLE}
+                 SET scheduled_height = ?1, expiry_height = 3490560
+                 WHERE run_id = ?2 AND stage_index = ?3"
+            ),
+            params![scheduled_height, run_id, stage_index],
+        )
+        .unwrap();
+    }
+
+    let block_hash = [0xabu8; 32];
+    conn.execute(
+        "INSERT INTO blocks (height, hash) VALUES (?1, ?2)",
+        params![mined_height, block_hash.as_slice()],
+    )
+    .unwrap();
+    let mut stored_txid = hex::decode(format!("{:064x}", 1)).unwrap();
+    stored_txid.reverse();
+    conn.execute(
+        "INSERT INTO transactions (txid, block, mined_height)
+         VALUES (?1, ?2, ?2)",
+        params![stored_txid, mined_height],
+    )
+    .unwrap();
+}
+
 fn seed_account_migration_rows(
     conn: &rusqlite::Connection,
     run_id: &str,
@@ -1064,6 +1230,173 @@ fn overdue_reschedule_crossing_expiry_bucket_requires_resigning() {
         run_phase(&db_path, "run-1").unwrap(),
         PHASE_READY_TO_MIGRATE
     );
+}
+
+#[test]
+fn on_open_reschedule_redraws_overdue_transfers_across_wallet_runs() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-1", &[100, 200], &[Some(90), Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET txid_hex = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+             WHERE run_id = 'run-1' AND part_index = 0"
+        ),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET txid_hex = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+             WHERE run_id = 'run-1' AND part_index = 1"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    create_outbox_test_run(&db_path, "run-2", &[300], &[Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET account_uuid = 'account-2' WHERE run_id = 'run-2'"),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 503, schedule_start_height = 502
+             WHERE status = 'scheduled'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    mark_pending_broadcasted(
+        &db_path,
+        "run-1",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .unwrap();
+    reschedule_wallet_overdue_pending_txs(&db_path, WalletNetwork::Regtest, 503).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let remaining = conn
+        .prepare(
+            "SELECT run_id, scheduled_height
+             FROM vizor_migration_pending_txs
+             WHERE status = 'scheduled'
+             ORDER BY run_id, part_index",
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(remaining.len(), 2);
+    assert_eq!(
+        remaining
+            .iter()
+            .map(|entry| entry.0.as_str())
+            .collect::<Vec<_>>(),
+        vec!["run-1", "run-2"]
+    );
+    assert!(remaining.iter().all(|entry| entry.1 > 503));
+}
+
+#[test]
+fn on_open_storage_recovery_keeps_accepted_tx_and_redraws_every_other_run() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-1", &[100, 200], &[Some(90), Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET txid_hex = CASE part_index
+                 WHEN 0 THEN 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+                 ELSE 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+             END
+             WHERE run_id = 'run-1'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let accepted_txid = "a".repeat(64);
+    create_outbox_test_run(&db_path, "run-2", &[300], &[Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET account_uuid = 'account-2' WHERE run_id = 'run-2'"),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 503, schedule_start_height = 502
+             WHERE status = 'scheduled'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    reschedule_wallet_overdue_pending_txs_after_accepted(
+        &db_path,
+        WalletNetwork::Regtest,
+        503,
+        "run-1",
+        &accepted_txid,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let schedules = conn
+        .prepare(
+            "SELECT run_id, txid_hex, scheduled_height
+             FROM vizor_migration_pending_txs
+             WHERE status = 'scheduled'
+             ORDER BY run_id, part_index",
+        )
+        .unwrap()
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(schedules.len(), 3);
+    assert_eq!(
+        schedules
+            .iter()
+            .find(|(_, txid, _)| txid == &accepted_txid)
+            .unwrap()
+            .2,
+        503
+    );
+    assert!(schedules
+        .iter()
+        .filter(|(_, txid, _)| txid != &accepted_txid)
+        .all(|(_, _, height)| *height > 503));
 }
 
 #[test]
@@ -1559,6 +1892,8 @@ fn timing_projection_starts_approved_offsets_after_initial_proof_readiness() {
 
     assert_eq!(projection.next_action_height, Some(200));
     assert_eq!(projection.next_action_part_index, Some(0));
+    assert_eq!(projection.next_proof_window_height, Some(200));
+    assert_eq!(projection.next_proof_window_part_indices, vec![0, 1, 2]);
     assert_eq!(projection.estimated_completion_height, Some(299));
     assert_eq!(
         projection.schedule_order_by_part,
@@ -1704,6 +2039,8 @@ fn timing_projection_keeps_unpromoted_parts_after_a_reschedule() {
 
     assert_eq!(projection.next_action_height, Some(550));
     assert_eq!(projection.next_action_part_index, Some(1));
+    assert_eq!(projection.next_proof_window_height, Some(550));
+    assert_eq!(projection.next_proof_window_part_indices, vec![1]);
     assert_eq!(projection.estimated_completion_height, Some(791));
     assert_eq!(
         projection.projected_signed_parts,
@@ -1891,7 +2228,7 @@ fn timing_projection_failure_does_not_block_migration_status() {
     let run = active_run(&conn, "account-1", WalletNetwork::Test)
         .unwrap()
         .unwrap();
-    let status = status_for_run(&conn, run).unwrap();
+    let status = status_for_run(&conn, run, 0).unwrap();
 
     assert_eq!(status.phase, PHASE_BROADCAST_SCHEDULED);
     assert_eq!(status.next_action_height, None);
@@ -1928,96 +2265,49 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
 }
 
 #[test]
-fn preparation_schedule_delays_every_root() {
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
-    ensure_schema(&conn).unwrap();
-    insert_preparation_policy_test_run(
-        &conn,
-        "spaced-roots",
-        PreparationTimingPolicy::Zip318Spaced,
-        8,
-        101,
-    );
-
-    let tx = conn.unchecked_transaction().unwrap();
+fn preparation_schedule_is_planned_across_dependency_layers() {
     let mut rng = StdRng::seed_from_u64(0x318);
-    initialize_preparation_schedule_with_tx(
-        &tx,
-        "spaced-roots",
+    let heights = planned_preparation_scheduled_heights(
         WalletNetwork::Main,
         PreparationTimingPolicy::Zip318Spaced,
+        MigrationTimingPolicy::Standard,
+        3_455_990,
+        &[0, 0, 1, 1],
         &mut rng,
     )
     .unwrap();
-    tx.commit().unwrap();
 
-    let mut stmt = conn
-        .prepare(&format!(
-            "SELECT scheduled_height FROM {STAGES_TABLE}
-             WHERE run_id = 'spaced-roots'
-             ORDER BY scheduled_height ASC"
-        ))
-        .unwrap();
-    let heights = stmt
-        .query_map([], |row| row.get::<_, u32>(0))
-        .unwrap()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    assert_ne!(heights[0], 100);
-    assert!(heights[0] <= 100 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
-    assert!(heights
-        .windows(2)
-        .all(|heights| { heights[1] - heights[0] <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS }));
+    assert_eq!(heights.len(), 4);
+    let root_end = heights[..2].iter().copied().max().unwrap();
+    let descendant_start = heights[2..].iter().copied().min().unwrap();
+    assert!(root_end >= 3_455_989);
+    assert!(descendant_start >= root_end + denomination_confirmations_required());
+    assert!(heights.iter().all(|height| {
+        zip318_canonical_migration_expiry_height(*height)
+            .is_ok_and(|expiry_height| expiry_height > *height)
+    }));
 }
 
 #[test]
-fn descendant_preparation_schedule_follows_observed_and_existing_heights() {
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
-    ensure_schema(&conn).unwrap();
-    insert_preparation_policy_test_run(
-        &conn,
-        "spaced-descendant",
-        PreparationTimingPolicy::Zip318Spaced,
-        1,
-        101,
-    );
-    conn.execute(
-        &format!(
-            "UPDATE {STAGES_TABLE} SET scheduled_height = 140
-             WHERE run_id = 'spaced-descendant'"
-        ),
-        [],
-    )
-    .unwrap();
+fn immediate_preparation_schedule_still_serializes_dependency_layers() {
     let mut rng = StdRng::seed_from_u64(0x318);
-    let after_existing = next_preparation_scheduled_height(
-        &conn,
-        "spaced-descendant",
+    let heights = planned_preparation_scheduled_heights(
         WalletNetwork::Main,
-        100,
+        PreparationTimingPolicy::Immediate,
+        MigrationTimingPolicy::Standard,
+        101,
+        &[0, 0, 1],
         &mut rng,
     )
     .unwrap();
-    assert!((140..=140 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS).contains(&after_existing));
 
-    let after_observed = next_preparation_scheduled_height(
-        &conn,
-        "spaced-descendant",
-        WalletNetwork::Main,
-        200,
-        &mut rng,
-    )
-    .unwrap();
-    assert!((200..=200 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS).contains(&after_observed));
+    assert_eq!(heights, vec![100, 100, 103]);
 }
 
 #[test]
 fn fast_testnet_uses_accelerated_preparation_delays() {
     assert_eq!(
-        preparation_schedule_parameters(
-            WalletNetwork::Regtest,
-            MigrationTimingPolicy::FastTestnet,
-        ),
+        preparation_schedule_parameters(WalletNetwork::Regtest, MigrationTimingPolicy::FastTestnet,),
         (
             FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS,
             FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS,
@@ -2042,25 +2332,21 @@ fn fast_testnet_uses_accelerated_preparation_delays() {
     )
     .unwrap();
     assert_eq!(
-        timing_policy_for_run_with_conn(
-            &conn,
-            "fast-testnet-preparation",
-            WalletNetwork::Regtest,
-        )
-        .unwrap(),
+        timing_policy_for_run_with_conn(&conn, "fast-testnet-preparation", WalletNetwork::Regtest,)
+            .unwrap(),
         MigrationTimingPolicy::FastTestnet,
     );
-
     let mut rng = StdRng::seed_from_u64(0x318);
     for _ in 0..32 {
-        let scheduled_height = next_preparation_scheduled_height(
-            &conn,
-            "fast-testnet-preparation",
+        let scheduled_height = planned_preparation_scheduled_heights(
             WalletNetwork::Test,
-            200,
+            PreparationTimingPolicy::Zip318Spaced,
+            MigrationTimingPolicy::FastTestnet,
+            201,
+            &[0],
             &mut rng,
         )
-        .unwrap();
+        .unwrap()[0];
         assert!((200..=200 + FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS).contains(&scheduled_height));
     }
 }
@@ -2085,12 +2371,12 @@ fn preparation_delay_rounds_to_nearest_block() {
 }
 
 #[test]
-fn all_remaining_preparation_stages_are_rescheduled_after_a_late_broadcast() {
+fn late_preparation_broadcast_rerandomizes_remaining_effective_heights() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     insert_preparation_policy_test_run(
         &conn,
-        "spaced-overdue",
+        "preparation-catch-up",
         PreparationTimingPolicy::Zip318Spaced,
         4,
         101,
@@ -2104,44 +2390,299 @@ fn all_remaining_preparation_stages_are_rescheduled_after_a_late_broadcast() {
                      WHEN 2 THEN 250
                      ELSE 1000
                  END,
-                 status = CASE stage_index
-                     WHEN 0 THEN 'broadcasted'
-                     ELSE 'pending'
-                 END
-             WHERE run_id = 'spaced-overdue'"
+                 broadcast_not_before_height = CASE stage_index
+                     WHEN 2 THEN 275
+                     ELSE NULL
+                 END,
+                 expiry_height = 3490560
+             WHERE run_id = 'preparation-catch-up'"
         ),
         [],
     )
     .unwrap();
+    let before = preparation_catch_up_test_rows(&conn, "preparation-catch-up");
+    let tx = conn.unchecked_transaction().unwrap();
+    mark_denomination_stage_broadcasted(&tx, "preparation-catch-up", &format!("{:064x}", 1))
+        .unwrap();
+    let mut rng = StdRng::seed_from_u64(0x318);
+    assert_eq!(
+        rerandomize_remaining_preparation_broadcast_heights(
+            &tx,
+            "preparation-catch-up",
+            WalletNetwork::Test,
+            200,
+            &mut rng,
+        )
+        .unwrap(),
+        3,
+    );
+    tx.commit().unwrap();
+    let after = preparation_catch_up_test_rows(&conn, "preparation-catch-up");
+
+    assert_eq!(
+        before
+            .iter()
+            .map(|row| (row.0, row.1, row.3))
+            .collect::<Vec<_>>(),
+        after
+            .iter()
+            .map(|row| (row.0, row.1, row.3))
+            .collect::<Vec<_>>(),
+        "the expiry-derived schedule must stay immutable",
+    );
+    assert!(after[0].2.is_none(), "the broadcasted stage is unchanged");
+    assert!(after[1..].iter().all(|row| row.2.is_some()));
+
+    let effective_heights = after[1..]
+        .iter()
+        .map(|row| row.1.max(row.2.unwrap_or(0)))
+        .collect::<Vec<_>>();
+    assert!(effective_heights[0] >= 200);
+    assert!(effective_heights[0] <= 200 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
+    assert!(effective_heights[1] - effective_heights[0] <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
+    assert_eq!(effective_heights[2], 1000);
+    assert!(effective_heights.windows(2).all(|pair| pair[0] <= pair[1]));
+    for (before, after) in before[1..].iter().zip(&after[1..]) {
+        let old_effective = before.1.max(before.2.unwrap_or(0));
+        let new_effective = after.1.max(after.2.unwrap_or(0));
+        assert!(new_effective >= old_effective);
+    }
+    let displayed_heights = migration_preparation_transactions_for_run(
+        &conn,
+        "preparation-catch-up",
+        &[],
+        denomination_confirmations_required(),
+        0,
+    )
+    .unwrap()
+    .into_iter()
+    .skip(1)
+    .map(|stage| stage.scheduled_height.unwrap())
+    .collect::<Vec<_>>();
+    assert_eq!(displayed_heights, effective_heights);
+}
+
+#[test]
+fn recovered_pending_preparation_stage_uses_chain_tip_and_rerandomizes_once() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "recovered-preparation-catch-up";
+    let scanned_inclusion_height = 200;
+    let chain_tip_height = 500;
+    insert_recovered_pending_preparation_test_run(
+        &conn,
+        run_id,
+        [100, 150, 175],
+        scanned_inclusion_height,
+    );
+    let before = preparation_catch_up_test_rows(&conn, run_id);
+    drop(conn);
 
     let mut rng = StdRng::seed_from_u64(0x318);
-    reschedule_remaining_preparation_stages(
-        &conn,
-        "spaced-overdue",
-        WalletNetwork::Main,
-        200,
+    reconcile_denomination_stage_chain_state_with_rng(
+        db_path,
+        run_id,
+        Some(chain_tip_height),
         &mut rng,
     )
     .unwrap();
 
-    let mut stmt = conn
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let statuses = conn
         .prepare(&format!(
-            "SELECT scheduled_height FROM {STAGES_TABLE}
-             WHERE run_id = 'spaced-overdue' AND status = 'pending'
-             ORDER BY scheduled_height ASC"
+            "SELECT status FROM {STAGES_TABLE}
+             WHERE run_id = ?1 ORDER BY stage_index"
         ))
-        .unwrap();
-    let heights = stmt
-        .query_map([], |row| row.get::<_, u32>(0))
+        .unwrap()
+        .query_map(params![run_id], |row| row.get::<_, String>(0))
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
-    assert_eq!(heights.len(), 3);
-    assert!((200..=200 + ZIP318_PREPARATION_MAX_DELAY_BLOCKS).contains(&heights[0]));
-    assert!(heights
-        .windows(2)
-        .all(|heights| { heights[1] - heights[0] <= ZIP318_PREPARATION_MAX_DELAY_BLOCKS }));
-    assert!(heights[2] <= 200 + 3 * ZIP318_PREPARATION_MAX_DELAY_BLOCKS);
+    assert_eq!(statuses, vec!["confirmed", "pending", "pending"]);
+    let after = preparation_catch_up_test_rows(&conn, run_id);
+    assert_eq!(
+        before
+            .iter()
+            .map(|row| (row.0, row.1, row.3))
+            .collect::<Vec<_>>(),
+        after
+            .iter()
+            .map(|row| (row.0, row.1, row.3))
+            .collect::<Vec<_>>(),
+        "recovery must preserve every signed schedule and expiry",
+    );
+    assert!(after[0].2.is_none());
+    let recovered_heights = after[1..]
+        .iter()
+        .map(|row| row.1.max(row.2.unwrap_or(0)))
+        .collect::<Vec<_>>();
+    assert!(scanned_inclusion_height < chain_tip_height);
+    assert!(recovered_heights[0] >= chain_tip_height);
+    assert!(recovered_heights.windows(2).all(|pair| pair[0] <= pair[1]));
+    drop(conn);
+
+    let first_recovery = after.iter().map(|row| row.2).collect::<Vec<Option<u32>>>();
+    let mut second_rng = StdRng::seed_from_u64(0x123);
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(600), &mut second_rng)
+        .unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    assert_eq!(
+        preparation_catch_up_test_rows(&conn, run_id)
+            .iter()
+            .map(|row| row.2)
+            .collect::<Vec<Option<u32>>>(),
+        first_recovery,
+        "a confirmed recovery must not re-randomize peers again",
+    );
+}
+
+#[test]
+fn recovered_pending_preparation_stage_conservatively_delays_near_future_peers() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "recovered-preparation-on-time";
+    insert_recovered_pending_preparation_test_run(&conn, run_id, [100, 251, 252], 200);
+    drop(conn);
+
+    let mut rng = StdRng::seed_from_u64(0x318);
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), &mut rng)
+        .unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let rows = preparation_catch_up_test_rows(&conn, run_id);
+    assert!(rows[0].2.is_none());
+    assert!(rows[1..].iter().all(|row| row.2.is_some()));
+    assert!(rows[1].1.max(rows[1].2.unwrap_or(0)) > rows[1].1);
+    for row in &rows[1..] {
+        assert!(row.1.max(row.2.unwrap_or(0)) >= row.1);
+    }
+    let status: String = conn
+        .query_row(
+            &format!(
+                "SELECT status FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND stage_index = 0"
+            ),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "confirmed");
+}
+
+#[test]
+fn recovered_pending_preparation_stage_rolls_back_if_rescheduling_fails() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "recovered-preparation-rollback";
+    insert_recovered_pending_preparation_test_run(&conn, run_id, [100, 150, 175], 200);
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE} SET timing_policy = 'invalid'
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .unwrap();
+    drop(conn);
+
+    let mut rng = StdRng::seed_from_u64(0x318);
+    let error =
+        reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, Some(250), &mut rng)
+            .unwrap_err();
+    assert!(error.contains("Unsupported migration timing policy"));
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let rows = preparation_catch_up_test_rows(&conn, run_id);
+    assert!(rows.iter().all(|row| row.2.is_none()));
+    let status: String = conn
+        .query_row(
+            &format!(
+                "SELECT status FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND stage_index = 0"
+            ),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "pending");
+}
+
+#[test]
+fn recovered_pending_immediate_stage_does_not_require_catch_up_context() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    ensure_schema(&conn).unwrap();
+    let run_id = "recovered-immediate-preparation";
+    insert_recovered_pending_preparation_test_run(&conn, run_id, [100, 150, 175], 200);
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE} SET preparation_timing_policy = 'immediate'
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .unwrap();
+    drop(conn);
+
+    reconcile_denomination_stage_chain_state(db_path, run_id).unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let rows = preparation_catch_up_test_rows(&conn, run_id);
+    assert!(rows.iter().all(|row| row.2.is_none()));
+    let status: String = conn
+        .query_row(
+            &format!(
+                "SELECT status FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND stage_index = 0"
+            ),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "confirmed");
+}
+
+#[test]
+fn immediate_preparation_does_not_create_catch_up_schedule() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    ensure_schema(&conn).unwrap();
+    insert_preparation_policy_test_run(
+        &conn,
+        "immediate-preparation-catch-up",
+        PreparationTimingPolicy::Immediate,
+        2,
+        101,
+    );
+    let tx = conn.unchecked_transaction().unwrap();
+    let mut rng = StdRng::seed_from_u64(0x318);
+    assert_eq!(
+        rerandomize_remaining_preparation_broadcast_heights(
+            &tx,
+            "immediate-preparation-catch-up",
+            WalletNetwork::Test,
+            200,
+            &mut rng,
+        )
+        .unwrap(),
+        0,
+    );
+    tx.commit().unwrap();
+    assert!(
+        preparation_catch_up_test_rows(&conn, "immediate-preparation-catch-up")
+            .iter()
+            .all(|row| row.2.is_none())
+    );
 }
 
 #[test]
@@ -2242,10 +2783,7 @@ fn regtest_schedule_is_short_but_still_requires_blocks() {
 #[test]
 fn fast_testnet_uses_accelerated_schedule_and_anchor_timing() {
     assert_eq!(
-        schedule_parameters_with_policy(
-            WalletNetwork::Regtest,
-            MigrationTimingPolicy::FastTestnet,
-        ),
+        schedule_parameters_with_policy(WalletNetwork::Regtest, MigrationTimingPolicy::FastTestnet,),
         (
             FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS,
             FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS,
@@ -2338,7 +2876,7 @@ fn fast_testnet_adopts_unstarted_run_and_replaces_schedule() {
 }
 
 #[test]
-fn fast_testnet_adoption_retimes_pending_preparation_stages() {
+fn fast_testnet_adoption_preserves_signed_preparation_schedule() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     insert_preparation_policy_test_run(
@@ -2353,6 +2891,7 @@ fn fast_testnet_adoption_retimes_pending_preparation_stages() {
             "UPDATE {STAGES_TABLE}
              SET scheduled_height = CASE stage_index
                  WHEN 0 THEN 100 WHEN 1 THEN 150 ELSE 200 END,
+                 expiry_height = 69120,
                  status = CASE stage_index
                      WHEN 0 THEN 'broadcasted' ELSE 'pending' END
              WHERE run_id = 'run-fast-preparation'"
@@ -2393,8 +2932,7 @@ fn fast_testnet_adoption_retimes_pending_preparation_stages() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert_eq!(heights.len(), 2);
-    assert!((100..=100 + FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS).contains(&heights[0]));
-    assert!(heights[1] - heights[0] <= FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS);
+    assert_eq!(heights, vec![150, 200]);
 }
 
 #[test]
@@ -3331,16 +3869,21 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
     assert_eq!(totals.txids, vec!["33".repeat(32)]);
     assert_eq!(totals.value_zatoshi, 100);
     assert_eq!(totals.fee_zatoshi, 10);
-    let replacement_part_index: u32 =
+    let (replacement_part_index, replacement_original_scheduled_height): (u32, Option<u32>) =
         open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
             .unwrap()
             .query_row(
-                &format!("SELECT part_index FROM {PENDING_TXS_TABLE} WHERE run_id = 'expired-run'"),
+                &format!(
+                    "SELECT part_index, original_scheduled_height
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = 'expired-run'"
+                ),
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
     assert_eq!(replacement_part_index, 0);
+    assert_eq!(replacement_original_scheduled_height, Some(91));
     let (signed_origin, replacement_scheduled_height): (u32, u32) =
         open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
             .unwrap()
@@ -3359,6 +3902,85 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
     assert_eq!(replacement_scheduled_height, 101);
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET status = 'needs_resign',
+                 original_scheduled_height = NULL,
+                 expiry_height = 1
+             WHERE run_id = 'expired-run'"
+        ),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET signed_schedule_origin_height = NULL,
+                 target_values_json = 'unrecoverable legacy metadata'
+             WHERE run_id = 'expired-run'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    replace_resigned_pending_parts(
+        &db_path,
+        "expired-run",
+        WalletNetwork::Regtest,
+        vec![PendingMigrationTxReplacement {
+            old_txid_hex: "33".repeat(32),
+            replacement: PendingMigrationTxInsert {
+                part_index: 0,
+                txid_hex: "55".repeat(32),
+                raw_tx: vec![7, 8, 9],
+                target_height: 102,
+                anchor_boundary_height: Some(90),
+                expiry_height: zip318_canonical_migration_expiry_height(102).unwrap(),
+                scheduled_height: 102,
+                value_zatoshi: 100,
+                fee_zatoshi: 10,
+                selected_note: selected_note.clone(),
+                metadata: PendingMigrationTxMetadata {
+                    tx_kind: "migration".to_string(),
+                    funding_account_uuid: "account-1".to_string(),
+                    selected_note: selected_note.clone(),
+                },
+            },
+        }],
+        Vec::new(),
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let unknown_original_after_replacement =
+        open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
+            .unwrap()
+            .query_row(
+                &format!(
+                    "SELECT original_scheduled_height
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = 'expired-run'"
+                ),
+                [],
+                |row| row.get::<_, Option<u32>>(0),
+            )
+            .unwrap();
+    assert_eq!(unknown_original_after_replacement, None);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET signed_schedule_origin_height = 90,
+                 target_values_json = '[100]'
+             WHERE run_id = 'expired-run'"
+        ),
+        [],
+    )
+    .unwrap();
     conn.execute(
         &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = 'expired-run'"),
         [],
@@ -3621,6 +4243,19 @@ fn migration_status_treats_non_migratable_residual_as_complete() {
 }
 
 #[test]
+fn projection_height_lookup_does_not_treat_wallet_db_errors_as_genesis() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    rusqlite::Connection::open(&db_path).unwrap();
+
+    assert!(migration_projection_scanned_height(
+        db_path.to_string_lossy().as_ref(),
+        WalletNetwork::Test,
+    )
+    .is_err(),);
+}
+
+#[test]
 fn migration_status_treats_sub_minimum_plan_value_as_complete() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
@@ -3672,7 +4307,7 @@ fn migration_status_keeps_completed_run_complete_with_residual_orchard() {
     .unwrap();
     mark_run_phase(&db_path, &run_id, PHASE_COMPLETE, None).unwrap();
 
-    let status = migration_status(
+    let status = migration_status_with_projection_height(
         &db_path,
         WalletNetwork::Test,
         "account-1",
@@ -3680,6 +4315,7 @@ fn migration_status_keeps_completed_run_complete_with_residual_orchard() {
         0,
         ZATOSHIS_PER_ZEC,
         0,
+        Some(0),
     )
     .unwrap();
 
@@ -3836,8 +4472,17 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
     );
     drop(conn);
 
-    let draft_status =
-        migration_status(&db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
+    let draft_status = migration_status_with_projection_height(
+        &db_path,
+        WalletNetwork::Test,
+        "account-1",
+        0,
+        0,
+        0,
+        0,
+        Some(0),
+    )
+    .unwrap();
     assert_eq!(draft_status.phase, PHASE_AWAITING_PREPARATION);
     assert_eq!(draft_status.denomination_split_total_count, 0);
     assert_eq!(draft_status.denomination_split_completed_count, 0);
@@ -4416,6 +5061,7 @@ fn confirmation_reconciliation_completes_run_and_releases_locks() {
             target_values_zatoshi: vec![100_000_000],
             last_error: None,
         },
+        0,
     )
     .unwrap();
 
@@ -4520,7 +5166,7 @@ fn confirmation_reconciliation_requeues_child_reorged_before_trusted_depth() {
     };
 
     reconcile_run_confirmations(&conn, run_id).unwrap();
-    let status = status_for_run(&conn, stale_run.clone()).unwrap();
+    let status = status_for_run(&conn, stale_run.clone(), 0).unwrap();
     assert_eq!(status.phase, PHASE_WAITING_MIGRATION_CONFIRMATIONS);
     assert_eq!(status.confirmed_tx_count, 1);
     assert_eq!(status.parts.len(), 1);
@@ -4556,7 +5202,7 @@ fn confirmation_reconciliation_requeues_child_reorged_before_trusted_depth() {
     assert_eq!(pending_status, "scheduled");
     assert!(scheduled_at_ms > 1);
 
-    let status = status_for_run(&conn, stale_run).unwrap();
+    let status = status_for_run(&conn, stale_run, 0).unwrap();
     assert_eq!(status.phase, PHASE_BROADCAST_SCHEDULED);
     assert_eq!(status.confirmed_tx_count, 0);
     assert_eq!(status.parts.len(), 1);
@@ -4610,9 +5256,9 @@ fn migration_parts_report_exact_mixed_states_and_trusted_depth() {
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
                   expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  scheduled_height, status, metadata_json)
+                  scheduled_height, original_scheduled_height, status, metadata_json)
                  VALUES ('run-parts', ?1, ?2, 'raw', 1, 100, 100, 1, ?3,
-                         0, 101, 1, ?4, ?5, '{{}}')"
+                         0, 101, 1, ?4, ?4, ?5, '{{}}')"
             ),
             params![
                 txid,
@@ -4624,6 +5270,15 @@ fn migration_parts_report_exact_mixed_states_and_trusted_depth() {
         )
         .unwrap();
     }
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 9
+             WHERE run_id = 'run-parts' AND part_index = 0"
+        ),
+        [],
+    )
+    .unwrap();
     for (txid, mined_height) in [(&txids[2], 20u32), (&txids[3], 18u32)] {
         let mut txid_blob = hex::decode(txid).unwrap();
         txid_blob.reverse();
@@ -4645,11 +5300,19 @@ fn migration_parts_report_exact_mixed_states_and_trusted_depth() {
 
     assert_eq!(parts.len(), 4);
     assert_eq!(parts[0].state, MigrationPartState::Scheduled);
+    assert_eq!(parts[0].original_scheduled_height, Some(1));
+    assert_eq!(parts[0].effective_scheduled_height, Some(9));
+    assert_eq!(parts[0].mined_height, None);
     assert_eq!(parts[1].state, MigrationPartState::Migrating);
+    assert_eq!(parts[1].original_scheduled_height, Some(2));
+    assert_eq!(parts[1].effective_scheduled_height, Some(2));
+    assert_eq!(parts[1].mined_height, None);
     assert_eq!(parts[2].state, MigrationPartState::Confirming);
     assert_eq!(parts[2].confirmation_count, 1);
+    assert_eq!(parts[2].mined_height, Some(20));
     assert_eq!(parts[3].state, MigrationPartState::Completed);
     assert_eq!(parts[3].confirmation_count, 3);
+    assert_eq!(parts[3].mined_height, Some(18));
     assert_eq!(
         parts.iter().map(|part| part.part_index).collect::<Vec<_>>(),
         vec![0, 1, 2, 3]
@@ -5050,7 +5713,7 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
         .unwrap();
     assert_eq!(retry_height, Some(290));
 
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 1);
     assert_eq!(status.next_action_height, Some(290));
@@ -5067,10 +5730,10 @@ fn denomination_reconciliation_marks_confirmed_notes_ready_to_migrate() {
         params![run_id],
     )
     .unwrap();
-    let stale_status = status_for_run(&conn, run.clone()).unwrap();
+    let stale_status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(stale_status.next_action_height, None);
     backfill_ready_migration_proof_retry_height(&conn, run_id).unwrap();
-    let recovered_status = status_for_run(&conn, run).unwrap();
+    let recovered_status = status_for_run(&conn, run, 0).unwrap();
     assert_eq!(recovered_status.next_action_height, Some(290));
     let recovered_retry_height: Option<u32> = conn
         .query_row(
@@ -5171,7 +5834,7 @@ fn status_keeps_migration_stage_while_waiting_for_spend_metadata() {
         target_values_zatoshi: vec![100_000_000],
         last_error: None,
     };
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 0);
     assert_eq!(status.pending_split_stage_count, 0);
@@ -5197,7 +5860,7 @@ fn status_keeps_migration_stage_while_waiting_for_spend_metadata() {
     )
     .unwrap();
 
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.signed_child_pczt_count, 1);
     assert_eq!(status.pending_split_stage_count, 0);
@@ -5208,7 +5871,7 @@ fn status_keeps_migration_stage_while_waiting_for_spend_metadata() {
     )
     .unwrap();
 
-    let status = status_for_run(&conn, run).unwrap();
+    let status = status_for_run(&conn, run, 0).unwrap();
     assert_eq!(status.phase, PHASE_READY_TO_MIGRATE);
     assert_eq!(status.pending_split_stage_count, 0);
 }
@@ -5677,7 +6340,17 @@ fn status_reconciliation_preserves_reincluded_parent_and_resets_offchain_depende
     drop(conn);
 
     reconcile_wallet_locks_after_sync(db_path, WalletNetwork::Test).unwrap();
-    let status = migration_status(db_path, WalletNetwork::Test, "account-1", 0, 0, 0, 0).unwrap();
+    let status = migration_status_with_projection_height(
+        db_path,
+        WalletNetwork::Test,
+        "account-1",
+        0,
+        0,
+        0,
+        0,
+        Some(0),
+    )
+    .unwrap();
     assert_eq!(status.phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
 
     let conn = rusqlite::Connection::open(db_path).unwrap();
@@ -5962,13 +6635,13 @@ fn denomination_reconciliation_waits_for_trusted_confirmations() {
     assert_eq!(phase, PHASE_WAITING_DENOM_CONFIRMATIONS);
     assert!(nullifier_hex.is_none());
 
-    let status = status_for_run(&conn, run).unwrap();
+    let status = status_for_run(&conn, run, 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 2);
     assert_eq!(status.denomination_confirmation_target, 3);
 }
 
 #[test]
-fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
+fn staged_split_progress_tracks_the_active_frontier_and_projects_future_rounds() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     conn.execute_batch(
@@ -5996,6 +6669,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
     )
     .unwrap();
     for (stage_index, txid) in stage_txids.iter().enumerate() {
+        let is_migration_output = stage_index + 1 == stage_txids.len();
         let (raw_tx, status) = if stage_index == 0 {
             (Some("raw"), "broadcasted")
         } else {
@@ -6021,7 +6695,31 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
             )
             .unwrap();
         }
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stage_outputs
+             (run_id, stage_index, output_order, output_index,
+              value_zatoshi, note_version, kind, part_index)
+             VALUES (?1, ?2, 0, 0, 99920000, 2, ?3, ?4)",
+            params![
+                run_id,
+                stage_index as u32,
+                if is_migration_output {
+                    "migration"
+                } else {
+                    "continuation"
+                },
+                is_migration_output.then_some(0u32),
+            ],
+        )
+        .unwrap();
     }
+    conn.execute(
+        "UPDATE vizor_migration_denomination_stages
+         SET scheduled_height = 19
+         WHERE run_id = ?1 AND stage_index = 2",
+        params![run_id],
+    )
+    .unwrap();
 
     let run = ActiveRun {
         run_id: run_id.to_string(),
@@ -6029,10 +6727,68 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         target_values_zatoshi: vec![100_000_000],
         last_error: None,
     };
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 0);
     assert_eq!(status.denomination_split_completed_count, 0);
     assert_eq!(status.denomination_split_total_count, 3);
+    assert_eq!(status.preparation_transactions[2].scheduled_height, None);
+    assert_eq!(
+        status
+            .preparation_transactions
+            .iter()
+            .map(|transaction| transaction.round)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3],
+    );
+    assert_eq!(status.preparation_transactions[2].planned_height, 19);
+    assert_eq!(status.preparation_transactions[2].projected_height, 22);
+    assert_eq!(
+        status.preparation_transactions[2].projected_completion_height,
+        25,
+    );
+    assert_eq!(
+        status.preparation_transactions[0].outputs[0],
+        MigrationPreparationOutputStatus {
+            value_zatoshi: 99_920_000,
+            target_value_zatoshi: None,
+            kind: MigrationPreparationOutputKind::Continuation,
+            next_round: Some(2),
+        },
+    );
+    assert_eq!(
+        status.preparation_transactions[2].outputs[0].kind,
+        MigrationPreparationOutputKind::Migration,
+    );
+    assert_eq!(
+        status.preparation_transactions[2].outputs[0].target_value_zatoshi,
+        Some(100_000_000),
+    );
+
+    let delayed_status = status_for_run(&conn, run.clone(), 30).unwrap();
+    assert_eq!(
+        delayed_status.preparation_transactions[0].state,
+        MigrationPreparationTransactionState::Broadcasted,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[0].projected_height,
+        status.preparation_transactions[0].projected_height,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[0].projected_completion_height,
+        33,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[1].projected_height,
+        33,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[2].projected_height,
+        52,
+    );
+    assert_eq!(
+        delayed_status.preparation_transactions[2].projected_completion_height,
+        55,
+    );
 
     let mut stage_0_txid = hex::decode(&stage_txids[0]).unwrap();
     stage_0_txid.reverse();
@@ -6046,16 +6802,21 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         [],
     )
     .unwrap();
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 1);
     assert_eq!(status.denomination_split_completed_count, 0);
+    assert_eq!(
+        status.preparation_transactions[0].state,
+        MigrationPreparationTransactionState::Confirming,
+    );
+    assert_eq!(status.preparation_transactions[0].mined_height, Some(20));
 
     conn.execute(
         "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (21)",
         [],
     )
     .unwrap();
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 2);
     assert_eq!(status.denomination_split_completed_count, 0);
 
@@ -6064,7 +6825,7 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         [],
     )
     .unwrap();
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 0);
     assert_eq!(status.denomination_split_completed_count, 1);
     assert_eq!(status.denomination_split_total_count, 3);
@@ -6088,19 +6849,58 @@ fn staged_split_progress_tracks_the_active_frontier_without_future_outputs() {
         [],
     )
     .unwrap();
-    let status = status_for_run(&conn, run.clone()).unwrap();
+    let status = status_for_run(&conn, run.clone(), 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 1);
     assert_eq!(status.denomination_split_completed_count, 1);
+    assert_eq!(status.preparation_transactions[1].mined_height, Some(23));
 
     conn.execute_batch(
         "INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (24);
          INSERT INTO orchard_tree_checkpoints (checkpoint_id) VALUES (25);",
     )
     .unwrap();
-    let status = status_for_run(&conn, run).unwrap();
+    let status = status_for_run(&conn, run, 0).unwrap();
     assert_eq!(status.denomination_confirmation_count, 0);
     assert_eq!(status.denomination_split_completed_count, 2);
     assert_eq!(status.denomination_split_total_count, 3);
+}
+
+#[test]
+fn preparation_output_targets_exclude_reserved_migration_fees() {
+    let targets = [50_000_000, 20_000_000];
+    let mut assigned = BTreeSet::new();
+    let output = |value_zatoshi, kind, part_index| DenominationStageOutputRef {
+        output_index: 0,
+        value_zatoshi,
+        note_version: 2,
+        kind,
+        part_index,
+    };
+
+    assert_eq!(
+        migration_preparation_output_target_value(
+            &output(50_015_000, DenominationStageOutputKind::Migration, Some(0),),
+            &targets,
+            &mut assigned,
+        ),
+        Some(50_000_000),
+    );
+    assert_eq!(
+        migration_preparation_output_target_value(
+            &output(20_010_000, DenominationStageOutputKind::Migration, None),
+            &targets,
+            &mut assigned,
+        ),
+        Some(20_000_000),
+    );
+    assert_eq!(
+        migration_preparation_output_target_value(
+            &output(10_000, DenominationStageOutputKind::Change, None),
+            &targets,
+            &mut assigned,
+        ),
+        None,
+    );
 }
 
 #[test]

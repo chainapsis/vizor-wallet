@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -427,18 +428,19 @@ void main() {
   testWidgets('home keeps Ironwood announcement visible during sync changes', (
     tester,
   ) async {
+    final syncedState = SyncState(
+      accountUuid: 'account-1',
+      hasAccountScopedData: true,
+      orchardBalance: BigInt.from(14_312_000_000),
+      spendableBalance: BigInt.from(14_312_000_000),
+      totalBalance: BigInt.from(14_312_000_000),
+    );
     await tester.pumpWidget(
       _appHarness(
         '/home',
         ironwoodMigrationAnnouncementStateListenable:
             _ironwoodAnnouncementTestProvider,
-        syncState: SyncState(
-          accountUuid: 'account-1',
-          hasAccountScopedData: true,
-          orchardBalance: BigInt.from(14_312_000_000),
-          spendableBalance: BigInt.from(14_312_000_000),
-          totalBalance: BigInt.from(14_312_000_000),
-        ),
+        syncState: syncedState,
       ),
     );
     await tester.pumpAndSettle();
@@ -463,13 +465,73 @@ void main() {
     expect(overlay, findsOneWidget);
     expect(tester.widget<AppPaneModalOverlay>(overlay).scrimColor, isNull);
 
+    (container.read(syncProvider.notifier) as FakeSyncNotifier).emit(
+      syncedState.copyWith(isSyncing: true),
+    );
+    await tester.pump();
     container
         .read(_ironwoodAnnouncementTestProvider.notifier)
         .setAnnouncement(const IronwoodMigrationAnnouncementState.hidden());
-    await tester.pumpAndSettle();
+    await container.read(ironwoodMigrationAnnouncementProvider.future);
+    await tester.pump();
 
     expect(overlay, findsOneWidget);
   });
+
+  testWidgets(
+    'home clears a stale Ironwood announcement after migration completes',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          ironwoodMigrationAnnouncementStateListenable:
+              _ironwoodAnnouncementTestProvider,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            ironwoodBalance: BigInt.from(14_312_000_000),
+            spendableBalance: BigInt.from(14_312_000_000),
+            totalBalance: BigInt.from(14_312_000_000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ZcashWalletApp)),
+      );
+      container
+          .read(_ironwoodAnnouncementTestProvider.notifier)
+          .setAnnouncement(
+            IronwoodMigrationAnnouncementState.visible(
+              network: 'main',
+              accountUuid: 'account-1',
+              status: _migrationStatus(kIronwoodMigrationReadyPhase),
+            ),
+          );
+      await tester.pumpAndSettle();
+
+      final router = GoRouter.of(tester.element(find.byType(HomeScreen)));
+      router.go('/migration/intro');
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeScreen), findsNothing);
+
+      router.go('/home');
+      await tester.pump();
+      final overlay = find.byKey(
+        const ValueKey('ironwood_migration_announcement_overlay'),
+      );
+      await _pumpUntilPresent(tester, overlay);
+      expect(overlay, findsOneWidget);
+
+      container
+          .read(_ironwoodAnnouncementTestProvider.notifier)
+          .setAnnouncement(const IronwoodMigrationAnnouncementState.hidden());
+      await tester.pumpAndSettle();
+
+      expect(overlay, findsNothing);
+    },
+  );
 
   testWidgets(
     'home desktop uses Ironwood balance and enables actions during migration',
@@ -521,6 +583,8 @@ void main() {
       expect(find.text('Preparing migration'), findsOneWidget);
       expect(find.text('100 ZEC still migrating'), findsNothing);
       expect(find.text('40.11'), findsOneWidget);
+      expect(find.text('Shielded balance (Ironwood)'), findsOneWidget);
+      expect(find.text('Shielded balance'), findsNothing);
       expect(find.text('Migration Required'), findsNothing);
       expect(
         find.byKey(
@@ -612,6 +676,8 @@ void main() {
     await tester.pumpWidget(
       _appHarness(
         '/home',
+        ironwoodHomeBalancePresentationMode:
+            IronwoodHomeBalancePresentationMode.ironwoodOnly,
         syncState: SyncState(
           accountUuid: 'account-1',
           hasAccountScopedData: true,
@@ -624,8 +690,36 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('143.12'), findsOneWidget);
+    expect(find.text('Shielded balance (Ironwood)'), findsOneWidget);
     expect(find.text('0'), findsNothing);
   });
+
+  testWidgets(
+    'home desktop completed Ironwood mode labels and shows only Ironwood',
+    (tester) async {
+      await tester.pumpWidget(
+        _appHarness(
+          '/home',
+          ironwoodHomeBalancePresentationMode:
+              IronwoodHomeBalancePresentationMode.ironwoodOnly,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            orchardBalance: BigInt.from(1_000_000),
+            ironwoodBalance: BigInt.from(4_011_000_000),
+            spendableBalance: BigInt.from(4_012_000_000),
+            totalBalance: BigInt.from(4_012_000_000),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Shielded balance (Ironwood)'), findsOneWidget);
+      expect(find.text('Shielded balance'), findsNothing);
+      expect(find.text('40.11'), findsOneWidget);
+      expect(find.text('40.12'), findsNothing);
+    },
+  );
 
   testWidgets('home desktop pay action opens exact-output pay screen', (
     tester,
@@ -644,6 +738,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Shielded balance'), findsOneWidget);
+    expect(find.text('Shielded balance (Ironwood)'), findsNothing);
     final sendRect = tester.getRect(
       find.byKey(const ValueKey('home_desktop_send_button')),
     );
@@ -1201,6 +1297,7 @@ Widget _appHarness(
   ThemeMode themeMode = ThemeMode.system,
   IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
       const IronwoodHomeMigrationCtaState.hidden(),
+  IronwoodHomeBalancePresentationMode? ironwoodHomeBalancePresentationMode,
   rust_sync.MigrationStatus? migrationCoordinatorStatus,
   ProviderListenable<IronwoodMigrationAnnouncementState>?
   ironwoodMigrationAnnouncementStateListenable,
@@ -1247,6 +1344,13 @@ Widget _appHarness(
       }),
       ironwoodHomeMigrationPresentationProvider.overrideWithValue(
         ironwoodHomeMigrationCtaState,
+      ),
+      ironwoodHomeBalancePresentationProvider.overrideWithValue(
+        ironwoodHomeBalancePresentationMode ??
+            (ironwoodHomeMigrationCtaState.mode ==
+                    IronwoodHomeMigrationCtaMode.resume
+                ? IronwoodHomeBalancePresentationMode.ironwoodOnly
+                : IronwoodHomeBalancePresentationMode.allShielded),
       ),
       if (migrationCoordinatorStatus != null)
         ironwoodMigrationCoordinatorProvider.overrideWith(

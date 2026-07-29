@@ -11,6 +11,7 @@ import 'address_book_use_cases.dart';
 import 'address_verify_use_cases.dart';
 import 'activity_use_cases.dart';
 import 'button_use_cases.dart';
+import 'carousel_use_cases.dart';
 import 'chip_use_cases.dart';
 import 'context_menu_use_cases.dart';
 import 'color_use_cases.dart';
@@ -62,8 +63,8 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookTheme(name: 'Dark', data: AppThemeData.dark),
             WidgetbookTheme(name: 'Light', data: AppThemeData.light),
           ],
-          themeBuilder: (context, theme, child) =>
-              AppTheme(data: theme, child: child),
+          themeBuilder:
+              (context, theme, child) => AppTheme(data: theme, child: child),
           initialTheme: const WidgetbookTheme(
             name: 'Dark',
             data: AppThemeData.dark,
@@ -83,6 +84,24 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Large',
                       builder: buildWelcomeLargeUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Customise account',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Default',
+                      builder: buildCustomiseAccountUseCase,
+                    ),
+                  ],
+                ),
+                WidgetbookComponent(
+                  name: 'Mobile customise account',
+                  useCases: [
+                    WidgetbookUseCase(
+                      name: 'Default',
+                      builder: buildMobileCustomiseAccountUseCase,
                     ),
                   ],
                 ),
@@ -1241,6 +1260,43 @@ class WidgetbookApp extends StatelessWidget {
         WidgetbookFolder(
           name: 'Components',
           children: [
+            WidgetbookComponent(
+              name: 'Carousel',
+              useCases: [
+                WidgetbookUseCase(
+                  name: 'Preparation / Interactive',
+                  builder: buildCarouselPreparationInteractiveUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Preparation / Card 1',
+                  builder: buildCarouselPreparationCardOneUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Preparation / Card 2',
+                  builder: buildCarouselPreparationCardTwoUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Preparation / Card 3',
+                  builder: buildCarouselPreparationCardThreeUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Migration / Interactive',
+                  builder: buildCarouselMigrationInteractiveUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Migration / Card 1',
+                  builder: buildCarouselMigrationCardOneUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Migration / Card 2',
+                  builder: buildCarouselMigrationCardTwoUseCase,
+                ),
+                WidgetbookUseCase(
+                  name: 'Migration / Card 3',
+                  builder: buildCarouselMigrationCardThreeUseCase,
+                ),
+              ],
+            ),
             WidgetbookComponent(
               name: 'Button',
               useCases: [

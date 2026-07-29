@@ -135,8 +135,12 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
 enum _MobileMigrationOption { private, immediate }
 
 class _MobileMigrationOptions extends ConsumerStatefulWidget {
-  const _MobileMigrationOptions({required this.immediateEnabled});
+  const _MobileMigrationOptions({
+    required this.privateEnabled,
+    required this.immediateEnabled,
+  });
 
+  final bool privateEnabled;
   final bool immediateEnabled;
 
   @override
@@ -146,17 +150,26 @@ class _MobileMigrationOptions extends ConsumerStatefulWidget {
 
 class _MobileMigrationOptionsState
     extends ConsumerState<_MobileMigrationOptions> {
-  var _selectedOption = _MobileMigrationOption.private;
+  late _MobileMigrationOption _selectedOption;
   var _isContinuing = false;
   String? _continueError;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedOption = widget.privateEnabled
+        ? _MobileMigrationOption.private
+        : _MobileMigrationOption.immediate;
+  }
 
   void _select(_MobileMigrationOption option) {
     // Continue commits to the selected option: it prepares that plan, saves a
     // draft, and routes on. Switching underneath that would apply one option's
     // work to the other's screen.
     if (_isContinuing) return;
-    if (option == _MobileMigrationOption.immediate &&
-        !widget.immediateEnabled) {
+    if ((option == _MobileMigrationOption.private && !widget.privateEnabled) ||
+        (option == _MobileMigrationOption.immediate &&
+            !widget.immediateEnabled)) {
       return;
     }
     if (_selectedOption == option) return;
@@ -281,9 +294,11 @@ class _MobileMigrationOptionsState
         topGap: 91,
         childGap: 24,
         title: 'Choose How to Migrate',
-        subtitle:
-            'Choose between more privacy over time or a faster migration. '
-            'You can review the details before anything moves.',
+        subtitle: widget.privateEnabled
+            ? 'Choose between more privacy over time or a faster migration. '
+                  'You can review the details before anything moves.'
+            : 'Private migration is temporarily unavailable on Android. '
+                  'Choose immediate to continue.',
         bottom: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -310,13 +325,14 @@ class _MobileMigrationOptionsState
             _MobileMigrationOptionCard(
               key: const ValueKey('mobile_ironwood_private_option'),
               title: 'Private',
-              body:
-                  'Splits transactions into multiple parts to minimize '
-                  'traceability, but takes longer.',
+              body: widget.privateEnabled
+                  ? 'Splits transactions into multiple parts to minimize '
+                        'traceability, but takes longer.'
+                  : 'Not available on Android.',
               selected: privateSelected,
               icon: _MigrationChoiceIcon.private,
-              recommended: true,
-              onTap: _isContinuing
+              recommended: widget.privateEnabled,
+              onTap: _isContinuing || !widget.privateEnabled
                   ? null
                   : () => _select(_MobileMigrationOption.private),
             ),

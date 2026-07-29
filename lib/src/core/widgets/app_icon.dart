@@ -70,6 +70,7 @@ abstract final class AppIcons {
   static const monitor = 'monitor';
   static const moneyBag = 'money_bag';
   static const migrationFast = 'migration_fast';
+  static const ironwoodMigrationLoader = 'ironwood_migration_loader';
   static const migrationSign = 'migration_sign';
   static const migrationSplit = 'migration_split';
   static const migrationTimer = 'migration_timer';
@@ -78,6 +79,7 @@ abstract final class AppIcons {
   static const options = 'options';
   static const paid = 'paid';
   static const paste = 'paste';
+  static const pause = 'pause';
   static const plane = 'plane';
   static const play = 'play';
   static const plus = 'plus';

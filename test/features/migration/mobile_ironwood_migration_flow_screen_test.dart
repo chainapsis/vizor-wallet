@@ -575,6 +575,7 @@ Widget _app({
   rust_sync.OrchardMigrationPrivatePlan? previewPlan,
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
   MobileIronwoodMigrationPreviewSurface? previewSurface,
+  bool? privateMigrationSupported,
   bool disableAnimations = true,
 }) {
   late final GoRouter router;
@@ -586,6 +587,7 @@ Widget _app({
       previewImmediatePlan: previewImmediatePlan ?? _immediatePlan,
       previewStatus: previewStatus,
       previewSurface: previewSurface,
+      privateMigrationSupported: privateMigrationSupported,
     );
   }
 
@@ -1007,6 +1009,11 @@ void _useMobileViewport(
 }
 
 void main() {
+  test('private migration remains available outside Android', () {
+    expect(supportsPrivateMobileIronwoodMigration(isAndroid: false), isTrue);
+    expect(supportsPrivateMobileIronwoodMigration(isAndroid: true), isFalse);
+  });
+
   setUpAll(() {
     RustLib.initMock(api: _rustApiFake);
   });
@@ -2153,6 +2160,87 @@ void main() {
     expect(find.text('Authorise anyway'), findsNothing);
   });
 
+  testWidgets('Android shows Private disabled and selects Immediate', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.options,
+        privateMigrationSupported: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final privateOption = find.byKey(
+      const ValueKey('mobile_ironwood_private_option'),
+    );
+    final immediateOption = find.byKey(
+      const ValueKey('mobile_ironwood_immediate_option'),
+    );
+    expect(find.text('Choose How to Migrate'), findsOneWidget);
+    expect(find.text('Private'), findsOneWidget);
+    expect(find.text('Immediate'), findsOneWidget);
+    expect(
+      find.text(
+        'Private migration is temporarily unavailable on Android. '
+        'Choose immediate to continue.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Not available on Android.'), findsOneWidget);
+    expect(find.text('Recommended'), findsNothing);
+    expect(
+      find.descendant(
+        of: privateOption,
+        matching: find.byKey(
+          const ValueKey('mobile_ironwood_unselected_radio'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: immediateOption,
+        matching: find.byKey(const ValueKey('mobile_ironwood_selected_radio')),
+      ),
+      findsOneWidget,
+    );
+
+    final privateGesture = find.descendant(
+      of: privateOption,
+      matching: find.byType(GestureDetector),
+    );
+    expect(tester.widget<GestureDetector>(privateGesture).onTap, isNull);
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(
+              const ValueKey('mobile_ironwood_private_option_opacity'),
+            ),
+          )
+          .opacity,
+      0.5,
+    );
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(
+              const ValueKey('mobile_ironwood_immediate_option_opacity'),
+            ),
+          )
+          .opacity,
+      1,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fast Migration'), findsOneWidget);
+    expect(find.text('Consider another option'), findsOneWidget);
+  });
+
   testWidgets(
     'shows the computed immediate completion estimate in production',
     (tester) async {
@@ -2484,6 +2572,23 @@ void main() {
     expect(find.text('Go home').hitTestable(), findsOneWidget);
   });
 
+  testWidgets('Android keeps an active Private migration status visible', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.migrating,
+        previewStatus: _visualMigrationStatus(),
+        privateMigrationSupported: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration in Progress'), findsOneWidget);
+    expect(find.text('Fast Migration'), findsNothing);
+  });
+
   testWidgets('retries an overdue migration when Needs input is tapped', (
     tester,
   ) async {
@@ -2652,7 +2757,7 @@ void main() {
           redactedPczt: Uint8List.fromList([2]),
         ),
       ],
-      signingBatchLimit: 50,
+      signingBatchLimit: 1,
     );
 
     await tester.pumpWidget(
@@ -2673,6 +2778,7 @@ void main() {
 
     expect(find.text('Step 1/2'), findsOneWidget);
     expect(find.text('Scan with Keystone'), findsOneWidget);
+    expect(find.text('Round 1 of 2'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
       findsOneWidget,
@@ -2693,8 +2799,31 @@ void main() {
 
     expect(find.text('Step 2/2'), findsOneWidget);
     expect(find.text('Confirm with Keystone'), findsOneWidget);
-    expect(find.textContaining('Scan the QR code'), findsOneWidget);
+    expect(find.text('Round 1 of 2'), findsOneWidget);
+    expect(
+      find.text('Scan the new signed QR shown on Keystone.'),
+      findsOneWidget,
+    );
+    final signingRoundLabel = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_round'),
+    );
+    final scanTarget = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_scan_target'),
+    );
+    expect(
+      tester.getBottomLeft(signingRoundLabel).dy,
+      lessThanOrEqualTo(tester.getTopLeft(scanTarget).dy),
+    );
     expect(tester.takeException(), isNull);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    expect(find.text('Step 1/2'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile_ironwood_keystone_qr')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('reuses the mobile Keystone flow for Immediate migration', (

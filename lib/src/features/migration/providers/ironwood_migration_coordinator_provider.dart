@@ -26,6 +26,134 @@ const _migrationAdvanceInterval = Duration(
       : 30,
 );
 
+/// Enforces ZIP 318's wallet-global, one-transfer fallback allowance for
+/// transfers that were already overdue when a desktop foreground epoch began.
+class DesktopOpenMigrationFallbackGate {
+  bool _available = true;
+  bool _foreground = true;
+  int? _foregroundEntryHeight;
+  bool _openStatusSnapshotReady = false;
+  final Map<String, int> _openOverdueScheduleByTxid = {};
+
+  bool get needsAuthoritativeEntryHeight =>
+      _foreground && _foregroundEntryHeight == null;
+  bool get needsOpenStatusSnapshot =>
+      _foreground &&
+      _foregroundEntryHeight != null &&
+      !_openStatusSnapshotReady;
+
+  void enterForeground() {
+    if (_foreground) return;
+    _foreground = true;
+    _available = true;
+    _foregroundEntryHeight = null;
+    _openStatusSnapshotReady = false;
+    _openOverdueScheduleByTxid.clear();
+  }
+
+  void leaveForeground() {
+    _foreground = false;
+    _available = false;
+    _foregroundEntryHeight = null;
+    _openStatusSnapshotReady = false;
+    _openOverdueScheduleByTxid.clear();
+  }
+
+  void observeForegroundEntryHeight(int height) {
+    if (height > 0) {
+      _foregroundEntryHeight ??= height;
+    }
+  }
+
+  void captureOpenStatuses(Iterable<rust_sync.MigrationStatus> statuses) {
+    final entryHeight = _foregroundEntryHeight;
+    if (entryHeight == null || entryHeight <= 0) return;
+    _openOverdueScheduleByTxid.clear();
+    for (final status in statuses) {
+      for (final broadcast in status.scheduledBroadcasts) {
+        if (broadcast.status.toLowerCase() == 'scheduled' &&
+            broadcast.scheduledHeight > 0 &&
+            broadcast.scheduledHeight <= entryHeight) {
+          _openOverdueScheduleByTxid[broadcast.txidHex] =
+              broadcast.scheduledHeight;
+        }
+      }
+    }
+    _openStatusSnapshotReady = true;
+  }
+
+  bool allows(rust_sync.MigrationStatus status) {
+    if ((_foregroundEntryHeight == null || !_openStatusSnapshotReady) &&
+        _hasScheduledTransfer(status)) {
+      // Neither a cached wallet height nor a partial account snapshot can
+      // establish the wallet-wide set that was overdue when the app opened.
+      // Fail closed until lightwalletd and every account status are available.
+      return false;
+    }
+    return !isOpenOverdue(status) || _available;
+  }
+
+  bool tryAcquireForAdvance(rust_sync.MigrationStatus status) {
+    if (!allows(status)) return false;
+    consumeIfOpenOverdue(status);
+    return true;
+  }
+
+  void consumeIfOpenOverdue(rust_sync.MigrationStatus status) {
+    if (isOpenOverdue(status)) {
+      _available = false;
+    }
+  }
+
+  void completeAdvance(
+    rust_sync.MigrationStatus before,
+    rust_sync.IronwoodMigrationResult result,
+  ) {
+    if (!isOpenOverdue(before)) return;
+    // The one-due Rust endpoint defines txids as the exact transactions
+    // accepted by this invocation, including the accepted-but-not-stored
+    // recovery case. Do not infer acceptance from aggregate run counters.
+    final resultTxids = result.txids
+        .split(',')
+        .map((txid) => txid.trim().toLowerCase())
+        .where((txid) => txid.isNotEmpty)
+        .toSet();
+    final acceptedOpenOverdueTx = before.scheduledBroadcasts.any(
+      (broadcast) =>
+          broadcast.status.toLowerCase() == 'scheduled' &&
+          _openOverdueScheduleByTxid[broadcast.txidHex] ==
+              broadcast.scheduledHeight &&
+          resultTxids.contains(broadcast.txidHex.toLowerCase()),
+    );
+    if (!acceptedOpenOverdueTx && _foreground) {
+      _available = true;
+    }
+  }
+
+  void failAdvance(rust_sync.MigrationStatus before) {
+    if (isOpenOverdue(before) && _foreground) {
+      _available = true;
+    }
+  }
+
+  bool isOpenOverdue(rust_sync.MigrationStatus status) {
+    return status.scheduledBroadcasts.any(
+      (broadcast) =>
+          broadcast.status.toLowerCase() == 'scheduled' &&
+          _openOverdueScheduleByTxid[broadcast.txidHex] ==
+              broadcast.scheduledHeight,
+    );
+  }
+
+  bool _hasScheduledTransfer(rust_sync.MigrationStatus status) {
+    return status.scheduledBroadcasts.any(
+      (broadcast) =>
+          broadcast.status.toLowerCase() == 'scheduled' &&
+          broadcast.scheduledHeight > 0,
+    );
+  }
+}
+
 class IronwoodMigrationCoordinatorState {
   const IronwoodMigrationCoordinatorState({
     this.statuses = const {},
@@ -75,6 +203,8 @@ class IronwoodMigrationCoordinator
   bool _refreshPending = false;
   bool _forceAdvancePending = false;
   bool _foreground = true;
+  int _accountStateEpoch = 0;
+  final _desktopOpenFallbackGate = DesktopOpenMigrationFallbackGate();
   bool _hasObservedInitialAccountList = false;
   Future<void>? _backgroundPreparationRecovery;
   final Map<String, DateTime> _lastAdvanceAt = {};
@@ -86,8 +216,18 @@ class IronwoodMigrationCoordinator
   @override
   IronwoodMigrationCoordinatorState build() {
     ref.listen(accountProvider, (_, next) {
-      final hasAccounts = next.value?.accounts.isNotEmpty ?? false;
-      if (!_hasObservedInitialAccountList && hasAccounts) {
+      _accountStateEpoch += 1;
+      final accountState = next.value;
+      if (accountState == null) {
+        unawaited(refreshNow());
+        return;
+      }
+      final hasAccounts = accountState.accounts.isNotEmpty;
+      if (!hasAccounts) {
+        _clearProcessLocalStateForNoAccounts();
+        return;
+      }
+      if (!_hasObservedInitialAccountList) {
         _hasObservedInitialAccountList = true;
         unawaited(resumeBackgroundPreparations());
         unawaited(refreshNow());
@@ -108,19 +248,26 @@ class IronwoodMigrationCoordinator
   }
 
   void setForeground(bool foreground) {
+    final wasForeground = _foreground;
     _foreground = foreground;
     if (foreground) {
+      if (kAppFormFactor == AppFormFactor.desktop && !wasForeground) {
+        _desktopOpenFallbackGate.enterForeground();
+      }
       unawaited(resumeBackgroundPreparations());
       unawaited(
         refreshNow(forceAdvance: kAppFormFactor == AppFormFactor.desktop),
       );
-    } else if (kAppFormFactor == AppFormFactor.mobile &&
-        (state.foregroundProgressPermits.isNotEmpty ||
-            state.childProofBatchPermits.isNotEmpty)) {
-      state = state.copyWith(
-        foregroundProgressPermits: const {},
-        childProofBatchPermits: const {},
-      );
+    } else {
+      if (kAppFormFactor == AppFormFactor.desktop) {
+        _desktopOpenFallbackGate.leaveForeground();
+      } else if (state.foregroundProgressPermits.isNotEmpty ||
+          state.childProofBatchPermits.isNotEmpty) {
+        state = state.copyWith(
+          foregroundProgressPermits: const {},
+          childProofBatchPermits: const {},
+        );
+      }
     }
   }
 
@@ -217,7 +364,11 @@ class IronwoodMigrationCoordinator
     if (ref.read(appSecurityProvider).requiresUnlock) return;
 
     final accountState = ref.read(accountProvider).value;
-    if (accountState == null || accountState.accounts.isEmpty) return;
+    if (accountState == null) return;
+    if (accountState.accounts.isEmpty) {
+      _clearProcessLocalStateForNoAccounts();
+      return;
+    }
     _hasObservedInitialAccountList = true;
 
     final service = ref.read(ironwoodMigrationServiceProvider);
@@ -423,9 +574,55 @@ class IronwoodMigrationCoordinator
 
     final accountState = ref.read(accountProvider).value;
     if (accountState == null || accountState.accounts.isEmpty) return;
+    final accountStateEpoch = _accountStateEpoch;
+    if (kAppFormFactor == AppFormFactor.desktop &&
+        _desktopOpenFallbackGate.needsAuthoritativeEntryHeight) {
+      try {
+        final entryHeight = await ref
+            .read(rpcEndpointFailoverProvider.notifier)
+            .getLatestBlockHeight();
+        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+        _desktopOpenFallbackGate.observeForegroundEntryHeight(
+          entryHeight.toInt(),
+        );
+      } catch (error) {
+        // Status reconciliation and non-broadcast migration work may continue,
+        // but the gate remains fail-closed for scheduled transfers until an
+        // authoritative foreground-entry height can be read.
+        log(
+          'Ironwood migration on-open height lookup failed; '
+          'scheduled fallback remains paused: $error',
+        );
+      }
+    }
 
     final service = ref.read(ironwoodMigrationServiceProvider);
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final desktopOpenStatuses = <String, rust_sync.MigrationStatus>{};
+    if (kAppFormFactor == AppFormFactor.desktop &&
+        _desktopOpenFallbackGate.needsOpenStatusSnapshot) {
+      var snapshotComplete = true;
+      for (final account in accountState.accounts) {
+        try {
+          desktopOpenStatuses[account.uuid] = await service.status(
+            network: endpoint.networkName,
+            accountUuid: account.uuid,
+          );
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+        } catch (error) {
+          snapshotComplete = false;
+          log(
+            'Ironwood migration on-open status snapshot failed for '
+            '${account.uuid}; scheduled fallback remains paused: $error',
+          );
+        }
+      }
+      if (snapshotComplete) {
+        _desktopOpenFallbackGate.captureOpenStatuses(
+          desktopOpenStatuses.values,
+        );
+      }
+    }
     final nextStatuses = Map<String, rust_sync.MigrationStatus>.from(
       state.statuses,
     );
@@ -435,11 +632,13 @@ class IronwoodMigrationCoordinator
     for (final account in accountState.accounts) {
       try {
         final previousStatus = state.statuses[account.uuid];
-        var status = await service.status(
-          network: endpoint.networkName,
-          accountUuid: account.uuid,
-        );
-        if (!ref.mounted) return;
+        var status =
+            desktopOpenStatuses[account.uuid] ??
+            await service.status(
+              network: endpoint.networkName,
+              accountUuid: account.uuid,
+            );
+        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
         nextStatuses[account.uuid] = status;
         nextErrors.remove(account.uuid);
 
@@ -452,12 +651,12 @@ class IronwoodMigrationCoordinator
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           status = await service.status(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           nextStatuses[account.uuid] = status;
           final stillDue = migrationHasDueScheduledBroadcast(
             status,
@@ -487,12 +686,12 @@ class IronwoodMigrationCoordinator
           accountUuid: account.uuid,
         )) {
           await _advance(account.uuid, status: status);
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           status = await service.status(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
-          if (!ref.mounted) return;
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           nextStatuses[account.uuid] = status;
         }
         if (account.uuid == accountState.activeAccountUuid &&
@@ -507,7 +706,7 @@ class IronwoodMigrationCoordinator
       }
     }
 
-    if (!ref.mounted) return;
+    if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
     if (activeBalanceMayHaveChanged) {
       try {
         // Migration status reads reconcile the database, but the home card
@@ -519,10 +718,38 @@ class IronwoodMigrationCoordinator
         // refresh races with a normal sync.
         log('Ironwood migration balance refresh failed: $error');
       }
-      if (!ref.mounted) return;
+      if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
     }
     state = state.copyWith(statuses: nextStatuses, errors: nextErrors);
     _invalidateMigrationProviders(accountState.activeAccountUuid);
+  }
+
+  bool _canApplyRefreshForAccountEpoch(int accountStateEpoch) =>
+      ref.mounted && accountStateEpoch == _accountStateEpoch;
+
+  void _clearProcessLocalStateForNoAccounts() {
+    final hadWalletState =
+        _hasObservedInitialAccountList ||
+        state.statuses.isNotEmpty ||
+        state.errors.isNotEmpty ||
+        state.advancingAccounts.isNotEmpty ||
+        state.foregroundProgressPermits.isNotEmpty ||
+        state.childProofBatchPermits.isNotEmpty ||
+        _lastAdvanceAt.isNotEmpty ||
+        _outboxRecoveryWindows.isNotEmpty ||
+        _lastAdvanceProgressKeys.isNotEmpty;
+    if (!hadWalletState) return;
+
+    _hasObservedInitialAccountList = false;
+    _lastAdvanceAt.clear();
+    _outboxRecoveryWindows.clear();
+    _lastAdvanceProgressKeys.clear();
+    _desktopOpenFallbackGate.leaveForeground();
+    if (_foreground) {
+      _desktopOpenFallbackGate.enterForeground();
+    }
+    state = const IronwoodMigrationCoordinatorState();
+    _invalidateMigrationProviders(null);
   }
 
   bool _migrationBalanceMayHaveChanged(
@@ -687,6 +914,10 @@ class IronwoodMigrationCoordinator
     required String accountUuid,
   }) {
     if (status.activeRunId == null) return false;
+    if (kAppFormFactor == AppFormFactor.desktop &&
+        !_desktopOpenFallbackGate.allows(status)) {
+      return false;
+    }
     if (kAppFormFactor == AppFormFactor.mobile &&
         !state.foregroundProgressPermits.contains(accountUuid)) {
       return false;
@@ -779,7 +1010,40 @@ class IronwoodMigrationCoordinator
   }) {
     final existing = _advanceOperations[accountUuid];
     if (existing != null) return existing;
-    final operation = _runAdvance(accountUuid, status: status);
+    final reservesOpenOverdueAllowance =
+        kAppFormFactor == AppFormFactor.desktop &&
+        status != null &&
+        _desktopOpenFallbackGate.isOpenOverdue(status);
+    if (kAppFormFactor == AppFormFactor.desktop &&
+        (status == null ||
+            !_desktopOpenFallbackGate.tryAcquireForAdvance(status))) {
+      // `_advance` is also called by manual retry, which bypasses
+      // `_shouldAdvance`. Keep the ZIP 318 on-open allowance centralized at
+      // this last coordinator boundary so no UI or polling entry point can
+      // submit a second overdue transfer in the same foreground epoch.
+      return Future.value();
+    }
+    final operation = () async {
+      try {
+        final result = await _runAdvance(accountUuid, status: status);
+        if (reservesOpenOverdueAllowance) {
+          // The authoritative open tip can be ahead of Rust's locally synced
+          // tip. In that case Rust correctly performs no broadcast, so return
+          // the reservation and let a later refresh retry after sync catches
+          // up.
+          _desktopOpenFallbackGate.completeAdvance(status, result);
+        }
+      } catch (_) {
+        if (reservesOpenOverdueAllowance) {
+          // The one-due Rust endpoint converts every failure after network
+          // acceptance into a successful result carrying the accepted txid.
+          // An exception here therefore happened before a transfer was
+          // accepted and the wallet-global reservation can be retried.
+          _desktopOpenFallbackGate.failAdvance(status);
+        }
+        rethrow;
+      }
+    }();
     _advanceOperations[accountUuid] = operation;
     return operation.whenComplete(() {
       if (identical(_advanceOperations[accountUuid], operation)) {
@@ -788,7 +1052,7 @@ class IronwoodMigrationCoordinator
     });
   }
 
-  Future<void> _runAdvance(
+  Future<rust_sync.IronwoodMigrationResult> _runAdvance(
     String accountUuid, {
     rust_sync.MigrationStatus? status,
   }) async {
@@ -811,7 +1075,7 @@ class IronwoodMigrationCoordinator
       _lastAdvanceProgressKeys[accountUuid] = _advanceProgressKey(status);
     }
     try {
-      await ref
+      return await ref
           .read(ironwoodMigrationServiceProvider)
           .continueSoftwarePrivateMigration(accountUuid: accountUuid);
     } finally {

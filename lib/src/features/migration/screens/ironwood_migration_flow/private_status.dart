@@ -45,8 +45,6 @@ class _IronwoodMigrationPrivateStatusContentState
     final status = widget.status;
     final presentation = _statusPresentation(status);
     final progress = _statusProgress(status);
-    final syncState = ref.watch(syncProvider).asData?.value;
-    final currentHeight = _currentMigrationHeight(syncState);
     final accountState = ref.watch(accountProvider).value;
     final isHardware =
         accountState?.accounts
@@ -56,6 +54,7 @@ class _IronwoodMigrationPrivateStatusContentState
     final action = _statusAction(status, isHardware: isHardware);
     final canUseAction = widget.accountUuid != null;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
+    final syncState = ref.watch(syncProvider).asData?.value;
     final isAdvancing =
         widget.accountUuid != null &&
         coordinator.advancingAccounts.contains(widget.accountUuid);
@@ -91,9 +90,9 @@ class _IronwoodMigrationPrivateStatusContentState
         }.contains(status.phase)) {
       return _MigrationStatusContent(
         status: status,
+        currentHeight: _currentMigrationHeight(syncState),
         action: action,
         isAdvancing: isAdvancing,
-        currentHeight: currentHeight,
         onAction: actionCallback,
       );
     }

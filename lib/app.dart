@@ -34,9 +34,11 @@ import 'src/features/home/screens/home_screen.dart';
 import 'src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
 import 'src/features/about/screens/about_screen.dart';
 import 'src/features/about/screens/mobile/mobile_about_screens.dart';
 import 'src/features/onboarding/create/address_types_screen.dart';
+import 'src/features/onboarding/create/customise_account_screen.dart';
 import 'src/features/onboarding/create/intro_zcash_screen.dart';
 import 'src/features/onboarding/create/onboarding_split_view.dart';
 import 'src/features/onboarding/create/secret_passphrase_screen.dart';
@@ -552,6 +554,21 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),
+      GoRoute(
+        path: '/onboarding/customise-account',
+        redirect: (_, state) => state.extra is CustomiseAccountArgs
+            ? null
+            : OnboardingStep.secretPassphrase.routePath,
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: CustomiseAccountScreen(
+            args: state.extra as CustomiseAccountArgs,
+          ),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
     ],
   ),
   ShellRoute(
@@ -791,6 +808,10 @@ List<RouteBase> _desktopRoutes() => [
   GoRoute(
     path: '/migration/private/schedule',
     builder: (_, _) => const IronwoodMigrationScheduleScreen(),
+  ),
+  GoRoute(
+    path: '/migration/private/preparation-schedule',
+    builder: (_, _) => const IronwoodMigrationPreparationScheduleScreen(),
   ),
   GoRoute(
     path: '/migration/private/keystone/sign',
@@ -1051,25 +1072,27 @@ class ZcashWalletApp extends ConsumerWidget {
                 child: _RpcEndpointFailoverToastListener(
                   child: _DesktopOpaqueWindowBackground(
                     child: IronwoodMigrationCoordinatorHost(
-                      child: SyncKeepAwakeNativeHost(
-                        child: SyncKeepAwakePrivacyLockHost(
-                          child: SyncKeepAwakeInteractionListener(
-                            child: GestureDetector(
-                              onTap: () {
-                                // Leaf-only: skip when the primary focus is a
-                                // `FocusScopeNode` rather than a concrete `FocusNode`.
-                                // Unfocusing the scope itself strips the scope's
-                                // "most-recently-focused child" memory, which leaves the
-                                // next Tab with no deterministic starting point.
-                                final primary =
-                                    FocusManager.instance.primaryFocus;
-                                if (primary != null &&
-                                    primary is! FocusScopeNode) {
-                                  primary.unfocus();
-                                }
-                              },
-                              behavior: HitTestBehavior.translucent,
-                              child: child!,
+                      child: IronwoodMigrationPrivacyLockHost(
+                        child: SyncKeepAwakeNativeHost(
+                          child: SyncKeepAwakePrivacyLockHost(
+                            child: SyncKeepAwakeInteractionListener(
+                              child: GestureDetector(
+                                onTap: () {
+                                  // Leaf-only: skip when the primary focus is a
+                                  // `FocusScopeNode` rather than a concrete `FocusNode`.
+                                  // Unfocusing the scope itself strips the scope's
+                                  // "most-recently-focused child" memory, which leaves the
+                                  // next Tab with no deterministic starting point.
+                                  final primary =
+                                      FocusManager.instance.primaryFocus;
+                                  if (primary != null &&
+                                      primary is! FocusScopeNode) {
+                                    primary.unfocus();
+                                  }
+                                },
+                                behavior: HitTestBehavior.translucent,
+                                child: child!,
+                              ),
                             ),
                           ),
                         ),

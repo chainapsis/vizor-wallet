@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:zcash_wallet/app.dart';
+import 'package:zcash_wallet/src/core/config/ironwood_migration_privacy_lock_config.dart';
 import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/storage/wallet_paths.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
+import 'package:zcash_wallet/src/features/migration/widgets/ironwood_migration_privacy_lock_host.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/chain_upgrade_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -38,7 +41,10 @@ const _homeHoldMs = int.fromEnvironment(
   defaultValue: 15000,
 );
 
-void main({bool visitScheduleAfterPreparation = false}) {
+void main({
+  bool visitScheduleAfterPreparation = false,
+  bool verifyPrivacyLock = false,
+}) {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   // The default integration-test frame policy renders primarily when the
   // driver pumps. This simulation is intentionally watched by a person, so
@@ -48,11 +54,22 @@ void main({bool visitScheduleAfterPreparation = false}) {
   setUpAll(initializeZcashWalletRuntime);
 
   testWidgets(
-    visitScheduleAfterPreparation
+    verifyPrivacyLock
+        ? 'continues a full migration behind the virtual privacy lock'
+        : visitScheduleAfterPreparation
         ? 'migrates while the live schedule screen remains open'
         : 'migrates a large many-note wallet at a controlled block cadence',
     (tester) async {
       expect(kZcashFastTestnetMigration, isTrue);
+      if (verifyPrivacyLock) {
+        expect(
+          kIronwoodMigrationPrivacyLockEnabled,
+          isTrue,
+          reason:
+              'Run with '
+              '--dart-define=VIZOR_IRONWOOD_MIGRATION_PRIVACY_LOCK=true',
+        );
+      }
       expect(_fundedZatoshi, greaterThanOrEqualTo(1000000000));
       expect(_fundingNoteCount, greaterThanOrEqualTo(10));
       await cleanupDesktopRegtestWallet();
@@ -80,6 +97,9 @@ void main({bool visitScheduleAfterPreparation = false}) {
         accountUuid,
         BigInt.from(_fundedZatoshi),
       );
+      if (verifyPrivacyLock) {
+        await _expectNoPrivacyLockWithoutMigration(tester);
+      }
 
       e2eLog('migration-sim activating local NU6.3 chain');
       await ironwoodDriverPost(_driverUrl, '/activate');
@@ -144,9 +164,23 @@ void main({bool visitScheduleAfterPreparation = false}) {
       expect(started.scheduleMeanDelayBlocks, 12);
       expect(started.scheduleMaxDelayBlocks, 48);
 
+      rust_sync.MigrationStatus? privacyLockBaseline;
+      var migrationAdvancedWhileLocked = false;
+      if (verifyPrivacyLock) {
+        privacyLockBaseline = await _engageAndVerifyPrivacyLock(
+          tester,
+          providerContainer,
+          accountUuid,
+        );
+      }
+
       var scheduleOpened = false;
       for (var mined = 0; mined <= _maxBlocks; mined++) {
         final status = await desktopRegtestMigrationStatus(accountUuid);
+        if (privacyLockBaseline != null &&
+            _migrationAdvanced(status, privacyLockBaseline)) {
+          migrationAdvancedWhileLocked = true;
+        }
         final chain = await ironwoodDriverGet(_driverUrl, '/status');
         final mempool = await ironwoodDriverGet(_driverUrl, '/mempool');
         e2eLog(
@@ -184,6 +218,20 @@ void main({bool visitScheduleAfterPreparation = false}) {
         }
 
         if (status.phase == kIronwoodMigrationCompletePhase) {
+          if (verifyPrivacyLock) {
+            expect(
+              migrationAdvancedWhileLocked,
+              isTrue,
+              reason:
+                  'Migration status must advance while the virtual lock '
+                  'blocks interaction.',
+            );
+            await _verifyCompletedMigrationRemainsPrivacyLocked(
+              tester,
+              providerContainer,
+            );
+            await _unlockMigrationPrivacyScreen(tester);
+          }
           if (visitScheduleAfterPreparation) {
             expect(scheduleOpened, isTrue);
             await _expectAllScheduleRowsCompleted(tester, status.parts.length);
@@ -267,6 +315,116 @@ void main({bool visitScheduleAfterPreparation = false}) {
     },
     timeout: const Timeout(Duration(minutes: 40)),
   );
+}
+
+Future<void> _expectNoPrivacyLockWithoutMigration(WidgetTester tester) async {
+  e2eLog(
+    'migration-sim privacy-lock waiting idle while no migration is active',
+  );
+  await Future<void>.delayed(const Duration(minutes: 1, seconds: 2));
+  await tester.pump();
+  expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsNothing);
+  expect(find.byKey(ironwoodMigrationInProgressBadgeKey), findsNothing);
+  e2eLog('migration-sim privacy-lock absent without an active migration');
+}
+
+Future<rust_sync.MigrationStatus> _engageAndVerifyPrivacyLock(
+  WidgetTester tester,
+  ProviderContainer providerContainer,
+  String accountUuid,
+) async {
+  e2eLog('migration-sim privacy-lock waiting for the one-minute idle lock');
+  await pumpUntil(
+    tester,
+    () => tester.any(find.byKey(ironwoodMigrationVirtualUnlockScreenKey)),
+    description: 'Ironwood migration virtual unlock screen',
+    timeout: const Duration(minutes: 1, seconds: 10),
+  );
+  expect(find.byKey(ironwoodMigrationInProgressBadgeKey), findsOneWidget);
+  expect(find.text('Migration in progress'), findsOneWidget);
+  expect(find.text('Forgot password?'), findsNothing);
+  expect(providerContainer.read(appSecurityProvider).requiresUnlock, isFalse);
+
+  await enterAppText(
+    tester,
+    const ValueKey('unlock_password_field'),
+    'Wrong123!',
+  );
+  await tapAppButton(tester, const ValueKey('unlock_submit_button'));
+  await pumpUntil(
+    tester,
+    () => tester.any(find.text('Incorrect password. Try again.')),
+    description: 'incorrect virtual unlock password error',
+  );
+  expect(find.byKey(ironwoodMigrationVirtualUnlockScreenKey), findsOneWidget);
+  expect(find.byKey(ironwoodMigrationInProgressBadgeKey), findsOneWidget);
+  expect(providerContainer.read(appSecurityProvider).requiresUnlock, isFalse);
+
+  final baseline = await desktopRegtestMigrationStatus(accountUuid);
+  expect(baseline.activeRunId, isNotNull);
+  e2eLog(
+    'migration-sim privacy-lock engaged '
+    'phase=${baseline.phase} run=${baseline.activeRunId}',
+  );
+  return baseline;
+}
+
+bool _migrationAdvanced(
+  rust_sync.MigrationStatus current,
+  rust_sync.MigrationStatus baseline,
+) {
+  return current.phase != baseline.phase ||
+      current.denominationSplitCompletedCount !=
+          baseline.denominationSplitCompletedCount ||
+      current.denominationConfirmationCount !=
+          baseline.denominationConfirmationCount ||
+      current.broadcastedTxCount != baseline.broadcastedTxCount ||
+      current.confirmedTxCount != baseline.confirmedTxCount ||
+      current.parts.any((currentPart) {
+        for (final baselinePart in baseline.parts) {
+          if (baselinePart.partIndex == currentPart.partIndex) {
+            return baselinePart.state != currentPart.state;
+          }
+        }
+        return true;
+      });
+}
+
+Future<void> _verifyCompletedMigrationRemainsPrivacyLocked(
+  WidgetTester tester,
+  ProviderContainer providerContainer,
+) async {
+  await pumpUntil(
+    tester,
+    () =>
+        tester.any(find.byKey(ironwoodMigrationVirtualUnlockScreenKey)) &&
+        !tester.any(find.byKey(ironwoodMigrationInProgressBadgeKey)),
+    description: 'completed migration privacy lock without progress badge',
+    timeout: const Duration(minutes: 2),
+  );
+  expect(find.text('Migration in progress'), findsNothing);
+  expect(find.text('Welcome back'), findsOneWidget);
+  expect(find.text('Unlock Vizor'), findsOneWidget);
+  expect(providerContainer.read(appSecurityProvider).requiresUnlock, isFalse);
+  e2eLog(
+    'migration-sim privacy-lock retained after migration completion '
+    'with progress badge hidden',
+  );
+}
+
+Future<void> _unlockMigrationPrivacyScreen(WidgetTester tester) async {
+  await enterAppText(
+    tester,
+    const ValueKey('unlock_password_field'),
+    desktopRegtestPassword,
+  );
+  await tapAppButton(tester, const ValueKey('unlock_submit_button'));
+  await pumpUntil(
+    tester,
+    () => !tester.any(find.byKey(ironwoodMigrationVirtualUnlockScreenKey)),
+    description: 'virtual privacy lock to accept the wallet password',
+  );
+  e2eLog('migration-sim privacy-lock unlocked with the correct password');
 }
 
 Future<void> _openScheduleAfterPreparation(

@@ -44,7 +44,8 @@ pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx,
     denomination_confirmations_required, migration_preparation_snapshot_read_only,
     migration_status, observable_denomination_transaction_ids, proof_retry_height,
-    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationScheduleEntry, MigrationStatus,
+    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationPreparationOutputKind,
+    MigrationPreparationTransactionState, MigrationScheduleEntry, MigrationStatus,
     PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
@@ -473,7 +474,7 @@ pub(super) struct StoredProposal {
     pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
     /// When `true`, the proposal was fee-counted with unpadded Orchard-pool
     /// bundles (migration children only) and the PCZT must be built with
-    /// `BundleType::UNPADDED` to balance. See `zip317_helper`.
+    /// `BundlePadding::UNPADDED` to balance. See `zip317_helper`.
     pub unpadded_orchard_pool_bundles: bool,
     pub network: WalletNetwork,
     pub account_id: AccountUuid,

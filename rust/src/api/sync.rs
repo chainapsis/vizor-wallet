@@ -754,7 +754,53 @@ pub struct MigrationPartStatus {
     pub state: MigrationPartState,
     pub txid_hex: Option<String>,
     pub schedule_start_height: Option<u32>,
+    /// Backward-compatible alias for `effective_scheduled_height`.
     pub scheduled_height: Option<u32>,
+    /// First absolute block height assigned to this logical migration part.
+    pub original_scheduled_height: Option<u32>,
+    /// Current absolute block height after any catch-up rescheduling.
+    pub effective_scheduled_height: Option<u32>,
+    /// Actual block containing the transaction, once observed in the local chain.
+    pub mined_height: Option<u32>,
+    pub confirmation_count: u32,
+    pub confirmation_target: u32,
+}
+
+pub enum MigrationPreparationTransactionState {
+    AwaitingInputs,
+    Scheduled,
+    Broadcasted,
+    Confirming,
+    Completed,
+}
+
+pub enum MigrationPreparationOutputKind {
+    Migration,
+    Change,
+    Continuation,
+}
+
+pub struct MigrationPreparationOutputStatus {
+    /// Actual Orchard note value, including any fee reserved for its migration.
+    pub value_zatoshi: u64,
+    /// Canonical ZIP 318 value that will reach Ironwood for migration outputs.
+    pub target_value_zatoshi: Option<u64>,
+    pub kind: MigrationPreparationOutputKind,
+    pub next_round: Option<u32>,
+}
+
+pub struct MigrationPreparationTransactionStatus {
+    pub stage_index: u32,
+    pub approximate_value_zatoshi: u64,
+    pub round: u32,
+    pub fee_zatoshi: u64,
+    pub planned_height: u32,
+    pub projected_height: u32,
+    pub projected_completion_height: u32,
+    pub outputs: Vec<MigrationPreparationOutputStatus>,
+    pub state: MigrationPreparationTransactionState,
+    pub scheduled_height: Option<u32>,
+    pub mined_height: Option<u32>,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
 }
@@ -784,7 +830,14 @@ pub struct MigrationStatus {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
+    pub preparation_mean_delay_blocks: Option<u32>,
     pub next_action_height: Option<u32>,
+    /// Earliest chain height at which the next ZIP 318 proof window should be
+    /// retried. Kept separate from `next_action_height`, which may instead
+    /// describe an earlier scheduled broadcast.
+    pub next_proof_window_height: Option<u32>,
+    /// Migration parts expected to use that proof window.
+    pub next_proof_window_part_indices: Option<Vec<u32>>,
     /// Exact foreground proof preflight. `None` means no signed proof action
     /// is currently applicable; `Some(false)` keeps a height-due action gated
     /// until its anchor checkpoint and witness are actually available.
@@ -793,6 +846,7 @@ pub struct MigrationStatus {
     pub next_action_part_index: Option<u32>,
     pub current_signing_part_indices: Option<Vec<u32>>,
     pub scheduled_broadcasts: Vec<MigrationScheduledBroadcast>,
+    pub preparation_transactions: Option<Vec<MigrationPreparationTransactionStatus>>,
     pub parts: Vec<MigrationPartStatus>,
 }
 
@@ -1264,7 +1318,10 @@ pub fn get_orchard_migration_status(
             signing_batch_limit: status.signing_batch_limit,
             schedule_mean_delay_blocks: status.schedule_mean_delay_blocks,
             schedule_max_delay_blocks: status.schedule_max_delay_blocks,
+            preparation_mean_delay_blocks: Some(status.preparation_mean_delay_blocks),
             next_action_height: status.next_action_height,
+            next_proof_window_height: status.next_proof_window_height,
+            next_proof_window_part_indices: Some(status.next_proof_window_part_indices),
             proof_ready,
             estimated_completion_height: status.estimated_completion_height,
             next_action_part_index: status.next_action_part_index,
@@ -1281,6 +1338,62 @@ pub fn get_orchard_migration_status(
                     status: broadcast.status,
                 })
                 .collect(),
+            preparation_transactions: Some(
+                status
+                    .preparation_transactions
+                    .into_iter()
+                    .map(|transaction| MigrationPreparationTransactionStatus {
+                        stage_index: transaction.stage_index,
+                        approximate_value_zatoshi: transaction.approximate_value_zatoshi,
+                        round: transaction.round,
+                        fee_zatoshi: transaction.fee_zatoshi,
+                        planned_height: transaction.planned_height,
+                        projected_height: transaction.projected_height,
+                        projected_completion_height: transaction.projected_completion_height,
+                        outputs: transaction
+                            .outputs
+                            .into_iter()
+                            .map(|output| MigrationPreparationOutputStatus {
+                                value_zatoshi: output.value_zatoshi,
+                                target_value_zatoshi: output.target_value_zatoshi,
+                                kind: match output.kind {
+                                    wallet_sync::MigrationPreparationOutputKind::Migration => {
+                                        MigrationPreparationOutputKind::Migration
+                                    }
+                                    wallet_sync::MigrationPreparationOutputKind::Change => {
+                                        MigrationPreparationOutputKind::Change
+                                    }
+                                    wallet_sync::MigrationPreparationOutputKind::Continuation => {
+                                        MigrationPreparationOutputKind::Continuation
+                                    }
+                                },
+                                next_round: output.next_round,
+                            })
+                            .collect(),
+                        state: match transaction.state {
+                            wallet_sync::MigrationPreparationTransactionState::AwaitingInputs => {
+                                MigrationPreparationTransactionState::AwaitingInputs
+                            }
+                            wallet_sync::MigrationPreparationTransactionState::Scheduled => {
+                                MigrationPreparationTransactionState::Scheduled
+                            }
+                            wallet_sync::MigrationPreparationTransactionState::Broadcasted => {
+                                MigrationPreparationTransactionState::Broadcasted
+                            }
+                            wallet_sync::MigrationPreparationTransactionState::Confirming => {
+                                MigrationPreparationTransactionState::Confirming
+                            }
+                            wallet_sync::MigrationPreparationTransactionState::Completed => {
+                                MigrationPreparationTransactionState::Completed
+                            }
+                        },
+                        scheduled_height: transaction.scheduled_height,
+                        mined_height: transaction.mined_height,
+                        confirmation_count: transaction.confirmation_count,
+                        confirmation_target: transaction.confirmation_target,
+                    })
+                    .collect(),
+            ),
             parts: status
                 .parts
                 .into_iter()
@@ -1303,6 +1416,9 @@ pub fn get_orchard_migration_status(
                     txid_hex: part.txid_hex,
                     schedule_start_height: part.schedule_start_height,
                     scheduled_height: part.scheduled_height,
+                    original_scheduled_height: part.original_scheduled_height,
+                    effective_scheduled_height: part.effective_scheduled_height,
+                    mined_height: part.mined_height,
                     confirmation_count: part.confirmation_count,
                     confirmation_target: part.confirmation_target,
                 })
@@ -1541,10 +1657,13 @@ pub fn broadcast_one_due_orchard_migration_transaction(
     })
 }
 
+/// Prepares denomination PCZTs with expiry heights derived from their planned
+/// broadcast heights.
 pub fn prepare_orchard_migration_denominations_pczt(
     db_path: String,
     network: String,
     account_uuid: String,
+    space_preparation_broadcasts: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1552,6 +1671,9 @@ pub fn prepare_orchard_migration_denominations_pczt(
             &db_path,
             network,
             &account_uuid,
+            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
+                space_preparation_broadcasts,
+            ),
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,
@@ -1651,7 +1773,6 @@ pub async fn complete_orchard_migration_denominations_pczt(
     password: String,
     salt_base64: String,
     approved_schedule: Vec<MigrationScheduledTransfer>,
-    space_preparation_broadcasts: bool,
 ) -> Result<IronwoodMigrationResult, String> {
     let network = parse_network_and_migrate(&db_path, &network)?;
     let password = Zeroizing::new(password.into_bytes());
@@ -1666,7 +1787,6 @@ pub async fn complete_orchard_migration_denominations_pczt(
         password.as_slice(),
         &salt_base64,
         to_wallet_migration_schedule(approved_schedule),
-        wallet_sync::PreparationTimingPolicy::from_spacing_enabled(space_preparation_broadcasts),
     )
     .await?;
     Ok(IronwoodMigrationResult {
@@ -1689,6 +1809,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
     network: String,
     account_uuid: String,
     approved_schedule: Vec<MigrationScheduledTransfer>,
+    space_preparation_broadcasts: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1697,6 +1818,9 @@ pub fn prepare_orchard_migration_single_qr_pczt(
             network,
             &account_uuid,
             to_wallet_migration_schedule(approved_schedule),
+            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
+                space_preparation_broadcasts,
+            ),
         )?;
         Ok(KeystoneMigrationSigningRequest {
             request_id: request.request_id,
@@ -1722,7 +1846,6 @@ pub async fn complete_orchard_migration_single_qr_pczt(
     signed_messages: Vec<KeystoneSignedMigrationMessage>,
     password: String,
     salt_base64: String,
-    space_preparation_broadcasts: bool,
 ) -> Result<IronwoodMigrationResult, String> {
     let network = parse_network_and_migrate(&db_path, &network)?;
     let password = Zeroizing::new(password.into_bytes());
@@ -1736,7 +1859,6 @@ pub async fn complete_orchard_migration_single_qr_pczt(
         signed_messages,
         password.as_slice(),
         &salt_base64,
-        wallet_sync::PreparationTimingPolicy::from_spacing_enabled(space_preparation_broadcasts),
     )
     .await?;
     Ok(IronwoodMigrationResult {
