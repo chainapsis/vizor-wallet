@@ -7524,3 +7524,144 @@ fn invalid_outbox_schedule_rolls_back_accepted_transition() {
         .unwrap();
     assert_eq!(status, "scheduled");
 }
+
+fn insert_test_mined_txid(conn: &rusqlite::Connection, txid_hex: &str, mined_height: u32) {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS transactions (
+             txid BLOB PRIMARY KEY,
+             mined_height INTEGER
+         )",
+        [],
+    )
+    .unwrap();
+    let mut txid_blob = hex::decode(txid_hex).unwrap();
+    txid_blob.reverse();
+    conn.execute(
+        "INSERT OR REPLACE INTO transactions (txid, mined_height) VALUES (?1, ?2)",
+        params![txid_blob, mined_height],
+    )
+    .unwrap();
+}
+
+fn pending_status(conn: &rusqlite::Connection, txid_hex: &str) -> String {
+    conn.query_row(
+        &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+        params![txid_hex],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn due_pending_skips_locally_mined_scheduled_part() {
+    // A part that is already mined locally must not remain the due candidate.
+    // Selection reconciles pending confirmations first so later due parts can
+    // advance instead of head-of-line blocking on a stale `scheduled` row.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-b",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    // create_outbox_test_run schedules at 101, 102, 103.
+    let tip = 103u32;
+
+    let before = due_pending_txs(&db_path, "race-b", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].txid_hex, txids[0]);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    assert!(local_denomination_chain_identity(&conn, &txids[0])
+        .unwrap()
+        .is_some());
+    drop(conn);
+
+    let next = due_pending_txs(&db_path, "race-b", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(
+        next[0].txid_hex, txids[1],
+        "locally mined part 0 must be skipped so part 1 becomes due"
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(
+        pending_status(&conn, &txids[0]),
+        "confirmed",
+        "due selection must promote the mined head so bookkeeping matches chain state"
+    );
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+}
+
+#[test]
+fn reconcile_promotes_pending_when_local_txid_is_mined() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-c",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    let tip = 103u32;
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+
+    reconcile_run_confirmations(&conn, "race-c").unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+    drop(conn);
+
+    let next = due_pending_txs(&db_path, "race-c", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(
+        next[0].txid_hex, txids[1],
+        "after reconcile, part 1 must become the due candidate"
+    );
+}
+
+#[test]
+fn due_pending_unblocks_later_parts_after_stale_head_is_mined() {
+    // Combined HOL symptom: mined-but-unreconciled part 0 must not block part 1
+    // once due selection runs.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-hol",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    let tip = 103u32;
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    drop(conn);
+
+    let unblocked =
+        due_pending_txs(&db_path, "race-hol", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(unblocked[0].txid_hex, txids[1]);
+
+    assert_eq!(
+        due_scheduled_pending_count(&db_path, "race-hol", tip).unwrap(),
+        2,
+        "after promoting part 0, two later scheduled parts remain due at tip"
+    );
+}
