@@ -105,13 +105,19 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
 
     final router = GoRouter.of(context);
     if (args.flow == SetPasswordFlow.create) {
-      router.go(
+      await router.push<void>(
         '/onboarding/customise-account',
         extra: CustomiseAccountArgs(
           mnemonic: args.requiredMnemonic,
           pendingPassword: passcode,
         ),
       );
+      if (!mounted) return;
+      setState(() {
+        _phase = _PasscodePhase.create;
+        _entry = '';
+        _firstPasscode = null;
+      });
       return;
     }
 

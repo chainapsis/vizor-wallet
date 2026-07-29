@@ -59,7 +59,10 @@ Widget _importApp({required _RecordingAccountNotifier accountNotifier}) {
   );
 }
 
-Widget _createRouterApp({required _RecordingAccountNotifier accountNotifier}) {
+Widget _createRouterApp({
+  required _RecordingAccountNotifier accountNotifier,
+  ValueChanged<GoRouter>? onRouter,
+}) {
   final router = GoRouter(
     routes: [
       GoRoute(
@@ -77,6 +80,7 @@ Widget _createRouterApp({required _RecordingAccountNotifier accountNotifier}) {
       ),
     ],
   );
+  onRouter?.call(router);
 
   return ProviderScope(
     overrides: [accountProvider.overrideWith(() => accountNotifier)],
@@ -173,6 +177,32 @@ void main() {
 
     expect(find.text('customise stub mnemonic words 123456'), findsOneWidget);
     expect(accountNotifier.createdMnemonic, isNull);
+  });
+
+  testWidgets('create customisation preserves a back route to passcode', (
+    tester,
+  ) async {
+    late final GoRouter router;
+    await tester.pumpWidget(
+      _createRouterApp(
+        accountNotifier: _RecordingAccountNotifier(),
+        onRouter: (value) => router = value,
+      ),
+    );
+    await tester.pump();
+
+    await _enter(tester, '123456');
+    await _enter(tester, '123456');
+    await tester.pumpAndSettle();
+
+    expect(find.text('customise stub mnemonic words 123456'), findsOneWidget);
+    expect(router.canPop(), isTrue);
+
+    router.pop();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Create Passcode'), findsOneWidget);
+    expect(find.text('Setting up your wallet...'), findsNothing);
   });
 
   testWidgets('import flow forwards selected additional ZIP32 accounts', (
