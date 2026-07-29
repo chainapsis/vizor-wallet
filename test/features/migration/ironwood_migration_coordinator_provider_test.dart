@@ -1392,6 +1392,91 @@ void main() {
     );
   });
 
+  test('wallet reset clears process-local migration state', () async {
+    final container = _container(
+      statuses: {
+        _softwareUuid: _status('waiting_denom_confirmations'),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      },
+      softwareStarts: [],
+      broadcasts: [],
+      mutableAccounts: true,
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    coordinator.grantChildProofBatchPermit(_softwareUuid);
+    await coordinator.refreshNow();
+    expect(
+      container.read(ironwoodMigrationCoordinatorProvider).statuses,
+      isNotEmpty,
+    );
+
+    (container.read(accountProvider.notifier) as _MutableAccountNotifier)
+        .clearAccounts();
+    await coordinator.refreshNow();
+
+    final state = container.read(ironwoodMigrationCoordinatorProvider);
+    expect(state.statuses, isEmpty);
+    expect(state.errors, isEmpty);
+    expect(state.advancingAccounts, isEmpty);
+    expect(state.foregroundProgressPermits, isEmpty);
+    expect(state.childProofBatchPermits, isEmpty);
+  });
+
+  test('wallet reset discards an in-flight status refresh', () async {
+    final statuses = {
+      _softwareUuid: _status('waiting_denom_confirmations'),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final statusStarted = Completer<void>();
+    final releaseStatus = Completer<void>();
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      mutableAccounts: true,
+      loadStatus: (accountUuid) async {
+        if (!statusStarted.isCompleted) {
+          statusStarted.complete();
+          await releaseStatus.future;
+        }
+        return statuses[accountUuid]!;
+      },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    final refresh = coordinator.refreshNow();
+    await statusStarted.future;
+    (container.read(accountProvider.notifier) as _MutableAccountNotifier)
+        .clearAccounts();
+    releaseStatus.complete();
+    await refresh;
+
+    expect(
+      container.read(ironwoodMigrationCoordinatorProvider).statuses,
+      isEmpty,
+    );
+  });
+
   testWidgets(
     'initial status refresh does not restart bound background preparation',
     (tester) async {
@@ -1581,6 +1666,133 @@ void main() {
 
     await expectLater(refresh, completes);
   });
+
+  test('duplicate stop callers await the same failing operation', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled'),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final stopStarted = Completer<void>();
+    final releaseStop = Completer<void>();
+    var stopCalls = 0;
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      stopMigrationRun:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+            required nativeAttemptedTxids,
+          }) async {
+            stopCalls += 1;
+            stopStarted.complete();
+            await releaseStop.future;
+            throw StateError('stop failed');
+          },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    final first = coordinator.stop(accountUuid: _softwareUuid, runId: 'run-1');
+    await stopStarted.future;
+    final duplicate = coordinator.stop(
+      accountUuid: _softwareUuid,
+      runId: 'run-1',
+    );
+    final firstFailure = expectLater(first, throwsA(isA<StateError>()));
+    final duplicateFailure = expectLater(duplicate, throwsA(isA<StateError>()));
+
+    expect(stopCalls, 1);
+    expect(
+      container.read(ironwoodMigrationCoordinatorProvider).stoppingAccounts,
+      contains(_softwareUuid),
+    );
+
+    releaseStop.complete();
+    await Future.wait([firstFailure, duplicateFailure]);
+    expect(stopCalls, 1);
+  });
+
+  test('stop requests for different runs execute serially', () async {
+    final statuses = {
+      _softwareUuid: _status('broadcast_scheduled'),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final releaseOldRun = Completer<void>();
+    final releaseNewRun = Completer<void>();
+    final oldRunStarted = Completer<void>();
+    final newRunStarted = Completer<void>();
+    final stopCalls = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      usesNativeOutbox: false,
+      stopMigrationRun:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+            required nativeAttemptedTxids,
+          }) async {
+            stopCalls.add(expectedRunId);
+            if (expectedRunId == 'old-run') {
+              oldRunStarted.complete();
+              await releaseOldRun.future;
+            } else {
+              newRunStarted.complete();
+              await releaseNewRun.future;
+            }
+          },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    final oldStop = coordinator.stop(
+      accountUuid: _softwareUuid,
+      runId: 'old-run',
+    );
+    await oldRunStarted.future;
+    final newStop = coordinator.stop(
+      accountUuid: _softwareUuid,
+      runId: 'new-run',
+    );
+
+    expect(stopCalls, ['old-run']);
+    releaseOldRun.complete();
+    await oldStop;
+    await newRunStarted.future;
+    expect(stopCalls, ['old-run', 'new-run']);
+    expect(
+      container.read(ironwoodMigrationCoordinatorProvider).stoppingAccounts,
+      contains(_softwareUuid),
+    );
+
+    releaseNewRun.complete();
+    await newStop;
+  });
 }
 
 ProviderContainer _container({
@@ -1601,6 +1813,7 @@ ProviderContainer _container({
   List<String>? proofReadinessRecords,
   bool mutableAccounts = false,
   AppSecurityState? initialSecurityState,
+  IronwoodMigrationStopper? stopMigrationRun,
 }) {
   final service = IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -1682,6 +1895,7 @@ ProviderContainer _container({
           statuses[accountUuid] = _status('broadcast_scheduled');
           return _result('broadcast_scheduled');
         },
+    stopMigrationRun: stopMigrationRun,
   );
 
   return ProviderContainer(
@@ -1727,6 +1941,10 @@ class _MutableAccountNotifier extends AccountNotifier {
     state = AsyncData(
       current.copyWith(accounts: List<AccountInfo>.of(current.accounts)),
     );
+  }
+
+  void clearAccounts() {
+    state = const AsyncData(AccountState());
   }
 }
 

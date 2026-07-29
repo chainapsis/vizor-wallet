@@ -96,6 +96,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
         MobileIronwoodKeystoneSigningViewState.scanner => _ScannerContent(
           camera: camera,
           round: round,
+          signingRoundLabel: signingRoundLabel,
           onToggleFlashlight: onToggleFlashlight,
           onShowRequestQr: onShowRequestQr,
           onCancel: onCancel,
@@ -188,8 +189,8 @@ class _StepOneContent extends StatelessWidget {
                         key: const ValueKey(
                           'mobile_ironwood_keystone_signing_round',
                         ),
-                        style: AppTypography.bodySmall.copyWith(
-                          color: colors.text.secondary,
+                        style: AppTypography.bodyMediumStrong.copyWith(
+                          color: colors.text.accent,
                         ),
                       ),
                     ],
@@ -449,6 +450,7 @@ class _ScannerContent extends StatelessWidget {
   const _ScannerContent({
     required this.camera,
     required this.round,
+    required this.signingRoundLabel,
     required this.onToggleFlashlight,
     required this.onShowRequestQr,
     required this.onCancel,
@@ -458,6 +460,7 @@ class _ScannerContent extends StatelessWidget {
 
   final Widget? camera;
   final MobileIronwoodKeystoneSigningRound round;
+  final String? signingRoundLabel;
   final VoidCallback? onToggleFlashlight;
   final VoidCallback? onShowRequestQr;
   final VoidCallback? onCancel;
@@ -475,15 +478,35 @@ class _ScannerContent extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final topInset = MediaQuery.paddingOf(context).top;
+            final displayHeight = _measuredTextHeight(
+              context,
+              text: 'Step 2/2',
+              style: AppTypography.displayLarge,
+              maxWidth: constraints.maxWidth,
+            );
+            final titleHeight = _measuredTextHeight(
+              context,
+              text: 'Confirm with Keystone',
+              style: AppTypography.bodyMediumStrong,
+              maxWidth: constraints.maxWidth,
+            );
+            final signingRoundReserve = signingRoundLabel == null
+                ? 0.0
+                : AppSpacing.xxs +
+                      _measuredTextHeight(
+                        context,
+                        text: signingRoundLabel!,
+                        style: AppTypography.bodyMediumStrong,
+                        maxWidth: constraints.maxWidth,
+                      );
             final headerReserve =
                 topInset +
                 kMobileTopNavHeight +
                 AppSpacing.s +
-                (AppTypography.displayLarge.fontSize ?? 40) *
-                    (AppTypography.displayLarge.height ?? 1) +
+                displayHeight +
                 AppSpacing.s +
-                (AppTypography.bodyMediumStrong.fontSize ?? 16) *
-                    (AppTypography.bodyMediumStrong.height ?? 1);
+                titleHeight +
+                signingRoundReserve;
             const chromeReserve =
                 12 +
                 _scannerCaptionHeight +
@@ -563,6 +586,18 @@ class _ScannerContent extends StatelessWidget {
                           color: const Color(0xFFFFFFFF),
                         ),
                       ),
+                      if (signingRoundLabel != null) ...[
+                        const SizedBox(height: AppSpacing.xxs),
+                        Text(
+                          signingRoundLabel!,
+                          key: const ValueKey(
+                            'mobile_ironwood_keystone_signing_round',
+                          ),
+                          style: AppTypography.bodyMediumStrong.copyWith(
+                            color: const Color(0xFFFFFFFF),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -652,6 +687,20 @@ class _ScannerContent extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  double _measuredTextHeight(
+    BuildContext context, {
+    required String text,
+    required TextStyle style,
+    required double maxWidth,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: maxWidth);
+    return painter.height;
   }
 
   double _scaledTop(

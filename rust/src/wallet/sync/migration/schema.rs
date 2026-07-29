@@ -417,6 +417,88 @@ fn backfill_legacy_pending_schedule_metadata(
     Ok(())
 }
 
+fn backfill_original_pending_schedule_heights(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT p.run_id, p.txid_hex, p.part_index, p.value_zatoshi,
+                    p.fee_zatoshi, r.target_values_json, r.schedule_json,
+                    r.signed_schedule_origin_height
+             FROM {PENDING_TXS_TABLE} p
+             JOIN {RUNS_TABLE} r ON r.run_id = p.run_id
+             WHERE p.original_scheduled_height IS NULL"
+        ))
+        .map_err(|e| format!("Prepare original migration schedule backfill: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+                row.get::<_, u64>(3)?,
+                row.get::<_, u64>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, Option<u32>>(7)?,
+            ))
+        })
+        .map_err(|e| format!("Query original migration schedule backfill: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read original migration schedule backfill: {e}"))?;
+    drop(stmt);
+
+    for (
+        run_id,
+        txid_hex,
+        part_index,
+        value_zatoshi,
+        fee_zatoshi,
+        target_values_json,
+        schedule_json,
+        schedule_origin,
+    ) in rows
+    {
+        let original_height = part_index
+            .zip(schedule_origin)
+            .and_then(|(part_index, origin)| {
+                let target_values =
+                    serde_json::from_str::<Vec<u64>>(&target_values_json).ok()?;
+                let schedule =
+                    serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json).ok()?;
+                let block_offset = schedule_block_offset_for_part(
+                    &schedule,
+                    &target_values,
+                    part_index,
+                    value_zatoshi,
+                )
+                .or_else(|| {
+                    schedule_block_offset_for_part(
+                        &schedule,
+                        &target_values,
+                        part_index,
+                        value_zatoshi.saturating_add(fee_zatoshi),
+                    )
+                })?;
+                origin.checked_add(block_offset)
+            });
+        let Some(original_height) = original_height else {
+            continue;
+        };
+        conn.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET original_scheduled_height = ?1
+                 WHERE run_id = ?2 AND txid_hex = ?3
+                   AND original_scheduled_height IS NULL"
+            ),
+            params![original_height, run_id, txid_hex],
+        )
+        .map_err(|e| format!("Backfill original migration scheduled height: {e}"))?;
+    }
+    Ok(())
+}
+
 fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(&format!(
         "
@@ -466,6 +548,8 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             scheduled_at_ms INTEGER NOT NULL,
             schedule_start_height INTEGER,
             scheduled_height INTEGER NOT NULL DEFAULT 0,
+            original_scheduled_height INTEGER,
+            broadcast_attempted INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL,
             metadata_json TEXT NOT NULL
         );
@@ -504,6 +588,29 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     .map_err(|e| format!("Initialize migration schema: {e}"))?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "part_index", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "anchor_boundary_height", "INTEGER")?;
+    let had_broadcast_attempted =
+        table_column_exists(conn, PENDING_TXS_TABLE, "broadcast_attempted")?;
+    add_column_if_missing(
+        conn,
+        PENDING_TXS_TABLE,
+        "broadcast_attempted",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    if !had_broadcast_attempted {
+        // Existing scheduled rows may predate the durable marker. Keep that
+        // uncertainty distinct from a known attempt: stop can safely discard
+        // an unknown row whose broadcast height is still in the future, while
+        // reconciling an unknown row that could already have been submitted.
+        conn.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET broadcast_attempted = 2
+                 WHERE status = 'scheduled'"
+            ),
+            [],
+        )
+        .map_err(|e| format!("Backfill migration broadcast attempts: {e}"))?;
+    }
     add_column_if_missing(
         conn,
         RUNS_TABLE,
@@ -533,6 +640,12 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     add_column_if_missing(conn, PENDING_TXS_TABLE, "schedule_start_height", "INTEGER")?;
     add_column_if_missing(
         conn,
+        PENDING_TXS_TABLE,
+        "original_scheduled_height",
+        "INTEGER",
+    )?;
+    add_column_if_missing(
+        conn,
         SIGNED_CHILD_PCZTS_TABLE,
         "scheduled_height",
         "INTEGER",
@@ -540,6 +653,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     backfill_pending_part_indices(conn)?;
     backfill_legacy_signed_schedule_metadata(conn)?;
     backfill_legacy_pending_schedule_metadata(conn)?;
+    backfill_original_pending_schedule_heights(conn)?;
     conn.execute(
         &format!(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_vizor_migration_pending_part

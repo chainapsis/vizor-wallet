@@ -280,8 +280,8 @@ pub(super) fn migration_child_builder<P: consensus::Parameters>(
             sapling_anchor: None,
             orchard_anchor: Some(orchard_anchor),
             ironwood_anchor: Some(orchard::Anchor::empty_tree()),
-            orchard_bundle_type: orchard::builder::BundleType::DEFAULT,
-            ironwood_bundle_type: orchard::builder::BundleType::UNPADDED,
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::UNPADDED,
         },
     )
     .with_expiry_height(BlockHeight::from(expiry_height)))

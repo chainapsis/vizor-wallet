@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
@@ -33,6 +34,36 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'app-carousel-preparation-card-1',
+    description: 'Preparation information carousel with card 1 selected',
+    builder: buildCarouselPreparationCardOneUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-preparation-card-2',
+    description: 'Preparation information carousel with card 2 selected',
+    builder: buildCarouselPreparationCardTwoUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-preparation-card-3',
+    description: 'Preparation information carousel with card 3 selected',
+    builder: buildCarouselPreparationCardThreeUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-migration-card-1',
+    description: 'Migration information carousel with card 1 selected',
+    builder: buildCarouselMigrationCardOneUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-migration-card-2',
+    description: 'Migration information carousel with card 2 selected',
+    builder: buildCarouselMigrationCardTwoUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'app-carousel-migration-card-3',
+    description: 'Migration information carousel with card 3 selected',
+    builder: buildCarouselMigrationCardThreeUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'pay-recipient',
     description: 'Pay recipient selection with recent contacts',
     builder: buildPayRecipientUseCase,
@@ -51,6 +82,18 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-completed',
     description: 'Pay activity completed state',
     builder: buildPayCompletedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'customise-account',
+    description: 'Desktop account personalisation onboarding screen',
+    builder: buildCustomiseAccountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-customise-account',
+    description: 'Mobile account personalisation onboarding screen',
+    builder: buildMobileCustomiseAccountUseCase,
+    desktop: false,
+    mobile: true,
   ),
   FigmaCompareScenario(
     id: 'mobile-home-default',
@@ -85,6 +128,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'ironwood-migration-announcement-modal',
     description: 'Ironwood migration announcement modal',
     builder: buildIronwoodMigrationAnnouncementModalUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-privacy-lock',
+    description: 'Desktop virtual unlock shown during Ironwood migration',
+    builder: buildIronwoodMigrationPrivacyLockUseCase,
   ),
   FigmaCompareScenario(
     id: 'desktop-home-ironwood-migration-required',
@@ -139,6 +187,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildIronwoodMigrationImmediateKeystoneScannerUseCase,
   ),
   FigmaCompareScenario(
+    id: 'ironwood-migration-private-keystone-request',
+    description: 'Private migration Keystone request QR',
+    builder: buildIronwoodMigrationPrivateKeystoneRequestUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-analyzing',
     description: 'Ironwood migration balance analysis loader',
     builder: buildIronwoodMigrationAnalyzingUseCase,
@@ -189,6 +242,26 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildIronwoodMigrationScheduleUseCase,
   ),
   FigmaCompareScenario(
+    id: 'ironwood-migration-preparation-schedule',
+    description: 'Ironwood migration preparation schedule',
+    builder: buildIronwoodMigrationPreparationScheduleUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-manage-schedule',
+    description: 'Ironwood migration schedule management choices',
+    builder: buildIronwoodMigrationManageScheduleUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-immediate-confirmation',
+    description: 'Ironwood immediate migration final confirmation',
+    builder: buildIronwoodMigrationImmediateConfirmationUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-stop-confirmation',
+    description: 'Ironwood migration cancellation final confirmation',
+    builder: buildIronwoodMigrationStopConfirmationUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-complete',
     description: 'Ironwood migration completion',
     builder: buildIronwoodMigrationCompleteUseCase,
@@ -211,6 +284,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-ironwood-migration-options',
     description: 'Mobile Ironwood migration type screen',
     builder: buildMobileIronwoodMigrationOptionsUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-android-options',
+    description: 'Android Ironwood migration type screen',
+    builder: buildMobileIronwoodMigrationAndroidOptionsUseCase,
     desktop: false,
     mobile: true,
   ),

@@ -152,6 +152,32 @@ enum BackgroundMigrationOutboxChannel {
     }
   }
 
+  static func listAttemptedTxids(
+    arguments: Any?,
+    store: BackgroundMigrationOutboxStore = .shared
+  ) throws -> [String] {
+    let arguments = try dictionary(arguments)
+    let network = try string(arguments, "network")
+    let accountUuid = try string(arguments, "accountUuid")
+    let runId = try string(arguments, "runId")
+    let matchingBatches = try store.read().batches.filter { batch in
+      batch.network == network && batch.accountUuid == accountUuid && batch.runId == runId
+    }
+    let items = matchingBatches.flatMap { $0.items }
+    let attemptedItems = items.filter { item in
+      if item.attemptCount > 0 {
+        return true
+      }
+      switch item.status {
+      case .submitting, .acceptedAwaitingReconciliation, .rejectedAwaitingReconciliation:
+        return true
+      default:
+        return false
+      }
+    }
+    return attemptedItems.map { $0.txidHex }
+  }
+
   static func acknowledgeReceipts(
     arguments: Any?,
     store: BackgroundMigrationOutboxStore = .shared

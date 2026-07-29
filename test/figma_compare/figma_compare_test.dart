@@ -18,6 +18,8 @@ void main() {
         'pay-recipient-new-address',
         'pay-in-progress',
         'pay-completed',
+        'customise-account',
+        'mobile-customise-account',
         'mobile-home-default',
         'ironwood-migration-announcement-modal',
       ]),

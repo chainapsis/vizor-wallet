@@ -44,7 +44,8 @@ pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx,
     denomination_confirmations_required, migration_preparation_snapshot_read_only,
     migration_status, observable_denomination_transaction_ids, proof_retry_height,
-    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationScheduleEntry, MigrationStatus,
+    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationPreparationOutputKind,
+    MigrationPreparationTransactionState, MigrationScheduleEntry, MigrationStatus,
     PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
@@ -55,13 +56,14 @@ pub use pczt::{
 pub(crate) use proposal_locks::recover_previous_process as recover_orphaned_send_locks;
 pub(crate) use send::estimate_send_max;
 pub(crate) use send::{
-    advance_orchard_migration_preparation_for_run, complete_orchard_migration_batch_pczt,
-    complete_orchard_migration_denominations_pczt, complete_orchard_migration_immediate_pczt,
-    complete_orchard_migration_single_qr_pczt, create_or_resume_private_migration_draft,
-    discard_all_keystone_migration_requests, discard_keystone_migration_request,
-    discard_keystone_migration_requests_for_account, keystone_migration_proof_status,
-    migrate_orchard_to_ironwood, migrate_orchard_to_ironwood_immediately,
-    orchard_migration_proof_readiness, orchard_migration_proof_readiness_at_scanned_height,
+    abandon_orchard_migration, advance_orchard_migration_preparation_for_run,
+    complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
+    complete_orchard_migration_immediate_pczt, complete_orchard_migration_single_qr_pczt,
+    create_or_resume_private_migration_draft, discard_all_keystone_migration_requests,
+    discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
+    keystone_migration_proof_status, migrate_orchard_to_ironwood,
+    migrate_orchard_to_ironwood_immediately, orchard_migration_proof_readiness,
+    orchard_migration_proof_readiness_at_scanned_height,
     orchard_migration_proof_readiness_read_only, prepare_orchard_migration_batch_pczt,
     prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_immediate_pczt,
     prepare_orchard_migration_single_qr_pczt, retain_prepared_note_anchor_checkpoints_after_scan,
@@ -101,8 +103,9 @@ pub use transactions::{
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
-    get_export_birthday_anchor, get_oldest_mined_transaction_anchor, ExportBirthdayAnchor,
-    TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
+    get_export_birthday_anchor, get_oldest_mined_transaction_anchor,
+    get_unmined_txids_with_mined_output_evidence, ExportBirthdayAnchor, TransactionDetail,
+    TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
     WalletBalanceAvailability,
 };
 
@@ -473,7 +476,7 @@ pub(super) struct StoredProposal {
     pub proposed_tx_version: Option<zcash_primitives::transaction::TxVersion>,
     /// When `true`, the proposal was fee-counted with unpadded Orchard-pool
     /// bundles (migration children only) and the PCZT must be built with
-    /// `BundleType::UNPADDED` to balance. See `zip317_helper`.
+    /// `BundlePadding::UNPADDED` to balance. See `zip317_helper`.
     pub unpadded_orchard_pool_bundles: bool,
     pub network: WalletNetwork,
     pub account_id: AccountUuid,

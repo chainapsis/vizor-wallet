@@ -38,6 +38,13 @@ class _UnconfiguredSecurityNotifier extends AppSecurityNotifier {
   }
 }
 
+class _ConfiguredSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() {
+    return const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+  }
+}
+
 Widget _app(Widget child, {bool seedCreateMnemonic = false}) {
   return ProviderScope(
     overrides: [
@@ -74,6 +81,36 @@ Widget _routerApp(Stream<void> screenshotStream) {
         _TestCreateMnemonicNotifier.new,
       ),
       appSecurityProvider.overrideWith(_UnconfiguredSecurityNotifier.new),
+    ],
+    child: MaterialApp.router(
+      routerConfig: router,
+      builder: (_, c) => AppTheme(data: AppThemeData.light, child: c!),
+    ),
+  );
+}
+
+Widget _additionalAccountRouterApp() {
+  final router = GoRouter(
+    initialLocation: '/secret',
+    routes: [
+      GoRoute(
+        path: '/secret',
+        builder: (_, _) => const MobileSecretPassphraseScreen(
+          args: CreateSecretPassphraseArgs(mnemonic: _mnemonic),
+        ),
+      ),
+      GoRoute(
+        path: '/onboarding/customise-account',
+        builder: (_, state) {
+          final args = state.extra! as CustomiseAccountArgs;
+          return Text('customise ${args.mnemonic}');
+        },
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      appSecurityProvider.overrideWith(_ConfiguredSecurityNotifier.new),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -254,7 +291,7 @@ void main() {
     ]);
   });
 
-  testWidgets('does not show screenshot warning after pushing passcode route', (
+  testWidgets('leaving the phrase replaces it with the passcode route', (
     tester,
   ) async {
     final screenshots = StreamController<void>();
@@ -284,12 +321,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('set passcode route'), findsOneWidget);
+    final passcodeContext = tester.element(find.text('set passcode route'));
+    expect(GoRouter.of(passcodeContext).canPop(), isFalse);
+    final container = ProviderScope.containerOf(passcodeContext);
+    expect(container.read(createOnboardingMnemonicProvider), isNull);
+    expect(container.read(onboardingSecretPassphraseRevealedProvider), isFalse);
 
     screenshots.add(null);
     await tester.pumpAndSettle();
 
     expect(find.byType(MobileSeedScreenshotWarningSheet), findsNothing);
     expect(haptics, ['HapticFeedbackType.mediumImpact']);
+  });
+
+  testWidgets('additional account continues to customisation before creation', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_additionalAccountRouterApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('customise $_mnemonic'), findsOneWidget);
+    final customiseContext = tester.element(find.text('customise $_mnemonic'));
+    expect(GoRouter.of(customiseContext).canPop(), isFalse);
   });
 
   testWidgets(

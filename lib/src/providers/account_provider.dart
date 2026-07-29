@@ -195,6 +195,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> createAccountFromMnemonic({
     required String mnemonic,
     String? name,
+    String profilePictureId = kDefaultProfilePictureId,
   }) async {
     try {
       final dbPath = await _getDbPath();
@@ -205,7 +206,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('createAccountFromMnemonic: birthday=$birthday');
 
       final accounts = state.value?.accounts ?? [];
-      final accountName = name ?? 'Account ${accounts.length + 1}';
+      final accountName = normalizeAccountName(
+        name ?? 'Account ${accounts.length + 1}',
+      );
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
 
       late final String accountUuid;
       late final String unifiedAddress;
@@ -241,6 +255,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         name: accountName,
         order: accounts.length,
         isSeedAnchor: accounts.isEmpty,
+        profilePictureId: normalizedProfilePictureId,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);

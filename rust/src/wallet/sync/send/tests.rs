@@ -13,6 +13,14 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn migration_stop_preserves_zero_as_the_no_expiry_sentinel() {
+    assert!(!migration_stop_candidate_is_expired(0, u32::MAX));
+    assert!(!migration_stop_candidate_is_expired(200, 199));
+    assert!(migration_stop_candidate_is_expired(200, 200));
+    assert!(migration_stop_candidate_is_expired(200, 201));
+}
+
+#[test]
 fn send_proposal_expires_at_its_lock_boundary() {
     let min_target = BlockHeight::from_u32(1_000);
     assert!(!send_proposal_is_expired(
@@ -236,6 +244,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
             StoredDenominationPczt {
                 account_uuid: account_uuid.to_string(),
                 network: WalletNetwork::Test,
+                preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
                 state: KeystoneMigrationRequestState::ProofReady,
                 proof_error: None,
                 draft_run_id: None,
@@ -277,6 +286,7 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
                 StoredSingleQrMigrationPczt {
                     account_uuid: account_uuid.to_string(),
                     network: WalletNetwork::Test,
+                    preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
                     state: KeystoneMigrationRequestState::ProofReady,
                     proof_error: None,
                     split_stages: vec![],
@@ -328,6 +338,64 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
         "keep-single-request",
         "keep-immediate-request",
     ] {
+        assert!(keystone_migration_proof_status(request_id).is_ok());
+        discard_keystone_migration_request(request_id).unwrap();
+    }
+}
+
+#[test]
+fn stopping_stale_run_discards_only_its_keystone_migration_requests() {
+    const ACCOUNT: &str = "keystone-stop-account";
+    const OLD_RUN: &str = "keystone-old-run";
+    const NEW_RUN: &str = "keystone-new-run";
+    let plan = migration::plan_denominations(1_000_000, 10_000, 15_000, 1).unwrap();
+
+    for (request_id, run_id) in [
+        ("old-denomination-request", OLD_RUN),
+        ("new-denomination-request", NEW_RUN),
+    ] {
+        keystone_denomination_requests().lock().unwrap().insert(
+            request_id.to_string(),
+            StoredDenominationPczt {
+                account_uuid: ACCOUNT.to_string(),
+                network: WalletNetwork::Test,
+                preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
+                state: KeystoneMigrationRequestState::ProofReady,
+                proof_error: None,
+                draft_run_id: Some(run_id.to_string()),
+                split_stages: vec![],
+                direct_prepared_refs: vec![],
+                total_migratable_zatoshi: plan.total_migratable_zatoshi,
+                plan: plan.clone(),
+            },
+        );
+    }
+    for (request_id, run_id) in [
+        ("old-batch-request", OLD_RUN),
+        ("new-batch-request", NEW_RUN),
+    ] {
+        keystone_migration_requests().lock().unwrap().insert(
+            request_id.to_string(),
+            StoredMigrationPcztBatch {
+                account_uuid: ACCOUNT.to_string(),
+                network: WalletNetwork::Test,
+                run_id: run_id.to_string(),
+                fallback_total_count: 0,
+                fallback_migrated_zatoshi: 0,
+                recovery_old_txids: vec![],
+                state: KeystoneMigrationRequestState::ProofReady,
+                proof_error: None,
+                messages: vec![],
+            },
+        );
+    }
+
+    discard_keystone_migration_requests_for_run(ACCOUNT, WalletNetwork::Test, OLD_RUN).unwrap();
+
+    for request_id in ["old-denomination-request", "old-batch-request"] {
+        assert!(keystone_migration_proof_status(request_id).is_err());
+    }
+    for request_id in ["new-denomination-request", "new-batch-request"] {
         assert!(keystone_migration_proof_status(request_id).is_ok());
         discard_keystone_migration_request(request_id).unwrap();
     }
@@ -417,7 +485,67 @@ fn on_open_migration_policy_sends_at_most_one_due_transaction() {
         500
     );
     assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.should_defer_broadcast(500));
+    assert!(MigrationBroadcastPolicy::ONE_FOREGROUND.reschedule_wallet_overdue);
     assert!(!MigrationBroadcastPolicy::ONE_FOREGROUND.is_cancelled());
+}
+
+#[test]
+fn one_due_result_reports_only_transactions_accepted_by_this_call() {
+    let result = one_due_migration_result(MigrationBroadcastAdvance {
+        result: IronwoodMigrationResult {
+            txids: "aggregate-a,aggregate-b".to_string(),
+            status: migration::PHASE_BROADCAST_SCHEDULED.to_string(),
+            broadcasted_count: 7,
+            total_count: 8,
+            message: None,
+            fee_zatoshi: 10_000,
+            migrated_zatoshi: 100_000,
+        },
+        accepted_txids: vec!["accepted-now".to_string()],
+    });
+
+    assert_eq!(result.txids, "accepted-now");
+    assert_eq!(result.broadcasted_count, 7);
+}
+
+#[test]
+fn one_due_result_does_not_report_aggregate_txids_when_nothing_was_accepted() {
+    let result = one_due_migration_result(MigrationBroadcastAdvance::without_acceptance(
+        IronwoodMigrationResult {
+            txids: "previously-accepted".to_string(),
+            status: migration::PHASE_BROADCAST_SCHEDULED.to_string(),
+            broadcasted_count: 1,
+            total_count: 2,
+            message: None,
+            fee_zatoshi: 10_000,
+            migrated_zatoshi: 100_000,
+        },
+    ));
+
+    assert!(result.txids.is_empty());
+    assert_eq!(result.broadcasted_count, 1);
+}
+
+#[test]
+fn one_due_result_preserves_acceptance_when_local_bookkeeping_fails() {
+    let totals_before = migration::PendingMigrationTotals {
+        txids: vec!["older-pending".to_string()],
+        broadcasted_count: 2,
+        total_count: 4,
+        fee_zatoshi: 10_000,
+        value_zatoshi: 100_000,
+    };
+    let result = one_due_migration_result(accepted_migration_processing_failure_result(
+        &totals_before,
+        vec!["accepted-now".to_string()],
+        "db busy".to_string(),
+        4,
+        100_000,
+    ));
+
+    assert_eq!(result.txids, "accepted-now");
+    assert_eq!(result.broadcasted_count, 3);
+    assert!(result.message.as_deref().unwrap().contains("db busy"));
 }
 
 fn taddr(seed: u8) -> TransparentAddress {
@@ -500,6 +628,7 @@ fn migration_test_stage(
         raw_tx: Some(vec![1, 2, 3, 4]),
         expected_txid_hex: output_txid_hex.to_string(),
         target_height: 90,
+        scheduled_height: 91,
         expiry_height: 120,
         fee_zatoshi: 10_000,
         status: migration::DenominationStageStatus::Pending,
@@ -612,6 +741,63 @@ fn migration_rebuilds_only_after_explicit_server_rejection() {
     ));
     assert!(!migration_broadcast_failure_requires_rebuild(
         "SendTransaction gRPC failed: connection unavailable"
+    ));
+}
+
+#[test]
+fn stop_skips_network_for_transactions_that_were_never_attempted() {
+    let (_temp_dir, db_path, run_id, _) = create_outbox_receipt_test_run(69_120);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    runtime
+        .block_on(reconcile_scheduled_migration_txs_before_abandon(
+            &db_path,
+            "not-a-lightwalletd-url",
+            WalletNetwork::Test,
+            MIGRATION_TEST_ACCOUNT,
+            &run_id,
+            &[],
+        ))
+        .unwrap();
+}
+
+#[test]
+fn native_attempt_state_requires_network_reconciliation() {
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    let error = runtime
+        .block_on(reconcile_scheduled_migration_txs_before_abandon(
+            &db_path,
+            "not-a-lightwalletd-url",
+            WalletNetwork::Test,
+            MIGRATION_TEST_ACCOUNT,
+            &run_id,
+            &[pending_txid],
+        ))
+        .unwrap_err();
+
+    assert!(error.starts_with("Open migration stop reconciliation endpoint:"));
+}
+
+#[test]
+fn legacy_attempt_state_reconciles_only_after_its_broadcast_height() {
+    let candidate = migration::MigrationStopCandidate {
+        kind: migration::MigrationStopCandidateKind::MigrationTransaction,
+        txid_hex: "10".repeat(32),
+        broadcast_height: 200,
+        expiry_height: 69_120,
+        attempt_state: migration::MigrationBroadcastAttemptState::UnknownLegacy,
+    };
+
+    assert!(!migration_stop_candidate_requires_reconciliation(
+        &candidate, false, 199,
+    ));
+    assert!(migration_stop_candidate_requires_reconciliation(
+        &candidate, false, 200,
+    ));
+    assert!(migration_stop_candidate_requires_reconciliation(
+        &candidate, true, 199,
     ));
 }
 
@@ -1358,6 +1544,283 @@ fn split_broadcast_result_preserves_status_and_migrated_amount() {
     assert_eq!(result.migrated_zatoshi, 180_000);
 }
 
+fn create_denomination_expiry_test_run(
+    status: migration::DenominationStageStatus,
+) -> (tempfile::TempDir, String, String) {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let denomination_input_txid = "30".repeat(32);
+    let selected_note_txid = "10".repeat(32);
+    let selected_note = migration_test_note(&selected_note_txid);
+    let mut stage = migration_test_stage(&denomination_input_txid, &selected_note_txid);
+    let stage_txid = stage.expected_txid_hex.clone();
+    match status {
+        migration::DenominationStageStatus::AwaitingInputs => {
+            stage.raw_tx = None;
+            stage.status = status;
+        }
+        migration::DenominationStageStatus::Pending
+        | migration::DenominationStageStatus::Broadcasted => {}
+        other => panic!("unsupported expiry test stage status: {other:?}"),
+    }
+    let run_id = migration::create_run_with_staged_denominations_and_signed_children(
+        &db_path,
+        MIGRATION_TEST_ACCOUNT,
+        WalletNetwork::Test,
+        &migration_test_plan(),
+        &[selected_note],
+        Vec::new(),
+        vec![stage],
+        None,
+        migration::PreparationTimingPolicy::Immediate,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    if status == migration::DenominationStageStatus::Broadcasted {
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        migration::mark_denomination_stage_broadcasted(&conn, &run_id, &stage_txid).unwrap();
+    }
+    (temp_dir, db_path, run_id)
+}
+
+#[test]
+fn expired_unbroadcast_preparation_stages_retire_at_scanned_expiry() {
+    for status in [
+        migration::DenominationStageStatus::AwaitingInputs,
+        migration::DenominationStageStatus::Pending,
+    ] {
+        let (_temp_dir, db_path, run_id) = create_denomination_expiry_test_run(status);
+
+        assert!(
+            retire_expired_denomination_run(&db_path, WalletNetwork::Test, &run_id, 119,)
+                .unwrap()
+                .is_none()
+        );
+
+        let result = retire_expired_denomination_run(&db_path, WalletNetwork::Test, &run_id, 120)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.status, migration::PHASE_FAILED_TERMINAL);
+        assert!(result
+            .message
+            .unwrap()
+            .contains("expired before confirmation"));
+        assert!(migration::active_migration_run(
+            &db_path,
+            MIGRATION_TEST_ACCOUNT,
+            WalletNetwork::Test,
+        )
+        .unwrap()
+        .is_none());
+    }
+}
+
+#[test]
+fn expired_broadcasted_preparation_stage_retires_at_scanned_expiry() {
+    let (_temp_dir, db_path, run_id) =
+        create_denomination_expiry_test_run(migration::DenominationStageStatus::Broadcasted);
+
+    assert!(
+        retire_expired_denomination_run(&db_path, WalletNetwork::Test, &run_id, 119,)
+            .unwrap()
+            .is_none()
+    );
+
+    let result = retire_expired_denomination_run(&db_path, WalletNetwork::Test, &run_id, 120)
+        .unwrap()
+        .unwrap();
+    assert_eq!(result.status, migration::PHASE_FAILED_TERMINAL);
+    assert!(result
+        .message
+        .unwrap()
+        .contains("expired before confirmation"));
+    assert!(
+        migration::active_migration_run(&db_path, MIGRATION_TEST_ACCOUNT, WalletNetwork::Test,)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn rerandomized_preparation_stage_waits_for_its_effective_height() {
+    let stage = migration::PendingRawDenominationStage {
+        stage_index: 0,
+        expected_txid_hex: "10".repeat(32),
+        raw_tx: vec![1, 2, 3, 4],
+        target_height: 100,
+        scheduled_height: 100,
+        broadcast_not_before_height: Some(124),
+        expiry_height: 1_000,
+        fee_zatoshi: 10_000,
+    };
+
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            &stage,
+            123,
+        ),
+        DenominationStageBroadcastReadiness::AwaitingHeight,
+    );
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            &stage,
+            124,
+        ),
+        DenominationStageBroadcastReadiness::Ready,
+    );
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Immediate,
+            &stage,
+            0,
+        ),
+        DenominationStageBroadcastReadiness::Ready,
+    );
+}
+
+#[test]
+fn legacy_zero_expiry_preparation_stage_remains_broadcastable() {
+    let (_temp_dir, db_path, run_id) =
+        create_denomination_expiry_test_run(migration::DenominationStageStatus::Pending);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        "UPDATE vizor_migration_denomination_stages
+         SET expiry_height = 0
+         WHERE run_id = ?1",
+        rusqlite::params![run_id],
+    )
+    .unwrap();
+    let stage = migration::pending_raw_denomination_stages(
+        &conn,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap()
+    .remove(0);
+
+    assert_eq!(
+        expired_denomination_stage_count(&conn, &run_id, u32::MAX).unwrap(),
+        0
+    );
+    assert!(
+        retire_expired_denomination_run(&db_path, WalletNetwork::Test, &run_id, u32::MAX,)
+            .unwrap()
+            .is_none()
+    );
+
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            &stage,
+            stage.scheduled_height - 1,
+        ),
+        DenominationStageBroadcastReadiness::AwaitingHeight,
+    );
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            &stage,
+            stage.scheduled_height,
+        ),
+        DenominationStageBroadcastReadiness::Ready,
+    );
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Immediate,
+            &stage,
+            0,
+        ),
+        DenominationStageBroadcastReadiness::Ready,
+    );
+}
+
+#[test]
+fn preparation_stage_expired_at_tip_waits_for_scanned_retirement() {
+    let (_temp_dir, db_path, run_id) =
+        create_denomination_expiry_test_run(migration::DenominationStageStatus::Pending);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let stage = migration::pending_raw_denomination_stages(
+        &conn,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap()
+    .remove(0);
+
+    assert_eq!(
+        expired_denomination_stage_count(&conn, &run_id, 119).unwrap(),
+        0
+    );
+    assert_eq!(
+        expired_denomination_stage_count(&conn, &run_id, 120).unwrap(),
+        1
+    );
+    assert!(
+        retire_expired_denomination_run(&db_path, WalletNetwork::Test, &run_id, 119)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Immediate,
+            &stage,
+            120,
+        ),
+        DenominationStageBroadcastReadiness::AwaitingExpiryScan,
+    );
+    assert!(
+        migration::active_migration_run(&db_path, MIGRATION_TEST_ACCOUNT, WalletNetwork::Test,)
+            .unwrap()
+            .is_some()
+    );
+
+    assert!(
+        retire_expired_denomination_run(&db_path, WalletNetwork::Test, &run_id, 120)
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[test]
+fn immediate_preparation_policy_does_not_bypass_expiry() {
+    let stage = migration::PendingRawDenominationStage {
+        stage_index: 0,
+        expected_txid_hex: "10".repeat(32),
+        raw_tx: vec![1, 2, 3, 4],
+        target_height: 100,
+        scheduled_height: 100,
+        broadcast_not_before_height: None,
+        expiry_height: 120,
+        fee_zatoshi: 10_000,
+    };
+
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Immediate,
+            &stage,
+            120,
+        ),
+        DenominationStageBroadcastReadiness::AwaitingExpiryScan,
+    );
+    assert_eq!(
+        denomination_stage_broadcast_readiness(
+            migration::PreparationTimingPolicy::Zip318Spaced,
+            &stage,
+            119,
+        ),
+        DenominationStageBroadcastReadiness::Ready,
+    );
+}
+
 #[test]
 fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     let temp_dir = tempfile::tempdir().unwrap();
@@ -1429,7 +1892,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
 
     assert_eq!(result.txids, pending_txid);
     assert_eq!(result.status, migration::PHASE_BROADCAST_SCHEDULED);
-    assert_eq!(result.broadcasted_count, 0);
+    assert_eq!(result.broadcasted_count, 1);
     assert_eq!(result.total_count, 1);
     assert_eq!(result.fee_zatoshi, 10_000);
     assert_eq!(result.migrated_zatoshi, 100_000);
@@ -1587,6 +2050,7 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
     let network = WalletNetwork::Regtest;
     let target_height = 120;
+    let expiry_height = 69_120;
     let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
     let fvk = orchard::keys::FullViewingKey::from(&sk);
     let recipient_scope = orchard::keys::Scope::Internal;
@@ -1613,9 +2077,10 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
         let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
         let orchard_anchor = merkle_path.root(cmx);
 
-        make_orchard_split_builder_with_type(
+        make_orchard_split_builder_with_padding(
             network,
             target_height,
+            expiry_height,
             orchard_anchor,
             &[(note, merkle_path)],
             &fvk,
@@ -1623,7 +2088,7 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
             recipient,
             &[output_value],
             &memo,
-            orchard::builder::BundleType::DEFAULT,
+            BundlePadding::DEFAULT,
         )
     };
 
@@ -1635,6 +2100,10 @@ fn built_v6_split_pczt() -> (BuiltPczt, orchard::keys::SpendingKey) {
     let build_result = builder.build_for_pczt(rand_core::OsRng, &fee_rule).unwrap();
 
     assert_eq!(build_result.pczt_parts.version, TxVersion::V6);
+    assert_eq!(
+        u32::from(build_result.pczt_parts.expiry_height),
+        expiry_height
+    );
     let built_pczt = pczt_from_build_result(build_result, network, None, 1, 1).unwrap();
     (built_pczt, sk)
 }
@@ -1650,6 +2119,7 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
     let network = WalletNetwork::Regtest;
     let target_height = 120;
+    let expiry_height = 69_120;
     let usk = UnifiedSpendingKey::from_seed(&network, &[9; 32], zip32::AccountId::ZERO).unwrap();
     let fvk = orchard::keys::FullViewingKey::from(usk.orchard());
     let recipient_scope = orchard::keys::Scope::Internal;
@@ -1658,7 +2128,7 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
     let memo = MemoBytes::empty();
     let outputs = vec![100_000u64; 10];
     let fee_rule = ConservativeZip317FeeRule;
-    let bundle_type = orchard::builder::BundleType::Transactional {
+    let bundle_padding = BundlePadding {
         bundle_required: false,
         pad_to_minimum: Some(16),
     };
@@ -1679,9 +2149,10 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
         let merkle_path = dummy_orchard_merkle_path().unwrap();
         let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
         let anchor = merkle_path.root(cmx);
-        make_orchard_split_builder_with_type(
+        make_orchard_split_builder_with_padding(
             network,
             target_height,
+            expiry_height,
             anchor,
             &[(note, merkle_path)],
             &fvk,
@@ -1689,7 +2160,7 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
             recipient,
             &outputs,
             &memo,
-            bundle_type,
+            bundle_padding,
         )
     };
 
@@ -1703,6 +2174,10 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
         .unwrap()
         .build_for_pczt(rand_core::OsRng, &fee_rule)
         .unwrap();
+    assert_eq!(
+        u32::from(build_result.pczt_parts.expiry_height),
+        expiry_height
+    );
     assert_eq!(
         build_result
             .pczt_parts

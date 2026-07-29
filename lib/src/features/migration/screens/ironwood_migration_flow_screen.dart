@@ -6,9 +6,12 @@ import 'package:flutter/material.dart'
     show
         Colors,
         CircularProgressIndicator,
+        Dialog,
         Divider,
         LinearProgressIndicator,
-        Scaffold;
+        Scaffold,
+        showDialog;
+import 'package:flutter/services.dart' show KeyDownEvent, LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -17,6 +20,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../main.dart' show log;
 import '../../../core/config/network_config.dart';
+import '../../../core/formatting/number_format.dart';
 import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_backdrop_shell.dart';
 import '../../../core/layout/app_desktop_shell.dart';
@@ -29,7 +33,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/primitives.dart';
 import '../../../core/widgets/app_back_link.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../../core/widgets/app_carousel.dart';
 import '../../../core/widgets/app_icon.dart';
+import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../core/widgets/app_toast.dart';
@@ -46,7 +52,9 @@ import '../models/ironwood_migration_presentation.dart';
 import '../models/mobile_ironwood_migration_status_entry.dart';
 import '../providers/ironwood_migration_announcement_provider.dart';
 import '../providers/ironwood_migration_coordinator_provider.dart';
+import '../providers/ironwood_migration_privacy_lock_provider.dart';
 import '../services/ironwood_migration_service.dart';
+import '../widgets/ironwood_migration_shimmer_text.dart';
 import '../widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 
 part 'ironwood_migration_flow/models.dart';

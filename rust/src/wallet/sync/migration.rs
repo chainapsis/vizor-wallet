@@ -29,7 +29,8 @@ pub(crate) use split_plan::{
 pub(crate) use stages::{
     all_denomination_stages_confirmed, denomination_stage_chain_records,
     denomination_stage_expected_txids, denomination_stage_status, denomination_stage_status_counts,
-    denomination_stages_for_run, insert_denomination_stages_with_tx,
+    denomination_stages_for_run, expired_broadcasted_denomination_stage_count,
+    expired_unbroadcast_denomination_stage_count, insert_denomination_stages_with_tx,
     locked_denomination_stage_input_outpoints, mark_denomination_stage_broadcasted,
     mark_denomination_stage_confirmed_at, pending_raw_denomination_stages,
     promote_awaiting_denomination_stage, replace_denomination_stage_confirmation_identity,
@@ -260,6 +261,39 @@ pub(crate) struct UnbroadcastMigrationRecoveryCandidate {
     pub scheduled_height: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationStopCandidateKind {
+    DenominationStage,
+    MigrationTransaction,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationBroadcastAttemptState {
+    NotAttempted,
+    Attempted,
+    UnknownLegacy,
+}
+
+impl MigrationBroadcastAttemptState {
+    fn from_db(value: i64) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::NotAttempted),
+            1 => Ok(Self::Attempted),
+            2 => Ok(Self::UnknownLegacy),
+            _ => Err(format!("Invalid migration broadcast attempt state {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MigrationStopCandidate {
+    pub kind: MigrationStopCandidateKind,
+    pub txid_hex: String,
+    pub broadcast_height: u32,
+    pub expiry_height: u32,
+    pub attempt_state: MigrationBroadcastAttemptState,
+}
+
 pub(crate) struct PendingMigrationTotals {
     pub txids: Vec<String>,
     pub value_zatoshi: u64,
@@ -297,6 +331,52 @@ pub(crate) struct MigrationPartStatus {
     pub txid_hex: Option<String>,
     pub schedule_start_height: Option<u32>,
     pub scheduled_height: Option<u32>,
+    pub original_scheduled_height: Option<u32>,
+    pub effective_scheduled_height: Option<u32>,
+    pub mined_height: Option<u32>,
+    pub confirmation_count: u32,
+    pub confirmation_target: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationPreparationTransactionState {
+    AwaitingInputs,
+    Scheduled,
+    Broadcasted,
+    Confirming,
+    Completed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationPreparationOutputKind {
+    Migration,
+    Change,
+    Continuation,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MigrationPreparationOutputStatus {
+    /// Actual Orchard note value, including any fee reserved for its migration.
+    pub value_zatoshi: u64,
+    /// Canonical ZIP 318 value that will reach Ironwood for migration outputs.
+    pub target_value_zatoshi: Option<u64>,
+    pub kind: MigrationPreparationOutputKind,
+    pub next_round: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MigrationPreparationTransactionStatus {
+    pub stage_index: u32,
+    pub approximate_value_zatoshi: u64,
+    pub round: u32,
+    pub fee_zatoshi: u64,
+    pub planned_height: u32,
+    pub projected_height: u32,
+    pub projected_completion_height: u32,
+    pub outputs: Vec<MigrationPreparationOutputStatus>,
+    pub state: MigrationPreparationTransactionState,
+    pub scheduled_height: Option<u32>,
+    pub mined_height: Option<u32>,
     pub confirmation_count: u32,
     pub confirmation_target: u32,
 }
@@ -325,8 +405,14 @@ pub(crate) struct MigrationStatus {
     pub signing_batch_limit: u32,
     pub schedule_mean_delay_blocks: u32,
     pub schedule_max_delay_blocks: u32,
+    pub preparation_mean_delay_blocks: u32,
     /// Earliest block height at which the wallet can make more progress.
     pub next_action_height: Option<u32>,
+    /// Earliest chain height at which the wallet should retry proofs against
+    /// the next usable ZIP 318 anchor window.
+    pub next_proof_window_height: Option<u32>,
+    /// Unpromoted migration parts waiting for that proof window.
+    pub next_proof_window_part_indices: Vec<u32>,
     /// Projected height at which every migration part reaches trusted depth.
     pub estimated_completion_height: Option<u32>,
     /// Part associated with `next_action_height`, when it can be identified.
@@ -334,12 +420,15 @@ pub(crate) struct MigrationStatus {
     /// Exact migration parts the next signing operation will include.
     pub current_signing_part_indices: Vec<u32>,
     pub scheduled_broadcasts: Vec<ScheduledMigrationBroadcast>,
+    pub preparation_transactions: Vec<MigrationPreparationTransactionStatus>,
     pub parts: Vec<MigrationPartStatus>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct MigrationTimingProjection {
     next_action_height: Option<u32>,
+    next_proof_window_height: Option<u32>,
+    next_proof_window_part_indices: Vec<u32>,
     estimated_completion_height: Option<u32>,
     next_action_part_index: Option<u32>,
     schedule_order_by_part: BTreeMap<u32, u32>,
@@ -378,16 +467,45 @@ pub(crate) fn migration_status(
     ironwood_spendable: u64,
     ironwood_pending: u64,
 ) -> Result<MigrationStatus, String> {
+    migration_status_with_projection_height(
+        db_path,
+        network,
+        account_uuid,
+        orchard_spendable,
+        orchard_pending,
+        ironwood_spendable,
+        ironwood_pending,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn migration_status_with_projection_height(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    orchard_spendable: u64,
+    orchard_pending: u64,
+    ironwood_spendable: u64,
+    ironwood_pending: u64,
+    projection_scanned_height: Option<u32>,
+) -> Result<MigrationStatus, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
 
     if let Some(run) = active_run(&conn, account_uuid, network)? {
-        return status_for_run(&conn, run);
+        let current_scanned_height = projection_scanned_height
+            .map(Ok)
+            .unwrap_or_else(|| migration_projection_scanned_height(db_path, network))?;
+        return status_for_run(&conn, run, current_scanned_height);
     }
 
     let orchard_migratable = orchard_balance_can_create_migration_output(orchard_spendable)?;
     if orchard_pending == 0 && !orchard_migratable {
         if let Some(run) = latest_completed_run(&conn, account_uuid, network)? {
-            let mut status = status_for_run(&conn, run)?;
+            let current_scanned_height = projection_scanned_height
+                .map(Ok)
+                .unwrap_or_else(|| migration_projection_scanned_height(db_path, network))?;
+            let mut status = status_for_run(&conn, run, current_scanned_height)?;
             // Completed runs are receipts, not resumable work. Preserve their
             // target values for completion UI without exposing an active run.
             status.active_run_id = None;
@@ -434,12 +552,26 @@ pub(crate) fn migration_status(
             configured_timing_policy(network),
         )
         .1,
+        preparation_mean_delay_blocks: 0,
         next_action_height: None,
+        next_proof_window_height: None,
+        next_proof_window_part_indices: Vec::new(),
         estimated_completion_height: None,
         next_action_part_index: None,
         current_signing_part_indices: Vec::new(),
         scheduled_broadcasts: Vec::new(),
+        preparation_transactions: Vec::new(),
         parts: Vec::new(),
+    })
+}
+
+fn migration_projection_scanned_height(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<u32, String> {
+    super::get_sync_progress(db_path, network).and_then(|progress| {
+        u32::try_from(progress.scanned_height)
+            .map_err(|_| "Migration scanned height exceeds u32".to_string())
     })
 }
 
@@ -522,11 +654,8 @@ pub(crate) struct ActiveRun {
 fn timing_policy_for_run_with_conn(
     conn: &rusqlite::Connection,
     run_id: &str,
-    network: WalletNetwork,
+    _network: WalletNetwork,
 ) -> Result<MigrationTimingPolicy, String> {
-    if !matches!(network, WalletNetwork::Test | WalletNetwork::Regtest) {
-        return Ok(MigrationTimingPolicy::Standard);
-    }
     let value = conn
         .query_row(
             &format!("SELECT timing_policy FROM {RUNS_TABLE} WHERE run_id = ?1"),
@@ -575,8 +704,8 @@ fn adopt_timing_policy_for_active_run(
     }
 
     // This opt-in exists only for local Testnet validation. Before any child
-    // transaction is constructed, preserve the prepared notes and signatures
-    // while replacing the long standard schedule with the fast policy.
+    // transaction is constructed, preserve signed preparation transactions
+    // while replacing the long child schedule with the fast policy.
     let schedule = planned_transfer_schedule_with_policy(
         run.target_values_zatoshi.iter().copied(),
         network,
@@ -586,14 +715,11 @@ fn adopt_timing_policy_for_active_run(
     let schedule_json = serde_json::to_string(&schedule)
         .map_err(|e| format!("Encode fast Testnet migration schedule: {e}"))?;
     let now = now_ms()?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin fast Testnet migration timing adoption: {e}"))?;
-    tx.execute(
+    conn.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
              SET timing_policy = ?1, schedule_json = ?2, updated_at_ms = ?3
-             WHERE run_id = ?4 AND timing_policy = 'standard'"
+             WHERE run_id = ?4 AND timing_policy != 'fast_testnet'"
         ),
         params![
             MigrationTimingPolicy::FastTestnet.as_str(),
@@ -603,9 +729,7 @@ fn adopt_timing_policy_for_active_run(
         ],
     )
     .map_err(|e| format!("Adopt fast Testnet migration timing: {e}"))?;
-    reschedule_pending_preparation_stages_with_tx(&tx, &run.run_id, network, &mut OsRng)?;
-    tx.commit()
-        .map_err(|e| format!("Commit fast Testnet migration timing adoption: {e}"))
+    Ok(())
 }
 
 pub(crate) fn active_migration_run(
@@ -1037,9 +1161,11 @@ pub(crate) fn reconcile_wallet_locks_after_sync(
             .optional()
             .map_err(|e| format!("Read post-sync migration run: {e}"))?;
         if let Some(run) = run {
-            reconcile_denomination_confirmations(&conn, &run)?;
-            reconcile_run_confirmations(&conn, &run.run_id)?;
-            backfill_ready_migration_proof_retry_height(&conn, &run.run_id)?;
+            if !migration_phase_releases_wallet_locks(&run.phase) {
+                reconcile_denomination_confirmations(&conn, &run)?;
+                reconcile_run_confirmations(&conn, &run.run_id)?;
+                backfill_ready_migration_proof_retry_height(&conn, &run.run_id)?;
+            }
         }
     }
 
@@ -1172,15 +1298,6 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     .map_err(|e| format!("Create staged migration run: {e}"))?;
     insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
     insert_denomination_stages_with_tx(&tx, &run_id, denomination_stages, password, salt_base64)?;
-    if initial_phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
-        initialize_preparation_schedule_with_tx(
-            &tx,
-            &run_id,
-            network,
-            preparation_timing_policy,
-            &mut OsRng,
-        )?;
-    }
     insert_signed_child_pczts_with_tx(
         &tx,
         &run_id,
@@ -1321,21 +1438,11 @@ pub(crate) fn finalize_private_migration_draft(
     } else {
         PHASE_WAITING_DENOM_CONFIRMATIONS
     };
-    let preparation_timing_policy = preparation_timing_policy_for_run_with_conn(&conn, run_id)?;
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin private migration draft finalization: {e}"))?;
     insert_prepared_notes_with_tx(&tx, run_id, prepared_notes, true)?;
     insert_denomination_stages_with_tx(&tx, run_id, denomination_stages, password, salt_base64)?;
-    if initial_phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
-        initialize_preparation_schedule_with_tx(
-            &tx,
-            run_id,
-            network,
-            preparation_timing_policy,
-            &mut OsRng,
-        )?;
-    }
     insert_signed_child_pczts_with_tx(
         &tx,
         run_id,
@@ -1956,11 +2063,7 @@ fn insert_pending_txs_with_tx(
         .map_err(|e| format!("Read migration run policy: {e}"))?;
     let network = WalletNetwork::from_str(&network)
         .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
-    let timing_policy = if matches!(network, WalletNetwork::Test | WalletNetwork::Regtest) {
-        MigrationTimingPolicy::from_str(&timing_policy)?
-    } else {
-        MigrationTimingPolicy::Standard
-    };
+    let timing_policy = MigrationTimingPolicy::from_str(&timing_policy)?;
     let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
         .map_err(|e| format!("Decode migration run target values: {e}"))?;
     let schedule_json = tx
@@ -2116,8 +2219,10 @@ fn insert_pending_txs_with_tx(
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  schedule_start_height, scheduled_height, status, metadata_json)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 'scheduled', ?16)"
+                  schedule_start_height, scheduled_height, original_scheduled_height,
+                  status, metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                         ?13, ?14, ?15, ?15, 'scheduled', ?16)"
                 ),
                 params![
                     run_id,
@@ -2641,6 +2746,16 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin denomination reorg child reset: {e}"))?;
+    if migration_phase_releases_wallet_locks(
+        &tx.query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("Read migration phase before denomination reorg reset: {e}"))?,
+    ) {
+        return Ok(false);
+    }
     let mut reset_any = false;
     for denomination_txid in denomination_txids {
         let denomination_txid = denomination_txid.to_ascii_lowercase();
@@ -2716,7 +2831,12 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL,
                      proof_retry_height = NULL
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3
+                   AND phase NOT IN (
+                       '{PHASE_COMPLETE}',
+                       '{PHASE_FAILED_TERMINAL}',
+                       '{PHASE_ABANDONED}'
+                   )"
             ),
             params![PHASE_WAITING_DENOM_CONFIRMATIONS, now, run_id],
         )
@@ -2731,9 +2851,21 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
 /// canonical chain. This needs no seed, PCZT, or encryption password, so the
 /// normal status path can reconcile a reorg even after every child has been
 /// broadcast.
+/// A pending stage discovered on-chain and its remaining peers are updated in
+/// one transaction. The submission timing was not persisted, so a spaced run
+/// conservatively restarts its peer delays from the current chain tip.
 pub(crate) fn reconcile_denomination_stage_chain_state(
     db_path: &str,
     run_id: &str,
+) -> Result<(), String> {
+    reconcile_denomination_stage_chain_state_with_rng(db_path, run_id, None, &mut OsRng)
+}
+
+fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?Sized>(
+    db_path: &str,
+    run_id: &str,
+    recovery_chain_tip_height: Option<u32>,
+    rng: &mut R,
 ) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
@@ -2758,6 +2890,7 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
     let mut affected = BTreeSet::new();
     let mut invalid_stages = BTreeSet::new();
     let mut identities_to_record = BTreeMap::new();
+    let mut recovered_pending_txids = BTreeSet::new();
 
     for record in &records {
         let txid = record.expected_txid_hex.to_ascii_lowercase();
@@ -2765,10 +2898,11 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
             (DenominationStageStatus::AwaitingInputs, Some(identity)) => {
                 identities_to_record.insert(txid, identity.clone());
             }
-            (
-                DenominationStageStatus::Pending | DenominationStageStatus::Broadcasted,
-                Some(identity),
-            ) => {
+            (DenominationStageStatus::Pending, Some(identity)) => {
+                recovered_pending_txids.insert(txid.clone());
+                identities_to_record.insert(txid, identity.clone());
+            }
+            (DenominationStageStatus::Broadcasted, Some(identity)) => {
                 identities_to_record.insert(txid, identity.clone());
             }
             (DenominationStageStatus::Confirmed, None) => {
@@ -2807,7 +2941,36 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
             break;
         }
     }
+    let recovery_network = if recovered_pending_txids.is_empty()
+        || preparation_timing_policy_for_run_with_conn(&conn, run_id)?
+            == PreparationTimingPolicy::Immediate
+    {
+        None
+    } else {
+        let network = conn
+            .query_row(
+                &format!("SELECT network FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|e| format!("Read recovered denomination run network: {e}"))?;
+        let network = WalletNetwork::from_str(&network)
+            .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
+        Some(network)
+    };
     drop(conn);
+
+    let recovery_context = if let Some(network) = recovery_network {
+        let chain_tip_height = if let Some(height) = recovery_chain_tip_height {
+            height
+        } else {
+            u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+                .map_err(|_| "Migration chain tip exceeds u32".to_string())?
+        };
+        Some((network, chain_tip_height))
+    } else {
+        None
+    };
 
     if !affected.is_empty() {
         // Child cleanup comes first. If the process stops before stage state is
@@ -2818,29 +2981,92 @@ pub(crate) fn reconcile_denomination_stage_chain_state(
 
     if !invalid_stages.is_empty() || !identities_to_record.is_empty() {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin denomination chain-state reconciliation: {e}"))?;
+        if migration_phase_releases_wallet_locks(
+            &tx.query_row(
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|e| format!("Read migration phase before chain-state reconciliation: {e}"))?,
+        ) {
+            return Ok(());
+        }
+        let mut recovered_pending_stage = false;
+        for txid in &recovered_pending_txids {
+            let still_pending = tx
+                .query_row(
+                    &format!(
+                        "SELECT status = 'pending' FROM {STAGES_TABLE}
+                         WHERE run_id = ?1 AND expected_txid_hex = ?2"
+                    ),
+                    params![run_id, txid],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(|e| format!("Check recovered denomination stage state: {e}"))?;
+            recovered_pending_stage |= still_pending;
+        }
         for txid in &invalid_stages {
-            reset_denomination_stage_exact(&conn, run_id, txid)?;
+            reset_denomination_stage_exact(&tx, run_id, txid)?;
         }
         for (txid, identity) in identities_to_record {
             if invalid_stages.contains(&txid) {
                 continue;
             }
             replace_denomination_stage_confirmation_identity(
-                &conn,
+                &tx,
                 run_id,
                 &txid,
                 identity.mined_height,
                 &identity.block_hash,
             )?;
         }
+        if let (true, Some((network, chain_tip_height))) =
+            (recovered_pending_stage, recovery_context)
+        {
+            let rerandomized = rerandomize_remaining_preparation_broadcast_heights(
+                &tx,
+                run_id,
+                network,
+                chain_tip_height,
+                rng,
+            )?;
+            if rerandomized > 0 {
+                log::info!(
+                    "migration: re-randomized {rerandomized} preparation stage(s) after recovering an on-chain pending stage"
+                );
+            }
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit denomination chain-state reconciliation: {e}"))?;
     }
 
     if !affected.is_empty() {
-        mark_run_phase(db_path, run_id, PHASE_WAITING_DENOM_CONFIRMATIONS, None)?;
-        log::warn!(
-            "migration: reconciled {} denomination transaction(s) after a chain change",
-            affected.len()
-        );
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        let now = now_ms()?;
+        let transitioned = conn
+            .execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                     WHERE run_id = ?3
+                       AND phase NOT IN (
+                           '{PHASE_COMPLETE}',
+                           '{PHASE_FAILED_TERMINAL}',
+                           '{PHASE_ABANDONED}'
+                       )"
+                ),
+                params![PHASE_WAITING_DENOM_CONFIRMATIONS, now, run_id],
+            )
+            .map_err(|e| format!("Mark denomination reorg waiting for confirmations: {e}"))?;
+        if transitioned == 1 {
+            log::warn!(
+                "migration: reconciled {} denomination transaction(s) after a chain change",
+                affected.len()
+            );
+        }
     }
     Ok(())
 }
@@ -3061,6 +3287,194 @@ pub(crate) fn unbroadcast_migration_recovery_candidates(
         return Err("Migration recovery has no unconfirmed transactions".to_string());
     }
     Ok(candidates)
+}
+
+pub(crate) fn scheduled_migration_stop_candidates(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<Vec<MigrationStopCandidate>, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let (stored_account_uuid, stored_network, phase) = conn
+        .query_row(
+            &format!(
+                "SELECT account_uuid, network, phase
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params![expected_run_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read migration run before stop reconciliation: {e}"))?
+        .ok_or_else(|| format!("Migration run {expected_run_id} was not found"))?;
+    if stored_account_uuid != account_uuid || stored_network != network_name(network) {
+        return Err("Migration run does not belong to this wallet account".to_string());
+    }
+    if phase == PHASE_ABANDONED {
+        return Ok(Vec::new());
+    }
+    if matches!(phase.as_str(), PHASE_COMPLETE | PHASE_FAILED_TERMINAL) {
+        return Err(format!("Migration run is already terminal ({phase})"));
+    }
+
+    let mut pending_stmt = conn
+        .prepare_cached(&format!(
+            "SELECT txid_hex, scheduled_height, expiry_height,
+                    broadcast_attempted
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status = 'scheduled'
+             ORDER BY part_index ASC, scheduled_height ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare scheduled migration stop candidates: {e}"))?;
+    let pending_rows = pending_stmt
+        .query_map(params![expected_run_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(|e| format!("Query scheduled migration stop candidates: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read scheduled migration stop candidate: {e}"))?;
+    let mut candidates = pending_rows
+        .into_iter()
+        .map(
+            |(txid_hex, broadcast_height, expiry_height, attempt_state)| {
+                Ok(MigrationStopCandidate {
+                    kind: MigrationStopCandidateKind::MigrationTransaction,
+                    txid_hex,
+                    broadcast_height,
+                    expiry_height,
+                    attempt_state: MigrationBroadcastAttemptState::from_db(attempt_state)?,
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, String>>()?;
+    drop(pending_stmt);
+
+    let mut stage_stmt = conn
+        .prepare_cached(&format!(
+            "SELECT expected_txid_hex,
+                    max(scheduled_height, coalesce(broadcast_not_before_height, 0)),
+                    expiry_height, broadcast_attempted
+             FROM {STAGES_TABLE}
+             WHERE run_id = ?1 AND status = 'pending'
+             ORDER BY stage_index ASC"
+        ))
+        .map_err(|e| format!("Prepare denomination stop candidates: {e}"))?;
+    let stage_rows = stage_stmt
+        .query_map(params![expected_run_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(|e| format!("Query denomination stop candidates: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read denomination stop candidate: {e}"))?;
+    candidates.extend(
+        stage_rows
+            .into_iter()
+            .map(
+                |(txid_hex, broadcast_height, expiry_height, attempt_state)| {
+                    Ok(MigrationStopCandidate {
+                        kind: MigrationStopCandidateKind::DenominationStage,
+                        txid_hex,
+                        broadcast_height,
+                        expiry_height,
+                        attempt_state: MigrationBroadcastAttemptState::from_db(attempt_state)?,
+                    })
+                },
+            )
+            .collect::<Result<Vec<_>, String>>()?,
+    );
+    Ok(candidates)
+}
+
+pub(crate) fn mark_pending_broadcast_attempted(
+    db_path: &str,
+    run_id: &str,
+    txid_hex: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let updated = conn
+        .execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET broadcast_attempted = 1
+                 WHERE run_id = ?1 AND txid_hex = ?2 AND status = 'scheduled'"
+            ),
+            params![run_id, txid_hex],
+        )
+        .map_err(|e| format!("Record migration broadcast attempt: {e}"))?;
+    if updated == 1 {
+        Ok(())
+    } else {
+        Err(format!(
+            "Migration transaction {txid_hex} is no longer scheduled"
+        ))
+    }
+}
+
+pub(crate) fn mark_denomination_broadcast_attempted(
+    db_path: &str,
+    run_id: &str,
+    txid_hex: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let updated = conn
+        .execute(
+            &format!(
+                "UPDATE {STAGES_TABLE}
+                 SET broadcast_attempted = 1
+                 WHERE run_id = ?1 AND expected_txid_hex = ?2
+                   AND status = 'pending'"
+            ),
+            params![run_id, txid_hex],
+        )
+        .map_err(|e| format!("Record denomination broadcast attempt: {e}"))?;
+    if updated == 1 {
+        Ok(())
+    } else {
+        Err(format!(
+            "Denomination transaction {txid_hex} is no longer pending"
+        ))
+    }
+}
+
+pub(crate) fn clear_denomination_broadcast_attempted(
+    db_path: &str,
+    run_id: &str,
+    txid_hex: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.execute(
+        &format!(
+            "UPDATE {STAGES_TABLE}
+             SET broadcast_attempted = 0
+             WHERE run_id = ?1 AND expected_txid_hex = ?2
+               AND status = 'pending'"
+        ),
+        params![run_id, txid_hex],
+    )
+    .map_err(|e| format!("Clear rejected denomination broadcast attempt: {e}"))?;
+    Ok(())
 }
 
 pub(crate) fn due_pending_txs(
@@ -3382,7 +3796,7 @@ pub(crate) fn replace_resigned_pending_parts(
             .query_row(
                 &format!(
                     "SELECT value_zatoshi, selected_note_txid,
-                            selected_note_output_index
+                            selected_note_output_index, original_scheduled_height
                      FROM {PENDING_TXS_TABLE}
                      WHERE run_id = ?1 AND txid_hex = ?2
                        AND status = 'needs_resign'"
@@ -3393,6 +3807,7 @@ pub(crate) fn replace_resigned_pending_parts(
                         row.get::<_, u64>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, u32>(2)?,
+                        row.get::<_, Option<u32>>(3)?,
                     ))
                 },
             )
@@ -3433,6 +3848,7 @@ pub(crate) fn replace_resigned_pending_parts(
             .checked_add(i64::from(schedule_entry.block_offset).saturating_mul(1000))
             .ok_or("Replacement migration time overflow")?;
         let scheduled_height = pending.scheduled_height;
+        let original_scheduled_height = original.3;
 
         tx.execute(
             &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = ?1 AND txid_hex = ?2"),
@@ -3445,9 +3861,10 @@ pub(crate) fn replace_resigned_pending_parts(
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height, expiry_height,
                   anchor_boundary_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  schedule_start_height, scheduled_height, status, metadata_json)
+                  schedule_start_height, scheduled_height, original_scheduled_height,
+                  status, metadata_json)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                         ?13, ?14, ?15, 'scheduled', ?16)"
+                         ?13, ?14, ?15, ?16, 'scheduled', ?17)"
             ),
             params![
                 run_id,
@@ -3465,6 +3882,7 @@ pub(crate) fn replace_resigned_pending_parts(
                 scheduled_at_ms,
                 schedule_start_height,
                 scheduled_height,
+                original_scheduled_height,
                 metadata_json,
             ],
         )
@@ -3631,11 +4049,163 @@ pub(crate) fn retire_run_for_rebuild(
     reconcile_wallet_locks_for_run(db_path, network, run_id)
 }
 
+pub(crate) fn abandon_run(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let run = conn
+        .query_row(
+            &format!(
+                "SELECT account_uuid, network, phase
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params![expected_run_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read migration run before stopping: {e}"))?
+        .ok_or_else(|| format!("Migration run {expected_run_id} was not found"))?;
+    if run.0 != account_uuid || run.1 != network_name(network) {
+        return Err("Migration run does not belong to this wallet account".to_string());
+    }
+    if run.2 == PHASE_ABANDONED {
+        drop(conn);
+        reconcile_wallet_locks_for_run(db_path, network, expected_run_id)?;
+        return discard_unsubmitted_preparation_stages(db_path, expected_run_id);
+    }
+    if matches!(run.2.as_str(), PHASE_COMPLETE | PHASE_FAILED_TERMINAL) {
+        return Err(format!("Migration run is already terminal ({})", run.2));
+    }
+
+    let now = now_ms()?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin migration stop transition: {e}"))?;
+    let transitioned = tx
+        .execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+             SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+             WHERE run_id = ?4 AND phase = ?5"
+            ),
+            params![
+                PHASE_ABANDONED,
+                now,
+                "Migration stopped by the user.",
+                expected_run_id,
+                run.2
+            ],
+        )
+        .map_err(|e| format!("Mark migration stopped: {e}"))?;
+    if transitioned != 1 {
+        return Err("Migration phase changed while stopping; retry.".to_string());
+    }
+
+    // A prepared child PCZT has not reached the network. Once the run is
+    // terminal it must never be promoted by a later foreground retry.
+    tx.execute(
+        &format!("DELETE FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
+        params![expected_run_id],
+    )
+    .map_err(|e| format!("Discard unsubmitted migration proofs: {e}"))?;
+    tx.execute(
+        &format!(
+            "DELETE FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status IN ('scheduled', 'needs_resign')"
+        ),
+        params![expected_run_id],
+    )
+    .map_err(|e| format!("Discard unsubmitted migration transactions: {e}"))?;
+
+    tx.execute(
+        &format!(
+            "UPDATE {PREPARED_NOTES_TABLE}
+             SET lock_state = 'unlocked'
+             WHERE run_id = ?1"
+        ),
+        params![expected_run_id],
+    )
+    .map_err(|e| format!("Release stopped migration note locks: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit migration stop transition: {e}"))?;
+    drop(conn);
+
+    // Keep stage inputs until generic wallet locks have been released: those
+    // rows can be the only durable outpoint list for later split rounds.
+    reconcile_wallet_locks_for_run(db_path, network, expected_run_id)?;
+    discard_unsubmitted_preparation_stages(db_path, expected_run_id)
+}
+
+fn discard_unsubmitted_preparation_stages(db_path: &str, run_id: &str) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin stopped preparation cleanup: {e}"))?;
+
+    // Broadcasted/confirmed rows remain as durable audit state; the ordinary
+    // wallet scanner continues to discover their resulting notes.
+    tx.execute(
+        &format!(
+            "DELETE FROM {STAGE_INPUTS_TABLE}
+             WHERE run_id = ?1 AND stage_index IN (
+                 SELECT stage_index FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')
+             )"
+        ),
+        params![run_id],
+    )
+    .map_err(|e| format!("Discard stopped preparation inputs: {e}"))?;
+    tx.execute(
+        &format!(
+            "DELETE FROM {STAGE_OUTPUTS_TABLE}
+             WHERE run_id = ?1 AND stage_index IN (
+                 SELECT stage_index FROM {STAGES_TABLE}
+                 WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')
+             )"
+        ),
+        params![run_id],
+    )
+    .map_err(|e| format!("Discard stopped preparation outputs: {e}"))?;
+    tx.execute(
+        &format!(
+            "DELETE FROM {STAGES_TABLE}
+             WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')"
+        ),
+        params![run_id],
+    )
+    .map_err(|e| format!("Discard unsubmitted preparation transactions: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("Commit stopped preparation cleanup: {e}"))
+}
+
 pub(crate) fn reschedule_overdue_pending_txs(
     db_path: &str,
     run_id: &str,
     network: WalletNetwork,
     chain_tip_height: u32,
+) -> Result<(), String> {
+    reschedule_overdue_pending_txs_with_options(db_path, run_id, network, chain_tip_height, 0, None)
+}
+
+fn reschedule_overdue_pending_txs_with_options(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    minimum_delay_blocks: u32,
+    excluded_txid: Option<&str>,
 ) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
@@ -3654,6 +4224,9 @@ pub(crate) fn reschedule_overdue_pending_txs(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read overdue migration transaction: {e}"))?;
     drop(stmt);
+    if let Some(excluded_txid) = excluded_txid {
+        txids.retain(|(txid, _)| txid != excluded_txid);
+    }
     if txids.is_empty() {
         return Ok(());
     }
@@ -3674,7 +4247,7 @@ pub(crate) fn reschedule_overdue_pending_txs(
     let mut needs_resign = false;
     for ((txid, expiry_height), offset) in txids.into_iter().zip(offsets) {
         let scheduled_height = chain_tip_height
-            .checked_add(offset)
+            .checked_add(offset.max(minimum_delay_blocks))
             .ok_or("Migration rescheduled height overflow")?;
         if zip318_canonical_migration_expiry_height(scheduled_height)? != expiry_height {
             tx.execute(
@@ -3713,6 +4286,89 @@ pub(crate) fn reschedule_overdue_pending_txs(
     }
     tx.commit()
         .map_err(|e| format!("Commit overdue migration reschedule: {e}"))
+}
+
+/// Redraws every still-overdue scheduled transfer in this wallet after the
+/// single ZIP 318 on-open fallback transfer has been submitted.
+///
+/// Runs are collected first and then rescheduled independently because each
+/// run owns its timing policy and may cross a different canonical expiry
+/// boundary. This function intentionally spans accounts: the on-open limit is
+/// a wallet privacy invariant, not a per-account allowance.
+pub(crate) fn reschedule_wallet_overdue_pending_txs(
+    db_path: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+) -> Result<(), String> {
+    reschedule_wallet_overdue_pending_txs_with_exclusion(db_path, network, chain_tip_height, None)
+}
+
+/// Reschedules every other overdue transfer after lightwalletd accepted a
+/// transaction whose local storage update failed. The accepted transaction is
+/// left in place for storage recovery; it must not be redrawn into a new
+/// expiry bucket or treated as needing a new signature.
+pub(crate) fn reschedule_wallet_overdue_pending_txs_after_accepted(
+    db_path: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    accepted_run_id: &str,
+    accepted_txid: &str,
+) -> Result<(), String> {
+    reschedule_wallet_overdue_pending_txs_with_exclusion(
+        db_path,
+        network,
+        chain_tip_height,
+        Some((accepted_run_id, accepted_txid)),
+    )
+}
+
+fn reschedule_wallet_overdue_pending_txs_with_exclusion(
+    db_path: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    excluded: Option<(&str, &str)>,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let run_ids = {
+        let mut stmt = conn
+            .prepare_cached(&format!(
+                "SELECT DISTINCT pending.run_id
+                 FROM {PENDING_TXS_TABLE} AS pending
+                 JOIN {RUNS_TABLE} AS runs ON runs.run_id = pending.run_id
+                 WHERE pending.status = 'scheduled'
+                   AND pending.scheduled_height <= ?1
+                   AND runs.network = ?2
+                 ORDER BY pending.run_id ASC"
+            ))
+            .map_err(|e| format!("Prepare wallet overdue migration query: {e}"))?;
+        let rows = stmt
+            .query_map(params![chain_tip_height, network_name(network)], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| format!("Query wallet overdue migration runs: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Read wallet overdue migration run: {e}"))?
+    };
+    drop(conn);
+
+    for run_id in run_ids {
+        let excluded_txid = excluded.and_then(|(excluded_run_id, excluded_txid)| {
+            (run_id == excluded_run_id).then_some(excluded_txid)
+        });
+        // A zero-block redraw would still be due during the same wallet-open
+        // pass and could allow a second fallback submission. ZIP 318's
+        // one-transfer on-open rule therefore requires at least one new block.
+        reschedule_overdue_pending_txs_with_options(
+            db_path,
+            &run_id,
+            network,
+            chain_tip_height,
+            1,
+            excluded_txid,
+        )?;
+    }
+    Ok(())
 }
 
 pub(crate) fn mark_pending_broadcasted(
@@ -4298,6 +4954,19 @@ fn calculate_migration_timing_projection(
         (None, Some(proof)) => Some(proof),
         (None, None) => None,
     };
+    let mut next_proof_window_part_indices = signed_children
+        .iter()
+        .map(|child| child.part_index)
+        .collect::<Vec<_>>();
+    next_proof_window_part_indices.sort_by_key(|part_index| {
+        (
+            schedule_order_by_part
+                .get(part_index)
+                .copied()
+                .unwrap_or(u32::MAX),
+            *part_index,
+        )
+    });
 
     let projected_signed_parts = if signed_children.is_empty() {
         Vec::new()
@@ -4410,6 +5079,8 @@ fn calculate_migration_timing_projection(
 
     Ok(MigrationTimingProjection {
         next_action_height: next_action.map(|value| value.0),
+        next_proof_window_height: proof_next.map(|value| value.0),
+        next_proof_window_part_indices,
         next_action_part_index: next_action.and_then(|value| value.1),
         estimated_completion_height,
         schedule_order_by_part,
@@ -4478,7 +5149,11 @@ fn backfill_ready_migration_proof_retry_height(
     Ok(())
 }
 
-fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<MigrationStatus, String> {
+fn status_for_run(
+    conn: &rusqlite::Connection,
+    run: ActiveRun,
+    current_scanned_height: u32,
+) -> Result<MigrationStatus, String> {
     let network = conn
         .query_row(
             &format!("SELECT network FROM {RUNS_TABLE} WHERE run_id = ?1"),
@@ -4489,6 +5164,7 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
     let network = WalletNetwork::from_str(&network)
         .ok_or_else(|| format!("Unsupported migration run network: {network}"))?;
     let timing_policy = timing_policy_for_run_with_conn(conn, &run.run_id, network)?;
+    let preparation_timing_policy = preparation_timing_policy_for_run_with_conn(conn, &run.run_id)?;
     let prepared_note_count = count_for_run(conn, PREPARED_NOTES_TABLE, &run.run_id)?;
     let pending_split_stage_count = pending_split_stage_count_for_run(conn, &run.run_id)?;
     let pending_tx_count = count_for_run(conn, PENDING_TXS_TABLE, &run.run_id)?;
@@ -4511,6 +5187,13 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         .map_err(|e| format!("Read durable migration phase: {e}"))?
         .unwrap_or_else(|| run.phase.clone());
     let denomination_confirmation_target = denomination_confirmations_required();
+    let preparation_transactions = migration_preparation_transactions_for_run(
+        conn,
+        &run.run_id,
+        &run.target_values_zatoshi,
+        denomination_confirmation_target,
+        current_scanned_height,
+    )?;
     // A private-migration draft is persisted before Keystone signs its
     // denomination PCZTs. It deliberately has no staged transactions yet;
     // stage progress is only meaningful after draft finalization.
@@ -4533,13 +5216,10 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
     } else {
         0
     };
-    let can_abandon = matches!(
-        phase.as_str(),
-        PHASE_WAITING_DENOM_CONFIRMATIONS
-            | PHASE_READY_TO_MIGRATE
-            | PHASE_FAILED_RECOVERABLE
-            | PHASE_PAUSED
-    ) && pending_tx_count == 0;
+    // Stop is available for every active phase. The caller first drains native
+    // preparation/outbox work, while the Rust operation guard excludes
+    // concurrent foreground proof or broadcast work.
+    let can_abandon = true;
     let mut parts = migration_parts_for_run(
         conn,
         &run.run_id,
@@ -4603,13 +5283,258 @@ fn status_for_run(conn: &rusqlite::Connection, run: ActiveRun) -> Result<Migrati
         signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
         schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
+        preparation_mean_delay_blocks: if preparation_timing_policy
+            == PreparationTimingPolicy::Immediate
+        {
+            0
+        } else {
+            preparation_schedule_parameters(network, timing_policy).0
+        },
         next_action_height: timing_projection.next_action_height,
+        next_proof_window_height: timing_projection.next_proof_window_height,
+        next_proof_window_part_indices: timing_projection.next_proof_window_part_indices,
         estimated_completion_height: timing_projection.estimated_completion_height,
         next_action_part_index: timing_projection.next_action_part_index,
         current_signing_part_indices,
         scheduled_broadcasts,
+        preparation_transactions,
         parts,
     })
+}
+
+fn migration_preparation_transactions_for_run(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    target_values_zatoshi: &[u64],
+    confirmation_target: u32,
+    current_scanned_height: u32,
+) -> Result<Vec<MigrationPreparationTransactionStatus>, String> {
+    if !table_exists(conn, STAGES_TABLE)? {
+        return Ok(Vec::new());
+    }
+
+    let chain_records = denomination_stage_chain_records(conn, run_id)?;
+    let stage_index_by_txid = chain_records
+        .iter()
+        .map(|record| {
+            (
+                record.expected_txid_hex.to_ascii_lowercase(),
+                record.stage_index,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut round_by_stage = BTreeMap::<u32, u32>::new();
+    for record in &chain_records {
+        let parent_round = record
+            .parent_txids
+            .iter()
+            .filter_map(|txid| stage_index_by_txid.get(&txid.to_ascii_lowercase()))
+            .filter_map(|stage_index| round_by_stage.get(stage_index))
+            .copied()
+            .max();
+        round_by_stage.insert(
+            record.stage_index,
+            parent_round.map_or(1, |round| round.saturating_add(1)),
+        );
+    }
+
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT s.stage_index,
+                    s.scheduled_height,
+                    MAX(s.scheduled_height,
+                        COALESCE(s.broadcast_not_before_height, 0)),
+                    s.fee_zatoshi,
+                    COALESCE(SUM(i.value_zatoshi), 0)
+             FROM {STAGES_TABLE} s
+             LEFT JOIN {STAGE_INPUTS_TABLE} i
+               ON i.run_id = s.run_id AND i.stage_index = s.stage_index
+             WHERE s.run_id = ?1
+             GROUP BY s.stage_index, s.scheduled_height,
+                      s.broadcast_not_before_height, s.fee_zatoshi
+             ORDER BY s.stage_index ASC"
+        ))
+        .map_err(|e| format!("Prepare migration preparation schedule query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, u32>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, u64>(3)?,
+                row.get::<_, u64>(4)?,
+            ))
+        })
+        .map_err(|e| format!("Query migration preparation schedule: {e}"))?;
+
+    let stage_rows = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read migration preparation schedule: {e}"))?;
+    drop(stmt);
+
+    let planned_max_by_round =
+        stage_rows
+            .iter()
+            .fold(BTreeMap::<u32, u32>::new(), |mut result, row| {
+                let round = round_by_stage.get(&row.0).copied().unwrap_or(1);
+                result
+                    .entry(round)
+                    .and_modify(|height| *height = (*height).max(row.1))
+                    .or_insert(row.1);
+                result
+            });
+    let mut projected_completion_by_stage = BTreeMap::<u32, u32>::new();
+    let mut assigned_target_parts = BTreeSet::<u32>::new();
+    let mut transactions = Vec::new();
+    for (stage_index, planned_height, effective_height, fee_zatoshi, approximate_value_zatoshi) in
+        stage_rows
+    {
+        let chain = chain_records
+            .iter()
+            .find(|record| record.stage_index == stage_index)
+            .ok_or_else(|| {
+                format!("Migration preparation stage {stage_index} has no chain-state record")
+            })?;
+        let (part_state, confirmation_count) =
+            denomination_stage_part_state(conn, chain, confirmation_target)?;
+        let state = match chain.status {
+            DenominationStageStatus::AwaitingInputs => {
+                MigrationPreparationTransactionState::AwaitingInputs
+            }
+            DenominationStageStatus::Pending => MigrationPreparationTransactionState::Scheduled,
+            DenominationStageStatus::Broadcasted if confirmation_count == 0 => {
+                MigrationPreparationTransactionState::Broadcasted
+            }
+            DenominationStageStatus::Broadcasted | DenominationStageStatus::Confirmed => {
+                match part_state {
+                    MigrationPartState::Completed => {
+                        MigrationPreparationTransactionState::Completed
+                    }
+                    _ => MigrationPreparationTransactionState::Confirming,
+                }
+            }
+        };
+        let mined_height = match chain.confirmed_mined_height {
+            Some(height) => Some(height),
+            None => local_denomination_chain_identity(conn, &chain.expected_txid_hex)?
+                .map(|identity| identity.mined_height),
+        };
+        let round = round_by_stage.get(&stage_index).copied().unwrap_or(1);
+        let parent_projected_completion = chain
+            .parent_txids
+            .iter()
+            .filter_map(|txid| stage_index_by_txid.get(&txid.to_ascii_lowercase()))
+            .filter_map(|parent_stage| projected_completion_by_stage.get(parent_stage))
+            .copied()
+            .max();
+        let original_round_base = if round <= 1 {
+            0
+        } else {
+            planned_max_by_round
+                .get(&round.saturating_sub(1))
+                .copied()
+                .unwrap_or(0)
+                .saturating_add(confirmation_target)
+        };
+        let planned_offset = planned_height.saturating_sub(original_round_base);
+        let dependency_projection = parent_projected_completion
+            .map(|height| height.saturating_add(planned_offset))
+            .unwrap_or(planned_height);
+        // A pending stage whose operational height has passed can broadcast at
+        // the current scanned tip. Once broadcast, keep this height stable
+        // because the UI uses it to preserve transaction order; only its
+        // completion forecast should continue moving until it is mined.
+        let projected_height = effective_height.max(dependency_projection).max(
+            (state == MigrationPreparationTransactionState::Scheduled)
+                .then_some(current_scanned_height)
+                .unwrap_or(0),
+        );
+        let projected_completion_height = mined_height.map_or_else(
+            || {
+                let projected_from_schedule = projected_height.saturating_add(confirmation_target);
+                if state == MigrationPreparationTransactionState::Broadcasted {
+                    projected_from_schedule
+                        .max(current_scanned_height.saturating_add(confirmation_target))
+                } else {
+                    projected_from_schedule
+                }
+            },
+            |height| height.saturating_add(confirmation_target.saturating_sub(1)),
+        );
+        projected_completion_by_stage.insert(stage_index, projected_completion_height);
+        let outputs = chain
+            .outputs
+            .iter()
+            .map(|output| MigrationPreparationOutputStatus {
+                value_zatoshi: output.value_zatoshi,
+                target_value_zatoshi: migration_preparation_output_target_value(
+                    output,
+                    target_values_zatoshi,
+                    &mut assigned_target_parts,
+                ),
+                kind: match output.kind {
+                    DenominationStageOutputKind::Migration => {
+                        MigrationPreparationOutputKind::Migration
+                    }
+                    DenominationStageOutputKind::Change => MigrationPreparationOutputKind::Change,
+                    DenominationStageOutputKind::Continuation => {
+                        MigrationPreparationOutputKind::Continuation
+                    }
+                },
+                next_round: (output.kind == DenominationStageOutputKind::Continuation)
+                    .then_some(round.saturating_add(1)),
+            })
+            .collect();
+        transactions.push(MigrationPreparationTransactionStatus {
+            stage_index,
+            approximate_value_zatoshi,
+            round,
+            fee_zatoshi,
+            planned_height,
+            projected_height,
+            projected_completion_height,
+            outputs,
+            state,
+            scheduled_height: (state != MigrationPreparationTransactionState::AwaitingInputs
+                && effective_height > 0)
+                .then_some(effective_height),
+            mined_height,
+            confirmation_count,
+            confirmation_target,
+        });
+    }
+    Ok(transactions)
+}
+
+fn migration_preparation_output_target_value(
+    output: &DenominationStageOutputRef,
+    target_values_zatoshi: &[u64],
+    assigned_target_parts: &mut BTreeSet<u32>,
+) -> Option<u64> {
+    if output.kind != DenominationStageOutputKind::Migration {
+        return None;
+    }
+
+    let part_index = output
+        .part_index
+        .filter(|index| {
+            (*index as usize) < target_values_zatoshi.len()
+                && !assigned_target_parts.contains(index)
+        })
+        .or_else(|| {
+            target_values_zatoshi
+                .iter()
+                .enumerate()
+                .filter_map(|(index, value)| {
+                    let index = u32::try_from(index).ok()?;
+                    (!assigned_target_parts.contains(&index) && *value <= output.value_zatoshi)
+                        .then_some((index, *value))
+                })
+                .max_by_key(|(_, value)| *value)
+                .map(|(index, _)| index)
+        })?;
+    assigned_target_parts.insert(part_index);
+    target_values_zatoshi.get(part_index as usize).copied()
 }
 
 pub(crate) fn select_migration_batch_signing_part_indices(
@@ -4670,6 +5595,9 @@ fn migration_parts_for_run(
             txid_hex: None,
             schedule_start_height: None,
             scheduled_height: None,
+            original_scheduled_height: None,
+            effective_scheduled_height: None,
+            mined_height: None,
             confirmation_count: 0,
             confirmation_target,
         })
@@ -4679,7 +5607,9 @@ fn migration_parts_for_run(
         .prepare_cached(&format!(
             "SELECT part_index, txid_hex, value_zatoshi, fee_zatoshi,
                     COALESCE(schedule_start_height, target_height - 1),
-                    scheduled_height, status
+                    scheduled_height,
+                    original_scheduled_height,
+                    status
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1
              ORDER BY scheduled_height ASC, txid_hex ASC"
@@ -4694,7 +5624,8 @@ fn migration_parts_for_run(
                 row.get::<_, u64>(3)?,
                 row.get::<_, u32>(4)?,
                 row.get::<_, u32>(5)?,
-                row.get::<_, String>(6)?,
+                row.get::<_, Option<u32>>(6)?,
+                row.get::<_, String>(7)?,
             ))
         })
         .map_err(|e| format!("Query migration part statuses: {e}"))?
@@ -4709,6 +5640,7 @@ fn migration_parts_for_run(
         fee_zatoshi,
         schedule_start_height,
         scheduled_height,
+        original_scheduled_height,
         raw_status,
     ) in rows
     {
@@ -4734,14 +5666,16 @@ fn migration_parts_for_run(
             .unwrap_or(parts.len() as u32);
         assigned.insert(part_index);
 
+        let chain_identity = local_denomination_chain_identity(conn, &txid_hex)?;
+        let mined_height = chain_identity
+            .as_ref()
+            .map(|identity| identity.mined_height);
         let (state, confirmation_count) = match raw_status.as_str() {
             "scheduled" => (MigrationPartState::Scheduled, 0),
             "broadcasted" => (MigrationPartState::Migrating, 0),
             "confirmed" => {
-                let confirmation_count = match local_denomination_chain_identity(conn, &txid_hex)? {
-                    Some(identity) => {
-                        synced_orchard_confirmation_count(conn, identity.mined_height)?
-                    }
+                let confirmation_count = match mined_height {
+                    Some(mined_height) => synced_orchard_confirmation_count(conn, mined_height)?,
                     None => 0,
                 };
                 let state = if phase == PHASE_COMPLETE || confirmation_count >= confirmation_target
@@ -4766,6 +5700,9 @@ fn migration_parts_for_run(
             txid_hex: Some(txid_hex),
             schedule_start_height: Some(schedule_start_height),
             scheduled_height: Some(scheduled_height),
+            original_scheduled_height,
+            effective_scheduled_height: Some(scheduled_height),
+            mined_height,
             confirmation_count,
             confirmation_target,
         };
@@ -4801,6 +5738,9 @@ fn denomination_migration_parts_for_run(
             txid_hex: None,
             schedule_start_height: None,
             scheduled_height: None,
+            original_scheduled_height: None,
+            effective_scheduled_height: None,
+            mined_height: None,
             confirmation_count: 0,
             confirmation_target,
         })
@@ -4811,6 +5751,11 @@ fn denomination_migration_parts_for_run(
         let txid_hex = stage.expected_txid_hex.to_ascii_lowercase();
         let (state, confirmation_count) =
             denomination_stage_part_state(conn, &stage, confirmation_target)?;
+        let mined_height = match stage.confirmed_mined_height {
+            Some(mined_height) => Some(mined_height),
+            None => local_denomination_chain_identity(conn, &txid_hex)?
+                .map(|identity| identity.mined_height),
+        };
         for output in stage
             .outputs
             .iter()
@@ -4848,6 +5793,9 @@ fn denomination_migration_parts_for_run(
                 txid_hex: Some(txid_hex.clone()),
                 schedule_start_height: None,
                 scheduled_height: None,
+                original_scheduled_height: None,
+                effective_scheduled_height: None,
+                mined_height,
                 confirmation_count,
                 confirmation_target,
             };
@@ -5111,7 +6059,16 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                     &format!(
                         "UPDATE {PENDING_TXS_TABLE}
                          SET status = 'confirmed'
-                         WHERE run_id = ?1 AND txid_hex = ?2"
+                         WHERE run_id = ?1 AND txid_hex = ?2
+                           AND EXISTS (
+                               SELECT 1 FROM {RUNS_TABLE}
+                               WHERE run_id = ?1
+                                 AND phase NOT IN (
+                                     '{PHASE_COMPLETE}',
+                                     '{PHASE_FAILED_TERMINAL}',
+                                     '{PHASE_ABANDONED}'
+                                 )
+                           )"
                     ),
                     params![run_id, txid_hex],
                 )
@@ -5128,7 +6085,16 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                          SET status = 'scheduled', scheduled_at_ms = ?1,
                              schedule_start_height = target_height,
                              scheduled_height = target_height
-                         WHERE run_id = ?2 AND txid_hex = ?3"
+                         WHERE run_id = ?2 AND txid_hex = ?3
+                           AND EXISTS (
+                               SELECT 1 FROM {RUNS_TABLE}
+                               WHERE run_id = ?2
+                                 AND phase NOT IN (
+                                     '{PHASE_COMPLETE}',
+                                     '{PHASE_FAILED_TERMINAL}',
+                                     '{PHASE_ABANDONED}'
+                                 )
+                           )"
                     ),
                     params![now, run_id, txid_hex],
                 )
@@ -5144,7 +6110,12 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
             &format!(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3
+                   AND phase NOT IN (
+                       '{PHASE_COMPLETE}',
+                       '{PHASE_FAILED_TERMINAL}',
+                       '{PHASE_ABANDONED}'
+                   )"
             ),
             params![PHASE_BROADCAST_SCHEDULED, now, run_id],
         )
@@ -5164,9 +6135,14 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
             &format!(
                 "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-                 WHERE run_id = ?3"
+                 WHERE run_id = ?3 AND phase = ?4"
             ),
-            params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+            params![
+                PHASE_BROADCAST_SCHEDULED,
+                now,
+                run_id,
+                PHASE_WAITING_MIGRATION_CONFIRMATIONS
+            ],
         )
         .map_err(|e| format!("Resume incomplete migration materialization: {e}"))?;
     }
@@ -5181,9 +6157,14 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
                     &format!(
                         "UPDATE {RUNS_TABLE}
                          SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-                         WHERE run_id = ?3"
+                         WHERE run_id = ?3 AND phase = ?4"
                     ),
-                    params![PHASE_BROADCAST_SCHEDULED, now, run_id],
+                    params![
+                        PHASE_BROADCAST_SCHEDULED,
+                        now,
+                        run_id,
+                        PHASE_WAITING_MIGRATION_CONFIRMATIONS
+                    ],
                 )
                 .map_err(|e| format!("Keep incomplete migration run materializing: {e}"))?;
             }
@@ -5211,15 +6192,24 @@ fn reconcile_run_confirmations(conn: &rusqlite::Connection, run_id: &str) -> Res
             }
         }
         let now = now_ms()?;
-        conn.execute(
-            &format!(
-                "UPDATE {RUNS_TABLE}
+        let completed = conn
+            .execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
                  SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-                 WHERE run_id = ?3"
-            ),
-            params![PHASE_COMPLETE, now, run_id],
-        )
-        .map_err(|e| format!("Mark migration run complete: {e}"))?;
+                 WHERE run_id = ?3
+                   AND phase NOT IN (
+                       '{PHASE_COMPLETE}',
+                       '{PHASE_FAILED_TERMINAL}',
+                       '{PHASE_ABANDONED}'
+                   )"
+                ),
+                params![PHASE_COMPLETE, now, run_id],
+            )
+            .map_err(|e| format!("Mark migration run complete: {e}"))?;
+        if completed != 1 {
+            return Ok(());
+        }
         conn.execute(
             &format!(
                 "UPDATE {PREPARED_NOTES_TABLE}
@@ -5331,9 +6321,15 @@ fn reconcile_denomination_confirmations(
             "UPDATE {RUNS_TABLE}
              SET phase = ?1, proof_retry_height = ?2, updated_at_ms = ?3,
                  last_error = NULL
-             WHERE run_id = ?4"
+             WHERE run_id = ?4 AND phase = ?5"
         ),
-        params![PHASE_READY_TO_MIGRATE, proof_ready_height, now, run.run_id],
+        params![
+            PHASE_READY_TO_MIGRATE,
+            proof_ready_height,
+            now,
+            run.run_id,
+            PHASE_WAITING_DENOM_CONFIRMATIONS
+        ],
     )
     .map_err(|e| format!("Mark denomination notes ready: {e}"))?;
 

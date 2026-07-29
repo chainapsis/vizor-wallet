@@ -76,6 +76,26 @@ The local HTTP driver serializes all chain-mutating requests. Concurrent
 later request cannot advance the tip while an earlier request is waiting for
 lightwalletd to observe its result.
 
+## Virtual unlock full migration scenario
+
+```bash
+migration_sim_test/run_virtual_unlock_full_migration.sh
+```
+
+This runs the same full many-note migration with the debug-only
+`VIZOR_IRONWOOD_MIGRATION_PRIVACY_LOCK=true` define. It verifies that the
+virtual unlock does not appear after more than one idle minute without an
+active migration, appears after one idle minute during migration, rejects an
+incorrect password, and continues blocking interaction while the migration
+advances to completion. At completion the progress badge must disappear while
+the unlock screen remains, and only the correct wallet password may dismiss
+it.
+
+Artifacts use the
+`migration_sim_test/artifacts/virtual-unlock-full-<timestamp>*` prefix. The
+window is hidden by default; set `VIZOR_E2E_HIDDEN_WINDOW=false` to observe the
+run.
+
 If Rust migration sources changed after a macOS app was already built, run
 `fvm flutter clean` once before the scenario. This prevents Xcode from reusing
 an older embedded Rust framework.

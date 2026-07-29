@@ -127,6 +127,14 @@ fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingP
         // the checkpoint containing the denomination note so E2E can advance.
         WalletNetwork::Regtest => 0,
         WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => 1,
+        WalletNetwork::Main | WalletNetwork::Test
+            if matches!(
+                timing_policy,
+                MigrationTimingPolicy::Standard90MinutesLatestAnchor
+            ) =>
+        {
+            0
+        }
         WalletNetwork::Main | WalletNetwork::Test => 1,
     }
 }
