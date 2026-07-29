@@ -43,7 +43,9 @@ use zcash_protocol::value::{BalanceError, Zatoshis};
 
 use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync::submission_policy::{self, SeparateRelayTransaction};
+use crate::wallet::sync::{
+    separate_relay_denomination_transaction, SeparateRelayDenominationTransaction,
+};
 
 use super::{lwd, SyncError, WalletDatabase};
 
@@ -92,11 +94,10 @@ pub(super) async fn run_enhancement(
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
-                    if let Some(marked) =
-                        submission_policy::separate_relay_transaction(db_path, *txid)
-                            .map_err(SyncError::db)?
+                    if let Some(local) = separate_relay_denomination_transaction(db_path, *txid)
+                        .map_err(SyncError::db)?
                     {
-                        let tx = parse_separate_relay_transaction(*txid, &marked)?;
+                        let tx = parse_separate_relay_transaction(*txid, &local)?;
                         match req {
                             TransactionDataRequest::Enhancement(_) => {
                                 let mined_height = db.get_tx_height(*txid).map_err(|e| {
@@ -136,7 +137,7 @@ pub(super) async fn run_enhancement(
                                 let status = match separate_relay_status(
                                     mined_height,
                                     fully_scanned_height,
-                                    marked.expiry_height,
+                                    local.expiry_height,
                                 ) {
                                     SeparateRelayStatus::Mined(height) => {
                                         Some(TransactionStatus::Mined(height))
@@ -330,12 +331,12 @@ pub(super) async fn run_enhancement(
 
 fn parse_separate_relay_transaction(
     txid: TxId,
-    marked: &SeparateRelayTransaction,
+    local: &SeparateRelayDenominationTransaction,
 ) -> Result<Transaction, SyncError> {
-    let mut reader = Cursor::new(marked.raw_tx.as_slice());
+    let mut reader = Cursor::new(local.raw_tx.as_slice());
     let tx = Transaction::read(&mut reader, BranchId::Sapling)
         .map_err(|e| SyncError::parse(format!("parse separate-relay transaction {txid}: {e}")))?;
-    if reader.position() != marked.raw_tx.len() as u64 {
+    if reader.position() != local.raw_tx.len() as u64 {
         return Err(SyncError::parse(format!(
             "separate-relay transaction {txid} has trailing bytes"
         )));
@@ -345,7 +346,7 @@ fn parse_separate_relay_transaction(
             "separate-relay transaction marker does not match {txid}"
         )));
     }
-    if u32::from(tx.expiry_height()) != marked.expiry_height {
+    if u32::from(tx.expiry_height()) != local.expiry_height {
         return Err(SyncError::parse(format!(
             "separate-relay transaction {txid} has inconsistent expiry height"
         )));
@@ -669,7 +670,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn marked_get_status_never_contacts_lightwalletd() {
+    async fn separate_relay_get_status_never_contacts_lightwalletd() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_str().unwrap();
@@ -697,15 +698,30 @@ mod tests {
             rusqlite::params![txid.as_ref(), expiry_height, raw],
         )
         .unwrap();
-        drop(conn);
-        submission_policy::register_separate_relay_transaction(
-            db_path,
-            "run-1",
-            &txid.to_string(),
-            &raw,
-            expiry_height,
+        conn.execute_batch(
+            "CREATE TABLE vizor_migration_runs (
+                 run_id TEXT PRIMARY KEY,
+                 created_at_ms INTEGER NOT NULL,
+                 denomination_submission_target TEXT NOT NULL
+             );
+             CREATE TABLE vizor_migration_denomination_stages (
+                 run_id TEXT NOT NULL,
+                 expected_txid_hex TEXT NOT NULL,
+                 expiry_height INTEGER NOT NULL
+             );
+             INSERT INTO vizor_migration_runs
+                 (run_id, created_at_ms, denomination_submission_target)
+             VALUES ('run-1', 1, 'relay:https://relay.example/submit');",
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stages
+                 (run_id, expected_txid_hex, expiry_height)
+             VALUES ('run-1', ?1, ?2)",
+            rusqlite::params![txid.to_string(), expiry_height],
+        )
+        .unwrap();
+        drop(conn);
 
         let mut db = super::super::open_db(db_path, network).unwrap();
         let requests = db.transaction_data_requests().unwrap();

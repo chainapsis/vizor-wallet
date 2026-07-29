@@ -1482,7 +1482,6 @@ pub fn get_orchard_migration_private_plan(
 pub fn prepare_orchard_migration_outbox(
     db_path: String,
     lightwalletd_url: String,
-    transaction_relay_url: Option<String>,
     network: String,
     account_uuid: String,
     password: String,
@@ -1495,7 +1494,6 @@ pub fn prepare_orchard_migration_outbox(
         let result = rt.block_on(wallet_sync::IronwoodMigrationResult::prepare_outbox(
             &db_path,
             &lightwalletd_url,
-            transaction_relay_url.as_deref(),
             network,
             &account_uuid,
             password.as_slice(),
@@ -1598,7 +1596,6 @@ pub fn reconcile_orchard_migration_outbox_receipt(
 pub fn broadcast_due_orchard_migration_transactions(
     db_path: String,
     lightwalletd_url: String,
-    transaction_relay_url: Option<String>,
     network: String,
     account_uuid: String,
     password: String,
@@ -1611,7 +1608,6 @@ pub fn broadcast_due_orchard_migration_transactions(
         let r = rt.block_on(wallet_sync::broadcast_due_orchard_migration_transactions(
             &db_path,
             &lightwalletd_url,
-            transaction_relay_url.as_deref(),
             network,
             &account_uuid,
             password,
@@ -1632,7 +1628,6 @@ pub fn broadcast_due_orchard_migration_transactions(
 pub fn broadcast_one_due_orchard_migration_transaction(
     db_path: String,
     lightwalletd_url: String,
-    transaction_relay_url: Option<String>,
     network: String,
     account_uuid: String,
     password: String,
@@ -1646,7 +1641,6 @@ pub fn broadcast_one_due_orchard_migration_transaction(
             wallet_sync::broadcast_one_due_orchard_migration_transaction(
                 &db_path,
                 &lightwalletd_url,
-                transaction_relay_url.as_deref(),
                 network,
                 &account_uuid,
                 password,
@@ -1704,6 +1698,7 @@ pub fn create_or_resume_private_migration_draft(
     account_uuid: String,
     approved_schedule: Vec<MigrationScheduledTransfer>,
     space_preparation_broadcasts: bool,
+    transaction_relay_url: Option<String>,
 ) -> Result<String, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1715,6 +1710,7 @@ pub fn create_or_resume_private_migration_draft(
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),
+            transaction_relay_url.as_deref(),
         )
     })
 }

@@ -584,6 +584,7 @@ fn migration_status_does_not_recover_latest_duplicate_broadcast_terminal_failure
             &[100_000],
             &[],
             PreparationTimingPolicy::Immediate,
+            None,
         )
         .unwrap_err(),
         "Migration recovery must complete before creating another run"
@@ -826,7 +827,6 @@ fn seed_account_migration_rows(
     account_uuid: &str,
     suffix: &str,
 ) {
-    super::super::submission_policy::ensure_separate_relay_table(conn).unwrap();
     conn.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -883,20 +883,9 @@ fn seed_account_migration_rows(
         DenominationStageStatus::Pending,
         None,
     );
-    let relay_txid = [suffix.as_bytes()[0]; 32];
-    conn.execute(
-        &format!(
-            "INSERT INTO {}
-             (txid, run_id, raw, expiry_height)
-             VALUES (?1, ?2, ?3, 100)",
-            super::super::submission_policy::SEPARATE_RELAY_TABLE
-        ),
-        params![relay_txid.as_slice(), run_id, [1u8, 2, 3]],
-    )
-    .unwrap();
 }
 
-fn account_migration_tables() -> [&'static str; 8] {
+fn account_migration_tables() -> [&'static str; 7] {
     [
         RUNS_TABLE,
         PREPARED_NOTES_TABLE,
@@ -905,7 +894,6 @@ fn account_migration_tables() -> [&'static str; 8] {
         STAGES_TABLE,
         STAGE_INPUTS_TABLE,
         STAGE_OUTPUTS_TABLE,
-        super::super::submission_policy::SEPARATE_RELAY_TABLE,
     ]
 }
 
@@ -945,161 +933,21 @@ fn delete_account_migration_rows_rolls_back_with_account_transaction() {
     }
 }
 
-fn insert_submission_policy_test_run(
-    conn: &rusqlite::Connection,
-    run_id: &str,
-    route: Option<&str>,
-    relay_url: Option<&str>,
-) {
-    conn.execute(
-        &format!(
-            "INSERT INTO {RUNS_TABLE}
-             (run_id, account_uuid, network, db_fingerprint, phase,
-              created_at_ms, updated_at_ms, target_values_json,
-              denomination_submission_route, denomination_relay_url)
-             VALUES (?1, 'account-1', 'test', 'wallet.db', ?2,
-                     1, 1, '[100]', ?3, ?4)"
-        ),
-        params![run_id, PHASE_WAITING_DENOM_CONFIRMATIONS, route, relay_url],
-    )
-    .unwrap();
+#[test]
+fn invalid_denomination_submission_target_fails_closed() {
+    assert!(parse_denomination_submission_target("run-1", "relay:").is_err());
+    assert!(parse_denomination_submission_target("run-1", "invalid").is_err());
 }
 
 #[test]
-fn denomination_submission_policy_is_immutable_and_fails_closed() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let db_path = temp_dir.path().join("wallet.db");
-    let db_path = db_path.to_str().unwrap();
-    let conn = rusqlite::Connection::open(db_path).unwrap();
-    ensure_schema(&conn).unwrap();
-    insert_submission_policy_test_run(
-        &conn,
-        "relay-run",
-        Some("separate_relay"),
-        Some("https://relay.one/submit"),
+fn separate_relay_requires_expiring_denomination_transactions() {
+    let mut stage = pending_test_stage(&"11".repeat(32), vec![1, 2, 3]);
+    let relay = MigrationDenominationSubmissionPolicy::SeparateRelay(
+        "https://relay.example/submit".to_string(),
     );
-    insert_submission_policy_test_run(&conn, "lwd-run", Some("lightwalletd"), None);
-    insert_submission_policy_test_run(&conn, "unbound-run", None, None);
-    insert_submission_policy_test_run(&conn, "corrupt-run", Some("lightwalletd"), None);
-    conn.execute_batch("PRAGMA ignore_check_constraints = ON;")
-        .unwrap();
-    conn.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET denomination_submission_route = 'invalid'
-             WHERE run_id = 'corrupt-run'"
-        ),
-        [],
-    )
-    .unwrap();
-    drop(conn);
-
-    assert_eq!(
-        resolve_denomination_submission_policy(db_path, "relay-run", None).unwrap(),
-        MigrationDenominationSubmissionPolicy::SeparateRelay(
-            "https://relay.one/submit".to_string()
-        )
-    );
-    assert_eq!(
-        resolve_denomination_submission_policy(
-            db_path,
-            "relay-run",
-            Some("https://relay.two/submit")
-        )
-        .unwrap(),
-        MigrationDenominationSubmissionPolicy::SeparateRelay(
-            "https://relay.one/submit".to_string()
-        )
-    );
-    assert_eq!(
-        resolve_denomination_submission_policy(
-            db_path,
-            "lwd-run",
-            Some("https://relay.one/submit")
-        )
-        .unwrap(),
-        MigrationDenominationSubmissionPolicy::Lightwalletd
-    );
-    assert_eq!(
-        resolve_denomination_submission_policy(
-            db_path,
-            "unbound-run",
-            Some("https://relay.one/submit")
-        )
-        .unwrap(),
-        MigrationDenominationSubmissionPolicy::SeparateRelay(
-            "https://relay.one/submit".to_string()
-        )
-    );
-    assert_eq!(
-        resolve_denomination_submission_policy(db_path, "unbound-run", None).unwrap(),
-        MigrationDenominationSubmissionPolicy::SeparateRelay(
-            "https://relay.one/submit".to_string()
-        )
-    );
-    assert!(resolve_denomination_submission_policy(db_path, "corrupt-run", None).is_err());
-}
-
-fn assert_legacy_submission_schema_backfill(extra_columns: &str) {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let db_path = temp_dir.path().join("wallet.db");
-    let db_path = db_path.to_str().unwrap();
-    let conn = rusqlite::Connection::open(db_path).unwrap();
-    conn.execute_batch(&format!(
-        "CREATE TABLE {RUNS_TABLE} (
-             run_id TEXT PRIMARY KEY,
-             account_uuid TEXT NOT NULL,
-             network TEXT NOT NULL,
-             db_fingerprint TEXT NOT NULL,
-             phase TEXT NOT NULL,
-             created_at_ms INTEGER NOT NULL,
-             updated_at_ms INTEGER NOT NULL,
-             target_values_json TEXT NOT NULL DEFAULT '[]',
-             schedule_json TEXT NOT NULL DEFAULT '[]',
-             timing_policy TEXT NOT NULL DEFAULT 'standard',
-             preparation_timing_policy TEXT NOT NULL DEFAULT 'immediate',
-             proof_retry_height INTEGER,
-             signed_schedule_origin_height INTEGER,
-             last_error TEXT{extra_columns}
-         );
-         INSERT INTO {RUNS_TABLE}
-             (run_id, account_uuid, network, db_fingerprint, phase,
-              created_at_ms, updated_at_ms, target_values_json)
-         VALUES ('legacy-run', 'account-1', 'test', 'wallet.db',
-                 '{PHASE_WAITING_DENOM_CONFIRMATIONS}', 1, 1, '[100]');"
-    ))
-    .unwrap();
-    ensure_schema(&conn).unwrap();
-
-    let stored: (Option<String>, Option<String>) = conn
-        .query_row(
-            &format!(
-                "SELECT denomination_submission_route, denomination_relay_url
-                 FROM {RUNS_TABLE} WHERE run_id = 'legacy-run'"
-            ),
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(stored, (Some("lightwalletd".to_string()), None));
-    drop(conn);
-
-    assert_eq!(
-        resolve_denomination_submission_policy(
-            db_path,
-            "legacy-run",
-            Some("https://relay.one/submit")
-        )
-        .unwrap(),
-        MigrationDenominationSubmissionPolicy::Lightwalletd
-    );
-}
-
-#[test]
-fn legacy_and_partially_migrated_runs_are_backfilled_to_lightwalletd() {
-    assert_legacy_submission_schema_backfill("");
-    assert_legacy_submission_schema_backfill(", denomination_submission_route TEXT");
-    assert_legacy_submission_schema_backfill(", denomination_relay_url TEXT");
+    assert!(validate_denomination_stages_for_submission_policy(&relay, &[stage.clone()]).is_err());
+    stage.expiry_height = 1;
+    validate_denomination_stages_for_submission_policy(&relay, &[stage]).unwrap();
 }
 
 #[test]
@@ -4495,6 +4343,7 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         &target_values,
         &approved_schedule,
         PreparationTimingPolicy::Immediate,
+        Some("https://relay.one/submit"),
     )
     .unwrap();
     let resumed_run_id = create_or_resume_private_migration_draft(
@@ -4504,16 +4353,20 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         &target_values,
         &approved_schedule,
         PreparationTimingPolicy::Immediate,
+        None,
     )
     .unwrap();
     assert_eq!(resumed_run_id, run_id);
 
     let conn = rusqlite::Connection::open(&db_path).unwrap();
-    let (phase, schedule_json): (String, String) = conn
+    let (phase, schedule_json, submission_target): (String, String, String) = conn
         .query_row(
-            &format!("SELECT phase, schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            &format!(
+                "SELECT phase, schedule_json, denomination_submission_target
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
             params![run_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
     assert_eq!(phase, PHASE_AWAITING_PREPARATION);
@@ -4521,6 +4374,7 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json).unwrap(),
         approved_schedule
     );
+    assert_eq!(submission_target, "relay:https://relay.one/submit");
     drop(conn);
 
     let draft_status = migration_status_with_projection_height(
@@ -4554,6 +4408,8 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         note_version: 2,
         nullifier_hex: None,
     }];
+    let mut denomination_stage = pending_test_stage(&expected_txid, vec![1, 2, 3]);
+    denomination_stage.expiry_height = 3_000_100;
     finalize_private_migration_draft(
         &db_path,
         &run_id,
@@ -4562,8 +4418,7 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         &plan,
         &prepared_notes,
         Vec::new(),
-        vec![pending_test_stage(&expected_txid, vec![1, 2, 3])],
-        None,
+        vec![denomination_stage],
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
@@ -4604,6 +4459,7 @@ fn private_migration_draft_with_direct_notes_skips_denomination_waiting() {
         &target_values,
         &approved_schedule,
         PreparationTimingPolicy::Immediate,
+        None,
     )
     .unwrap();
     let plan = DenominationPlan {
@@ -4631,7 +4487,6 @@ fn private_migration_draft_with_direct_notes_skips_denomination_waiting() {
         &prepared_notes,
         Vec::new(),
         Vec::new(),
-        None,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )

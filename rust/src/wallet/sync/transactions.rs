@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::OptionalExtension;
 use transparent::address::TransparentAddress;
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
@@ -1640,34 +1640,15 @@ pub(crate) fn get_resubmittable_txs(
         .unchecked_transaction()
         .map_err(|e| format!("Begin resubmission snapshot: {e}"))?;
 
-    const BASE_QUERY: &str = "SELECT DISTINCT txid, raw, expiry_height \
+    const QUERY: &str = "SELECT DISTINCT txid, raw, expiry_height \
          FROM v_transactions \
          WHERE mined_height IS NULL \
            AND (expiry_height = 0 OR expiry_height > ?1) \
            AND account_balance_delta < 0 \
            AND raw IS NOT NULL";
-    const PRIVACY_QUERY: &str = "SELECT DISTINCT txid, raw, expiry_height \
-         FROM v_transactions \
-         WHERE mined_height IS NULL \
-           AND (expiry_height = 0 OR expiry_height > ?1) \
-           AND account_balance_delta < 0 \
-           AND raw IS NOT NULL \
-           AND NOT EXISTS (\
-               SELECT 1 \
-               FROM ext_vizor_separate_relay_transactions policy \
-               WHERE policy.txid = v_transactions.txid\
-           )";
-    // Keep the table check and candidate query in one snapshot. If the marker
-    // table is created concurrently, this snapshot also predates the locally
-    // stored transaction and cannot select it through the legacy query.
-    let query = if super::submission_policy::separate_relay_table_exists(&read_tx)? {
-        PRIVACY_QUERY
-    } else {
-        BASE_QUERY
-    };
 
     let mut stmt = read_tx
-        .prepare(query)
+        .prepare(QUERY)
         .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
@@ -1688,8 +1669,28 @@ pub(crate) fn get_resubmittable_txs(
         })
         .map_err(|e| format!("Query error: {e}"))?;
 
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Row error: {e}"))
+    let candidates = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {e}"))?;
+    drop(stmt);
+
+    let mut resubmittable = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let txid = TxId::from_bytes(
+            candidate
+                .txid_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| "Resubmission transaction ID must be 32 bytes".to_string())?,
+        );
+        if !super::migration::is_separate_relay_denomination_transaction(
+            &read_tx,
+            &txid.to_string(),
+        )? {
+            resubmittable.push(candidate);
+        }
+    }
+    Ok(resubmittable)
 }
 
 #[cfg(test)]
@@ -4545,17 +4546,36 @@ mod tests {
     fn resubmit_excludes_separate_relay_transactions() {
         let db = fresh_db();
         let txid = fake_txid(0x08);
+        let txid_hex = TxId::from_bytes(txid).to_string();
         let raw = fake_raw();
         insert_row(&db, &txid, Some(&raw), None, Some(1_000_100), -5_000);
 
         let conn = rusqlite::Connection::open(db.path()).unwrap();
-        super::super::submission_policy::ensure_separate_relay_table(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE vizor_migration_runs (
+                run_id TEXT PRIMARY KEY,
+                created_at_ms INTEGER NOT NULL,
+                denomination_submission_target TEXT NOT NULL
+             );
+             CREATE TABLE vizor_migration_denomination_stages (
+                run_id TEXT NOT NULL,
+                expected_txid_hex TEXT NOT NULL,
+                expiry_height INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
         conn.execute(
-            &format!(
-                "INSERT INTO {} (txid, run_id, raw, expiry_height) VALUES (?1, 'run-1', ?2, ?3)",
-                super::super::submission_policy::SEPARATE_RELAY_TABLE
-            ),
-            rusqlite::params![txid, raw, 1_000_100i64],
+            "INSERT INTO vizor_migration_runs
+                (run_id, created_at_ms, denomination_submission_target)
+             VALUES ('run-1', 1, 'relay:https://relay.example/submit')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stages
+                (run_id, expected_txid_hex, expiry_height)
+             VALUES ('run-1', ?1, 1000100)",
+            [txid_hex],
         )
         .unwrap();
         drop(conn);

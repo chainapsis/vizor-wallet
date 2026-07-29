@@ -1739,7 +1739,6 @@ ProviderContainer _container({
         ({
           required dbPath,
           required lightwalletdUrl,
-          String? transactionRelayUrl,
           required network,
           required accountUuid,
           required password,

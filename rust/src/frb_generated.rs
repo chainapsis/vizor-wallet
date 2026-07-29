@@ -198,7 +198,6 @@ fn wire__crate__api__sync__broadcast_due_orchard_migration_transactions_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
-            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
@@ -209,7 +208,6 @@ fn wire__crate__api__sync__broadcast_due_orchard_migration_transactions_impl(
                     let output_ok = crate::api::sync::broadcast_due_orchard_migration_transactions(
                         api_db_path,
                         api_lightwalletd_url,
-                        api_transaction_relay_url,
                         api_network,
                         api_account_uuid,
                         api_password,
@@ -245,7 +243,6 @@ fn wire__crate__api__sync__broadcast_one_due_orchard_migration_transaction_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
-            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
@@ -257,7 +254,6 @@ fn wire__crate__api__sync__broadcast_one_due_orchard_migration_transaction_impl(
                         crate::api::sync::broadcast_one_due_orchard_migration_transaction(
                             api_db_path,
                             api_lightwalletd_url,
-                            api_transaction_relay_url,
                             api_network,
                             api_account_uuid,
                             api_password,
@@ -936,6 +932,7 @@ fn wire__crate__api__sync__create_or_resume_private_migration_draft_impl(
             let api_approved_schedule =
                 <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(&mut deserializer);
             let api_space_preparation_broadcasts = <bool>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -945,6 +942,7 @@ fn wire__crate__api__sync__create_or_resume_private_migration_draft_impl(
                         api_account_uuid,
                         api_approved_schedule,
                         api_space_preparation_broadcasts,
+                        api_transaction_relay_url,
                     )?;
                     Ok(output_ok)
                 })())
@@ -4539,7 +4537,6 @@ fn wire__crate__api__sync__prepare_orchard_migration_outbox_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
-            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
@@ -4550,7 +4547,6 @@ fn wire__crate__api__sync__prepare_orchard_migration_outbox_impl(
                     let output_ok = crate::api::sync::prepare_orchard_migration_outbox(
                         api_db_path,
                         api_lightwalletd_url,
-                        api_transaction_relay_url,
                         api_network,
                         api_account_uuid,
                         api_password,

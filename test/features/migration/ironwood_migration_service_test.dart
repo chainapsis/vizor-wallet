@@ -1387,7 +1387,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -1556,7 +1555,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -1632,7 +1630,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -2202,7 +2199,6 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
-            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -2250,7 +2246,6 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
-            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -2307,7 +2302,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -2592,6 +2586,7 @@ void main() {
         activeRunId: 'draft-run-1',
       );
       var createCount = 0;
+      String? seenRelayUrl;
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus:
@@ -2605,6 +2600,7 @@ void main() {
         ),
         backgroundCredentialStore: store,
         getEndpoint: _testEndpoint,
+        getTransactionRelayUrl: () => 'https://relay.example/submit',
         isMobile: () => true,
         isIOS: () => true,
         listMigrationOutboxReceipts: () async => const [],
@@ -2614,8 +2610,10 @@ void main() {
               required network,
               required accountUuid,
               required approvedSchedule,
+              String? transactionRelayUrl,
             }) async {
               createCount += 1;
+              seenRelayUrl = transactionRelayUrl;
               return 'draft-run-1';
             },
       );
@@ -2627,6 +2625,7 @@ void main() {
 
       expect(runId, 'draft-run-1');
       expect(createCount, 1);
+      expect(seenRelayUrl, 'https://relay.example/submit');
       final manifest = await store.read(
         network: 'test',
         accountUuid: 'account-1',
@@ -2979,7 +2978,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -3677,7 +3675,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -3770,7 +3767,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -3851,7 +3847,6 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
-            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -3912,7 +3907,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -3981,7 +3975,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -4065,7 +4058,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -4225,7 +4217,6 @@ void main() {
               ({
                 required dbPath,
                 required lightwalletdUrl,
-                transactionRelayUrl,
                 required network,
                 required accountUuid,
                 required password,
@@ -4307,7 +4298,6 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
-            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -4402,7 +4392,6 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -4459,7 +4448,6 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
-            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -4480,7 +4468,6 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
-            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -4734,7 +4721,6 @@ IronwoodMigrationService _notificationAuthorizationService({
         ({
           required dbPath,
           required lightwalletdUrl,
-          transactionRelayUrl,
           required network,
           required accountUuid,
           required password,

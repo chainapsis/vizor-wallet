@@ -433,7 +433,6 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
 Future<IronwoodMigrationResult> prepareOrchardMigrationOutbox({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -441,7 +440,6 @@ Future<IronwoodMigrationResult> prepareOrchardMigrationOutbox({
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationOutbox(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
-  transactionRelayUrl: transactionRelayUrl,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -489,7 +487,6 @@ Future<void> reconcileOrchardMigrationOutboxReceipt({
 Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -497,7 +494,6 @@ Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
 }) => RustLib.instance.api.crateApiSyncBroadcastDueOrchardMigrationTransactions(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
-  transactionRelayUrl: transactionRelayUrl,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -507,7 +503,6 @@ Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
 Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -516,7 +511,6 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
     RustLib.instance.api.crateApiSyncBroadcastOneDueOrchardMigrationTransaction(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
-      transactionRelayUrl: transactionRelayUrl,
       network: network,
       accountUuid: accountUuid,
       password: password,
@@ -544,12 +538,14 @@ Future<String> createOrResumePrivateMigrationDraft({
   required String accountUuid,
   required List<MigrationScheduledTransfer> approvedSchedule,
   required bool spacePreparationBroadcasts,
+  String? transactionRelayUrl,
 }) => RustLib.instance.api.crateApiSyncCreateOrResumePrivateMigrationDraft(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: spacePreparationBroadcasts,
+  transactionRelayUrl: transactionRelayUrl,
 );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({

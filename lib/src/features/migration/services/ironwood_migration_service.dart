@@ -242,7 +242,6 @@ typedef IronwoodMigrationDueBroadcaster =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
       required String lightwalletdUrl,
-      String? transactionRelayUrl,
       required String network,
       required String accountUuid,
       required String password,
@@ -406,6 +405,7 @@ typedef IronwoodMigrationPrivateDraftCreator =
       required String network,
       required String accountUuid,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+      String? transactionRelayUrl,
     });
 typedef IronwoodMigrationKeystoneDenominationCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
@@ -576,7 +576,6 @@ _defaultCompleteKeystoneSingleQrMigration({
 Future<rust_sync.IronwoodMigrationResult> _defaultBroadcastDueMigration({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -584,7 +583,6 @@ Future<rust_sync.IronwoodMigrationResult> _defaultBroadcastDueMigration({
 }) => rust_sync.broadcastOneDueOrchardMigrationTransaction(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
-  transactionRelayUrl: transactionRelayUrl,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -594,7 +592,6 @@ Future<rust_sync.IronwoodMigrationResult> _defaultBroadcastDueMigration({
 Future<rust_sync.IronwoodMigrationResult> _defaultPrepareMigrationOutbox({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -602,7 +599,6 @@ Future<rust_sync.IronwoodMigrationResult> _defaultPrepareMigrationOutbox({
 }) => rust_sync.prepareOrchardMigrationOutbox(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
-  transactionRelayUrl: transactionRelayUrl,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -614,12 +610,14 @@ Future<String> _defaultCreatePrivateMigrationDraft({
   required String network,
   required String accountUuid,
   required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  String? transactionRelayUrl,
 }) => rust_sync.createOrResumePrivateMigrationDraft(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+  transactionRelayUrl: transactionRelayUrl,
 );
 
 class IronwoodMigrationService {
@@ -1231,12 +1229,12 @@ class IronwoodMigrationService {
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
+    final transactionRelayUrl = getTransactionRelayUrl();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
 
     if (isMacOS()) {
@@ -1246,7 +1244,7 @@ class IronwoodMigrationService {
         operation: (credential) => startMacosSoftwareMigration(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          transactionRelayUrl: context.transactionRelayUrl,
+          transactionRelayUrl: transactionRelayUrl,
           network: endpoint.networkName,
           accountUuid: accountUuid,
           password: credential.password,
@@ -1271,7 +1269,7 @@ class IronwoodMigrationService {
           resultFuture = startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            transactionRelayUrl: context.transactionRelayUrl,
+            transactionRelayUrl: transactionRelayUrl,
             network: endpoint.networkName,
             accountUuid: accountUuid,
             mnemonicBytes: mnemonicBytes,
@@ -1302,7 +1300,6 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
 
     try {
@@ -1346,7 +1343,6 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
 
     final rust_sync.IronwoodMigrationResult broadcastResult;
@@ -1361,7 +1357,6 @@ class IronwoodMigrationService {
         operation: (credential) => prepareMigrationOutbox(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          transactionRelayUrl: context.transactionRelayUrl,
           network: endpoint.networkName,
           accountUuid: accountUuid,
           password: credential.password,
@@ -1375,7 +1370,6 @@ class IronwoodMigrationService {
         operation: (credential) => broadcastDueMigration(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          transactionRelayUrl: context.transactionRelayUrl,
           network: endpoint.networkName,
           accountUuid: accountUuid,
           password: credential.password,
@@ -1409,7 +1403,6 @@ class IronwoodMigrationService {
         operation: (credential) => startMacosSoftwareMigration(
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          transactionRelayUrl: context.transactionRelayUrl,
           network: endpoint.networkName,
           accountUuid: accountUuid,
           password: credential.password,
@@ -1431,7 +1424,6 @@ class IronwoodMigrationService {
           return startSoftwareMigration(
             dbPath: dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            transactionRelayUrl: context.transactionRelayUrl,
             network: endpoint.networkName,
             accountUuid: accountUuid,
             mnemonicBytes: mnemonicBytes,
@@ -1458,7 +1450,6 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
     return operationRegistry.run(
       network: context.network,
@@ -1526,7 +1517,6 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
 
     await operationRegistry.run(
@@ -1671,7 +1661,6 @@ class IronwoodMigrationService {
             accountUuid: context.accountUuid,
             dbPath: context.dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-            transactionRelayUrl: context.transactionRelayUrl,
           );
           final credential = _MigrationCredential(
             password: manifest.credentialHex,
@@ -1684,7 +1673,7 @@ class IronwoodMigrationService {
             await startSoftwareMigration(
               dbPath: context.dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              transactionRelayUrl: context.transactionRelayUrl,
+              transactionRelayUrl: getTransactionRelayUrl(),
               network: context.network,
               accountUuid: context.accountUuid,
               mnemonicBytes: mnemonicBytes,
@@ -1816,7 +1805,6 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
     return _runCredentialOperation(
       context: context,
@@ -1827,6 +1815,7 @@ class IronwoodMigrationService {
         network: endpoint.networkName,
         accountUuid: accountUuid,
         approvedSchedule: approvedSchedule,
+        transactionRelayUrl: getTransactionRelayUrl(),
       ),
     );
   }
@@ -1844,7 +1833,6 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
 
     return _runCredentialOperation(
@@ -1854,7 +1842,7 @@ class IronwoodMigrationService {
       operation: (credential) => completeKeystoneSingleQrMigration(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        transactionRelayUrl: context.transactionRelayUrl,
+        transactionRelayUrl: getTransactionRelayUrl(),
         network: endpoint.networkName,
         accountUuid: accountUuid,
         requestId: requestId,
@@ -1879,7 +1867,6 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
 
     return _runCredentialOperation(
@@ -1889,7 +1876,7 @@ class IronwoodMigrationService {
       operation: (credential) => completeKeystoneDenominationMigration(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        transactionRelayUrl: context.transactionRelayUrl,
+        transactionRelayUrl: getTransactionRelayUrl(),
         network: endpoint.networkName,
         accountUuid: accountUuid,
         requestId: requestId,
@@ -1929,7 +1916,6 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      transactionRelayUrl: getTransactionRelayUrl(),
     );
 
     return _runCredentialOperation(
@@ -2078,7 +2064,6 @@ class IronwoodMigrationService {
           accountUuid: context.accountUuid,
           dbPath: context.dbPath,
           lightwalletdUrl: context.lightwalletdUrl!,
-          transactionRelayUrl: context.transactionRelayUrl,
         );
       }
       if (manifest == null) {
@@ -2113,7 +2098,6 @@ class IronwoodMigrationService {
       accountUuid: context.accountUuid,
       dbPath: context.dbPath,
       lightwalletdUrl: context.lightwalletdUrl!,
-      transactionRelayUrl: context.transactionRelayUrl,
     );
     return _MigrationCredential(
       password: manifest.credentialHex,
@@ -2280,7 +2264,6 @@ class IronwoodMigrationService {
         network: context.network,
         accountUuid: context.accountUuid,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        transactionRelayUrl: getTransactionRelayUrl(),
       );
     } catch (_) {
       return context;
@@ -2401,7 +2384,6 @@ class IronwoodMigrationService {
       await prepareMigrationOutbox(
         dbPath: context.dbPath,
         lightwalletdUrl: lightwalletdUrl,
-        transactionRelayUrl: context.transactionRelayUrl,
         network: context.network,
         accountUuid: context.accountUuid,
         password: credential.password,
@@ -2979,14 +2961,12 @@ class _MigrationCredentialContext {
     required this.network,
     required this.accountUuid,
     this.lightwalletdUrl,
-    this.transactionRelayUrl,
   });
 
   final String dbPath;
   final String network;
   final String accountUuid;
   final String? lightwalletdUrl;
-  final String? transactionRelayUrl;
 }
 
 String? _fileName(String path) {

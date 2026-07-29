@@ -135,7 +135,6 @@ class _FailingBindCredentialStore
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
-    String? transactionRelayUrl,
   }) async {
     _manifest = _manifestFor(null);
     return _manifest;
@@ -940,6 +939,7 @@ IronwoodMigrationService _migrationService({
           required network,
           required accountUuid,
           required approvedSchedule,
+          String? transactionRelayUrl,
         }) =>
             onCreatePrivateDraft?.call(accountUuid, approvedSchedule) ??
             Future.value('private-draft-run'),
@@ -955,7 +955,6 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
-          String? transactionRelayUrl,
           required network,
           required accountUuid,
           required password,

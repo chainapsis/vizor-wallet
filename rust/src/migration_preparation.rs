@@ -262,7 +262,6 @@ pub fn inspect_proof_readiness(
 pub fn advance(
     db_path: &str,
     lightwalletd_url: &str,
-    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     expected_run_id: &str,
@@ -280,7 +279,6 @@ pub fn advance(
         .block_on(sync::advance_orchard_migration_preparation_for_run(
             db_path,
             lightwalletd_url,
-            transaction_relay_url,
             network,
             account_uuid,
             expected_run_id,
