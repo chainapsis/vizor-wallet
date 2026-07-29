@@ -112,7 +112,10 @@ pub fn start_full_sync(
             })
             .is_err()
         {
-            log::warn!("sync: StreamSink closed, progress not delivered");
+            log::warn!(
+                "[{}] sync: StreamSink closed, progress not delivered",
+                sync_engine::elapsed(),
+            );
         }
     });
 
@@ -120,7 +123,10 @@ pub fn start_full_sync(
     // detached. Forward terminal errors through the stream it actually reads.
     if let Err(error) = result {
         if sink.add_error(error.clone()).is_err() {
-            log::warn!("sync: StreamSink closed before error delivery: {error}");
+            log::warn!(
+                "[{}] sync: StreamSink closed before error delivery: {error}",
+                sync_engine::elapsed(),
+            );
         }
     }
 

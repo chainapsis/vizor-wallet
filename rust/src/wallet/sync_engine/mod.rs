@@ -119,7 +119,7 @@ const ANCHOR_ROOT_REPAIR_REWIND_DISTANCES: [u32; 3] = [100, 1000, 10_000];
 /// Sync-scoped elapsed time reference. Set at sync start.
 static SYNC_START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 
-fn elapsed() -> String {
+pub(crate) fn elapsed() -> String {
     SYNC_START
         .lock()
         .ok()
