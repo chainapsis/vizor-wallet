@@ -1372,6 +1372,50 @@ class RunnerTests: XCTestCase {
     XCTAssertFalse(migrationPreparationStateNeedsForegroundNotification(4))
   }
 
+  func testForegroundRecoveryNotificationFallsBackWhenInspectionFails() {
+    let scope = "test:account-a:run-1"
+
+    XCTAssertEqual(
+      migrationPreparationForegroundRecoveryNotificationEvent(
+        scope: scope,
+        preparationState: nil
+      ),
+      MigrationPreparationNotificationEvent(
+        scope: scope,
+        kind: .needsForegroundRecovery,
+        fingerprint: "foreground-preparation-inspection-failed"
+      )
+    )
+  }
+
+  func testForegroundRecoveryNotificationUsesTheInspectedState() {
+    let scope = "test:account-a:run-1"
+
+    XCTAssertEqual(
+      migrationPreparationForegroundRecoveryNotificationEvent(
+        scope: scope,
+        preparationState: 5
+      ),
+      MigrationPreparationNotificationEvent(
+        scope: scope,
+        kind: .needsForegroundRecovery,
+        fingerprint: "foreground-preparation-required:state-5"
+      )
+    )
+    XCTAssertNil(
+      migrationPreparationForegroundRecoveryNotificationEvent(
+        scope: scope,
+        preparationState: 0
+      )
+    )
+    XCTAssertNil(
+      migrationPreparationForegroundRecoveryNotificationEvent(
+        scope: scope,
+        preparationState: 4
+      )
+    )
+  }
+
   func testMigrationPreparationContinuedTaskTracksOnlyDenominationConfirmations() {
     XCTAssertEqual(
       migrationPreparationContinuedTaskDisposition(.continuedProcessing),
