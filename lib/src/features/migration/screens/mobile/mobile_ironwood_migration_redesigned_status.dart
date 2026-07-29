@@ -91,14 +91,13 @@ class _MobileMigrationRedesignedStatusState
     super.didUpdateWidget(oldWidget);
     final enteredAwaitingPreparation =
         oldWidget.status.phase != kIronwoodMigrationAwaitingPreparationPhase &&
-        widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase;
+            widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase;
     if (oldWidget.status.activeRunId != widget.status.activeRunId ||
         enteredAwaitingPreparation) {
       _softwarePreparationResumeAttempted = false;
       _softwarePreparationResumeError = null;
     }
-    final completedPreparation =
-        oldWidget.status.phase ==
+    final completedPreparation = oldWidget.status.phase ==
             kIronwoodMigrationWaitingDenomConfirmationsPhase &&
         widget.status.phase != kIronwoodMigrationWaitingDenomConfirmationsPhase;
     if (completedPreparation) {
@@ -339,9 +338,8 @@ class _MobileMigrationRedesignedStatusState
       return;
     }
     if (!mounted) return;
-    final retryError = ref
-        .read(ironwoodMigrationCoordinatorProvider)
-        .errors[accountUuid];
+    final retryError =
+        ref.read(ironwoodMigrationCoordinatorProvider).errors[accountUuid];
     if (retryError != null) {
       setState(
         () => _preparationRuntimeState =
@@ -408,29 +406,33 @@ class _MobileMigrationRedesignedStatusState
     });
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
-    final coordinatorError = accountUuid == null
-        ? null
-        : coordinator.errors[accountUuid];
-    final needsCredentialRecovery =
-        accountUuid != null &&
+    final coordinatorError =
+        accountUuid == null ? null : coordinator.errors[accountUuid];
+    final needsCredentialRecovery = accountUuid != null &&
         ironwoodMigrationNeedsCredentialRecovery(coordinatorError);
     final needsHardwareCredentialAttention =
         needsCredentialRecovery && widget.isHardware;
     final needsSoftwareCredentialRecovery =
         needsCredentialRecovery && !widget.isHardware;
-    final recoveryInProgress =
-        accountUuid != null &&
+    final recoveryInProgress = accountUuid != null &&
         coordinator.advancingAccounts.contains(accountUuid);
-    final hasForegroundPermit =
-        accountUuid != null &&
+    final hasForegroundPermit = accountUuid != null &&
         coordinator.foregroundProgressPermits.contains(accountUuid);
-    final hasChildProofBatchPermit =
-        accountUuid != null &&
+    final hasChildProofBatchPermit = accountUuid != null &&
         coordinator.childProofBatchPermits.contains(accountUuid);
-    final actionInProgress =
-        _actionRunning ||
+    final actionInProgress = _actionRunning ||
         (accountUuid != null &&
             coordinator.advancingAccounts.contains(accountUuid));
+    void viewMigrationSchedule() {
+      context.push('/migration/private/schedule');
+    }
+
+    void viewPreparationSchedule() {
+      context.push('/migration/private/preparation-schedule');
+    }
+
+    final leftToMigrateText = _leftToMigrateText(widget.status);
+    final completionEstimateText = _completionEstimateText(widget.status);
     _recordVisibleAttention(accountUuid);
 
     if (widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase ||
@@ -447,17 +449,19 @@ class _MobileMigrationRedesignedStatusState
             ? _keystonePreparationSignatureMessage
             : _softwarePreparationResumeError,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewPreparationSchedule,
         onContinue: accountUuid == null
             ? null
             : widget.isHardware
-            ? () =>
-                  context.push('/migration/private/keystone/denominations/sign')
-            : softwareResumeFailed
-            ? () {
-                _softwarePreparationResumeAttempted = false;
-                unawaited(_resumeSoftwarePreparation());
-              }
-            : null,
+                ? () => context.push(
+                      '/migration/private/keystone/denominations/sign',
+                    )
+                : softwareResumeFailed
+                    ? () {
+                        _softwarePreparationResumeAttempted = false;
+                        unawaited(_resumeSoftwarePreparation());
+                      }
+                    : null,
       );
     }
 
@@ -469,17 +473,21 @@ class _MobileMigrationRedesignedStatusState
         return _MigrationPreparationPreview(
           state: _MigrationPreparationState.syncing,
           onBack: () => context.go('/home'),
+          onViewSchedule: viewPreparationSchedule,
         );
       }
       return _MigrationProgressPreview(
         state: _MigrationProgressState.syncing,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
+        leftToMigrateText: leftToMigrateText,
+        completionEstimateText: completionEstimateText,
       );
     }
 
@@ -490,6 +498,7 @@ class _MobileMigrationRedesignedStatusState
         state: _MigrationPreparationState.paused,
         isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewPreparationSchedule,
         onContinue: accountUuid == null || _actionRunning
             ? null
             : () => unawaited(_continuePreparation(accountUuid)),
@@ -501,6 +510,7 @@ class _MobileMigrationRedesignedStatusState
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
@@ -511,44 +521,51 @@ class _MobileMigrationRedesignedStatusState
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
+        leftToMigrateText: leftToMigrateText,
+        completionEstimateText: completionEstimateText,
+        nextActionPresentation: _nextMigrationPresentation(
+          widget.status,
+          requiresInput: true,
+        ),
         statusValueOverride: needsHardwareCredentialAttention
             ? 'Keystone account required'
             : null,
         actionMessage: needsHardwareCredentialAttention
             ? 'Reconnect or re-import your Keystone account to continue this '
-                  'migration.'
+                'migration.'
             : needsSoftwareCredentialRecovery
-            ? 'Your migration credentials need to be restored before '
-                  'continuing.'
-            : "Couldn't continue this migration. Try again.",
+                ? 'Your migration credentials need to be restored before '
+                    'continuing.'
+                : "Couldn't continue this migration. Try again.",
         actionLabel: needsHardwareCredentialAttention
             ? 'Back to home'
             : needsSoftwareCredentialRecovery
-            ? recoveryInProgress
-                  ? 'Recovering...'
-                  : 'Recover'
-            : _actionRunning
-            ? 'Retrying...'
-            : 'Retry',
+                ? recoveryInProgress
+                    ? 'Recovering...'
+                    : 'Recover'
+                : _actionRunning
+                    ? 'Retrying...'
+                    : 'Retry',
         onAction: accountUuid == null || recoveryInProgress || _actionRunning
             ? null
             : needsHardwareCredentialAttention
-            ? () => context.go('/home')
-            : needsSoftwareCredentialRecovery
-            ? () => unawaited(_confirmRecovery(accountUuid))
-            : () => unawaited(_retryAfterError(accountUuid)),
+                ? () => context.go('/home')
+                : needsSoftwareCredentialRecovery
+                    ? () => unawaited(_confirmRecovery(accountUuid))
+                    : () => unawaited(_retryAfterError(accountUuid)),
       );
     }
 
     final durableActionPhase =
         widget.status.phase == kIronwoodMigrationPausedPhase ||
-        widget.status.phase == kIronwoodMigrationFailedRecoverablePhase;
+            widget.status.phase == kIronwoodMigrationFailedRecoverablePhase;
     if (durableActionPhase) {
       final batchProgress = _batchProgress(widget.status);
       final paused = widget.status.phase == kIronwoodMigrationPausedPhase;
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
@@ -559,14 +576,20 @@ class _MobileMigrationRedesignedStatusState
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
+        leftToMigrateText: leftToMigrateText,
+        completionEstimateText: completionEstimateText,
+        nextActionPresentation: _nextMigrationPresentation(
+          widget.status,
+          requiresInput: true,
+        ),
         actionMessage: widget.status.message,
         actionLabel: _actionRunning
             ? paused
-                  ? 'Resuming...'
-                  : 'Retrying...'
+                ? 'Resuming...'
+                : 'Retrying...'
             : paused
-            ? 'Resume'
-            : 'Retry',
+                ? 'Resume'
+                : 'Retry',
         onAction: accountUuid == null || _actionRunning
             ? null
             : () => unawaited(_retryAfterError(accountUuid)),
@@ -575,8 +598,7 @@ class _MobileMigrationRedesignedStatusState
 
     if (widget.status.phase ==
         kIronwoodMigrationWaitingDenomConfirmationsPhase) {
-      final needsManualResume =
-          !hasForegroundPermit &&
+      final needsManualResume = !hasForegroundPermit &&
           !_preparationRuntimeState.hasAutomaticBackgroundWork &&
           _preparationRuntimeState !=
               IronwoodMigrationPreparationRuntimeState
@@ -587,6 +609,7 @@ class _MobileMigrationRedesignedStatusState
             : _MigrationPreparationState.active,
         isKeystone: widget.isHardware,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewPreparationSchedule,
         onContinue: !needsManualResume || accountUuid == null
             ? null
             : () => unawaited(_continuePreparation(accountUuid)),
@@ -614,8 +637,7 @@ class _MobileMigrationRedesignedStatusState
     final batchNumber = batchProgress.currentBatchNumber;
     final signingAllKeystoneTransactions =
         widget.isHardware && _isInitialKeystoneSigning(widget.status);
-    final resigningKeystoneTransactions =
-        widget.isHardware &&
+    final resigningKeystoneTransactions = widget.isHardware &&
         widget.status.parts.any(
           (part) => part.state == rust_sync.MigrationPartState.needsInput,
         );
@@ -624,6 +646,7 @@ class _MobileMigrationRedesignedStatusState
       showPreparationCompleteModal: _showPreparationComplete,
       onPreparationCompleteDone: () => unawaited(_dismissPreparationComplete()),
       onBack: actionInProgress ? null : () => context.go('/home'),
+      onViewSchedule: viewMigrationSchedule,
       completedParts: _completedParts(widget.status),
       totalParts: _totalParts(widget.status),
       segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
@@ -635,6 +658,12 @@ class _MobileMigrationRedesignedStatusState
       migratedAmountText: _migratedAmountText(widget.status),
       totalAmountText: _totalAmountText(widget.status),
       availableAmountText: _availableAmountText(accountUuid),
+      leftToMigrateText: leftToMigrateText,
+      completionEstimateText: completionEstimateText,
+      nextActionPresentation: _nextMigrationPresentation(
+        widget.status,
+        requiresInput: state == _MigrationProgressState.needsInput,
+      ),
       nextActionText: nextActionText,
       actionLabel: _requiredActionLabel(
         widget.status,
@@ -645,18 +674,18 @@ class _MobileMigrationRedesignedStatusState
       actionBatchLabel: signingAllKeystoneTransactions
           ? 'All transactions'
           : resigningKeystoneTransactions
-          ? 'Transactions needing signature'
-          : 'Batch #$batchNumber',
+              ? 'Transactions needing signature'
+              : 'Batch #$batchNumber',
       actionBatchValue: signingAllKeystoneTransactions
           ? _allMigrationActionValueText(widget.status)
           : resigningKeystoneTransactions
-          ? _needsInputActionValueText(widget.status)
-          : batchProgress.currentBatchParts.isEmpty
-          ? null
-          : _actionBatchValueText(
-              widget.status,
-              batchProgress.currentBatchParts,
-            ),
+              ? _needsInputActionValueText(widget.status)
+              : batchProgress.currentBatchParts.isEmpty
+                  ? null
+                  : _actionBatchValueText(
+                      widget.status,
+                      batchProgress.currentBatchParts,
+                    ),
       actionRunning: _actionRunning,
       onAction: accountUuid == null || _actionRunning
           ? null
@@ -676,7 +705,7 @@ class _MobileMigrationRedesignedStatusState
     }
     final confirming =
         status.phase == kIronwoodMigrationWaitingConfirmationsPhase ||
-        status.broadcastedTxCount > status.confirmedTxCount;
+            status.broadcastedTxCount > status.confirmedTxCount;
     if (confirming) return _MigrationProgressState.confirming;
     final broadcasting = status.phase == kIronwoodMigrationBroadcastingPhase;
     if (broadcasting) return _MigrationProgressState.broadcasting;
@@ -896,6 +925,33 @@ class _MobileMigrationRedesignedStatusState
     );
   }
 
+  MigrationNextActionPresentation _nextMigrationPresentation(
+    rust_sync.MigrationStatus status, {
+    required bool requiresInput,
+  }) {
+    return migrationNextActionPresentation(
+      status: status,
+      currentHeight: _currentHeight(),
+      requiresInput: requiresInput,
+      waitingForAnchor: status.phase == kIronwoodMigrationReadyToMigratePhase &&
+          status.proofReady == false,
+    );
+  }
+
+  String _leftToMigrateText(rust_sync.MigrationStatus status) {
+    final total = migrationTargetTotal(status);
+    final completed = migrationCompletedValue(status);
+    final remaining = total > completed ? total - completed : BigInt.zero;
+    return '${_compactZec(remaining)} ZEC';
+  }
+
+  String _completionEstimateText(rust_sync.MigrationStatus status) {
+    return migrationApproximateCompletionTimingLabel(
+      status,
+      currentHeight: _currentHeight(),
+    );
+  }
+
   /// Records that this completed run has been presented, so home stops routing
   /// back here. Deliberately keyed to the screen actually rendering rather than
   /// to the navigation that brought the user here: a launch that dies before
@@ -927,6 +983,10 @@ class _MobileMigrationRedesignedStatusState
   }
 
   int _completedParts(rust_sync.MigrationStatus status) {
+    if (status.phase == kIronwoodMigrationReadyToMigratePhase &&
+        !migrationHasTransferProgress(status)) {
+      return 0;
+    }
     if (status.parts.isNotEmpty) {
       return status.parts
           .where((part) => part.state == rust_sync.MigrationPartState.completed)
@@ -951,11 +1011,9 @@ class _MobileMigrationRedesignedStatusState
     };
     final partOrder = _migrationRingPartOrder(status);
     return {
-      for (
-        var displayIndex = 0;
-        displayIndex < partOrder.length;
-        displayIndex++
-      )
+      for (var displayIndex = 0;
+          displayIndex < partOrder.length;
+          displayIndex++)
         if (_awaitsConfirmation(stateByPartIndex[partOrder[displayIndex]]))
           displayIndex,
     };
@@ -971,13 +1029,15 @@ class _MobileMigrationRedesignedStatusState
   }
 
   Set<int> _completedRingSegments(rust_sync.MigrationStatus status) {
+    if (status.phase == kIronwoodMigrationReadyToMigratePhase &&
+        !migrationHasTransferProgress(status)) {
+      return const {};
+    }
     if (status.parts.isEmpty) {
       return {
-        for (
-          var index = 0;
-          index < status.confirmedTxCount.clamp(0, _totalParts(status));
-          index++
-        )
+        for (var index = 0;
+            index < status.confirmedTxCount.clamp(0, _totalParts(status));
+            index++)
           index,
       };
     }
@@ -986,11 +1046,9 @@ class _MobileMigrationRedesignedStatusState
     };
     final partOrder = _migrationRingPartOrder(status);
     return {
-      for (
-        var displayIndex = 0;
-        displayIndex < partOrder.length;
-        displayIndex++
-      )
+      for (var displayIndex = 0;
+          displayIndex < partOrder.length;
+          displayIndex++)
         if (stateByPartIndex[partOrder[displayIndex]] ==
             rust_sync.MigrationPartState.completed)
           displayIndex,
@@ -1088,11 +1146,9 @@ class _MobileMigrationRedesignedStatusState
           ? totalBatches
           : completedParts ~/ _migrationPartsPerBatch;
     } else {
-      for (
-        var start = 0;
-        start < ordered.length;
-        start += _migrationPartsPerBatch
-      ) {
+      for (var start = 0;
+          start < ordered.length;
+          start += _migrationPartsPerBatch) {
         final parts = ordered
             .skip(start)
             .take(_migrationPartsPerBatch)
@@ -1191,8 +1247,7 @@ class _MobileMigrationRedesignedStatusState
     final totalParts = _totalParts(status);
     final orderedParts = _orderedMobileMigrationParts(status.parts);
     final partIndices = orderedParts.map((part) => part.partIndex).toSet();
-    final hasCompletePartOrder =
-        orderedParts.length == totalParts &&
+    final hasCompletePartOrder = orderedParts.length == totalParts &&
         partIndices.length == totalParts &&
         partIndices.every((partIndex) => partIndex < totalParts);
     return hasCompletePartOrder
@@ -1205,11 +1260,9 @@ class _MobileMigrationRedesignedStatusState
         status.currentSigningPartIndices?.toSet() ?? const <int>{};
     final partOrder = _migrationRingPartOrder(status);
     return {
-      for (
-        var displayIndex = 0;
-        displayIndex < partOrder.length;
-        displayIndex++
-      )
+      for (var displayIndex = 0;
+          displayIndex < partOrder.length;
+          displayIndex++)
         if (signingPartIndices.contains(partOrder[displayIndex])) displayIndex,
     };
   }
@@ -1235,18 +1288,7 @@ class _MobileMigrationRedesignedStatusState
   }
 
   String _migratedAmountText(rust_sync.MigrationStatus status) {
-    final completed = status.parts.isNotEmpty
-        ? status.parts
-              .where(
-                (part) => part.state == rust_sync.MigrationPartState.completed,
-              )
-              .fold<BigInt>(
-                BigInt.zero,
-                (total, part) => total + part.valueZatoshi,
-              )
-        : status.targetValuesZatoshi
-              .take(status.confirmedTxCount)
-              .fold<BigInt>(BigInt.zero, (total, value) => total + value);
+    final completed = migrationCompletedValue(status);
     return '${ZecAmount.fromZatoshi(completed).compactBalance.amountText} ZEC';
   }
 

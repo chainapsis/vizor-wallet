@@ -187,41 +187,6 @@ class _MobileMigrationOptionsState
       _isContinuing = true;
       _continueError = null;
     });
-    rust_sync.OrchardMigrationPrivatePlan? plan;
-    String? accountUuid;
-    try {
-      plan = await ref.read(ironwoodMigrationPrivatePlanProvider.future);
-      if (!mounted) return;
-      if (plan == null) {
-        throw StateError('Migration plan is unavailable.');
-      }
-      final accountState = await ref.read(accountProvider.future);
-      if (!mounted) return;
-      accountUuid = accountState.activeAccountUuid;
-      if (accountUuid == null) {
-        throw StateError('No active account is selected.');
-      }
-      if (accountState.activeAccount?.isHardware ?? false) {
-        if (!_keystoneTwoRoundPlanSupported(plan)) {
-          throw StateError(
-            'This migration needs more transactions than one Keystone '
-            'signing request supports.',
-          );
-        }
-      }
-    } catch (error) {
-      debugPrint('Failed to prepare private migration choice: $error');
-      if (!mounted) return;
-      setState(() {
-        // The lock disables back, both option cards and Continue, so any exit
-        // that leaves the user on this screen has to release it. Keeping it
-        // held here strands them on an error they cannot retry or leave.
-        _isContinuing = false;
-        _continueError = "Couldn't prepare the migration plan. Try again.";
-      });
-      return;
-    }
-
     IronwoodMigrationNotificationAuthorizationStatus authorization;
     try {
       authorization = await ref
@@ -231,46 +196,22 @@ class _MobileMigrationOptionsState
       if (!mounted) return;
       // Permission status is fail-closed: if native status cannot be read,
       // show the explanation screen and keep background work disabled.
-      context.go('/migration/private/notifications', extra: plan);
+      context.go('/migration/private/notifications');
       return;
     }
 
-    var draftSaved = false;
     try {
       if (!mounted) return;
       if (!authorization.allowsBackgroundMigration) {
-        context.go('/migration/private/notifications', extra: plan);
+        context.go('/migration/private/notifications');
         return;
       }
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .savePrivateMigrationDraft(
-            accountUuid: accountUuid,
-            approvedSchedule: plan.scheduledTransfers,
-          );
-      draftSaved = true;
-      if (!mounted) return;
-      await _refreshPrivateMigrationDraftPresentation(ref);
-      if (!mounted) return;
-      final continuation = await _continuePrivateMigrationAfterNotificationGate(
-        ref,
-        plan,
-      );
-      if (!mounted) return;
-      _openPrivateMigrationDestination(context, continuation, plan);
+      context.go('/migration/private/start');
     } catch (error) {
-      debugPrint('Failed to activate direct-note migration: $error');
+      debugPrint('Failed to open private migration preparation: $error');
       if (!mounted) return;
-      if (draftSaved || await _hasDurablePrivateMigrationRun(ref)) {
-        if (!mounted) return;
-        context.go(
-          '/migration/private/status',
-          extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
-        );
-        return;
-      }
       setState(() {
-        _continueError = "Couldn't start the migration. Try again.";
+        _continueError = "Couldn't open migration preparation. Try again.";
       });
     } finally {
       if (mounted) setState(() => _isContinuing = false);
@@ -355,127 +296,4 @@ class _MobileMigrationOptionsState
       ),
     );
   }
-}
-
-Future<void> _refreshPrivateMigrationDraftPresentation(WidgetRef ref) async {
-  ref.invalidate(ironwoodMigrationRouteCtaProvider);
-  ref.invalidate(ironwoodHomeMigrationCtaProvider);
-  ref.invalidate(ironwoodPostMigrationStateProvider);
-  try {
-    await ref.read(ironwoodHomeMigrationCtaProvider.future);
-  } catch (error) {
-    // The durable draft is already saved. Let the destination screen reconcile
-    // it rather than trapping the user on the option picker for a stale read.
-    debugPrint('Failed to refresh private migration presentation: $error');
-  }
-}
-
-Future<bool> _hasDurablePrivateMigrationRun(WidgetRef ref) async {
-  ref.invalidate(ironwoodMigrationRouteCtaProvider);
-  try {
-    final cta = await ref.read(ironwoodMigrationRouteCtaProvider.future);
-    return cta.status?.activeRunId != null;
-  } catch (_) {
-    return false;
-  }
-}
-
-enum _PrivateMigrationContinuationDestination {
-  status,
-  keystoneDenominationSigning,
-}
-
-void _openPrivateMigrationDestination(
-  BuildContext context,
-  ({
-    _PrivateMigrationContinuationDestination destination,
-    MobileIronwoodMigrationKeystoneDenominationSignEntry? keystoneEntry,
-  })
-  continuation,
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) {
-  switch (continuation.destination) {
-    case _PrivateMigrationContinuationDestination.status:
-      context.go(
-        '/migration/private/status',
-        extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
-      );
-      return;
-    case _PrivateMigrationContinuationDestination.keystoneDenominationSigning:
-      final entry = continuation.keystoneEntry;
-      if (entry == null) {
-        throw StateError('Keystone signing request is unavailable.');
-      }
-      context.go(
-        '/migration/private/keystone/denominations/sign',
-        extra: entry,
-      );
-      return;
-  }
-}
-
-Future<
-  ({
-    _PrivateMigrationContinuationDestination destination,
-    MobileIronwoodMigrationKeystoneDenominationSignEntry? keystoneEntry,
-  })
->
-_continuePrivateMigrationAfterNotificationGate(
-  WidgetRef ref,
-  rust_sync.OrchardMigrationPrivatePlan plan,
-) async {
-  final accountState = await ref.read(accountProvider.future);
-  final accountUuid = accountState.activeAccountUuid;
-  if (accountUuid == null) {
-    throw StateError('No active account is selected.');
-  }
-
-  if (accountState.activeAccount?.isHardware ?? false) {
-    final service = ref.read(ironwoodMigrationServiceProvider);
-    final request = await service.prepareKeystoneDenominationPrivateMigration(
-      accountUuid: accountUuid,
-    );
-    if (request.messages.isEmpty) {
-      await service.completeKeystoneDenominationPrivateMigration(
-        accountUuid: accountUuid,
-        requestId: request.requestId,
-        signedMessages: const [],
-        approvedSchedule: plan.scheduledTransfers,
-      );
-      _invalidateStartedPrivateMigration(ref);
-      return (
-        destination: _PrivateMigrationContinuationDestination.status,
-        keystoneEntry: null,
-      );
-    }
-    return (
-      destination:
-          _PrivateMigrationContinuationDestination.keystoneDenominationSigning,
-      keystoneEntry: MobileIronwoodMigrationKeystoneDenominationSignEntry(
-        approvedSchedule: plan.scheduledTransfers,
-        request: request,
-        accountUuid: accountUuid,
-      ),
-    );
-  }
-
-  await ref
-      .read(ironwoodMigrationCoordinatorProvider.notifier)
-      .startSoftwareMigration(
-        accountUuid: accountUuid,
-        approvedSchedule: plan.scheduledTransfers,
-      );
-
-  _invalidateStartedPrivateMigration(ref);
-  return (
-    destination: _PrivateMigrationContinuationDestination.status,
-    keystoneEntry: null,
-  );
-}
-
-void _invalidateStartedPrivateMigration(WidgetRef ref) {
-  ref.invalidate(ironwoodMigrationRouteCtaProvider);
-  ref.invalidate(ironwoodHomeMigrationCtaProvider);
-  ref.invalidate(ironwoodMigrationFlowDataProvider);
-  ref.invalidate(ironwoodMigrationPrivatePlanProvider);
 }

@@ -322,6 +322,19 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         ),
       ),
     ),
+    GoRoute(
+      path: '/migration/private/start',
+      redirect: _redirectUnsupportedPrivateMigration,
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileIronwoodMigrationStartScreen(
+          approvedPlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => null,
+          },
+        ),
+      ),
+    ),
     // Completion has its own destination so home does not have to route
     // through the status screen, whose entry refresh renders a progress
     // surface before the finished phase resolves.
@@ -348,6 +361,20 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
           ),
         );
       },
+    ),
+    GoRoute(
+      path: '/migration/private/schedule',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationScheduleScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/private/preparation-schedule',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationPreparationScheduleScreen(),
+      ),
     ),
     GoRoute(
       path: '/migration/private/keystone/denominations/sign',

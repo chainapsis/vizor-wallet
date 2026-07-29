@@ -1103,6 +1103,20 @@ Widget buildMobileIronwoodMigrationNotificationsConfirmationUseCase(
   );
 }
 
+Widget buildMobileIronwoodMigrationStartLoadingUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationStartLoading,
+  );
+}
+
+Widget buildMobileIronwoodMigrationStartKeystoneReadyUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationStartKeystoneReady,
+  );
+}
+
 Widget buildMobileIronwoodMigrationPreparationActiveUseCase(
   BuildContext context,
 ) {
@@ -1196,6 +1210,49 @@ Widget buildMobileIronwoodMigrationKeystoneSignAllUseCase(
 Widget buildMobileIronwoodMigrationBroadcastingUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
     MobileIronwoodMigrationPreviewSurface.migrationBroadcasting,
+  );
+}
+
+Widget buildMobileIronwoodMigrationScheduleUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationScheduleUseCase(preparation: false);
+}
+
+Widget buildMobileIronwoodMigrationPreparationScheduleUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationScheduleUseCase(preparation: true);
+}
+
+Widget _buildMobileIronwoodMigrationScheduleUseCase({
+  required bool preparation,
+}) {
+  final accountState = _ironwoodMigrationAccountState();
+  final status = preparation
+      ? _previewPrivateMigrationStatus()
+      : _previewMigrationScheduleStatus();
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(
+          accountState.activeAccountUuid,
+          initialState: SyncState(
+            accountUuid: accountState.activeAccountUuid,
+            hasAccountScopedData: true,
+            scannedHeight: 3_000_000,
+            chainTipHeight: 3_000_000,
+          ),
+        ),
+      ),
+    ],
+    child: _MobilePreviewFrame(
+      child: preparation
+          ? MobileIronwoodMigrationPreparationScheduleScreen(
+              previewStatus: status,
+            )
+          : MobileIronwoodMigrationScheduleScreen(previewStatus: status),
+    ),
   );
 }
 
