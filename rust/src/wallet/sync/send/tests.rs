@@ -1777,7 +1777,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     assert_eq!(result.fee_zatoshi, 10_000);
     assert_eq!(result.migrated_zatoshi, 100_000);
     let message = result.message.as_deref().unwrap();
-    assert!(message.contains("accepted by lightwalletd"));
+    assert!(message.contains("accepted for broadcast"));
     assert!(message.contains("Vizor will retry"));
     assert_eq!(
         migration::scheduled_pending_count(&db_path, &run_id).unwrap(),

@@ -4588,11 +4588,7 @@ async fn broadcast_pending_denomination_stages(
             break;
         }
         let broadcast_result = if let Some(client) = relay_client.as_ref() {
-            match validate_separate_relay_denomination_stage(stage).and_then(|()| {
-                decrypt_and_store_migration_tx(db_path, network, &stage.raw_tx).map_err(|e| {
-                    format!("Store denomination split before separate-relay submission: {e}")
-                })
-            }) {
+            match validate_separate_relay_denomination_stage(stage) {
                 Ok(()) => {
                     client
                         .send_raw_transaction(&stage.raw_tx, &stage.expected_txid_hex)
@@ -4626,26 +4622,21 @@ async fn broadcast_pending_denomination_stages(
             }));
         }
 
-        if relay_client.is_none() {
-            if let Err(e) = decrypt_and_store_migration_tx(db_path, network, &stage.raw_tx) {
-                let message = migration_storage_retry_message(
-                    "Denomination split",
-                    &stage.expected_txid_hex,
-                    &e,
-                );
-                log::warn!("migration: {message}");
-                return Ok(Some(CreatedBroadcastResult {
-                    txids,
-                    status: if broadcasted_count == 0 {
-                        CreatedBroadcastResult::PENDING_BROADCAST
-                    } else {
-                        CreatedBroadcastResult::PARTIAL_BROADCAST
-                    },
-                    broadcasted_count,
-                    total_count,
-                    message: Some(message),
-                }));
-            }
+        if let Err(e) = decrypt_and_store_migration_tx(db_path, network, &stage.raw_tx) {
+            let message =
+                migration_storage_retry_message("Denomination split", &stage.expected_txid_hex, &e);
+            log::warn!("migration: {message}");
+            return Ok(Some(CreatedBroadcastResult {
+                txids,
+                status: if broadcasted_count == 0 {
+                    CreatedBroadcastResult::PENDING_BROADCAST
+                } else {
+                    CreatedBroadcastResult::PARTIAL_BROADCAST
+                },
+                broadcasted_count,
+                total_count,
+                message: Some(message),
+            }));
         }
 
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -5192,7 +5183,7 @@ fn reconcile_orchard_migration_outbox_receipt(
 
 fn migration_storage_retry_message(tx_label: &str, txid_hex: &str, error: &str) -> String {
     format!(
-        "{tx_label} {txid_hex} was accepted by lightwalletd, but local wallet storage failed: {error}. Vizor will retry until local state is recorded."
+        "{tx_label} {txid_hex} was accepted for broadcast, but local wallet storage failed: {error}. Vizor will retry until local state is recorded."
     )
 }
 
