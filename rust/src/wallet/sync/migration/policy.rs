@@ -8,7 +8,7 @@ pub(crate) const ZIP318_EXPIRY_MODULUS: u32 = 34_560;
 // Keep the original value readable for runs created before the shorter policy.
 pub(crate) const ZIP318_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 144;
 pub(crate) const ZIP318_TRANSFER_MAX_DELAY_BLOCKS: u32 = 576;
-pub(crate) const NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 72;
+pub(crate) const NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 66;
 pub(crate) const REGTEST_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 1;
 pub(crate) const REGTEST_TRANSFER_MAX_DELAY_BLOCKS: u32 = 4;
 pub(crate) const FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 12;

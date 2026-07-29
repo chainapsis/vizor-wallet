@@ -2656,7 +2656,8 @@ fn schedule_validation_keeps_legacy_positive_first_offsets_compatible() {
 }
 
 #[test]
-fn configured_schedule_uses_ninety_minute_mean_without_changing_regtest() {
+fn configured_schedule_uses_shortened_mean_without_changing_regtest() {
+    assert_eq!(NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS, 66);
     assert_eq!(
         schedule_parameters(WalletNetwork::Regtest),
         (1, REGTEST_TRANSFER_MAX_DELAY_BLOCKS)
@@ -2763,7 +2764,7 @@ fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
 }
 
 #[test]
-fn ninety_minute_schedule_samples_the_truncated_distribution() {
+fn shortened_schedule_samples_the_truncated_distribution() {
     let count = 20_000;
     let mut rng = StdRng::seed_from_u64(0x90);
     let offsets = random_schedule_block_offsets_with_rng(
@@ -2775,9 +2776,9 @@ fn ninety_minute_schedule_samples_the_truncated_distribution() {
     let total_delay = u64::from(*offsets.last().unwrap());
 
     // Redrawing samples above the 12-hour cap makes the realized mean
-    // slightly lower than the untruncated 72-block parameter.
-    assert!(total_delay > count as u64 * 70);
-    assert!(total_delay < count as u64 * 74);
+    // slightly lower than the untruncated 66-block parameter.
+    assert!(total_delay > count as u64 * 64);
+    assert!(total_delay < count as u64 * 68);
 }
 
 #[test]
