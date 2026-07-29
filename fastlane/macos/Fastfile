@@ -408,7 +408,7 @@ rescue StandardError => e
   nil
 end
 
-def previous_sparkle_release_archive_assets(metadata, limit: 5)
+def previous_sparkle_release_archive_assets(metadata, limit: 2)
   releases = github_api_json("https://api.github.com/repos/#{ENV.fetch("RELEASE_REPOSITORY")}/releases?per_page=100")
   archive_asset_name = sparkle_update_archive_asset_name(metadata)
   appcast_asset_name = sparkle_appcast_asset_name(metadata)
