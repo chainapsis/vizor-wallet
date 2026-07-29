@@ -268,6 +268,7 @@ pub extern "C" fn zcash_inspect_migration_proof_readiness(
 pub extern "C" fn zcash_advance_migration_preparation(
     db_path: *const c_char,
     lightwalletd_url: *const c_char,
+    transaction_relay_url: *const c_char,
     network: *const c_char,
     account_uuid: *const c_char,
     expected_run_id: *const c_char,
@@ -283,6 +284,7 @@ pub extern "C" fn zcash_advance_migration_preparation(
         let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
             return 1;
         };
+        let transaction_relay_url = unsafe { c_str_to_str(transaction_relay_url) };
         let Some(network_str) = (unsafe { c_str_to_str(network) }) else {
             return 1;
         };
@@ -312,6 +314,7 @@ pub extern "C" fn zcash_advance_migration_preparation(
         match migration_preparation::advance(
             db_path,
             lightwalletd_url,
+            transaction_relay_url,
             network,
             account_uuid,
             expected_run_id,

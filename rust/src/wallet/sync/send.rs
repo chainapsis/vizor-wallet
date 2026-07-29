@@ -381,6 +381,7 @@ impl IronwoodMigrationResult {
     pub(crate) async fn prepare_outbox(
         db_path: &str,
         lightwalletd_url: &str,
+        transaction_relay_url: Option<&str>,
         network: WalletNetwork,
         account_uuid: &str,
         pending_password: &[u8],
@@ -389,6 +390,7 @@ impl IronwoodMigrationResult {
         prepare_orchard_migration_outbox(
             db_path,
             lightwalletd_url,
+            transaction_relay_url,
             network,
             account_uuid,
             pending_password,
@@ -1319,6 +1321,7 @@ async fn execute_stored_proposal(
 pub(crate) async fn migrate_orchard_to_ironwood(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     seed: SecretVec<u8>,
@@ -1344,6 +1347,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             match advance_staged_denomination_run(
                 db_path,
                 lightwalletd_url,
+                transaction_relay_url,
                 network,
                 account_uuid,
                 &run,
@@ -1503,6 +1507,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             &prepared_refs,
             signed_children,
             denomination_stages,
+            transaction_relay_url,
             pending_password.as_slice(),
             pending_salt_base64,
         )?;
@@ -1518,6 +1523,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             denomination_stages,
             Some(&approved_schedule),
             preparation_timing_policy,
+            transaction_relay_url,
             pending_password.as_slice(),
             pending_salt_base64,
         )?
@@ -1559,6 +1565,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
+        transaction_relay_url,
         network,
         &run_id,
         pending_password.as_slice(),
@@ -1937,6 +1944,7 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
 async fn prepare_orchard_migration_outbox(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     pending_password: &[u8],
@@ -1958,6 +1966,7 @@ async fn prepare_orchard_migration_outbox(
     match advance_staged_denomination_run(
         db_path,
         lightwalletd_url,
+        transaction_relay_url,
         network,
         account_uuid,
         &run,
@@ -2133,6 +2142,7 @@ fn any_migration_proof_candidate_ready<T>(
 pub(crate) async fn advance_orchard_migration_preparation_for_run(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     expected_run_id: &str,
@@ -2163,6 +2173,7 @@ pub(crate) async fn advance_orchard_migration_preparation_for_run(
     match advance_staged_denomination_run(
         db_path,
         lightwalletd_url,
+        transaction_relay_url,
         network,
         account_uuid,
         &run,
@@ -2200,6 +2211,7 @@ pub(crate) async fn advance_orchard_migration_preparation_for_run(
 pub async fn broadcast_due_orchard_migration_transactions(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
@@ -2208,6 +2220,7 @@ pub async fn broadcast_due_orchard_migration_transactions(
     broadcast_due_orchard_migration_transactions_inner(
         db_path,
         lightwalletd_url,
+        transaction_relay_url,
         network,
         account_uuid,
         pending_password,
@@ -2221,6 +2234,7 @@ pub async fn broadcast_due_orchard_migration_transactions(
 pub async fn broadcast_one_due_orchard_migration_transaction(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
@@ -2229,6 +2243,7 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
     let advance = broadcast_due_orchard_migration_transactions_inner(
         db_path,
         lightwalletd_url,
+        transaction_relay_url,
         network,
         account_uuid,
         pending_password,
@@ -2242,6 +2257,7 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
 async fn broadcast_due_orchard_migration_transactions_inner(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
@@ -2293,6 +2309,7 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     match advance_staged_denomination_run(
         db_path,
         lightwalletd_url,
+        transaction_relay_url,
         network,
         account_uuid,
         &run,
@@ -4352,6 +4369,42 @@ enum DenominationStageBroadcastReadiness {
     Ready,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DenominationSubmissionRoute {
+    SeparateRelay,
+    Lightwalletd,
+    MissingSeparateRelay,
+}
+
+fn denomination_submission_route(
+    relay_is_configured: bool,
+    transaction_is_marked: bool,
+) -> DenominationSubmissionRoute {
+    if relay_is_configured {
+        DenominationSubmissionRoute::SeparateRelay
+    } else if transaction_is_marked {
+        DenominationSubmissionRoute::MissingSeparateRelay
+    } else {
+        DenominationSubmissionRoute::Lightwalletd
+    }
+}
+
+fn denomination_stage_requires_rebuild_for_separate_relay(
+    relay_is_configured: bool,
+    expiry_height: u32,
+) -> bool {
+    relay_is_configured && expiry_height == 0
+}
+
+fn denomination_stage_has_separate_relay_policy(
+    db_path: &str,
+    stage: &super::migration::PendingRawDenominationStage,
+) -> Result<bool, String> {
+    let txid = parse_txid_hex(&stage.expected_txid_hex)?;
+    super::submission_policy::separate_relay_transaction(db_path, txid)
+        .map(|transaction| transaction.is_some())
+}
+
 fn denomination_stage_broadcast_readiness(
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
     stage: &super::migration::PendingRawDenominationStage,
@@ -4388,12 +4441,23 @@ fn denomination_expiry_scan_wait_result(txids: &str, total_count: u32) -> Create
 async fn broadcast_pending_denomination_stages(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<Option<CreatedBroadcastResult>, String> {
+    let submission_policy = super::migration::resolve_denomination_submission_policy(
+        db_path,
+        run_id,
+        transaction_relay_url,
+    )?;
+    let persisted_relay_url = match submission_policy {
+        super::migration::MigrationDenominationSubmissionPolicy::Lightwalletd => None,
+        super::migration::MigrationDenominationSubmissionPolicy::SeparateRelay(url) => Some(url),
+    };
+    let transaction_relay_url = persisted_relay_url.as_deref();
     let progress = super::get_sync_progress(db_path, network)?;
     let scanned_height = u32::try_from(progress.scanned_height)
         .map_err(|_| "Migration scanned height exceeds u32".to_string())?;
@@ -4434,6 +4498,23 @@ async fn broadcast_pending_denomination_stages(
         super::migration::preparation_timing_policy_for_run(db_path, run_id)?;
     let total_count = u32::try_from(pending.len())
         .map_err(|_| "Pending denomination stage count exceeds u32".to_string())?;
+    if pending.iter().any(|stage| {
+        denomination_stage_requires_rebuild_for_separate_relay(
+            transaction_relay_url.is_some(),
+            stage.expiry_height,
+        )
+    }) {
+        let message = "A legacy migration preparation transaction has no expiry height and cannot use the separate relay safely. Restart migration to rebuild the preparation schedule."
+            .to_string();
+        super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
+        return Ok(Some(CreatedBroadcastResult {
+            txids: String::new(),
+            status: super::migration::PHASE_FAILED_TERMINAL,
+            broadcasted_count: 0,
+            total_count,
+            message: Some(message),
+        }));
+    }
     if !pending.iter().any(|stage| {
         denomination_stage_broadcast_readiness(
             preparation_timing_policy,
@@ -4454,35 +4535,76 @@ async fn broadcast_pending_denomination_stages(
             ),
         }));
     }
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
-        Err(e) => {
-            return Ok(Some(CreatedBroadcastResult {
-                txids,
-                status: CreatedBroadcastResult::PENDING_BROADCAST,
-                broadcasted_count: 0,
-                total_count,
-                message: Some(format!("Denomination split broadcast could not start: {e}")),
-            }));
+    if transaction_relay_url.is_none() {
+        for stage in &pending {
+            if denomination_stage_has_separate_relay_policy(db_path, stage)? {
+                return Ok(Some(CreatedBroadcastResult {
+                    txids,
+                    status: CreatedBroadcastResult::PENDING_BROADCAST,
+                    broadcasted_count: 0,
+                    total_count,
+                    message: Some(
+                        "A denomination split was assigned to a separate relay, but its relay URL is unavailable. Refusing to submit the transaction through lightwalletd."
+                            .to_string(),
+                    ),
+                }));
+            }
         }
-    };
-    let live_chain_tip_height =
-        match crate::wallet::sync_engine::get_latest_block(&mut client).await {
-            Ok(tip) => u32::try_from(tip.height)
-                .map_err(|_| "Live migration chain tip exceeds u32".to_string())?,
+    }
+    // A separate relay is deliberately scoped to denomination preparation.
+    // When configured, do not contact lightwalletd here, including for a fresh
+    // height. The preceding wallet sync already persisted the tip used below.
+    let relay_client = match transaction_relay_url {
+        Some(url) => match super::broadcast::TransactionRelayClient::new(url) {
+            Ok(client) => Some(client),
             Err(e) => {
                 return Ok(Some(CreatedBroadcastResult {
                     txids,
                     status: CreatedBroadcastResult::PENDING_BROADCAST,
                     broadcasted_count: 0,
                     total_count,
-                    message: Some(format!(
-                        "Denomination split broadcast could not refresh the chain tip: {e}"
-                    )),
+                    message: Some(format!("Denomination split relay could not start: {e}")),
+                }));
+            }
+        },
+        None => None,
+    };
+    let mut lwd_client = None;
+    let chain_tip_height = if relay_client.is_some() {
+        known_chain_tip_height
+    } else {
+        let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await
+        {
+            Ok(client) => client,
+            Err(e) => {
+                return Ok(Some(CreatedBroadcastResult {
+                    txids,
+                    status: CreatedBroadcastResult::PENDING_BROADCAST,
+                    broadcasted_count: 0,
+                    total_count,
+                    message: Some(format!("Denomination split broadcast could not start: {e}")),
                 }));
             }
         };
-    let chain_tip_height = known_chain_tip_height.max(live_chain_tip_height);
+        let live_chain_tip_height =
+            match crate::wallet::sync_engine::get_latest_block(&mut client).await {
+                Ok(tip) => u32::try_from(tip.height)
+                    .map_err(|_| "Live migration chain tip exceeds u32".to_string())?,
+                Err(e) => {
+                    return Ok(Some(CreatedBroadcastResult {
+                        txids,
+                        status: CreatedBroadcastResult::PENDING_BROADCAST,
+                        broadcasted_count: 0,
+                        total_count,
+                        message: Some(format!(
+                            "Denomination split broadcast could not refresh the chain tip: {e}"
+                        )),
+                    }));
+                }
+            };
+        lwd_client = Some(client);
+        known_chain_tip_height.max(live_chain_tip_height)
+    };
     let expired_at_live_tip = {
         let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
         expired_denomination_stage_count(&conn, run_id, chain_tip_height)?
@@ -4516,7 +4638,46 @@ async fn broadcast_pending_denomination_stages(
         if policy.is_cancelled() {
             break;
         }
-        if let Err(e) = broadcast_raw_transaction(&mut client, &stage.raw_tx).await {
+        let transaction_is_marked = if relay_client.is_none() {
+            denomination_stage_has_separate_relay_policy(db_path, stage)?
+        } else {
+            false
+        };
+        let broadcast_result =
+            match denomination_submission_route(relay_client.is_some(), transaction_is_marked) {
+                DenominationSubmissionRoute::SeparateRelay => {
+                    match super::submission_policy::register_separate_relay_transaction(
+                        db_path,
+                        run_id,
+                        &stage.expected_txid_hex,
+                        &stage.raw_tx,
+                        stage.expiry_height,
+                    ) {
+                        Ok(()) => {
+                            relay_client
+                                .as_ref()
+                                .expect("relay client exists for the separate relay route")
+                                .send_raw_transaction(&stage.raw_tx, &stage.expected_txid_hex)
+                                .await
+                        }
+                        Err(e) => Err(format!("Could not record separate relay policy: {e}")),
+                    }
+                }
+                DenominationSubmissionRoute::Lightwalletd => {
+                    broadcast_raw_transaction(
+                        lwd_client
+                            .as_mut()
+                            .expect("lightwalletd client exists for the lightwalletd route"),
+                        &stage.raw_tx,
+                    )
+                    .await
+                }
+                DenominationSubmissionRoute::MissingSeparateRelay => Err(
+                    "Separate relay URL is unavailable; refusing lightwalletd submission"
+                        .to_string(),
+                ),
+            };
+        if let Err(e) = broadcast_result {
             return Ok(Some(CreatedBroadcastResult {
                 txids,
                 status: if broadcasted_count == 0 {

@@ -609,6 +609,7 @@ fn create_outbox_receipt_test_run(
         )],
         None,
         migration::PreparationTimingPolicy::Immediate,
+        None,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )
@@ -646,6 +647,40 @@ fn parse_txid_hex_accepts_display_order_hex() {
     let txid = parse_txid_hex(txid_hex).unwrap();
 
     assert_eq!(format!("{txid}"), txid_hex);
+}
+
+#[test]
+fn separate_relay_marker_never_falls_back_to_lightwalletd() {
+    assert_eq!(
+        denomination_submission_route(true, false),
+        DenominationSubmissionRoute::SeparateRelay
+    );
+    assert_eq!(
+        denomination_submission_route(true, true),
+        DenominationSubmissionRoute::SeparateRelay
+    );
+    assert_eq!(
+        denomination_submission_route(false, false),
+        DenominationSubmissionRoute::Lightwalletd
+    );
+    assert_eq!(
+        denomination_submission_route(false, true),
+        DenominationSubmissionRoute::MissingSeparateRelay
+    );
+}
+
+#[test]
+fn separate_relay_requires_legacy_zero_expiry_stages_to_be_rebuilt() {
+    assert!(
+        denomination_stage_requires_rebuild_for_separate_relay(true, 0),
+        "a separate relay needs a finite local expiry boundary"
+    );
+    assert!(!denomination_stage_requires_rebuild_for_separate_relay(
+        true, 1_000_100
+    ));
+    assert!(!denomination_stage_requires_rebuild_for_separate_relay(
+        false, 0
+    ));
 }
 
 #[test]
@@ -1454,6 +1489,7 @@ fn create_denomination_expiry_test_run(
         vec![stage],
         None,
         migration::PreparationTimingPolicy::Immediate,
+        None,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )
@@ -1722,6 +1758,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
         )],
         None,
         migration::PreparationTimingPolicy::Immediate,
+        None,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )

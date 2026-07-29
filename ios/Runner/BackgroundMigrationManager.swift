@@ -13,6 +13,7 @@ struct IronwoodMigrationBackgroundManifest: Decodable {
   let accountUuid: String
   let dbPath: String
   let lightwalletdUrl: String
+  let transactionRelayUrl: String?
   let credentialHex: String
   let saltBase64: String
   let expectedRunId: String?

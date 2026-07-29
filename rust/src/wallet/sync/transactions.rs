@@ -1636,16 +1636,38 @@ pub(crate) fn get_resubmittable_txs(
     current_height: u32,
 ) -> Result<Vec<ResubmittableTx>, String> {
     let conn = open_readonly_conn(db_path)?;
+    let read_tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin resubmission snapshot: {e}"))?;
 
-    let mut stmt = conn
-        .prepare(
-            "SELECT DISTINCT txid, raw, expiry_height \
-             FROM v_transactions \
-             WHERE mined_height IS NULL \
-               AND (expiry_height = 0 OR expiry_height > ?1) \
-               AND account_balance_delta < 0 \
-               AND raw IS NOT NULL",
-        )
+    const BASE_QUERY: &str = "SELECT DISTINCT txid, raw, expiry_height \
+         FROM v_transactions \
+         WHERE mined_height IS NULL \
+           AND (expiry_height = 0 OR expiry_height > ?1) \
+           AND account_balance_delta < 0 \
+           AND raw IS NOT NULL";
+    const PRIVACY_QUERY: &str = "SELECT DISTINCT txid, raw, expiry_height \
+         FROM v_transactions \
+         WHERE mined_height IS NULL \
+           AND (expiry_height = 0 OR expiry_height > ?1) \
+           AND account_balance_delta < 0 \
+           AND raw IS NOT NULL \
+           AND NOT EXISTS (\
+               SELECT 1 \
+               FROM ext_vizor_separate_relay_transactions policy \
+               WHERE policy.txid = v_transactions.txid\
+           )";
+    // Keep the table check and candidate query in one snapshot. If the marker
+    // table is created concurrently, this snapshot also predates the locally
+    // stored transaction and cannot select it through the legacy query.
+    let query = if super::submission_policy::separate_relay_table_exists(&read_tx)? {
+        PRIVACY_QUERY
+    } else {
+        BASE_QUERY
+    };
+
+    let mut stmt = read_tx
+        .prepare(query)
         .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
@@ -4517,6 +4539,29 @@ mod tests {
         assert_eq!(got[0].txid_bytes, txid.to_vec());
         assert_eq!(got[0].raw_tx, raw);
         assert_eq!(got[0].expiry_height, 1_000_100);
+    }
+
+    #[test]
+    fn resubmit_excludes_separate_relay_transactions() {
+        let db = fresh_db();
+        let txid = fake_txid(0x08);
+        let raw = fake_raw();
+        insert_row(&db, &txid, Some(&raw), None, Some(1_000_100), -5_000);
+
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        super::super::submission_policy::ensure_separate_relay_table(&conn).unwrap();
+        conn.execute(
+            &format!(
+                "INSERT INTO {} (txid, run_id, raw, expiry_height) VALUES (?1, 'run-1', ?2, ?3)",
+                super::super::submission_policy::SEPARATE_RELAY_TABLE
+            ),
+            rusqlite::params![txid, raw, 1_000_100i64],
+        )
+        .unwrap();
+        drop(conn);
+
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert!(got.is_empty());
     }
 
     #[test]

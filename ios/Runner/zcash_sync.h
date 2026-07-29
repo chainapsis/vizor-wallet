@@ -56,6 +56,7 @@ void zcash_end_migration_preparation_operation(void);
 int32_t zcash_advance_migration_preparation(
     const char* db_path,
     const char* lightwalletd_url,
+    const char* transaction_relay_url,
     const char* network,
     const char* account_uuid,
     const char* expected_run_id,

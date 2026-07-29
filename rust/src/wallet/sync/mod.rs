@@ -29,6 +29,7 @@ mod migration_wallet_ops;
 mod pczt;
 mod proposal_locks;
 mod send;
+pub(crate) mod submission_policy;
 mod transactions;
 
 // Re-export the split submodules at the `wallet::sync` path so every

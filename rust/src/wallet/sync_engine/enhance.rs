@@ -14,16 +14,19 @@
 //!     backfill its activity).
 //!
 //! Librustzcash signals these gaps by populating
-//! `db.transaction_data_requests()`. This module drains the queue
-//! against lightwalletd via three gRPC calls (`GetTransaction`,
-//! `TransactionsInvolvingAddress`) and writes the results back into
-//! `db` using `decrypt_and_store_transaction` and
-//! `set_transaction_status`. The loop retries up to three times
-//! because servicing one request can legally populate new requests
-//! (e.g. a newly-decrypted transaction may reveal additional parent
-//! transactions to enhance).
+//! `db.transaction_data_requests()`. This module normally drains the queue
+//! against lightwalletd via `GetTransaction` and
+//! `TransactionsInvolvingAddress`. Locally complete transactions submitted
+//! through the separate relay are instead serviced from their durable local
+//! bytes and compact-block scan state, so lightwalletd never receives their
+//! transaction IDs. The loop retries up to three times because servicing one
+//! request can legally populate new requests (e.g. a newly-decrypted
+//! transaction may reveal additional parent transactions to enhance).
 
-use std::collections::{BTreeMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashSet},
+    io::Cursor,
+};
 
 use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
@@ -34,12 +37,13 @@ use zcash_client_backend::{
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
 use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync::submission_policy::{self, SeparateRelayTransaction};
 
 use super::{lwd, SyncError, WalletDatabase};
 
@@ -81,17 +85,93 @@ pub(super) async fn run_enhancement(
             break;
         }
 
+        let mut serviced_any = false;
+
         for req in &requests {
             match req {
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
+                    if let Some(marked) =
+                        submission_policy::separate_relay_transaction(db_path, *txid)
+                            .map_err(SyncError::db)?
+                    {
+                        let tx = parse_separate_relay_transaction(*txid, &marked)?;
+                        match req {
+                            TransactionDataRequest::Enhancement(_) => {
+                                let mined_height = db.get_tx_height(*txid).map_err(|e| {
+                                    SyncError::db(format!(
+                                        "get_tx_height for separate-relay transaction {txid}: {e}"
+                                    ))
+                                })?;
+                                with_wallet_db_write_lock(
+                                    "sync_engine.enhance.separate_relay_transaction",
+                                    || {
+                                        decrypt_and_store_transaction(
+                                            &network,
+                                            db,
+                                            &tx,
+                                            mined_height,
+                                        )
+                                    },
+                                )
+                                .map_err(|e| {
+                                    SyncError::db(format!(
+                                        "store separate-relay transaction {txid}: {e}"
+                                    ))
+                                })?;
+                                serviced_any = true;
+                            }
+                            TransactionDataRequest::GetStatus(_) => {
+                                let mined_height = db.get_tx_height(*txid).map_err(|e| {
+                                    SyncError::db(format!(
+                                        "get_tx_height for separate-relay transaction {txid}: {e}"
+                                    ))
+                                })?;
+                                let fully_scanned_height = if mined_height.is_none() {
+                                    super::wallet_summary_heights(db)?.map(|(scanned, _)| scanned)
+                                } else {
+                                    None
+                                };
+                                let status = match separate_relay_status(
+                                    mined_height,
+                                    fully_scanned_height,
+                                    marked.expiry_height,
+                                ) {
+                                    SeparateRelayStatus::Mined(height) => {
+                                        Some(TransactionStatus::Mined(height))
+                                    }
+                                    SeparateRelayStatus::Expired => {
+                                        Some(TransactionStatus::NotInMainChain)
+                                    }
+                                    SeparateRelayStatus::Pending => None,
+                                };
+                                if let Some(status) = status {
+                                    with_wallet_db_write_lock(
+                                        "sync_engine.enhance.separate_relay_status",
+                                        || db.set_transaction_status(*txid, status),
+                                    )
+                                    .map_err(|e| {
+                                        SyncError::db(format!(
+                                            "set separate-relay transaction status for {txid}: {e}"
+                                        ))
+                                    })?;
+                                    serviced_any = true;
+                                }
+                            }
+                            TransactionDataRequest::TransactionsInvolvingAddress(_) => {
+                                unreachable!()
+                            }
+                        }
+                        continue;
+                    }
                     if failed_txids.contains(&txid_str) {
                         continue;
                     }
 
                     match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
                         Ok(raw) => {
+                            serviced_any = true;
                             let mined_height = mined_height_from_raw_height(raw.height)?;
                             if !raw.data.is_empty() {
                                 match Transaction::read(&raw.data[..], BranchId::Sapling) {
@@ -136,6 +216,7 @@ pub(super) async fn run_enhancement(
                         }
                         Err(e) => match classify_get_transaction_error(&e) {
                             GetTransactionErrorAction::MarkTxidNotRecognized => {
+                                serviced_any = true;
                                 log::warn!(
                                     "sync: get_transaction did not recognize {txid_str}: {e}"
                                 );
@@ -176,6 +257,7 @@ pub(super) async fn run_enhancement(
                         .await
                     {
                         Ok(mut stream) => {
+                            serviced_any = true;
                             let mut fee_client = client.clone();
                             loop {
                                 match lwd::next_stream_message(
@@ -239,8 +321,65 @@ pub(super) async fn run_enhancement(
                 }
             }
         }
+        if !serviced_any {
+            break;
+        }
     }
     Ok(())
+}
+
+fn parse_separate_relay_transaction(
+    txid: TxId,
+    marked: &SeparateRelayTransaction,
+) -> Result<Transaction, SyncError> {
+    let mut reader = Cursor::new(marked.raw_tx.as_slice());
+    let tx = Transaction::read(&mut reader, BranchId::Sapling)
+        .map_err(|e| SyncError::parse(format!("parse separate-relay transaction {txid}: {e}")))?;
+    if reader.position() != marked.raw_tx.len() as u64 {
+        return Err(SyncError::parse(format!(
+            "separate-relay transaction {txid} has trailing bytes"
+        )));
+    }
+    if tx.txid() != txid {
+        return Err(SyncError::parse(format!(
+            "separate-relay transaction marker does not match {txid}"
+        )));
+    }
+    if u32::from(tx.expiry_height()) != marked.expiry_height {
+        return Err(SyncError::parse(format!(
+            "separate-relay transaction {txid} has inconsistent expiry height"
+        )));
+    }
+    if tx.sapling_bundle().is_none()
+        && tx.orchard_bundle().is_none()
+        && tx.ironwood_bundle().is_none()
+    {
+        return Err(SyncError::parse(format!(
+            "separate-relay transaction {txid} is not shielded"
+        )));
+    }
+    Ok(tx)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SeparateRelayStatus {
+    Mined(BlockHeight),
+    Expired,
+    Pending,
+}
+
+fn separate_relay_status(
+    mined_height: Option<BlockHeight>,
+    fully_scanned_height: Option<u64>,
+    expiry_height: u32,
+) -> SeparateRelayStatus {
+    if let Some(height) = mined_height {
+        SeparateRelayStatus::Mined(height)
+    } else if fully_scanned_height.is_some_and(|height| height >= u64::from(expiry_height)) {
+        SeparateRelayStatus::Expired
+    } else {
+        SeparateRelayStatus::Pending
+    }
 }
 
 async fn fill_missing_transparent_fee(
@@ -436,6 +575,32 @@ mod tests {
         Transaction::read(&tx_bytes[..], BranchId::Sapling).unwrap()
     }
 
+    fn marked_status_test_tx(expiry_height: u32) -> (Transaction, Vec<u8>) {
+        let value_commitment = sapling_crypto::value::ValueCommitment::derive(
+            sapling_crypto::value::NoteValue::from_raw(1),
+            sapling_crypto::value::ValueCommitTrapdoor::random(rand_core::OsRng),
+        );
+        let mut raw = Vec::with_capacity(1_100);
+        raw.extend_from_slice(&0x8000_0004u32.to_le_bytes());
+        raw.extend_from_slice(&0x892f_2085u32.to_le_bytes());
+        raw.extend_from_slice(&[0, 0]); // transparent inputs and outputs
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.extend_from_slice(&expiry_height.to_le_bytes());
+        raw.extend_from_slice(&0i64.to_le_bytes());
+        raw.push(0); // Sapling spends
+        raw.push(1); // Sapling outputs
+        raw.extend_from_slice(&value_commitment.to_bytes());
+        raw.extend_from_slice(&[0; 32]); // cmu
+        raw.extend_from_slice(&[0; 32]); // ephemeral key
+        raw.resize(raw.len() + 580 + 80 + 192, 0);
+        raw.push(0); // JoinSplits
+        raw.resize(raw.len() + 64, 0); // Sapling binding signature
+
+        let tx = Transaction::read(&raw[..], BranchId::Sapling).unwrap();
+        assert!(tx.sapling_bundle().is_some());
+        (tx, raw)
+    }
+
     fn transparent_fee_test_db(
         tx: &Transaction,
         account_balance_delta: i64,
@@ -501,6 +666,63 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[tokio::test]
+    async fn marked_get_status_never_contacts_lightwalletd() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let network = WalletNetwork::Test;
+        let mnemonic = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+        crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            network,
+            &seed,
+            Some(1),
+            "enhancement-test",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path, network, 3_000_000).unwrap();
+
+        let expiry_height = 3_000_100;
+        let (tx, raw) = marked_status_test_tx(expiry_height);
+        let txid = tx.txid();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT INTO transactions
+             (txid, expiry_height, raw, min_observed_height)
+             VALUES (?1, ?2, ?3, 1)",
+            rusqlite::params![txid.as_ref(), expiry_height, raw],
+        )
+        .unwrap();
+        drop(conn);
+        submission_policy::register_separate_relay_transaction(
+            db_path,
+            "run-1",
+            &txid.to_string(),
+            &raw,
+            expiry_height,
+        )
+        .unwrap();
+
+        let mut db = super::super::open_db(db_path, network).unwrap();
+        let requests = db.transaction_data_requests().unwrap();
+        assert!(
+            requests.iter().any(
+                |request| matches!(request, TransactionDataRequest::GetStatus(id) if *id == txid)
+            ),
+            "unexpected requests: {requests:?}"
+        );
+
+        // The endpoint is deliberately unavailable. Any GetTransaction call
+        // would turn this into a network error.
+        let channel = Channel::from_static("http://127.0.0.1:9").connect_lazy();
+        let mut client = CompactTxStreamerClient::new(channel);
+        run_enhancement(&mut client, &mut db, db_path, network)
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -578,5 +800,30 @@ mod tests {
             mined_height_from_raw_height(u32::MAX as u64 + 1),
             Err(SyncError::Parse(_)),
         ));
+    }
+
+    #[test]
+    fn separate_relay_status_uses_scanned_mined_height() {
+        let height = BlockHeight::from_u32(1_000_010);
+        assert_eq!(
+            separate_relay_status(Some(height), Some(1_000_100), 1_000_050),
+            SeparateRelayStatus::Mined(height)
+        );
+    }
+
+    #[test]
+    fn separate_relay_status_expires_only_after_full_scan() {
+        assert_eq!(
+            separate_relay_status(None, Some(1_000_049), 1_000_050),
+            SeparateRelayStatus::Pending
+        );
+        assert_eq!(
+            separate_relay_status(None, None, 1_000_050),
+            SeparateRelayStatus::Pending
+        );
+        assert_eq!(
+            separate_relay_status(None, Some(1_000_050), 1_000_050),
+            SeparateRelayStatus::Expired
+        );
     }
 }

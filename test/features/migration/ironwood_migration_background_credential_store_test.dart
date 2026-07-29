@@ -24,6 +24,7 @@ void main() {
       accountUuid: 'account-1',
       dbPath: '/tmp/wallet.db',
       lightwalletdUrl: 'https://lwd.example:443',
+      transactionRelayUrl: 'https://relay.example/submit',
     );
 
     expect(
@@ -33,7 +34,8 @@ void main() {
       ),
       'test:account-1',
     );
-    expect(prepared.version, 1);
+    expect(prepared.version, 2);
+    expect(prepared.transactionRelayUrl, 'https://relay.example/submit');
     expect(
       prepared.credentialHex,
       '000102030405060708090a0b0c0d0e0f'
@@ -80,15 +82,59 @@ void main() {
     expect(relocated.credentialHex, prepared.credentialHex);
     expect(relocated.saltBase64, prepared.saltBase64);
     expect(relocated.expectedRunId, 'run-1');
+    expect(relocated.transactionRelayUrl, prepared.transactionRelayUrl);
   });
 
-  test('manifest decoding rejects non-strict or invalid values', () {
-    final valid = <String, Object?>{
+  test('version 1 manifests decode with relay routing disabled', () {
+    final legacy = <String, Object?>{
       'version': 1,
       'network': 'main',
       'accountUuid': 'account-1',
       'dbPath': '/tmp/wallet.db',
       'lightwalletdUrl': 'https://lwd.example:443',
+      'credentialHex': List.filled(32, 'ab').join(),
+      'saltBase64': base64Encode(List<int>.filled(16, 7)),
+      'expectedRunId': 'run-1',
+    };
+
+    final manifest = IronwoodMigrationBackgroundCredentialManifest.decode(
+      jsonEncode(legacy),
+    );
+
+    expect(manifest.version, 1);
+    expect(manifest.transactionRelayUrl, isNull);
+    expect(manifest.encode(), jsonEncode(legacy));
+  });
+
+  test('version 2 manifests allow a null transaction relay', () async {
+    final store = IronwoodMigrationBackgroundCredentialStore.testing(
+      storage: const FlutterSecureStorage(),
+      randomBytes: (length) => Uint8List(length),
+    );
+
+    final prepared = await store.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://lwd.example:443',
+    );
+
+    expect(prepared.version, 2);
+    expect(prepared.transactionRelayUrl, isNull);
+    expect(
+      jsonDecode(prepared.encode()),
+      containsPair('transactionRelayUrl', null),
+    );
+  });
+
+  test('manifest decoding rejects non-strict or invalid values', () {
+    final valid = <String, Object?>{
+      'version': 2,
+      'network': 'main',
+      'accountUuid': 'account-1',
+      'dbPath': '/tmp/wallet.db',
+      'lightwalletdUrl': 'https://lwd.example:443',
+      'transactionRelayUrl': 'https://relay.example/submit',
       'credentialHex': List.filled(32, 'ab').join(),
       'saltBase64': base64Encode(List<int>.filled(16, 7)),
       'expectedRunId': null,
@@ -111,8 +157,12 @@ void main() {
       {...valid, 'credentialHex': List.filled(31, 'ab').join()},
       {...valid, 'saltBase64': base64Encode(List<int>.filled(15, 7))},
       {...valid, 'saltBase64': 'not-base64'},
+      {...valid, 'transactionRelayUrl': ''},
+      {...valid, 'transactionRelayUrl': 7},
       {...valid, 'expectedRunId': ''},
       {...valid, 'expectedRunId': 7},
+      {...valid, 'version': 1},
+      {...valid, 'version': 3},
       const <Object?>[],
     ];
 

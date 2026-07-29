@@ -135,6 +135,7 @@ class _FailingBindCredentialStore
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
+    String? transactionRelayUrl,
   }) async {
     _manifest = _manifestFor(null);
     return _manifest;
@@ -901,6 +902,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          String? transactionRelayUrl,
           required network,
           required accountUuid,
           required mnemonicBytes,
@@ -918,6 +920,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          String? transactionRelayUrl,
           required network,
           required accountUuid,
           required requestId,
@@ -952,6 +955,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          String? transactionRelayUrl,
           required network,
           required accountUuid,
           required password,
@@ -2919,6 +2923,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              String? transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,

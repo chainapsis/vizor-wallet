@@ -35,6 +35,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
+    String? transactionRelayUrl,
     required String credentialHex,
     required String saltBase64,
     required String? expectedRunId,
@@ -45,6 +46,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      transactionRelayUrl: transactionRelayUrl,
       credentialHex: credentialHex,
       saltBase64: saltBase64,
       expectedRunId: expectedRunId,
@@ -55,6 +57,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      transactionRelayUrl: transactionRelayUrl,
       credentialHex: credentialHex,
       saltBase64: saltBase64,
       expectedRunId: expectedRunId,
@@ -67,6 +70,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
     required this.accountUuid,
     required this.dbPath,
     required this.lightwalletdUrl,
+    required this.transactionRelayUrl,
     required this.credentialHex,
     required this.saltBase64,
     required this.expectedRunId,
@@ -84,18 +88,31 @@ class IronwoodMigrationBackgroundCredentialManifest {
         'Ironwood migration manifest must be a JSON object.',
       );
     }
-    if (decoded.length != _manifestKeys.length ||
-        !_manifestKeys.every(decoded.containsKey)) {
+    final version = decoded['version'];
+    final manifestKeys = switch (version) {
+      1 => _manifestV1Keys,
+      2 => _manifestV2Keys,
+      _ => null,
+    };
+    if (manifestKeys == null) {
       throw const FormatException(
-        'Ironwood migration manifest fields do not match version 1.',
+        'Ironwood migration manifest version is unsupported.',
+      );
+    }
+    if (decoded.length != manifestKeys.length ||
+        !manifestKeys.every(decoded.containsKey)) {
+      throw const FormatException(
+        'Ironwood migration manifest fields do not match its version.',
       );
     }
 
-    final version = decoded['version'];
     final network = decoded['network'];
     final accountUuid = decoded['accountUuid'];
     final dbPath = decoded['dbPath'];
     final lightwalletdUrl = decoded['lightwalletdUrl'];
+    final transactionRelayUrl = version == 2
+        ? decoded['transactionRelayUrl']
+        : null;
     final credentialHex = decoded['credentialHex'];
     final saltBase64 = decoded['saltBase64'];
     final expectedRunId = decoded['expectedRunId'];
@@ -104,6 +121,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
         accountUuid is! String ||
         dbPath is! String ||
         lightwalletdUrl is! String ||
+        (transactionRelayUrl != null && transactionRelayUrl is! String) ||
         credentialHex is! String ||
         saltBase64 is! String ||
         (expectedRunId != null && expectedRunId is! String)) {
@@ -119,6 +137,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
         accountUuid: accountUuid,
         dbPath: dbPath,
         lightwalletdUrl: lightwalletdUrl,
+        transactionRelayUrl: transactionRelayUrl as String?,
         credentialHex: credentialHex,
         saltBase64: saltBase64,
         expectedRunId: expectedRunId as String?,
@@ -133,6 +152,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
   final String accountUuid;
   final String dbPath;
   final String lightwalletdUrl;
+  final String? transactionRelayUrl;
   final String credentialHex;
   final String saltBase64;
   final String? expectedRunId;
@@ -143,6 +163,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
     'accountUuid': accountUuid,
     'dbPath': dbPath,
     'lightwalletdUrl': lightwalletdUrl,
+    if (version >= 2) 'transactionRelayUrl': transactionRelayUrl,
     'credentialHex': credentialHex,
     'saltBase64': saltBase64,
     'expectedRunId': expectedRunId,
@@ -161,6 +182,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      transactionRelayUrl: transactionRelayUrl,
       credentialHex: credentialHex,
       saltBase64: saltBase64,
       expectedRunId: runId,
@@ -174,6 +196,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
       accountUuid: accountUuid,
       dbPath: value,
       lightwalletdUrl: lightwalletdUrl,
+      transactionRelayUrl: transactionRelayUrl,
       credentialHex: credentialHex,
       saltBase64: saltBase64,
       expectedRunId: expectedRunId,
@@ -189,6 +212,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
           accountUuid == other.accountUuid &&
           dbPath == other.dbPath &&
           lightwalletdUrl == other.lightwalletdUrl &&
+          transactionRelayUrl == other.transactionRelayUrl &&
           credentialHex == other.credentialHex &&
           saltBase64 == other.saltBase64 &&
           expectedRunId == other.expectedRunId;
@@ -200,6 +224,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
     accountUuid,
     dbPath,
     lightwalletdUrl,
+    transactionRelayUrl,
     credentialHex,
     saltBase64,
     expectedRunId,
@@ -287,6 +312,7 @@ class IronwoodMigrationBackgroundCredentialStore {
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
+    String? transactionRelayUrl,
   }) async {
     final credentialBytes = _randomBytes(32);
     final saltBytes = _randomBytes(16);
@@ -296,11 +322,12 @@ class IronwoodMigrationBackgroundCredentialStore {
       );
     }
     final manifest = IronwoodMigrationBackgroundCredentialManifest(
-      version: 1,
+      version: 2,
       network: network,
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      transactionRelayUrl: transactionRelayUrl,
       credentialHex: credentialBytes
           .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
           .join(),
@@ -608,7 +635,7 @@ class IronwoodMigrationBackgroundLifecycle {
   }
 }
 
-const _manifestKeys = <String>{
+const _manifestV1Keys = <String>{
   'version',
   'network',
   'accountUuid',
@@ -618,6 +645,7 @@ const _manifestKeys = <String>{
   'saltBase64',
   'expectedRunId',
 };
+const _manifestV2Keys = <String>{..._manifestV1Keys, 'transactionRelayUrl'};
 const _supportedNetworks = <String>{'main', 'test', 'regtest'};
 final _lowercaseCredentialPattern = RegExp(r'^[0-9a-f]{64}$');
 final _canonicalSaltPattern = RegExp(r'^[A-Za-z0-9+/]{22}==$');
@@ -628,12 +656,20 @@ void _validateManifestValues({
   required String accountUuid,
   required String dbPath,
   required String lightwalletdUrl,
+  required String? transactionRelayUrl,
   required String credentialHex,
   required String saltBase64,
   required String? expectedRunId,
 }) {
-  if (version != 1) {
-    throw ArgumentError.value(version, 'version', 'must be 1');
+  if (version != 1 && version != 2) {
+    throw ArgumentError.value(version, 'version', 'must be 1 or 2');
+  }
+  if (version == 1 && transactionRelayUrl != null) {
+    throw ArgumentError.value(
+      transactionRelayUrl,
+      'transactionRelayUrl',
+      'is unavailable in version 1',
+    );
   }
   if (!_supportedNetworks.contains(network)) {
     throw ArgumentError.value(network, 'network', 'is unsupported');
@@ -641,6 +677,9 @@ void _validateManifestValues({
   _requireNonEmpty(accountUuid, 'accountUuid');
   _requireNonEmpty(dbPath, 'dbPath');
   _requireNonEmpty(lightwalletdUrl, 'lightwalletdUrl');
+  if (transactionRelayUrl != null) {
+    _requireNonEmpty(transactionRelayUrl, 'transactionRelayUrl');
+  }
   if (!_lowercaseCredentialPattern.hasMatch(credentialHex)) {
     throw ArgumentError.value(
       credentialHex,

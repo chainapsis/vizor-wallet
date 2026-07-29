@@ -1275,6 +1275,7 @@ void main() {
       final returnedMnemonicBytes = <Uint8List>[];
       final seenSalts = <String>[];
       final seenMnemonicPayloads = <List<int>>[];
+      final seenRelayUrls = <String?>[];
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -1291,6 +1292,7 @@ void main() {
           networkName: 'test',
           lightwalletdUrl: 'https://lwd.example:443',
         ),
+        getTransactionRelayUrl: () => 'https://relay.example/submit',
         getSessionPassword: () => 'test-password',
         getMnemonicBytesForAccount: (_) async {
           final bytes = Uint8List.fromList([1, 2, 3, 4]);
@@ -1302,6 +1304,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -1311,6 +1314,7 @@ void main() {
             }) {
               seenSalts.add(saltBase64);
               seenMnemonicPayloads.add(List<int>.from(mnemonicBytes));
+              seenRelayUrls.add(transactionRelayUrl);
               return Future.value(_migrationResult());
             },
       );
@@ -1329,6 +1333,10 @@ void main() {
       expect(seenMnemonicPayloads, [
         [1, 2, 3, 4],
         [1, 2, 3, 4],
+      ]);
+      expect(seenRelayUrls, [
+        'https://relay.example/submit',
+        'https://relay.example/submit',
       ]);
       expect(returnedMnemonicBytes, hasLength(2));
       for (final bytes in returnedMnemonicBytes) {
@@ -1379,6 +1387,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -1399,6 +1408,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -1486,6 +1496,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,
@@ -1545,6 +1556,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -1562,6 +1574,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -1619,6 +1632,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -2054,6 +2068,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -2127,6 +2142,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2141,6 +2157,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2185,6 +2202,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -2232,6 +2250,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -2243,6 +2262,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -2287,6 +2307,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -2296,6 +2317,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -2403,6 +2425,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,
@@ -2642,6 +2665,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,
@@ -2955,6 +2979,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -3075,6 +3100,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3186,6 +3212,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3280,6 +3307,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3343,6 +3371,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -3409,6 +3438,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -3514,6 +3544,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -3646,6 +3677,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -3738,6 +3770,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -3755,6 +3788,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -3817,6 +3851,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -3877,6 +3912,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -3945,6 +3981,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -4028,6 +4065,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -4048,6 +4086,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,
@@ -4171,6 +4210,7 @@ void main() {
               ({
                 required dbPath,
                 required lightwalletdUrl,
+                transactionRelayUrl,
                 required network,
                 required accountUuid,
                 required mnemonicBytes,
@@ -4185,6 +4225,7 @@ void main() {
               ({
                 required dbPath,
                 required lightwalletdUrl,
+                transactionRelayUrl,
                 required network,
                 required accountUuid,
                 required password,
@@ -4266,6 +4307,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -4360,6 +4402,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -4416,6 +4459,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -4436,6 +4480,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -4689,6 +4734,7 @@ IronwoodMigrationService _notificationAuthorizationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          transactionRelayUrl,
           required network,
           required accountUuid,
           required password,
@@ -4706,6 +4752,7 @@ IronwoodMigrationService _notificationAuthorizationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          transactionRelayUrl,
           required network,
           required accountUuid,
           required approvedSchedule,

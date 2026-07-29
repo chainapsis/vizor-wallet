@@ -149,6 +149,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
 pub(crate) async fn complete_orchard_migration_denominations_pczt(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     request_id: &str,
@@ -239,6 +240,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
                 &prepared_refs,
                 Vec::new(),
                 denomination_stages,
+                transaction_relay_url,
                 pending_password,
                 pending_salt_base64,
             )?;
@@ -254,6 +256,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
                 denomination_stages,
                 Some(&approved_schedule),
                 stored.preparation_timing_policy,
+                transaction_relay_url,
                 pending_password,
                 pending_salt_base64,
             )
@@ -287,6 +290,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
+        transaction_relay_url,
         network,
         &run_id,
         pending_password,
@@ -449,6 +453,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
 pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     request_id: &str,
@@ -582,6 +587,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             denomination_stages,
             Some(&stored.approved_schedule),
             stored.preparation_timing_policy,
+            transaction_relay_url,
             pending_password,
             pending_salt_base64,
         )
@@ -632,6 +638,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
+        transaction_relay_url,
         network,
         &run_id,
         pending_password,

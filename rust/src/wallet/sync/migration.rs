@@ -65,6 +65,7 @@ pub(crate) fn delete_account_migration_rows_with_tx(
         PREPARED_NOTES_TABLE,
         PENDING_TXS_TABLE,
         SIGNED_CHILD_PCZTS_TABLE,
+        super::submission_policy::SEPARATE_RELAY_TABLE,
     ] {
         if table_exists(tx, table)? {
             tx.execute(
@@ -218,6 +219,97 @@ pub(crate) struct SignedChildProofCandidate {
 pub(crate) struct DuePendingMigrationTx {
     pub txid_hex: String,
     pub raw_tx: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum MigrationDenominationSubmissionPolicy {
+    Lightwalletd,
+    SeparateRelay(String),
+}
+
+fn denomination_submission_columns(
+    transaction_relay_url: Option<&str>,
+) -> Result<(&'static str, Option<String>), String> {
+    match transaction_relay_url {
+        Some(url) => {
+            let url = url.trim();
+            if url.is_empty() {
+                return Err("Migration transaction relay URL is empty".to_string());
+            }
+            let url = super::broadcast::validate_transaction_relay_url(url)?;
+            Ok(("separate_relay", Some(url.to_string())))
+        }
+        None => Ok(("lightwalletd", None)),
+    }
+}
+
+/// Binds a legacy run on first use and otherwise returns its immutable route.
+/// A run never follows later endpoint-setting changes between denomination
+/// stages.
+pub(crate) fn resolve_denomination_submission_policy(
+    db_path: &str,
+    run_id: &str,
+    requested_relay_url: Option<&str>,
+) -> Result<MigrationDenominationSubmissionPolicy, String> {
+    with_wallet_db_write_lock("migration.resolve_denomination_submission_policy", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin denomination submission policy binding: {e}"))?;
+        let stored = tx
+            .query_row(
+                &format!(
+                    "SELECT denomination_submission_route, denomination_relay_url
+                     FROM {RUNS_TABLE} WHERE run_id = ?1"
+                ),
+                params![run_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Read denomination submission policy: {e}"))?
+            .ok_or_else(|| format!("Migration run {run_id} was not found"))?;
+
+        let (route, relay_url) = match stored {
+            (None, None) => {
+                let (route, relay_url) = denomination_submission_columns(requested_relay_url)?;
+                tx.execute(
+                    &format!(
+                        "UPDATE {RUNS_TABLE}
+                         SET denomination_submission_route = ?1,
+                             denomination_relay_url = ?2
+                         WHERE run_id = ?3
+                           AND denomination_submission_route IS NULL
+                           AND denomination_relay_url IS NULL"
+                    ),
+                    params![route, relay_url.as_deref(), run_id],
+                )
+                .map_err(|e| format!("Bind denomination submission policy: {e}"))?;
+                (Some(route.to_string()), relay_url)
+            }
+            stored => stored,
+        };
+
+        let policy = match (route.as_deref(), relay_url) {
+            (Some("lightwalletd"), None) => MigrationDenominationSubmissionPolicy::Lightwalletd,
+            (Some("separate_relay"), Some(url)) if !url.trim().is_empty() => {
+                MigrationDenominationSubmissionPolicy::SeparateRelay(url)
+            }
+            _ => {
+                return Err(format!(
+                    "Migration run {run_id} has an invalid denomination submission policy"
+                ))
+            }
+        };
+        tx.commit()
+            .map_err(|e| format!("Commit denomination submission policy binding: {e}"))?;
+        Ok(policy)
+    })
 }
 
 #[derive(Debug)]
@@ -1028,6 +1120,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     denomination_stages: Vec<DenominationStageInsert>,
     approved_schedule: Option<&[MigrationScheduleEntry]>,
     preparation_timing_policy: PreparationTimingPolicy,
+    transaction_relay_url: Option<&str>,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<String, String> {
@@ -1061,6 +1154,8 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
     let timing_policy = configured_timing_policy(network);
+    let (denomination_submission_route, denomination_relay_url) =
+        denomination_submission_columns(transaction_relay_url)?;
     let initial_phase = if denomination_stages.is_empty() {
         PHASE_READY_TO_MIGRATE
     } else {
@@ -1087,8 +1182,9 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
               updated_at_ms, target_values_json, timing_policy, schedule_json,
-              preparation_timing_policy)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10)"
+              preparation_timing_policy, denomination_submission_route,
+              denomination_relay_url)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
         ),
         params![
             run_id,
@@ -1101,6 +1197,8 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
             timing_policy.as_str(),
             schedule_json,
             preparation_timing_policy.as_str(),
+            denomination_submission_route,
+            denomination_relay_url,
         ],
     )
     .map_err(|e| format!("Create staged migration run: {e}"))?;
@@ -1225,6 +1323,7 @@ pub(crate) fn finalize_private_migration_draft(
     prepared_notes: &[PreparedOrchardNoteRef],
     signed_children: Vec<SignedMigrationPcztInsert>,
     denomination_stages: Vec<DenominationStageInsert>,
+    transaction_relay_url: Option<&str>,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<(), String> {
@@ -1246,6 +1345,8 @@ pub(crate) fn finalize_private_migration_draft(
     } else {
         PHASE_WAITING_DENOM_CONFIRMATIONS
     };
+    let (denomination_submission_route, denomination_relay_url) =
+        denomination_submission_columns(transaction_relay_url)?;
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin private migration draft finalization: {e}"))?;
@@ -1262,7 +1363,9 @@ pub(crate) fn finalize_private_migration_draft(
     tx.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+             SET phase = ?1, updated_at_ms = ?2, last_error = NULL,
+                 denomination_submission_route = ?6,
+                 denomination_relay_url = ?7
              WHERE run_id = ?3 AND phase IN (?4, ?5)"
         ),
         params![
@@ -1271,6 +1374,8 @@ pub(crate) fn finalize_private_migration_draft(
             run_id,
             PHASE_AWAITING_PREPARATION,
             PHASE_AWAITING_DENOMINATION_SIGNATURE,
+            denomination_submission_route,
+            denomination_relay_url,
         ],
     )
     .map_err(|e| format!("Activate private migration draft: {e}"))?;

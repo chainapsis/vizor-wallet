@@ -514,9 +514,23 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             schedule_json TEXT NOT NULL DEFAULT '[]',
             timing_policy TEXT NOT NULL DEFAULT 'standard',
             preparation_timing_policy TEXT NOT NULL DEFAULT 'immediate',
+            denomination_submission_route TEXT CHECK (
+                denomination_submission_route IS NULL
+                OR denomination_submission_route IN ('lightwalletd', 'separate_relay')
+            ),
+            denomination_relay_url TEXT,
             proof_retry_height INTEGER,
             signed_schedule_origin_height INTEGER,
-            last_error TEXT
+            last_error TEXT,
+            CHECK (
+                (denomination_submission_route IS NULL AND denomination_relay_url IS NULL)
+                OR
+                (denomination_submission_route = 'lightwalletd' AND denomination_relay_url IS NULL)
+                OR
+                (denomination_submission_route = 'separate_relay'
+                 AND denomination_relay_url IS NOT NULL
+                 AND length(trim(denomination_relay_url)) > 0)
+            )
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_runs_active
             ON {RUNS_TABLE}(account_uuid, network, phase, created_at_ms);
@@ -605,6 +619,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "preparation_timing_policy",
         "TEXT NOT NULL DEFAULT 'immediate'",
     )?;
+    ensure_denomination_submission_columns(conn)?;
     add_column_if_missing(conn, RUNS_TABLE, "proof_retry_height", "INTEGER")?;
     add_column_if_missing(
         conn,
@@ -680,6 +695,47 @@ fn add_column_if_missing(
             [],
         )
         .map_err(|e| format!("Add migration column {table}.{column}: {e}"))?;
+    }
+    Ok(())
+}
+
+fn ensure_denomination_submission_columns(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    let route_missing =
+        !table_column_exists(conn, RUNS_TABLE, "denomination_submission_route")?;
+    let relay_url_missing = !table_column_exists(conn, RUNS_TABLE, "denomination_relay_url")?;
+    if !route_missing && !relay_url_missing {
+        return Ok(());
+    }
+
+    let mut migration = String::from("SAVEPOINT vizor_denomination_submission_columns;");
+    if route_missing {
+        migration.push_str(&format!(
+            "ALTER TABLE {RUNS_TABLE} ADD COLUMN denomination_submission_route TEXT;"
+        ));
+    }
+    if relay_url_missing {
+        migration.push_str(&format!(
+            "ALTER TABLE {RUNS_TABLE} ADD COLUMN denomination_relay_url TEXT;"
+        ));
+    }
+    migration.push_str(&format!(
+        "UPDATE {RUNS_TABLE}
+         SET denomination_submission_route = 'lightwalletd'
+         WHERE denomination_submission_route IS NULL
+           AND denomination_relay_url IS NULL;
+         RELEASE vizor_denomination_submission_columns;"
+    ));
+
+    if let Err(error) = conn.execute_batch(&migration) {
+        let _ = conn.execute_batch(
+            "ROLLBACK TO vizor_denomination_submission_columns;
+             RELEASE vizor_denomination_submission_columns;",
+        );
+        return Err(format!(
+            "Migrate denomination submission policy columns: {error}"
+        ));
     }
     Ok(())
 }

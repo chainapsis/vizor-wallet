@@ -198,6 +198,7 @@ fn wire__crate__api__sync__broadcast_due_orchard_migration_transactions_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
@@ -208,6 +209,7 @@ fn wire__crate__api__sync__broadcast_due_orchard_migration_transactions_impl(
                     let output_ok = crate::api::sync::broadcast_due_orchard_migration_transactions(
                         api_db_path,
                         api_lightwalletd_url,
+                        api_transaction_relay_url,
                         api_network,
                         api_account_uuid,
                         api_password,
@@ -243,6 +245,7 @@ fn wire__crate__api__sync__broadcast_one_due_orchard_migration_transaction_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
@@ -254,6 +257,7 @@ fn wire__crate__api__sync__broadcast_one_due_orchard_migration_transaction_impl(
                         crate::api::sync::broadcast_one_due_orchard_migration_transaction(
                             api_db_path,
                             api_lightwalletd_url,
+                            api_transaction_relay_url,
                             api_network,
                             api_account_uuid,
                             api_password,
@@ -591,6 +595,7 @@ fn wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_request_id = <String>::sse_decode(&mut deserializer);
@@ -610,6 +615,7 @@ fn wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(
                             crate::api::sync::complete_orchard_migration_denominations_pczt(
                                 api_db_path,
                                 api_lightwalletd_url,
+                                api_transaction_relay_url,
                                 api_network,
                                 api_account_uuid,
                                 api_request_id,
@@ -704,6 +710,7 @@ fn wire__crate__api__sync__complete_orchard_migration_single_qr_pczt_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_request_id = <String>::sse_decode(&mut deserializer);
@@ -721,6 +728,7 @@ fn wire__crate__api__sync__complete_orchard_migration_single_qr_pczt_impl(
                             crate::api::sync::complete_orchard_migration_single_qr_pczt(
                                 api_db_path,
                                 api_lightwalletd_url,
+                                api_transaction_relay_url,
                                 api_network,
                                 api_account_uuid,
                                 api_request_id,
@@ -4018,6 +4026,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_mnemonic_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
@@ -4032,6 +4041,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
                     let output_ok = crate::api::sync::migrate_orchard_to_ironwood(
                         api_db_path,
                         api_lightwalletd_url,
+                        api_transaction_relay_url,
                         api_network,
                         api_account_uuid,
                         api_mnemonic_bytes,
@@ -4121,6 +4131,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
@@ -4135,6 +4146,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
                         crate::api::sync::migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
                             api_db_path,
                             api_lightwalletd_url,
+                            api_transaction_relay_url,
                             api_network,
                             api_account_uuid,
                             api_password,
@@ -4527,6 +4539,7 @@ fn wire__crate__api__sync__prepare_orchard_migration_outbox_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
@@ -4537,6 +4550,7 @@ fn wire__crate__api__sync__prepare_orchard_migration_outbox_impl(
                     let output_ok = crate::api::sync::prepare_orchard_migration_outbox(
                         api_db_path,
                         api_lightwalletd_url,
+                        api_transaction_relay_url,
                         api_network,
                         api_account_uuid,
                         api_password,

@@ -302,6 +302,7 @@ Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
 Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   required String dbPath,
   required String lightwalletdUrl,
+  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
@@ -312,6 +313,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
 }) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwood(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  transactionRelayUrl: transactionRelayUrl,
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
@@ -431,6 +433,7 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
 Future<IronwoodMigrationResult> prepareOrchardMigrationOutbox({
   required String dbPath,
   required String lightwalletdUrl,
+  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -438,6 +441,7 @@ Future<IronwoodMigrationResult> prepareOrchardMigrationOutbox({
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationOutbox(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  transactionRelayUrl: transactionRelayUrl,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -485,6 +489,7 @@ Future<void> reconcileOrchardMigrationOutboxReceipt({
 Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
   required String dbPath,
   required String lightwalletdUrl,
+  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -492,6 +497,7 @@ Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
 }) => RustLib.instance.api.crateApiSyncBroadcastDueOrchardMigrationTransactions(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  transactionRelayUrl: transactionRelayUrl,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -501,6 +507,7 @@ Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
 Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
   required String dbPath,
   required String lightwalletdUrl,
+  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -509,6 +516,7 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
     RustLib.instance.api.crateApiSyncBroadcastOneDueOrchardMigrationTransaction(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      transactionRelayUrl: transactionRelayUrl,
       network: network,
       accountUuid: accountUuid,
       password: password,
@@ -547,6 +555,7 @@ Future<String> createOrResumePrivateMigrationDraft({
 Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required String dbPath,
   required String lightwalletdUrl,
+  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -558,6 +567,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
     RustLib.instance.api.crateApiSyncCompleteOrchardMigrationDenominationsPczt(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      transactionRelayUrl: transactionRelayUrl,
       network: network,
       accountUuid: accountUuid,
       requestId: requestId,
@@ -588,6 +598,7 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
 Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   required String dbPath,
   required String lightwalletdUrl,
+  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -597,6 +608,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
 }) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  transactionRelayUrl: transactionRelayUrl,
   network: network,
   accountUuid: accountUuid,
   requestId: requestId,
@@ -651,6 +663,7 @@ Future<IronwoodMigrationResult>
 migrateOrchardToIronwoodWithMacosStoredMnemonic({
   required String dbPath,
   required String lightwalletdUrl,
+  String? transactionRelayUrl,
   required String network,
   required String accountUuid,
   required String password,
@@ -661,6 +674,7 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
     .crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      transactionRelayUrl: transactionRelayUrl,
       network: network,
       accountUuid: accountUuid,
       password: password,

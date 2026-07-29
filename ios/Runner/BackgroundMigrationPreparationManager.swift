@@ -1563,18 +1563,27 @@ final class BackgroundMigrationPreparationManager {
     guard !isStopRequested else { return .cancelled }
 
     let credential = Data(manifest.credentialHex.utf8)
-    let advanceCode = credential.withUnsafeBytes { bytes in
-      zcash_advance_migration_preparation(
-        manifest.dbPath,
-        manifest.lightwalletdUrl,
-        manifest.network,
-        manifest.accountUuid,
-        runId,
-        bytes.bindMemory(to: UInt8.self).baseAddress,
-        UInt(bytes.count),
-        manifest.saltBase64,
-        &preparation
-      )
+    let advance: (UnsafePointer<CChar>?) -> Int32 = { relayUrl in
+      credential.withUnsafeBytes { bytes in
+        zcash_advance_migration_preparation(
+          manifest.dbPath,
+          manifest.lightwalletdUrl,
+          relayUrl,
+          manifest.network,
+          manifest.accountUuid,
+          runId,
+          bytes.bindMemory(to: UInt8.self).baseAddress,
+          UInt(bytes.count),
+          manifest.saltBase64,
+          &preparation
+        )
+      }
+    }
+    let advanceCode: Int32
+    if let transactionRelayUrl = manifest.transactionRelayUrl {
+      advanceCode = transactionRelayUrl.withCString(advance)
+    } else {
+      advanceCode = advance(nil)
     }
     guard advanceCode == 0 else {
       print("[BGPreparation] advance failed: \(advanceCode)")
