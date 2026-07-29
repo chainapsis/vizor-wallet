@@ -130,15 +130,35 @@ fn elapsed() -> String {
         .unwrap_or_default()
 }
 
-fn batch_size_for_range(base_batch_size: u32, start: BlockHeight, range_end: BlockHeight) -> u32 {
+fn batch_size_for_range(
+    base_batch_size: u32,
+    start: BlockHeight,
+    range_end: BlockHeight,
+    migration_anchor_retention_start: Option<BlockHeight>,
+) -> u32 {
     let start_u32 = u32::from(start);
     let range_end_u32 = u32::from(range_end);
     // Overlap check: range [start, range_end) ∩ [SANDBLASTING_START, SANDBLASTING_END)
-    if start_u32 < SANDBLASTING_END && range_end_u32 > SANDBLASTING_START {
+    let mut batch_size = if start_u32 < SANDBLASTING_END && range_end_u32 > SANDBLASTING_START {
         BATCH_SIZE_SANDBLASTING
     } else {
         base_batch_size
+    };
+
+    if let Some(retention_start) = migration_anchor_retention_start {
+        let retention_start_u32 = u32::from(retention_start);
+        if start >= retention_start {
+            batch_size = batch_size.min(BATCH_SIZE_MIGRATION_ANCHOR_RETENTION);
+        } else if range_end > retention_start {
+            // Do not let a normal pre-activation batch cross into the range
+            // where migration anchors can first be selected. The next batch
+            // starts exactly at the retention boundary and is capped below
+            // the checkpoint pruning depth.
+            batch_size = batch_size.min(retention_start_u32 - start_u32);
+        }
     }
+
+    batch_size
 }
 
 fn chain_tip_exclusive_end(current_tip_height: u64) -> BlockHeight {
@@ -151,13 +171,19 @@ fn scannable_batch_end(
     start: BlockHeight,
     range_end: BlockHeight,
     current_tip_height: u64,
+    migration_anchor_retention_start: Option<BlockHeight>,
 ) -> Option<(u32, BlockHeight)> {
     let available_end = std::cmp::min(range_end, chain_tip_exclusive_end(current_tip_height));
     if start >= available_end {
         return None;
     }
 
-    let batch_size = batch_size_for_range(base_batch_size, start, available_end);
+    let batch_size = batch_size_for_range(
+        base_batch_size,
+        start,
+        available_end,
+        migration_anchor_retention_start,
+    );
     let end = std::cmp::min(start + batch_size, available_end);
     Some((batch_size, end))
 }
@@ -177,12 +203,27 @@ fn effective_base_batch_size(default_batch_size: u32) -> u32 {
     default_batch_size
 }
 
-fn migration_anchor_retention_batch_size(base_batch_size: u32, required: bool) -> u32 {
-    if required {
-        base_batch_size.min(BATCH_SIZE_MIGRATION_ANCHOR_RETENTION)
-    } else {
-        base_batch_size
+fn migration_anchor_retention_start_height(
+    network: WalletNetwork,
+    required: bool,
+) -> Option<BlockHeight> {
+    if !required {
+        return None;
     }
+
+    network
+        .activation_height(NetworkUpgrade::Nu6_3)
+        // Migration anchor selection rejects the activation block itself.
+        .and_then(|height| u32::from(height).checked_add(1))
+        .map(BlockHeight::from_u32)
+}
+
+fn migration_anchor_retention_is_active_at(
+    migration_anchor_retention_start: Option<BlockHeight>,
+    scanned_height: u64,
+) -> bool {
+    migration_anchor_retention_start
+        .is_some_and(|retention_start| scanned_height >= u64::from(u32::from(retention_start)))
 }
 
 #[cfg(debug_assertions)]
@@ -1325,7 +1366,7 @@ async fn run_sync_impl(
     allow_resubmit: bool,
     progress_fn: &(impl Fn(SyncProgressEvent) + Send + Sync),
 ) -> Result<(), SyncError> {
-    let mut migration_anchor_retention_required =
+    let migration_anchor_retention_required =
         crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
             .map_err(SyncError::db)?;
     let default_batch_size = if running_mode == 2 {
@@ -1333,17 +1374,17 @@ async fn run_sync_impl(
     } else {
         BATCH_SIZE_FOREGROUND
     };
-    let unclamped_base_batch_size = effective_base_batch_size(default_batch_size);
-    let mut base_batch_size = migration_anchor_retention_batch_size(
-        unclamped_base_batch_size,
-        migration_anchor_retention_required,
-    );
+    let base_batch_size = effective_base_batch_size(default_batch_size);
+    let mut migration_anchor_retention_start =
+        migration_anchor_retention_start_height(network, migration_anchor_retention_required);
     log::info!(
-        "[{}] sync: starting (mode={}, base_batch={}, migration_anchor_retention={})",
+        "[{}] sync: starting (mode={}, base_batch={}, migration_anchor_retention={}, \
+         retention_start={:?})",
         elapsed(),
         running_mode,
         base_batch_size,
         migration_anchor_retention_required,
+        migration_anchor_retention_start.map(u32::from),
     );
 
     // Persist the active session before any new sync work begins. A crash or
@@ -1677,9 +1718,13 @@ async fn run_sync_impl(
         // making scan_cached_blocks much slower per block and
         // using more memory. Matches the SDK's
         // `SANDBLASTING_RANGE` check.
-        let Some((batch_size, end)) =
-            scannable_batch_end(base_batch_size, start, range_end, current_tip_height)
-        else {
+        let Some((batch_size, end)) = scannable_batch_end(
+            base_batch_size,
+            start,
+            range_end,
+            current_tip_height,
+            migration_anchor_retention_start,
+        ) else {
             log::info!(
                 "[{}] sync: pending range {} starts after current tip {}, waiting for tip advance",
                 elapsed(),
@@ -1994,7 +2039,11 @@ async fn run_sync_impl(
             },
         };
 
-        if migration_anchor_retention_required {
+        let scanned_through = u64::from(u32::from(end).saturating_sub(1));
+        if migration_anchor_retention_is_active_at(
+            migration_anchor_retention_start,
+            scanned_through,
+        ) {
             let retained = with_wallet_db_write_lock(
                 "sync_engine.retain_migration_anchor_checkpoints",
                 || {
@@ -2026,11 +2075,7 @@ async fn run_sync_impl(
                 crate::wallet::sync::migration_anchor_retention_required(db_data_path, network)
                     .map_err(SyncError::db)?;
             if !still_required {
-                migration_anchor_retention_required = false;
-                base_batch_size = migration_anchor_retention_batch_size(
-                    unclamped_base_batch_size,
-                    migration_anchor_retention_required,
-                );
+                migration_anchor_retention_start = None;
                 log::info!(
                     "[{}] sync: migration anchor retention released (base_batch={})",
                     elapsed(),
@@ -2188,8 +2233,12 @@ async fn run_sync_impl(
             .find(|r| is_pending_scan_range(r))
             .map(|r| {
                 let next_start = r.block_range().start;
-                let next_batch_size =
-                    batch_size_for_range(base_batch_size, next_start, r.block_range().end);
+                let next_batch_size = batch_size_for_range(
+                    base_batch_size,
+                    next_start,
+                    r.block_range().end,
+                    migration_anchor_retention_start,
+                );
                 let next_end = std::cmp::min(next_start + next_batch_size, r.block_range().end);
                 u32::from(next_end).saturating_sub(u32::from(next_start)) as u64
             })
@@ -2237,9 +2286,13 @@ async fn run_sync_impl(
             let pf_start = end;
             // Recompute batch_size for the prefetch range in case
             // it crosses a sandblasting boundary differently.
-            if let Some((_, pf_end)) =
-                scannable_batch_end(base_batch_size, pf_start, range_end, current_tip_height)
-            {
+            if let Some((_, pf_end)) = scannable_batch_end(
+                base_batch_size,
+                pf_start,
+                range_end,
+                current_tip_height,
+                migration_anchor_retention_start,
+            ) {
                 let mut pf_client = client.clone();
                 prefetch = Some(Prefetch {
                     start: pf_start,
@@ -2268,7 +2321,10 @@ async fn run_sync_impl(
     // unresolved in an earlier run.
     crate::wallet::sync::reconcile_wallet_locks_after_sync(db_data_path, network)
         .map_err(SyncError::db)?;
-    if migration_anchor_retention_required {
+    if migration_anchor_retention_is_active_at(
+        migration_anchor_retention_start,
+        final_scanned_height,
+    ) {
         with_wallet_db_write_lock(
             "sync_engine.retain_migration_anchor_checkpoints.final",
             || {
@@ -2441,6 +2497,12 @@ fn should_use_empty_chain_state(
 mod tests {
     use super::*;
 
+    const TEST_NU6_3_ACTIVATION_HEIGHT: u32 = 1_000;
+
+    fn test_migration_anchor_retention_start() -> Option<BlockHeight> {
+        Some(BlockHeight::from_u32(TEST_NU6_3_ACTIVATION_HEIGHT + 1))
+    }
+
     #[test]
     fn empty_chain_state_uses_network_activation_height() {
         assert!(
@@ -2471,6 +2533,7 @@ mod tests {
                 BlockHeight::from_u32(121),
                 BlockHeight::from_u32(131),
                 121,
+                None,
             ),
             Some((2_000, BlockHeight::from_u32(122))),
         );
@@ -2484,16 +2547,133 @@ mod tests {
                 BlockHeight::from_u32(122),
                 BlockHeight::from_u32(131),
                 121,
+                None,
             ),
             None,
         );
     }
 
     #[test]
-    fn migration_anchor_retention_caps_batches_below_the_checkpoint_pruning_depth() {
-        assert_eq!(migration_anchor_retention_batch_size(1_000, true), 96);
-        assert_eq!(migration_anchor_retention_batch_size(80, true), 80);
-        assert_eq!(migration_anchor_retention_batch_size(1_000, false), 1_000);
+    fn migration_anchor_retention_uses_normal_batches_before_activation() {
+        let retention_start = test_migration_anchor_retention_start();
+        assert_eq!(
+            batch_size_for_range(
+                2_000,
+                BlockHeight::from_u32(100),
+                BlockHeight::from_u32(900),
+                retention_start,
+            ),
+            2_000,
+        );
+        assert!(!migration_anchor_retention_is_active_at(
+            retention_start,
+            u64::from(TEST_NU6_3_ACTIVATION_HEIGHT),
+        ));
+    }
+
+    #[test]
+    fn migration_anchor_retention_splits_batches_at_activation_boundary() {
+        let retention_start = test_migration_anchor_retention_start();
+        let retention_start_height = retention_start.expect("retention start");
+        assert_eq!(
+            scannable_batch_end(
+                2_000,
+                BlockHeight::from_u32(900),
+                BlockHeight::from_u32(1_500),
+                1_499,
+                retention_start,
+            ),
+            Some((101, retention_start_height)),
+        );
+        assert!(!migration_anchor_retention_is_active_at(
+            retention_start,
+            u64::from(TEST_NU6_3_ACTIVATION_HEIGHT),
+        ));
+    }
+
+    #[test]
+    fn migration_anchor_retention_caps_post_activation_batches() {
+        let retention_start = test_migration_anchor_retention_start();
+        let retention_start_height = retention_start.expect("retention start");
+        assert_eq!(
+            batch_size_for_range(
+                1_000,
+                retention_start_height,
+                BlockHeight::from_u32(3_000),
+                retention_start,
+            ),
+            BATCH_SIZE_MIGRATION_ANCHOR_RETENTION,
+        );
+        assert_eq!(
+            batch_size_for_range(
+                80,
+                retention_start_height,
+                BlockHeight::from_u32(3_000),
+                retention_start,
+            ),
+            80,
+        );
+        assert!(migration_anchor_retention_is_active_at(
+            retention_start,
+            u64::from(u32::from(retention_start_height)),
+        ));
+    }
+
+    #[test]
+    fn migration_anchor_retention_release_restores_normal_batches() {
+        assert_eq!(
+            batch_size_for_range(
+                2_000,
+                BlockHeight::from_u32(TEST_NU6_3_ACTIVATION_HEIGHT + 1),
+                BlockHeight::from_u32(3_000),
+                None,
+            ),
+            2_000,
+        );
+        assert!(!migration_anchor_retention_is_active_at(
+            None,
+            u64::from(TEST_NU6_3_ACTIVATION_HEIGHT + 1),
+        ));
+    }
+
+    #[test]
+    fn migration_anchor_retention_starts_after_nu6_3() {
+        let activation = WalletNetwork::Main
+            .activation_height(NetworkUpgrade::Nu6_3)
+            .expect("mainnet NU6.3 activation height");
+        let expected = BlockHeight::from_u32(u32::from(activation) + 1);
+
+        assert_eq!(
+            migration_anchor_retention_start_height(WalletNetwork::Main, true),
+            Some(expected),
+        );
+        assert_eq!(
+            migration_anchor_retention_start_height(WalletNetwork::Main, false),
+            None,
+        );
+    }
+
+    #[test]
+    fn migration_anchor_retention_composes_with_sandblasting_batches() {
+        let retention_start = Some(BlockHeight::from_u32(SANDBLASTING_START + 50));
+        assert_eq!(
+            batch_size_for_range(
+                2_000,
+                BlockHeight::from_u32(SANDBLASTING_START),
+                BlockHeight::from_u32(SANDBLASTING_START + 500),
+                retention_start,
+            ),
+            50,
+        );
+        assert_eq!(
+            batch_size_for_range(
+                2_000,
+                BlockHeight::from_u32(SANDBLASTING_START + 50),
+                BlockHeight::from_u32(SANDBLASTING_START + 500),
+                retention_start,
+            ),
+            BATCH_SIZE_MIGRATION_ANCHOR_RETENTION,
+        );
     }
 
     #[test]
