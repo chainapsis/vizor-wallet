@@ -2156,6 +2156,9 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
 
 #[test]
 fn preparation_schedule_is_planned_across_dependency_layers() {
+    assert_eq!(ZIP318_PREPARATION_MEAN_DELAY_BLOCKS, 16);
+    assert_eq!(ZIP318_PREPARATION_MAX_DELAY_BLOCKS, 96);
+
     let mut rng = StdRng::seed_from_u64(0x318);
     let heights = planned_preparation_scheduled_heights(
         WalletNetwork::Main,
