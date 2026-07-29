@@ -992,6 +992,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
                   }
                   if (gen != _syncGen || !_isSyncing) return;
                 }
+                ++_progressEventVersion;
                 _isSyncing = false;
                 _stopDisplayProgressTimer();
                 log(
@@ -1007,6 +1008,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             onError: (e) {
               if (!ref.mounted || gen != _syncGen) return;
               log('Sync: stream error: $e');
+              ++_progressEventVersion;
               _isSyncing = false;
               _stopDisplayProgressTimer();
               // Sync died mid-stream: tear the mempool observer down
@@ -1027,6 +1029,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         .catchError((e, st) {
           if (gen != _syncGen) return;
           log('SyncNotifier: ERROR: $e\n$st');
+          ++_progressEventVersion;
           _isSyncing = false;
           _stopDisplayProgressTimer();
           // Sync setup threw before the stream was ever attached.
@@ -1176,6 +1179,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   void _recordSyncFailure(Object error) {
+    ++_progressEventVersion;
     final failure = classifySyncFailure(error);
     final prev = state.value;
     final accountUuid = _getActiveAccountUuid();
@@ -1875,7 +1879,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         balanceReadIsCurrent;
     final useFetchedRecentTxs =
         useFetchedAccountData && didFetchRecentTxs && balanceReadIsCurrent;
-    if (progressEventVersion != _progressEventVersion) {
+    // A stream error can be recorded while this handler awaits DB reads. Its
+    // stopped failure state must win over this older progress event.
+    final currentState = state.value;
+    final failureRecordedWhileAwaiting =
+        currentState?.failure != null &&
+        (!identical(currentState?.failure, prev?.failure) ||
+            currentState?.lastSyncFailedAt != prev?.lastSyncFailedAt);
+    if (progressEventVersion != _progressEventVersion ||
+        failureRecordedWhileAwaiting) {
       _mergeFetchedAccountDataIntoLatestState(
         accountUuid: accountUuid,
         balance: useFetchedBalance ? fetchedBalance : null,
@@ -1885,7 +1897,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         shieldTransparentAmount: shieldTransparentAmount,
       );
       log(
-        'SyncNotifier: discarded out-of-order progress metadata'
+        'SyncNotifier: discarded stale progress metadata'
         '${useFetchedBalance || useFetchedRecentTxs ? ', kept account data' : ''}',
       );
       return;
@@ -1893,7 +1905,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     if (useFetchedBalance) {
       ++_authoritativeBalanceVersion;
     }
-    final stateScopedPrev = _previousScopedState(state.value, stateAccountUuid);
+    final stateScopedPrev = _previousScopedState(
+      currentState,
+      stateAccountUuid,
+    );
     final hasBalanceData =
         useFetchedBalance || (stateScopedPrev?.hasBalanceData ?? false);
     final hasRecentTransactionsData =

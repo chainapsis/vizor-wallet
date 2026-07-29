@@ -97,7 +97,7 @@ pub fn start_full_sync(
     mode: u8,
     sink: StreamSink<ApiSyncProgressEvent>,
 ) -> Result<(), String> {
-    run_full_sync_internal(db_path, lightwalletd_url, network, mode, |progress| {
+    let result = run_full_sync_internal(db_path, lightwalletd_url, network, mode, |progress| {
         if sink
             .add(ApiSyncProgressEvent {
                 scanned_height: progress.scanned_height,
@@ -114,7 +114,17 @@ pub fn start_full_sync(
         {
             log::warn!("sync: StreamSink closed, progress not delivered");
         }
-    })
+    });
+
+    // Generated Dart exposes the sink stream, while the FRB task future is
+    // detached. Forward terminal errors through the stream it actually reads.
+    if let Err(error) = result {
+        if sink.add_error(error.clone()).is_err() {
+            log::warn!("sync: StreamSink closed before error delivery: {error}");
+        }
+    }
+
+    Ok(())
 }
 
 /// Blocking sync entrypoint that uses the same API-layer network parsing,
