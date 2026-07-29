@@ -30,31 +30,6 @@ class IronwoodMigrationKeystoneCombinedSignScreen extends StatelessWidget {
   }
 }
 
-class MobileIronwoodMigrationKeystoneCombinedSignScreen
-    extends StatelessWidget {
-  const MobileIronwoodMigrationKeystoneCombinedSignScreen({
-    required this.approvedSchedule,
-    this.previewRequest,
-    this.previewUrParts = const [],
-    super.key,
-  });
-
-  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
-  final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
-  final List<String> previewUrParts;
-
-  @override
-  Widget build(BuildContext context) {
-    return _IronwoodMigrationKeystonePrivateSignScreen(
-      step: _KeystonePrivateSignStep.combined,
-      approvedSchedule: approvedSchedule,
-      mobileLayout: true,
-      previewRequest: previewRequest,
-      previewUrParts: previewUrParts,
-    );
-  }
-}
-
 class IronwoodMigrationKeystoneImmediateSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneImmediateSignScreen({
     required this.approvedPlan,
@@ -109,6 +84,52 @@ class MobileIronwoodMigrationKeystoneImmediateSignScreen
       previewStartScanning: previewStartScanning,
     );
   }
+}
+
+class MobileIronwoodMigrationKeystoneCombinedSignScreen
+    extends StatelessWidget {
+  const MobileIronwoodMigrationKeystoneCombinedSignScreen({
+    required this.approvedSchedule,
+    this.initialRequest,
+    this.initialAccountUuid,
+    this.previewRequest,
+    this.previewUrParts = const [],
+    this.previewStartScanning = false,
+    super.key,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final rust_sync.KeystoneMigrationSigningRequest? initialRequest;
+  final String? initialAccountUuid;
+  final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
+  final List<String> previewUrParts;
+  final bool previewStartScanning;
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.combined,
+      approvedSchedule: approvedSchedule,
+      mobileLayout: true,
+      initialRequest: initialRequest,
+      initialAccountUuid: initialAccountUuid,
+      previewRequest: previewRequest,
+      previewUrParts: previewUrParts,
+      previewStartScanning: previewStartScanning,
+    );
+  }
+}
+
+class MobileIronwoodMigrationKeystoneCombinedSignEntry {
+  const MobileIronwoodMigrationKeystoneCombinedSignEntry({
+    required this.approvedSchedule,
+    required this.request,
+    required this.accountUuid,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final rust_sync.KeystoneMigrationSigningRequest request;
+  final String accountUuid;
 }
 
 class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
@@ -335,7 +356,8 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     _KeystonePrivateSignStep.immediate =>
       'Scan the QR code with your Keystone wallet to confirm migration.',
     _KeystonePrivateSignStep.combined =>
-      'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.',
+      'Scan this request with Keystone to sign the preparation transactions '
+          'and migration batches together.',
     _KeystonePrivateSignStep.denominations =>
       'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.',
     _KeystonePrivateSignStep.batch =>

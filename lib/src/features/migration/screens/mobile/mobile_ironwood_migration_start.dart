@@ -4,8 +4,13 @@ enum _MobileMigrationStartPhase { loading, keystoneReady, error }
 
 enum _PrivateMigrationContinuationDestination {
   status,
+  keystoneCombinedSigning,
   keystoneDenominationSigning,
 }
+
+bool _privatePlanUsesCombinedKeystoneSigning(
+  rust_sync.OrchardMigrationPrivatePlan plan,
+) => plan.denominationSplitStageCount > 0;
 
 Future<void> _refreshPrivateMigrationDraftPresentation(WidgetRef ref) async {
   ref.invalidate(ironwoodMigrationRouteCtaProvider);
@@ -34,7 +39,8 @@ void _openPrivateMigrationDestination(
   BuildContext context,
   ({
     _PrivateMigrationContinuationDestination destination,
-    MobileIronwoodMigrationKeystoneDenominationSignEntry? keystoneEntry,
+    MobileIronwoodMigrationKeystoneCombinedSignEntry? combinedEntry,
+    MobileIronwoodMigrationKeystoneDenominationSignEntry? denominationEntry,
   })
   continuation,
   rust_sync.OrchardMigrationPrivatePlan plan,
@@ -46,10 +52,19 @@ void _openPrivateMigrationDestination(
         extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
       );
       return;
-    case _PrivateMigrationContinuationDestination.keystoneDenominationSigning:
-      final entry = continuation.keystoneEntry;
+    case _PrivateMigrationContinuationDestination.keystoneCombinedSigning:
+      final entry = continuation.combinedEntry;
       if (entry == null) {
         throw StateError('Keystone signing request is unavailable.');
+      }
+      context.go('/migration/private/keystone/sign', extra: entry);
+      return;
+    case _PrivateMigrationContinuationDestination.keystoneDenominationSigning:
+      final entry = continuation.denominationEntry;
+      if (entry == null) {
+        throw StateError(
+          'Keystone preparation signing request is unavailable.',
+        );
       }
       context.go(
         '/migration/private/keystone/denominations/sign',
@@ -62,7 +77,8 @@ void _openPrivateMigrationDestination(
 Future<
   ({
     _PrivateMigrationContinuationDestination destination,
-    MobileIronwoodMigrationKeystoneDenominationSignEntry? keystoneEntry,
+    MobileIronwoodMigrationKeystoneCombinedSignEntry? combinedEntry,
+    MobileIronwoodMigrationKeystoneDenominationSignEntry? denominationEntry,
   })
 >
 _continuePrivateMigrationAfterNotificationGate(
@@ -77,30 +93,55 @@ _continuePrivateMigrationAfterNotificationGate(
 
   if (accountState.activeAccount?.isHardware ?? false) {
     final service = ref.read(ironwoodMigrationServiceProvider);
-    final request = await service.prepareKeystoneDenominationPrivateMigration(
-      accountUuid: accountUuid,
-    );
-    if (request.messages.isEmpty) {
-      await service.completeKeystoneDenominationPrivateMigration(
+    if (!_privatePlanUsesCombinedKeystoneSigning(plan)) {
+      final request = await service.prepareKeystoneDenominationPrivateMigration(
         accountUuid: accountUuid,
-        requestId: request.requestId,
-        signedMessages: const [],
-        approvedSchedule: plan.scheduledTransfers,
       );
-      _invalidateStartedPrivateMigration(ref);
+      if (request.messages.isEmpty) {
+        await service.completeKeystoneDenominationPrivateMigration(
+          accountUuid: accountUuid,
+          requestId: request.requestId,
+          signedMessages: const [],
+          approvedSchedule: plan.scheduledTransfers,
+        );
+        _invalidateStartedPrivateMigration(ref);
+        return (
+          destination: _PrivateMigrationContinuationDestination.status,
+          combinedEntry: null,
+          denominationEntry: null,
+        );
+      }
       return (
-        destination: _PrivateMigrationContinuationDestination.status,
-        keystoneEntry: null,
+        destination: _PrivateMigrationContinuationDestination
+            .keystoneDenominationSigning,
+        combinedEntry: null,
+        denominationEntry: MobileIronwoodMigrationKeystoneDenominationSignEntry(
+          approvedSchedule: plan.scheduledTransfers,
+          request: request,
+          accountUuid: accountUuid,
+        ),
       );
     }
+    if (await _hasDurablePrivateMigrationRun(ref)) {
+      return (
+        destination: _PrivateMigrationContinuationDestination.status,
+        combinedEntry: null,
+        denominationEntry: null,
+      );
+    }
+    final request = await service.prepareKeystoneSingleQrPrivateMigration(
+      accountUuid: accountUuid,
+      approvedSchedule: plan.scheduledTransfers,
+    );
     return (
       destination:
-          _PrivateMigrationContinuationDestination.keystoneDenominationSigning,
-      keystoneEntry: MobileIronwoodMigrationKeystoneDenominationSignEntry(
+          _PrivateMigrationContinuationDestination.keystoneCombinedSigning,
+      combinedEntry: MobileIronwoodMigrationKeystoneCombinedSignEntry(
         approvedSchedule: plan.scheduledTransfers,
         request: request,
         accountUuid: accountUuid,
       ),
+      denominationEntry: null,
     );
   }
 
@@ -114,7 +155,8 @@ _continuePrivateMigrationAfterNotificationGate(
   _invalidateStartedPrivateMigration(ref);
   return (
     destination: _PrivateMigrationContinuationDestination.status,
-    keystoneEntry: null,
+    combinedEntry: null,
+    denominationEntry: null,
   );
 }
 
@@ -139,15 +181,15 @@ class _MobileIronwoodMigrationStartScreenState
     extends ConsumerState<MobileIronwoodMigrationStartScreen> {
   static const _messages = [
     'Preparing your migration...',
-    'Organizing private batches...',
-    'Creating preparation transactions...',
+    'Organizing migration batches...',
+    'Preparing your migration plan...',
   ];
   static const _messagePeriod = Duration(milliseconds: 1400);
 
   Timer? _messageTimer;
   _MobileMigrationStartPhase _phase = _MobileMigrationStartPhase.loading;
   _PrivateMigrationContinuationDestination? _destination;
-  MobileIronwoodMigrationKeystoneDenominationSignEntry? _keystoneEntry;
+  MobileIronwoodMigrationKeystoneCombinedSignEntry? _keystoneCombinedEntry;
   rust_sync.OrchardMigrationPrivatePlan? _resolvedPlan;
   String? _error;
   var _messageIndex = 0;
@@ -188,7 +230,7 @@ class _MobileIronwoodMigrationStartScreenState
       setState(() {
         _phase = _MobileMigrationStartPhase.loading;
         _destination = null;
-        _keystoneEntry = null;
+        _keystoneCombinedEntry = null;
         _error = null;
         _messageIndex = 0;
       });
@@ -210,24 +252,26 @@ class _MobileIronwoodMigrationStartScreenState
       if (accountUuid == null) {
         throw StateError('No active account is selected.');
       }
-      if ((accountState.activeAccount?.isHardware ?? false) &&
-          !_keystoneTwoRoundPlanSupported(plan)) {
+      final isHardware = accountState.activeAccount?.isHardware ?? false;
+      if (isHardware && !_keystoneTwoRoundPlanSupported(plan)) {
         throw StateError(
           'This migration needs more transactions than one Keystone '
           'signing request supports.',
         );
       }
 
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .savePrivateMigrationDraft(
-            accountUuid: accountUuid,
-            approvedSchedule: plan.scheduledTransfers,
-          );
-      draftSaved = true;
-      if (!mounted) return;
-      await _refreshPrivateMigrationDraftPresentation(ref);
-      if (!mounted) return;
+      if (!isHardware || !_privatePlanUsesCombinedKeystoneSigning(plan)) {
+        await ref
+            .read(ironwoodMigrationServiceProvider)
+            .savePrivateMigrationDraft(
+              accountUuid: accountUuid,
+              approvedSchedule: plan.scheduledTransfers,
+            );
+        draftSaved = true;
+        if (!mounted) return;
+        await _refreshPrivateMigrationDraftPresentation(ref);
+        if (!mounted) return;
+      }
 
       final continuation = await _continuePrivateMigrationAfterNotificationGate(
         ref,
@@ -237,14 +281,13 @@ class _MobileIronwoodMigrationStartScreenState
       if (!mounted) return;
 
       if (continuation.destination ==
-          _PrivateMigrationContinuationDestination
-              .keystoneDenominationSigning) {
+          _PrivateMigrationContinuationDestination.keystoneCombinedSigning) {
         _messageTimer?.cancel();
         _isPreparing = false;
         setState(() {
           _phase = _MobileMigrationStartPhase.keystoneReady;
           _destination = continuation.destination;
-          _keystoneEntry = continuation.keystoneEntry;
+          _keystoneCombinedEntry = continuation.combinedEntry;
         });
         return;
       }
@@ -277,18 +320,18 @@ class _MobileIronwoodMigrationStartScreenState
 
   void _continueWithKeystone() {
     final plan = _resolvedPlan;
-    final entry = _keystoneEntry;
+    final entry = _keystoneCombinedEntry;
     if (plan == null ||
         entry == null ||
         _destination !=
-            _PrivateMigrationContinuationDestination
-                .keystoneDenominationSigning) {
+            _PrivateMigrationContinuationDestination.keystoneCombinedSigning) {
       return;
     }
     _openPrivateMigrationDestination(context, (
       destination:
-          _PrivateMigrationContinuationDestination.keystoneDenominationSigning,
-      keystoneEntry: entry,
+          _PrivateMigrationContinuationDestination.keystoneCombinedSigning,
+      combinedEntry: entry,
+      denominationEntry: null,
     ), plan);
   }
 
@@ -410,15 +453,10 @@ class _MobileMigrationStartLoadingContent extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AppIcon(
-          AppIcons.loader,
-          key: const ValueKey(
-            'mobile_ironwood_migration_start_loading_indicator',
-          ),
-          size: 32,
-          color: context.colors.icon.accent,
+        const IronwoodMigrationAnalyzingProgressBar(
+          key: ValueKey('mobile_ironwood_migration_start_loading_indicator'),
         ),
-        const SizedBox(height: AppSpacing.base),
+        const SizedBox(height: AppSpacing.xl),
         AnimatedSwitcher(
           duration: MediaQuery.disableAnimationsOf(context)
               ? Duration.zero
@@ -440,8 +478,7 @@ class _MobileMigrationStartLoadingContent extends StatelessWidget {
         SizedBox(
           width: 286,
           child: Text(
-            'Vizor is preparing the private transactions needed to begin '
-            'your migration.',
+            'Vizor is preparing your migration. This may take a moment.',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
@@ -478,7 +515,8 @@ class _MobileMigrationStartReadyContent extends StatelessWidget {
         SizedBox(
           width: 286,
           child: Text(
-            'Continue to approve the preparation transactions with Keystone.',
+            'Continue to sign the preparation transactions and migration '
+            'batches together with Keystone.',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,

@@ -422,8 +422,17 @@ class WidgetbookApp extends StatelessWidget {
                           buildMobileIronwoodMigrationPreparationSyncingUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Preparation schedule',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationScheduleUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Migration - Syncing',
                       builder: buildMobileIronwoodMigrationSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration schedule',
+                      builder: buildMobileIronwoodMigrationScheduleUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Migration - Preparation done',

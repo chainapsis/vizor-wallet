@@ -555,8 +555,8 @@ void main() {
       expect(find.text('Scan request with Keystone'), findsOneWidget);
       expect(
         find.text(
-          'Scan this request QR with Keystone. Keystone will show a new '
-          'signed QR when it finishes.',
+          'Scan this request with Keystone to sign the preparation '
+          'transactions and migration batches together.',
         ),
         findsOneWidget,
       );

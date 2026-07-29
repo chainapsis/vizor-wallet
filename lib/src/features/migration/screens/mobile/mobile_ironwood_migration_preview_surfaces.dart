@@ -3,7 +3,7 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 void _noopMigrationPreviewAction() {}
 
 const _keystonePreparationSignatureMessage =
-    'Sign the preparation transaction on Keystone.';
+    'Preparation needs another Keystone signature.';
 
 enum _MigrationBackdropGlow { positive, neutral }
 
@@ -625,7 +625,11 @@ class _MigrationPreparationPreview extends StatelessWidget {
                   isKeystone ? AppIcons.qr : AppIcons.play,
                   size: 20,
                 ),
-                child: const Text('Continue preparation'),
+                child: Text(
+                  isKeystone
+                      ? 'Continue with Keystone'
+                      : 'Continue preparation',
+                ),
               ),
             )
           : null,
@@ -1668,32 +1672,44 @@ class _MigrationSkeletonBarState extends State<_MigrationSkeletonBar>
   Widget build(BuildContext context) {
     final base = context.colors.background.ground;
     final highlight = context.colors.border.subtle;
+    final highlightWidth = widget.width * 0.45;
     return SizedBox(
       width: widget.width,
       height: widget.height,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadii.full),
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final shift = (_controller.value * 2 - 1) * widget.width;
-            return ShaderMask(
-              blendMode: BlendMode.srcIn,
-              shaderCallback: (bounds) =>
-                  LinearGradient(
-                    colors: [base, highlight, base],
-                    stops: const [0.15, 0.5, 0.85],
-                  ).createShader(
-                    Rect.fromLTWH(
-                      bounds.left + shift,
-                      bounds.top,
-                      bounds.width,
-                      bounds.height,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: base),
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              final left =
+                  -highlightWidth +
+                  _controller.value * (widget.width + highlightWidth);
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned(
+                    left: left,
+                    top: 0,
+                    bottom: 0,
+                    width: highlightWidth,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            highlight.withValues(alpha: 0),
+                            highlight,
+                            highlight.withValues(alpha: 0),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-              child: const ColoredBox(color: Color(0xFFFFFFFF)),
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

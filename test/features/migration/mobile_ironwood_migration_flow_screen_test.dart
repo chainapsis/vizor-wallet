@@ -788,13 +788,19 @@ Widget _productionApp({
         path: '/migration/private/keystone/sign',
         builder: (_, state) {
           onKeystoneCombinedRouteBuilt?.call();
+          final entry = switch (state.extra) {
+            MobileIronwoodMigrationKeystoneCombinedSignEntry value => value,
+            _ => null,
+          };
           final schedule = switch (state.extra) {
             List<rust_sync.MigrationScheduledTransfer> value => value,
-            _ => const <rust_sync.MigrationScheduledTransfer>[],
+            _ => entry?.approvedSchedule ?? const [],
           };
           return realKeystoneCombinedRoute
               ? MobileIronwoodMigrationKeystoneCombinedSignScreen(
                   approvedSchedule: schedule,
+                  initialRequest: entry?.request,
+                  initialAccountUuid: entry?.accountUuid,
                 )
               : Text('keystone combined sign route:${schedule.length}');
         },
@@ -1695,6 +1701,14 @@ void main() {
       findsOneWidget,
     );
     expect(
+      tester.getSize(
+        find.byKey(
+          const ValueKey('mobile_ironwood_migration_start_loading_indicator'),
+        ),
+      ),
+      const Size(196, 12),
+    );
+    expect(
       find.byWidgetPredicate(
         (widget) =>
             widget is AppIcon && widget.name == AppIcons.chevronBackward,
@@ -1704,7 +1718,7 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 1400));
     await tester.pump(const Duration(milliseconds: 250));
-    expect(find.text('Organizing private batches...'), findsOneWidget);
+    expect(find.text('Organizing migration batches...'), findsOneWidget);
     expect(
       find.byKey(
         const ValueKey('mobile_ironwood_migration_start_loading_indicator'),
@@ -1733,7 +1747,7 @@ void main() {
             ios: true,
             getNotificationAuthorizationStatus: () async =>
                 IronwoodMigrationNotificationAuthorizationStatus.authorized,
-            onPrepareKeystoneDenominations: (_) async {
+            onPrepareKeystoneSingleQr: (_, _) async {
               prepareCount += 1;
               return _keystoneDenominationRequest();
             },
@@ -1781,7 +1795,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(prepareCount, 1);
-      expect(find.text('keystone denomination sign route'), findsOneWidget);
+      expect(
+        find.text(
+          'keystone combined sign route:${_plan.scheduledTransfers.length}',
+        ),
+        findsOneWidget,
+      );
     },
   );
 
@@ -3073,10 +3092,10 @@ void main() {
     expect(softwareStartCount, 0);
     expect(keystonePrepareCount, 0);
     expect(find.text('Preparing your migration'), findsOneWidget);
-    expect(find.text('Continue preparation'), findsOneWidget);
+    expect(find.text('Continue with Keystone'), findsOneWidget);
     expect(find.text('keystone denomination sign route'), findsNothing);
 
-    await tester.tap(find.text('Continue preparation'));
+    await tester.tap(find.text('Continue with Keystone'));
     await tester.pumpAndSettle();
 
     expect(find.text('keystone denomination sign route'), findsOneWidget);
@@ -3103,6 +3122,29 @@ void main() {
     expect(find.text('home route'), findsOneWidget);
   });
 
+  testWidgets(
+    'does not show Keystone recovery before a signature is actually required',
+    (tester) async {
+      _useMobileViewport(tester);
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          hardware: true,
+          status: _status(phase: kIronwoodMigrationAwaitingPreparationPhase),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Preparing your migration'), findsOneWidget);
+      expect(find.text('Continue with Keystone'), findsNothing);
+      expect(
+        find.text('Preparation needs another Keystone signature.'),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('resumes a saved Keystone draft from migration status', (
     tester,
   ) async {
@@ -3120,13 +3162,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preparing your migration'), findsOneWidget);
-    expect(find.text('Continue preparation'), findsOneWidget);
+    expect(find.text('Continue with Keystone'), findsOneWidget);
     expect(
-      find.text('Sign the preparation transaction on Keystone.'),
+      find.text('Preparation needs another Keystone signature.'),
       findsOneWidget,
     );
 
-    await tester.tap(find.text('Continue preparation'));
+    await tester.tap(find.text('Continue with Keystone'));
     await tester.pumpAndSettle();
 
     expect(find.text('keystone denomination sign route'), findsOneWidget);

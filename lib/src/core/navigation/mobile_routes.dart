@@ -11,6 +11,7 @@ import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_s
 import '../../features/migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
     show
+        MobileIronwoodMigrationKeystoneCombinedSignEntry,
         MobileIronwoodMigrationKeystoneCombinedSignScreen,
         MobileIronwoodMigrationKeystoneImmediateSignScreen,
         MobileIronwoodMigrationKeystoneBatchSignScreen,
@@ -379,17 +380,24 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
     ),
     GoRoute(
       path: '/migration/private/keystone/sign',
-      redirect: (_, state) =>
-          state.extra is List<rust_sync.MigrationScheduledTransfer>
-          ? null
-          : '/migration/options',
-      pageBuilder: (context, state) => CupertinoPage(
-        key: state.pageKey,
-        child: MobileIronwoodMigrationKeystoneCombinedSignScreen(
-          approvedSchedule:
-              state.extra! as List<rust_sync.MigrationScheduledTransfer>,
-        ),
-      ),
+      pageBuilder: (context, state) {
+        final entry = switch (state.extra) {
+          MobileIronwoodMigrationKeystoneCombinedSignEntry value => value,
+          _ => null,
+        };
+        final approvedSchedule = switch (state.extra) {
+          List<rust_sync.MigrationScheduledTransfer> schedule => schedule,
+          _ => entry?.approvedSchedule ?? const [],
+        };
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileIronwoodMigrationKeystoneCombinedSignScreen(
+            approvedSchedule: approvedSchedule,
+            initialRequest: entry?.request,
+            initialAccountUuid: entry?.accountUuid,
+          ),
+        );
+      },
     ),
     GoRoute(
       path: '/migration/private/keystone/denominations/sign',
