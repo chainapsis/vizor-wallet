@@ -30,15 +30,12 @@ build TX1 PCZT
                                                + SpendAuth signature
 ```
 
-The current TX1 is deliberately **not broadcastable on Zcash**. Its input is
-the signed synthetic note with a synthetic authentication path, and the PCZT
-is not completed with an Ironwood proof, binding signature, or transaction
-extraction. "Normal Zcash transaction" therefore means that TX1 uses the
-normal transaction structure and ZIP-244 signing algorithm. It does not mean
-that the resulting bytes can or should be submitted to the Zcash network.
-
-An implementation MUST NOT submit either the unsigned or signed TX1 PCZT to a
-Zcash node.
+TX1 never becomes a Zcash transaction. It remains a PCZT signing artifact
+whose input is the signed synthetic note with a synthetic authentication path.
+It is not completed with an Ironwood proof or binding signature, and
+transaction extraction never occurs. "Normal Zcash transaction" means only
+that TX1 uses the normal transaction structure and ZIP-244 signing algorithm.
+There are no Zcash transaction bytes to submit.
 
 ## Goals
 
@@ -224,7 +221,8 @@ The wallet MUST construct the PCZT global fields as follows:
 The current library accepts only the NU6.3 branch, so the suggested
 transaction version resolves to V6.
 
-The zero expiry height is acceptable only because TX1 is never broadcast.
+The zero expiry height is part of the PCZT signing digest only; TX1 never
+becomes a transaction whose expiry could be evaluated by consensus.
 
 ### Ironwood bundle
 
@@ -259,7 +257,7 @@ The real output is:
 
 The implementation currently has a 1-zatoshi synthetic spend and a zero-value
 output. This produces a nominal positive 1-zatoshi shielded value balance.
-No real fee is paid because TX1 is never extracted or broadcast.
+No real fee is paid because the PCZT never becomes a Zcash transaction.
 
 The zero-value output is protocol-relevant: ZKP #1 reconstructs `cmx_new` for
 that same output value. Implementations MUST NOT change it to a 1-zatoshi

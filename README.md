@@ -79,7 +79,7 @@ stage-oriented API:
 
 The Zcash-format transaction signed during delegation is specified separately
 in [Delegation signing transaction (TX1)](docs/delegation-signing-transaction.md).
-It distinguishes the non-broadcast PCZT signing artifact from the vote-chain
+It distinguishes the PCZT-only signing artifact from the vote-chain
 delegation submission and includes software-wallet and Keystone examples.
 The companion
 [external software export](docs/exporting-to-external-software.md) defines the
