@@ -253,6 +253,10 @@ pub(super) async fn run_enhancement(
     Ok(())
 }
 
+/// Whether servicing `request` can make progress right now: full-data
+/// enhancements always can, status-only requests only when
+/// `query_unmined_statuses` permits them, and address-scoped requests only
+/// when they carry a bounded block range.
 fn request_is_actionable(request: &TransactionDataRequest, query_unmined_statuses: bool) -> bool {
     match request {
         TransactionDataRequest::Enhancement(_) => true,
@@ -263,6 +267,11 @@ fn request_is_actionable(request: &TransactionDataRequest, query_unmined_statuse
     }
 }
 
+/// Resolves a `GetStatus` request locally when the wallet DB already records
+/// a mined height for `txid` (restored by compact scanning), re-asserting
+/// `TransactionStatus::Mined` — which also dequeues the request — without
+/// downloading the transaction. Returns `Ok(false)` when the height is
+/// unknown and the caller must query lightwalletd.
 fn resolve_status_from_scanned_height(
     db: &mut WalletDatabase,
     txid: TxId,
@@ -469,6 +478,10 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 mod tests {
     use super::*;
 
+    /// Builds a real migrated wallet DB containing one transaction with a
+    /// known mined height plus an explicit status-type retrieval-queue entry
+    /// for it, mirroring the post-recovery state `resolve_status_from_scanned_height`
+    /// services.
     fn status_recovery_test_db(
         txid: TxId,
         mined_height: BlockHeight,

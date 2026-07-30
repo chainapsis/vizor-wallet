@@ -213,6 +213,36 @@ fn is_pending_scan_range(range: &ScanRange) -> bool {
     range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
 }
 
+/// Blocks below the chain tip within which the max scanned height must sit
+/// for the wallet's mined-height view to count as current. Mirrors
+/// zcash_client_sqlite's (non-public) `PRUNING_DEPTH` stable-region depth,
+/// the same boundary its `update_chain_tip` uses to distinguish a
+/// steady-state wallet from one performing a deep rescan.
+const MINED_STATUS_TIP_MARGIN: u64 = 100;
+
+/// Whether the wallet's local mined-height view is current enough to act on
+/// unmined-transaction statuses (servicing `GetStatus` data requests and
+/// selecting transactions for resubmission).
+///
+/// True when the scan queue is drained, or when the max scanned block sits
+/// within [`MINED_STATUS_TIP_MARGIN`] of the chain tip: pending work in that
+/// state is backfill below the scan frontier (an imported account's history,
+/// repair rescans), which cannot restore the mined height of a tip-recent
+/// transaction. A recovery truncation deletes block rows above the rewind
+/// point, pulling the max scanned height far below the tip until the rescan
+/// completes, so recovery keeps status lookups deferred.
+fn should_query_unmined_statuses(
+    has_pending_scan_ranges: bool,
+    max_scanned_height: Option<u64>,
+    chain_tip_height: u64,
+) -> bool {
+    if !has_pending_scan_ranges {
+        return true;
+    }
+    max_scanned_height
+        .is_some_and(|max_scanned| max_scanned + MINED_STATUS_TIP_MARGIN >= chain_tip_height)
+}
+
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
     ranges
         .iter()
@@ -2046,12 +2076,25 @@ async fn run_sync_impl(
 
         // A recovery can temporarily mark many locally stored transactions as
         // unmined. Let compact scanning restore their mined heights before
-        // querying lightwalletd for the statuses that remain unknown.
-        let query_unmined_statuses = !db
-            .suggest_scan_ranges()
-            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
-            .iter()
-            .any(is_pending_scan_range);
+        // querying lightwalletd for the statuses that remain unknown; backfill
+        // below a tip-current scan frontier does not defer status work (see
+        // `should_query_unmined_statuses`).
+        let query_unmined_statuses = {
+            let has_pending_scan_ranges = db
+                .suggest_scan_ranges()
+                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
+                .iter()
+                .any(is_pending_scan_range);
+            let max_scanned_height = db
+                .block_max_scanned()
+                .map_err(|e| SyncError::db(format!("block_max_scanned: {e}")))?
+                .map(|meta| u32::from(meta.block_height()) as u64);
+            should_query_unmined_statuses(
+                has_pending_scan_ranges,
+                max_scanned_height,
+                current_tip_height,
+            )
+        };
 
         // Enhancement
         run_enhancement(
@@ -2506,6 +2549,48 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn unmined_statuses_query_when_scan_queue_is_drained() {
+        assert!(should_query_unmined_statuses(false, None, 1_000_000));
+        assert!(should_query_unmined_statuses(
+            false,
+            Some(500_000),
+            1_000_000
+        ));
+    }
+
+    #[test]
+    fn unmined_statuses_defer_while_scan_frontier_is_far_below_tip() {
+        // Recovery: truncation pulled the max scanned height far below the tip.
+        assert!(!should_query_unmined_statuses(
+            true,
+            Some(777_800),
+            1_000_000
+        ));
+        // Fresh restore: nothing scanned yet.
+        assert!(!should_query_unmined_statuses(true, None, 1_000_000));
+    }
+
+    #[test]
+    fn unmined_statuses_query_during_backfill_with_tip_current_frontier() {
+        // Imported-account backfill: historic ranges pending, frontier at tip.
+        assert!(should_query_unmined_statuses(
+            true,
+            Some(1_000_000),
+            1_000_000
+        ));
+        assert!(should_query_unmined_statuses(
+            true,
+            Some(1_000_000 - MINED_STATUS_TIP_MARGIN),
+            1_000_000
+        ));
+        assert!(!should_query_unmined_statuses(
+            true,
+            Some(1_000_000 - MINED_STATUS_TIP_MARGIN - 1),
+            1_000_000
+        ));
     }
 
     #[test]
