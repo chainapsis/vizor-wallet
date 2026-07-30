@@ -1868,6 +1868,14 @@ fn seed_broadcasted_unstored_migration_part(
     let selected_note_txid = "101112131415161718191a1b1c1d1e1f000102030405060708090a0b0c0d0e0f";
     let selected_note = migration_test_note(selected_note_txid);
     let plan = migration_test_plan();
+    // Deterministic schedule: empty schedule_json makes insert_pending_txs draw a
+    // random ZIP-318 offset that can exceed scheduled_height and fail with
+    // "Migration signed schedule starts below zero".
+    let approved_schedule = [migration::MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100_000,
+        block_offset: 1,
+    }];
     let run_id = migration::create_run_with_staged_denominations_and_signed_children(
         db_path,
         MIGRATION_TEST_ACCOUNT,
@@ -1879,12 +1887,15 @@ fn seed_broadcasted_unstored_migration_part(
             denomination_input_txid,
             selected_note_txid,
         )],
-        None,
+        Some(approved_schedule.as_slice()),
         migration::PreparationTimingPolicy::Immediate,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )
     .unwrap();
+    // Match the stable #388 fixture: target_height == scheduled_height triggers
+    // the legacy rewrite (target - 1 + block). With offset 1 that stays at
+    // scheduled_height.
     migration::insert_pending_txs(
         db_path,
         &run_id,
@@ -1892,12 +1903,9 @@ fn seed_broadcasted_unstored_migration_part(
             part_index: 0,
             txid_hex: pending_txid.to_string(),
             raw_tx: vec![5, 6, 7, 8],
-            // Keep target != scheduled so insert does not rewrite scheduled_height
-            // via the legacy target_height==scheduled_height compatibility path.
-            target_height: scheduled_height.saturating_sub(1).max(1),
+            target_height: scheduled_height,
             anchor_boundary_height: None,
-            expiry_height: migration::zip318_canonical_migration_expiry_height(scheduled_height)
-                .unwrap(),
+            expiry_height: 69_120,
             scheduled_height,
             value_zatoshi: 100_000,
             fee_zatoshi: 10_000,
