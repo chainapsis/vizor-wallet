@@ -280,7 +280,13 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
       let now = Date()
       let existingDeadline = self.state.batchDeadline
       self.state.resolve(scope: scope)
-      if self.state.summary != nil {
+      // Carry the deadline over so resolving one scope does not extend the
+      // window the others are already waiting on — but only while it is still
+      // ahead. A delivered summary leaves its deadline in the past, and
+      // restoring that lets the next `enqueue` expire the batch and drop the
+      // scopes that still need an alert while their fingerprints stay accepted.
+      if self.state.summary != nil, let existingDeadline, existingDeadline > now
+      {
         self.state.batchDeadline = existingDeadline
       }
       self.persistState()
@@ -323,9 +329,12 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
       let now = Date()
       let existingDeadline = self.state.batchDeadline
       let changed = self.state.retain(scopes: scopes)
-      if self.state.summary != nil {
-        self.state.batchDeadline = existingDeadline
-      }
+      // Same boundary rule as `resolve`: a deadline that already passed belongs
+      // to a delivered summary and must not survive into the next batch.
+      self.state.batchDeadline =
+        self.state.summary != nil && (existingDeadline.map { $0 > now } ?? false)
+        ? existingDeadline
+        : nil
       self.persistState()
       guard self.state.summary != nil else {
         self.submissionGeneration &+= 1
@@ -365,9 +374,23 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
     }
   }
 
+  /// Takes down the delivered aggregate and re-arms one for whatever it
+  /// covered that is still unresolved.
+  ///
+  /// A foreground launch clears the single delivered summary even when it
+  /// spoke for several accounts. Their events stay accepted, so nothing would
+  /// enqueue them again, and every account except the one the user happens to
+  /// open would sit parked with no alert. Re-arming from the events still
+  /// pending keeps a signal for each of them; the scopes the foreground goes
+  /// on to resolve cancel or shrink it from `resolve`.
   func clearDeliveredSummary() {
     queue.async {
       self.removeDeliveredSummary()
+      guard self.state.summary != nil else { return }
+      // The delivered summary left its deadline in the past. Start a fresh
+      // window so this re-arm cannot fire the moment the app is opened.
+      self.state.batchDeadline = nil
+      self.schedulePendingSummary(now: Date()) { _ in }
     }
   }
 
