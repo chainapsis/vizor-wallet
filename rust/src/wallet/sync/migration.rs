@@ -3131,9 +3131,9 @@ pub(crate) fn unbroadcast_migration_recovery_candidates(
 
 /// Promotes pending migration rows to `confirmed` when the wallet already has
 /// local chain identity for their txids (and demotes orphaned `confirmed` rows
-/// after a reorg). Call before due selection **and** before expiry recovery so a
-/// mined-but-still-`scheduled` part cannot head-of-line block later due parts or
-/// be flipped to `needs_resign` after its ZIP 318 expiry height.
+/// after a reorg). Call before due selection, expiry recovery, **and**
+/// noncanonical broadcast-height recovery so a mined-but-still-`scheduled` part
+/// cannot head-of-line block later due parts or be flipped to `needs_resign`.
 pub(crate) fn reconcile_run_pending_confirmations(
     db_path: &str,
     run_id: &str,
@@ -3396,6 +3396,10 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
+    // Outbox export and broadcast advance call this before due selection.
+    // Reconcile first so a mined-but-still-`scheduled` part whose tip crossed a
+    // ZIP 318 expiry window is promoted to `confirmed` instead of `needs_resign`.
+    reconcile_run_pending_confirmations(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let canonical_expiry = zip318_canonical_migration_expiry_height(chain_tip_height)?;

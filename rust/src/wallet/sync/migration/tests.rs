@@ -1447,6 +1447,61 @@ fn overdue_broadcast_crossing_expiry_bucket_requires_resigning_before_send() {
 }
 
 #[test]
+fn noncanonical_broadcast_height_promotes_locally_mined_scheduled_part_instead_of_resign() {
+    // Outbox export calls mark_due_parts_with_noncanonical_broadcast_height_for_resign
+    // before due selection. A mined-but-still-`scheduled` part whose tip crossed a
+    // ZIP 318 expiry window must become `confirmed`, not `needs_resign`.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "noncanonical-mined",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'noncanonical-mined'"
+        ),
+        [],
+    )
+    .unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 34_559);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    drop(conn);
+
+    let tip = 34_560u32;
+    assert_eq!(
+        mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+            &db_path,
+            "noncanonical-mined",
+            tip,
+        )
+        .unwrap(),
+        1,
+        "unmined noncanonical part must still require resign"
+    );
+    assert_eq!(
+        pending_parts_needing_resign(&db_path, "noncanonical-mined")
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "needs_resign");
+}
+
+#[test]
 fn incremental_child_promotion_uses_immutable_signed_schedule_origin() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
