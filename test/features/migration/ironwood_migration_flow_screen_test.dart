@@ -15,6 +15,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/screens/ironwood_migration_flow_screen.dart';
@@ -3093,6 +3094,134 @@ void main() {
 
       expect(stopCount, 1);
       expect(find.text('home-route'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'cancellation stays blocking until navigation for both schedule stages',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final cases = [
+        (
+          route: '/migration/private/preparation-schedule',
+          status: _migrationStatus(
+            phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+            activeRunId: 'run-1',
+            canAbandon: true,
+            denominationSplitTotalCount: 1,
+            preparationTransactions: [
+              _preparationTransaction(
+                0,
+                500_000_000,
+                rust_sync.MigrationPreparationTransactionState.scheduled,
+                scheduledHeight: 1_010,
+              ),
+            ],
+          ),
+        ),
+        (
+          route: '/migration/private/schedule',
+          status: _migrationStatus(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            activeRunId: 'run-1',
+            canAbandon: true,
+            targetValuesZatoshi: const [10_000_000],
+            totalCount: 1,
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.scheduled,
+              ),
+            ],
+          ),
+        ),
+      ];
+
+      for (final testCase in cases) {
+        var currentStatus = testCase.status;
+        late ProviderContainer container;
+        final stopStarted = Completer<void>();
+        final releaseStop = Completer<void>();
+        const request = IronwoodMigrationStatusRequest(
+          network: 'test',
+          accountUuid: 'account-1',
+        );
+
+        await tester.pumpWidget(
+          _migrationEntryHarness(
+            ctaState: IronwoodHomeMigrationCtaState.resume(
+              network: 'test',
+              accountUuid: 'account-1',
+              status: currentStatus,
+            ),
+            initialLocation: testCase.route,
+            statusGetter:
+                ({required dbPath, required network, required accountUuid}) =>
+                    Future.value(currentStatus),
+            onStop: ({required accountUuid, required runId}) async {
+              currentStatus = _migrationStatus();
+              container.invalidate(ironwoodMigrationStatusProvider(request));
+              stopStarted.complete();
+              await releaseStop.future;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        container = ProviderScope.containerOf(
+          tester.element(find.byType(MaterialApp)),
+        );
+
+        await tester.tap(
+          find.byKey(
+            const ValueKey('ironwood_migration_schedule_manage_button'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('ironwood_migration_manage_stop_option')),
+        );
+        await tester.pump();
+        await tester.tap(
+          find.byKey(
+            const ValueKey('ironwood_migration_manage_continue_button'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('ironwood_confirm_stop_migration_button')),
+        );
+        await stopStarted.future;
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.text('Cancelling...'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('ironwood_migration_manage_modal')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('ironwood_migration_manage_modal')),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is AppIcon && widget.name == AppIcons.loader,
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('home-route'), findsNothing);
+
+        releaseStop.complete();
+        await tester.pumpAndSettle();
+
+        expect(find.text('home-route'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
     },
   );
 

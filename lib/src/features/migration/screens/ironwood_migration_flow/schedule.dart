@@ -255,9 +255,13 @@ class _IronwoodMigrationScheduleRouteState
         status != null &&
         _managedRunId != null &&
         status.activeRunId == _managedRunId;
+    // A durable stop clears activeRunId before the coordinator finishes its
+    // balance and status refreshes. Keep the blocking modal mounted through
+    // that gap so the user cannot leave before _confirmManage routes home.
     final showOverlay =
         request != null &&
-        managedRunIsCurrent &&
+        status != null &&
+        (_submitting ? _managedRunId != null : managedRunIsCurrent) &&
         _manageStage != _MigrationManageStage.closed;
 
     return _IronwoodMigrationFrame(
@@ -435,6 +439,9 @@ class _MigrationManageModal extends StatelessWidget {
           onCancel: submitting ? null : onCancel,
           actionLabel: submitting ? 'Loading...' : 'Continue',
           onAction: submitting || !choiceIsAvailable ? null : onContinue,
+          actionLeading: submitting
+              ? const AppIcon(AppIcons.loader, size: 16)
+              : null,
           cancelKey: const ValueKey('ironwood_migration_manage_cancel_button'),
           actionKey: const ValueKey(
             'ironwood_migration_manage_continue_button',
@@ -487,7 +494,10 @@ class _MigrationManageModal extends StatelessWidget {
           onCancel: submitting ? null : onCancel,
           actionLabel: submitting ? 'Stopping...' : 'Confirm',
           onAction: submitting || !canFinishImmediately ? null : onConfirm,
-          actionLeading: const AppIcon(AppIcons.migrationFast, size: 16),
+          actionLeading: AppIcon(
+            submitting ? AppIcons.loader : AppIcons.migrationFast,
+            size: 16,
+          ),
           cancelKey: const ValueKey(
             'ironwood_migration_immediate_confirm_cancel_button',
           ),
@@ -530,6 +540,9 @@ class _MigrationManageModal extends StatelessWidget {
           actionLabel: submitting ? 'Cancelling...' : 'Confirm',
           onAction: submitting || !canStop ? null : onConfirm,
           actionVariant: AppButtonVariant.destructive,
+          actionLeading: submitting
+              ? const AppIcon(AppIcons.loader, size: 16)
+              : null,
           cancelKey: const ValueKey(
             'ironwood_migration_stop_confirm_cancel_button',
           ),
