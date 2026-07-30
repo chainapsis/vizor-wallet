@@ -11,6 +11,8 @@ enum SwapFailureOperation {
   sendZecDeposit,
 }
 
+enum SwapFailureSurface { swap, pay }
+
 enum SwapFailureCategory {
   unsupportedAsset,
   amountTooLow,
@@ -28,9 +30,13 @@ enum SwapFailureCategory {
   unknown,
 }
 
-String swapFailureMessage(SwapFailureOperation operation, Object error) {
+String swapFailureMessage(
+  SwapFailureOperation operation,
+  Object error, {
+  SwapFailureSurface surface = SwapFailureSurface.swap,
+}) {
   final category = swapFailureCategory(operation, error);
-  return _messageFor(operation, category);
+  return _messageFor(operation, category, surface);
 }
 
 SwapFailureCategory swapFailureCategory(
@@ -107,11 +113,14 @@ SwapFailureCategory _oneClickCategory(
 String _messageFor(
   SwapFailureOperation operation,
   SwapFailureCategory category,
+  SwapFailureSurface surface,
 ) {
   return switch (category) {
     SwapFailureCategory.unsupportedAsset => _unsupportedAssetMessage(operation),
     SwapFailureCategory.amountTooLow =>
-      'Amount is too low for this swap.\nTry a larger amount.',
+      surface == SwapFailureSurface.pay
+          ? 'Amount is too low for this payment.\nTry a larger amount.'
+          : 'Amount is too low for this swap.\nTry a larger amount.',
     SwapFailureCategory.amountPrecision =>
       'Amount has too many decimal places.\nUse fewer decimals and try again.',
     SwapFailureCategory.invalidRouteOrAddress =>

@@ -873,6 +873,24 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     batches[location.batch].items[location.item] = item
   }
 
+  /// Restores a selected item when cancellation was observed before the
+  /// transport call began. Unlike an interrupted/failed transport, this is a
+  /// definite non-attempt and must not make stop reconciliation wait for
+  /// transaction expiry.
+  mutating func recordCancelledBeforeSubmission(itemId: String, error: String) throws {
+    let location = try itemLocation(itemId)
+    guard batches[location.batch].items[location.item].status == .submitting else {
+      throw BackgroundMigrationOutboxError.invalidTransition
+    }
+    var item = batches[location.batch].items[location.item]
+    item.status = .armed
+    item.nextAttemptAt = nil
+    item.lastError = error
+    item.attemptId = nil
+    item.attemptStartedAt = nil
+    batches[location.batch].items[location.item] = item
+  }
+
   mutating func recordAccepted(
     itemId: String,
     equivalent: Bool,

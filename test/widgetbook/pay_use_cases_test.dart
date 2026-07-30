@@ -66,6 +66,26 @@ void main() {
     expect(find.text('Select recipient'), findsOneWidget);
   });
 
+  testWidgets('Pay quote-error use case renders the full provider message', (
+    tester,
+  ) async {
+    await _pumpPayUseCase(tester, buildPayRecipientQuoteErrorUseCase);
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.text(
+        'This route or address was rejected.\n'
+        'Edit the details and request a new quote.',
+      ),
+      findsOneWidget,
+    );
+    final error = tester.widget<Text>(
+      find.byKey(const ValueKey('pay_recipient_quote_error')),
+    );
+    expect(error.maxLines, isNull);
+    expect(error.overflow, isNull);
+  });
+
   testWidgets('Pay review use case renders a live quote and confirm action', (
     tester,
   ) async {

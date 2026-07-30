@@ -209,6 +209,16 @@ import UIKit
         } catch {
           result(self.backgroundMigrationFlutterError(error))
         }
+      case "listOutboxAttemptedTxids":
+        do {
+          result(
+            try BackgroundMigrationOutboxChannel.listAttemptedTxids(
+              arguments: call.arguments
+            )
+          )
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
       case "ackOutboxReceipts":
         do {
           try BackgroundMigrationOutboxChannel.acknowledgeReceipts(arguments: call.arguments)
