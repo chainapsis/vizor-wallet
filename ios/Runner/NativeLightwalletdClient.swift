@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 final class BackgroundMigrationCancellation: @unchecked Sendable {
   private let lock = NSLock()
@@ -564,7 +565,7 @@ enum NativeTransactionRelayClient {
     }
   }
 
-  private static func relayURL(_ endpoint: String) -> URL? {
+  static func relayURL(_ endpoint: String) -> URL? {
     guard let components = URLComponents(string: endpoint),
       components.user == nil,
       components.password == nil,
@@ -580,7 +581,10 @@ enum NativeTransactionRelayClient {
 
   private static func isLoopback(_ host: String) -> Bool {
     let host = host.lowercased()
-    return host == "localhost" || host == "127.0.0.1" || host == "::1"
+    if host == "localhost" || host == "::1" {
+      return true
+    }
+    return IPv4Address(host)?.rawValue.first == 127
   }
 
   private static func isTxidHex(_ value: String) -> Bool {

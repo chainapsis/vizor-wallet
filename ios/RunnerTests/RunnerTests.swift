@@ -909,6 +909,20 @@ final class NativeTransactionRelayClientTests: XCTestCase {
   private let txid =
     "838813428b78712263511ed5c6fb9a108c939038a440b74f72bee6caedf602fd"
 
+  func testRelayURLAcceptsIPv4LoopbackRange() {
+    for host in ["127.0.0.1", "127.0.0.2", "127.255.255.255"] {
+      XCTAssertNotNil(
+        NativeTransactionRelayClient.relayURL("http://\(host):18232")
+      )
+    }
+    XCTAssertNil(
+      NativeTransactionRelayClient.relayURL("http://126.255.255.255:18232")
+    )
+    XCTAssertNil(
+      NativeTransactionRelayClient.relayURL("http://128.0.0.0:18232")
+    )
+  }
+
   func testRelayResponseBufferRejectsBeforeAppendingPastLimit() {
     var buffer = NativeBoundedResponseBuffer(maximumBytes: 4)
 
