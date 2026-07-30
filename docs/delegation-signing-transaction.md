@@ -30,9 +30,9 @@ build TX1 PCZT
                                                + SpendAuth signature
 ```
 
-The current TX1 is deliberately **not broadcastable on Zcash**. Its input is a
-synthetic note with a synthetic authentication path, and the PCZT is not
-completed with an Ironwood proof, binding signature, or transaction
+The current TX1 is deliberately **not broadcastable on Zcash**. Its input is
+the signed synthetic note with a synthetic authentication path, and the PCZT
+is not completed with an Ironwood proof, binding signature, or transaction
 extraction. "Normal Zcash transaction" therefore means that TX1 uses the
 normal transaction structure and ZIP-244 signing algorithm. It does not mean
 that the resulting bytes can or should be submitted to the Zcash network.
@@ -54,6 +54,38 @@ TX1 provides:
 
 TX1 does not transfer the holder's real ZEC and does not consume the real
 notes whose voting weight is delegated.
+
+## What TX1 authorizes
+
+TX1 is logically a delegation of voting rights from the Zcash account to one
+new voting hotkey. The wallet generates that hotkey separately from the
+account spending key, then uses the hotkey's one external Orchard address in
+both the VAN and TX1.
+
+For one voting identity and round, the wallet SHOULD generate one fresh
+hotkey before preparing delegation bundles. If the eligible notes require
+more than one bundle, every TX1 for that identity and round SHOULD delegate to
+the same hotkey.
+
+No single field carries the full meaning of the delegation. The authorization
+comes from the following bindings taken together:
+
+1. ZKP #1 proves that the real eligible notes belong to the same account that
+   owns the synthetic note spent by TX1.
+2. `rho_signed` binds that synthetic note to the eligible-note commitments,
+   the VAN, and the voting round.
+3. The VAN commits to one hotkey address, the delegated weight, and the round.
+4. TX1 creates its zero-value output at that same hotkey address, and ZKP #1
+   reconstructs the output commitment as `cmx_new`.
+5. The account's SpendAuth signature authorizes the resulting TX1 sighash.
+
+Consequently, a valid delegation signature and ZKP #1 statement mean:
+
+> The account that owns these eligible notes delegates their voting weight
+> for this round to this one new hotkey.
+
+The hotkey can authorize later vote-chain actions. It cannot spend the
+account's Zcash funds.
 
 ## Inputs
 
@@ -78,24 +110,63 @@ padding secrets, voting hotkey, and voting round ID MUST be taken from the same
 persisted delegation-bundle context. A wallet MUST NOT allow an external
 signer response to replace any of these values.
 
-## Bound synthetic note
+## Notes used by TX1
 
-TX1 contains a synthetic signed note. It is constructed as follows:
+There are three different kinds of notes in the construction:
 
-1. Pad the eligible note list to `BUNDLE_NOTE_SLOTS` using the exact synthetic
-   notes used by ZKP #1.
-2. Compute the five extracted note commitments `cmx[0]` through `cmx[4]`.
-3. Compute:
+- **Eligible notes** are the holder's real Zcash notes at the voting snapshot.
+  They are witnesses to ZKP #1 and are not spent by TX1.
+- **Padding notes** fill ZKP #1's fixed five-note input. They are synthetic,
+  and TX1 does not spend them.
+- The **signed note** is one additional synthetic note created only as TX1's
+  spend. Its constrained `rho_signed` binds the signature to the delegation.
 
-   ```text
-   rho_signed =
-       Poseidon(cmx[0], cmx[1], cmx[2], cmx[3], cmx[4], VAN, round_id)
-   ```
+TX1 also has a separate, zero-value output note addressed to the hotkey. That
+output is not the signed note.
 
-4. Derive the signed-note recipient from the delegating account FVK at
-   external diversifier index zero.
-5. Sample a fresh `rseed_signed`.
-6. Construct an Ironwood V3 note with:
+### Eligible and padding note slots
+
+ZKP #1 always has `BUNDLE_NOTE_SLOTS` note slots. The wallet places the real
+eligible notes first, in persisted bundle order, then fills the remaining
+slots with the exact synthetic padding notes used by the proof.
+
+For every padding slot, the wallet samples a fresh valid `rho` and a fresh
+valid `rseed`, constructs a note for the delegating account, and computes its
+extracted note commitment. The wallet persists these padding secrets because
+the proof must reconstruct the same notes.
+
+Let `cmx[0]` through `cmx[4]` be the canonical 32-byte encodings of the
+extracted commitments in that exact slot order. Implementations MUST NOT sort
+or otherwise reorder the commitments after padding.
+
+### How `rho_signed` is chosen
+
+`rho_signed` is not sampled and is not copied from an eligible or padding
+note. It is deterministically derived as the seven-input Pallas Poseidon hash:
+
+```text
+rho_signed =
+    Poseidon(cmx[0], cmx[1], cmx[2], cmx[3], cmx[4], VAN, round_id)
+```
+
+Each input is interpreted from its canonical 32-byte encoding as a Pallas base
+field element. `VAN` is the already-computed commitment containing the one
+hotkey address, delegated weight, round, and VAN blinding value. `round_id` is
+the same voting-round field element used in the VAN and ZKP #1.
+
+The same seven inputs always produce the same `rho_signed`. A fresh delegation
+setup will normally produce a different value because the VAN blinding value
+and any padding-note secrets are fresh.
+
+### How the signed note is made
+
+After deriving `rho_signed`, the wallet:
+
+1. derives the recipient from the delegating account FVK at external
+   diversifier index zero;
+2. samples a fresh 32-byte `rseed_signed`, retrying until it is valid for
+   `rho_signed`; and
+3. constructs an Ironwood V3 note with:
 
    ```text
    recipient = account_fvk.address_at(0, External)
@@ -107,15 +178,30 @@ TX1 contains a synthetic signed note. It is constructed as follows:
 The 1-zatoshi value makes the action non-zero for existing signer display
 paths. It is synthetic and is not taken from the holder's balance.
 
-ZKP #1 MUST reconstruct the signed-note nullifier from the same
-`rho_signed`, `rseed_signed`, and account key material. This is what binds the
-signature to the delegated notes, VAN, voting hotkey, and round.
+The wallet uses Merkle position zero and 32 zero-valued sibling encodings for
+the signed note's synthetic authentication path. Its anchor is computed from
+that note and path only so that the normal Zcash builder accepts the spend.
+The signed note is not in the Zcash note-commitment tree.
+
+ZKP #1 MUST reconstruct the signed-note nullifier from the exact same note:
+the delegating-account recipient, 1-zatoshi value, `rho_signed`,
+`rseed_signed`, V3 note version, position zero, and account key material. TX1
+places this nullifier in its spend, so it is covered by the ZIP-244 sighash.
+This is what binds the signature to the eligible-note slots, VAN, hotkey, and
+round.
 
 ```text
-(cmx[0..4], VAN, round_id)
-              |
-              v
-          rho_signed --> nf_signed --> TX1 sighash --> SpendAuth signature
+eligible notes --+
+padding notes ----+--> cmx[0..4] --+
+                                      |
+one hotkey address --> VAN ------------+--> rho_signed
+round ---------------------------------+        |
+                                                v
+signed note --> nf_signed --> TX1 sighash --> SpendAuth signature
+     |
+     +-- owned by the delegating account
+
+one hotkey address --> zero-value output --> cmx_new
 ```
 
 ## Transaction construction
@@ -153,7 +239,7 @@ The real spend is:
 
 | Field | Value |
 | --- | --- |
-| Note | The bound synthetic note |
+| Note | The signed synthetic note |
 | Merkle position | `0` |
 | Authentication path | 32 zero-valued sibling encodings |
 | Anchor | Root computed from the synthetic note and synthetic path |
@@ -258,6 +344,10 @@ Before assembling the vote-chain delegation submission, the wallet MUST:
 
 The vote-chain submission contains the SpendAuth signature, `rk`, and TX1
 sighash, but it is not TX1 and does not contain a Zcash transaction.
+
+To hand the resulting voting authority to another application, use the
+[external software export](exporting-to-external-software.md). Do not export
+the wallet seed or account spending key.
 
 Signing state is one-shot. After a restart, the wallet MAY resume only if it
 retained the exact signing request, including the full PCZT. Otherwise it MUST
