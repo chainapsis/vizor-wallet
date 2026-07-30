@@ -684,6 +684,42 @@ fn pending_migration_policy_rebuild_message(
     Ok(None)
 }
 
+/// Persist accepted-but-unstored migration txs, reconcile confirmations, then
+/// evaluate fee/input policy rebuild. Store must run before retirement so a
+/// lightwalletd-accepted tx is recorded locally before the run goes terminal
+/// and note locks are released. If store retry still leaves gaps, return Err so
+/// callers cannot fall through to rebuild/expiry.
+fn retry_store_then_pending_migration_policy_rebuild_message(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    chain_tip_height: u32,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<Option<String>, String> {
+    let _stored = retry_store_broadcasted_migration_txs_missing_local(
+        db_path,
+        network,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    super::migration::reconcile_run_pending_confirmations(db_path, run_id)?;
+    let still_missing = super::migration::broadcasted_pending_txs_missing_local_identity(
+        db_path,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?
+    .len();
+    if still_missing > 0 {
+        return Err(format!(
+            "{still_missing} accepted migration transaction(s) are still missing from local wallet storage. Vizor will retry until local state is recorded."
+        ));
+    }
+    pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)
+}
+
 pub fn propose_send(
     db_path: &str,
     network: WalletNetwork,
@@ -1390,12 +1426,16 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                     let chain_tip_height =
                         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
                             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-                    if let Some(message) = pending_migration_policy_rebuild_message(
-                        db_path,
-                        network,
-                        &run.run_id,
-                        chain_tip_height,
-                    )? {
+                    if let Some(message) =
+                        retry_store_then_pending_migration_policy_rebuild_message(
+                            db_path,
+                            network,
+                            &run.run_id,
+                            chain_tip_height,
+                            pending_password.as_slice(),
+                            pending_salt_base64,
+                        )?
+                    {
                         drop(seed);
                         super::migration::retire_run_for_rebuild(
                             db_path,
@@ -2174,9 +2214,14 @@ async fn prepare_orchard_migration_outbox(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-    if let Some(message) =
-        pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
-    {
+    if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
+        db_path,
+        network,
+        &run.run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )? {
         super::migration::retire_run_for_rebuild(db_path, network, &run.run_id, &message)?;
         let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
         return Ok(migration_result_from_pending_totals(
@@ -4902,9 +4947,19 @@ async fn broadcast_due_scheduled_migration_txs(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-    if let Some(message) =
-        pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)?
-    {
+    // Store accepted-but-unstored rows before fee-policy retirement and before
+    // expiry handling. Policy rebuild would otherwise go terminal and release
+    // locks without recording network-accepted state; expiry flips
+    // `broadcasted` → `needs_resign` and would drop rows out of store-retry.
+    // Unresolved store gaps return Err so callers cannot fall through.
+    if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
+        db_path,
+        network,
+        run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )? {
         super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
         return Ok(MigrationBroadcastAdvance::without_acceptance(
             migration_result_from_pending_totals(
@@ -5380,33 +5435,81 @@ where
         let message =
             migration_storage_retry_message("Migration transaction", &pending.txid_hex, &e);
         log::warn!("migration: {message}");
-        super::migration::mark_run_phase(
-            db_path,
-            run_id,
-            super::migration::PHASE_BROADCAST_SCHEDULED,
-            Some(&message),
-        )?;
+        // Network accepted: promote out of `scheduled` so due selection cannot
+        // HOL-block later parts as "Due now". Local store is retried separately
+        // from the encrypted pending raw (see retry_store_broadcasted…).
+        super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)?;
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, Some(&message))?;
         let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-        let mut result = migration_result_from_pending_totals(
+        let result = migration_result_from_pending_totals(
             totals,
-            super::migration::PHASE_BROADCAST_SCHEDULED,
+            &phase,
             Some(message),
             fallback_total_count,
             fallback_migrated_zatoshi,
         );
-        // The operation result reports network acceptance even though the
-        // durable pending row remains scheduled for local storage recovery.
-        // Callers can therefore enforce one accepted transfer per wallet-open
-        // epoch without parsing the human-readable recovery message.
-        result.broadcasted_count = result
-            .broadcasted_count
-            .checked_add(1)
-            .ok_or("Accepted migration transaction count overflow")?;
+        // Callers can still enforce one accepted transfer per wallet-open epoch
+        // from the accepted txid / broadcasted_count without parsing the message.
         return Ok(Some(result));
     }
 
     super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)?;
     Ok(None)
+}
+
+/// Retry local wallet storage for network-accepted (`broadcasted`) rows that
+/// still lack `transactions.raw`. Returns how many rows were newly stored.
+///
+/// On any successful store, clears the run's durable storage-retry
+/// `last_error` so `MigrationStatus.message` changes even though the row
+/// remains `broadcasted`. The coordinator uses that message diff to refresh
+/// home balances after an otherwise status-stable store. Remaining failures
+/// re-stamp `last_error` afterward.
+fn retry_store_broadcasted_migration_txs_missing_local(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<u32, String> {
+    let missing = super::migration::broadcasted_pending_txs_missing_local_identity(
+        db_path,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    let mut stored = 0u32;
+    let mut last_failure: Option<String> = None;
+    for pending in missing {
+        match decrypt_and_store_migration_tx(db_path, network, &pending.raw_tx) {
+            Ok(()) => {
+                stored = stored.saturating_add(1);
+                log::info!(
+                    "migration: recorded previously accepted tx {} after local store retry",
+                    pending.txid_hex
+                );
+            }
+            Err(error) => {
+                let message = migration_storage_retry_message(
+                    "Migration transaction",
+                    &pending.txid_hex,
+                    &error,
+                );
+                log::warn!("migration: {message}");
+                last_failure = Some(message);
+            }
+        }
+    }
+    if stored > 0 {
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, None)?;
+    }
+    if let Some(message) = last_failure.as_deref() {
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, Some(message))?;
+    }
+    Ok(stored)
 }
 
 fn migration_result_from_pending_totals(

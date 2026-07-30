@@ -278,6 +278,59 @@ fn stop_candidates_track_attempts_for_children_and_denomination_stages() {
     }));
 }
 
+#[test]
+fn stop_candidates_include_broadcasted_rows_missing_local_raw() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let txids = create_outbox_test_run(&db_path, "run-unstored", &[10, 20], &[None, None]);
+    let unstored_txid = &txids[0];
+    let stored_txid = &txids[1];
+
+    mark_pending_broadcasted(&db_path, "run-unstored", unstored_txid).unwrap();
+    mark_pending_broadcasted(&db_path, "run-unstored", stored_txid).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             raw BLOB
+         );",
+    )
+    .unwrap();
+    let mut stored_blob = hex::decode(stored_txid).unwrap();
+    stored_blob.reverse();
+    conn.execute(
+        "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)",
+        params![stored_blob, vec![1_u8, 2, 3]],
+    )
+    .unwrap();
+    drop(conn);
+
+    let candidates = scheduled_migration_stop_candidates(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-unstored",
+    )
+    .unwrap();
+    assert_eq!(
+        candidates.len(),
+        1,
+        "only broadcasted-without-local-raw rows remain stop-reconcilable"
+    );
+    assert_eq!(candidates[0].kind, MigrationStopCandidateKind::MigrationTransaction);
+    assert_eq!(candidates[0].txid_hex, *unstored_txid);
+    assert_eq!(
+        candidates[0].attempt_state,
+        MigrationBroadcastAttemptState::Attempted,
+        "accepted-but-unstored rows must force stop reconciliation"
+    );
+}
+
 fn pending_test_stage(expected_txid_hex: &str, raw_tx: Vec<u8>) -> DenominationStageInsert {
     DenominationStageInsert {
         stage_index: 0,
@@ -4506,6 +4559,164 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
             .len(),
         1
     );
+}
+
+#[test]
+fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let txid_hex = "aa".repeat(32);
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: None,
+    };
+    let metadata = PendingMigrationTxMetadata {
+        tx_kind: "migration".to_string(),
+        funding_account_uuid: "account-1".to_string(),
+        selected_note: selected_note.clone(),
+    };
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('store-retry-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]', '[]')"
+        ),
+        params![db_path, PHASE_WAITING_MIGRATION_CONFIRMATIONS],
+    )
+    .unwrap();
+    drop(conn);
+
+    let scheduled_height = 95;
+    let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+    insert_pending_txs(
+        &db_path,
+        "store-retry-run",
+        vec![PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: txid_hex.clone(),
+            raw_tx: vec![9, 8, 7, 6],
+            target_height: scheduled_height,
+            anchor_boundary_height: None,
+            expiry_height,
+            scheduled_height,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note,
+            metadata,
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+    mark_pending_broadcasted(&db_path, "store-retry-run", &txid_hex).unwrap();
+
+    // Past expiry, but no local transactions.raw yet: do not resign.
+    assert!(
+        !pending_row_is_expired_for_resign(
+            &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
+            "broadcasted",
+            expiry_height,
+            expiry_height,
+            &txid_hex,
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        expired_unconfirmed_pending_count(&db_path, "store-retry-run", expiry_height).unwrap(),
+        0
+    );
+    assert_eq!(
+        mark_expired_pending_parts_for_resign(&db_path, "store-retry-run", expiry_height)
+            .unwrap(),
+        0
+    );
+    let status: String = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
+        .unwrap()
+        .query_row(
+            &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+            params![txid_hex],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "broadcasted");
+    assert_eq!(
+        broadcasted_pending_txs_missing_local_identity(
+            &db_path,
+            "store-retry-run",
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap()
+        .len(),
+        1,
+        "not-yet-stored broadcasted rows must stay eligible for store retry"
+    );
+
+    // Once local raw is present, the same past-expiry broadcasted row resigns.
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             raw BLOB
+         );",
+    )
+    .unwrap();
+    let mut txid_blob = hex::decode(&txid_hex).unwrap();
+    txid_blob.reverse();
+    conn.execute(
+        "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)",
+        params![txid_blob, vec![9_u8, 8, 7, 6]],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(
+        pending_row_is_expired_for_resign(
+            &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
+            "broadcasted",
+            expiry_height,
+            expiry_height,
+            &txid_hex,
+        )
+        .unwrap()
+    );
+    assert!(
+        broadcasted_pending_txs_missing_local_identity(
+            &db_path,
+            "store-retry-run",
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap()
+        .is_empty(),
+        "local raw present means store retry is done even while still broadcasted"
+    );
+    assert_eq!(
+        expired_unconfirmed_pending_count(&db_path, "store-retry-run", expiry_height).unwrap(),
+        1
+    );
+    assert_eq!(
+        mark_expired_pending_parts_for_resign(&db_path, "store-retry-run", expiry_height)
+            .unwrap(),
+        1
+    );
+    let status: String = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
+        .unwrap()
+        .query_row(
+            &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+            params![txid_hex],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "needs_resign");
 }
 
 #[test]
