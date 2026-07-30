@@ -106,6 +106,88 @@ void main() {
   );
 
   test(
+    'Android reports no background preparation tracking capability',
+    () async {
+      var capabilityCalls = 0;
+      final service = _preparationTrackingSupportService(
+        isIOS: false,
+        isAndroid: true,
+        supportsBackgroundPreparationTracking: () async {
+          capabilityCalls++;
+          return true;
+        },
+      );
+
+      expect(await service.backgroundPreparationTrackingSupported(), isFalse);
+      // There is no Android preparation worker and no Android
+      // `background_migration` channel, so the platform gate must answer before
+      // any native probe runs.
+      expect(capabilityCalls, 0);
+    },
+  );
+
+  test(
+    'background preparation tracking mirrors the native capability',
+    () async {
+      final unsupported = _preparationTrackingSupportService(
+        supportsBackgroundPreparationTracking: () async => false,
+      );
+      final supported = _preparationTrackingSupportService(
+        supportsBackgroundPreparationTracking: () async => true,
+      );
+
+      expect(
+        await unsupported.backgroundPreparationTrackingSupported(),
+        isFalse,
+      );
+      expect(await supported.backgroundPreparationTrackingSupported(), isTrue);
+    },
+  );
+
+  test(
+    'background preparation tracking capability failure fails closed',
+    () async {
+      final throwing = _preparationTrackingSupportService(
+        supportsBackgroundPreparationTracking: () async =>
+            throw PlatformException(code: 'channel_error'),
+      );
+
+      // Over-promising a background lane strands the run; under-promising only
+      // asks the user to keep Vizor open.
+      expect(await throwing.backgroundPreparationTrackingSupported(), isFalse);
+    },
+  );
+
+  test(
+    'an injected preparation runtime source is treated as capable',
+    () async {
+      // Mirrors the `supportsBackgroundMigration` convention: only the default
+      // native runtime-state source is OS-version gated, so a caller that
+      // supplies its own source is not described by that gate.
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isIOS: () => true,
+        isAndroid: () => false,
+        getPreparationRuntimeState:
+            ({required network, required accountUuid, required runId}) async =>
+                IronwoodMigrationPreparationRuntimeState.scheduled,
+      );
+
+      expect(await service.backgroundPreparationTrackingSupported(), isTrue);
+    },
+  );
+
+  test(
     'status resolves wallet db path before calling Rust status API',
     () async {
       String? seenDbPath;
@@ -5141,6 +5223,31 @@ RpcEndpointConfig _testEndpoint() => const RpcEndpointConfig(
   networkName: 'test',
   lightwalletdUrl: 'https://lwd.example:443',
 );
+
+IronwoodMigrationService _preparationTrackingSupportService({
+  bool isIOS = true,
+  bool isAndroid = false,
+  required IronwoodMigrationPreparationTrackingSupportCheck
+  supportsBackgroundPreparationTracking,
+}) {
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _migrationStatus(),
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) async =>
+            null,
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    getEndpoint: _testEndpoint,
+    isMacOS: () => false,
+    isMobile: () => true,
+    isIOS: () => isIOS,
+    isAndroid: () => isAndroid,
+    supportsBackgroundPreparationTracking:
+        supportsBackgroundPreparationTracking,
+  );
+}
 
 IronwoodMigrationService _notificationAuthorizationService({
   required bool isIOS,

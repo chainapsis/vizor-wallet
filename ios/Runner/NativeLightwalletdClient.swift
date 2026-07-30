@@ -1,19 +1,41 @@
 import Foundation
 
 final class BackgroundMigrationCancellation: @unchecked Sendable {
-  private let lock = NSLock()
+  private let condition = NSCondition()
   private var cancelled = false
+  private let nativeHandle = zcash_lightwalletd_cancellation_create()
 
   func cancel() {
-    lock.lock()
+    condition.lock()
     cancelled = true
-    lock.unlock()
+    condition.broadcast()
+    let handle = nativeHandle
+    condition.unlock()
+    zcash_lightwalletd_cancellation_cancel(handle)
   }
 
   var isCancelled: Bool {
-    lock.lock()
-    defer { lock.unlock() }
+    condition.lock()
+    defer { condition.unlock() }
     return cancelled
+  }
+
+  func waitUntilCancelled(timeout: TimeInterval) -> Bool {
+    condition.lock()
+    defer { condition.unlock() }
+    if cancelled { return true }
+    _ = condition.wait(
+      until: Date().addingTimeInterval(max(0, timeout))
+    )
+    return cancelled
+  }
+
+  fileprivate var lightwalletdCancellationHandle: UnsafeMutableRawPointer? {
+    nativeHandle
+  }
+
+  deinit {
+    zcash_lightwalletd_cancellation_destroy(nativeHandle)
   }
 }
 
@@ -24,6 +46,7 @@ enum NativeLightwalletdError: Error, Equatable {
   case transport(String)
   case invalidHTTPStatus(Int)
   case grpcStatus(String)
+  case grpcStatusUnavailable
   case malformedResponse
   case missingHeight
   case missingSendResponse
@@ -32,6 +55,13 @@ enum NativeLightwalletdError: Error, Equatable {
 struct NativeLightwalletdSendResponse: Equatable {
   let errorCode: Int32
   let errorMessage: String
+}
+
+enum NativeLightwalletdTransactionObservation: Equatable {
+  case notFound
+  case mempool
+  case mined(height: UInt64)
+  case forked
 }
 
 private final class NativeLightwalletdRequestResult: @unchecked Sendable {
@@ -70,9 +100,36 @@ private final class NativeLightwalletdSendRequestResult: @unchecked Sendable {
   }
 }
 
+private final class NativeLightwalletdTransactionRequestResult:
+  @unchecked Sendable
+{
+  private let lock = NSLock()
+  private var storedResult:
+    Result<NativeLightwalletdTransactionObservation, NativeLightwalletdError>?
+
+  func set(
+    _ result:
+      Result<NativeLightwalletdTransactionObservation, NativeLightwalletdError>
+  ) {
+    lock.lock()
+    storedResult = result
+    lock.unlock()
+  }
+
+  var result:
+    Result<NativeLightwalletdTransactionObservation, NativeLightwalletdError>?
+  {
+    lock.lock()
+    defer { lock.unlock() }
+    return storedResult
+  }
+}
+
 enum NativeLightwalletdClient {
   private static let latestBlockPath =
     "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLatestBlock"
+  private static let getTransactionPath =
+    "/cash.z.wallet.sdk.rpc.CompactTxStreamer/GetTransaction"
   private static let sendTransactionPath =
     "/cash.z.wallet.sdk.rpc.CompactTxStreamer/SendTransaction"
 
@@ -80,71 +137,29 @@ enum NativeLightwalletdClient {
     endpoint: String,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<UInt64, NativeLightwalletdError> {
-    guard let url = rpcURL(endpoint: endpoint, methodPath: latestBlockPath) else {
+    guard rpcURL(endpoint: endpoint, methodPath: latestBlockPath) != nil else {
       return .failure(.invalidEndpoint)
     }
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.timeoutInterval = 15
-    request.setValue("application/grpc", forHTTPHeaderField: "Content-Type")
-    request.setValue("trailers", forHTTPHeaderField: "TE")
-    request.httpBody = Data(repeating: 0, count: 5)
-
-    let semaphore = DispatchSemaphore(value: 0)
-    let result = NativeLightwalletdRequestResult()
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.timeoutIntervalForRequest = 15
-    configuration.timeoutIntervalForResource = 16
-    let session = URLSession(configuration: configuration)
-    let task = session.dataTask(with: request) { data, response, error in
-      defer { semaphore.signal() }
-      if let error {
-        result.set(.failure(.transport(String(describing: error))))
-        return
-      }
-      guard let http = response as? HTTPURLResponse else {
-        result.set(.failure(.malformedResponse))
-        return
-      }
-      guard http.statusCode == 200 else {
-        result.set(.failure(.invalidHTTPStatus(http.statusCode)))
-        return
-      }
-      if let grpcStatus = http.value(forHTTPHeaderField: "grpc-status"),
-        grpcStatus != "0"
-      {
-        result.set(.failure(.grpcStatus(grpcStatus)))
-        return
-      }
-      guard let data else {
-        result.set(.failure(.malformedResponse))
-        return
-      }
-      do {
-        result.set(.success(try parseLatestBlockResponse(data)))
-      } catch let error as NativeLightwalletdError {
-        result.set(.failure(error))
-      } catch {
-        result.set(.failure(.malformedResponse))
-      }
+    guard !cancellation.isCancelled else {
+      return .failure(.cancelled)
     }
-    task.resume()
-
-    let deadline = Date(timeIntervalSinceNow: 16)
-    while semaphore.wait(timeout: .now() + 0.25) == .timedOut {
-      if cancellation.isCancelled {
-        task.cancel()
-        session.invalidateAndCancel()
-        return .failure(.cancelled)
-      }
-      if Date() >= deadline {
-        task.cancel()
-        session.invalidateAndCancel()
-        return .failure(.timedOut)
-      }
+    var height: UInt64 = 0
+    let code = endpoint.withCString {
+      zcash_lightwalletd_latest_block_height(
+        $0,
+        &height,
+        cancellation.lightwalletdCancellationHandle
+      )
     }
-    session.finishTasksAndInvalidate()
-    return result.result ?? .failure(.malformedResponse)
+    guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
+      !cancellation.isCancelled
+    else {
+      return .failure(.cancelled)
+    }
+    guard code == 0 else {
+      return .failure(.transport("Rust lightwalletd latest block failed (code \(code))"))
+    }
+    return .success(height)
   }
 
   static func parseLatestBlockResponse(_ data: Data) throws -> UInt64 {
@@ -172,76 +187,124 @@ enum NativeLightwalletdClient {
     throw NativeLightwalletdError.missingHeight
   }
 
+  static func transaction(
+    endpoint: String,
+    transactionId: Data,
+    cancellation: BackgroundMigrationCancellation
+  ) -> Result<
+    NativeLightwalletdTransactionObservation,
+    NativeLightwalletdError
+  > {
+    guard transactionId.count == 32,
+      rpcURL(endpoint: endpoint, methodPath: getTransactionPath) != nil
+    else {
+      return .failure(.invalidEndpoint)
+    }
+    guard !cancellation.isCancelled else {
+      return .failure(.cancelled)
+    }
+    var nativeObservation = CLightwalletdTransactionObservation(
+      state: 0,
+      mined_height: 0
+    )
+    let code = endpoint.withCString { endpointPointer in
+      transactionId.withUnsafeBytes { transactionPointer in
+        zcash_lightwalletd_observe_transaction(
+          endpointPointer,
+          transactionPointer.bindMemory(to: UInt8.self).baseAddress,
+          UInt(transactionId.count),
+          &nativeObservation,
+          cancellation.lightwalletdCancellationHandle
+        )
+      }
+    }
+    guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
+      !cancellation.isCancelled
+    else {
+      return .failure(.cancelled)
+    }
+    guard code == 0 else {
+      return .failure(.transport("Rust lightwalletd transaction lookup failed (code \(code))"))
+    }
+    switch nativeObservation.state {
+    case 0:
+      return .success(.notFound)
+    case 1:
+      return .success(.mempool)
+    case 2:
+      return .success(.mined(height: nativeObservation.mined_height))
+    case 3:
+      return .success(.forked)
+    default:
+      return .failure(.malformedResponse)
+    }
+  }
+
+  static func parseTransactionResponse(
+    _ data: Data
+  ) throws -> NativeLightwalletdTransactionObservation {
+    let payload = try grpcPayload(data)
+    var index = payload.startIndex
+    var height: UInt64 = 0
+    while index < payload.endIndex {
+      let key = try readVarint(payload, index: &index)
+      let fieldNumber = key >> 3
+      let wireType = key & 0x07
+      if fieldNumber == 2, wireType == 0 {
+        height = try readVarint(payload, index: &index)
+      } else {
+        try skipField(payload, wireType: wireType, index: &index)
+      }
+    }
+    if height == 0 { return .mempool }
+    if height == UInt64.max { return .forked }
+    return .mined(height: height)
+  }
+
   static func sendTransaction(
     endpoint: String,
     rawTransaction: Data,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError> {
-    guard let url = rpcURL(endpoint: endpoint, methodPath: sendTransactionPath) else {
+    guard !rawTransaction.isEmpty,
+      rpcURL(endpoint: endpoint, methodPath: sendTransactionPath) != nil
+    else {
       return .failure(.invalidEndpoint)
     }
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.timeoutInterval = 15
-    request.setValue("application/grpc", forHTTPHeaderField: "Content-Type")
-    request.setValue("trailers", forHTTPHeaderField: "TE")
-    request.httpBody = grpcFrame(payload: rawTransactionMessage(rawTransaction))
-
-    let semaphore = DispatchSemaphore(value: 0)
-    let result = NativeLightwalletdSendRequestResult()
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.timeoutIntervalForRequest = 15
-    configuration.timeoutIntervalForResource = 16
-    let session = URLSession(configuration: configuration)
-    let task = session.dataTask(with: request) { data, response, error in
-      defer { semaphore.signal() }
-      if let error {
-        result.set(.failure(.transport(String(describing: error))))
-        return
-      }
-      guard let http = response as? HTTPURLResponse else {
-        result.set(.failure(.malformedResponse))
-        return
-      }
-      guard http.statusCode == 200 else {
-        result.set(.failure(.invalidHTTPStatus(http.statusCode)))
-        return
-      }
-      if let grpcStatus = http.value(forHTTPHeaderField: "grpc-status"),
-        grpcStatus != "0"
-      {
-        result.set(.failure(.grpcStatus(grpcStatus)))
-        return
-      }
-      guard let data else {
-        result.set(.failure(.malformedResponse))
-        return
-      }
-      do {
-        result.set(.success(try parseSendTransactionResponse(data)))
-      } catch let error as NativeLightwalletdError {
-        result.set(.failure(error))
-      } catch {
-        result.set(.failure(.malformedResponse))
+    guard !cancellation.isCancelled else {
+      return .failure(.cancelled)
+    }
+    var responseErrorCode: Int32 = 0
+    var responseErrorMessage = [CChar](repeating: 0, count: 4096)
+    let code = endpoint.withCString { endpointPointer in
+      rawTransaction.withUnsafeBytes { transactionPointer in
+        responseErrorMessage.withUnsafeMutableBufferPointer { messagePointer in
+          zcash_lightwalletd_send_transaction(
+            endpointPointer,
+            transactionPointer.bindMemory(to: UInt8.self).baseAddress,
+            UInt(rawTransaction.count),
+            &responseErrorCode,
+            messagePointer.baseAddress,
+            UInt(messagePointer.count),
+            cancellation.lightwalletdCancellationHandle
+          )
+        }
       }
     }
-    task.resume()
-
-    let deadline = Date(timeIntervalSinceNow: 16)
-    while semaphore.wait(timeout: .now() + 0.25) == .timedOut {
-      if cancellation.isCancelled {
-        task.cancel()
-        session.invalidateAndCancel()
-        return .failure(.cancelled)
-      }
-      if Date() >= deadline {
-        task.cancel()
-        session.invalidateAndCancel()
-        return .failure(.timedOut)
-      }
+    guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
+      !cancellation.isCancelled
+    else {
+      return .failure(.cancelled)
     }
-    session.finishTasksAndInvalidate()
-    return result.result ?? .failure(.malformedResponse)
+    guard code == 0 else {
+      return .failure(.transport("Rust lightwalletd send failed (code \(code))"))
+    }
+    return .success(
+      NativeLightwalletdSendResponse(
+        errorCode: responseErrorCode,
+        errorMessage: String(cString: responseErrorMessage)
+      )
+    )
   }
 
   static func parseSendTransactionResponse(
@@ -304,6 +367,16 @@ enum NativeLightwalletdClient {
     var message = Data([0x0A])
     message.append(contentsOf: encodeVarint(UInt64(rawTransaction.count)))
     message.append(rawTransaction)
+    return message
+  }
+
+  private static func transactionFilterMessage(
+    _ transactionId: Data
+  ) -> Data {
+    // TxFilter.hash is protobuf field 3.
+    var message = Data([0x1A])
+    message.append(contentsOf: encodeVarint(UInt64(transactionId.count)))
+    message.append(transactionId)
     return message
   }
 

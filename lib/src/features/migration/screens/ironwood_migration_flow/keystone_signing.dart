@@ -86,6 +86,52 @@ class MobileIronwoodMigrationKeystoneImmediateSignScreen
   }
 }
 
+class MobileIronwoodMigrationKeystoneCombinedSignScreen
+    extends StatelessWidget {
+  const MobileIronwoodMigrationKeystoneCombinedSignScreen({
+    required this.approvedSchedule,
+    this.initialRequest,
+    this.initialAccountUuid,
+    this.previewRequest,
+    this.previewUrParts = const [],
+    this.previewStartScanning = false,
+    super.key,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final rust_sync.KeystoneMigrationSigningRequest? initialRequest;
+  final String? initialAccountUuid;
+  final rust_sync.KeystoneMigrationSigningRequest? previewRequest;
+  final List<String> previewUrParts;
+  final bool previewStartScanning;
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationKeystonePrivateSignScreen(
+      step: _KeystonePrivateSignStep.combined,
+      approvedSchedule: approvedSchedule,
+      mobileLayout: true,
+      initialRequest: initialRequest,
+      initialAccountUuid: initialAccountUuid,
+      previewRequest: previewRequest,
+      previewUrParts: previewUrParts,
+      previewStartScanning: previewStartScanning,
+    );
+  }
+}
+
+class MobileIronwoodMigrationKeystoneCombinedSignEntry {
+  const MobileIronwoodMigrationKeystoneCombinedSignEntry({
+    required this.approvedSchedule,
+    required this.request,
+    required this.accountUuid,
+  });
+
+  final List<rust_sync.MigrationScheduledTransfer> approvedSchedule;
+  final rust_sync.KeystoneMigrationSigningRequest request;
+  final String accountUuid;
+}
+
 class IronwoodMigrationKeystoneDenominationSignScreen extends StatelessWidget {
   const IronwoodMigrationKeystoneDenominationSignScreen({
     this.approvedSchedule = const [],
@@ -310,7 +356,8 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
     _KeystonePrivateSignStep.immediate =>
       'Scan the QR code with your Keystone wallet to confirm migration.',
     _KeystonePrivateSignStep.combined =>
-      'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.',
+      'Scan this request with Keystone to sign the preparation transactions '
+          'and migration batches together.',
     _KeystonePrivateSignStep.denominations =>
       'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.',
     _KeystonePrivateSignStep.batch =>
@@ -416,6 +463,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   List<rust_sync.KeystoneSignedMigrationMessage>? _pendingSignedMessages;
   KeystoneQrScannerControls? _scannerControls;
   bool _decoding = false;
+  // Multi-part UR scan progress (0-100) for the mobile scanner chrome. The
+  // scanner card reports it; the mobile view renders it under the viewfinder.
+  int _scanProgress = 0;
   bool _requestCompleted = false;
   bool _showImmediateScanHelp = true;
   Future<void>? _completionOperation;
@@ -507,6 +557,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _pendingSignedMessages = null;
       _scannerControls = null;
       _decoding = false;
+      _scanProgress = 0;
     });
 
     String? requestIdToDiscard = preparedRequest?.requestId;
@@ -619,6 +670,26 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   String? get _signingRoundLabel => _signingRounds.length <= 1
       ? null
       : 'Round ${_signingRoundIndex + 1} of ${_signingRounds.length}';
+
+  /// How many transactions the QR currently on screen signs.
+  ///
+  /// `_signingRounds` is the exact partition of `request.messages` that the
+  /// QR encoder consumes (`_keystoneSigningRounds`, capped by
+  /// `signingBatchLimit` and the Keystone byte budget), so the current round's
+  /// length is the real message count for this QR and the flattened total is
+  /// the request's message count.
+  String? get _signingMessageCountLabel {
+    final round = _currentSigningRound;
+    if (round == null || round.isEmpty) return null;
+    final total = _request?.messages.length ?? round.length;
+    if (round.length >= total) {
+      return 'Signs ${_transactionCountText(total)}';
+    }
+    return 'Signs ${round.length} of ${_transactionCountText(total)}';
+  }
+
+  String _transactionCountText(int count) =>
+      count == 1 ? '1 transaction' : '$count transactions';
 
   Future<void> _handleScanComplete(ScanResult result) async {
     if (_decoding ||
@@ -912,6 +983,11 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _stopProofPolling();
       _requestCompleted = true;
       _pendingSignedMessages = null;
+      if (widget.mobileLayout) {
+        // Mobile lands on home, which reads the migration CTA and the
+        // post-migration state directly.
+        _invalidateIronwoodMigrationStatusState(ref);
+      }
       context.go('/home');
       return;
     }
@@ -981,6 +1057,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
     if (!mounted) return;
     final previousRoute = switch ((widget.mobileLayout, widget.step)) {
       (true, _KeystonePrivateSignStep.immediate) => '/migration/fast/review',
+      // Combined signing creates the durable run only at completion, so a
+      // cancelled mobile session has no draft for the status screen to show.
+      (true, _KeystonePrivateSignStep.combined) => '/migration/options',
       (true, _KeystonePrivateSignStep.denominations) =>
         '/migration/private/status',
       _ => widget.step.previousRoute,
@@ -1194,6 +1273,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       state: MobileIronwoodKeystoneSigningViewState.ready,
       round: round,
       signingRoundLabel: _signingRoundLabel,
+      signingMessageCountLabel: _signingMessageCountLabel,
       qrCode: KeystonePcztQrStage(
         key: const ValueKey('mobile_ironwood_keystone_qr'),
         phase: KeystonePcztQrStagePhase.ready,
@@ -1210,6 +1290,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 _stage = _KeystoneDenominationSignStage.scanning;
                 _error = null;
                 _decoding = false;
+                _scanProgress = 0;
               });
             },
       onCancel: () => unawaited(_returnToReview()),
@@ -1249,10 +1330,13 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           expectedUrType: _keystoneMigrationSignBatchResultUrType,
           decoding: _decoding || waitingForProofs,
           error: null,
-          onProgress: (_) {
-            if (_pendingSignedMessages != null) return;
-            if (_error == null || !mounted) return;
-            setState(() => _error = null);
+          onProgress: (progress) {
+            if (_pendingSignedMessages != null || !mounted) return;
+            if (_error == null && _scanProgress == progress) return;
+            setState(() {
+              _error = null;
+              _scanProgress = progress;
+            });
           },
           onDecodeError: _handleDecodeError,
           onComplete: (result) => unawaited(_handleScanComplete(result)),
@@ -1265,6 +1349,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           cameraHeight: constraints.maxHeight,
           fullBleedMobile: true,
           showScanOverlay: false,
+          // The mobile view renders a viewfinder-width progress bar with a
+          // percentage instead of the card's small bottom bar.
+          showScanProgress: false,
           onControlsReady: _handleScannerControlsReady,
         ),
       ),
@@ -1276,6 +1363,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               ? 'Signature captured. Waiting for local proofs.'
               : 'Scan the new signed QR shown on Keystone.'),
       signingRoundLabel: _signingRoundLabel,
+      scanProgress: completing || waitingForProofs || _scanProgress <= 0
+          ? null
+          : _scanProgress / 100,
       scannerMessageIsError: _error != null,
       onToggleFlashlight:
           completing || waitingForProofs || scannerControls == null
@@ -1300,6 +1390,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _error = null;
       _decoding = false;
       _scannerControls = null;
+      _scanProgress = 0;
     });
   }
 
@@ -1826,15 +1917,59 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
   ];
 }
 
-List<List<T>> _keystoneSigningRounds<T>(List<T> messages, int limit) {
-  if (messages.isEmpty) return <List<T>>[];
+// The Keystone firmware enforces two independent caps on one signing round:
+// the message count (`signingBatchLimit`) and a 512 KiB ceiling that covers
+// both the canonical PCZT byte total and the request-id + Postcard envelope
+// (`ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES` in rust/src/wallet/keystone.rs). Rounds
+// must stay under both, or QR encoding rejects the round after the user has
+// already approved the migration.
+const _keystoneSigningRoundMaxTotalBytes = 512 * 1024;
+// Headroom for the request id and per-message Postcard framing, which the
+// firmware counts against the same ceiling as the raw PCZT payloads.
+const _keystoneSigningRoundByteBudget =
+    _keystoneSigningRoundMaxTotalBytes - 16 * 1024;
+
+@visibleForTesting
+List<List<rust_sync.KeystoneMigrationMessage>> keystoneSigningRoundsForTest(
+  List<rust_sync.KeystoneMigrationMessage> messages,
+  int limit,
+) => _keystoneSigningRounds(messages, limit);
+
+List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRounds(
+  List<rust_sync.KeystoneMigrationMessage> messages,
+  int limit,
+) {
+  if (messages.isEmpty) return const [];
   if (limit <= 0) {
     throw StateError('Keystone signing batch limit must be positive.');
   }
-  return [
-    for (var start = 0; start < messages.length; start += limit)
-      messages.sublist(start, math.min(start + limit, messages.length)),
-  ];
+  final rounds = <List<rust_sync.KeystoneMigrationMessage>>[];
+  var round = <rust_sync.KeystoneMigrationMessage>[];
+  var roundBytes = 0;
+  for (final message in messages) {
+    final messageBytes = message.redactedPczt.length + message.id.length;
+    // A round cannot be split below one message, so a transaction that alone
+    // exceeds the budget can never be encoded. Fail here rather than let the
+    // firmware limit reject the request after the user approves the migration.
+    if (messageBytes > _keystoneSigningRoundByteBudget) {
+      throw StateError(
+        'A migration transaction is too large for one Keystone signing '
+        'request.',
+      );
+    }
+    final overflowsByteBudget =
+        round.isNotEmpty &&
+        roundBytes + messageBytes > _keystoneSigningRoundByteBudget;
+    if (round.length >= limit || overflowsByteBudget) {
+      rounds.add(round);
+      round = <rust_sync.KeystoneMigrationMessage>[];
+      roundBytes = 0;
+    }
+    round.add(message);
+    roundBytes += messageBytes;
+  }
+  if (round.isNotEmpty) rounds.add(round);
+  return rounds;
 }
 
 String _keystoneSigningRoundRequestId(

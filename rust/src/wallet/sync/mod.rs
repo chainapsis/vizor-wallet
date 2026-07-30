@@ -41,10 +41,12 @@ mod transactions;
 // downstream consumers, which matches the pre-refactor surface
 // exactly).
 pub(crate) use migration::{
-    configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
-    proof_retry_height, reconcile_wallet_locks_after_sync, MigrationPartState,
-    MigrationPreparationOutputKind, MigrationPreparationTransactionState, MigrationScheduleEntry,
-    MigrationStatus, PreparationTimingPolicy,
+    configure_fast_testnet_migration, delete_account_migration_rows_with_tx,
+    denomination_confirmations_required, migration_preparation_snapshot_read_only,
+    migration_status, observable_denomination_transaction_ids, proof_retry_height,
+    reconcile_wallet_locks_after_sync, MigrationPartState, MigrationPreparationOutputKind,
+    MigrationPreparationTransactionState, MigrationScheduleEntry, MigrationStatus,
+    PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{
@@ -61,7 +63,8 @@ pub(crate) use send::{
     discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
     keystone_migration_proof_status, migrate_orchard_to_ironwood,
     migrate_orchard_to_ironwood_immediately, orchard_migration_proof_readiness,
-    orchard_migration_proof_readiness_at_scanned_height, prepare_orchard_migration_batch_pczt,
+    orchard_migration_proof_readiness_at_scanned_height,
+    orchard_migration_proof_readiness_read_only, prepare_orchard_migration_batch_pczt,
     prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_immediate_pczt,
     prepare_orchard_migration_single_qr_pczt, retain_prepared_note_anchor_checkpoints_after_scan,
     retire_unbroadcast_orchard_migration, KeystoneSignedMigrationMessage,

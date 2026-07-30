@@ -59,6 +59,25 @@ GoRoute _placeholderRoute(String path, String label) => GoRoute(
   builder: (_, _) => Center(child: Text(label)),
 );
 
+/// Stand-in for a migration screen's back scope: a route that cannot pop but
+/// still wants the back press.
+class _RouteLevelBackHandler extends StatelessWidget {
+  const _RouteLevelBackHandler({required this.label, this.onBack});
+
+  final String label;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    onPopInvokedWithResult: (didPop, _) {
+      if (didPop) return;
+      onBack?.call();
+    },
+    child: Center(child: Text(label)),
+  );
+}
+
 Widget _app(
   _ExitBackTestRouter testRouter, {
   AppThemeData theme = AppThemeData.dark,
@@ -251,6 +270,121 @@ void main() {
     );
     expect(text.style?.color, AppThemeData.light.colors.text.inverse);
     expect(text.style?.decoration, TextDecoration.none);
+    _clearExitHint(testRouter);
+  });
+
+  testWidgets('android root back reaches migration routes that cannot pop', (
+    tester,
+  ) async {
+    final platformCalls = _capturePlatformCalls(tester);
+    var handledBacks = 0;
+    final testRouter = _exitBackRouter(
+      initialLocation: '/migration/options',
+      routes: [
+        _placeholderRoute('/home', 'Home route'),
+        GoRoute(
+          path: '/migration/options',
+          builder: (_, _) => _RouteLevelBackHandler(
+            label: 'Migration options route',
+            onBack: () => handledBacks++,
+          ),
+        ),
+      ],
+    );
+    await tester.pumpWidget(_app(testRouter));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migration options route'), findsOneWidget);
+    expect(testRouter.router.canPop(), isFalse);
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+
+    expect(handledBacks, 1);
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(_systemNavigatorPopCallCount(platformCalls), 0);
+  });
+
+  testWidgets('a migration route that blocks back never shows the exit hint', (
+    tester,
+  ) async {
+    final platformCalls = _capturePlatformCalls(tester);
+    final testRouter = _exitBackRouter(
+      initialLocation: '/migration/private/start',
+      routes: [
+        _placeholderRoute('/home', 'Home route'),
+        GoRoute(
+          path: '/migration/private/start',
+          // No fallback: the screen is holding back while work is in flight.
+          builder: (_, _) =>
+              const _RouteLevelBackHandler(label: 'Migration start route'),
+        ),
+      ],
+    );
+    await tester.pumpWidget(_app(testRouter));
+    await tester.pumpAndSettle();
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+
+    expect(find.text('Migration start route'), findsOneWidget);
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsNothing);
+    expect(_systemNavigatorPopCallCount(platformCalls), 0);
+  });
+
+  testWidgets('a migration route without a back handler still exits', (
+    tester,
+  ) async {
+    final platformCalls = _capturePlatformCalls(tester);
+    final testRouter = _exitBackRouter(
+      initialLocation: '/migration/intro',
+      routes: [
+        _placeholderRoute('/home', 'Home route'),
+        _placeholderRoute('/migration/intro', 'Migration intro route'),
+      ],
+    );
+    await tester.pumpWidget(_app(testRouter));
+    await tester.pumpAndSettle();
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
+    expect(_systemNavigatorPopCallCount(platformCalls), 0);
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+    expect(_systemNavigatorPopCallCount(platformCalls), 1);
+  });
+
+  testWidgets('a non-migration route keeps the immediate exit hint', (
+    tester,
+  ) async {
+    var handledBacks = 0;
+    final testRouter = _exitBackRouter(
+      initialLocation: '/settings',
+      routes: [
+        _placeholderRoute('/home', 'Home route'),
+        GoRoute(
+          path: '/settings',
+          builder: (_, _) => _RouteLevelBackHandler(
+            label: 'Settings route',
+            onBack: () => handledBacks++,
+          ),
+        ),
+      ],
+    );
+    await tester.pumpWidget(_app(testRouter));
+    await tester.pumpAndSettle();
+
+    expect(await testRouter.dispatcher.didPopRoute(), isTrue);
+    await tester.pump();
+
+    // The delegate-first path is scoped to `/migration`; everywhere else the
+    // root back press goes straight to the exit hint as before.
+    expect(handledBacks, 0);
+    expect(find.text(MobileExitBackGuard.exitHintMessage), findsOneWidget);
     _clearExitHint(testRouter);
   });
 

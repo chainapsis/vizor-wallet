@@ -555,8 +555,8 @@ void main() {
       expect(find.text('Scan request with Keystone'), findsOneWidget);
       expect(
         find.text(
-          'Scan this request QR with Keystone. Keystone will show a new '
-          'signed QR when it finishes.',
+          'Scan this request with Keystone to sign the preparation '
+          'transactions and migration batches together.',
         ),
         findsOneWidget,
       );
@@ -664,6 +664,83 @@ void main() {
     );
   });
 
+  group('keystoneSigningRounds', () {
+    rust_sync.KeystoneMigrationMessage message(String id, int bytes) =>
+        rust_sync.KeystoneMigrationMessage(
+          id: id,
+          redactedPczt: Uint8List(bytes),
+        );
+
+    test('chunks by the signing batch limit', () {
+      final rounds = keystoneSigningRoundsForTest([
+        for (var i = 0; i < 5; i++) message('m$i', 10),
+      ], 2);
+      expect(rounds.map((round) => round.length), [2, 2, 1]);
+    });
+
+    test('splits the first message beyond the 40-message firmware cap', () {
+      final messages = [for (var i = 0; i < 41; i++) message('m$i', 10)];
+      expect(
+        keystoneSigningRoundsForTest(
+          messages.take(40).toList(),
+          40,
+        ).map((round) => round.length),
+        [40],
+      );
+      expect(
+        keystoneSigningRoundsForTest(messages, 40).map((round) => round.length),
+        [40, 1],
+      );
+    });
+
+    test('splits a round that would exceed the firmware byte ceiling', () {
+      // 40 messages of 26 KiB total over 1 MiB — the count fits in one round
+      // but the firmware rejects anything over 512 KiB per round.
+      final rounds = keystoneSigningRoundsForTest([
+        for (var i = 0; i < 40; i++) message('m$i', 26 * 1024),
+      ], 40);
+      expect(rounds.length, greaterThan(1));
+      for (final round in rounds) {
+        final bytes = round.fold<int>(
+          0,
+          (total, item) => total + item.redactedPczt.length + item.id.length,
+        );
+        expect(bytes, lessThanOrEqualTo(512 * 1024 - 16 * 1024));
+      }
+      expect(rounds.expand((round) => round).map((item) => item.id).toList(), [
+        for (var i = 0; i < 40; i++) 'm$i',
+      ]);
+    });
+
+    test('rejects a message no round could ever carry', () {
+      // Giving it its own round does not help: the firmware rejects the round
+      // for the same reason, and by then the user has already approved the
+      // migration and is waiting on a QR that cannot be produced.
+      expect(
+        () => keystoneSigningRoundsForTest([
+          message('big', 600 * 1024),
+          message('small', 10),
+        ], 40),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('still packs a message that only just fits', () {
+      const budget = 512 * 1024 - 16 * 1024;
+      final rounds = keystoneSigningRoundsForTest([
+        message('big', budget - 'big'.length),
+        message('small', 10),
+      ], 40);
+      expect(
+        rounds.map((round) => round.map((item) => item.id).toList()).toList(),
+        [
+          ['big'],
+          ['small'],
+        ],
+      );
+    });
+  });
+
   testWidgets('private review routes Keystone accounts to combined signing', (
     tester,
   ) async {
@@ -673,36 +750,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     var softwareStarted = false;
-    final service = IronwoodMigrationService(
-      getWalletDbPath: () async => '/tmp/wallet.db',
-      getStatus: ({required dbPath, required network, required accountUuid}) {
-        return Future.value(_status());
-      },
-      getPrivatePlan:
-          ({required dbPath, required network, required accountUuid}) {
-            return Future.value(_privatePlan());
-          },
-      secureStore: AppSecureStore.testing(
-        storage: const FlutterSecureStorage(),
-      ),
-      getEndpoint: () => defaultRpcEndpointConfig('main'),
-      getSessionPassword: () => 'test-password',
-      getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
-      isMacOS: () => false,
-      startSoftwareMigration:
-          ({
-            required dbPath,
-            required lightwalletdUrl,
-            required network,
-            required accountUuid,
-            required approvedSchedule,
-            required mnemonicBytes,
-            required password,
-            required saltBase64,
-          }) {
-            softwareStarted = true;
-            return Future.value(_migrationResult());
-          },
+    final splitPlan = _privatePlan(denominationSplitStageCount: 1);
+    final service = _keystonePrivateReviewService(
+      plan: splitPlan,
+      onSoftwareStart: () => softwareStarted = true,
     );
 
     await tester.pumpWidget(
@@ -710,6 +761,7 @@ void main() {
         initialLocation: '/migration/private/review',
         migrationService: service,
         activeAccountIsHardware: true,
+        previewPrivatePlan: splitPlan,
       ),
     );
     await tester.pumpAndSettle();
@@ -721,6 +773,44 @@ void main() {
     expect(softwareStarted, isFalse);
     expect(find.text('keystone-combined-sign-route:1:144'), findsOneWidget);
   });
+
+  testWidgets(
+    'private review routes direct-note Keystone plans to denomination signing',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      var softwareStarted = false;
+      // No split stages: the combined request would carry zero messages,
+      // which Rust rejects, so the legacy denomination completion (which
+      // accepts the empty set) owns this start.
+      final service = _keystonePrivateReviewService(
+        plan: _privatePlan(),
+        onSoftwareStart: () => softwareStarted = true,
+      );
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(
+          initialLocation: '/migration/private/review',
+          migrationService: service,
+          activeAccountIsHardware: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _openShuffleReview(tester);
+      await tester.tap(find.widgetWithText(AppButton, 'Start migration'));
+      await tester.pumpAndSettle();
+
+      expect(softwareStarted, isFalse);
+      expect(
+        find.text('keystone-denomination-sign-route:1:144'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('legacy review route redirects to private review', (
     tester,
@@ -4022,6 +4112,7 @@ Widget _migrationOptionsHarness({
   bool useImmediatePreview = true,
   rust_sync.KeystoneMigrationSigningRequest? previewCombinedSigningRequest,
   List<String> previewCombinedSigningUrParts = const [],
+  rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -4061,7 +4152,7 @@ Widget _migrationOptionsHarness({
             accountName: 'Account 1',
             profilePictureId: kDefaultProfilePictureId,
           ),
-          previewPrivatePlan: _privatePlan(),
+          previewPrivatePlan: previewPrivatePlan ?? _privatePlan(),
         ),
       ),
       GoRoute(
@@ -4877,7 +4968,44 @@ class _FakeSyncNotifier extends SyncNotifier {
   Future<SyncState> build() async => initialState;
 }
 
-rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
+IronwoodMigrationService _keystonePrivateReviewService({
+  required rust_sync.OrchardMigrationPrivatePlan plan,
+  required void Function() onSoftwareStart,
+}) {
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus: ({required dbPath, required network, required accountUuid}) {
+      return Future.value(_status());
+    },
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) {
+          return Future.value(plan);
+        },
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    getEndpoint: () => defaultRpcEndpointConfig('main'),
+    getSessionPassword: () => 'test-password',
+    getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
+    isMacOS: () => false,
+    startSoftwareMigration:
+        ({
+          required dbPath,
+          required lightwalletdUrl,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+          required mnemonicBytes,
+          required password,
+          required saltBase64,
+        }) {
+          onSoftwareStart();
+          return Future.value(_migrationResult());
+        },
+  );
+}
+
+rust_sync.OrchardMigrationPrivatePlan _privatePlan({
+  int denominationSplitStageCount = 0,
+}) {
   return rust_sync.OrchardMigrationPrivatePlan(
     targetValuesZatoshi: frb.Uint64List.fromList([10_000_000]),
     totalInputZatoshi: BigInt.from(10_010_000),
@@ -4886,8 +5014,8 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan() {
     migrationFeeZatoshi: BigInt.from(5_000),
     estimatedTotalFeeZatoshi: BigInt.from(10_000),
     plannedBatchCount: 1,
-    denominationSplitStageCount: 0,
-    denominationSplitLayerCount: 0,
+    denominationSplitStageCount: denominationSplitStageCount,
+    denominationSplitLayerCount: denominationSplitStageCount,
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,

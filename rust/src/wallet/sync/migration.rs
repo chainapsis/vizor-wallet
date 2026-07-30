@@ -94,8 +94,10 @@ pub(crate) const PHASE_WAITING_FOR_IRONWOOD_SPENDABILITY: &str =
     "waiting_for_ironwood_spendability";
 pub(crate) const PHASE_READY_TO_PREPARE: &str = "ready_to_prepare";
 pub(crate) const PHASE_AWAITING_PREPARATION: &str = "awaiting_preparation";
-// Kept readable so drafts created by pre-unification mobile builds remain
-// resumable after an upgrade.
+// Never written. This phase is only ever read: it widens draft matching and
+// the `WHERE phase IN (...)` filters below, and it has been read-only since it
+// was introduced, so no shipped build can have stored it. A hardware draft that
+// still needs its split signature is stored as `PHASE_AWAITING_PREPARATION`.
 pub(crate) const PHASE_AWAITING_DENOMINATION_SIGNATURE: &str = "awaiting_denomination_signature";
 pub(crate) const PHASE_WAITING_DENOM_CONFIRMATIONS: &str = "waiting_denom_confirmations";
 pub(crate) const PHASE_READY_TO_MIGRATE: &str = "ready_to_migrate";
@@ -104,6 +106,9 @@ pub(crate) const PHASE_BROADCAST_SCHEDULED: &str = "broadcast_scheduled";
 pub(crate) const PHASE_BROADCASTING: &str = "broadcasting";
 pub(crate) const PHASE_WAITING_MIGRATION_CONFIRMATIONS: &str = "waiting_migration_confirmations";
 pub(crate) const PHASE_COMPLETE: &str = "complete";
+// Never written either. Reads only: an anchor-retention filter and the
+// user-action decision below both accept it, but nothing stores it, so any
+// surface that exists solely to present a paused run is unreachable.
 pub(crate) const PHASE_PAUSED: &str = "paused";
 pub(crate) const PHASE_FAILED_RECOVERABLE: &str = "failed_recoverable";
 pub(crate) const PHASE_FAILED_TERMINAL: &str = "failed_terminal";
@@ -742,6 +747,166 @@ pub(crate) fn active_migration_run(
     // wallet-lock reconciliation run after sync, outside the wallet write
     // mutex, so callers can safely use this while holding that mutex.
     active_run(&conn, account_uuid, network)
+}
+
+/// Lists denomination transactions that have been materialized and can
+/// therefore be observed through lightwalletd without decrypting wallet data.
+pub(crate) fn observable_denomination_transaction_ids(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<Vec<String>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    let Some(run) = active_run(&conn, account_uuid, network)? else {
+        return Ok(Vec::new());
+    };
+    if run.run_id != expected_run_id {
+        return Ok(Vec::new());
+    }
+    // This is the iOS background tracker's read-only boundary. Do not call the
+    // normal stage helpers here: they run `ensure_schema`, which may ALTER or
+    // rebuild legacy tables. Foreground migration setup owns schema upgrades.
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT expected_txid_hex
+             FROM {STAGES_TABLE}
+             WHERE run_id = ?1 AND status IN ('broadcasted', 'confirmed')
+             ORDER BY stage_index ASC"
+        ))
+        .map_err(|e| format!("Prepare observable migration txid query: {e}"))?;
+    let rows = stmt
+        .query_map(params![expected_run_id], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("Query observable migration txids: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Read observable migration txids: {e}"))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReadOnlyMigrationPreparationSnapshot {
+    pub phase: String,
+    pub completed_stage_count: u32,
+    pub total_stage_count: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ReadOnlyMigrationProofSnapshot {
+    pub next_proof_height: Option<u32>,
+    pub timing_policy: MigrationTimingPolicy,
+}
+
+/// Reads only the state required by the iOS confirmation tracker.
+///
+/// This deliberately bypasses `migration_status` and the denomination stage
+/// helpers because those foreground paths may run schema upgrades. A missing
+/// or legacy-incompatible table is returned as an error so iOS hands the run
+/// back to the foreground instead of mutating the wallet from a background
+/// confirmation task.
+pub(crate) fn migration_preparation_snapshot_read_only(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<Option<ReadOnlyMigrationPreparationSnapshot>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    if !table_exists(&conn, RUNS_TABLE)? {
+        return Ok(None);
+    }
+    let phase = conn
+        .query_row(
+            &format!(
+                "SELECT phase
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1 AND account_uuid = ?2 AND network = ?3
+                   AND phase NOT IN ('{PHASE_NO_ORCHARD_FUNDS}', '{PHASE_COMPLETE}',
+                                     '{PHASE_FAILED_TERMINAL}', '{PHASE_ABANDONED}')"
+            ),
+            params![expected_run_id, account_uuid, network_name(network)],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration preparation phase: {e}"))?;
+    let Some(phase) = phase else {
+        return Ok(None);
+    };
+
+    let (completed_stage_count, total_stage_count) = if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+        if !table_exists(&conn, STAGES_TABLE)? {
+            return Err(
+                "Migration preparation stage schema requires foreground recovery".to_string(),
+            );
+        }
+        let counts = conn
+            .query_row(
+                &format!(
+                    "SELECT COALESCE(SUM(status = 'confirmed'), 0), COUNT(*)
+                         FROM {STAGES_TABLE}
+                         WHERE run_id = ?1"
+                ),
+                params![expected_run_id],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .map_err(|e| format!("Read migration preparation stage counts: {e}"))?;
+        (
+            u32::try_from(counts.0)
+                .map_err(|_| "Completed migration stage count exceeds u32".to_string())?,
+            u32::try_from(counts.1).map_err(|_| "Migration stage count exceeds u32".to_string())?,
+        )
+    } else {
+        (0, 0)
+    };
+
+    Ok(Some(ReadOnlyMigrationPreparationSnapshot {
+        phase,
+        completed_stage_count,
+        total_stage_count,
+    }))
+}
+
+/// Reads the run fields required by the iOS proof-readiness check.
+///
+/// This is intentionally separate from `migration_status`: that foreground
+/// status path can repair migration schemas, while a background notification
+/// wake must hand an incompatible database back to the foreground unchanged.
+pub(crate) fn migration_proof_snapshot_read_only(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    expected_run_id: &str,
+) -> Result<Option<ReadOnlyMigrationProofSnapshot>, String> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
+    if !table_exists(&conn, RUNS_TABLE)? {
+        return Ok(None);
+    }
+    let snapshot = conn
+        .query_row(
+            &format!(
+                "SELECT phase, proof_retry_height, timing_policy
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1 AND account_uuid = ?2 AND network = ?3"
+            ),
+            params![expected_run_id, account_uuid, network_name(network)],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<u32>>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read migration proof snapshot: {e}"))?;
+    let Some((phase, next_proof_height, timing_policy)) = snapshot else {
+        return Ok(None);
+    };
+    match phase.as_str() {
+        PHASE_READY_TO_MIGRATE | PHASE_BROADCAST_SCHEDULED => {}
+        _ => return Ok(None),
+    };
+    Ok(Some(ReadOnlyMigrationProofSnapshot {
+        next_proof_height,
+        timing_policy: MigrationTimingPolicy::from_str(&timing_policy)?,
+    }))
 }
 
 /// Returns whether Orchard inputs remain reserved by either an active
@@ -2820,7 +2985,11 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
     }
 
     if !invalid_stages.is_empty() || !identities_to_record.is_empty() {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        // This reconciliation records canonical-chain identities and commits
+        // stage resets, so it must tolerate the foreground scanner finishing
+        // a concurrent wallet write. The read timeout can expire first on
+        // mobile and strand an otherwise completed preparation run.
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| format!("Begin denomination chain-state reconciliation: {e}"))?;

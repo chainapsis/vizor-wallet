@@ -121,7 +121,15 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
       return super.invokeCallback(defaultValue);
     }
 
-    if (_canPop()) {
+    // The migration flow is a set of flat, top-level routes that replace each
+    // other with `go`, so its screens routinely sit on a stack that cannot
+    // pop. Offering the route layer the back press first is what lets their
+    // `PopScope` handlers run at all; without it a mid-flow back press skips
+    // straight to the exit hint and a second press quits the app. The check is
+    // pinned to `/migration` on purpose: every other screen keeps the existing
+    // "root back means exit" behaviour, which has not been audited for
+    // `PopScope` dependencies.
+    if (_canPop() || _isMigrationLocation(_currentLocation())) {
       final handledByRoute = await super.invokeCallback(
         Future<bool>.value(false),
       );
@@ -144,6 +152,11 @@ class MobileExitBackDispatcher extends RootBackButtonDispatcher {
       unawaited(SystemNavigator.pop());
     }
     return true;
+  }
+
+  static bool _isMigrationLocation(String location) {
+    final path = Uri.tryParse(location)?.path ?? location;
+    return path == '/migration' || path.startsWith('/migration/');
   }
 
   void dispose() {

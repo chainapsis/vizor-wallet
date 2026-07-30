@@ -16,6 +16,8 @@ enum MobileIronwoodMigrationStep {
 enum MobileIronwoodMigrationPreviewSurface {
   notificationsPrompt,
   notificationsConfirmation,
+  migrationStartLoading,
+  migrationStartKeystoneReady,
   preparationActive,
   preparationPaused,
   preparationPausedKeystone,
@@ -35,3 +37,7 @@ enum MobileIronwoodMigrationPreviewSurface {
 
 const _migrationProgress = 60 / 196;
 const _migrationAnalysisEaseOut = Cubic(0.23, 1, 0.32, 1);
+
+final mobileIronwoodMigrationStartMinimumDurationProvider = Provider<Duration>(
+  (_) => const Duration(seconds: 3),
+);

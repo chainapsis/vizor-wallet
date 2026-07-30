@@ -316,6 +316,20 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-start-loading',
+    description: 'Mobile private migration start loading screen',
+    builder: buildMobileIronwoodMigrationStartLoadingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-start-keystone-ready',
+    description: 'Mobile private migration ready for Keystone signing',
+    builder: buildMobileIronwoodMigrationStartKeystoneReadyUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-ironwood-migration-preparation-active',
     description: 'Mobile private migration preparation in progress',
     builder: buildMobileIronwoodMigrationPreparationActiveUseCase,
@@ -376,6 +390,29 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'mobile-ironwood-migration-needs-input',
     description: 'Mobile migration batch ready for signature',
     builder: buildMobileIronwoodMigrationNeedsInputUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-schedule',
+    description: 'Mobile Ironwood migration schedule',
+    builder: buildMobileIronwoodMigrationScheduleUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-schedule-pending',
+    description:
+        'Mobile Ironwood migration schedule with parts Rust has not assigned '
+        'a height to yet',
+    builder: buildMobileIronwoodMigrationSchedulePendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-preparation-schedule',
+    description: 'Mobile Ironwood preparation transaction schedule',
+    builder: buildMobileIronwoodMigrationPreparationScheduleUseCase,
     desktop: false,
     mobile: true,
   ),

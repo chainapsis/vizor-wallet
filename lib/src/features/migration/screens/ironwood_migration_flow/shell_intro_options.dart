@@ -71,7 +71,6 @@ class _IronwoodMigrationShell extends ConsumerWidget {
         const _IronwoodMigrationWhatToExpectContent(),
       IronwoodMigrationFlowStep.options => _IronwoodMigrationOptionsContent(
         data: data,
-        immediateEnabled: true,
       ),
       IronwoodMigrationFlowStep.review =>
         _IronwoodMigrationPrivateReviewContent(
@@ -664,13 +663,9 @@ class _MigrationExpectationIllustration extends StatelessWidget {
 }
 
 class _IronwoodMigrationOptionsContent extends StatefulWidget {
-  const _IronwoodMigrationOptionsContent({
-    required this.data,
-    required this.immediateEnabled,
-  });
+  const _IronwoodMigrationOptionsContent({required this.data});
 
   final IronwoodMigrationFlowData data;
-  final bool immediateEnabled;
 
   @override
   State<_IronwoodMigrationOptionsContent> createState() =>
@@ -684,9 +679,7 @@ class _IronwoodMigrationOptionsContentState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final selected = widget.immediateEnabled
-        ? _selected
-        : _MigrationMode.private;
+    final selected = _selected;
     return SizedBox(
       width: 420,
       height: 656,
@@ -745,13 +738,10 @@ class _IronwoodMigrationOptionsContentState
                   mode: _MigrationMode.fast,
                   selected: selected == _MigrationMode.fast,
                   title: 'Immediate',
-                  body: widget.immediateEnabled
-                      ? 'Migrates your entire balance in one batch. Fast but '
-                            'less private.'
-                      : 'Immediate migration is not available with Keystone.',
-                  onTap: widget.immediateEnabled
-                      ? () => setState(() => _selected = _MigrationMode.fast)
-                      : null,
+                  body:
+                      'Migrates your entire balance in one batch. Fast but '
+                      'less private.',
+                  onTap: () => setState(() => _selected = _MigrationMode.fast),
                 ),
               ],
             ),
@@ -763,11 +753,8 @@ class _IronwoodMigrationOptionsContentState
             child: AppButton(
               key: const ValueKey('ironwood_migration_select_review_button'),
               onPressed: () {
-                final selectedAtTap = widget.immediateEnabled
-                    ? _selected
-                    : _MigrationMode.private;
                 context.go(
-                  selectedAtTap == _MigrationMode.private
+                  _selected == _MigrationMode.private
                       ? '/migration/private/review'
                       : '/migration/immediate/review',
                 );

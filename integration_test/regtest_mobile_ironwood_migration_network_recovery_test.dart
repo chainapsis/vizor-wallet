@@ -58,7 +58,7 @@ void main() {
 
       await postDriver('/activate', const {});
       await _waitForIronwoodSync(tester, container);
-      await openMobilePrivateMigrationReview(tester);
+      await openMobilePrivateMigrationOptions(tester);
       final approvedPlan = await container.read(
         ironwoodMigrationPrivatePlanProvider.future,
       );
@@ -66,11 +66,7 @@ void main() {
 
       logE2e('stopping lightwalletd before the first migration broadcast');
       await postDriver('/lightwalletd/stop', const {});
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_ironwood_authorize_start_button'),
-        timeout: const Duration(minutes: 5),
-      );
+      await startMobilePrivateMigration(tester);
 
       final accountUuid = await accountUuidAtOrder(0);
       final interrupted = await waitForMobileRegtestMigrationStatus(

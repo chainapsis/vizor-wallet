@@ -72,6 +72,16 @@ String _compactZec(BigInt zatoshi) {
   return ZecAmount.fromZatoshi(zatoshi).balance.amountText;
 }
 
+String _migrationDisplayZec(BigInt zatoshi) {
+  final amount = ZecAmount.fromZatoshi(
+    zatoshi,
+  ).compactBalancePretty(minFractionDigits: 0, maxFractionDigits: 4).amountText;
+  final separator = amount.indexOf('.');
+  final whole = separator < 0 ? amount : amount.substring(0, separator);
+  final fraction = separator < 0 ? '' : amount.substring(separator);
+  return '${formatGroupedInteger(int.parse(whole))}$fraction';
+}
+
 String _migrationArrivalLabel(rust_sync.OrchardMigrationPrivatePlan plan) {
   return migrationPlanCompletionTimingLabel(plan);
 }

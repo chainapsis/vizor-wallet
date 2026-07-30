@@ -359,8 +359,9 @@ private enum BackgroundMigrationNotification {
 /// machinery that only exists on iOS 26. That makes it the whole verification on
 /// older supported versions, where background preparation never runs and this
 /// notification is the only thing that brings the user back to continue the
-/// migration. iOS 26 wraps the same inspection with a preparation sync when the
-/// first look says the witness is not there yet.
+/// migration. The iOS 26 continued task independently tracks already-executed
+/// preparation transaction confirmations with lightwalletd queries; it does
+/// not sync or make this proof-readiness decision.
 enum IronwoodMigrationProofReadinessCheck {
   struct Scope {
     let batch: BackgroundMigrationOutboxBatch
@@ -714,11 +715,8 @@ final class BackgroundMigrationManager {
       }
       // This wake is a silent BGProcessingTask. It queries the chain tip,
       // broadcasts transactions that are already signed, and notifies — it does
-      // not scan. Preparation work needs a chain sync to see its denomination
-      // confirmations, so it belongs to the user-initiated, user-visible
-      // continued-processing task, not here. Running it from this wake meant a
-      // closed app performing multi-minute chain syncs the user never asked
-      // for.
+      // not scan. The separate continued-processing task owns denomination
+      // confirmation tracking and hands confirmed waves back to the foreground.
       self.runOutbox(
         task: task,
         cancellation: cancellation,
@@ -766,12 +764,8 @@ final class BackgroundMigrationManager {
         let announced = runResult.proofReady.flatMap {
           self.unverifiedProofReadyNotice(for: $0)
         }
-        // A run waiting on denomination confirmations needs a scan to move, and
-        // this wake does not scan. Saying nothing leaves it stalled until the
-        // user happens to reopen the app. The notification is deduplicated by
-        // the preparation state it reports, and that state cannot change while
-        // nothing is scanning, so a stalled run is announced once rather than
-        // on every wake.
+        // This silent wake still cannot scan. If no continued task owns the
+        // active preparation, notify once so foreground recovery can resume it.
         if #available(iOS 26.0, *) {
           BackgroundMigrationPreparationManager.shared
             .notifyPreparationNeedsForeground()

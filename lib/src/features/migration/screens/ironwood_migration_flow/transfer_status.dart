@@ -54,32 +54,6 @@ final _migrationInProgressCarouselItems = [
   ),
 ];
 
-int _compareMigrationPartsByExpectedProcessingOrder(
-  rust_sync.MigrationPartStatus left,
-  rust_sync.MigrationPartStatus right,
-) {
-  // The approved schedule order is immutable, but an overdue transaction can
-  // be assigned a new height while migration is running. The ring and schedule
-  // must follow that current expected chronology rather than leaving completed
-  // colors scattered according to the stale original order.
-  final leftHeight = left.scheduledHeight;
-  final rightHeight = right.scheduledHeight;
-  if (leftHeight != null || rightHeight != null) {
-    final comparison = (leftHeight ?? 1 << 30).compareTo(
-      rightHeight ?? 1 << 30,
-    );
-    if (comparison != 0) return comparison;
-  }
-
-  final leftOrder = left.scheduleOrder;
-  final rightOrder = right.scheduleOrder;
-  if (leftOrder != null || rightOrder != null) {
-    final comparison = (leftOrder ?? 1 << 30).compareTo(rightOrder ?? 1 << 30);
-    if (comparison != 0) return comparison;
-  }
-  return left.partIndex.compareTo(right.partIndex);
-}
-
 class _MigrationStatusContent extends StatelessWidget {
   const _MigrationStatusContent({
     required this.status,
@@ -98,19 +72,13 @@ class _MigrationStatusContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = this.status;
-    final parts = [..._displayMigrationParts(status)]
-      ..sort(_compareMigrationPartsByExpectedProcessingOrder);
+    final parts = orderedMigrationParts(_displayMigrationParts(status));
     var values = parts.isNotEmpty
         ? [for (final part in parts) part.valueZatoshi]
         : [for (final value in status.targetValuesZatoshi) value];
     if (values.isEmpty && status.phase != kIronwoodMigrationCompletePhase) {
       values = [BigInt.zero];
     }
-    final readyHasMigrationProgress =
-        status.pendingTxCount > 0 ||
-        status.broadcastedTxCount > 0 ||
-        status.confirmedTxCount > 0 ||
-        status.signedChildPcztCount > 0;
     final statuses = status.phase == kIronwoodMigrationCompletePhase
         ? List<_MigrationBatchStatus>.filled(
             values.length,
@@ -120,7 +88,7 @@ class _MigrationStatusContent extends StatelessWidget {
         // migrate. It must not paint the transfer ring green before any
         // migration note has actually been signed and confirmed.
         : status.phase == kIronwoodMigrationReadyToMigratePhase &&
-              !readyHasMigrationProgress
+              !migrationHasTransferProgress(status)
         ? List<_MigrationBatchStatus>.filled(
             values.length,
             _MigrationBatchStatus.scheduled,
@@ -341,12 +309,9 @@ class _MigrationLiveStatusContent extends StatelessWidget {
     final isComplete = action == _StatusAction.backHome;
     final completedAmount = _migrationCompletedAmount(values, statuses);
     final leftToMigrate = totalZatoshi - completedAmount;
-    final ringPresentation = _migrationRingPresentation(
+    final ringPresentation = migrationNextActionPresentation(
       status: status,
-      parts: parts,
-      values: values,
-      statuses: statuses,
-      totalZatoshi: totalZatoshi,
+      requiresInput: isSigning,
       waitingForAnchor: waitingForAnchor,
       currentHeight: currentHeight,
     );
@@ -491,7 +456,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                '${_formatZecAmountCompact(ringPresentation.amount)} ZEC',
+                                '${_formatZecAmountCompact(ringPresentation.amountZatoshi)} ZEC',
                                 style: AppTypography.headlineSmall.copyWith(
                                   color: colors.text.accent,
                                 ),
@@ -657,20 +622,6 @@ class _MigrationLiveStatusContent extends StatelessWidget {
   }
 }
 
-class _MigrationRingPresentation {
-  const _MigrationRingPresentation({
-    required this.label,
-    required this.amount,
-    required this.detail,
-    this.scheduledHeight,
-  });
-
-  final String label;
-  final BigInt amount;
-  final String detail;
-  final int? scheduledHeight;
-}
-
 class _PreparationRingPresentation {
   const _PreparationRingPresentation({
     required this.label,
@@ -692,7 +643,7 @@ class _PreparationRingPresentation {
 _PreparationRingPresentation _preparationRingPresentation(
   rust_sync.MigrationStatus status,
 ) {
-  final transactions = _orderedPreparationTransactions(status);
+  final transactions = orderedMigrationPreparationTransactions(status);
   final preparationTotal = _preparationTotalCount(status);
   final overallTotal = _overallTransactionTotalCount(status);
   final completed = _preparationCompletedCount(status);
@@ -804,20 +755,6 @@ List<rust_sync.MigrationPreparationTransactionStatus> _preparationTransactions(
   rust_sync.MigrationStatus status,
 ) => status.preparationTransactions ?? const [];
 
-List<rust_sync.MigrationPreparationTransactionStatus>
-_orderedPreparationTransactions(rust_sync.MigrationStatus status) {
-  final transactions = [..._preparationTransactions(status)];
-  transactions.sort((a, b) {
-    final roundCompare = a.round.compareTo(b.round);
-    if (roundCompare != 0) return roundCompare;
-    final heightCompare = a.projectedHeight.compareTo(b.projectedHeight);
-    return heightCompare != 0
-        ? heightCompare
-        : a.stageIndex.compareTo(b.stageIndex);
-  });
-  return transactions;
-}
-
 int _preparationRemainingCount(rust_sync.MigrationStatus status) => math.max(
   0,
   _preparationTotalCount(status) - _preparationCompletedCount(status),
@@ -915,171 +852,10 @@ class _PreparationRingDetail extends StatelessWidget {
   }
 }
 
-_MigrationRingPresentation _migrationRingPresentation({
-  required rust_sync.MigrationStatus status,
-  required List<rust_sync.MigrationPartStatus> parts,
-  required List<BigInt> values,
-  required List<_MigrationBatchStatus> statuses,
-  required BigInt totalZatoshi,
-  required bool waitingForAnchor,
-  required int currentHeight,
-}) {
-  final needsInputIndex = statuses.indexOf(_MigrationBatchStatus.needsInput);
-  if (needsInputIndex >= 0) {
-    return _MigrationRingPresentation(
-      label: 'Next migration',
-      amount: values[needsInputIndex],
-      detail: 'Ready to sign',
-    );
-  }
-
-  final nextProofWindowHeight = status.nextProofWindowHeight;
-  final proofWindowPartIndices =
-      status.nextProofWindowPartIndices?.toSet() ?? const <int>{};
-  final earliestScheduledHeight = parts
-      .where(
-        (part) =>
-            part.state == rust_sync.MigrationPartState.scheduled &&
-            part.scheduledHeight != null,
-      )
-      .map((part) => part.scheduledHeight!)
-      .fold<int?>(null, (earliest, height) {
-        return earliest == null ? height : math.min(earliest, height);
-      });
-  final proofWindowIsNext =
-      nextProofWindowHeight != null &&
-      proofWindowPartIndices.isNotEmpty &&
-      (earliestScheduledHeight == null ||
-          nextProofWindowHeight < earliestScheduledHeight);
-  if (proofWindowIsNext) {
-    final windowAmount = parts
-        .where((part) => proofWindowPartIndices.contains(part.partIndex))
-        .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi);
-    final displayAmount = windowAmount > BigInt.zero
-        ? windowAmount
-        : totalZatoshi;
-    if (status.proofReady == false &&
-        currentHeight > 0 &&
-        currentHeight >= nextProofWindowHeight) {
-      return _MigrationRingPresentation(
-        label: 'Opening migration window',
-        amount: displayAmount,
-        detail: 'Waiting for wallet sync',
-      );
-    }
-    if (status.proofReady == true) {
-      return _MigrationRingPresentation(
-        label: 'Migration window ready',
-        amount: displayAmount,
-        detail: 'Preparing migration',
-      );
-    }
-    return _MigrationRingPresentation(
-      label: 'Next migration window',
-      amount: displayAmount,
-      detail: 'Expected at',
-      scheduledHeight: nextProofWindowHeight,
-    );
-  }
-
-  final scheduledIndex = statuses.indexOf(_MigrationBatchStatus.scheduled);
-  if (scheduledIndex >= 0) {
-    final part = scheduledIndex < parts.length ? parts[scheduledIndex] : null;
-    final legacyBroadcast = part == null
-        ? _nextScheduledBroadcast(status)
-        : null;
-    final scheduledHeight =
-        part?.scheduledHeight ?? legacyBroadcast?.scheduledHeight;
-    final isDue =
-        scheduledHeight != null &&
-        currentHeight > 0 &&
-        scheduledHeight <= currentHeight;
-    return _MigrationRingPresentation(
-      label: isDue ? 'Sending migration' : 'Next migration',
-      amount: legacyBroadcast?.valueZatoshi ?? values[scheduledIndex],
-      detail: isDue
-          ? 'Sending now'
-          : scheduledHeight == null
-          ? 'Schedule pending'
-          : 'at',
-      scheduledHeight: isDue ? null : scheduledHeight,
-    );
-  }
-
-  final preparingIndex = statuses.indexOf(_MigrationBatchStatus.preparing);
-  if (preparingIndex >= 0) {
-    return _MigrationRingPresentation(
-      label: 'Next migration',
-      amount: values[preparingIndex],
-      detail: 'Schedule pending',
-    );
-  }
-
-  final migratingCount = statuses
-      .where((status) => status == _MigrationBatchStatus.migrating)
-      .length;
-  final confirmingCount = statuses
-      .where((status) => status == _MigrationBatchStatus.confirming)
-      .length;
-  final remainingCount = migratingCount + confirmingCount;
-  final remainingAmount = values.indexed.fold<BigInt>(BigInt.zero, (
-    sum,
-    entry,
-  ) {
-    final (index, value) = entry;
-    if (index >= statuses.length) return sum;
-    return switch (statuses[index]) {
-      _MigrationBatchStatus.migrating ||
-      _MigrationBatchStatus.confirming => sum + value,
-      _ => sum,
-    };
-  });
-
-  if (migratingCount > 0 && confirmingCount == 0) {
-    return _MigrationRingPresentation(
-      label: 'Awaiting mining',
-      amount: remainingAmount,
-      detail: _migrationNoteCountLabel(migratingCount, 'broadcast'),
-    );
-  }
-  if (confirmingCount > 0 && migratingCount == 0) {
-    return _MigrationRingPresentation(
-      label: 'Confirming',
-      amount: remainingAmount,
-      detail: _migrationNoteCountLabel(
-        confirmingCount,
-        'awaiting confirmation',
-      ),
-    );
-  }
-  if (remainingCount > 0) {
-    return _MigrationRingPresentation(
-      label: 'Finalizing migration',
-      amount: remainingAmount,
-      detail: _migrationNoteCountLabel(remainingCount, 'remaining'),
-    );
-  }
-  if (waitingForAnchor) {
-    return _MigrationRingPresentation(
-      label: 'Next migration',
-      amount: totalZatoshi,
-      detail: 'Schedule pending',
-    );
-  }
-  return _MigrationRingPresentation(
-    label: 'Migration complete',
-    amount: totalZatoshi,
-    detail: 'All notes completed',
-  );
-}
-
-String _migrationNoteCountLabel(int count, String state) =>
-    '$count ${count == 1 ? 'note' : 'notes'} $state';
-
 class _MigrationRingDetail extends StatelessWidget {
   const _MigrationRingDetail({required this.presentation});
 
-  final _MigrationRingPresentation presentation;
+  final MigrationNextActionPresentation presentation;
 
   @override
   Widget build(BuildContext context) {

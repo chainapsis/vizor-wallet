@@ -133,6 +133,16 @@ typedef IronwoodMigrationPreparationRuntimeStateGetter =
       required String accountUuid,
       required String runId,
     });
+
+/// Whether this device has a background denomination-preparation lane at all.
+///
+/// Deliberately separate from [IronwoodMigrationPreparationRuntimeState]: that
+/// enum answers "what is this run's tracking task doing right now", which is
+/// per-scope and changes constantly, while this answers "can such a task exist
+/// on this OS build", which is device-static and scope-independent. Copy has to
+/// read the second one before it may promise anything about closing the app.
+typedef IronwoodMigrationPreparationTrackingSupportCheck =
+    Future<bool> Function();
 typedef IronwoodMigrationPreparationForegroundContinuationAcknowledger =
     Future<void> Function({
       required String network,
@@ -611,6 +621,8 @@ class IronwoodMigrationService {
     IronwoodMigrationBackgroundQuiescer? quiesceBackgroundMigration,
     IronwoodMigrationBackgroundResumer? resumeBackgroundMigration,
     IronwoodMigrationPreparationRuntimeStateGetter? getPreparationRuntimeState,
+    IronwoodMigrationPreparationTrackingSupportCheck?
+    supportsBackgroundPreparationTracking,
     IronwoodMigrationPreparationForegroundContinuationAcknowledger?
     acknowledgePreparationForegroundContinuation,
     IronwoodMigrationAccountRevoker? revokeMigrationAccount,
@@ -691,6 +703,17 @@ class IronwoodMigrationService {
            IronwoodMigrationBackgroundLifecycle.instance.resumeAfterMutation,
        getPreparationRuntimeState =
            getPreparationRuntimeState ?? _defaultGetPreparationRuntimeState,
+       // Same convention as `supportsBackgroundMigration` above: a caller that
+       // supplies its own runtime-state source is not talking to the iOS
+       // continued-processing task, so the OS version gate that guards that task
+       // does not describe it. Only the default native source is version-gated.
+       // The `== null` test reads the constructor parameter, not the field
+       // assigned just above — an initializer entry cannot rebind a parameter.
+       _supportsBackgroundPreparationTracking =
+           supportsBackgroundPreparationTracking ??
+           (getPreparationRuntimeState == null
+               ? _defaultSupportsBackgroundPreparationTracking
+               : _alwaysSupportsPreparationTracking),
        acknowledgePreparationForegroundContinuation =
            acknowledgePreparationForegroundContinuation ??
            _defaultAcknowledgePreparationForegroundContinuation,
@@ -807,6 +830,8 @@ class IronwoodMigrationService {
   final IronwoodMigrationBackgroundResumer resumeBackgroundMigration;
   final IronwoodMigrationPreparationRuntimeStateGetter
   getPreparationRuntimeState;
+  final IronwoodMigrationPreparationTrackingSupportCheck
+  _supportsBackgroundPreparationTracking;
   final IronwoodMigrationPreparationForegroundContinuationAcknowledger
   acknowledgePreparationForegroundContinuation;
   final IronwoodMigrationAccountRevoker revokeMigrationAccount;
@@ -930,6 +955,26 @@ class IronwoodMigrationService {
       accountUuid: accountUuid,
       runId: runId,
     );
+  }
+
+  /// Whether denomination preparation can keep being tracked with Vizor closed.
+  ///
+  /// [preparationRuntimeState] cannot answer this. On a device without the
+  /// background lane the native side has no task to report on, so it answers
+  /// `idle` — the same value it reports for a supported device that simply has
+  /// nothing armed yet, and the same value this screen's own error paths fall
+  /// back to. Copy that promises background progress must consult this instead.
+  ///
+  /// Fails closed: any platform mismatch or channel error reports unsupported,
+  /// because over-promising a background lane strands the run, while
+  /// under-promising only asks the user to keep the app open.
+  Future<bool> backgroundPreparationTrackingSupported() async {
+    if (!_usesNativePreparation) return false;
+    try {
+      return await _supportsBackgroundPreparationTracking();
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> acknowledgePreparationContinuation({
@@ -2911,6 +2956,22 @@ _defaultGetPreparationRuntimeState({
   );
   return IronwoodMigrationPreparationRuntimeState.fromNative(value);
 }
+
+/// Reports whether this build can run the iOS preparation tracking task.
+///
+/// Android is intentionally false: this repository has no Android preparation
+/// worker and no Android `background_migration` channel, so nothing observes a
+/// run while the app is away. `_usesNativePreparation` already keeps Android out
+/// of the runtime-state path for the same reason.
+Future<bool> _defaultSupportsBackgroundPreparationTracking() async {
+  if (!Platform.isIOS) return false;
+  return await _backgroundMigrationChannel.invokeMethod<bool>(
+        'supportsPreparationTracking',
+      ) ??
+      false;
+}
+
+Future<bool> _alwaysSupportsPreparationTracking() async => true;
 
 Future<void> _defaultAcknowledgePreparationForegroundContinuation({
   required String network,

@@ -359,6 +359,305 @@ void main() {
       isTrue,
     );
   });
+
+  test('orders rescheduled parts by their effective chronology', () {
+    final ordered = orderedMigrationParts([
+      _part(index: 0, scheduleOrder: 0, scheduledHeight: 1_200),
+      _part(index: 1, scheduleOrder: 1, scheduledHeight: 1_100),
+      _part(index: 2, scheduleOrder: 2),
+    ]);
+
+    expect(ordered.map((part) => part.partIndex), [1, 0, 2]);
+  });
+
+  test('presents the next scheduled note amount and block', () {
+    final status = _status(
+      phase: 'broadcast_scheduled',
+      broadcasts: const [],
+      targetValues: [20_000, 40_000],
+      parts: [
+        _part(
+          index: 0,
+          value: 20_000,
+          state: rust_sync.MigrationPartState.scheduled,
+          scheduledHeight: 3_428_143,
+        ),
+        _part(
+          index: 1,
+          value: 40_000,
+          state: rust_sync.MigrationPartState.scheduled,
+          scheduledHeight: 3_500_000,
+        ),
+      ],
+    );
+
+    final presentation = migrationNextActionPresentation(
+      status: status,
+      currentHeight: 3_400_000,
+    );
+
+    expect(presentation.label, 'Next migration');
+    expect(presentation.amountZatoshi, BigInt.from(20_000));
+    expect(presentation.detail, 'at');
+    expect(presentation.scheduledHeight, 3_428_143);
+  });
+
+  test('keeps a signing part block while the batch needs input', () {
+    final status = _status(
+      phase: 'ready_to_migrate',
+      broadcasts: const [],
+      targetValues: [20_000, 40_000],
+      currentSigningPartIndices: [1],
+      parts: [
+        _part(
+          index: 0,
+          value: 20_000,
+          state: rust_sync.MigrationPartState.scheduled,
+          scheduledHeight: 3_428_143,
+        ),
+        _part(
+          index: 1,
+          value: 40_000,
+          state: rust_sync.MigrationPartState.needsInput,
+          scheduledHeight: 3_500_000,
+        ),
+      ],
+    );
+
+    final presentation = migrationNextActionPresentation(
+      status: status,
+      currentHeight: 3_400_000,
+      requiresInput: true,
+    );
+
+    expect(presentation.amountZatoshi, BigInt.from(40_000));
+    expect(presentation.detail, 'at');
+    expect(presentation.scheduledHeight, 3_500_000);
+  });
+
+  test('does not count prepared denominations as migrated value', () {
+    final status = _status(
+      phase: 'ready_to_migrate',
+      broadcasts: const [],
+      targetValues: [100_000_000, 200_000_000],
+      parts: [
+        _part(
+          index: 0,
+          value: 100_000_000,
+          state: rust_sync.MigrationPartState.completed,
+        ),
+        _part(
+          index: 1,
+          value: 200_000_000,
+          state: rust_sync.MigrationPartState.completed,
+        ),
+      ],
+    );
+
+    expect(migrationCompletedValue(status), BigInt.zero);
+  });
+
+  group('projectedMigrationPartHeights', () {
+    test(
+      'projects the approved cadence from the tip when nothing is assigned',
+      () {
+        final status = _status(
+          phase: 'broadcast_scheduled',
+          broadcasts: const [],
+          totalCount: 4,
+          parts: [
+            for (var index = 0; index < 4; index++)
+              _part(index: index, scheduleOrder: index),
+          ],
+        );
+
+        expect(
+          projectedMigrationPartHeights(status: status, currentHeight: 1_000),
+          {0: 1_144, 1: 1_288, 2: 1_432, 3: 1_576},
+        );
+      },
+    );
+
+    test('continues from the last height Rust actually assigned', () {
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        totalCount: 4,
+        parts: [
+          _part(
+            index: 0,
+            scheduleOrder: 0,
+            state: rust_sync.MigrationPartState.scheduled,
+            scheduledHeight: 1_200,
+          ),
+          _part(
+            index: 1,
+            scheduleOrder: 1,
+            state: rust_sync.MigrationPartState.scheduled,
+            scheduledHeight: 1_400,
+          ),
+          _part(index: 2, scheduleOrder: 2),
+          _part(index: 3, scheduleOrder: 3),
+        ],
+      );
+
+      expect(
+        projectedMigrationPartHeights(status: status, currentHeight: 1_000),
+        {2: 1_544, 3: 1_688},
+      );
+    });
+
+    test('never projects a height the chain has already passed', () {
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        totalCount: 2,
+        parts: [
+          _part(
+            index: 0,
+            scheduleOrder: 0,
+            state: rust_sync.MigrationPartState.completed,
+            scheduledHeight: 1_200,
+          ),
+          _part(index: 1, scheduleOrder: 1),
+        ],
+      );
+
+      expect(
+        projectedMigrationPartHeights(status: status, currentHeight: 5_000),
+        {1: 5_144},
+      );
+    });
+
+    test('follows the schedule order, not the part index', () {
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        totalCount: 3,
+        parts: [
+          _part(index: 7, scheduleOrder: 2),
+          _part(index: 3, scheduleOrder: 0),
+          _part(index: 5, scheduleOrder: 1),
+        ],
+      );
+
+      final projected = projectedMigrationPartHeights(
+        status: status,
+        currentHeight: 1_000,
+      );
+      expect(projected, {3: 1_144, 5: 1_288, 7: 1_432});
+
+      final rendered = orderedMigrationParts(
+        status.parts,
+      ).map((part) => projected[part.partIndex]!).toList();
+      expect(rendered, [1_144, 1_288, 1_432]);
+      for (var index = 1; index < rendered.length; index++) {
+        expect(rendered[index], greaterThan(rendered[index - 1]));
+      }
+    });
+
+    test('compresses the cadence to land on the estimated completion', () {
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        totalCount: 4,
+        confirmationTarget: 10,
+        // 1_200 is the last broadcast the estimate implies; the remaining ten
+        // blocks are its confirmations.
+        estimatedCompletionHeight: 1_210,
+        parts: [
+          for (var index = 0; index < 4; index++)
+            _part(index: index, scheduleOrder: index),
+        ],
+      );
+
+      expect(
+        projectedMigrationPartHeights(status: status, currentHeight: 1_000),
+        {0: 1_050, 1: 1_100, 2: 1_150, 3: 1_200},
+      );
+    });
+
+    test('never lets a compressed cadence tie or go backwards', () {
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        totalCount: 5,
+        confirmationTarget: 10,
+        estimatedCompletionHeight: 1_012,
+        parts: [
+          for (var index = 0; index < 5; index++)
+            _part(index: index, scheduleOrder: index),
+        ],
+      );
+
+      expect(
+        projectedMigrationPartHeights(status: status, currentHeight: 1_000),
+        {0: 1_001, 1: 1_002, 2: 1_003, 3: 1_004, 4: 1_005},
+      );
+    });
+
+    test('leaves an estimate to the caller when the cadence is unknown', () {
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        totalCount: 2,
+        scheduleMeanDelayBlocks: 0,
+        parts: [
+          _part(index: 0, scheduleOrder: 0),
+          _part(index: 1, scheduleOrder: 1),
+        ],
+      );
+
+      expect(
+        projectedMigrationPartHeights(status: status, currentHeight: 1_000),
+        isEmpty,
+      );
+    });
+
+    test('leaves an estimate to the caller when nothing anchors it', () {
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        totalCount: 2,
+        parts: [
+          _part(index: 0, scheduleOrder: 0),
+          _part(index: 1, scheduleOrder: 1),
+        ],
+      );
+
+      expect(
+        projectedMigrationPartHeights(status: status, currentHeight: 0),
+        isEmpty,
+      );
+    });
+
+    test('projects nothing once every part carries a height', () {
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        totalCount: 2,
+        parts: [
+          _part(
+            index: 0,
+            scheduleOrder: 0,
+            state: rust_sync.MigrationPartState.scheduled,
+            scheduledHeight: 1_200,
+          ),
+          _part(
+            index: 1,
+            scheduleOrder: 1,
+            state: rust_sync.MigrationPartState.scheduled,
+            scheduledHeight: 1_400,
+          ),
+        ],
+      );
+
+      expect(
+        projectedMigrationPartHeights(status: status, currentHeight: 1_000),
+        isEmpty,
+      );
+    });
+  });
 }
 
 rust_sync.MigrationScheduledBroadcast _broadcast(
@@ -378,16 +677,20 @@ rust_sync.MigrationScheduledBroadcast _broadcast(
 rust_sync.MigrationStatus _status({
   required String phase,
   required List<rust_sync.MigrationScheduledBroadcast> broadcasts,
+  List<int> targetValues = const [],
+  List<rust_sync.MigrationPartStatus> parts = const [],
+  List<int>? currentSigningPartIndices,
   int? totalCount,
   int? nextActionHeight,
   int? estimatedCompletionHeight,
   int confirmationTarget = 0,
+  int scheduleMeanDelayBlocks = 144,
   String? activeRunId,
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
     activeRunId: activeRunId,
-    targetValuesZatoshi: frb.Uint64List(0),
+    targetValuesZatoshi: frb.Uint64List.fromList(targetValues),
     preparedNoteCount: 0,
     denominationConfirmationCount: 0,
     denominationConfirmationTarget: confirmationTarget,
@@ -401,11 +704,32 @@ rust_sync.MigrationStatus _status({
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 35,
-    scheduleMeanDelayBlocks: 144,
+    scheduleMeanDelayBlocks: scheduleMeanDelayBlocks,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
     estimatedCompletionHeight: estimatedCompletionHeight,
     scheduledBroadcasts: broadcasts,
-    parts: const [],
+    currentSigningPartIndices: currentSigningPartIndices == null
+        ? null
+        : frb.Uint32List.fromList(currentSigningPartIndices),
+    parts: parts,
+  );
+}
+
+rust_sync.MigrationPartStatus _part({
+  required int index,
+  int? scheduleOrder,
+  int value = 10_000,
+  rust_sync.MigrationPartState state = rust_sync.MigrationPartState.preparing,
+  int? scheduledHeight,
+}) {
+  return rust_sync.MigrationPartStatus(
+    partIndex: index,
+    scheduleOrder: scheduleOrder,
+    valueZatoshi: BigInt.from(value),
+    state: state,
+    scheduledHeight: scheduledHeight,
+    confirmationCount: 0,
+    confirmationTarget: 10,
   );
 }
