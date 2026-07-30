@@ -1895,6 +1895,11 @@ fn seed_broadcasted_unstored_migration_part(
         MIGRATION_TEST_SALT,
     )
     .unwrap();
+    // Fee must match canonical ZIP-317 fee at the quiet tip used by prepare /
+    // broadcast_due_at_tip, or policy rebuild retires the run before resubmit.
+    let quiet_tip = scheduled_height + migration::MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS;
+    let fee_zatoshi =
+        canonical_migration_fee_zatoshi(WalletNetwork::Test, quiet_tip + 1).unwrap();
     // Match the stable #388 fixture: target_height == scheduled_height triggers
     // the legacy rewrite (target - 1 + block). With offset 1 that stays at
     // scheduled_height.
@@ -1910,7 +1915,7 @@ fn seed_broadcasted_unstored_migration_part(
             expiry_height: 69_120,
             scheduled_height,
             value_zatoshi: 100_000,
-            fee_zatoshi: 10_000,
+            fee_zatoshi,
             selected_note: selected_note.clone(),
             metadata: migration::PendingMigrationTxMetadata {
                 tx_kind: "migration".to_string(),
@@ -2124,6 +2129,196 @@ fn timed_resubmit_hard_reject_leaves_broadcasted_and_skips_gate() {
             &db_path,
             &run_id,
             next_tip,
+            MIGRATION_TEST_PASSWORD,
+            MIGRATION_TEST_SALT,
+        )
+        .unwrap()
+        .len(),
+        1
+    );
+}
+
+fn test_due_pending(txid_hex: &str, raw: u8) -> migration::DuePendingMigrationTx {
+    migration::DuePendingMigrationTx {
+        txid_hex: txid_hex.to_string(),
+        raw_tx: vec![raw],
+    }
+}
+
+#[test]
+fn one_foreground_submit_budget_prefers_resubmit_over_due() {
+    let resubmit = vec![
+        test_due_pending("resubmit-a", 1),
+        test_due_pending("resubmit-b", 2),
+    ];
+    let due = vec![test_due_pending("due-a", 3)];
+    let (resubmit_batch, due_batch) = take_migration_submit_budget(
+        MigrationBroadcastPolicy::ONE_FOREGROUND,
+        resubmit,
+        due,
+    );
+    assert_eq!(resubmit_batch.len(), 1);
+    assert_eq!(resubmit_batch[0].txid_hex, "resubmit-a");
+    assert!(
+        due_batch.is_empty(),
+        "shared budget of 1 must defer due when resubmit consumes the slot"
+    );
+}
+
+#[test]
+fn one_foreground_submit_budget_allows_due_when_no_resubmit() {
+    let (resubmit_batch, due_batch) = take_migration_submit_budget(
+        MigrationBroadcastPolicy::ONE_FOREGROUND,
+        Vec::new(),
+        vec![test_due_pending("due-a", 3), test_due_pending("due-b", 4)],
+    );
+    assert!(resubmit_batch.is_empty());
+    assert_eq!(due_batch.len(), 1);
+    assert_eq!(due_batch[0].txid_hex, "due-a");
+}
+
+#[test]
+fn foreground_submit_budget_allows_all_candidates() {
+    let resubmit = vec![
+        test_due_pending("resubmit-a", 1),
+        test_due_pending("resubmit-b", 2),
+    ];
+    let due = vec![test_due_pending("due-a", 3)];
+    let (resubmit_batch, due_batch) =
+        take_migration_submit_budget(MigrationBroadcastPolicy::FOREGROUND, resubmit, due);
+    assert_eq!(resubmit_batch.len(), 2);
+    assert_eq!(due_batch.len(), 1);
+}
+
+#[test]
+fn prepare_due_advance_resubmit_only_at_quiet_tip() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let pending_txid = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+    let scheduled = 100u32;
+    let run_id = seed_broadcasted_unstored_migration_part(&db_path, pending_txid, scheduled);
+    let tip = scheduled + migration::MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS;
+    let policy = MigrationBroadcastPolicy::FOREGROUND;
+
+    let prepared = prepare_due_scheduled_migration_advance(
+        &db_path,
+        WalletNetwork::Test,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+        1,
+        100_000,
+        &policy,
+        tip,
+    )
+    .unwrap();
+    let PreparedDueScheduledAdvance::Ready {
+        totals_before,
+        resubmit,
+        due,
+    } = prepared
+    else {
+        panic!("expected Ready with timed-resubmit candidates");
+    };
+    assert!(due.is_empty());
+    assert_eq!(resubmit.len(), 1);
+    assert_eq!(resubmit[0].txid_hex, pending_txid);
+    assert_eq!(totals_before.broadcasted_count, 1);
+
+    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(
+        &db_path,
+        &run_id,
+        tip,
+        &resubmit,
+        |_, _| Ok(()),
+    );
+    assert_eq!(succeeded, vec![pending_txid.to_string()]);
+
+    // Production resubmit-only success returns waiting advance with empty accepted_txids.
+    let advance =
+        scheduled_migration_waiting_advance(&db_path, &run_id, totals_before, 1, 100_000)
+            .unwrap();
+    assert!(advance.accepted_txids.is_empty());
+    let one_due = one_due_migration_result(advance);
+    assert!(one_due.txids.is_empty());
+
+    // Same tip is no longer selected after the attempt was recorded.
+    let prepared_again = prepare_due_scheduled_migration_advance(
+        &db_path,
+        WalletNetwork::Test,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+        1,
+        100_000,
+        &policy,
+        tip,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared_again,
+        PreparedDueScheduledAdvance::Finished(_)
+    ));
+}
+
+#[tokio::test]
+async fn broadcast_due_at_tip_resubmit_only_survives_lwd_open_failure() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let pending_txid = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+    let scheduled = 100u32;
+    let run_id = seed_broadcasted_unstored_migration_part(&db_path, pending_txid, scheduled);
+    let tip = scheduled + migration::MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS;
+    let policy = MigrationBroadcastPolicy::FOREGROUND;
+
+    // Prove we reach the LWD open path (Ready), not a rebuild Finished short-circuit.
+    assert!(matches!(
+        prepare_due_scheduled_migration_advance(
+            &db_path,
+            WalletNetwork::Test,
+            &run_id,
+            MIGRATION_TEST_PASSWORD,
+            MIGRATION_TEST_SALT,
+            1,
+            100_000,
+            &policy,
+            tip,
+        )
+        .unwrap(),
+        PreparedDueScheduledAdvance::Ready { .. }
+    ));
+
+    let advance = broadcast_due_scheduled_migration_txs_at_tip(
+        &db_path,
+        "http://127.0.0.1:1",
+        WalletNetwork::Test,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+        1,
+        100_000,
+        MigrationBroadcastPolicy::FOREGROUND,
+        tip,
+    )
+    .await
+    .unwrap();
+
+    assert!(advance.accepted_txids.is_empty());
+    assert_ne!(
+        advance.result.status,
+        migration::PHASE_FAILED_RECOVERABLE
+    );
+    let one_due = one_due_migration_result(advance);
+    assert!(one_due.txids.is_empty());
+
+    // Open failed before SendTransaction, so the quiet tip remains eligible.
+    assert_eq!(
+        migration::broadcasted_pending_txs_due_for_resubmit(
+            &db_path,
+            &run_id,
+            tip,
             MIGRATION_TEST_PASSWORD,
             MIGRATION_TEST_SALT,
         )

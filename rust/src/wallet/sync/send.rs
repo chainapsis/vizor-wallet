@@ -4614,45 +4614,77 @@ async fn broadcast_pending_denomination_stages(
     }))
 }
 
-async fn broadcast_due_scheduled_migration_txs(
+enum PreparedDueScheduledAdvance {
+    Finished(MigrationBroadcastAdvance),
+    Ready {
+        totals_before: super::migration::PendingMigrationTotals,
+        resubmit: Vec<super::migration::DuePendingMigrationTx>,
+        due: Vec<super::migration::DuePendingMigrationTx>,
+    },
+}
+
+fn scheduled_migration_waiting_advance(
     db_path: &str,
-    lightwalletd_url: &str,
+    run_id: &str,
+    totals_before: super::migration::PendingMigrationTotals,
+    fallback_total_count: u32,
+    fallback_migrated_zatoshi: u64,
+) -> Result<MigrationBroadcastAdvance, String> {
+    let status = super::migration::run_phase(db_path, run_id)?;
+    let message = if status == super::migration::PHASE_BROADCAST_SCHEDULED
+        && super::migration::next_scheduled_height(db_path, run_id)?.is_none()
+    {
+        "Migration is waiting to prepare the next transaction."
+    } else {
+        "Migration transactions are scheduled for delayed broadcast."
+    };
+    Ok(MigrationBroadcastAdvance::without_acceptance(
+        migration_result_from_pending_totals(
+            totals_before,
+            &status,
+            Some(message.to_string()),
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        ),
+    ))
+}
+
+fn prepare_due_scheduled_migration_advance(
+    db_path: &str,
     network: WalletNetwork,
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
     fallback_total_count: u32,
     fallback_migrated_zatoshi: u64,
-    policy: MigrationBroadcastPolicy<'_>,
-) -> Result<MigrationBroadcastAdvance, String> {
+    policy: &MigrationBroadcastPolicy<'_>,
+    chain_tip_height: u32,
+) -> Result<PreparedDueScheduledAdvance, String> {
     let totals_before = super::migration::pending_totals_for_run(db_path, run_id)?;
     if totals_before.total_count == 0 {
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            migration_result_from_pending_totals(
+        return Ok(PreparedDueScheduledAdvance::Finished(
+            MigrationBroadcastAdvance::without_acceptance(migration_result_from_pending_totals(
                 totals_before,
                 super::migration::PHASE_READY_TO_MIGRATE,
                 Some("No signed migration transactions are scheduled yet.".to_string()),
                 fallback_total_count,
                 fallback_migrated_zatoshi,
-            ),
+            )),
         ));
     }
 
-    let chain_tip_height =
-        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
-            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
     if let Some(message) =
         pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)?
     {
         super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            migration_result_from_pending_totals(
+        return Ok(PreparedDueScheduledAdvance::Finished(
+            MigrationBroadcastAdvance::without_acceptance(migration_result_from_pending_totals(
                 totals_before,
                 super::migration::PHASE_FAILED_TERMINAL,
                 Some(message),
                 fallback_total_count,
                 fallback_migrated_zatoshi,
-            ),
+            )),
         ));
     }
 
@@ -4663,14 +4695,14 @@ async fn broadcast_due_scheduled_migration_txs(
             "{expired_count} migration transaction(s) expired before confirmation. Re-sign the affected denomination(s) with fresh anchors and expiry heights."
         );
         super::migration::mark_expired_pending_parts_for_resign(db_path, run_id, chain_tip_height)?;
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            migration_result_from_pending_totals(
+        return Ok(PreparedDueScheduledAdvance::Finished(
+            MigrationBroadcastAdvance::without_acceptance(migration_result_from_pending_totals(
                 totals_before,
                 super::migration::PHASE_READY_TO_MIGRATE,
                 Some(message),
                 fallback_total_count,
                 fallback_migrated_zatoshi,
-            ),
+            )),
         ));
     }
     let noncanonical_due_count =
@@ -4681,8 +4713,8 @@ async fn broadcast_due_scheduled_migration_txs(
         )?;
     if noncanonical_due_count > 0 {
         let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            migration_result_from_pending_totals(
+        return Ok(PreparedDueScheduledAdvance::Finished(
+            MigrationBroadcastAdvance::without_acceptance(migration_result_from_pending_totals(
                 totals,
                 super::migration::PHASE_READY_TO_MIGRATE,
                 Some(format!(
@@ -4690,7 +4722,7 @@ async fn broadcast_due_scheduled_migration_txs(
                 )),
                 fallback_total_count,
                 fallback_migrated_zatoshi,
-            ),
+            )),
         ));
     }
     // Retry local store for already-accepted parts before selecting the next due
@@ -4717,58 +4749,115 @@ async fn broadcast_due_scheduled_migration_txs(
         pending_salt_base64,
     )?;
     if resubmit.is_empty() && due.is_empty() {
-        let status = super::migration::run_phase(db_path, run_id)?;
-        let message = if status == super::migration::PHASE_BROADCAST_SCHEDULED
-            && super::migration::next_scheduled_height(db_path, run_id)?.is_none()
-        {
-            "Migration is waiting to prepare the next transaction."
-        } else {
-            "Migration transactions are scheduled for delayed broadcast."
-        };
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            migration_result_from_pending_totals(
+        return Ok(PreparedDueScheduledAdvance::Finished(
+            scheduled_migration_waiting_advance(
+                db_path,
+                run_id,
                 totals_before,
-                &status,
-                Some(message.to_string()),
                 fallback_total_count,
                 fallback_migrated_zatoshi,
-            ),
+            )?,
         ));
     }
     if policy.is_cancelled() {
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            migration_result_from_pending_totals(
+        return Ok(PreparedDueScheduledAdvance::Finished(
+            MigrationBroadcastAdvance::without_acceptance(migration_result_from_pending_totals(
                 totals_before,
                 super::migration::PHASE_BROADCAST_SCHEDULED,
                 Some("Background migration stopped before the next broadcast.".to_string()),
                 fallback_total_count,
                 fallback_migrated_zatoshi,
-            ),
+            )),
         ));
     }
+    Ok(PreparedDueScheduledAdvance::Ready {
+        totals_before,
+        resubmit,
+        due,
+    })
+}
+
+async fn broadcast_due_scheduled_migration_txs(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+    fallback_total_count: u32,
+    fallback_migrated_zatoshi: u64,
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<MigrationBroadcastAdvance, String> {
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    broadcast_due_scheduled_migration_txs_at_tip(
+        db_path,
+        lightwalletd_url,
+        network,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+        fallback_total_count,
+        fallback_migrated_zatoshi,
+        policy,
+        chain_tip_height,
+    )
+    .await
+}
+
+async fn broadcast_due_scheduled_migration_txs_at_tip(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+    fallback_total_count: u32,
+    fallback_migrated_zatoshi: u64,
+    policy: MigrationBroadcastPolicy<'_>,
+    chain_tip_height: u32,
+) -> Result<MigrationBroadcastAdvance, String> {
+    let prepared = prepare_due_scheduled_migration_advance(
+        db_path,
+        network,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+        fallback_total_count,
+        fallback_migrated_zatoshi,
+        &policy,
+        chain_tip_height,
+    )?;
+    let (totals_before, resubmit, due) = match prepared {
+        PreparedDueScheduledAdvance::Finished(advance) => return Ok(advance),
+        PreparedDueScheduledAdvance::Ready {
+            totals_before,
+            resubmit,
+            due,
+        } => (totals_before, resubmit, due),
+    };
+
+    // ONE_FOREGROUND shares one SendTransaction slot across recovery resubmit
+    // and new due broadcast so desktop on-open cannot submit multiple txs.
+    let (resubmit_batch, due_batch) = take_migration_submit_budget(policy, resubmit, due);
 
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
         Err(e) => {
-            if due.is_empty() {
+            if due_batch.is_empty() {
                 // Timed recovery rebroadcast is best-effort; do not fail the run
-                // when only recovery work was pending.
+                // when only recovery work would run this step.
                 log::warn!(
                     "migration: timed rebroadcast skipped; could not open lightwalletd: {e}"
                 );
-                let status = super::migration::run_phase(db_path, run_id)?;
-                return Ok(MigrationBroadcastAdvance::without_acceptance(
-                    migration_result_from_pending_totals(
-                        totals_before,
-                        &status,
-                        Some(
-                            "Migration transactions are scheduled for delayed broadcast."
-                                .to_string(),
-                        ),
-                        fallback_total_count,
-                        fallback_migrated_zatoshi,
-                    ),
-                ));
+                return scheduled_migration_waiting_advance(
+                    db_path,
+                    run_id,
+                    totals_before,
+                    fallback_total_count,
+                    fallback_migrated_zatoshi,
+                );
             }
             let message = format!("Migration broadcast could not start: {e}");
             super::migration::mark_run_phase(
@@ -4793,38 +4882,29 @@ async fn broadcast_due_scheduled_migration_txs(
 
     // Blind rebroadcast of accepted-but-unstored parts on quiet-height
     // boundaries. Never counts toward accepted_txids / one-open gate.
+    // Candidates skipped by the shared budget keep last_resubmit_tip unset.
     rebroadcast_timed_broadcasted_migration_txs(
         &mut client,
         db_path,
         run_id,
         chain_tip_height,
-        &resubmit,
+        &resubmit_batch,
     )
     .await;
 
-    if due.is_empty() {
-        let status = super::migration::run_phase(db_path, run_id)?;
-        let message = if status == super::migration::PHASE_BROADCAST_SCHEDULED
-            && super::migration::next_scheduled_height(db_path, run_id)?.is_none()
-        {
-            "Migration is waiting to prepare the next transaction."
-        } else {
-            "Migration transactions are scheduled for delayed broadcast."
-        };
-        return Ok(MigrationBroadcastAdvance::without_acceptance(
-            migration_result_from_pending_totals(
-                totals_before,
-                &status,
-                Some(message.to_string()),
-                fallback_total_count,
-                fallback_migrated_zatoshi,
-            ),
-        ));
+    if due_batch.is_empty() {
+        return scheduled_migration_waiting_advance(
+            db_path,
+            run_id,
+            totals_before,
+            fallback_total_count,
+            fallback_migrated_zatoshi,
+        );
     }
 
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
     let mut accepted_txids = Vec::new();
-    for pending in due.into_iter().take(policy.limit(usize::MAX)) {
+    for pending in due_batch {
         if policy.is_cancelled() {
             super::migration::mark_run_phase(
                 db_path,
@@ -5242,6 +5322,24 @@ fn retry_store_broadcasted_migration_txs_missing_local(
         }
     }
     Ok(())
+}
+
+/// Split recovery resubmit and due broadcast candidates under the shared
+/// per-step `SendTransaction` budget (`ONE_FOREGROUND` → 1). Resubmit is
+/// preferred so accepted-but-unstored recovery runs before a new due submit.
+fn take_migration_submit_budget(
+    policy: MigrationBroadcastPolicy<'_>,
+    resubmit: Vec<super::migration::DuePendingMigrationTx>,
+    due: Vec<super::migration::DuePendingMigrationTx>,
+) -> (
+    Vec<super::migration::DuePendingMigrationTx>,
+    Vec<super::migration::DuePendingMigrationTx>,
+) {
+    let budget = policy.limit(resubmit.len().saturating_add(due.len()));
+    let resubmit_batch: Vec<_> = resubmit.into_iter().take(budget).collect();
+    let due_budget = budget.saturating_sub(resubmit_batch.len());
+    let due_batch: Vec<_> = due.into_iter().take(due_budget).collect();
+    (resubmit_batch, due_batch)
 }
 
 /// Blind-rebroadcast accepted-but-unstored migration parts on quiet-height
