@@ -377,15 +377,12 @@ fn migration_submission_record_with_conn(
     Ok(Some((run_id, policy, expiry_height)))
 }
 
-pub(crate) fn is_separate_relay_migration_transaction(
+pub(crate) fn migration_submission_policy_for_transaction(
     conn: &rusqlite::Connection,
     txid_hex: &str,
-) -> Result<bool, String> {
-    migration_submission_record_with_conn(conn, txid_hex).map(|record| {
-        record.is_some_and(|(_, policy, _)| {
-            matches!(policy, MigrationSubmissionPolicy::SeparateRelay(_))
-        })
-    })
+) -> Result<Option<MigrationSubmissionPolicy>, String> {
+    migration_submission_record_with_conn(conn, txid_hex)
+        .map(|record| record.map(|(_, policy, _)| policy))
 }
 
 #[derive(Debug)]
@@ -428,6 +425,8 @@ pub(crate) struct UnbroadcastMigrationRecoveryCandidate {
     pub txid_hex: String,
     pub status: String,
     pub scheduled_height: u32,
+    pub expiry_height: u32,
+    pub attempt_state: MigrationBroadcastAttemptState,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3484,7 +3483,8 @@ pub(crate) fn unbroadcast_migration_recovery_candidates(
 
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, status, scheduled_height
+            "SELECT txid_hex, status, scheduled_height, expiry_height,
+                    broadcast_attempted
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status IN ('scheduled', 'broadcasted')
              ORDER BY part_index ASC, scheduled_height ASC, txid_hex ASC"
@@ -3492,16 +3492,28 @@ pub(crate) fn unbroadcast_migration_recovery_candidates(
         .map_err(|e| format!("Prepare migration recovery candidates: {e}"))?;
     let rows = stmt
         .query_map(params![expected_run_id], |row| {
-            Ok(UnbroadcastMigrationRecoveryCandidate {
-                txid_hex: row.get(0)?,
-                status: row.get(1)?,
-                scheduled_height: row.get(2)?,
-            })
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+                row.get::<_, u32>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
         })
         .map_err(|e| format!("Query migration recovery candidates: {e}"))?;
     let candidates = rows
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Read migration recovery candidate: {e}"))?;
+        .map(|row| {
+            let (txid_hex, status, scheduled_height, expiry_height, attempt_state) =
+                row.map_err(|e| format!("Read migration recovery candidate: {e}"))?;
+            Ok(UnbroadcastMigrationRecoveryCandidate {
+                txid_hex,
+                status,
+                scheduled_height,
+                expiry_height,
+                attempt_state: MigrationBroadcastAttemptState::from_db(attempt_state)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     if candidates.is_empty() {
         return Err("Migration recovery has no unconfirmed transactions".to_string());
     }

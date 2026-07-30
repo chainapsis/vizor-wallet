@@ -1952,6 +1952,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
 
 fn validate_unbroadcast_migration_recovery_candidates(
     candidates: &[super::migration::UnbroadcastMigrationRecoveryCandidate],
+    submission_policy: &super::migration::MigrationSubmissionPolicy,
     chain_tip_height: u32,
 ) -> Result<(), String> {
     for candidate in candidates {
@@ -1960,6 +1961,27 @@ fn validate_unbroadcast_migration_recovery_candidates(
                 "Migration transaction {} was already marked as broadcasted",
                 candidate.txid_hex
             ));
+        }
+        if matches!(
+            submission_policy,
+            super::migration::MigrationSubmissionPolicy::SeparateRelay(_)
+        ) && candidate.attempt_state
+            != super::migration::MigrationBroadcastAttemptState::NotAttempted
+        {
+            // A NotFound response from the sync server cannot disprove an
+            // ambiguous relay acceptance. Expiry is the safe unlock boundary.
+            if candidate.expiry_height == 0 {
+                return Err(format!(
+                    "Relay-attempted migration transaction {} has no expiry height",
+                    candidate.txid_hex
+                ));
+            }
+            if chain_tip_height < candidate.expiry_height {
+                return Err(format!(
+                    "Migration recovery must wait until relay-attempted transaction {} expires at block {}",
+                    candidate.txid_hex, candidate.expiry_height
+                ));
+            }
         }
         let safe_recovery_height = candidate
             .scheduled_height
@@ -1988,6 +2010,8 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         network,
         expected_run_id,
     )?;
+    let submission_policy =
+        super::migration::migration_submission_policy(db_path, expected_run_id)?;
     let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Open migration recovery endpoint: {e}"))?;
@@ -1996,7 +2020,11 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
         .map_err(|e| format!("Read migration recovery chain tip: {e}"))?;
     let chain_tip_height =
         u32::try_from(chain_tip.height).map_err(|_| "Migration recovery chain tip exceeds u32")?;
-    validate_unbroadcast_migration_recovery_candidates(&candidates, chain_tip_height)?;
+    validate_unbroadcast_migration_recovery_candidates(
+        &candidates,
+        &submission_policy,
+        chain_tip_height,
+    )?;
 
     for candidate in &candidates {
         let txid = parse_txid_hex(&candidate.txid_hex)?;
@@ -5947,8 +5975,8 @@ async fn broadcast_raw_transaction(
 ///
 /// `attempted` counts the candidates pulled from the DB — one entry
 /// per unmined, unexpired, outbound wallet transaction visible at
-/// the requested height. `succeeded` is the subset where
-/// lightwalletd accepted the broadcast (either on the first try or
+/// the requested height. `succeeded` is the subset where the saved
+/// submission route accepted the broadcast (either on the first try or
 /// the single retry). `failed` is everything else; per-tx failures
 /// are always logged before being counted and never propagated up.
 #[derive(Debug, Default, Clone, Copy)]
@@ -5956,6 +5984,37 @@ pub(crate) struct ResubmitStats {
     pub attempted: usize,
     pub succeeded: usize,
     pub failed: usize,
+}
+
+async fn resubmit_transaction(
+    lightwalletd_client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
+    relay_clients: &mut HashMap<String, super::broadcast::TransactionRelayClient>,
+    tx: &super::transactions::ResubmittableTx,
+    txid_hex: &str,
+) -> Result<(), String> {
+    match &tx.migration_submission_policy {
+        Some(super::migration::MigrationSubmissionPolicy::SeparateRelay(url)) => {
+            super::broadcast::parse_separate_relay_transaction(
+                parse_txid_hex(txid_hex)?,
+                &tx.raw_tx,
+                tx.expiry_height,
+            )?;
+            if !relay_clients.contains_key(url) {
+                relay_clients.insert(
+                    url.clone(),
+                    super::broadcast::TransactionRelayClient::new(url)?,
+                );
+            }
+            relay_clients
+                .get(url)
+                .expect("relay client was inserted")
+                .send_raw_transaction(&tx.raw_tx, txid_hex)
+                .await
+        }
+        Some(super::migration::MigrationSubmissionPolicy::Lightwalletd) | None => {
+            broadcast_raw_transaction(lightwalletd_client, &tx.raw_tx).await
+        }
+    }
 }
 
 /// Auto-resubmit every wallet-created unmined, unexpired,
@@ -5999,9 +6058,9 @@ pub(crate) struct ResubmitStats {
 /// without introducing an extra await point between the RPC
 /// response and the stats bump.
 ///
-/// The caller owns the gRPC client. In the sync loop the same
-/// client that downloaded the compact blocks is threaded straight
-/// through, so auto-resubmit reuses the same connection.
+/// The caller owns the gRPC client. Ordinary transactions reuse the same
+/// connection that downloaded compact blocks. Migration transactions retain
+/// the immutable relay route selected when their run was created.
 /// `excluded_txids` are filtered before their raw bytes are loaded.
 /// Recovery uses this to avoid rebroadcasting transactions that
 /// compact scanning can restore as mined.
@@ -6053,6 +6112,7 @@ where
         succeeded: 0,
         failed: 0,
     };
+    let mut relay_clients = HashMap::new();
 
     for tx in &candidates {
         // Cancel-check at the top of every iteration: this is
@@ -6069,8 +6129,14 @@ where
             break;
         }
 
-        let txid_hex = hex::encode(&tx.txid_bytes);
-        match broadcast_raw_transaction(client, &tx.raw_tx).await {
+        let txid_hex = TxId::from_bytes(
+            tx.txid_bytes
+                .as_slice()
+                .try_into()
+                .expect("resubmission query validated transaction ID length"),
+        )
+        .to_string();
+        match resubmit_transaction(client, &mut relay_clients, tx, &txid_hex).await {
             Ok(()) => {
                 log::info!(
                     "resubmit: {txid_hex} ok (expiry={}, bytes={})",
@@ -6095,7 +6161,7 @@ where
                     stats.failed += 1;
                     break;
                 }
-                match broadcast_raw_transaction(client, &tx.raw_tx).await {
+                match resubmit_transaction(client, &mut relay_clients, tx, &txid_hex).await {
                     Ok(()) => {
                         log::info!("resubmit: {txid_hex} ok on retry");
                         stats.succeeded += 1;
