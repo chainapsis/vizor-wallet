@@ -2011,9 +2011,16 @@ async fn reconcile_scheduled_migration_txs_before_abandon(
                 // Before expiry an attempted submission may have been accepted
                 // moments ago but not indexed yet. At or after expiry, the
                 // same endpoint's chain tip proves an absent transaction can
-                // no longer be mined, so stop may safely discard it.
-                if chain_tip_height >= candidate.expiry_height {
+                // no longer be mined, so stop may safely discard it. Zero is
+                // the legacy no-expiry sentinel and never provides that proof.
+                if migration_stop_candidate_is_expired(candidate.expiry_height, chain_tip_height) {
                     continue;
+                }
+                if candidate.expiry_height == 0 {
+                    return Err(format!(
+                        "Migration cannot stop until non-expiring transaction {} is reconciled",
+                        candidate.txid_hex
+                    ));
                 }
                 return Err(format!(
                     "Migration cannot stop until transaction {} is reconciled or expires at block {}",
@@ -2029,6 +2036,10 @@ async fn reconcile_scheduled_migration_txs_before_abandon(
         }
     }
     Ok(())
+}
+
+fn migration_stop_candidate_is_expired(expiry_height: u32, chain_tip_height: u32) -> bool {
+    expiry_height > 0 && chain_tip_height >= expiry_height
 }
 
 fn migration_stop_candidate_requires_reconciliation(

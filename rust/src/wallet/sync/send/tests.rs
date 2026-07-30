@@ -13,6 +13,14 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn migration_stop_preserves_zero_as_the_no_expiry_sentinel() {
+    assert!(!migration_stop_candidate_is_expired(0, u32::MAX));
+    assert!(!migration_stop_candidate_is_expired(200, 199));
+    assert!(migration_stop_candidate_is_expired(200, 200));
+    assert!(migration_stop_candidate_is_expired(200, 201));
+}
+
+#[test]
 fn send_proposal_expires_at_its_lock_boundary() {
     let min_target = BlockHeight::from_u32(1_000);
     assert!(!send_proposal_is_expired(
