@@ -219,6 +219,39 @@ void main() {
     expect(broadcasts, isEmpty);
   });
 
+  test(
+    'non-outbox mobile advances waiting confirmations for store retry',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('waiting_migration_confirmations'),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+        usesNativeOutbox: false,
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantForegroundProgressPermit(_softwareUuid);
+      await coordinator.refreshNow();
+
+      expect(broadcasts, [_softwareUuid]);
+    },
+  );
+
   test('reentry refresh is read-only without a foreground permit', () async {
     final statuses = {
       _softwareUuid: _status(

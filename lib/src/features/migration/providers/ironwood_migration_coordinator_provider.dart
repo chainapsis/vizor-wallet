@@ -933,12 +933,18 @@ class IronwoodMigrationCoordinator
             hasChildProofBatchPermit &&
             (!isHardware || canPrepareNextProof)) ||
         (kAppFormFactor == AppFormFactor.mobile &&
-            status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
-            ((usesNativeOutbox &&
-                    status.signedChildPcztCount == 0 &&
-                    _hasScheduledBroadcast(status)) ||
-                (!usesNativeOutbox && _hasDueScheduledBroadcast(status)) ||
-                (hasChildProofBatchPermit && canPrepareNextProof))) ||
+            ((status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+                    ((usesNativeOutbox &&
+                            status.signedChildPcztCount == 0 &&
+                            _hasScheduledBroadcast(status)) ||
+                        (!usesNativeOutbox &&
+                            _hasDueScheduledBroadcast(status)) ||
+                        (hasChildProofBatchPermit && canPrepareNextProof))) ||
+                // Keep calling into broadcast_due_scheduled after the last
+                // part flips phase so accepted-but-unstored txs and expiry
+                // resign can still retry (store-from-raw / needs_resign).
+                status.phase ==
+                    kIronwoodMigrationWaitingConfirmationsPhase)) ||
         (kAppFormFactor == AppFormFactor.desktop &&
             {
               kIronwoodMigrationBroadcastScheduledPhase,
