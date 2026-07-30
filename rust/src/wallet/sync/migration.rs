@@ -3053,8 +3053,9 @@ pub(crate) fn unbroadcast_migration_recovery_candidates(
 
 /// Promotes pending migration rows to `confirmed` when the wallet already has
 /// local chain identity for their txids (and demotes orphaned `confirmed` rows
-/// after a reorg). Call before due selection so a mined-but-still-`scheduled`
-/// part cannot head-of-line block later due parts.
+/// after a reorg). Call before due selection **and** before expiry recovery so a
+/// mined-but-still-`scheduled` part cannot head-of-line block later due parts or
+/// be flipped to `needs_resign` after its ZIP 318 expiry height.
 pub(crate) fn reconcile_run_pending_confirmations(
     db_path: &str,
     run_id: &str,
@@ -3299,6 +3300,10 @@ pub(crate) fn expired_unconfirmed_pending_count(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
+    // Resume/export paths check this before due selection. Promote locally mined
+    // rows first so a past-expiry but already-confirmed part is not treated as
+    // needing resign.
+    reconcile_run_pending_confirmations(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let expired = expired_unconfirmed_pending_txids(&conn, run_id, chain_tip_height)?;
@@ -3310,6 +3315,11 @@ pub(crate) fn mark_expired_pending_parts_for_resign(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
+    // Resume (`migrate_orchard_to_ironwood`) and outbox export call this before
+    // `due_pending_txs`. Reconcile first so a mined-but-still-`scheduled` part
+    // past its expiry height is promoted to `confirmed` instead of
+    // `needs_resign`.
+    reconcile_run_pending_confirmations(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let tx = conn
