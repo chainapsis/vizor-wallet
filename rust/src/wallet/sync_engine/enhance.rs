@@ -34,7 +34,7 @@ use zcash_client_backend::{
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
@@ -58,6 +58,8 @@ pub(super) async fn run_enhancement(
     network: WalletNetwork,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
+
+    backfill_stored_transparent_fees(client, db, db_path).await?;
 
     for _ in 0..3 {
         let requests = db
@@ -236,6 +238,60 @@ pub(super) async fn run_enhancement(
         }
     }
     Ok(())
+}
+
+/// Backfills fees for stored transactions whose status requests are dormant
+/// while their mined heights are known.
+async fn backfill_stored_transparent_fees(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &WalletDatabase,
+    db_path: &str,
+) -> Result<(), SyncError> {
+    for txid in stored_transaction_ids_missing_fee(db_path)? {
+        let txid_str = format!("{txid}");
+        match db.get_transaction(txid) {
+            Ok(Some(tx)) => {
+                if let Err(e) = fill_missing_transparent_fee(client, db_path, &tx).await {
+                    log::warn!(
+                        "sync: stored transparent fee enhancement failed for {txid_str}: {e}"
+                    );
+                }
+            }
+            Ok(None) => {}
+            Err(e) => log::warn!(
+                "sync: could not read stored transaction for fee enhancement {txid_str}: {e}"
+            ),
+        }
+    }
+
+    Ok(())
+}
+
+fn stored_transaction_ids_missing_fee(db_path: &str) -> Result<Vec<TxId>, SyncError> {
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| SyncError::db(format!("open wallet DB for fee scan: {e}")))?;
+    conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
+        .map_err(|e| SyncError::db(format!("configure fee scan busy timeout: {e}")))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT t.txid
+             FROM transactions t
+             WHERE t.raw IS NOT NULL
+             AND t.fee IS NULL
+             AND EXISTS (
+                 SELECT 1
+                 FROM v_transactions vt
+                 WHERE vt.txid = t.txid
+             )",
+        )
+        .map_err(|e| SyncError::db(format!("prepare missing fee scan: {e}")))?;
+    let rows = stmt
+        .query_map([], |row| row.get(0).map(TxId::from_bytes))
+        .map_err(|e| SyncError::db(format!("query missing fees: {e}")))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| SyncError::db(format!("read missing fee transaction: {e}")))
 }
 
 /// Whether servicing `request` can make progress right now. Transaction
@@ -434,6 +490,64 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 mod tests {
     use super::*;
 
+    fn scanned_transaction_missing_fee_test_db(
+        mined_height: BlockHeight,
+    ) -> (tempfile::NamedTempFile, WalletDatabase, Transaction) {
+        let (tx, raw) = transparent_fee_test_tx_and_bytes();
+        let txid = tx.txid();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            db_path,
+            WalletNetwork::Regtest,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        zcash_client_sqlite::wallet::init::init_wallet_db(&mut db, None).unwrap();
+        db.update_chain_tip(mined_height + 10).unwrap();
+        drop(db);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT INTO transactions
+                (txid, mined_height, raw, fee, min_observed_height)
+             VALUES (?1, ?2, ?3, NULL, ?2)",
+            rusqlite::params![txid.as_ref(), u32::from(mined_height), raw],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO accounts
+                (uuid, account_kind, uivk, birthday_height, has_spend_key)
+             VALUES (randomblob(16), 1, 'test-uivk', 1, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sapling_received_notes
+                (transaction_id, output_index, account_id, diversifier, value,
+                 rcm, is_change, commitment_tree_position, recipient_key_scope)
+             SELECT id_tx, 0, 1, X'00', 1, X'00', 1, 1, 1
+             FROM transactions WHERE txid = ?1",
+            rusqlite::params![txid.as_ref()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tx_retrieval_queue (txid, query_type)
+             VALUES (?1, 0)",
+            rusqlite::params![txid.as_ref()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let db = crate::wallet::db::open_wallet_db_with_timeout(
+            db_path,
+            WalletNetwork::Regtest,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        (file, db, tx)
+    }
+
     fn transparent_fee_test_tx_and_bytes() -> (Transaction, Vec<u8>) {
         let tx_bytes = hex::decode(
             "0400008085202f8901aee37187e843da597683c26c01457f5fd3b1a038996ef74dc8d60d483aaf395a000000006b483045022100874c70db77ea9e93f75cc83a9e141e17c8eb97588e29fe4e307631fdde4f162a02203493df62d648cd86a1189eaf9bcafc652bc14c5df02519d9e45e25b32aaffb5b012102106a2dcaaac2ae3b24358a03f4264e05db420c5b090399bc23885fa02fef7716ffffffff02764e1900000000001976a914fb451987556f7a19b726966ee6cff917e0bb3bfb88ac560ca400000000001976a9141634f5ff0b8f6603a17570436d6c12a91f4b1fed88ac00000000000000000000000000000000000000",
@@ -512,6 +626,23 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn scanned_transaction_missing_fee_is_selected_when_status_request_is_dormant() {
+        let mined_height = BlockHeight::from_u32(500);
+        let (file, db, tx) = scanned_transaction_missing_fee_test_db(mined_height);
+        let txid = tx.txid();
+
+        assert!(!db
+            .transaction_data_requests()
+            .unwrap()
+            .contains(&TransactionDataRequest::GetStatus(txid)));
+        assert_eq!(
+            stored_transaction_ids_missing_fee(file.path().to_str().unwrap()).unwrap(),
+            vec![txid]
+        );
+        assert_eq!(db.get_transaction(txid).unwrap().unwrap().txid(), txid);
     }
 
     #[test]
