@@ -40,11 +40,15 @@ const kIronwoodMigrationContinuePhases = {
   kIronwoodMigrationFailedRecoverablePhase,
 };
 
+/// Phases where the wallet is still shaping the balance into the parts a
+/// migration will move. `ready_to_migrate` is deliberately absent: preparation
+/// has finished by then, and the run is waiting for its next proof window, so
+/// calling it preparation contradicts the batch progress the status screen
+/// shows for the same run.
 const kIronwoodMigrationPreparationPhases = {
   kIronwoodMigrationAwaitingPreparationPhase,
   kIronwoodMigrationAwaitingDenominationSignaturePhase,
   kIronwoodMigrationWaitingDenomConfirmationsPhase,
-  kIronwoodMigrationReadyToMigratePhase,
 };
 
 bool isIronwoodMigrationInProgressPhase(String phase) {

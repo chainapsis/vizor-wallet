@@ -1083,6 +1083,65 @@ void main() {
     },
   );
 
+  testWidgets('stops calling a run that is ready to migrate preparation', (
+    tester,
+  ) async {
+    final status = rust_sync.MigrationStatus(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      activeRunId: 'run-1',
+      targetValuesZatoshi: frb.Uint64List.fromList([500000000, 200000000]),
+      preparedNoteCount: 2,
+      denominationConfirmationCount: 3,
+      denominationConfirmationTarget: 3,
+      denominationSplitCompletedCount: 1,
+      denominationSplitTotalCount: 1,
+      pendingTxCount: 0,
+      broadcastedTxCount: 0,
+      confirmedTxCount: 0,
+      totalCount: 2,
+      signedChildPcztCount: 2,
+      pendingSplitStageCount: 0,
+      canAbandon: false,
+      signingBatchLimit: 50,
+      scheduleMeanDelayBlocks: 144,
+      scheduleMaxDelayBlocks: 576,
+      scheduledBroadcasts: const [],
+      parts: [
+        rust_sync.MigrationPartStatus(
+          partIndex: 0,
+          valueZatoshi: BigInt.from(500000000),
+          state: rust_sync.MigrationPartState.scheduled,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+        rust_sync.MigrationPartStatus(
+          partIndex: 1,
+          valueZatoshi: BigInt.from(200000000),
+          state: rust_sync.MigrationPartState.scheduled,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _app(
+        _syncedState(orchardBalance: BigInt.from(700000000)),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Preparation is done for this run; the status screen already shows batch
+    // progress, so home must not describe it as still preparing.
+    expect(find.text('Preparing migration'), findsNothing);
+    expect(find.text('7 ZEC still migrating'), findsOneWidget);
+  });
+
   testWidgets('uses every incomplete part for the remaining amount', (
     tester,
   ) async {
