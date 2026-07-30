@@ -101,6 +101,24 @@ pub use transactions::{
     get_transaction_detail, get_transaction_history, get_wallet_balance,
     parse_address_request_kind, set_transaction_status, AddressRequestKind,
 };
+
+/// Integration-test hook: hex txids the sync loop's auto-resubmit would
+/// rebroadcast at `current_height`. Lets the Ironwood regtest E2E pin the
+/// eviction-recovery handoff: migration rebroadcast stops once the local
+/// store succeeds, so a stored-but-unmined part must satisfy the
+/// `get_resubmittable_txs` predicate (a self-transfer nets to `-fee`).
+#[doc(hidden)]
+pub fn resubmittable_txids_for_test(
+    db_path: &str,
+    current_height: u32,
+) -> Result<Vec<String>, String> {
+    Ok(
+        transactions::get_resubmittable_txs(db_path, current_height)?
+            .into_iter()
+            .map(|tx| hex::encode(&tx.txid_bytes))
+            .collect(),
+    )
+}
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
     get_export_birthday_anchor, get_oldest_mined_transaction_anchor,

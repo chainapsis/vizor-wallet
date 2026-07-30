@@ -684,26 +684,33 @@ fn pending_migration_policy_rebuild_message(
     Ok(None)
 }
 
-/// Persist accepted-but-unstored migration txs, reconcile confirmations, then
-/// evaluate fee/input policy rebuild. Store must run before retirement so a
-/// lightwalletd-accepted tx is recorded locally before the run goes terminal
-/// and note locks are released. If store retry still leaves gaps, return Err so
-/// callers cannot fall through to rebuild/expiry.
-fn retry_store_then_pending_migration_policy_rebuild_message(
+/// Persist accepted-but-unstored migration txs (and rebroadcast any that stay
+/// missing), reconcile confirmations, then evaluate fee/input policy rebuild.
+/// Store must run before retirement so a lightwalletd-accepted tx is recorded
+/// locally before the run goes terminal and note locks are released. If store
+/// retry still leaves gaps, return Err so callers cannot fall through to
+/// rebuild/expiry — rebroadcast already ran for that recovery window.
+async fn retry_store_then_pending_migration_policy_rebuild_message(
     db_path: &str,
+    lightwalletd_url: &str,
     network: WalletNetwork,
     run_id: &str,
     chain_tip_height: u32,
     pending_password: &[u8],
     pending_salt_base64: &str,
+    policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<Option<String>, String> {
-    let _stored = retry_store_broadcasted_migration_txs_missing_local(
+    retry_store_broadcasted_migration_txs_missing_local(
         db_path,
+        lightwalletd_url,
         network,
         run_id,
+        chain_tip_height,
         pending_password,
         pending_salt_base64,
-    )?;
+        policy,
+    )
+    .await?;
     super::migration::reconcile_run_pending_confirmations(db_path, run_id)?;
     let still_missing = super::migration::broadcasted_pending_txs_missing_local_identity(
         db_path,
@@ -1429,12 +1436,15 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                     if let Some(message) =
                         retry_store_then_pending_migration_policy_rebuild_message(
                             db_path,
+                            lightwalletd_url,
                             network,
                             &run.run_id,
                             chain_tip_height,
                             pending_password.as_slice(),
                             pending_salt_base64,
-                        )?
+                            MigrationBroadcastPolicy::FOREGROUND,
+                        )
+                        .await?
                     {
                         drop(seed);
                         super::migration::retire_run_for_rebuild(
@@ -2216,12 +2226,16 @@ async fn prepare_orchard_migration_outbox(
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
     if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
         db_path,
+        lightwalletd_url,
         network,
         &run.run_id,
         chain_tip_height,
         pending_password,
         pending_salt_base64,
-    )? {
+        MigrationBroadcastPolicy::FOREGROUND,
+    )
+    .await?
+    {
         super::migration::retire_run_for_rebuild(db_path, network, &run.run_id, &message)?;
         let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
         return Ok(migration_result_from_pending_totals(
@@ -4948,18 +4962,23 @@ async fn broadcast_due_scheduled_migration_txs(
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
     // Store accepted-but-unstored rows before fee-policy retirement and before
-    // expiry handling. Policy rebuild would otherwise go terminal and release
-    // locks without recording network-accepted state; expiry flips
-    // `broadcasted` → `needs_resign` and would drop rows out of store-retry.
-    // Unresolved store gaps return Err so callers cannot fall through.
+    // expiry handling (and rebroadcast any that stay missing). Policy rebuild
+    // would otherwise go terminal and release locks without recording
+    // network-accepted state; expiry flips `broadcasted` → `needs_resign` and
+    // would drop rows out of store-retry. Unresolved store gaps return Err so
+    // callers cannot fall through — rebroadcast already ran for that window.
     if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
         db_path,
+        lightwalletd_url,
         network,
         run_id,
         chain_tip_height,
         pending_password,
         pending_salt_base64,
-    )? {
+        policy,
+    )
+    .await?
+    {
         super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
         return Ok(MigrationBroadcastAdvance::without_acceptance(
             migration_result_from_pending_totals(
@@ -5458,30 +5477,137 @@ where
     Ok(None)
 }
 
-/// Retry local wallet storage for network-accepted (`broadcasted`) rows that
-/// still lack `transactions.raw`. Returns how many rows were newly stored.
+/// Minimum tip advance between network rebroadcasts of the same
+/// accepted-but-unstored migration tx. An arbitrary pacing choice
+/// (~25 minutes), not a protocol constant: it only trades recovery
+/// latency against duplicate idempotent sends.
+const MIGRATION_REBROADCAST_MIN_TIP_DELTA: u32 = 20;
+
+/// `(run_id, txid)` -> chain tip at the last rebroadcast attempt made
+/// by this process. In-memory only: it just paces attempts within a
+/// session, while eligibility is anchored to the durable
+/// `scheduled_height`, so recovery survives restarts. Keyed by run as
+/// well as txid so per-run pruning cannot touch another run's entries.
+static MIGRATION_REBROADCAST_LAST_TIP: OnceLock<Mutex<HashMap<(String, String), u32>>> =
+    OnceLock::new();
+
+/// Whether an accepted-but-unstored tx is due for a network rebroadcast.
 ///
-/// On any successful store, clears the run's durable storage-retry
-/// `last_error` so `MigrationStatus.message` changes even though the row
-/// remains `broadcasted`. The coordinator uses that message diff to refresh
-/// home balances after an otherwise status-stable store. Remaining failures
-/// re-stamp `last_error` afterward.
-fn retry_store_broadcasted_migration_txs_missing_local(
+/// Gate 1: `tip >= scheduled_height + MIGRATION_REBROADCAST_MIN_TIP_DELTA`,
+/// read off the pending row so a restart cannot reset it. Gate 2: a full
+/// pacing window since this process last *attempted* the tx. A first
+/// sighting passes gate 2 immediately — seeding the map without sending
+/// would leave short-lived sessions unable to ever reach a send.
+fn migration_rebroadcast_due(
+    run_id: &str,
+    txid_hex: &str,
+    chain_tip_height: u32,
+    scheduled_height: u32,
+) -> bool {
+    if chain_tip_height < scheduled_height.saturating_add(MIGRATION_REBROADCAST_MIN_TIP_DELTA) {
+        return false;
+    }
+    let last_tips = MIGRATION_REBROADCAST_LAST_TIP
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("migration rebroadcast pacing lock poisoned");
+    match last_tips.get(&(run_id.to_string(), txid_hex.to_string())) {
+        Some(&last) => {
+            chain_tip_height >= last.saturating_add(MIGRATION_REBROADCAST_MIN_TIP_DELTA)
+        }
+        None => true,
+    }
+}
+
+/// Arm the session pacing window for `txid_hex`. Call only after
+/// `SendTransaction` actually ran (success or RPC error) — a failed
+/// channel open must not consume the slot and delay recovery by a
+/// full window once connectivity returns.
+fn record_migration_rebroadcast_attempt(run_id: &str, txid_hex: &str, chain_tip_height: u32) {
+    MIGRATION_REBROADCAST_LAST_TIP
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .expect("migration rebroadcast pacing lock poisoned")
+        .insert(
+            (run_id.to_string(), txid_hex.to_string()),
+            chain_tip_height,
+        );
+}
+
+/// Drop this run's pacing entries for txs that left its recovery set,
+/// bounding the map. Scoped to `run_id`: pruning another run's entries
+/// would let two accounts' alternating advances reset each other's
+/// pacing and starve both rebroadcasts.
+fn prune_migration_rebroadcast_pacing(run_id: &str, live_txids: &HashSet<String>) {
+    if let Some(last_tips) = MIGRATION_REBROADCAST_LAST_TIP.get() {
+        last_tips
+            .lock()
+            .expect("migration rebroadcast pacing lock poisoned")
+            .retain(|(entry_run_id, txid), _| entry_run_id != run_id || live_txids.contains(txid));
+    }
+}
+
+/// Recovery pass for `broadcasted` parts that lightwalletd accepted
+/// but the wallet DB does not know about yet. Best-effort and
+/// phase-preserving, in two layers:
+///
+///   1. Retry the local store from the encrypted pending raw. Once it
+///      succeeds, the sync loop's auto-resubmit
+///      (`resubmit_pending_transactions`) owns mempool-eviction
+///      recovery for the tx. (iOS native preparation sync runs with
+///      resubmit disabled; there the handoff waits for a foreground
+///      sync.) On any successful store, clears the run's durable
+///      storage-retry `last_error` so `MigrationStatus.message`
+///      changes even though the row remains `broadcasted` — the
+///      coordinator uses that message diff to refresh home balances.
+///   2. While the store keeps failing, auto-resubmit cannot see the tx
+///      (`raw IS NULL`), so re-send the same signed bytes, paced by
+///      [`migration_rebroadcast_due`]. "Already in mempool/chain" is
+///      soft-accepted; other rejections are logged and ignored — the
+///      network accepted this tx once, never fail the run for a
+///      rebroadcast.
+///
+/// The gRPC channel opens lazily, so the common "store retry
+/// succeeded" path stays network-free. The cancel token is honored
+/// before the query and per row: this pass runs ahead of the caller's
+/// own cancel check, and the account-DB mutation fence relies on it to
+/// quiesce native migration work promptly. Skipping a pass costs
+/// nothing — the next advance repeats it.
+#[allow(clippy::too_many_arguments)]
+async fn retry_store_broadcasted_migration_txs_missing_local(
     db_path: &str,
+    lightwalletd_url: &str,
     network: WalletNetwork,
     run_id: &str,
+    chain_tip_height: u32,
     pending_password: &[u8],
     pending_salt_base64: &str,
-) -> Result<u32, String> {
+    policy: MigrationBroadcastPolicy<'_>,
+) -> Result<(), String> {
+    if policy.is_cancelled() {
+        log::info!("migration: cancel observed before store-retry pass, skipping");
+        return Ok(());
+    }
     let missing = super::migration::broadcasted_pending_txs_missing_local_identity(
         db_path,
         run_id,
         pending_password,
         pending_salt_base64,
     )?;
+    prune_migration_rebroadcast_pacing(
+        run_id,
+        &missing.iter().map(|p| p.txid_hex.clone()).collect(),
+    );
+    let mut client = None;
+    let mut channel_unavailable = false;
+    let mut rebroadcasts_attempted = 0usize;
     let mut stored = 0u32;
     let mut last_failure: Option<String> = None;
     for pending in missing {
+        if policy.is_cancelled() {
+            log::info!("migration: cancel observed mid store-retry pass, stopping");
+            break;
+        }
         match decrypt_and_store_migration_tx(db_path, network, &pending.raw_tx) {
             Ok(()) => {
                 stored = stored.saturating_add(1);
@@ -5489,6 +5615,7 @@ fn retry_store_broadcasted_migration_txs_missing_local(
                     "migration: recorded previously accepted tx {} after local store retry",
                     pending.txid_hex
                 );
+                continue;
             }
             Err(error) => {
                 let message = migration_storage_retry_message(
@@ -5500,6 +5627,54 @@ fn retry_store_broadcasted_migration_txs_missing_local(
                 last_failure = Some(message);
             }
         }
+        // Skips here only disable rebroadcast; store retries keep going.
+        // `policy.limit` caps rebroadcasts per pass without charging the
+        // one-open submission gate.
+        if channel_unavailable
+            || rebroadcasts_attempted >= policy.limit(usize::MAX)
+            || !migration_rebroadcast_due(
+                run_id,
+                &pending.txid_hex,
+                chain_tip_height,
+                pending.scheduled_height,
+            )
+        {
+            continue;
+        }
+        let client = match &mut client {
+            Some(client) => client,
+            None => match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+                Ok(opened) => client.insert(opened),
+                Err(error) => {
+                    // Pacing slot not recorded: next pass may retry at once.
+                    log::warn!(
+                        "migration: rebroadcast channel open failed, will retry next pass: {error}"
+                    );
+                    channel_unavailable = true;
+                    continue;
+                }
+            },
+        };
+        let attempt = broadcast_raw_transaction(client, &pending.raw_tx).await;
+        // Either outcome is a real attempt: arm pacing and spend budget.
+        record_migration_rebroadcast_attempt(run_id, &pending.txid_hex, chain_tip_height);
+        rebroadcasts_attempted += 1;
+        match attempt {
+            Ok(()) => {
+                log::info!(
+                    "migration: rebroadcast accepted-but-unstored tx {} at tip {}",
+                    pending.txid_hex,
+                    chain_tip_height
+                );
+            }
+            Err(error) => {
+                log::warn!(
+                    "migration: rebroadcast of accepted-but-unstored tx {} failed \
+                     (already accepted once, leaving broadcasted): {error}",
+                    pending.txid_hex
+                );
+            }
+        }
     }
     if stored > 0 {
         let phase = super::migration::run_phase(db_path, run_id)?;
@@ -5509,7 +5684,7 @@ fn retry_store_broadcasted_migration_txs_missing_local(
         let phase = super::migration::run_phase(db_path, run_id)?;
         super::migration::mark_run_phase(db_path, run_id, &phase, Some(message))?;
     }
-    Ok(stored)
+    Ok(())
 }
 
 fn migration_result_from_pending_totals(

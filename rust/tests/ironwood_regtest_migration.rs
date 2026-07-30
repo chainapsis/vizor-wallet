@@ -88,6 +88,32 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
     );
     assert!(migration.broadcasted_count > 0);
 
+    // Pin the eviction-recovery handoff: right now at least one migration
+    // part is stored in the wallet DB and unmined — exactly the state in
+    // which mempool-eviction recovery relies on the sync loop's
+    // auto-resubmit seeing the tx. If a self-transfer's
+    // `account_balance_delta` ever fails to net negative (it should be
+    // `-fee`), this assertion catches the silent gap.
+    let tip = u32::try_from(latest_height()).expect("tip must fit u32");
+    let resubmittable = rust_lib_zcash_wallet::wallet::sync::resubmittable_txids_for_test(&db, tip)
+        .expect("query auto-resubmit candidates");
+    let run_txids: std::collections::HashSet<String> = migration
+        .txids
+        .split(',')
+        .filter(|txid| !txid.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect();
+    assert!(
+        // The wallet DB stores txids in raw byte order while migration
+        // results use display (byte-reversed) hex; accept either.
+        resubmittable.iter().any(|raw_hex| {
+            run_txids.contains(&raw_hex.to_ascii_lowercase())
+                || run_txids.contains(&reverse_txid_hex(raw_hex))
+        }),
+        "a stored-but-unmined migration part must match the auto-resubmit \
+         predicate; resubmittable={resubmittable:?}, run txids={run_txids:?}"
+    );
+
     mine_and_sync(&db, TRUSTED_CONFIRMATIONS);
     let status = sync_api::get_orchard_migration_status(
         db.clone(),
@@ -119,6 +145,21 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
         migrated.orchard, 0,
         "the deterministic migration must consume all funded Orchard value"
     );
+}
+
+/// Convert txid hex between raw byte order and display order (the
+/// encoding is its own inverse: reverse the byte pairs).
+fn reverse_txid_hex(txid_hex: &str) -> String {
+    txid_hex
+        .as_bytes()
+        .chunks(2)
+        .rev()
+        .map(|pair| {
+            std::str::from_utf8(pair)
+                .expect("txid hex must be ASCII")
+                .to_ascii_lowercase()
+        })
+        .collect()
 }
 
 fn activation_height() -> u32 {

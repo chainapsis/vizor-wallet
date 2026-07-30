@@ -225,6 +225,15 @@ pub(crate) struct DuePendingMigrationTx {
     pub raw_tx: Vec<u8>,
 }
 
+/// A network-accepted (`broadcasted`) pending row the local wallet DB has no
+/// mined identity for yet. `scheduled_height` lets recovery pace rebroadcasts
+/// without persisting per-attempt state.
+pub(crate) struct BroadcastedPendingMigrationTx {
+    pub txid_hex: String,
+    pub raw_tx: Vec<u8>,
+    pub scheduled_height: u32,
+}
+
 #[derive(Debug)]
 pub(crate) struct MigrationOutboxItem {
     pub item_id: String,
@@ -4520,13 +4529,13 @@ pub(crate) fn broadcasted_pending_txs_missing_local_identity(
     run_id: &str,
     password: &[u8],
     salt_base64: &str,
-) -> Result<Vec<DuePendingMigrationTx>, String> {
+) -> Result<Vec<BroadcastedPendingMigrationTx>, String> {
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, encrypted_raw_tx
+            "SELECT txid_hex, encrypted_raw_tx, scheduled_height
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status = 'broadcasted'
              ORDER BY scheduled_height ASC, txid_hex ASC"
@@ -4534,13 +4543,17 @@ pub(crate) fn broadcasted_pending_txs_missing_local_identity(
         .map_err(|e| format!("Prepare broadcasted migration store-retry query: {e}"))?;
     let rows = stmt
         .query_map(params![run_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
         })
         .map_err(|e| format!("Query broadcasted migration store-retry txs: {e}"))?;
 
     let mut missing = Vec::new();
     for row in rows {
-        let (txid_hex, encrypted_raw_tx) =
+        let (txid_hex, encrypted_raw_tx, scheduled_height) =
             row.map_err(|e| format!("Read broadcasted migration store-retry tx: {e}"))?;
         // Skip once local wallet storage has the raw bytes. Mined identity is
         // not required — store-retry is about persist, not confirmation.
@@ -4552,9 +4565,10 @@ pub(crate) fn broadcasted_pending_txs_missing_local_identity(
             password,
             salt.as_slice(),
         )?;
-        missing.push(DuePendingMigrationTx {
+        missing.push(BroadcastedPendingMigrationTx {
             txid_hex,
             raw_tx: raw_tx.to_vec(),
+            scheduled_height,
         });
     }
     Ok(missing)

@@ -2643,3 +2643,300 @@ fn prefers_non_ephemeral_sources_over_ephemeral_sources() {
     assert_eq!(addresses, vec![taddr(2)]);
     assert_eq!(u64::from(total), 120_000);
 }
+
+#[test]
+fn migration_rebroadcast_waits_for_quiet_blocks_after_scheduled_height() {
+    // Distinct txid per test keeps this independent of other tests
+    // sharing the process-wide pacing map.
+    let run_id = "rebroadcast-scheduled-gate-test-run";
+    let txid = "rebroadcast-scheduled-gate-test-tx";
+    prune_migration_rebroadcast_pacing(run_id, &std::collections::HashSet::new());
+    let scheduled = 1_000;
+
+    // Inside the quiet window after the scheduled height the tx was
+    // submitted too recently to be treated as evicted.
+    assert!(!migration_rebroadcast_due(
+        run_id, txid, scheduled, scheduled
+    ));
+    assert!(!migration_rebroadcast_due(
+        run_id,
+        txid,
+        scheduled + MIGRATION_REBROADCAST_MIN_TIP_DELTA - 1,
+        scheduled
+    ));
+
+    // The window is measured from `scheduled_height`, not from the first
+    // sighting, so the first pass that observes a sufficiently old row
+    // sends immediately — including the first pass after a restart.
+    assert!(migration_rebroadcast_due(
+        run_id,
+        txid,
+        scheduled + MIGRATION_REBROADCAST_MIN_TIP_DELTA,
+        scheduled
+    ));
+}
+
+#[test]
+fn migration_rebroadcast_paces_attempts_within_a_session() {
+    let run_id = "rebroadcast-session-pacing-test-run";
+    let txid = "rebroadcast-session-pacing-test-tx";
+    prune_migration_rebroadcast_pacing(run_id, &std::collections::HashSet::new());
+    // Long overdue relative to its schedule: the durable gate is open on
+    // every call, so only the in-session pacing map limits attempts.
+    let scheduled = 1_000;
+    let first_tip = scheduled + 5_000;
+
+    assert!(migration_rebroadcast_due(
+        run_id, txid, first_tip, scheduled
+    ));
+    // The due check is read-only: until an attempt is recorded, a
+    // channel-open failure (which records nothing) must not burn the
+    // slot — the same tip stays due.
+    assert!(migration_rebroadcast_due(
+        run_id, txid, first_tip, scheduled
+    ));
+    record_migration_rebroadcast_attempt(run_id, txid, first_tip);
+    // Same tip, and mid-window: the advance loop runs far more often
+    // than once per quiet window, so these must not re-send.
+    assert!(!migration_rebroadcast_due(
+        run_id, txid, first_tip, scheduled
+    ));
+    assert!(!migration_rebroadcast_due(
+        run_id,
+        txid,
+        first_tip + MIGRATION_REBROADCAST_MIN_TIP_DELTA - 1,
+        scheduled
+    ));
+    // A full window of tip advance re-arms it.
+    assert!(migration_rebroadcast_due(
+        run_id,
+        txid,
+        first_tip + MIGRATION_REBROADCAST_MIN_TIP_DELTA,
+        scheduled
+    ));
+
+    // Pruning forgets the in-session pacing, but the durable gate still
+    // applies, so a forgotten txid cannot burst-send below its window.
+    prune_migration_rebroadcast_pacing(run_id, &std::collections::HashSet::new());
+    record_migration_rebroadcast_attempt(run_id, txid, first_tip);
+    prune_migration_rebroadcast_pacing(run_id, &std::collections::HashSet::new());
+    assert!(migration_rebroadcast_due(
+        run_id, txid, first_tip, scheduled
+    ));
+    assert!(!migration_rebroadcast_due(
+        run_id,
+        txid,
+        scheduled + 1,
+        scheduled
+    ));
+}
+
+#[test]
+fn migration_rebroadcast_pruning_is_scoped_to_the_pruning_run() {
+    // Two accounts can hold active migration runs in the same wallet DB,
+    // and their advance passes interleave. Run A's prune must not evict
+    // run B's pacing entry, or alternating passes would reset each
+    // other's pacing forever and starve both rebroadcasts.
+    let run_a = "rebroadcast-cross-run-prune-run-a";
+    let run_b = "rebroadcast-cross-run-prune-run-b";
+    let txid_a = "rebroadcast-cross-run-prune-tx-a";
+    let txid_b = "rebroadcast-cross-run-prune-tx-b";
+    prune_migration_rebroadcast_pacing(run_a, &std::collections::HashSet::new());
+    prune_migration_rebroadcast_pacing(run_b, &std::collections::HashSet::new());
+    let scheduled = 1_000;
+    let tip = scheduled + 5_000;
+
+    // B attempts, then A's pass prunes with a live set that does not
+    // contain B's txid (it never could — live sets are per-run).
+    assert!(migration_rebroadcast_due(run_b, txid_b, tip, scheduled));
+    record_migration_rebroadcast_attempt(run_b, txid_b, tip);
+    prune_migration_rebroadcast_pacing(run_a, &[txid_a.to_string()].into());
+
+    // B's pacing entry must have survived A's prune: mid-window calls
+    // stay suppressed instead of re-sending on every alternating pass.
+    assert!(!migration_rebroadcast_due(run_b, txid_b, tip, scheduled));
+
+    // B's own prune still forgets its entry once the tx leaves the
+    // recovery set.
+    prune_migration_rebroadcast_pacing(run_b, &std::collections::HashSet::new());
+    assert!(migration_rebroadcast_due(run_b, txid_b, tip, scheduled));
+}
+
+/// Build a run holding one `broadcasted` part whose local store never
+/// succeeded — the state
+/// `retry_store_broadcasted_migration_txs_missing_local` exists to
+/// recover from. Returns `(temp_dir, db_path, run_id)`; the caller must
+/// keep `temp_dir` alive.
+fn broadcasted_but_unstored_migration_run() -> (tempfile::TempDir, String, String) {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let denomination_input_txid =
+        "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f";
+    let selected_note_txid = "101112131415161718191a1b1c1d1e1f000102030405060708090a0b0c0d0e0f";
+    let pending_txid = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+    let selected_note = migration_test_note(selected_note_txid);
+    let plan = migration_test_plan();
+    let run_id = migration::create_run_with_staged_denominations_and_signed_children(
+        &db_path,
+        MIGRATION_TEST_ACCOUNT,
+        WalletNetwork::Test,
+        &plan,
+        std::slice::from_ref(&selected_note),
+        Vec::new(),
+        vec![migration_test_stage(
+            denomination_input_txid,
+            selected_note_txid,
+        )],
+        None,
+        migration::PreparationTimingPolicy::Immediate,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    migration::insert_pending_txs(
+        &db_path,
+        &run_id,
+        vec![migration::PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: pending_txid.to_string(),
+            raw_tx: vec![5, 6, 7, 8],
+            target_height: 100,
+            anchor_boundary_height: None,
+            expiry_height: 69_120,
+            scheduled_height: MIGRATION_CANCEL_TEST_SCHEDULED_HEIGHT,
+            value_zatoshi: 100_000,
+            fee_zatoshi: 10_000,
+            selected_note: selected_note.clone(),
+            metadata: migration::PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: MIGRATION_TEST_ACCOUNT.to_string(),
+                selected_note,
+            },
+        }],
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    // Accept on the network, fail the local store: leaves the row
+    // `broadcasted` with nothing in the wallet DB.
+    record_accepted_scheduled_migration_tx(
+        &db_path,
+        WalletNetwork::Test,
+        &run_id,
+        &migration::DuePendingMigrationTx {
+            txid_hex: pending_txid.to_string(),
+            raw_tx: vec![5, 6, 7, 8],
+        },
+        1,
+        100_000,
+        |_db_path, _network, _raw_tx| Err("db busy".to_string()),
+    )
+    .unwrap()
+    .unwrap();
+    (temp_dir, db_path, run_id)
+}
+
+const MIGRATION_CANCEL_TEST_SCHEDULED_HEIGHT: u32 = 100;
+const MIGRATION_CANCEL_TEST_SENTINEL: &str = "sentinel: recovery pass has not run";
+
+fn migration_run_last_error(db_path: &str) -> Option<String> {
+    migration::active_migration_run(db_path, MIGRATION_TEST_ACCOUNT, WalletNetwork::Test)
+        .unwrap()
+        .unwrap()
+        .last_error
+}
+
+/// Overwrite `last_error` with a sentinel so a later assertion can tell
+/// "the recovery pass did no work" from "the pass ran and re-reported the
+/// storage-retry message".
+fn arm_migration_recovery_sentinel(db_path: &str, run_id: &str) {
+    let phase = migration::run_phase(db_path, run_id).unwrap();
+    migration::mark_run_phase(
+        db_path,
+        run_id,
+        &phase,
+        Some(MIGRATION_CANCEL_TEST_SENTINEL),
+    )
+    .unwrap();
+    assert_eq!(
+        migration_run_last_error(db_path).as_deref(),
+        Some(MIGRATION_CANCEL_TEST_SENTINEL)
+    );
+}
+
+#[tokio::test]
+async fn store_retry_pass_skips_every_row_when_preparation_is_cancelled() {
+    // This pass runs ahead of the caller's own `policy.is_cancelled()`
+    // early return, so it must honor the token itself: the account-DB
+    // mutation fence and the lock path both quiesce native migration work
+    // through cancellation, and a pass that ignored it would still open a
+    // channel and broadcast after the operation was told to stop.
+    let (_temp_dir, db_path, run_id) = broadcasted_but_unstored_migration_run();
+    arm_migration_recovery_sentinel(&db_path, &run_id);
+
+    let cancel = std::sync::atomic::AtomicBool::new(true);
+    // A tip below `scheduled_height + MIGRATION_REBROADCAST_MIN_TIP_DELTA`
+    // keeps the rebroadcast gate shut, so this test can never reach the
+    // network even if the cancel check regresses — the store retry's
+    // `last_error` write is the observable.
+    retry_store_broadcasted_migration_txs_missing_local(
+        &db_path,
+        "http://127.0.0.1:1",
+        WalletNetwork::Test,
+        &run_id,
+        MIGRATION_CANCEL_TEST_SCHEDULED_HEIGHT,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+        MigrationBroadcastPolicy::background_preparation(&cancel),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        migration_run_last_error(&db_path).as_deref(),
+        Some(MIGRATION_CANCEL_TEST_SENTINEL),
+        "a cancelled pass must not retry the local store"
+    );
+}
+
+#[tokio::test]
+async fn store_retry_pass_runs_when_preparation_is_not_cancelled() {
+    // Companion to the cancelled case: proves the assertion above is
+    // detecting cancellation rather than a fixture that never does work.
+    let (_temp_dir, db_path, run_id) = broadcasted_but_unstored_migration_run();
+    arm_migration_recovery_sentinel(&db_path, &run_id);
+
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    retry_store_broadcasted_migration_txs_missing_local(
+        &db_path,
+        "http://127.0.0.1:1",
+        WalletNetwork::Test,
+        &run_id,
+        MIGRATION_CANCEL_TEST_SCHEDULED_HEIGHT,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+        MigrationBroadcastPolicy::background_preparation(&cancel),
+    )
+    .await
+    .unwrap();
+
+    // The fixture's raw bytes are not a decodable transaction, so the
+    // store retry fails and replaces the sentinel with the storage-retry
+    // message. The row stays `broadcasted` either way.
+    let last_error = migration_run_last_error(&db_path).unwrap();
+    assert_ne!(
+        last_error, MIGRATION_CANCEL_TEST_SENTINEL,
+        "an active pass must retry the local store"
+    );
+    assert!(
+        last_error.contains("accepted by lightwalletd"),
+        "unexpected recovery message: {last_error}"
+    );
+    assert_eq!(
+        migration::pending_totals_for_run(&db_path, &run_id)
+            .unwrap()
+            .broadcasted_count,
+        1
+    );
+}
