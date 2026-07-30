@@ -1555,6 +1555,87 @@ fn noncanonical_broadcast_height_promotes_locally_mined_scheduled_part_instead_o
 }
 
 #[test]
+fn noncanonical_recovery_observes_identity_committed_under_contended_write_lock() {
+    // Prototype coverage for atomic reconcile+resign: a sync-like writer that
+    // commits chain identity while holding the DB write lock must be visible to
+    // recovery once that lock is released. IMMEDIATE serialization is what
+    // closes the old separate-connection TOCTOU window.
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    use std::time::Duration;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "noncanonical-lock",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'noncanonical-lock'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let tip = 34_560u32;
+    let barrier = Arc::new(Barrier::new(2));
+    let holder = {
+        let db_path = db_path.clone();
+        let txid = txids[0].clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+            conn.execute_batch("BEGIN IMMEDIATE")
+                .expect("sync-like writer must take the write lock");
+            barrier.wait();
+            // Keep the lock long enough for recovery's IMMEDIATE begin to block.
+            thread::sleep(Duration::from_millis(50));
+            insert_test_mined_txid(&conn, &txid, 34_559);
+            conn.execute_batch("COMMIT")
+                .expect("sync-like writer must commit mined identity");
+        })
+    };
+    let recovery = {
+        let db_path = db_path.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+                &db_path,
+                "noncanonical-lock",
+                tip,
+            )
+        })
+    };
+
+    holder.join().expect("sync-like writer thread");
+    let affected = recovery
+        .join()
+        .expect("recovery thread")
+        .expect("noncanonical recovery under lock contention");
+    assert_eq!(
+        affected, 1,
+        "unmined sibling must still require resign after contended promote"
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "needs_resign");
+}
+
+#[test]
 fn incremental_child_promotion_uses_immutable_signed_schedule_origin() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
