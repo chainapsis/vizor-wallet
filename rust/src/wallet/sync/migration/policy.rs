@@ -67,7 +67,7 @@ pub(crate) fn configured_timing_policy(network: WalletNetwork) -> MigrationTimin
     } else if network == WalletNetwork::Regtest {
         MigrationTimingPolicy::Standard
     } else {
-        MigrationTimingPolicy::Standard90MinutesLatestAnchor
+        MigrationTimingPolicy::Standard90Minutes
     }
 }
 

@@ -366,8 +366,8 @@ fn private_plan_timing_accounts_for_spaced_preparation_transactions() {
     )
     .unwrap();
 
-    assert_eq!(immediate, (0, Some(1010)));
-    assert_eq!(spaced, (144, Some(1154)));
+    assert_eq!(immediate, (144, Some(1154)));
+    assert_eq!(spaced, (288, Some(1298)));
 }
 
 #[test]
@@ -393,8 +393,8 @@ fn private_plan_timing_uses_direct_note_mined_height_without_split_layers() {
     )
     .unwrap();
 
-    assert_eq!(waiting, (0, Some(1010)));
-    assert_eq!(already_ready, (0, Some(722)));
+    assert_eq!(waiting, (144, Some(1154)));
+    assert_eq!(already_ready, (0, Some(866)));
 }
 
 #[test]

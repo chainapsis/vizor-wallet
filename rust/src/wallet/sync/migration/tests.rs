@@ -1511,7 +1511,7 @@ fn planner_accepts_only_zip318_one_two_five_denominations() {
 }
 
 #[test]
-fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries() {
+fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
     assert_eq!(ZIP318_ANCHOR_AGE_CAP, 4);
 
     assert_eq!(
@@ -1529,15 +1529,15 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
 
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000),
-        vec![5616, 5472, 5328, 5184, 5040]
+        vec![5472, 5328, 5184, 5040]
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5600, 5000),
-        vec![5616]
+        Vec::<u32>::new()
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5900, 5600, 5000),
-        vec![5760, 5616]
+        vec![5616]
     );
 
     assert!(zip318_anchor_boundary_is_candidate(
@@ -1547,7 +1547,7 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
         5000,
         5000
     ));
-    assert!(zip318_anchor_boundary_is_candidate(
+    assert!(!zip318_anchor_boundary_is_candidate(
         WalletNetwork::Test,
         5616,
         5700,
@@ -1557,12 +1557,12 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
     assert_eq!(
         zip318_anchor_candidate_boundaries_with_policy(
             WalletNetwork::Test,
-            MigrationTimingPolicy::Standard,
+            MigrationTimingPolicy::Standard90MinutesLatestAnchor,
             5700,
             5000,
             5000,
         ),
-        vec![5472, 5328, 5184, 5040]
+        vec![5616, 5472, 5328, 5184, 5040]
     );
     assert!(!zip318_anchor_boundary_is_candidate(
         WalletNetwork::Test,
@@ -1582,8 +1582,11 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
     let latest_boundary = ZIP318_ANCHOR_BUCKET_MODULUS * (ZIP318_ANCHOR_AGE_CAP.saturating_add(2));
     let capped_candidates =
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, latest_boundary, 1, 0);
-    assert_eq!(capped_candidates.len(), ZIP318_ANCHOR_AGE_CAP as usize + 1);
-    assert_eq!(capped_candidates.first(), Some(&latest_boundary));
+    assert_eq!(capped_candidates.len(), ZIP318_ANCHOR_AGE_CAP as usize);
+    assert_eq!(
+        capped_candidates.first(),
+        Some(&(latest_boundary - ZIP318_ANCHOR_BUCKET_MODULUS))
+    );
     assert_eq!(
         capped_candidates.last(),
         Some(&(latest_boundary - ZIP318_ANCHOR_BUCKET_MODULUS * ZIP318_ANCHOR_AGE_CAP))
@@ -1650,11 +1653,11 @@ fn proof_retry_waits_until_the_next_boundary_is_trusted() {
 fn proof_readiness_ages_the_boundary_containing_the_prepared_note() {
     assert_eq!(
         estimated_proof_ready_height(WalletNetwork::Main, 142).unwrap(),
-        146
+        290
     );
     assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Main, 142).unwrap(),
-        2
+        146
     );
     assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Regtest, 10).unwrap(),
@@ -1701,7 +1704,7 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
     }
     assert_eq!(
         zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5600, 5000),
-        Some(5616)
+        None
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Regtest, 503, 501, 500)[0],
@@ -2759,7 +2762,7 @@ fn mainnet_run_reads_its_persisted_timing_policy() {
 }
 
 #[test]
-fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
+fn new_mainnet_draft_persists_ninety_minute_policy() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -2781,7 +2784,7 @@ fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
 
     assert_eq!(
         timing_policy_for_run(&db_path, &run_id, WalletNetwork::Main).unwrap(),
-        MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+        MigrationTimingPolicy::Standard90Minutes,
     );
 }
 
@@ -2959,7 +2962,7 @@ fn fast_testnet_adoption_preserves_signed_preparation_schedule() {
 }
 
 #[test]
-fn configured_latest_anchor_policy_does_not_retime_existing_runs() {
+fn configured_timing_policy_does_not_retime_existing_runs() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     for (account_uuid, run_id, timing_policy, retry_height) in [
