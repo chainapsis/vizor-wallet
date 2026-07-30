@@ -2565,6 +2565,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      FlutterError.onError = originalOnError;
 
       expect(
         flutterErrors.where(
@@ -3753,6 +3754,77 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Transaction 3'), findsOneWidget);
   });
+
+  testWidgets(
+    'preparation schedule summary grows with accessibility text scaling',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final flutterErrors = <FlutterErrorDetails>[];
+      final originalOnError = FlutterError.onError;
+      FlutterError.onError = flutterErrors.add;
+      addTearDown(() => FlutterError.onError = originalOnError);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        preparationMeanDelayBlocks: 24,
+        preparationTransactions: [
+          _preparationTransaction(
+            0,
+            500_000_000,
+            rust_sync.MigrationPreparationTransactionState.scheduled,
+            scheduledHeight: 1_010,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          initialLocation: '/migration/private/preparation-schedule',
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 1_000,
+            chainTipHeight: 1_000,
+          ),
+          disableAnimations: true,
+          textScaler: const TextScaler.linear(1.5),
+        ),
+      );
+      await tester.pumpAndSettle();
+      FlutterError.onError = originalOnError;
+
+      expect(
+        flutterErrors.where(
+          (details) => details.toString().contains('schedule.dart'),
+        ),
+        isEmpty,
+      );
+      final summary = find.byKey(
+        const ValueKey('ironwood_migration_preparation_schedule_summary'),
+      );
+      final scheduleList = find.byKey(
+        const ValueKey('ironwood_migration_preparation_schedule_list'),
+      );
+      final summaryRect = tester.getRect(summary);
+      expect(summaryRect.height, greaterThan(104));
+      expect(
+        tester.getRect(find.text('Current block')).bottom,
+        lessThanOrEqualTo(summaryRect.bottom),
+      );
+      expect(
+        tester.getRect(scheduleList).top,
+        greaterThanOrEqualTo(summaryRect.bottom + 12),
+      );
+    },
+  );
 
   testWidgets('migration schedule stops before opening the Immediate review', (
     tester,

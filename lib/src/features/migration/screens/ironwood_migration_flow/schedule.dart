@@ -773,17 +773,18 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: SizedBox(
+            child: ConstrainedBox(
               key: const ValueKey(
                 'ironwood_migration_preparation_schedule_summary',
               ),
-              height: 104,
+              constraints: const BoxConstraints(minHeight: 104),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 12,
                 ),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     _MigrationSummaryMetric(
                       label: 'Current round',

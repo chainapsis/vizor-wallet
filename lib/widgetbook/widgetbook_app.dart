@@ -363,6 +363,11 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildIronwoodMigrationPreparationScheduleUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Preparation schedule · Large text',
+                      builder:
+                          buildIronwoodMigrationPreparationScheduleLargeTextUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Migration schedule',
                       builder: buildIronwoodMigrationScheduleUseCase,
                     ),
