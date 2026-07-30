@@ -598,15 +598,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   StreamSubscription? _mempoolSub;
   bool _mempoolRefreshInFlight = false;
   bool _mempoolRefreshQueued = false;
-  // Single-flight for balance/history refreshes. Every trigger (account
-  // switch, unlock, resume, mempool, sync completion, recovery) funnels
-  // through `_requestBalanceRefresh`, so overlapping triggers cannot each
-  // pay for a full `getBalance` + `getTransactionHistory` pass.
-  //
-  // Trailing, not just joining: a request that arrives mid-flight queues
-  // one more pass instead of adopting the in-flight result, because that
-  // result may have been read before the event that triggered it (a send,
-  // say). Callers still await data that reflects their trigger.
+  // Coalesce balance/history refreshes through `_requestBalanceRefresh`.
+  // Mid-flight requests queue one trailing pass so callers don't adopt a
+  // stale in-flight result.
   bool _balanceRefreshInFlight = false;
   bool _balanceRefreshQueued = false;
   bool _balanceRefreshQueuedReleaseSnapshot = false;
