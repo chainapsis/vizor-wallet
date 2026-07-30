@@ -659,7 +659,8 @@ fn pending_migration_policy_rebuild_message(
 /// Persist accepted-but-unstored migration txs, reconcile confirmations, then
 /// evaluate fee/input policy rebuild. Store must run before retirement so a
 /// lightwalletd-accepted tx is recorded locally before the run goes terminal
-/// and note locks are released.
+/// and note locks are released. If store retry still leaves gaps, return Err so
+/// callers cannot fall through to rebuild/expiry.
 fn retry_store_then_pending_migration_policy_rebuild_message(
     db_path: &str,
     network: WalletNetwork,
@@ -676,6 +677,18 @@ fn retry_store_then_pending_migration_policy_rebuild_message(
         pending_salt_base64,
     )?;
     super::migration::reconcile_run_pending_confirmations(db_path, run_id)?;
+    let still_missing = super::migration::broadcasted_pending_txs_missing_local_identity(
+        db_path,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?
+    .len();
+    if still_missing > 0 {
+        return Err(format!(
+            "{still_missing} accepted migration transaction(s) are still missing from local wallet storage. Vizor will retry until local state is recorded."
+        ));
+    }
     pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)
 }
 
@@ -4832,6 +4845,7 @@ async fn broadcast_due_scheduled_migration_txs(
     // expiry handling. Policy rebuild would otherwise go terminal and release
     // locks without recording network-accepted state; expiry flips
     // `broadcasted` → `needs_resign` and would drop rows out of store-retry.
+    // Unresolved store gaps return Err so callers cannot fall through.
     if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
         db_path,
         network,
