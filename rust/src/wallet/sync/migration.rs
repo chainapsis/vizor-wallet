@@ -2980,7 +2980,11 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
     }
 
     if !invalid_stages.is_empty() || !identities_to_record.is_empty() {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        // This reconciliation records canonical-chain identities and commits
+        // stage resets, so it must tolerate the foreground scanner finishing
+        // a concurrent wallet write. The read timeout can expire first on
+        // mobile and strand an otherwise completed preparation run.
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| format!("Begin denomination chain-state reconciliation: {e}"))?;
