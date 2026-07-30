@@ -13,15 +13,13 @@
 //!     the wallet imports or derives a new t-address and has to
 //!     backfill its activity).
 //!
-//! Librustzcash signals these gaps by populating
-//! `db.transaction_data_requests()`. This module normally drains the queue
-//! against lightwalletd via `GetTransaction` and
-//! `TransactionsInvolvingAddress`. Locally created, locally complete,
-//! expiring transactions whose wallet-owned shielded activity can be found by
-//! compact-block scanning are serviced from local state instead. The loop
-//! retries up to three times because servicing one request can legally
-//! populate new requests (e.g. a newly-decrypted transaction may reveal
-//! additional parent transactions to enhance).
+//! Librustzcash signals these gaps through `db.transaction_data_requests()`.
+//! Missing transaction data and transparent history normally come from
+//! lightwalletd. Status requests with local evidence are handled without a
+//! transaction-specific server lookup: recovery waits for compact scanning to
+//! restore a prior mined height, while locally created transactions stay local
+//! until scanning mines them or passes their expiry. The loop retries up to
+//! three times because servicing one request can populate another.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -35,7 +33,7 @@ use zcash_client_backend::{
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
@@ -51,8 +49,9 @@ const SAPLING_POOL_CODE: i64 = 2;
 const ORCHARD_POOL_CODE: i64 = 3;
 const IRONWOOD_POOL_CODE: i64 = 4;
 
-/// Drains `db.transaction_data_requests()` against lightwalletd until
-/// the queue is empty or no request is actionable. Returns
+/// Services `db.transaction_data_requests()` against lightwalletd until
+/// the queue is empty or no request is actionable. Status-only requests
+/// in `deferred_status_txids` remain queued for compact scanning. Returns
 /// `SyncError::Db` if `db.transaction_data_requests()` itself fails.
 /// Per-request failures are split by semantics: an explicit
 /// "txid not recognized" response is recorded via
@@ -64,6 +63,7 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    deferred_status_txids: &HashSet<Vec<u8>>,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
 
@@ -79,12 +79,9 @@ pub(super) async fn run_enhancement(
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests.iter().any(|r| match r {
-            TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
-            TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-                req.block_range_end().is_some()
-            }
-        });
+        let actionable = requests
+            .iter()
+            .any(|request| request_is_actionable(request, deferred_status_txids));
         if !actionable {
             break;
         }
@@ -94,8 +91,27 @@ pub(super) async fn run_enhancement(
         for req in &requests {
             match req {
                 TransactionDataRequest::GetStatus(txid)
+                    if deferred_status_txids.contains(txid.as_ref().as_slice()) =>
+                {
+                    continue
+                }
+                TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
+
+                    if matches!(req, TransactionDataRequest::GetStatus(_)) {
+                        match resolve_status_from_scanned_height(db, *txid) {
+                            Ok(true) => {
+                                serviced_any = true;
+                                continue;
+                            }
+                            Ok(false) => {}
+                            Err(e) => log::error!(
+                                "sync: could not resolve transaction status locally: {e}"
+                            ),
+                        }
+                    }
+
                     if let Some(local) = locally_created_transaction(db_path, *txid)? {
                         match req {
                             TransactionDataRequest::Enhancement(_) => {
@@ -402,6 +418,51 @@ fn local_transaction_status(
     }
 }
 
+/// Whether servicing `request` can make progress right now: full-data
+/// enhancements always can, status-only requests unless their transaction is
+/// deferred for compact scanning, and address-scoped requests only when they
+/// carry a bounded block range.
+fn request_is_actionable(
+    request: &TransactionDataRequest,
+    deferred_status_txids: &HashSet<Vec<u8>>,
+) -> bool {
+    match request {
+        TransactionDataRequest::Enhancement(_) => true,
+        TransactionDataRequest::GetStatus(txid) => {
+            !deferred_status_txids.contains(txid.as_ref().as_slice())
+        }
+        TransactionDataRequest::TransactionsInvolvingAddress(req) => {
+            req.block_range_end().is_some()
+        }
+    }
+}
+
+/// Resolves a `GetStatus` request locally when the wallet DB already records
+/// a mined height for `txid` (restored by compact scanning), re-asserting
+/// `TransactionStatus::Mined` — which also dequeues the request — without
+/// downloading the transaction. Returns `Ok(false)` when the height is
+/// unknown and the caller must query lightwalletd.
+fn resolve_status_from_scanned_height(
+    db: &mut WalletDatabase,
+    txid: TxId,
+) -> Result<bool, SyncError> {
+    let Some(mined_height) = db
+        .get_tx_height(txid)
+        .map_err(|e| SyncError::db(format!("get transaction height: {e}")))?
+    else {
+        return Ok(false);
+    };
+
+    with_wallet_db_write_lock(
+        "sync_engine.enhance.set_known_mined_transaction_status",
+        || {
+            db.set_transaction_status(txid, TransactionStatus::Mined(mined_height))
+                .map_err(|e| SyncError::db(format!("set known mined transaction status: {e}")))
+        },
+    )?;
+    Ok(true)
+}
+
 async fn fill_missing_transparent_fee(
     client: &mut CompactTxStreamerClient<Channel>,
     db_path: &str,
@@ -586,6 +647,51 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Builds a real migrated wallet DB containing one transaction with a
+    /// known mined height plus an explicit status-type retrieval-queue entry
+    /// for it, mirroring the post-recovery state `resolve_status_from_scanned_height`
+    /// services.
+    fn status_recovery_test_db(
+        txid: TxId,
+        mined_height: BlockHeight,
+    ) -> (tempfile::NamedTempFile, WalletDatabase) {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            db_path,
+            WalletNetwork::Regtest,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        zcash_client_sqlite::wallet::init::init_wallet_db(&mut db, None).unwrap();
+        db.update_chain_tip(mined_height + 10).unwrap();
+        drop(db);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT INTO transactions
+                (txid, mined_height, raw, min_observed_height)
+             VALUES (?1, ?2, X'00', ?2)",
+            rusqlite::params![txid.as_ref(), u32::from(mined_height)],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tx_retrieval_queue (txid, query_type)
+             VALUES (?1, 0)",
+            rusqlite::params![txid.as_ref()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let db = crate::wallet::db::open_wallet_db_with_timeout(
+            db_path,
+            WalletNetwork::Regtest,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        (file, db)
+    }
 
     fn transparent_fee_test_tx() -> Transaction {
         let tx_bytes = hex::decode(
@@ -829,9 +935,44 @@ mod tests {
 
         let channel = Channel::from_static("http://127.0.0.1:9").connect_lazy();
         let mut client = CompactTxStreamerClient::new(channel);
-        run_enhancement(&mut client, &mut db, db_path, network)
+        run_enhancement(&mut client, &mut db, db_path, network, &HashSet::new())
             .await
             .unwrap();
+    }
+
+    #[test]
+    fn deferred_status_requests_do_not_block_full_data_enhancement() {
+        let deferred = HashSet::from([vec![1; 32]]);
+        assert!(!request_is_actionable(
+            &TransactionDataRequest::GetStatus(TxId::from_bytes([1; 32])),
+            &deferred,
+        ));
+        assert!(request_is_actionable(
+            &TransactionDataRequest::GetStatus(TxId::from_bytes([2; 32])),
+            &deferred,
+        ));
+        assert!(request_is_actionable(
+            &TransactionDataRequest::Enhancement(TxId::from_bytes([1; 32])),
+            &deferred,
+        ));
+    }
+
+    #[test]
+    fn scanned_height_resolves_status_without_transaction_download() {
+        let txid = TxId::from_bytes([3; 32]);
+        let mined_height = BlockHeight::from_u32(500);
+        let (_file, mut db) = status_recovery_test_db(txid, mined_height);
+
+        assert!(db
+            .transaction_data_requests()
+            .unwrap()
+            .contains(&TransactionDataRequest::GetStatus(txid)));
+        assert!(resolve_status_from_scanned_height(&mut db, txid).unwrap());
+        assert!(!db
+            .transaction_data_requests()
+            .unwrap()
+            .contains(&TransactionDataRequest::GetStatus(txid)));
+        assert_eq!(db.get_tx_height(txid).unwrap(), Some(mined_height));
     }
 
     #[test]

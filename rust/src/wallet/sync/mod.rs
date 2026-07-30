@@ -102,8 +102,9 @@ pub use transactions::{
 };
 #[allow(unused_imports)] // ditto
 pub(crate) use transactions::{
-    get_export_birthday_anchor, get_oldest_mined_transaction_anchor, ExportBirthdayAnchor,
-    TransactionDetail, TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
+    get_export_birthday_anchor, get_oldest_mined_transaction_anchor,
+    get_unmined_txids_with_mined_output_evidence, ExportBirthdayAnchor, TransactionDetail,
+    TransactionDetailOutput, TransactionInfo, TxDataRequest, WalletBalance,
     WalletBalanceAvailability,
 };
 

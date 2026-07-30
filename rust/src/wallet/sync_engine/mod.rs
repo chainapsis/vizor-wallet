@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -211,6 +211,18 @@ fn target_percentage_after_blocks(initial_total: u64, remaining: u64, blocks: u6
 
 fn is_pending_scan_range(range: &ScanRange) -> bool {
     range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
+}
+
+fn deferred_status_txids(
+    db_path: &str,
+    ranges: &[ScanRange],
+) -> Result<HashSet<Vec<u8>>, SyncError> {
+    if ranges.iter().any(is_pending_scan_range) {
+        crate::wallet::sync::get_unmined_txids_with_mined_output_evidence(db_path)
+            .map_err(SyncError::db)
+    } else {
+        Ok(HashSet::new())
+    }
 }
 
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
@@ -1402,8 +1414,8 @@ async fn run_sync_impl(
 
     refresh_utxos(&mut client, db_data_path, &mut db, network, tip_height).await?;
 
-    // 2.5. Resubmit any unmined, unexpired wallet txs now that we
-    // know the current tip. Matches the first of the three
+    // 2.5. Resubmit eligible unmined wallet txs now that we know the
+    // current tip. Matches the first of the three
     // resubmit call sites in zcash-android-wallet-sdk's
     // `processNewBlocks` (line 551). Best-effort: failures are
     // logged inside the helper and must not abort the sync.
@@ -1424,10 +1436,15 @@ async fn run_sync_impl(
             elapsed(),
         );
     } else {
+        let startup_ranges = db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+        let startup_deferred_status_txids = deferred_status_txids(db_data_path, &startup_ranges)?;
         let _ = crate::wallet::sync::resubmit_pending_transactions(
             db_data_path,
             &mut client,
             tip.height as u32,
+            &startup_deferred_status_txids,
             || {
                 cancel.load(Ordering::Relaxed)
                     || desired_mode.load(Ordering::SeqCst) != running_mode
@@ -2044,8 +2061,24 @@ async fn run_sync_impl(
             return Ok(());
         }
 
+        // Truncation can temporarily clear a transaction's mined height while
+        // retaining note positions that prove compact scanning found it mined.
+        // Let scanning restore those statuses without blocking normal pending
+        // transaction lookups.
+        let post_scan_ranges = db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+        let deferred_status_txids = deferred_status_txids(db_data_path, &post_scan_ranges)?;
+
         // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+        run_enhancement(
+            &mut client,
+            &mut db,
+            db_data_path,
+            network,
+            &deferred_status_txids,
+        )
+        .await?;
 
         // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
         // lines 593/701 call sites (end of verify batch / end of
@@ -2128,6 +2161,7 @@ async fn run_sync_impl(
                         db_data_path,
                         &mut client,
                         fresh_tip_height,
+                        &deferred_status_txids,
                         || {
                             cancel.load(Ordering::Relaxed)
                                 || desired_mode.load(Ordering::SeqCst) != running_mode
