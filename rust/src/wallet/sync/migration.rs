@@ -3899,6 +3899,76 @@ pub(crate) fn broadcasted_pending_txs_missing_local_identity(
     Ok(missing)
 }
 
+/// True when `tip` is on a quiet/backoff boundary for blind rebroadcast of an
+/// accepted-but-unstored migration part scheduled at `scheduled_height`.
+pub(crate) fn migration_broadcast_resubmit_on_quiet_boundary(
+    tip: u32,
+    scheduled_height: u32,
+) -> bool {
+    let Some(min_tip) = scheduled_height.checked_add(MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS)
+    else {
+        return false;
+    };
+    if tip < min_tip {
+        return false;
+    }
+    tip.saturating_sub(scheduled_height) % MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS == 0
+}
+
+/// Accepted (`broadcasted`) pending rows still missing local wallet identity
+/// that are due for a height-windowed blind rebroadcast. Never selected as due
+/// broadcasts — recovery only.
+pub(crate) fn broadcasted_pending_txs_due_for_resubmit(
+    db_path: &str,
+    run_id: &str,
+    chain_tip_height: u32,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Vec<DuePendingMigrationTx>, String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let mut stmt = conn
+        .prepare_cached(&format!(
+            "SELECT txid_hex, encrypted_raw_tx, scheduled_height
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = ?1 AND status = 'broadcasted'
+             ORDER BY scheduled_height ASC, txid_hex ASC"
+        ))
+        .map_err(|e| format!("Prepare broadcasted migration resubmit query: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
+        })
+        .map_err(|e| format!("Query broadcasted migration resubmit txs: {e}"))?;
+
+    let mut due = Vec::new();
+    for row in rows {
+        let (txid_hex, encrypted_raw_tx, scheduled_height) =
+            row.map_err(|e| format!("Read broadcasted migration resubmit tx: {e}"))?;
+        if local_denomination_chain_identity(&conn, &txid_hex)?.is_some() {
+            continue;
+        }
+        if !migration_broadcast_resubmit_on_quiet_boundary(chain_tip_height, scheduled_height) {
+            continue;
+        }
+        let raw_tx = secret_payload::decrypt_payload(
+            encrypted_raw_tx.as_bytes(),
+            password,
+            salt.as_slice(),
+        )?;
+        due.push(DuePendingMigrationTx {
+            txid_hex,
+            raw_tx: raw_tx.to_vec(),
+        });
+    }
+    Ok(due)
+}
+
 fn update_run_after_pending_broadcast(
     tx: &rusqlite::Transaction<'_>,
     run_id: &str,

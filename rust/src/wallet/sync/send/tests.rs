@@ -1834,6 +1834,244 @@ fn scheduled_storage_failure_after_acceptance_marks_broadcasted() {
 }
 
 #[test]
+fn quiet_boundary_requires_scheduled_plus_n_quiet_blocks() {
+    let scheduled = 100u32;
+    let quiet = migration::MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS;
+    assert!(!migration::migration_broadcast_resubmit_on_quiet_boundary(
+        scheduled, scheduled
+    ));
+    assert!(!migration::migration_broadcast_resubmit_on_quiet_boundary(
+        scheduled + quiet - 1,
+        scheduled
+    ));
+    assert!(migration::migration_broadcast_resubmit_on_quiet_boundary(
+        scheduled + quiet,
+        scheduled
+    ));
+    assert!(!migration::migration_broadcast_resubmit_on_quiet_boundary(
+        scheduled + quiet + 1,
+        scheduled
+    ));
+    assert!(migration::migration_broadcast_resubmit_on_quiet_boundary(
+        scheduled + quiet * 2,
+        scheduled
+    ));
+}
+
+fn seed_broadcasted_unstored_migration_part(
+    db_path: &str,
+    pending_txid: &str,
+    scheduled_height: u32,
+) -> String {
+    let denomination_input_txid =
+        "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f";
+    let selected_note_txid = "101112131415161718191a1b1c1d1e1f000102030405060708090a0b0c0d0e0f";
+    let selected_note = migration_test_note(selected_note_txid);
+    let plan = migration_test_plan();
+    let run_id = migration::create_run_with_staged_denominations_and_signed_children(
+        db_path,
+        MIGRATION_TEST_ACCOUNT,
+        WalletNetwork::Test,
+        &plan,
+        &[selected_note.clone()],
+        Vec::new(),
+        vec![migration_test_stage(
+            denomination_input_txid,
+            selected_note_txid,
+        )],
+        None,
+        migration::PreparationTimingPolicy::Immediate,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    migration::insert_pending_txs(
+        db_path,
+        &run_id,
+        vec![migration::PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: pending_txid.to_string(),
+            raw_tx: vec![5, 6, 7, 8],
+            // Keep target != scheduled so insert does not rewrite scheduled_height
+            // via the legacy target_height==scheduled_height compatibility path.
+            target_height: scheduled_height.saturating_sub(1).max(1),
+            anchor_boundary_height: None,
+            expiry_height: migration::zip318_canonical_migration_expiry_height(scheduled_height)
+                .unwrap(),
+            scheduled_height,
+            value_zatoshi: 100_000,
+            fee_zatoshi: 10_000,
+            selected_note: selected_note.clone(),
+            metadata: migration::PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: MIGRATION_TEST_ACCOUNT.to_string(),
+                selected_note,
+            },
+        }],
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    migration::mark_pending_broadcasted(db_path, &run_id, pending_txid).unwrap();
+    run_id
+}
+
+#[test]
+fn timed_resubmit_skips_mid_quiet_window() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let pending_txid = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+    let scheduled = 100u32;
+    let run_id = seed_broadcasted_unstored_migration_part(&db_path, pending_txid, scheduled);
+
+    let mid = scheduled + migration::MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS - 1;
+    let candidates = migration::broadcasted_pending_txs_due_for_resubmit(
+        &db_path,
+        &run_id,
+        mid,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    assert!(candidates.is_empty());
+
+    let mut broadcasts = 0usize;
+    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(&candidates, |_, _| {
+        broadcasts += 1;
+        Ok(())
+    });
+    assert!(succeeded.is_empty());
+    assert_eq!(broadcasts, 0);
+}
+
+#[test]
+fn timed_resubmit_on_quiet_boundary_soft_accepts_without_due_or_gate() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let pending_txid = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+    let scheduled = 100u32;
+    let run_id = seed_broadcasted_unstored_migration_part(&db_path, pending_txid, scheduled);
+
+    let tip = scheduled + migration::MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS;
+    assert!(
+        migration::migration_broadcast_resubmit_on_quiet_boundary(tip, scheduled),
+        "tip {tip} should be on quiet boundary for scheduled {scheduled}"
+    );
+    assert_eq!(
+        migration::pending_totals_for_run(&db_path, &run_id)
+            .unwrap()
+            .broadcasted_count,
+        1
+    );
+    let missing = migration::broadcasted_pending_txs_missing_local_identity(
+        &db_path,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    assert_eq!(
+        missing.len(),
+        1,
+        "expected missing-local broadcasted part before timed resubmit"
+    );
+    let candidates = migration::broadcasted_pending_txs_due_for_resubmit(
+        &db_path,
+        &run_id,
+        tip,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    assert_eq!(
+        candidates.len(),
+        1,
+        "missing={:?} tip={tip} scheduled={scheduled}",
+        missing.iter().map(|c| c.txid_hex.clone()).collect::<Vec<_>>()
+    );
+    assert_eq!(candidates[0].txid_hex, pending_txid);
+    assert_eq!(candidates[0].raw_tx, vec![5, 6, 7, 8]);
+
+    let mut broadcasted_raw = Vec::new();
+    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(&candidates, |txid, raw| {
+        assert_eq!(txid, pending_txid);
+        broadcasted_raw = raw.to_vec();
+        // Soft-accept path: broadcast helper returns Ok.
+        Ok(())
+    });
+    assert_eq!(succeeded, vec![pending_txid.to_string()]);
+    assert_eq!(broadcasted_raw, vec![5, 6, 7, 8]);
+
+    // HOL: broadcasted head must not win due selection.
+    let due = migration::due_pending_txs(
+        &db_path,
+        &run_id,
+        tip,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    assert!(due.is_empty());
+    assert_eq!(
+        migration::scheduled_pending_count(&db_path, &run_id).unwrap(),
+        0
+    );
+
+    let one_due = one_due_migration_result(MigrationBroadcastAdvance::without_acceptance(
+        migration_result_from_pending_totals(
+            migration::pending_totals_for_run(&db_path, &run_id).unwrap(),
+            migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS,
+            None,
+            1,
+            100_000,
+        ),
+    ));
+    assert!(one_due.txids.is_empty());
+    assert_eq!(
+        migration::pending_totals_for_run(&db_path, &run_id)
+            .unwrap()
+            .broadcasted_count,
+        1
+    );
+}
+
+#[test]
+fn timed_resubmit_hard_reject_leaves_broadcasted_and_skips_gate() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let pending_txid = "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+    let scheduled = 100u32;
+    let run_id = seed_broadcasted_unstored_migration_part(&db_path, pending_txid, scheduled);
+
+    let tip = scheduled + migration::MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS;
+    let candidates = migration::broadcasted_pending_txs_due_for_resubmit(
+        &db_path,
+        &run_id,
+        tip,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(&candidates, |_, _| {
+        Err("Broadcast rejected: txn-mempool-conflict".to_string())
+    });
+    assert!(succeeded.is_empty());
+    assert_eq!(
+        migration::pending_totals_for_run(&db_path, &run_id)
+            .unwrap()
+            .broadcasted_count,
+        1
+    );
+    assert_eq!(
+        migration::scheduled_pending_count(&db_path, &run_id).unwrap(),
+        0
+    );
+}
+
+#[test]
 fn migration_child_bundle_shape_and_fee_are_two_plus_one() {
     let orchard_actions = orchard::builder::BundleType::DEFAULT
         .num_actions(

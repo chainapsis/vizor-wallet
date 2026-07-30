@@ -4700,6 +4700,13 @@ async fn broadcast_due_scheduled_migration_txs(
         pending_password,
         pending_salt_base64,
     )?;
+    let resubmit = super::migration::broadcasted_pending_txs_due_for_resubmit(
+        db_path,
+        run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )?;
     let due = super::migration::due_pending_txs(
         db_path,
         run_id,
@@ -4707,7 +4714,7 @@ async fn broadcast_due_scheduled_migration_txs(
         pending_password,
         pending_salt_base64,
     )?;
-    if due.is_empty() {
+    if resubmit.is_empty() && due.is_empty() {
         let status = super::migration::run_phase(db_path, run_id)?;
         let message = if status == super::migration::PHASE_BROADCAST_SCHEDULED
             && super::migration::next_scheduled_height(db_path, run_id)?.is_none()
@@ -4741,6 +4748,26 @@ async fn broadcast_due_scheduled_migration_txs(
     let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
         Err(e) => {
+            if due.is_empty() {
+                // Timed recovery rebroadcast is best-effort; do not fail the run
+                // when only recovery work was pending.
+                log::warn!(
+                    "migration: timed rebroadcast skipped; could not open lightwalletd: {e}"
+                );
+                let status = super::migration::run_phase(db_path, run_id)?;
+                return Ok(MigrationBroadcastAdvance::without_acceptance(
+                    migration_result_from_pending_totals(
+                        totals_before,
+                        &status,
+                        Some(
+                            "Migration transactions are scheduled for delayed broadcast."
+                                .to_string(),
+                        ),
+                        fallback_total_count,
+                        fallback_migrated_zatoshi,
+                    ),
+                ));
+            }
             let message = format!("Migration broadcast could not start: {e}");
             super::migration::mark_run_phase(
                 db_path,
@@ -4761,6 +4788,30 @@ async fn broadcast_due_scheduled_migration_txs(
             ));
         }
     };
+
+    // Blind rebroadcast of accepted-but-unstored parts on quiet-height
+    // boundaries. Never counts toward accepted_txids / one-open gate.
+    rebroadcast_timed_broadcasted_migration_txs(&mut client, &resubmit).await;
+
+    if due.is_empty() {
+        let status = super::migration::run_phase(db_path, run_id)?;
+        let message = if status == super::migration::PHASE_BROADCAST_SCHEDULED
+            && super::migration::next_scheduled_height(db_path, run_id)?.is_none()
+        {
+            "Migration is waiting to prepare the next transaction."
+        } else {
+            "Migration transactions are scheduled for delayed broadcast."
+        };
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            migration_result_from_pending_totals(
+                totals_before,
+                &status,
+                Some(message.to_string()),
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            ),
+        ));
+    }
 
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
     let mut accepted_txids = Vec::new();
@@ -5182,6 +5233,62 @@ fn retry_store_broadcasted_migration_txs_missing_local(
         }
     }
     Ok(())
+}
+
+/// Blind-rebroadcast accepted-but-unstored migration parts on quiet-height
+/// boundaries. Returns txids for which `broadcast` returned Ok (including
+/// soft-accept). Does not change pending status or report acceptance for the
+/// one-open gate.
+fn rebroadcast_timed_broadcasted_migration_txs_with<F>(
+    candidates: &[super::migration::DuePendingMigrationTx],
+    mut broadcast: F,
+) -> Vec<String>
+where
+    F: FnMut(&str, &[u8]) -> Result<(), String>,
+{
+    let mut succeeded = Vec::new();
+    for pending in candidates {
+        match broadcast(&pending.txid_hex, &pending.raw_tx) {
+            Ok(()) => {
+                log::info!(
+                    "migration: timed rebroadcast accepted for previously submitted tx {}",
+                    pending.txid_hex
+                );
+                succeeded.push(pending.txid_hex.clone());
+            }
+            Err(error) => {
+                log::warn!(
+                    "migration: timed rebroadcast failed for {}: {error}",
+                    pending.txid_hex
+                );
+            }
+        }
+    }
+    succeeded
+}
+
+async fn rebroadcast_timed_broadcasted_migration_txs(
+    client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
+        tonic::transport::Channel,
+    >,
+    candidates: &[super::migration::DuePendingMigrationTx],
+) {
+    for pending in candidates {
+        match broadcast_raw_transaction(client, &pending.raw_tx).await {
+            Ok(()) => {
+                log::info!(
+                    "migration: timed rebroadcast accepted for previously submitted tx {}",
+                    pending.txid_hex
+                );
+            }
+            Err(error) => {
+                log::warn!(
+                    "migration: timed rebroadcast failed for {}: {error}",
+                    pending.txid_hex
+                );
+            }
+        }
+    }
 }
 
 fn migration_result_from_pending_totals(
