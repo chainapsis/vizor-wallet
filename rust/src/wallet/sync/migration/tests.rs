@@ -278,6 +278,59 @@ fn stop_candidates_track_attempts_for_children_and_denomination_stages() {
     }));
 }
 
+#[test]
+fn stop_candidates_include_broadcasted_rows_missing_local_raw() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let txids = create_outbox_test_run(&db_path, "run-unstored", &[10, 20], &[None, None]);
+    let unstored_txid = &txids[0];
+    let stored_txid = &txids[1];
+
+    mark_pending_broadcasted(&db_path, "run-unstored", unstored_txid).unwrap();
+    mark_pending_broadcasted(&db_path, "run-unstored", stored_txid).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             raw BLOB
+         );",
+    )
+    .unwrap();
+    let mut stored_blob = hex::decode(stored_txid).unwrap();
+    stored_blob.reverse();
+    conn.execute(
+        "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)",
+        params![stored_blob, vec![1_u8, 2, 3]],
+    )
+    .unwrap();
+    drop(conn);
+
+    let candidates = scheduled_migration_stop_candidates(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-unstored",
+    )
+    .unwrap();
+    assert_eq!(
+        candidates.len(),
+        1,
+        "only broadcasted-without-local-raw rows remain stop-reconcilable"
+    );
+    assert_eq!(candidates[0].kind, MigrationStopCandidateKind::MigrationTransaction);
+    assert_eq!(candidates[0].txid_hex, *unstored_txid);
+    assert_eq!(
+        candidates[0].attempt_state,
+        MigrationBroadcastAttemptState::Attempted,
+        "accepted-but-unstored rows must force stop reconciliation"
+    );
+}
+
 fn pending_test_stage(expected_txid_hex: &str, raw_tx: Vec<u8>) -> DenominationStageInsert {
     DenominationStageInsert {
         stage_index: 0,

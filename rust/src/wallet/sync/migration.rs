@@ -3180,12 +3180,15 @@ pub(crate) fn scheduled_migration_stop_candidates(
         return Err(format!("Migration run is already terminal ({phase})"));
     }
 
+    // Include `broadcasted` rows that still lack local `transactions.raw`:
+    // accept-then-store-fail promotes out of `scheduled` so due selection
+    // cannot HOL-block, but stop must still store them before unlocking notes.
     let mut pending_stmt = conn
         .prepare_cached(&format!(
             "SELECT txid_hex, scheduled_height, expiry_height,
-                    broadcast_attempted
+                    broadcast_attempted, status
              FROM {PENDING_TXS_TABLE}
-             WHERE run_id = ?1 AND status = 'scheduled'
+             WHERE run_id = ?1 AND status IN ('scheduled', 'broadcasted')
              ORDER BY part_index ASC, scheduled_height ASC, txid_hex ASC"
         ))
         .map_err(|e| format!("Prepare scheduled migration stop candidates: {e}"))?;
@@ -3196,25 +3199,31 @@ pub(crate) fn scheduled_migration_stop_candidates(
                 row.get::<_, u32>(1)?,
                 row.get::<_, u32>(2)?,
                 row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })
         .map_err(|e| format!("Query scheduled migration stop candidates: {e}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Read scheduled migration stop candidate: {e}"))?;
-    let mut candidates = pending_rows
-        .into_iter()
-        .map(
-            |(txid_hex, broadcast_height, expiry_height, attempt_state)| {
-                Ok(MigrationStopCandidate {
-                    kind: MigrationStopCandidateKind::MigrationTransaction,
-                    txid_hex,
-                    broadcast_height,
-                    expiry_height,
-                    attempt_state: MigrationBroadcastAttemptState::from_db(attempt_state)?,
-                })
-            },
-        )
-        .collect::<Result<Vec<_>, String>>()?;
+    let mut candidates = Vec::new();
+    for (txid_hex, broadcast_height, expiry_height, attempt_state, status) in pending_rows {
+        let attempt_state = if status == "broadcasted" {
+            // Network already accepted: always reconcile before abandon unlocks.
+            if local_transaction_raw(&conn, &txid_hex)?.is_some() {
+                continue;
+            }
+            MigrationBroadcastAttemptState::Attempted
+        } else {
+            MigrationBroadcastAttemptState::from_db(attempt_state)?
+        };
+        candidates.push(MigrationStopCandidate {
+            kind: MigrationStopCandidateKind::MigrationTransaction,
+            txid_hex,
+            broadcast_height,
+            expiry_height,
+            attempt_state,
+        });
+    }
     drop(pending_stmt);
 
     let mut stage_stmt = conn
