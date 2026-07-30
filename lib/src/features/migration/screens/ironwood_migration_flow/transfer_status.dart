@@ -281,7 +281,6 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
             child: AppButton(
               key: const ValueKey('ironwood_migration_status_action_button'),
               onPressed: onDone,
-              variant: AppButtonVariant.secondary,
               height: 36,
               minWidth: 96,
               expand: true,

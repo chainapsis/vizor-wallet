@@ -2361,7 +2361,12 @@ void main() {
       closeTo(544.5, 0.01),
     );
     expect(find.text('Back home'), findsNothing);
-    expect(find.widgetWithText(AppButton, 'Done'), findsOneWidget);
+    final doneButton = find.widgetWithText(AppButton, 'Done');
+    expect(doneButton, findsOneWidget);
+    expect(
+      tester.widget<AppButton>(doneButton).variant,
+      AppButtonVariant.primary,
+    );
   });
 
   testWidgets('private complete fallback without run details returns home', (
