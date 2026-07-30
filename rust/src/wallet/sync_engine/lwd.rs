@@ -98,6 +98,20 @@ where
     }
 }
 
+type AddressUtxoStream = tonic::Streaming<GetAddressUtxosReply>;
+
+async fn await_address_utxo_stream<F>(
+    timeout: Duration,
+    future: F,
+) -> Result<AddressUtxoStream, SyncError>
+where
+    F: Future<Output = Result<Response<AddressUtxoStream>, Status>>,
+{
+    await_tonic_stream("get_address_utxos_stream", timeout, future)
+        .await
+        .map_err(|e| status_to_network_error("get_address_utxos_stream", e))
+}
+
 // Server-streaming calls intentionally use plain `Request::new` at
 // their call sites. A `grpc-timeout` header would bound the whole
 // stream lifetime; here we only bound stream start and per-message idle
@@ -268,9 +282,8 @@ pub(super) async fn get_address_utxos_stream(
     client: &mut CompactTxStreamerClient<Channel>,
     addresses: Vec<String>,
     start_height: BlockHeight,
-) -> Result<tonic::Streaming<GetAddressUtxosReply>, SyncError> {
-    await_tonic_stream(
-        "get_address_utxos_stream",
+) -> Result<AddressUtxoStream, SyncError> {
+    await_address_utxo_stream(
         LIGHTWALLETD_STREAM_START_TIMEOUT,
         client.get_address_utxos_stream(Request::new(GetAddressUtxosArg {
             addresses,
@@ -279,7 +292,24 @@ pub(super) async fn get_address_utxos_stream(
         })),
     )
     .await
-    .map_err(|e| status_to_network_error("get_address_utxos_stream", e))
+}
+
+async fn await_stream_message<T, F>(
+    label: &str,
+    timeout: Duration,
+    future: F,
+) -> Result<Option<T>, SyncError>
+where
+    F: Future<Output = Result<Option<T>, Status>>,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(Ok(message)) => Ok(message),
+        Ok(Err(status)) => Err(status_to_network_error(label, status)),
+        Err(_) => Err(SyncError::net(format!(
+            "{label}: timed out after {}s waiting for next message",
+            timeout.as_secs()
+        ))),
+    }
 }
 
 /// Read the next server-streaming message with a bounded idle wait.
@@ -288,14 +318,7 @@ pub(crate) async fn next_stream_message<T>(
     stream: &mut tonic::Streaming<T>,
     label: &str,
 ) -> Result<Option<T>, SyncError> {
-    match tokio::time::timeout(LIGHTWALLETD_STREAM_IDLE_TIMEOUT, stream.message()).await {
-        Ok(Ok(message)) => Ok(message),
-        Ok(Err(status)) => Err(status_to_network_error(label, status)),
-        Err(_) => Err(SyncError::net(format!(
-            "{label}: timed out after {}s waiting for next message",
-            LIGHTWALLETD_STREAM_IDLE_TIMEOUT.as_secs()
-        ))),
-    }
+    await_stream_message(label, LIGHTWALLETD_STREAM_IDLE_TIMEOUT, stream.message()).await
 }
 
 /// Pulls the latest shielded subtree roots from lightwalletd
@@ -550,6 +573,47 @@ pub(super) async fn download_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stalled_address_utxo_stream_start_is_bounded() {
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            await_address_utxo_stream(
+                Duration::from_millis(5),
+                std::future::pending::<Result<Response<AddressUtxoStream>, Status>>(),
+            ),
+        )
+        .await
+        .expect("test guard: address UTXO stream start hung");
+
+        assert!(matches!(
+            result,
+            Err(SyncError::Network(message))
+                if message.contains("get_address_utxos_stream")
+                    && message.contains("timed out")
+        ));
+    }
+
+    #[tokio::test]
+    async fn stalled_stream_message_is_bounded() {
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            await_stream_message::<service::GetAddressUtxosReply, _>(
+                "get_address_utxos_stream",
+                Duration::from_millis(5),
+                std::future::pending(),
+            ),
+        )
+        .await
+        .expect("test guard: address UTXO stream message hung");
+
+        assert!(matches!(
+            result,
+            Err(SyncError::Network(message))
+                if message.contains("get_address_utxos_stream")
+                    && message.contains("timed out")
+        ));
+    }
 
     #[test]
     fn explicit_ironwood_pool_requests_follow_nu6_3_activation() {

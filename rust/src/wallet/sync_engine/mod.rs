@@ -123,7 +123,7 @@ const ANCHOR_ROOT_REPAIR_REWIND_DISTANCES: [u32; 3] = [100, 1000, 10_000];
 /// Sync-scoped elapsed time reference. Set at sync start.
 static SYNC_START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 
-fn elapsed() -> String {
+pub(crate) fn elapsed() -> String {
     SYNC_START
         .lock()
         .ok()
@@ -1239,6 +1239,9 @@ async fn refresh_utxos(
         };
 
         for (batch_index, batch) in external_batches.into_iter().enumerate() {
+            if should_exit() {
+                return Ok(());
+            }
             let start_height = block_height_from_u64(
                 batch.start_height,
                 "transparent receive UTXO batch start height",
@@ -1346,10 +1349,7 @@ async fn refresh_transparent_addresses(
     mut mark_cache_dirty: impl FnMut(),
     should_exit: &impl Fn() -> bool,
 ) -> Result<bool, SyncError> {
-    if addresses.is_empty() {
-        return Ok(false);
-    }
-    if should_exit() {
+    if addresses.is_empty() || should_exit() {
         return Ok(false);
     }
 
@@ -1361,20 +1361,34 @@ async fn refresh_transparent_addresses(
         addresses.len(),
     );
 
-    let mut stream = get_address_utxos_stream(client, addresses, start_height).await?;
-
-    let mut received_any = false;
-    loop {
-        if should_exit() {
+    let mut stream = tokio::select! {
+        biased;
+        _ = watch_for_exit(should_exit) => {
             log::info!(
-                "[{}] sync: exiting during {} transparent UTXO refresh",
+                "[{}] sync: exiting during {} transparent UTXO stream start",
                 elapsed(),
                 label,
             );
-            return Ok(received_any);
+            return Ok(false);
         }
-        let Some(reply) = next_stream_message(&mut stream, "get_address_utxos_stream").await?
-        else {
+        result = get_address_utxos_stream(client, addresses, start_height) => result?,
+    };
+
+    let mut received_any = false;
+    loop {
+        let reply = tokio::select! {
+            biased;
+            _ = watch_for_exit(should_exit) => {
+                log::info!(
+                    "[{}] sync: exiting during {} transparent UTXO refresh",
+                    elapsed(),
+                    label,
+                );
+                return Ok(received_any);
+            }
+            result = next_stream_message(&mut stream, "get_address_utxos_stream") => result?,
+        };
+        let Some(reply) = reply else {
             break;
         };
         let txid: [u8; 32] = reply
@@ -1417,6 +1431,12 @@ async fn refresh_transparent_addresses(
     }
 
     Ok(received_any)
+}
+
+async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
+    while !should_exit() {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 // ==================== Main sync ====================
@@ -1594,10 +1614,6 @@ async fn run_sync_impl(
     crate::wallet::sync::recover_orphaned_send_locks(db_data_path, network)
         .map_err(SyncError::db)?;
 
-    // Match the cancellation granularity we already use for
-    // `run_enhancement`: let this stage run to completion once it has
-    // started, but don't enter it (or continue past it) after a
-    // cancel/mode change has already been observed.
     if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode {
         log::info!(
             "[{}] sync: cancel/mode observed before transparent UTXO refresh, skipping",
@@ -1617,6 +1633,14 @@ async fn run_sync_impl(
         &should_exit,
     )
     .await?;
+
+    if should_exit() {
+        log::info!(
+            "[{}] sync: cancel/mode observed after transparent UTXO refresh",
+            elapsed(),
+        );
+        return Ok(());
+    }
 
     // 2.5. Resubmit eligible unmined wallet txs now that we know the
     // current tip. Matches the first of the three
