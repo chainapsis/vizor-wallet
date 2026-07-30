@@ -484,11 +484,15 @@ class _MobilePreparationTransactionCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
+                  Flexible(
                     child: Text(
-                      '${_migrationDisplayZec(transaction.approximateValueZatoshi)} ZEC '
-                      '${_mobileSchedulePercentage(transaction.approximateValueZatoshi, roundTotal)}',
+                      key: ValueKey(
+                        'mobile_ironwood_preparation_amount_'
+                        '${transaction.stageIndex}',
+                      ),
+                      '${_migrationDisplayZec(transaction.approximateValueZatoshi)} ZEC',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(
@@ -497,41 +501,69 @@ class _MobilePreparationTransactionCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.xs),
-                  if (completed) ...[
-                    AppIcon(
-                      AppIcons.checkCircle,
-                      size: 16,
-                      color: context.colors.icon.success,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                  ] else if (active) ...[
-                    AppIcon(
-                      AppIcons.loader,
-                      size: 16,
-                      color: context.colors.icon.regular,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                  ] else if (state ==
-                      rust_sync
-                          .MigrationPreparationTransactionState
-                          .scheduled) ...[
-                    AppIcon(
-                      AppIcons.block,
-                      size: 16,
-                      color: context.colors.icon.regular,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
-                  ],
                   Flexible(
                     child: Text(
-                      stateLabel,
+                      key: ValueKey(
+                        'mobile_ironwood_preparation_percentage_'
+                        '${transaction.stageIndex}',
+                      ),
+                      _mobileSchedulePercentage(
+                        transaction.approximateValueZatoshi,
+                        roundTotal,
+                      ),
                       maxLines: 1,
-                      textAlign: TextAlign.right,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelLarge.copyWith(
-                        color: stateColor,
+                        color: context.colors.text.accent,
+                        fontWeight: FontWeight.w500,
                       ),
+                    ),
+                  ),
+                  Flexible(
+                    child: Row(
+                      key: ValueKey(
+                        'mobile_ironwood_preparation_state_'
+                        '${transaction.stageIndex}',
+                      ),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (completed) ...[
+                          AppIcon(
+                            AppIcons.checkCircle,
+                            size: 16,
+                            color: context.colors.icon.success,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                        ] else if (active) ...[
+                          AppIcon(
+                            AppIcons.loader,
+                            size: 16,
+                            color: context.colors.icon.regular,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                        ] else if (state ==
+                            rust_sync
+                                .MigrationPreparationTransactionState
+                                .scheduled) ...[
+                          AppIcon(
+                            AppIcons.block,
+                            size: 16,
+                            color: context.colors.icon.regular,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
+                        ],
+                        Flexible(
+                          child: Text(
+                            stateLabel,
+                            maxLines: 1,
+                            textAlign: TextAlign.right,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: stateColor,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

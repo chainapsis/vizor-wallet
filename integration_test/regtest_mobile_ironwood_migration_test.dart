@@ -52,7 +52,7 @@ void main() {
       logE2e('activating Ironwood while the mobile app is running');
       await postDriver('/activate', const {});
       await _waitForIronwoodSync(tester, container);
-      await openMobilePrivateMigrationReview(tester);
+      await openMobilePrivateMigrationOptions(tester);
 
       final approvedPlan = await container.read(
         ironwoodMigrationPrivatePlanProvider.future,
@@ -63,19 +63,15 @@ void main() {
       expect(approvedPlan.totalMigratableZatoshi, BigInt.from(1000000));
       expect(approvedPlan.estimatedTotalFeeZatoshi, BigInt.from(95000));
 
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_ironwood_authorize_start_button'),
-        timeout: const Duration(minutes: 5),
-      );
+      await startMobilePrivateMigration(tester);
       await pumpUntil(
         tester,
         () => tester.any(
           find.byKey(
-            const ValueKey('mobile_ironwood_migration_status_preparing'),
+            const ValueKey('mobile_ironwood_view_preparation_schedule_button'),
           ),
         ),
-        description: 'mobile migration preparing screen',
+        description: 'mobile migration preparation status screen',
         timeout: const Duration(minutes: 5),
       );
 
@@ -149,7 +145,13 @@ void main() {
         approvedPlan.estimatedTotalFeeZatoshi,
       );
 
-      await waitForHome(tester);
+      await tapUntilVisible(
+        tester,
+        trigger: find.text('Done').hitTestable(),
+        outcome: find.byKey(const ValueKey('mobile_home_shielded_balance')),
+        description: 'completed migration result to return home',
+        timeout: const Duration(minutes: 1),
+      );
       await pumpUntil(
         tester,
         () => !tester.any(

@@ -5066,9 +5066,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Syncing your wallet…'), findsNothing);
       expect(
-        find.text(
-          'Confirming in the background. You can close Vizor.',
-        ),
+        find.text('Confirming in the background. You can close Vizor.'),
         findsOneWidget,
       );
     },
@@ -5308,9 +5306,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text(
-          'Confirming in the background. You can close Vizor.',
-        ),
+        find.text('Confirming in the background. You can close Vizor.'),
         findsOneWidget,
       );
       expect(find.text('Continue preparation'), findsNothing);
@@ -5333,8 +5329,7 @@ void main() {
                   required network,
                   required accountUuid,
                   required runId,
-                }) async =>
-                    IronwoodMigrationPreparationRuntimeState.scheduled,
+                }) async => IronwoodMigrationPreparationRuntimeState.scheduled,
           ),
           status: _status(
             phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
@@ -5344,9 +5339,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text(
-          'Confirming in the background. You can close Vizor.',
-        ),
+        find.text('Confirming in the background. You can close Vizor.'),
         findsOneWidget,
       );
     },
@@ -5386,9 +5379,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.text(
-          'Confirming in the background. You can close Vizor.',
-        ),
+        find.text('Confirming in the background. You can close Vizor.'),
         findsNothing,
       );
     },
@@ -5465,9 +5456,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text(
-          'Confirming in the background. You can close Vizor.',
-        ),
+        find.text('Confirming in the background. You can close Vizor.'),
         findsOneWidget,
       );
       expect(find.text('Continue preparation'), findsNothing);
@@ -5787,6 +5776,27 @@ void main() {
     expect(find.text('Round 2'), findsOneWidget);
     expect(find.text('Rounds remaining'), findsOneWidget);
     expect(find.text('3,000,000'), findsOneWidget);
+
+    final amountRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_preparation_amount_0')),
+    );
+    final percentageRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_preparation_percentage_0')),
+    );
+    final stateRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_preparation_state_0')),
+    );
+    final amountToPercentageGap = percentageRect.left - amountRect.right;
+    final percentageToStateGap = stateRect.left - percentageRect.right;
+    expect(amountToPercentageGap, greaterThan(0));
+    expect(percentageToStateGap, greaterThan(0));
+    expect(
+      amountToPercentageGap,
+      closeTo(percentageToStateGap, 0.5),
+      reason:
+          'Preparation amount, percentage, and state should use an even '
+          'space-between layout.',
+    );
   });
 
   testWidgets(

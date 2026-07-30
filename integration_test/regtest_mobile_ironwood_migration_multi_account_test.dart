@@ -67,7 +67,7 @@ void main() {
 
       await postDriver('/activate', const {});
       await _waitForIronwoodSync(tester, container);
-      await openMobilePrivateMigrationReview(tester);
+      await openMobilePrivateMigrationOptions(tester);
       final plan = await rust_sync.getOrchardMigrationPrivatePlan(
         dbPath: await getWalletDbPath(),
         network: mobileE2eNetwork,
@@ -76,11 +76,7 @@ void main() {
       );
       expect(plan, isNotNull);
 
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_ironwood_authorize_start_button'),
-        timeout: const Duration(minutes: 5),
-      );
+      await startMobilePrivateMigration(tester);
       final started = await waitForMobileRegtestMigrationStatus(
         tester,
         firstAccountUuid,

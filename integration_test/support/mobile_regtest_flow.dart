@@ -417,28 +417,56 @@ Future<void> waitForHome(WidgetTester tester) async {
   );
 }
 
-Future<void> openMobilePrivateMigrationReview(WidgetTester tester) async {
-  await openMobileMigrationOptions(tester);
+Future<void> openMobilePrivateMigrationOptions(WidgetTester tester) =>
+    openMobileMigrationOptions(tester);
+
+Future<void> startMobilePrivateMigration(WidgetTester tester) async {
   await tapAppButton(
     tester,
     const ValueKey('mobile_ironwood_options_continue_button'),
     timeout: const Duration(minutes: 2),
   );
+
+  final notifications = find.byKey(const ValueKey('migration_preview_not_now'));
+  final loading = find.byKey(
+    const ValueKey('mobile_ironwood_migration_start_loading'),
+  );
+  final preparing = find.byKey(
+    const ValueKey('mobile_ironwood_migration_status_preparing'),
+  );
   await pumpUntil(
     tester,
-    () {
-      final keyed = find.byKey(
-        const ValueKey('mobile_ironwood_authorize_start_button'),
-      );
-      final button = find.descendant(
-        of: keyed,
-        matching: find.byType(AppButton),
-        matchRoot: true,
-      );
-      return tester.any(button) &&
-          tester.widget<AppButton>(button).onPressed != null;
-    },
-    description: 'mobile private migration review plan',
+    () =>
+        tester.any(notifications) ||
+        tester.any(loading) ||
+        tester.any(preparing),
+    description: 'mobile migration notification gate or preparation',
+    timeout: const Duration(minutes: 3),
+  );
+
+  if (tester.any(notifications)) {
+    await tapAppButton(tester, const ValueKey('migration_preview_not_now'));
+    final continueWithoutNotifications = find.widgetWithText(
+      AppButton,
+      'Continue without notifications',
+    );
+    await pumpUntil(
+      tester,
+      () =>
+          tester.any(continueWithoutNotifications) &&
+          tester.widget<AppButton>(continueWithoutNotifications).onPressed !=
+              null,
+      description: 'continue without notifications confirmation',
+    );
+    await tester.tap(continueWithoutNotifications);
+    await tester.pump(const Duration(milliseconds: 250));
+    logE2e('continued without migration notifications');
+  }
+
+  await pumpUntil(
+    tester,
+    () => tester.any(loading) || tester.any(preparing),
+    description: 'mobile migration preparation loading screen',
     timeout: const Duration(minutes: 3),
   );
 }
