@@ -217,12 +217,13 @@ fn deferred_status_txids(
     db_path: &str,
     ranges: &[ScanRange],
 ) -> Result<HashSet<Vec<u8>>, SyncError> {
-    if ranges.iter().any(is_pending_scan_range) {
-        crate::wallet::sync::get_unmined_txids_with_mined_output_evidence(db_path)
-            .map_err(SyncError::db)
-    } else {
-        Ok(HashSet::new())
-    }
+    let pending_ranges = ranges
+        .iter()
+        .filter(|range| is_pending_scan_range(range))
+        .map(|range| range.block_range().clone())
+        .collect::<Vec<_>>();
+    crate::wallet::sync::get_unmined_txids_with_mined_output_evidence(db_path, &pending_ranges)
+        .map_err(SyncError::db)
 }
 
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {

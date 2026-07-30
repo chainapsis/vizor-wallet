@@ -103,14 +103,46 @@ pub(super) async fn run_enhancement(
                     let txid_str = format!("{txid}");
 
                     if matches!(req, TransactionDataRequest::GetStatus(_)) {
-                        match resolve_status_from_scanned_height(db, *txid) {
-                            Ok(true) => {
-                                serviced_any = true;
-                                continue;
+                        match scanned_mined_height(db, *txid) {
+                            Ok(Some(mined_height)) => {
+                                let can_resolve_locally = match db.get_transaction(*txid) {
+                                    Ok(Some(tx)) => {
+                                        if let Err(e) =
+                                            fill_missing_transparent_fee(client, db_path, &tx).await
+                                        {
+                                            log::warn!(
+                                                "sync: transparent fee enhancement failed for {txid_str}: {e}"
+                                            );
+                                        }
+                                        true
+                                    }
+                                    Ok(None) => true,
+                                    Err(e) => {
+                                        log::error!(
+                                            "sync: could not read stored transaction for local status resolution: {e}"
+                                        );
+                                        false
+                                    }
+                                };
+                                if can_resolve_locally {
+                                    match resolve_status_from_scanned_height(
+                                        db,
+                                        *txid,
+                                        mined_height,
+                                    ) {
+                                        Ok(()) => {
+                                            serviced_any = true;
+                                            continue;
+                                        }
+                                        Err(e) => log::error!(
+                                            "sync: could not resolve transaction status locally: {e}"
+                                        ),
+                                    }
+                                }
                             }
-                            Ok(false) => {}
+                            Ok(None) => {}
                             Err(e) => log::error!(
-                                "sync: could not resolve transaction status locally: {e}"
+                                "sync: could not read locally restored transaction status: {e}"
                             ),
                         }
                     }
@@ -462,30 +494,25 @@ fn request_is_actionable(
     }
 }
 
-/// Resolves a `GetStatus` request locally when the wallet DB already records
-/// a mined height for `txid` (restored by compact scanning), re-asserting
-/// `TransactionStatus::Mined` — which also dequeues the request — without
-/// downloading the transaction. Returns `Ok(false)` when the height is
-/// unknown and the caller must query lightwalletd.
+fn scanned_mined_height(db: &WalletDatabase, txid: TxId) -> Result<Option<BlockHeight>, SyncError> {
+    db.get_tx_height(txid)
+        .map_err(|e| SyncError::db(format!("get transaction height: {e}")))
+}
+
+/// Re-asserts a compact-scan-restored mined status after any missing fee has
+/// been backfilled, which also dequeues the `GetStatus` request.
 fn resolve_status_from_scanned_height(
     db: &mut WalletDatabase,
     txid: TxId,
-) -> Result<bool, SyncError> {
-    let Some(mined_height) = db
-        .get_tx_height(txid)
-        .map_err(|e| SyncError::db(format!("get transaction height: {e}")))?
-    else {
-        return Ok(false);
-    };
-
+    mined_height: BlockHeight,
+) -> Result<(), SyncError> {
     with_wallet_db_write_lock(
         "sync_engine.enhance.set_known_mined_transaction_status",
         || {
             db.set_transaction_status(txid, TransactionStatus::Mined(mined_height))
                 .map_err(|e| SyncError::db(format!("set known mined transaction status: {e}")))
         },
-    )?;
-    Ok(true)
+    )
 }
 
 async fn fill_missing_transparent_fee(
@@ -678,9 +705,11 @@ mod tests {
     /// for it, mirroring the post-recovery state `resolve_status_from_scanned_height`
     /// services.
     fn status_recovery_test_db(
-        txid: TxId,
         mined_height: BlockHeight,
-    ) -> (tempfile::NamedTempFile, WalletDatabase) {
+        fee: Option<i64>,
+    ) -> (tempfile::NamedTempFile, WalletDatabase, Transaction) {
+        let (tx, raw) = transparent_fee_test_tx_and_bytes();
+        let txid = tx.txid();
         let file = tempfile::NamedTempFile::new().unwrap();
         let db_path = file.path().to_str().unwrap();
         let mut db = crate::wallet::db::open_wallet_db_with_timeout(
@@ -696,9 +725,25 @@ mod tests {
         let conn = rusqlite::Connection::open(db_path).unwrap();
         conn.execute(
             "INSERT INTO transactions
-                (txid, mined_height, raw, min_observed_height)
-             VALUES (?1, ?2, X'00', ?2)",
-            rusqlite::params![txid.as_ref(), u32::from(mined_height)],
+                (txid, mined_height, raw, fee, min_observed_height)
+             VALUES (?1, ?2, ?3, ?4, ?2)",
+            rusqlite::params![txid.as_ref(), u32::from(mined_height), raw, fee],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO accounts
+                (uuid, account_kind, uivk, birthday_height, has_spend_key)
+             VALUES (randomblob(16), 1, 'test-uivk', 1, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sapling_received_notes
+                (transaction_id, output_index, account_id, diversifier, value,
+                 rcm, is_change, commitment_tree_position, recipient_key_scope)
+             SELECT id_tx, 0, 1, X'00', 1, X'00', 1, 1, 1
+             FROM transactions WHERE txid = ?1",
+            rusqlite::params![txid.as_ref()],
         )
         .unwrap();
         conn.execute(
@@ -715,15 +760,20 @@ mod tests {
             SYNC_DB_BUSY_TIMEOUT,
         )
         .unwrap();
-        (file, db)
+        (file, db, tx)
     }
 
-    fn transparent_fee_test_tx() -> Transaction {
+    fn transparent_fee_test_tx_and_bytes() -> (Transaction, Vec<u8>) {
         let tx_bytes = hex::decode(
             "0400008085202f8901aee37187e843da597683c26c01457f5fd3b1a038996ef74dc8d60d483aaf395a000000006b483045022100874c70db77ea9e93f75cc83a9e141e17c8eb97588e29fe4e307631fdde4f162a02203493df62d648cd86a1189eaf9bcafc652bc14c5df02519d9e45e25b32aaffb5b012102106a2dcaaac2ae3b24358a03f4264e05db420c5b090399bc23885fa02fef7716ffffffff02764e1900000000001976a914fb451987556f7a19b726966ee6cff917e0bb3bfb88ac560ca400000000001976a9141634f5ff0b8f6603a17570436d6c12a91f4b1fed88ac00000000000000000000000000000000000000",
         )
         .unwrap();
-        Transaction::read(&tx_bytes[..], BranchId::Sapling).unwrap()
+        let tx = Transaction::read(&tx_bytes[..], BranchId::Sapling).unwrap();
+        (tx, tx_bytes)
+    }
+
+    fn transparent_fee_test_tx() -> Transaction {
+        transparent_fee_test_tx_and_bytes().0
     }
 
     fn local_status_test_tx(expiry_height: u32) -> (Transaction, Vec<u8>) {
@@ -1069,20 +1119,41 @@ mod tests {
 
     #[test]
     fn scanned_height_resolves_status_without_transaction_download() {
-        let txid = TxId::from_bytes([3; 32]);
         let mined_height = BlockHeight::from_u32(500);
-        let (_file, mut db) = status_recovery_test_db(txid, mined_height);
+        let (_file, mut db, tx) = status_recovery_test_db(mined_height, Some(0));
+        let txid = tx.txid();
 
         assert!(db
             .transaction_data_requests()
             .unwrap()
             .contains(&TransactionDataRequest::GetStatus(txid)));
-        assert!(resolve_status_from_scanned_height(&mut db, txid).unwrap());
+        assert_eq!(scanned_mined_height(&db, txid).unwrap(), Some(mined_height));
+        resolve_status_from_scanned_height(&mut db, txid, mined_height).unwrap();
         assert!(!db
             .transaction_data_requests()
             .unwrap()
             .contains(&TransactionDataRequest::GetStatus(txid)));
         assert_eq!(db.get_tx_height(txid).unwrap(), Some(mined_height));
+    }
+
+    #[test]
+    fn scanned_status_loads_missing_fee_input_before_dequeue() {
+        let mined_height = BlockHeight::from_u32(500);
+        let (file, mut db, tx) = status_recovery_test_db(mined_height, None);
+        let txid = tx.txid();
+
+        assert_eq!(db.get_transaction(txid).unwrap().unwrap().txid(), txid);
+        assert!(should_fill_missing_transparent_fee(file.path().to_str().unwrap(), &tx).unwrap());
+        assert!(db
+            .transaction_data_requests()
+            .unwrap()
+            .contains(&TransactionDataRequest::GetStatus(txid)));
+
+        resolve_status_from_scanned_height(&mut db, txid, mined_height).unwrap();
+        assert!(!db
+            .transaction_data_requests()
+            .unwrap()
+            .contains(&TransactionDataRequest::GetStatus(txid)));
     }
 
     #[test]

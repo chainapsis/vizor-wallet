@@ -16,7 +16,10 @@
 //! chain-tip update, scan range management) and the shared
 //! PROPOSAL_STORE used by both the software and PCZT send paths.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 use rusqlite::OptionalExtension;
 use transparent::address::TransparentAddress;
@@ -268,16 +271,22 @@ pub fn get_transaction_data_requests(
 }
 
 /// Returns unmined transactions that the wallet previously discovered in a
-/// compact block. A shielded note only receives a commitment-tree position
-/// when it is scanned as mined; truncation retains that position even after it
-/// clears the transaction's mined height.
+/// compact block and that a pending scan range could still restore as mined.
+/// A shielded note only receives a commitment-tree position when it is scanned
+/// as mined; truncation retains that position even after it clears the
+/// transaction's mined height.
 pub(crate) fn get_unmined_txids_with_mined_output_evidence(
     db_path: &str,
+    pending_ranges: &[Range<BlockHeight>],
 ) -> Result<HashSet<Vec<u8>>, String> {
+    if pending_ranges.is_empty() {
+        return Ok(HashSet::new());
+    }
+
     let conn = open_readonly_conn(db_path)?;
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT t.txid
+            "SELECT DISTINCT t.txid, t.min_observed_height, t.expiry_height
              FROM transactions t
              WHERE t.mined_height IS NULL
                AND (
@@ -300,11 +309,32 @@ pub(crate) fn get_unmined_txids_with_mined_output_evidence(
         )
         .map_err(|e| format!("SQL error: {e}"))?;
     let rows = stmt
-        .query_map([], |row| row.get::<_, Vec<u8>>(0))
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+            ))
+        })
         .map_err(|e| format!("Query error: {e}"))?;
 
-    rows.collect::<Result<HashSet<_>, _>>()
-        .map_err(|e| format!("Row error: {e}"))
+    rows.filter_map(|row| match row {
+        Ok((txid, min_observed_height, expiry_height))
+            if pending_ranges.iter().any(|range| {
+                let range_start = u32::from(range.start);
+                let range_end = u32::from(range.end);
+                let known_expiry = expiry_height.filter(|height| *height > 0);
+                range_end > min_observed_height
+                    && known_expiry.is_none_or(|height| range_start < height)
+            }) =>
+        {
+            Some(Ok(txid))
+        }
+        Ok(_) => None,
+        Err(error) => Some(Err(error)),
+    })
+    .collect::<Result<HashSet<_>, _>>()
+    .map_err(|e| format!("Row error: {e}"))
 }
 
 pub fn decrypt_and_store_transaction(
@@ -1848,7 +1878,9 @@ mod tests {
             "CREATE TABLE transactions (
                  id_tx INTEGER PRIMARY KEY,
                  txid BLOB NOT NULL,
-                 mined_height INTEGER
+                 mined_height INTEGER,
+                 min_observed_height INTEGER NOT NULL,
+                 expiry_height INTEGER
              );
              CREATE TABLE sapling_received_notes (
                  transaction_id INTEGER NOT NULL,
@@ -1908,8 +1940,9 @@ mod tests {
             (6, None),
         ] {
             conn.execute(
-                "INSERT INTO transactions (id_tx, txid, mined_height)
-                 VALUES (?1, ?2, ?3)",
+                "INSERT INTO transactions
+                    (id_tx, txid, mined_height, min_observed_height, expiry_height)
+                 VALUES (?1, ?2, ?3, 900, 1_100)",
                 rusqlite::params![id, fake_txid(id as u8), mined_height],
             )
             .unwrap();
@@ -1925,8 +1958,12 @@ mod tests {
             .unwrap();
         drop(conn);
 
-        let got =
-            get_unmined_txids_with_mined_output_evidence(db.path().to_str().unwrap()).unwrap();
+        let pending_ranges = [BlockHeight::from_u32(900)..BlockHeight::from_u32(1_100)];
+        let got = get_unmined_txids_with_mined_output_evidence(
+            db.path().to_str().unwrap(),
+            &pending_ranges,
+        )
+        .unwrap();
         assert_eq!(
             got,
             HashSet::from([
@@ -1934,6 +1971,58 @@ mod tests {
                 fake_txid(2).to_vec(),
                 fake_txid(3).to_vec(),
             ])
+        );
+    }
+
+    #[test]
+    fn mined_output_evidence_stops_deferring_after_restoring_ranges_pass() {
+        let db = mined_output_evidence_db();
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        for (id, expiry_height) in [(1, 600), (2, 0)] {
+            conn.execute(
+                "INSERT INTO transactions
+                    (id_tx, txid, mined_height, min_observed_height, expiry_height)
+                 VALUES (?1, ?2, NULL, 500, ?3)",
+                rusqlite::params![id, fake_txid(id as u8), expiry_height],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO orchard_received_notes VALUES (?1, ?2)",
+                rusqlite::params![id, id * 10],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        let recovery_and_older = [
+            BlockHeight::from_u32(500)..BlockHeight::from_u32(600),
+            BlockHeight::from_u32(100)..BlockHeight::from_u32(400),
+        ];
+        assert_eq!(
+            get_unmined_txids_with_mined_output_evidence(
+                db.path().to_str().unwrap(),
+                &recovery_and_older,
+            )
+            .unwrap(),
+            HashSet::from([fake_txid(1).to_vec(), fake_txid(2).to_vec()])
+        );
+
+        let older_only = [BlockHeight::from_u32(100)..BlockHeight::from_u32(400)];
+        assert!(get_unmined_txids_with_mined_output_evidence(
+            db.path().to_str().unwrap(),
+            &older_only,
+        )
+        .unwrap()
+        .is_empty());
+
+        let after_expiry = [BlockHeight::from_u32(600)..BlockHeight::from_u32(700)];
+        assert_eq!(
+            get_unmined_txids_with_mined_output_evidence(
+                db.path().to_str().unwrap(),
+                &after_expiry,
+            )
+            .unwrap(),
+            HashSet::from([fake_txid(2).to_vec()])
         );
     }
 
