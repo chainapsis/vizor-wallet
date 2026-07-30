@@ -3,6 +3,7 @@ use super::*;
 
 use incrementalmerkletree::Position;
 use rusqlite::{params, Connection};
+use shardtree::store::ShardStore;
 use transparent::bundle::{OutPoint, TxOut};
 use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
 use zcash_keys::keys::{ReceiverRequirement, UnifiedSpendingKey};
@@ -141,6 +142,156 @@ fn migration_anchor_uses_latest_checkpoint_before_an_empty_bucket_boundary() {
     assert_eq!(
         representative_orchard_checkpoint(&checkpoints, 5_472, 5_400),
         Some(5_460)
+    );
+}
+
+#[test]
+fn pre_scan_retention_covers_exact_and_empty_bucket_boundaries() {
+    let checkpoints = [100_000, 100_007, 100_009, 100_020, 100_031, 100_032];
+
+    let retained = checkpoint_representatives_for_scan(&checkpoints, 100_000, 100_000, 100_033, 12);
+
+    assert_eq!(retained, BTreeSet::from([100_007, 100_020, 100_032]));
+}
+
+#[test]
+fn pre_scan_retention_ignores_boundaries_at_or_before_activation() {
+    let checkpoints = [99_996, 100_008];
+
+    assert_eq!(
+        checkpoint_representatives_for_scan(&checkpoints, 100_000, 99_990, 100_009, 12,),
+        BTreeSet::from([100_008]),
+    );
+}
+
+#[test]
+fn pre_scan_retention_includes_a_new_frontier_checkpoint() {
+    let checkpoints = [100_006, 100_008, 100_020];
+
+    assert_eq!(
+        checkpoint_representatives_for_scan(&checkpoints, 100_000, 100_008, 100_021, 12),
+        BTreeSet::from([100_008, 100_020]),
+    );
+}
+
+#[test]
+fn pre_scan_retention_survives_deep_sqlite_checkpoint_pruning() {
+    use incrementalmerkletree::{Hashable, Retention};
+    use orchard::tree::MerkleHashOrchard;
+
+    crate::wallet::network::configure_regtest_nu6_3_activation_height(100_000).unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let network = WalletNetwork::Regtest;
+    let mnemonic = crate::wallet::keys::generate_mnemonic();
+    let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+    let (account_uuid, _) = crate::wallet::keys::init_db_and_create_account(
+        db_path,
+        network,
+        &seed,
+        Some(1),
+        "anchor-retention",
+    )
+    .unwrap();
+
+    // Initialize the Vizor migration schema, then create the smallest active
+    // run shape consumed by `prepared_anchor_retention_candidates`.
+    assert!(
+        migration::migration_anchor_retention_references(db_path, network)
+            .unwrap()
+            .is_empty()
+    );
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        "INSERT INTO vizor_migration_runs
+         (run_id, account_uuid, network, db_fingerprint, phase,
+          created_at_ms, updated_at_ms, target_values_json, timing_policy)
+         VALUES ('run-1', ?1, 'regtest', ?2, ?3, 1, 1, '[100]', 'fast_testnet')",
+        params![
+            account_uuid,
+            db_path,
+            migration::PHASE_WAITING_DENOM_CONFIRMATIONS,
+        ],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO vizor_migration_prepared_notes
+         (run_id, txid_hex, output_index, value_zatoshi, note_version, lock_state)
+         VALUES ('run-1', ?1, 0, 100, 2, 'locked')",
+        params![format!("{:064x}", 1)],
+    )
+    .unwrap();
+    drop(conn);
+
+    let activation_height = 100_000;
+    let frontier_height = 100_000;
+    let batch_end = 100_141;
+    let incoming_checkpoint_heights = (100_001..batch_end)
+        .filter(|height| *height != 100_008)
+        .collect::<BTreeSet<_>>();
+    assert!(!incoming_checkpoint_heights.contains(&100_008));
+
+    let mut db = open_wallet_db(db_path, network).unwrap();
+    let retained = retain_migration_anchor_checkpoints_before_scan(
+        db_path,
+        network,
+        &mut db,
+        frontier_height,
+        batch_end,
+        &incoming_checkpoint_heights,
+    )
+    .unwrap();
+    assert!(retained > 0);
+    assert!(
+        migration::migration_anchor_retention_references(db_path, network)
+            .unwrap()
+            .contains(&("run-1".to_string(), 100_007))
+    );
+
+    let result: Result<(), ShardTreeError<commitment_tree::Error>> =
+        db.with_orchard_tree_mut(|tree| {
+            let leaf = <MerkleHashOrchard as Hashable>::empty_leaf();
+            tree.append(leaf, Retention::Marked)?;
+            tree.checkpoint(BlockHeight::from(frontier_height))?;
+            for height in &incoming_checkpoint_heights {
+                tree.append(leaf, Retention::Ephemeral)?;
+                tree.checkpoint(BlockHeight::from(*height))?;
+            }
+
+            assert!(tree
+                .root_at_checkpoint_id(&BlockHeight::from(100_007))?
+                .is_some());
+            assert!(tree
+                .witness_at_checkpoint_id(Position::from(0), &BlockHeight::from(100_007))?
+                .is_some());
+            assert!(tree
+                .root_at_checkpoint_id(&BlockHeight::from(100_008))?
+                .is_none());
+            assert!(tree
+                .root_at_checkpoint_id(&BlockHeight::from(100_009))?
+                .is_none());
+            assert!(tree
+                .store()
+                .retained_checkpoints()
+                .map_err(ShardTreeError::Storage)?
+                .contains(&BlockHeight::from(100_007)));
+            Ok(())
+        });
+    result.unwrap();
+
+    // Keep this calculation in the same test so the fixture proves that the
+    // retained SQLite checkpoint is the production representative for the
+    // empty logical boundary, not merely an arbitrary pinned height.
+    assert_eq!(
+        checkpoint_representatives_for_scan(
+            &[frontier_height, 100_007, 100_009],
+            activation_height,
+            frontier_height,
+            100_010,
+            12,
+        ),
+        BTreeSet::from([100_007]),
     );
 }
 

@@ -2920,6 +2920,107 @@ fn release_orchard_checkpoint(
     result.map_err(|e| format!("Release Orchard migration checkpoint: {e:?}"))
 }
 
+fn checkpoint_representatives_for_scan(
+    checkpoint_heights: &[u32],
+    activation_height: u32,
+    frontier_height: u32,
+    batch_end: u32,
+    boundary_modulus: u32,
+) -> BTreeSet<u32> {
+    if boundary_modulus == 0 || frontier_height >= batch_end {
+        return BTreeSet::new();
+    }
+
+    let first_eligible_height = frontier_height.max(activation_height.saturating_add(1));
+    let remainder = first_eligible_height % boundary_modulus;
+    let Some(first_boundary) = (if remainder == 0 {
+        Some(first_eligible_height)
+    } else {
+        first_eligible_height.checked_add(boundary_modulus - remainder)
+    }) else {
+        return BTreeSet::new();
+    };
+
+    (first_boundary..batch_end)
+        .step_by(boundary_modulus as usize)
+        .filter_map(|boundary| representative_orchard_checkpoint(checkpoint_heights, boundary, 0))
+        .collect()
+}
+
+pub(crate) fn retain_migration_anchor_checkpoints_before_scan(
+    db_path: &str,
+    network: WalletNetwork,
+    db: &mut WalletDatabase,
+    frontier_height: u32,
+    batch_end: u32,
+    incoming_checkpoint_heights: &BTreeSet<u32>,
+) -> Result<usize, String> {
+    let candidates = super::migration::prepared_anchor_retention_candidates(db_path, network)?;
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    let mut run_policies = BTreeMap::new();
+    for candidate in candidates {
+        run_policies
+            .entry(candidate.run_id)
+            .or_insert(candidate.timing_policy);
+    }
+
+    let mut checkpoint_heights = orchard_checkpoint_heights(db)?
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    // `update_tree` inserts the downloaded tree state as a checkpoint before
+    // adding the batch. It can become the representative of an otherwise
+    // empty migration boundary and must be protected from the same batch's
+    // pruning.
+    checkpoint_heights.insert(frontier_height);
+    checkpoint_heights.extend(incoming_checkpoint_heights);
+    let checkpoint_heights = checkpoint_heights.into_iter().collect::<Vec<_>>();
+    let activation_height = nu6_3_activation_height_u32(network)?;
+    let retained_before_maintenance = retained_orchard_checkpoint_heights(db)?;
+    let mut desired_references =
+        super::migration::migration_anchor_retention_references(db_path, network)?;
+
+    for (run_id, timing_policy) in run_policies {
+        let boundary_modulus = super::migration::anchor_bucket_modulus(network, timing_policy);
+        for checkpoint_height in checkpoint_representatives_for_scan(
+            &checkpoint_heights,
+            activation_height,
+            frontier_height,
+            batch_end,
+            boundary_modulus,
+        ) {
+            desired_references.insert((run_id.clone(), checkpoint_height));
+        }
+    }
+
+    // Keep the current owners alongside the speculative batch references. A
+    // crash before the scan commits can therefore only leave extra pins; the
+    // next post-scan reconciliation releases anything no longer needed.
+    let released = super::migration::stage_migration_anchor_retention_references(
+        db_path,
+        network,
+        &desired_references,
+        &retained_before_maintenance,
+    )?;
+    // Reapply every ledger-backed pin, not only the ones projected for this
+    // batch. This repairs a process interruption after ownership was staged
+    // but before `ensure_retained` reached the tree store.
+    let desired_heights = desired_references
+        .iter()
+        .map(|(_, checkpoint_height)| *checkpoint_height)
+        .collect::<BTreeSet<_>>();
+    for checkpoint_height in &desired_heights {
+        retain_orchard_checkpoint(db, *checkpoint_height)?;
+    }
+    for checkpoint_height in &released {
+        release_orchard_checkpoint(db, *checkpoint_height)?;
+    }
+    super::migration::finish_migration_anchor_retention_releases(db_path, network, &released)?;
+    Ok(desired_heights.len())
+}
+
 pub(crate) fn migration_anchor_retention_required(
     db_path: &str,
     network: WalletNetwork,

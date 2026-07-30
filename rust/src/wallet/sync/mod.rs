@@ -66,9 +66,9 @@ pub(crate) use send::{
     orchard_migration_proof_readiness_at_scanned_height,
     orchard_migration_proof_readiness_read_only, prepare_orchard_migration_batch_pczt,
     prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_immediate_pczt,
-    prepare_orchard_migration_single_qr_pczt, retain_prepared_note_anchor_checkpoints_after_scan,
-    retire_unbroadcast_orchard_migration, KeystoneSignedMigrationMessage,
-    OrchardMigrationImmediatePlan,
+    prepare_orchard_migration_single_qr_pczt, retain_migration_anchor_checkpoints_before_scan,
+    retain_prepared_note_anchor_checkpoints_after_scan, retire_unbroadcast_orchard_migration,
+    KeystoneSignedMigrationMessage, OrchardMigrationImmediatePlan,
 };
 pub use send::{
     broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
