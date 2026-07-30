@@ -20,12 +20,12 @@ const _migrationPreparationCarouselItems = [
     tileColor: _migrationCarouselGreen,
     icon: AppIcons.wallet,
   ),
-  AppCarouselItem.image(
+  AppCarouselItem.icon(
     message:
         'We may have to do multiple rounds of note splitting depending on '
         'your balance.',
     tileColor: _migrationCarouselCrimson,
-    imageAsset: _ironwoodMigrationExpectationRunningAsset,
+    icon: AppIcons.migrationSplit,
   ),
 ];
 
@@ -352,6 +352,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                 top: 54,
                 width: 396,
                 child: _MigrationStageHeader(
+                  key: const ValueKey('ironwood_migration_stage_header'),
                   stage: isPreparing
                       ? _MigrationStage.preparation
                       : isComplete
@@ -496,18 +497,24 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                 ),
               ),
               Positioned(
-                left: 28,
+                left: 12,
                 top: isPreparing ? 382 : 390,
-                width: 364,
+                width: 396,
                 child: isPreparing
                     ? Column(
                         children: [
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_overall_progress',
+                            ),
                             label: 'Overall progress',
                             value: _overallPreparationProgressDisplay(status),
                           ),
                           const SizedBox(height: 16),
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_estimated_completion',
+                            ),
                             label: 'Est. completion',
                             value: _preparationCompletionEstimateDisplay(
                               status,
@@ -517,6 +524,9 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_current_block',
+                            ),
                             label: 'Current block',
                             value: formatGroupedInteger(currentHeight),
                             valueIcon: AppIcons.block,
@@ -527,12 +537,18 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                     : Column(
                         children: [
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_left_to_migrate',
+                            ),
                             label: 'Left to migrate',
                             value:
                                 '${_formatZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero)} ZEC',
                           ),
                           const SizedBox(height: 16),
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_estimated_completion',
+                            ),
                             label: 'Est. completion',
                             value: _migrationCompletionEstimateDisplay(
                               status,
@@ -887,6 +903,7 @@ class _MigrationRingDetail extends StatelessWidget {
 
 class _MigrationSummaryMetric extends StatelessWidget {
   const _MigrationSummaryMetric({
+    super.key,
     required this.label,
     required this.value,
     this.secondary = false,
@@ -909,22 +926,33 @@ class _MigrationSummaryMetric extends StatelessWidget {
     );
     return Row(
       children: [
-        Expanded(child: Text(label, style: style)),
+        Text(label, style: style),
         const SizedBox(width: 16),
-        if (valueIcon != null) ...[
-          AppIcon(valueIcon!, size: 16, color: context.colors.icon.regular),
-          const SizedBox(width: 4),
-        ],
-        Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
+        Expanded(
+          child: Align(
             alignment: Alignment.centerRight,
-            child: Text(
-              value,
-              maxLines: 1,
-              softWrap: false,
-              textAlign: TextAlign.right,
-              style: style,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (valueIcon != null) ...[
+                    AppIcon(
+                      valueIcon!,
+                      size: 16,
+                      color: context.colors.icon.regular,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    value,
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.right,
+                    style: style,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

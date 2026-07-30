@@ -281,7 +281,11 @@ class _IronwoodMigrationImmediateReviewContentState
 }
 
 class _ImmediateReviewRow extends StatelessWidget {
-  const _ImmediateReviewRow({required this.label, required this.value});
+  const _ImmediateReviewRow({
+    required this.label,
+    required this.value,
+    super.key,
+  });
 
   final String label;
   final String value;

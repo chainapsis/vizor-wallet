@@ -529,7 +529,7 @@ String _formatMigrationBlockDurationEstimate(int blocks) {
 enum _MigrationStage { preparation, migration, finish }
 
 class _MigrationStageHeader extends StatelessWidget {
-  const _MigrationStageHeader({required this.stage});
+  const _MigrationStageHeader({required this.stage, super.key});
 
   final _MigrationStage stage;
 

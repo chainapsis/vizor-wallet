@@ -16,6 +16,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_carousel.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -604,6 +605,53 @@ void main() {
     expect(find.text('Review shuffle'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
   });
+
+  testWidgets(
+    'private review aligns its summary and keep-running content to the stage header',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(initialLocation: '/migration/private/review'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final stageRect = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_stage_header')),
+      );
+      final completionRect = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_review_completion_row')),
+      );
+      final keepRunningRect = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_keep_running_content')),
+      );
+      expect(completionRect.left, closeTo(stageRect.left, 0.01));
+      expect(completionRect.right, closeTo(stageRect.right, 0.01));
+      expect(keepRunningRect.left, closeTo(stageRect.left, 0.01));
+      expect(keepRunningRect.right, closeTo(stageRect.right, 0.01));
+
+      final iconTile = find.byKey(
+        const ValueKey('ironwood_migration_keep_running_icon_tile'),
+      );
+      expect(tester.getSize(iconTile), const Size.square(48));
+      final tileDecoration =
+          tester.widget<DecoratedBox>(iconTile).decoration as BoxDecoration;
+      expect(tileDecoration.color, const Color(0xFFB90A4A));
+      expect(tileDecoration.borderRadius, BorderRadius.circular(12));
+      expect(find.text('Keep Vizor running'), findsOneWidget);
+      expect(
+        find.text(
+          'Preparation continues while the app is minimized, then migration '
+          'starts automatically.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('private review starts software migration and opens status', (
     tester,
@@ -2739,6 +2787,111 @@ void main() {
         ),
         findsOneWidget,
       );
+    },
+  );
+
+  testWidgets(
+    'preparing and migrating summary rows align labels left and values right',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      void expectRowAlignment(Finder row) {
+        final texts = find.descendant(of: row, matching: find.byType(Text));
+        expect(texts, findsNWidgets(2));
+        final rowRect = tester.getRect(row);
+        final stageRect = tester.getRect(
+          find.byKey(const ValueKey('ironwood_migration_stage_header')),
+        );
+        expect(rowRect.left, closeTo(stageRect.left, 0.01));
+        expect(rowRect.right, closeTo(stageRect.right, 0.01));
+        expect(tester.getRect(texts.at(0)).left, closeTo(rowRect.left, 0.01));
+        expect(tester.getRect(texts.at(1)).right, closeTo(rowRect.right, 0.01));
+      }
+
+      await tester.pumpWidget(
+        _privateStatusHarness(status: _status(), disableAnimations: true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expectRowAlignment(
+        find.byKey(
+          const ValueKey('ironwood_migration_summary_overall_progress'),
+        ),
+      );
+      expectRowAlignment(
+        find.byKey(
+          const ValueKey('ironwood_migration_summary_estimated_completion'),
+        ),
+      );
+      expectRowAlignment(
+        find.byKey(const ValueKey('ironwood_migration_summary_current_block')),
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          disableAnimations: true,
+          status: _migrationStatus(
+            phase: kIronwoodMigrationBroadcastScheduledPhase,
+            activeRunId: 'run-figma-summary',
+            targetValuesZatoshi: const [10_000_000, 20_000_000],
+            totalCount: 2,
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.migrating,
+              ),
+              _migrationPart(
+                1,
+                20_000_000,
+                rust_sync.MigrationPartState.scheduled,
+                scheduledHeight: 1_200,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expectRowAlignment(
+        find.byKey(
+          const ValueKey('ironwood_migration_summary_left_to_migrate'),
+        ),
+      );
+      expectRowAlignment(
+        find.byKey(
+          const ValueKey('ironwood_migration_summary_estimated_completion'),
+        ),
+      );
+    },
+  );
+
+  testWidgets(
+    'preparation carousel uses the Figma split icon for multiple rounds',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(status: _status(), disableAnimations: true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final carousel = tester.widget<AppCarousel>(find.byType(AppCarousel));
+      final multipleRoundsItem = carousel.items[2];
+      expect(multipleRoundsItem.icon, AppIcons.migrationSplit);
+      expect(multipleRoundsItem.iconSize, 20);
+      expect(multipleRoundsItem.imageAsset, isNull);
     },
   );
 

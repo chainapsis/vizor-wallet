@@ -632,6 +632,7 @@ class _MigrationReviewContent extends StatelessWidget {
             top: 58,
             width: 396,
             child: const _MigrationStageHeader(
+              key: ValueKey('ironwood_migration_stage_header'),
               stage: _MigrationStage.preparation,
             ),
           ),
@@ -673,34 +674,59 @@ class _MigrationReviewContent extends StatelessWidget {
             top: 386,
             width: 396,
             child: _ImmediateReviewRow(
+              key: const ValueKey('ironwood_migration_review_completion_row'),
               label: 'Migration complete in',
               value: completionEstimate,
             ),
           ),
           Positioned(
-            left: 44,
+            left: 12,
             top: 442,
-            width: 332,
+            width: 396,
             child: Row(
+              key: const ValueKey('ironwood_migration_keep_running_content'),
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    _ironwoodMigrationExpectationRunningAsset,
-                    width: 32,
-                    height: 32,
-                    fit: BoxFit.cover,
+                DecoratedBox(
+                  key: const ValueKey(
+                    'ironwood_migration_keep_running_icon_tile',
+                  ),
+                  decoration: BoxDecoration(
+                    color: _migrationCarouselCrimson,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox.square(
+                      dimension: 48,
+                      child: Image.asset(
+                        _ironwoodMigrationExpectationRunningAsset,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 Expanded(
-                  child: Text(
-                    'Keep Vizor running. Preparation continues while the app '
-                    'is minimized, then migration starts automatically.',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Keep Vizor running',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.accent,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Preparation continues while the app is minimized, '
+                        'then migration starts automatically.',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

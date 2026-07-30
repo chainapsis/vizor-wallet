@@ -355,6 +355,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildIronwoodMigrationAnalyzingUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Private review',
+                      builder: buildIronwoodMigrationPrivateReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Preparing',
                       builder:
                           buildIronwoodMigrationPrivateStatusWaitingUseCase,
