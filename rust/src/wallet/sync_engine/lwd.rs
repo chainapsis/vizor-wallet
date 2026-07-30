@@ -26,8 +26,8 @@ use zcash_client_backend::{
     },
     proto::service::{
         self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
-        Empty, GetSubtreeRootsArg, RawTransaction, SendResponse, TransparentAddressBlockFilter,
-        TreeState, TxFilter,
+        Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction,
+        SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
@@ -98,7 +98,7 @@ where
     }
 }
 
-type AddressUtxoStream = tonic::Streaming<service::GetAddressUtxosReply>;
+type AddressUtxoStream = tonic::Streaming<GetAddressUtxosReply>;
 
 async fn await_address_utxo_stream<F>(
     timeout: Duration,
@@ -276,6 +276,8 @@ pub(crate) async fn get_taddress_txids(
 }
 
 /// Open a transparent UTXO stream with a bounded wait for response headers.
+/// Callers should read individual messages with [`next_stream_message`] so a
+/// stalled lightwalletd stream cannot pin the sync loop indefinitely.
 pub(super) async fn get_address_utxos_stream(
     client: &mut CompactTxStreamerClient<Channel>,
     addresses: Vec<String>,
@@ -283,7 +285,7 @@ pub(super) async fn get_address_utxos_stream(
 ) -> Result<AddressUtxoStream, SyncError> {
     await_address_utxo_stream(
         LIGHTWALLETD_STREAM_START_TIMEOUT,
-        client.get_address_utxos_stream(Request::new(service::GetAddressUtxosArg {
+        client.get_address_utxos_stream(Request::new(GetAddressUtxosArg {
             addresses,
             start_height: u32::from(start_height) as u64,
             max_entries: 0,

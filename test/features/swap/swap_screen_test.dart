@@ -1529,7 +1529,7 @@ void main() {
           matching: find.byType(SwapAssetIcon),
         ),
       );
-      expect(amountAssetIcon.showChainBadge, isFalse);
+      expect(amountAssetIcon.showChainBadge, isTrue);
       expect(find.text('New address'), findsOneWidget);
       expect(find.text('0x529084...e4169ee7'), findsOneWidget);
       expect(find.text('In progress'), findsOneWidget);
@@ -7248,6 +7248,40 @@ void main() {
     );
     expect(_fieldText(tester, 'swap_amount_field'), '1.5');
     expect(_destinationSummaryText(tester), '0x529084...169ee7');
+  });
+
+  testWidgets('pay quote failure uses payment-specific copy', (tester) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        swapProvider: _LowAmountQuoteSwapProvider(),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_select_recipient_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Amount is too low for this payment.\nTry a larger amount.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('this swap'), findsNothing);
   });
 
   testWidgets('start failure stays on review and shows an inline error', (
