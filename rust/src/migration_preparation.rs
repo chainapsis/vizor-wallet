@@ -2,8 +2,9 @@
 //!
 //! Platform adapters are responsible only for converting their native inputs
 //! and outputs. Operation ownership, foreground-sync exclusion, state
-//! interpretation, sync execution, and denomination advancement live here so
-//! iOS and Android use the same state machine.
+//! interpretation, sync execution, and denomination advancement live here.
+//! Android runs the full worker flow. iOS uses read-only confirmation polling;
+//! foreground FRB calls own sync and advancement between confirmed waves.
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -230,31 +231,62 @@ pub fn inspect(
     progress_for_status(db_path, network, account_uuid, &status)
 }
 
+pub fn inspect_read_only(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<MigrationPreparationProgress, MigrationPreparationError> {
+    let snapshot = sync::migration_preparation_snapshot_read_only(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+    )
+    .map_err(MigrationPreparationError::Execution)?;
+    let Some(snapshot) = snapshot else {
+        return Ok(MigrationPreparationProgress::inactive());
+    };
+    let state = match snapshot.phase.as_str() {
+        "waiting_denom_confirmations" => {
+            MigrationPreparationState::WaitingForDenominationPreparation
+        }
+        "broadcast_scheduled" | "broadcasting" | "waiting_migration_confirmations" => {
+            MigrationPreparationState::Inactive
+        }
+        _ => MigrationPreparationState::NeedsUserAction,
+    };
+    Ok(MigrationPreparationProgress {
+        state,
+        confirmation_count: 0,
+        confirmation_target: sync::denomination_confirmations_required(),
+        completed_stage_count: snapshot.completed_stage_count,
+        total_stage_count: snapshot.total_stage_count,
+    })
+}
+
+pub fn observable_transaction_ids(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<Vec<String>, MigrationPreparationError> {
+    sync::observable_denomination_transaction_ids(db_path, account_uuid, network, expected_run_id)
+        .map_err(MigrationPreparationError::Execution)
+}
+
 pub fn inspect_proof_readiness(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     expected_run_id: &str,
 ) -> Result<bool, MigrationPreparationError> {
-    let status = sync::migration_status(db_path, network, account_uuid, 0, 0, 0, 0)
-        .map_err(MigrationPreparationError::Execution)?;
-    if status.active_run_id.as_deref() != Some(expected_run_id) {
-        return Ok(false);
-    }
-    let scanned_height = sync::get_sync_progress(db_path, network)
-        .and_then(|progress| {
-            u32::try_from(progress.scanned_height)
-                .map_err(|_| "Migration scanned height exceeds u32".to_string())
-        })
-        .map_err(MigrationPreparationError::Execution)?;
-    sync::orchard_migration_proof_readiness_at_scanned_height(
+    sync::orchard_migration_proof_readiness_read_only(
         db_path,
         network,
         account_uuid,
-        &status,
-        scanned_height,
+        expected_run_id,
     )
-    .map(|readiness| readiness == Some(true))
     .map_err(MigrationPreparationError::Execution)
 }
 
@@ -430,6 +462,171 @@ fn classify_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_only_inspection_does_not_upgrade_legacy_stage_schema() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE vizor_migration_runs (
+                 run_id TEXT PRIMARY KEY,
+                 account_uuid TEXT NOT NULL,
+                 network TEXT NOT NULL,
+                 phase TEXT NOT NULL
+             );
+             CREATE TABLE vizor_migration_denomination_stages (
+                 run_id TEXT NOT NULL,
+                 status TEXT NOT NULL
+             );
+             INSERT INTO vizor_migration_runs
+                 (run_id, account_uuid, network, phase)
+             VALUES
+                 ('run-1', 'account-1', 'test', 'waiting_denom_confirmations');
+             INSERT INTO vizor_migration_denomination_stages (run_id, status)
+             VALUES
+                 ('run-1', 'confirmed'),
+                 ('run-1', 'broadcasted');",
+        )
+        .unwrap();
+        let schema_version_before: i64 = conn
+            .pragma_query_value(None, "schema_version", |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        let progress = inspect_read_only(
+            file.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            "account-1",
+            "run-1",
+        )
+        .unwrap();
+
+        assert_eq!(
+            progress.state,
+            MigrationPreparationState::WaitingForDenominationPreparation
+        );
+        assert_eq!(progress.completed_stage_count, 1);
+        assert_eq!(progress.total_stage_count, 2);
+
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        let schema_version_after: i64 = conn
+            .pragma_query_value(None, "schema_version", |row| row.get(0))
+            .unwrap();
+        let columns = conn
+            .prepare("PRAGMA table_info(vizor_migration_denomination_stages)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(schema_version_after, schema_version_before);
+        assert_eq!(columns, vec!["run_id", "status"]);
+    }
+
+    #[test]
+    fn read_only_inspection_defers_missing_stage_schema_to_foreground() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE vizor_migration_runs (
+                 run_id TEXT PRIMARY KEY,
+                 account_uuid TEXT NOT NULL,
+                 network TEXT NOT NULL,
+                 phase TEXT NOT NULL
+             );
+             INSERT INTO vizor_migration_runs
+                 (run_id, account_uuid, network, phase)
+             VALUES
+                 ('run-1', 'account-1', 'test', 'waiting_denom_confirmations');",
+        )
+        .unwrap();
+        drop(conn);
+
+        let error = inspect_read_only(
+            file.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            "account-1",
+            "run-1",
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("requires foreground recovery"));
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        let stage_table_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table'
+                   AND name = 'vizor_migration_denomination_stages'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stage_table_count, 0);
+    }
+
+    #[test]
+    fn proof_readiness_inspection_does_not_upgrade_legacy_stage_schema() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE vizor_migration_runs (
+                 run_id TEXT PRIMARY KEY,
+                 account_uuid TEXT NOT NULL,
+                 network TEXT NOT NULL,
+                 phase TEXT NOT NULL,
+                 proof_retry_height INTEGER,
+                 timing_policy TEXT NOT NULL
+             );
+             CREATE TABLE vizor_migration_signed_child_pczts (
+                 run_id TEXT NOT NULL,
+                 message_id TEXT NOT NULL,
+                 child_index INTEGER NOT NULL,
+                 selected_note_json TEXT NOT NULL,
+                 anchor_boundary_height INTEGER
+             );
+             CREATE TABLE vizor_migration_pending_txs (
+                 run_id TEXT NOT NULL,
+                 part_index INTEGER NOT NULL
+             );
+             CREATE TABLE vizor_migration_denomination_stages (
+                 run_id TEXT NOT NULL,
+                 status TEXT NOT NULL
+             );
+             INSERT INTO vizor_migration_runs
+                 (run_id, account_uuid, network, phase, proof_retry_height,
+                  timing_policy)
+             VALUES
+                 ('run-1', 'account-1', 'test', 'ready_to_migrate',
+                  100, 'standard');",
+        )
+        .unwrap();
+        let schema_version_before: i64 = conn
+            .pragma_query_value(None, "schema_version", |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        assert!(!inspect_proof_readiness(
+            file.path().to_str().unwrap(),
+            WalletNetwork::Test,
+            "account-1",
+            "run-1",
+        )
+        .unwrap());
+
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        let schema_version_after: i64 = conn
+            .pragma_query_value(None, "schema_version", |row| row.get(0))
+            .unwrap();
+        let columns = conn
+            .prepare("PRAGMA table_info(vizor_migration_denomination_stages)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(schema_version_after, schema_version_before);
+        assert_eq!(columns, vec!["run_id", "status"]);
+    }
 
     #[test]
     fn operation_owns_cancel_across_sync_and_advance() {

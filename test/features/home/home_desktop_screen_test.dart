@@ -580,7 +580,8 @@ void main() {
         ),
       );
 
-      expect(find.text('100 ZEC still migrating'), findsOneWidget);
+      expect(find.text('Preparing migration'), findsOneWidget);
+      expect(find.text('100 ZEC still migrating'), findsNothing);
       expect(find.text('40.11'), findsOneWidget);
       expect(find.text('Shielded balance (Ironwood)'), findsOneWidget);
       expect(find.text('Shielded balance'), findsNothing);

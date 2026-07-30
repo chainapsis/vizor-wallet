@@ -40,6 +40,17 @@ const kIronwoodMigrationContinuePhases = {
   kIronwoodMigrationFailedRecoverablePhase,
 };
 
+const kIronwoodMigrationPreparationPhases = {
+  kIronwoodMigrationAwaitingPreparationPhase,
+  kIronwoodMigrationAwaitingDenominationSignaturePhase,
+  kIronwoodMigrationWaitingDenomConfirmationsPhase,
+  kIronwoodMigrationReadyToMigratePhase,
+};
+
 bool isIronwoodMigrationInProgressPhase(String phase) {
   return kIronwoodMigrationContinuePhases.contains(phase);
+}
+
+bool isIronwoodMigrationPreparingPhase(String? phase) {
+  return kIronwoodMigrationPreparationPhases.contains(phase);
 }

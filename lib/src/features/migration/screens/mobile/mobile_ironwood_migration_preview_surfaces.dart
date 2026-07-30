@@ -584,7 +584,32 @@ class _MigrationNotificationIllustration extends StatelessWidget {
   }
 }
 
-enum _MigrationPreparationState { active, paused, syncing }
+/// Preparation preview states.
+///
+/// `advancing` and `backgroundTracking` are both visually "working" states —
+/// they animate the ring exactly like `active` — but they answer a different
+/// question: whether leaving the app right now stalls the migration. An
+/// advance needs the foreground permit and must keep Vizor open; an armed
+/// background tracking task does not.
+enum _MigrationPreparationState {
+  active,
+  advancing,
+  backgroundTracking,
+  paused,
+  syncing;
+
+  bool get animatesRing =>
+      this == active || this == advancing || this == backgroundTracking;
+}
+
+const _migrationPreparationAdvancingMessage =
+    'Preparing the next transactions. Keep Vizor open.';
+// Rendered inside the 200px-wide preparation ring — keep it two short
+// sentences or it fills the dial.
+const _migrationPreparationBackgroundTrackingMessage =
+    'Confirming in the background. You can close Vizor.';
+const _migrationPreparationNotificationsDisabledMessage =
+    'Allow notifications to continue in the background, or keep Vizor open.';
 
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
@@ -673,7 +698,7 @@ class _MigrationPreparationDial extends StatelessWidget {
         children: [
           _AnimatedMigrationPreparationRing(
             key: const ValueKey('mobile_ironwood_preparation_ring'),
-            animate: state == _MigrationPreparationState.active,
+            animate: state.animatesRing,
             color: context.colors.border.subtle,
           ),
           SizedBox(
@@ -702,7 +727,13 @@ class _MigrationPreparationDial extends StatelessWidget {
                             'Preparation was paused because you left.'
                       : syncing
                       ? 'Syncing your wallet…'
-                      : 'Preparation will\ntake 10–20 min',
+                      : switch (state) {
+                          _MigrationPreparationState.advancing =>
+                            _migrationPreparationAdvancingMessage,
+                          _MigrationPreparationState.backgroundTracking =>
+                            _migrationPreparationBackgroundTrackingMessage,
+                          _ => 'Preparation will\ntake 10–20 min',
+                        },
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: context.colors.text.accent,

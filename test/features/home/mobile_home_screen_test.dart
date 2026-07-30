@@ -1015,8 +1015,8 @@ void main() {
       final status = rust_sync.MigrationStatus(
         phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
         activeRunId: 'run-1',
-        targetValuesZatoshi: frb.Uint64List.fromList([200000000]),
-        preparedNoteCount: 1,
+        targetValuesZatoshi: frb.Uint64List.fromList([500000000, 200000000]),
+        preparedNoteCount: 2,
         denominationConfirmationCount: 1,
         denominationConfirmationTarget: 3,
         denominationSplitCompletedCount: 0,
@@ -1024,7 +1024,7 @@ void main() {
         pendingTxCount: 0,
         broadcastedTxCount: 0,
         confirmedTxCount: 0,
-        totalCount: 1,
+        totalCount: 2,
         signedChildPcztCount: 0,
         pendingSplitStageCount: 1,
         canAbandon: false,
@@ -1032,12 +1032,27 @@ void main() {
         scheduleMeanDelayBlocks: 144,
         scheduleMaxDelayBlocks: 576,
         scheduledBroadcasts: const [],
-        parts: const [],
+        parts: [
+          rust_sync.MigrationPartStatus(
+            partIndex: 0,
+            valueZatoshi: BigInt.from(500000000),
+            state: rust_sync.MigrationPartState.completed,
+            confirmationCount: 3,
+            confirmationTarget: 3,
+          ),
+          rust_sync.MigrationPartStatus(
+            partIndex: 1,
+            valueZatoshi: BigInt.from(200000000),
+            state: rust_sync.MigrationPartState.migrating,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+        ],
       );
 
       await tester.pumpWidget(
         _app(
-          _syncedState(orchardBalance: BigInt.from(200000000)),
+          _syncedState(orchardBalance: BigInt.from(700000000)),
           migrationCta: IronwoodHomeMigrationCtaState.resume(
             network: 'main',
             accountUuid: 'account-1',
@@ -1054,10 +1069,11 @@ void main() {
             )
             .textSpan
             ?.toPlainText(),
-        '2 ZEC',
+        '7 ZEC',
       );
       expect(find.text('Receive your first ZEC'), findsNothing);
-      expect(find.text('Migration in progress'), findsOneWidget);
+      expect(find.text('Preparing migration'), findsOneWidget);
+      expect(find.text('2 ZEC still migrating'), findsNothing);
       expect(
         tester
             .widget<AppButton>(find.byKey(const ValueKey('mobile_home_send')))
