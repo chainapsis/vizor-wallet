@@ -2044,8 +2044,24 @@ async fn run_sync_impl(
             return Ok(());
         }
 
+        // A recovery can temporarily mark many locally stored transactions as
+        // unmined. Let compact scanning restore their mined heights before
+        // querying lightwalletd for the statuses that remain unknown.
+        let query_unmined_statuses = !db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
+            .iter()
+            .any(is_pending_scan_range);
+
         // Enhancement
-        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
+        run_enhancement(
+            &mut client,
+            &mut db,
+            db_data_path,
+            network,
+            query_unmined_statuses,
+        )
+        .await?;
 
         // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
         // lines 593/701 call sites (end of verify batch / end of
@@ -2123,7 +2139,10 @@ async fn run_sync_impl(
                         }
                     }
                 }
-                if allow_resubmit {
+                // Status lookups are deferred while recovery scanning remains.
+                // Wait until mined status is reliable before selecting
+                // transactions for resubmission.
+                if allow_resubmit && query_unmined_statuses {
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
                         &mut client,

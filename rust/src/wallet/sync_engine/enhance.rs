@@ -14,7 +14,7 @@
 //!     backfill its activity).
 //!
 //! Librustzcash signals these gaps by populating
-//! `db.transaction_data_requests()`. This module drains the queue
+//! `db.transaction_data_requests()`. This module services the queue
 //! against lightwalletd via three gRPC calls (`GetTransaction`,
 //! `TransactionsInvolvingAddress`) and writes the results back into
 //! `db` using `decrypt_and_store_transaction` and
@@ -34,7 +34,7 @@ use zcash_client_backend::{
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
@@ -43,8 +43,9 @@ use crate::wallet::network::WalletNetwork;
 
 use super::{lwd, SyncError, WalletDatabase};
 
-/// Drains `db.transaction_data_requests()` against lightwalletd until
-/// the queue is empty or no request is actionable. Returns
+/// Services `db.transaction_data_requests()` against lightwalletd until
+/// the queue is empty or no request is actionable. Status-only requests
+/// remain queued while `query_unmined_statuses` is false. Returns
 /// `SyncError::Db` if `db.transaction_data_requests()` itself fails.
 /// Per-request failures are split by semantics: an explicit
 /// "txid not recognized" response is recorded via
@@ -56,6 +57,7 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
+    query_unmined_statuses: bool,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
 
@@ -71,23 +73,31 @@ pub(super) async fn run_enhancement(
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests.iter().any(|r| match r {
-            TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
-            TransactionDataRequest::TransactionsInvolvingAddress(req) => {
-                req.block_range_end().is_some()
-            }
-        });
+        let actionable = requests
+            .iter()
+            .any(|request| request_is_actionable(request, query_unmined_statuses));
         if !actionable {
             break;
         }
 
         for req in &requests {
             match req {
+                TransactionDataRequest::GetStatus(_) if !query_unmined_statuses => continue,
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
                     if failed_txids.contains(&txid_str) {
                         continue;
+                    }
+
+                    if matches!(req, TransactionDataRequest::GetStatus(_)) {
+                        match resolve_status_from_scanned_height(db, *txid) {
+                            Ok(true) => continue,
+                            Ok(false) => {}
+                            Err(e) => log::error!(
+                                "sync: could not resolve transaction status locally: {e}"
+                            ),
+                        }
                     }
 
                     match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
@@ -241,6 +251,37 @@ pub(super) async fn run_enhancement(
         }
     }
     Ok(())
+}
+
+fn request_is_actionable(request: &TransactionDataRequest, query_unmined_statuses: bool) -> bool {
+    match request {
+        TransactionDataRequest::Enhancement(_) => true,
+        TransactionDataRequest::GetStatus(_) => query_unmined_statuses,
+        TransactionDataRequest::TransactionsInvolvingAddress(req) => {
+            req.block_range_end().is_some()
+        }
+    }
+}
+
+fn resolve_status_from_scanned_height(
+    db: &mut WalletDatabase,
+    txid: TxId,
+) -> Result<bool, SyncError> {
+    let Some(mined_height) = db
+        .get_tx_height(txid)
+        .map_err(|e| SyncError::db(format!("get transaction height: {e}")))?
+    else {
+        return Ok(false);
+    };
+
+    with_wallet_db_write_lock(
+        "sync_engine.enhance.set_known_mined_transaction_status",
+        || {
+            db.set_transaction_status(txid, TransactionStatus::Mined(mined_height))
+                .map_err(|e| SyncError::db(format!("set known mined transaction status: {e}")))
+        },
+    )?;
+    Ok(true)
 }
 
 async fn fill_missing_transparent_fee(
@@ -428,6 +469,47 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 mod tests {
     use super::*;
 
+    fn status_recovery_test_db(
+        txid: TxId,
+        mined_height: BlockHeight,
+    ) -> (tempfile::NamedTempFile, WalletDatabase) {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
+            db_path,
+            WalletNetwork::Regtest,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        zcash_client_sqlite::wallet::init::init_wallet_db(&mut db, None).unwrap();
+        db.update_chain_tip(mined_height + 10).unwrap();
+        drop(db);
+
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT INTO transactions
+                (txid, mined_height, raw, min_observed_height)
+             VALUES (?1, ?2, X'00', ?2)",
+            rusqlite::params![txid.as_ref(), u32::from(mined_height)],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tx_retrieval_queue (txid, query_type)
+             VALUES (?1, 0)",
+            rusqlite::params![txid.as_ref()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let db = crate::wallet::db::open_wallet_db_with_timeout(
+            db_path,
+            WalletNetwork::Regtest,
+            SYNC_DB_BUSY_TIMEOUT,
+        )
+        .unwrap();
+        (file, db)
+    }
+
     fn transparent_fee_test_tx() -> Transaction {
         let tx_bytes = hex::decode(
             "0400008085202f8901aee37187e843da597683c26c01457f5fd3b1a038996ef74dc8d60d483aaf395a000000006b483045022100874c70db77ea9e93f75cc83a9e141e17c8eb97588e29fe4e307631fdde4f162a02203493df62d648cd86a1189eaf9bcafc652bc14c5df02519d9e45e25b32aaffb5b012102106a2dcaaac2ae3b24358a03f4264e05db420c5b090399bc23885fa02fef7716ffffffff02764e1900000000001976a914fb451987556f7a19b726966ee6cff917e0bb3bfb88ac560ca400000000001976a9141634f5ff0b8f6603a17570436d6c12a91f4b1fed88ac00000000000000000000000000000000000000",
@@ -501,6 +583,40 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn deferred_status_requests_do_not_block_full_data_enhancement() {
+        assert!(!request_is_actionable(
+            &TransactionDataRequest::GetStatus(TxId::from_bytes([1; 32])),
+            false,
+        ));
+        assert!(request_is_actionable(
+            &TransactionDataRequest::GetStatus(TxId::from_bytes([1; 32])),
+            true,
+        ));
+        assert!(request_is_actionable(
+            &TransactionDataRequest::Enhancement(TxId::from_bytes([2; 32])),
+            false,
+        ));
+    }
+
+    #[test]
+    fn scanned_height_resolves_status_without_transaction_download() {
+        let txid = TxId::from_bytes([3; 32]);
+        let mined_height = BlockHeight::from_u32(500);
+        let (_file, mut db) = status_recovery_test_db(txid, mined_height);
+
+        assert!(db
+            .transaction_data_requests()
+            .unwrap()
+            .contains(&TransactionDataRequest::GetStatus(txid)));
+        assert!(resolve_status_from_scanned_height(&mut db, txid).unwrap());
+        assert!(!db
+            .transaction_data_requests()
+            .unwrap()
+            .contains(&TransactionDataRequest::GetStatus(txid)));
+        assert_eq!(db.get_tx_height(txid).unwrap(), Some(mined_height));
     }
 
     #[test]
