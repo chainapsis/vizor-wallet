@@ -346,6 +346,16 @@ pub(crate) fn mark_transaction_created_locally(db_path: &str, txid: &TxId) -> Re
     })
 }
 
+/// Adds the local-origin marker without turning successful transaction storage
+/// into a failure if this follow up write cannot be persisted.
+pub(crate) fn mark_transaction_created_locally_best_effort(db_path: &str, txid: &TxId) {
+    if let Err(error) = mark_transaction_created_locally(db_path, txid) {
+        log::warn!(
+            "Stored locally created transaction {txid}, but its origin marker failed: {error}"
+        );
+    }
+}
+
 pub fn set_transaction_status(
     db_path: &str,
     network: WalletNetwork,

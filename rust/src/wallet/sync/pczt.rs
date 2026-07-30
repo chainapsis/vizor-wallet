@@ -998,7 +998,7 @@ pub async fn extract_and_broadcast_pczt(
             Ok::<(), String>(())
         })?;
         if used_fallback {
-            super::transactions::mark_transaction_created_locally(db_path, &txid)?;
+            super::transactions::mark_transaction_created_locally_best_effort(db_path, &txid);
         }
         Ok(())
     };

@@ -4938,7 +4938,8 @@ fn decrypt_and_store_migration_tx(
     )
     .map_err(|e| format!("Read locally created migration transaction: {e}"))?;
     super::transactions::decrypt_and_store_transaction(db_path, network, raw_tx, None)?;
-    super::transactions::mark_transaction_created_locally(db_path, &tx.txid())
+    super::transactions::mark_transaction_created_locally_best_effort(db_path, &tx.txid());
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
