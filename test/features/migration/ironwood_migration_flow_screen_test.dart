@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -46,6 +47,150 @@ void main() {
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
+  });
+
+  testWidgets(
+    'how-it-works carousel exposes the Figma geometry and desktop cursor',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1080, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(initialLocation: '/migration/how-it-works'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('How the Migration Works'), findsOneWidget);
+      expect(
+        tester.getSize(
+          find.byKey(
+            const ValueKey('ironwood_migration_how_carousel_viewport'),
+          ),
+        ),
+        const Size(700, 320),
+      );
+      final cardSize = tester.getSize(
+        find.byKey(const ValueKey('ironwood_migration_how_card_0')),
+      );
+      expect(cardSize.width, moreOrLessEquals(396));
+      expect(cardSize.height, moreOrLessEquals(280));
+      expect(
+        tester.getTopLeft(
+          find.byKey(const ValueKey('ironwood_migration_how_card_0')),
+        ),
+        const Offset(474, 220),
+      );
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(
+                const ValueKey('ironwood_migration_how_card_opacity_0'),
+              ),
+            )
+            .opacity,
+        1,
+      );
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(
+                const ValueKey('ironwood_migration_how_card_opacity_1'),
+              ),
+            )
+            .opacity,
+        moreOrLessEquals(0.3),
+      );
+
+      final dragRegion = tester.widget<MouseRegion>(
+        find.byKey(
+          const ValueKey('ironwood_migration_how_carousel_drag_region'),
+        ),
+      );
+      expect(dragRegion.cursor, SystemMouseCursors.grab);
+    },
+  );
+
+  testWidgets('how-it-works carousel supports card and indicator clicks', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(initialLocation: '/migration/how-it-works'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Step 2').hitTestable());
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('0.1 ZEC / 1 ZEC / 5 ZEC'), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ironwood_migration_how_indicator_1')),
+      ),
+      const Size(40, 8),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_how_indicator_2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ironwood_migration_how_indicator_2')),
+      ),
+      const Size(40, 8),
+    );
+  });
+
+  testWidgets('how-it-works carousel supports mouse dragging', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(initialLocation: '/migration/how-it-works'),
+    );
+    await tester.pumpAndSettle();
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    final firstCard = find.byKey(
+      const ValueKey('ironwood_migration_how_card_0'),
+    );
+    final center = tester.getCenter(firstCard);
+    await mouse.addPointer(location: center);
+    await mouse.down(center);
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<MouseRegion>(
+            find.byKey(
+              const ValueKey('ironwood_migration_how_carousel_drag_region'),
+            ),
+          )
+          .cursor,
+      SystemMouseCursors.grabbing,
+    );
+
+    await mouse.moveBy(const Offset(-412, 0));
+    await mouse.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ironwood_migration_how_indicator_1')),
+      ),
+      const Size(40, 8),
+    );
   });
 
   testWidgets('what-to-expect screen shows the four migration expectations', (
@@ -4345,7 +4490,14 @@ Widget _migrationOptionsHarness({
       ),
       GoRoute(
         path: '/migration/how-it-works',
-        builder: (_, _) => const Text('how it works'),
+        builder: (_, _) => IronwoodMigrationFlowScreen(
+          step: IronwoodMigrationFlowStep.howItWorks,
+          previewData: IronwoodMigrationFlowData(
+            amountZatoshi: BigInt.from(10_000_000),
+            accountName: 'Account 1',
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+        ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
       GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),

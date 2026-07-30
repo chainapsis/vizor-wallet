@@ -339,6 +339,10 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Desktop',
                   useCases: [
                     WidgetbookUseCase(
+                      name: 'How it works',
+                      builder: buildIronwoodMigrationHowItWorksUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Preparing',
                       builder:
                           buildIronwoodMigrationPrivateStatusWaitingUseCase,
