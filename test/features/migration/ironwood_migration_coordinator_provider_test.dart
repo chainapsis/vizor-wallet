@@ -2021,7 +2021,7 @@ ProviderContainer _container({
         ({
           required dbPath,
           required lightwalletdUrl,
-          String? transactionRelayUrl,
+          String? transactionSubmissionTarget,
           required network,
           required accountUuid,
           required password,

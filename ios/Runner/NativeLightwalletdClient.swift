@@ -1,6 +1,14 @@
 import Foundation
 import Network
 
+private func isNativeLocalHost(_ host: String) -> Bool {
+  let host = host.lowercased()
+  if host == "localhost" || host == "::1" || host == "10.0.2.2" {
+    return true
+  }
+  return IPv4Address(host)?.rawValue.first == 127
+}
+
 final class BackgroundMigrationCancellation: @unchecked Sendable {
   private let condition = NSCondition()
   private var cancelled = false
@@ -561,6 +569,27 @@ enum NativeLightwalletdClient {
     return data[payloadStart..<payloadEnd]
   }
 
+  static func transactionSubmissionURL(
+    endpoint: String,
+    syncEndpoint: String
+  ) -> URL? {
+    guard let components = URLComponents(string: endpoint),
+      components.user == nil,
+      components.password == nil,
+      let submissionHost = components.host,
+      components.query == nil,
+      components.fragment == nil,
+      components.path.isEmpty || components.path == "/",
+      components.scheme == "https"
+        || (components.scheme == "http" && isNativeLocalHost(submissionHost)),
+      let syncHost = URLComponents(string: syncEndpoint)?.host,
+      submissionHost.caseInsensitiveCompare(syncHost) != .orderedSame
+    else {
+      return nil
+    }
+    return components.url
+  }
+
   private static func rpcURL(endpoint: String, methodPath: String) -> URL? {
     guard var components = URLComponents(string: endpoint),
       components.scheme == "https" || components.scheme == "http",
@@ -733,19 +762,11 @@ enum NativeTransactionRelayClient {
       let host = components.host,
       components.query == nil,
       components.fragment == nil,
-      components.scheme == "https" || (components.scheme == "http" && isLoopback(host))
+      components.scheme == "https" || (components.scheme == "http" && isNativeLocalHost(host))
     else {
       return nil
     }
     return components.url
-  }
-
-  private static func isLoopback(_ host: String) -> Bool {
-    let host = host.lowercased()
-    if host == "localhost" || host == "::1" {
-      return true
-    }
-    return IPv4Address(host)?.rawValue.first == 127
   }
 
   private static func isTxidHex(_ value: String) -> Bool {

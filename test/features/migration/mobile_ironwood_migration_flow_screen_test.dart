@@ -1120,7 +1120,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
-          String? transactionRelayUrl,
+          String? transactionSubmissionTarget,
           required network,
           required accountUuid,
           required mnemonicBytes,
@@ -1134,6 +1134,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          String? transactionSubmissionTarget,
           required network,
           required accountUuid,
           required mnemonicBytes,
@@ -1152,7 +1153,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
-          String? transactionRelayUrl,
+          String? transactionSubmissionTarget,
           required network,
           required accountUuid,
           required requestId,
@@ -1179,6 +1180,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          String? transactionSubmissionTarget,
           required network,
           required accountUuid,
           required requestId,
@@ -1194,7 +1196,7 @@ IronwoodMigrationService _migrationService({
           required network,
           required accountUuid,
           required approvedSchedule,
-          String? transactionRelayUrl,
+          String? transactionSubmissionTarget,
         }) =>
             onCreatePrivateDraft?.call(accountUuid, approvedSchedule) ??
             Future.value('private-draft-run'),
@@ -3605,7 +3607,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
-              String? transactionRelayUrl,
+              String? transactionSubmissionTarget,
               required network,
               required accountUuid,
               required requestId,

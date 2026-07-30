@@ -84,7 +84,7 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   let accountUuid: String
   let runId: String
   var lightwalletdUrl: String
-  let transactionRelayUrl: String?
+  let transactionSubmissionTarget: String?
   let timingMeanBlocks: UInt64
   let timingMaxBlocks: UInt64
   let createdAt: Date
@@ -120,6 +120,39 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   }
 }
 
+enum BackgroundMigrationSubmissionTarget: Equatable {
+  private static let relayPrefix = "relay:"
+  private static let lightwalletdPrefix = "lightwalletd:"
+
+  case relay(String)
+  case lightwalletd(String)
+
+  init?(encoded: String, syncLightwalletdUrl: String) {
+    if encoded.hasPrefix(Self.relayPrefix) {
+      let endpoint = String(encoded.dropFirst(Self.relayPrefix.count))
+      guard NativeTransactionRelayClient.relayURL(endpoint) != nil else {
+        return nil
+      }
+      self = .relay(endpoint)
+      return
+    }
+    if encoded.hasPrefix(Self.lightwalletdPrefix) {
+      let endpoint = String(encoded.dropFirst(Self.lightwalletdPrefix.count))
+      guard
+        NativeLightwalletdClient.transactionSubmissionURL(
+          endpoint: endpoint,
+          syncEndpoint: syncLightwalletdUrl
+        ) != nil
+      else {
+        return nil
+      }
+      self = .lightwalletd(endpoint)
+      return
+    }
+    return nil
+  }
+}
+
 struct BackgroundMigrationOutboxScheduleUpdate: Codable, Equatable {
   let itemId: String
   let scheduledHeight: UInt64
@@ -147,7 +180,7 @@ struct BackgroundMigrationOutboxSelection: Equatable {
   let accountUuid: String
   let scopeKey: String
   let lightwalletdUrl: String
-  let transactionRelayUrl: String?
+  let transactionSubmissionTarget: String?
   let item: BackgroundMigrationOutboxItem
 }
 
@@ -216,7 +249,12 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       !batch.accountUuid.isEmpty,
       !batch.runId.isEmpty,
       !batch.lightwalletdUrl.isEmpty,
-      batch.transactionRelayUrl?.isEmpty != true,
+      batch.transactionSubmissionTarget.map({
+        BackgroundMigrationSubmissionTarget(
+          encoded: $0,
+          syncLightwalletdUrl: batch.lightwalletdUrl
+        ) != nil
+      }) ?? true,
       batch.timingMeanBlocks > 0,
       batch.timingMaxBlocks > 0,
       batch.timingMeanBlocks <= batch.timingMaxBlocks,
@@ -244,7 +282,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       guard existing.network == batch.network,
         existing.accountUuid == batch.accountUuid,
         existing.runId == batch.runId,
-        existing.transactionRelayUrl == batch.transactionRelayUrl,
+        existing.transactionSubmissionTarget == batch.transactionSubmissionTarget,
         existing.timingMeanBlocks == batch.timingMeanBlocks,
         existing.timingMaxBlocks == batch.timingMaxBlocks
       else {
@@ -824,7 +862,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       accountUuid: batch.accountUuid,
       scopeKey: batch.scopeKey,
       lightwalletdUrl: batch.lightwalletdUrl,
-      transactionRelayUrl: batch.transactionRelayUrl,
+      transactionSubmissionTarget: batch.transactionSubmissionTarget,
       item: item
     )
   }

@@ -55,23 +55,26 @@ fvm flutter build macos --release \
 change source. Open-source builds should use the public CoinGecko base URL
 above; production builds can point this define at a Vizor-operated proxy.
 
-Ironwood migrations can submit both their locally complete preparation
-transactions and their Phase 2 pool-crossing transactions through a separate
-JSON-RPC relay. Managed mainnet configurations use
+Ironwood migrations choose a separate transaction-submission target for both
+their locally complete preparation transactions and their Phase 2
+pool-crossing transactions. The candidate pool contains a configured JSON-RPC
+relay plus managed lightwalletd endpoints on the same network whose host is
+different from the sync host. Mainnet includes
 `https://zakura-broadcast.valargroup.dev` by default. Set the matching build
-define to override it or to enable relaying on another network:
+define to override that relay or to enable one on another network:
 
 - `VIZOR_ZCASH_TRANSACTION_RELAY_URL_MAIN`
 - `VIZOR_ZCASH_TRANSACTION_RELAY_URL_TEST`
 - `VIZOR_ZCASH_TRANSACTION_RELAY_URL_REGTEST`
 - `VIZOR_ZCASH_TRANSACTION_RELAY_URL_IRONWOOD_MASQUERADE`
 
-An unset or empty testnet, regtest, or Ironwood Masquerade value keeps the
-existing lightwalletd path for new migrations. The relay is used only with a
-built-in lightwalletd preset; a custom lightwalletd selection always keeps the
-existing submission flow. A migration keeps the submission route it started
-with, so changing or removing the define does not reroute its later preparation
-or Phase 2 transactions. Test builds can opt into the testnet Zakura relay with
+The target is selected once and persisted with the migration run, so changing
+the sync endpoint or build define does not reroute later preparation or Phase 2
+transactions. Managed alternatives are available even when the sync endpoint
+is custom, and an alternate lightwalletd target is rejected if its host matches
+the current sync host. Regtest and Ironwood Masquerade builds keep the existing
+lightwalletd path only when no compatible separate target exists. Test builds
+can opt into the testnet Zakura relay with
 `VIZOR_ZCASH_TRANSACTION_RELAY_URL_TEST=https://zakura-broadcast.testnet.valargroup.dev`.
 Production relays should use HTTPS, expose only transaction submission, disable
 request-body logging, and avoid redirects.

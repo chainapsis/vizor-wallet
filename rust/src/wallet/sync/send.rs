@@ -1377,7 +1377,7 @@ async fn execute_stored_proposal(
 pub(crate) async fn migrate_orchard_to_ironwood(
     db_path: &str,
     lightwalletd_url: &str,
-    transaction_relay_url: Option<&str>,
+    transaction_submission_target: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     seed: SecretVec<u8>,
@@ -1581,7 +1581,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             denomination_stages,
             Some(&approved_schedule),
             preparation_timing_policy,
-            transaction_relay_url,
+            transaction_submission_target,
             pending_password.as_slice(),
             pending_salt_base64,
         )?
@@ -4750,11 +4750,51 @@ enum DenominationStageBroadcastReadiness {
     Ready,
 }
 
-fn validate_separate_relay_denomination_stage(
+#[derive(Debug)]
+enum ResolvedMigrationSubmission {
+    Lightwalletd { url: String, is_separate: bool },
+    Relay(String),
+}
+
+impl ResolvedMigrationSubmission {
+    fn from_policy(
+        policy: &super::migration::MigrationSubmissionPolicy,
+        sync_lightwalletd_url: &str,
+    ) -> Result<Self, String> {
+        match policy {
+            super::migration::MigrationSubmissionPolicy::Lightwalletd => Ok(Self::Lightwalletd {
+                url: sync_lightwalletd_url.to_string(),
+                is_separate: false,
+            }),
+            super::migration::MigrationSubmissionPolicy::LightwalletdUrl(url) => {
+                let url = super::broadcast::validate_distinct_lightwalletd_submission_url(
+                    url,
+                    sync_lightwalletd_url,
+                )?;
+                Ok(Self::Lightwalletd {
+                    url: url.to_string(),
+                    is_separate: true,
+                })
+            }
+            super::migration::MigrationSubmissionPolicy::SeparateRelay(url) => {
+                Ok(Self::Relay(url.clone()))
+            }
+        }
+    }
+
+    fn is_separate(&self) -> bool {
+        match self {
+            Self::Lightwalletd { is_separate, .. } => *is_separate,
+            Self::Relay(_) => true,
+        }
+    }
+}
+
+fn validate_separate_submission_denomination_stage(
     stage: &super::migration::PendingRawDenominationStage,
 ) -> Result<(), String> {
     let expected_txid = parse_txid_hex(&stage.expected_txid_hex)?;
-    super::broadcast::parse_separate_relay_transaction(
+    super::broadcast::parse_separate_submission_transaction(
         expected_txid,
         &stage.raw_tx,
         stage.expiry_height,
@@ -4805,11 +4845,6 @@ async fn broadcast_pending_denomination_stages(
     policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<Option<CreatedBroadcastResult>, String> {
     let submission_policy = super::migration::migration_submission_policy(db_path, run_id)?;
-    let persisted_relay_url = match submission_policy {
-        super::migration::MigrationSubmissionPolicy::Lightwalletd => None,
-        super::migration::MigrationSubmissionPolicy::SeparateRelay(url) => Some(url),
-    };
-    let transaction_relay_url = persisted_relay_url.as_deref();
     let progress = super::get_sync_progress(db_path, network)?;
     let scanned_height = u32::try_from(progress.scanned_height)
         .map_err(|_| "Migration scanned height exceeds u32".to_string())?;
@@ -4870,30 +4905,48 @@ async fn broadcast_pending_denomination_stages(
             ),
         }));
     }
-    // When configured, do not contact lightwalletd from this preparation path,
-    // including for a fresh height. The preceding wallet sync already persisted
-    // the tip used below.
-    let relay_client = match transaction_relay_url {
-        Some(url) => match super::broadcast::TransactionRelayClient::new(url) {
-            Ok(client) => Some(client),
+    let submission =
+        match ResolvedMigrationSubmission::from_policy(&submission_policy, lightwalletd_url) {
+            Ok(submission) => submission,
             Err(e) => {
                 return Ok(Some(CreatedBroadcastResult {
                     txids,
                     status: CreatedBroadcastResult::PENDING_BROADCAST,
                     broadcasted_count: 0,
                     total_count,
-                    message: Some(format!("Denomination split relay could not start: {e}")),
+                    message: Some(format!(
+                        "Denomination split submission target is invalid: {e}"
+                    )),
                 }));
             }
-        },
-        None => None,
+        };
+    // A JSON-RPC relay cannot provide a fresh chain height. The preceding
+    // wallet sync already persisted the tip used for that route.
+    let relay_client = match &submission {
+        ResolvedMigrationSubmission::Relay(url) => {
+            match super::broadcast::TransactionRelayClient::new(url) {
+                Ok(client) => Some(client),
+                Err(e) => {
+                    return Ok(Some(CreatedBroadcastResult {
+                        txids,
+                        status: CreatedBroadcastResult::PENDING_BROADCAST,
+                        broadcasted_count: 0,
+                        total_count,
+                        message: Some(format!("Denomination split relay could not start: {e}")),
+                    }));
+                }
+            }
+        }
+        ResolvedMigrationSubmission::Lightwalletd { .. } => None,
     };
     let mut lwd_client = None;
     let chain_tip_height = if relay_client.is_some() {
         known_chain_tip_height
     } else {
-        let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await
-        {
+        let ResolvedMigrationSubmission::Lightwalletd { url, .. } = &submission else {
+            unreachable!("relay route was handled above")
+        };
+        let mut client = match crate::wallet::sync_engine::open_lwd_channel(url).await {
             Ok(client) => client,
             Err(e) => {
                 return Ok(Some(CreatedBroadcastResult {
@@ -4962,15 +5015,17 @@ async fn broadcast_pending_denomination_stages(
             run_id,
             &stage.expected_txid_hex,
         )?;
-        let broadcast_result = if let Some(client) = relay_client.as_ref() {
-            match validate_separate_relay_denomination_stage(stage) {
-                Ok(()) => {
-                    client
-                        .send_raw_transaction(&stage.raw_tx, &stage.expected_txid_hex)
-                        .await
-                }
-                Err(e) => Err(e),
-            }
+        let validation_result = if submission.is_separate() {
+            validate_separate_submission_denomination_stage(stage)
+        } else {
+            Ok(())
+        };
+        let broadcast_result = if let Err(e) = validation_result {
+            Err(e)
+        } else if let Some(client) = relay_client.as_ref() {
+            client
+                .send_raw_transaction(&stage.raw_tx, &stage.expected_txid_hex)
+                .await
         } else {
             broadcast_raw_transaction(
                 lwd_client
@@ -5081,18 +5136,18 @@ async fn broadcast_pending_denomination_stages(
     }))
 }
 
-fn validate_separate_relay_migration_transaction(
+fn validate_separate_submission_migration_transaction(
     pending: &super::migration::DuePendingMigrationTx,
 ) -> Result<(), String> {
     let expected_txid = parse_txid_hex(&pending.txid_hex)?;
-    let tx = super::broadcast::parse_separate_relay_transaction(
+    let tx = super::broadcast::parse_separate_submission_transaction(
         expected_txid,
         &pending.raw_tx,
         pending.expiry_height,
     )?;
     if tx.orchard_bundle().is_none() || tx.ironwood_bundle().is_none() {
         return Err(format!(
-            "Separate-relay migration transaction {} does not cross from Orchard to Ironwood",
+            "Separate-route migration transaction {} does not cross from Orchard to Ironwood",
             pending.txid_hex
         ));
     }
@@ -5227,10 +5282,34 @@ async fn broadcast_due_scheduled_migration_txs(
     }
 
     let submission_policy = super::migration::migration_submission_policy(db_path, run_id)?;
-    let relay_client = match submission_policy {
-        super::migration::MigrationSubmissionPolicy::Lightwalletd => None,
-        super::migration::MigrationSubmissionPolicy::SeparateRelay(url) => {
-            match super::broadcast::TransactionRelayClient::new(&url) {
+    let submission =
+        match ResolvedMigrationSubmission::from_policy(&submission_policy, lightwalletd_url) {
+            Ok(submission) => submission,
+            Err(e) => {
+                let message = format!("Migration submission target is invalid: {e}");
+                super::migration::mark_run_phase(
+                    db_path,
+                    run_id,
+                    super::migration::PHASE_FAILED_RECOVERABLE,
+                    Some(&message),
+                )?;
+                return Ok(MigrationBroadcastAdvance::without_acceptance(
+                    IronwoodMigrationResult {
+                        txids: String::new(),
+                        status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
+                        broadcasted_count: 0,
+                        total_count: fallback_total_count,
+                        message: Some(message),
+                        fee_zatoshi: 0,
+                        migrated_zatoshi: fallback_migrated_zatoshi,
+                    },
+                ));
+            }
+        };
+    let relay_client = match &submission {
+        ResolvedMigrationSubmission::Lightwalletd { .. } => None,
+        ResolvedMigrationSubmission::Relay(url) => {
+            match super::broadcast::TransactionRelayClient::new(url) {
                 Ok(client) => Some(client),
                 Err(e) => {
                     let message = format!("Migration relay could not start: {e}");
@@ -5255,8 +5334,9 @@ async fn broadcast_due_scheduled_migration_txs(
             }
         }
     };
-    let mut lwd_client = if relay_client.is_none() {
-        match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+    let mut lwd_client = if let ResolvedMigrationSubmission::Lightwalletd { url, .. } = &submission
+    {
+        match crate::wallet::sync_engine::open_lwd_channel(url).await {
             Ok(client) => Some(client),
             Err(e) => {
                 let message = format!("Migration broadcast could not start: {e}");
@@ -5296,15 +5376,17 @@ async fn broadcast_due_scheduled_migration_txs(
             break;
         }
         super::migration::mark_pending_broadcast_attempted(db_path, run_id, &pending.txid_hex)?;
-        let broadcast_result = if let Some(client) = relay_client.as_ref() {
-            match validate_separate_relay_migration_transaction(&pending) {
-                Ok(()) => {
-                    client
-                        .send_raw_transaction(&pending.raw_tx, &pending.txid_hex)
-                        .await
-                }
-                Err(error) => Err(error),
-            }
+        let validation_result = if submission.is_separate() {
+            validate_separate_submission_migration_transaction(&pending)
+        } else {
+            Ok(())
+        };
+        let broadcast_result = if let Err(error) = validation_result {
+            Err(error)
+        } else if let Some(client) = relay_client.as_ref() {
+            client
+                .send_raw_transaction(&pending.raw_tx, &pending.txid_hex)
+                .await
         } else {
             broadcast_raw_transaction(
                 lwd_client

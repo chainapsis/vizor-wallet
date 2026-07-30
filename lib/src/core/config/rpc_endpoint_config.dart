@@ -1,3 +1,5 @@
+import 'dart:math' show Random;
+
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import 'network_config.dart';
@@ -241,13 +243,17 @@ bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
   return config.effectivePresetId == kCustomRpcEndpointPresetId;
 }
 
-/// Returns the transaction relay for a managed endpoint.
+const _migrationRelaySubmissionPrefix = 'relay:';
+const _migrationLightwalletdSubmissionPrefix = 'lightwalletd:';
+
+/// Returns every valid migration submission target for [syncEndpoint].
 ///
-/// Custom endpoint intent always keeps transaction submission on the selected
-/// lightwalletd, even when its URL happens to match a built-in preset. Mainnet
-/// falls back to the Zakura broadcast endpoint when no build URL is supplied.
-String? transactionRelayUrlForPrimaryEndpoint(
-  RpcEndpointConfig primary, {
+/// Relay targets and managed lightwalletd targets are tagged so Rust and the
+/// native iOS outbox can persist both the URL and its transport. A
+/// lightwalletd candidate is excluded when its host matches the sync host,
+/// even if it uses a different port.
+List<String> transactionSubmissionTargetsForSyncEndpoint(
+  RpcEndpointConfig syncEndpoint, {
   String mainUrl = kVizorZcashTransactionRelayUrlMain,
   String testUrl = kVizorZcashTransactionRelayUrlTest,
   String regtestUrl = kVizorZcashTransactionRelayUrlRegtest,
@@ -255,38 +261,76 @@ String? transactionRelayUrlForPrimaryEndpoint(
       kVizorZcashTransactionRelayUrlIronwoodMasquerade,
   bool ironwoodMasquerade = kZcashIronwoodMasquerade,
 }) {
-  final RpcEndpointPreset? preset;
-  if (ironwoodMasquerade) {
-    preset = primary.presetId?.trim() == kIronwoodMasqueradeRpcEndpointPresetId
-        ? kIronwoodMasqueradeRpcEndpointPreset
-        : null;
-  } else {
-    if (isCustomRpcEndpointConfig(primary)) return null;
-    preset = explicitRpcEndpointPresetFor(primary);
-  }
-  if (preset == null) return null;
+  final String normalizedSyncEndpoint;
   try {
-    if (primary.normalizedLightwalletdUrl !=
-        normalizeRpcEndpointUrl(preset.url, allowDefaultPort: true)) {
-      return null;
-    }
+    normalizedSyncEndpoint = normalizeRpcEndpointUrl(
+      syncEndpoint.lightwalletdUrl,
+      allowDefaultPort: true,
+    );
   } on FormatException {
-    return null;
+    return const [];
   }
+  final syncHost = Uri.parse(normalizedSyncEndpoint).host.toLowerCase();
+  final targets = <String>[];
 
-  final configured = ironwoodMasquerade
+  final configuredRelay = ironwoodMasquerade
       ? ironwoodMasqueradeUrl
-      : switch (primary.network) {
+      : switch (syncEndpoint.network) {
           ZcashNetwork.mainnet => mainUrl,
           ZcashNetwork.testnet => testUrl,
           ZcashNetwork.regtest => regtestUrl,
         };
-  final trimmed = configured.trim();
-  if (trimmed.isNotEmpty) return trimmed;
-  if (!ironwoodMasquerade && primary.network == ZcashNetwork.mainnet) {
-    return kZakuraMainnetTransactionRelayUrl;
+  final relayUrl = configuredRelay.trim().isNotEmpty
+      ? configuredRelay.trim()
+      : !ironwoodMasquerade && syncEndpoint.network == ZcashNetwork.mainnet
+      ? kZakuraMainnetTransactionRelayUrl
+      : null;
+  if (relayUrl != null) {
+    targets.add('$_migrationRelaySubmissionPrefix$relayUrl');
   }
-  return null;
+
+  final managedPresets = ironwoodMasquerade
+      ? const [kIronwoodMasqueradeRpcEndpointPreset]
+      : rpcEndpointPresetsForNetwork(syncEndpoint.networkName);
+  final seenLightwalletdUrls = <String>{normalizedSyncEndpoint};
+  for (final preset in managedPresets) {
+    String normalized;
+    try {
+      normalized = normalizeRpcEndpointUrl(preset.url, allowDefaultPort: true);
+    } on FormatException {
+      continue;
+    }
+    final candidateHost = Uri.parse(normalized).host.toLowerCase();
+    if (candidateHost == syncHost || !seenLightwalletdUrls.add(normalized)) {
+      continue;
+    }
+    targets.add('$_migrationLightwalletdSubmissionPrefix$normalized');
+  }
+
+  return List.unmodifiable(targets);
+}
+
+/// Selects one immutable migration submission target for a new run.
+String? transactionSubmissionTargetForSyncEndpoint(
+  RpcEndpointConfig syncEndpoint, {
+  String mainUrl = kVizorZcashTransactionRelayUrlMain,
+  String testUrl = kVizorZcashTransactionRelayUrlTest,
+  String regtestUrl = kVizorZcashTransactionRelayUrlRegtest,
+  String ironwoodMasqueradeUrl =
+      kVizorZcashTransactionRelayUrlIronwoodMasquerade,
+  bool ironwoodMasquerade = kZcashIronwoodMasquerade,
+  Random? random,
+}) {
+  final targets = transactionSubmissionTargetsForSyncEndpoint(
+    syncEndpoint,
+    mainUrl: mainUrl,
+    testUrl: testUrl,
+    regtestUrl: regtestUrl,
+    ironwoodMasqueradeUrl: ironwoodMasqueradeUrl,
+    ironwoodMasquerade: ironwoodMasquerade,
+  );
+  if (targets.isEmpty) return null;
+  return targets[(random ?? Random.secure()).nextInt(targets.length)];
 }
 
 bool isRpcEndpointAllowedForBuild(String lightwalletdUrl) {

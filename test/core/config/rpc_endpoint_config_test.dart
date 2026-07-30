@@ -1,3 +1,5 @@
+import 'dart:math' show Random;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 
@@ -270,58 +272,92 @@ void main() {
     });
   });
 
-  group('transactionRelayUrlForPrimaryEndpoint', () {
-    test('never relays a custom endpoint that matches a preset URL', () {
-      final preset = defaultRpcEndpointConfig('main');
-      final custom = RpcEndpointConfig(
-        networkName: preset.networkName,
-        lightwalletdUrl: preset.lightwalletdUrl,
+  group('transaction submission targets', () {
+    test('mainnet includes Zakura and alternate lightwalletd hosts', () {
+      final primary = defaultRpcEndpointConfig('main');
+      final targets = transactionSubmissionTargetsForSyncEndpoint(
+        primary,
+        mainUrl: '   ',
+      );
+
+      expect(targets.first, 'relay:https://zakura-broadcast.valargroup.dev');
+      expect(
+        targets.where((target) => target.startsWith('lightwalletd:')),
+        isNotEmpty,
+      );
+      final primaryHost = Uri.parse(primary.normalizedLightwalletdUrl).host;
+      for (final target in targets.where(
+        (target) => target.startsWith('lightwalletd:'),
+      )) {
+        expect(
+          Uri.parse(target.substring('lightwalletd:'.length)).host,
+          isNot(equals(primaryHost)),
+        );
+      }
+    });
+
+    test('custom sync endpoints still receive managed alternatives', () {
+      const primary = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://custom.example:443',
         presetId: kCustomRpcEndpointPresetId,
       );
 
+      final targets = transactionSubmissionTargetsForSyncEndpoint(
+        primary,
+        mainUrl: 'https://relay.example/submit',
+      );
+
+      expect(targets.first, 'relay:https://relay.example/submit');
       expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          custom,
-          mainUrl: 'https://relay.example/submit',
-        ),
-        isNull,
+        targets.where((target) => target.startsWith('lightwalletd:')),
+        isNotEmpty,
       );
     });
 
-    test('uses the network relay for a non-default managed preset', () {
+    test('same lightwalletd host is excluded even on another port', () {
       const primary = RpcEndpointConfig(
         networkName: 'main',
-        lightwalletdUrl: 'https://zec.rocks:443',
-        presetId: 'zec-rocks',
+        lightwalletdUrl: 'https://zec.rocks:9067',
+        presetId: kCustomRpcEndpointPresetId,
       );
 
+      final targets = transactionSubmissionTargetsForSyncEndpoint(primary);
+
+      expect(targets, isNot(contains('lightwalletd:https://zec.rocks:443')));
       expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          primary,
-          mainUrl: '  https://relay.example/submit  ',
-        ),
-        'https://relay.example/submit',
+        targets.where((target) => target.startsWith('lightwalletd:')),
+        isNotEmpty,
       );
     });
 
-    test('does not trust a recognized preset id with a mismatched URL', () {
-      const stalePrimary = RpcEndpointConfig(
-        networkName: 'main',
-        lightwalletdUrl: 'https://unexpected.example:443',
-        presetId: 'zec-rocks',
+    test('testnet uses another lightwalletd when no relay is configured', () {
+      final targets = transactionSubmissionTargetsForSyncEndpoint(
+        defaultRpcEndpointConfig('test'),
+        testUrl: '   ',
       );
 
-      expect(isCustomRpcEndpointConfig(stalePrimary), isFalse);
+      expect(targets, ['lightwalletd:https://zcash.mysideoftheweb.com:19067']);
+    });
+
+    test('regtest keeps the legacy route only without a separate target', () {
       expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          stalePrimary,
-          mainUrl: 'https://relay.example/submit',
+        transactionSubmissionTargetsForSyncEndpoint(
+          defaultRpcEndpointConfig('regtest'),
+          regtestUrl: '   ',
         ),
-        isNull,
+        isEmpty,
+      );
+      expect(
+        transactionSubmissionTargetsForSyncEndpoint(
+          defaultRpcEndpointConfig('regtest'),
+          regtestUrl: 'http://127.0.0.1:8080/submit',
+        ),
+        ['relay:http://127.0.0.1:8080/submit'],
       );
     });
 
-    test('uses a separate relay for Ironwood Masquerade builds', () {
+    test('Ironwood Masquerade uses its configured relay', () {
       const primary = RpcEndpointConfig(
         networkName: 'main',
         lightwalletdUrl: 'https://lwd.157.245.208.35.sslip.io:443',
@@ -329,76 +365,24 @@ void main() {
       );
 
       expect(
-        transactionRelayUrlForPrimaryEndpoint(
+        transactionSubmissionTargetsForSyncEndpoint(
           primary,
-          mainUrl: 'https://main.example/submit',
           ironwoodMasqueradeUrl: 'https://ironwood.example/submit',
           ironwoodMasquerade: true,
         ),
-        'https://ironwood.example/submit',
+        ['relay:https://ironwood.example/submit'],
       );
     });
 
-    test('selects the configured relay by network', () {
-      const urls = (
-        main: 'https://main.example/submit',
-        test: 'https://test.example/submit',
-        regtest: 'http://127.0.0.1:8080/submit',
-      );
+    test('selector chooses one candidate from the immutable pool', () {
+      final primary = defaultRpcEndpointConfig('main');
+      final targets = transactionSubmissionTargetsForSyncEndpoint(primary);
+      final expectedRandom = Random(7);
+      final expected = targets[expectedRandom.nextInt(targets.length)];
 
       expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          defaultRpcEndpointConfig('main'),
-          mainUrl: urls.main,
-          testUrl: urls.test,
-          regtestUrl: urls.regtest,
-        ),
-        urls.main,
-      );
-      expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          defaultRpcEndpointConfig('test'),
-          mainUrl: urls.main,
-          testUrl: urls.test,
-          regtestUrl: urls.regtest,
-        ),
-        urls.test,
-      );
-      expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          defaultRpcEndpointConfig('regtest'),
-          mainUrl: urls.main,
-          testUrl: urls.test,
-          regtestUrl: urls.regtest,
-        ),
-        urls.regtest,
-      );
-    });
-
-    test('uses the Zakura endpoint when the main build URL is empty', () {
-      expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          defaultRpcEndpointConfig('main'),
-          mainUrl: '   ',
-        ),
-        'https://zakura-broadcast.valargroup.dev',
-      );
-    });
-
-    test('keeps non-mainnet routing disabled when build URLs are empty', () {
-      expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          defaultRpcEndpointConfig('test'),
-          testUrl: '   ',
-        ),
-        isNull,
-      );
-      expect(
-        transactionRelayUrlForPrimaryEndpoint(
-          defaultRpcEndpointConfig('regtest'),
-          regtestUrl: '   ',
-        ),
-        isNull,
+        transactionSubmissionTargetForSyncEndpoint(primary, random: Random(7)),
+        expected,
       );
     });
   });

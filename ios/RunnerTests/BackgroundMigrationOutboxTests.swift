@@ -301,18 +301,18 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     }
   }
 
-  func testRestagingCannotChangeTheSavedRelay() throws {
+  func testRestagingCannotChangeTheSavedSubmissionTarget() throws {
     let original = makeBatch(
       batchId: "batch-a",
       account: "account-a",
       heights: [100],
-      transactionRelayUrl: "https://relay-one.example/submit"
+      transactionSubmissionTarget: "relay:https://relay-one.example/submit"
     )
     let replacement = makeBatch(
       batchId: "batch-a",
       account: "account-a",
       heights: [100],
-      transactionRelayUrl: "https://relay-two.example/submit"
+      transactionSubmissionTarget: "relay:https://relay-two.example/submit"
     )
     var snapshot = BackgroundMigrationOutboxSnapshot()
 
@@ -719,7 +719,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       batchId: "batch-a",
       account: "account-a",
       heights: [100],
-      transactionRelayUrl: relayUrl
+      transactionSubmissionTarget: "relay:\(relayUrl)"
     )
     try stageAndArm(batch, in: harness.store)
     var tipEndpoints: [String] = []
@@ -757,6 +757,60 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertEqual(relaySubmissions[0].2, batch.items[0].rawTransaction)
     guard case .accepted = outcome.transport else {
       return XCTFail("Expected an accepted relay submission, got \(outcome)")
+    }
+  }
+
+  func testRunnerUsesSavedAlternateLightwalletdForTransactionSubmission() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let submissionUrl = "https://zcash.mysideoftheweb.com:19067"
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100],
+      transactionSubmissionTarget: "lightwalletd:\(submissionUrl)"
+    )
+    try stageAndArm(batch, in: harness.store)
+    var tipEndpoints: [String] = []
+    var sendEndpoints: [String] = []
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { endpoint, _ in
+        tipEndpoints.append(endpoint)
+        return .success(200)
+      },
+      sendTransaction: { endpoint, _, _ in
+        sendEndpoints.append(endpoint)
+        return .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+
+    XCTAssertEqual(tipEndpoints, [batch.lightwalletdUrl])
+    XCTAssertEqual(sendEndpoints, [submissionUrl])
+    guard case .accepted = outcome.transport else {
+      return XCTFail("Expected an accepted alternate-lightwalletd submission, got \(outcome)")
+    }
+  }
+
+  func testStageRejectsSubmissionLightwalletdOnTheSyncHost() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100],
+      transactionSubmissionTarget: "lightwalletd:https://testnet.zec.rocks:9067"
+    )
+
+    XCTAssertThrowsError(try snapshot.stage(batch)) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .invalidBatch)
     }
   }
 
@@ -1673,7 +1727,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     account: String,
     heights: [UInt64] = [100, 101, 102],
     nextProofHeight: UInt64? = nil,
-    transactionRelayUrl: String? = nil
+    transactionSubmissionTarget: String? = nil
   ) -> BackgroundMigrationOutboxBatch {
     BackgroundMigrationOutboxBatch(
       batchId: batchId,
@@ -1681,7 +1735,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       accountUuid: account,
       runId: "run-\(account)",
       lightwalletdUrl: "https://testnet.zec.rocks:443",
-      transactionRelayUrl: transactionRelayUrl,
+      transactionSubmissionTarget: transactionSubmissionTarget,
       timingMeanBlocks: 144,
       timingMaxBlocks: 576,
       createdAt: now,

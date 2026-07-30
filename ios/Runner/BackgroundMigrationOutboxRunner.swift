@@ -272,15 +272,43 @@ enum BackgroundMigrationOutboxRunner {
       )
     }
 
+    let submissionTarget = selection.transactionSubmissionTarget.flatMap {
+      BackgroundMigrationSubmissionTarget(
+        encoded: $0,
+        syncLightwalletdUrl: selection.lightwalletdUrl
+      )
+    }
+    if selection.transactionSubmissionTarget != nil && submissionTarget == nil {
+      recordUncertain(
+        store: store,
+        itemId: selection.item.itemId,
+        error: "Migration transaction submission target is invalid.",
+        at: now
+      )
+      return BackgroundMigrationOutboxRunResult(
+        transport: .needsUserAction,
+        proofReady: proofReady,
+        broadcastComplete: broadcastComplete,
+        transportAccountUuid: selection.accountUuid
+      )
+    }
+
     let submissionResult: Result<NativeLightwalletdSendResponse, NativeLightwalletdError>
-    if let relayUrl = selection.transactionRelayUrl {
+    switch submissionTarget {
+    case .some(.relay(let relayUrl)):
       submissionResult = dependencies.sendTransactionRelay(
         relayUrl,
         selection.item.txidHex,
         selection.item.rawTransaction,
         cancellation
       )
-    } else {
+    case .some(.lightwalletd(let submissionLightwalletdUrl)):
+      submissionResult = dependencies.sendTransaction(
+        submissionLightwalletdUrl,
+        selection.item.rawTransaction,
+        cancellation
+      )
+    case nil:
       submissionResult = dependencies.sendTransaction(
         selection.lightwalletdUrl,
         selection.item.rawTransaction,

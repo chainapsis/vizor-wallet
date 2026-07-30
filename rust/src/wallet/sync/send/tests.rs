@@ -14,6 +14,33 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn resolves_alternate_lightwalletd_without_reusing_sync_host() {
+    let resolved = ResolvedMigrationSubmission::from_policy(
+        &migration::MigrationSubmissionPolicy::LightwalletdUrl(
+            "https://submit.example.com:443".to_string(),
+        ),
+        "https://sync.example.com:443",
+    )
+    .unwrap();
+    assert!(matches!(
+        resolved,
+        ResolvedMigrationSubmission::Lightwalletd {
+            is_separate: true,
+            ..
+        }
+    ));
+
+    let error = ResolvedMigrationSubmission::from_policy(
+        &migration::MigrationSubmissionPolicy::LightwalletdUrl(
+            "https://SYNC.example.com:9067".to_string(),
+        ),
+        "https://sync.example.com:443",
+    )
+    .expect_err("same-host submission must fail");
+    assert!(error.contains("must not use the sync host"), "{error}");
+}
+
+#[test]
 fn migration_stop_preserves_zero_as_the_no_expiry_sentinel() {
     assert!(!migration_stop_candidate_is_expired(0, u32::MAX));
     assert!(!migration_stop_candidate_is_expired(200, 199));
@@ -1780,7 +1807,7 @@ fn create_denomination_expiry_test_run(
 }
 
 #[test]
-fn observed_separate_relay_stage_restores_missing_wallet_raw() {
+fn observed_separate_submission_stage_restores_missing_wallet_raw() {
     let (_temp_dir, db_path, run_id) =
         create_denomination_expiry_test_run(migration::DenominationStageStatus::Pending);
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
@@ -1807,12 +1834,15 @@ fn observed_separate_relay_stage_restores_missing_wallet_raw() {
     .unwrap();
 
     let mut stored = Vec::new();
-    let restored =
-        restore_observed_separate_relay_transactions(&conn, &stages, |raw_tx, mined_height| {
+    let restored = restore_observed_separate_submission_transactions(
+        &conn,
+        &stages,
+        |raw_tx, mined_height| {
             stored.push((raw_tx.to_vec(), mined_height));
             Ok(())
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
 
     assert_eq!(restored, 1);
     assert_eq!(stored, vec![(vec![1, 2, 3, 4], 105)]);

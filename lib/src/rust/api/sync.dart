@@ -302,7 +302,7 @@ Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
 Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
+  String? transactionSubmissionTarget,
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
@@ -313,7 +313,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
 }) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwood(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
-  transactionRelayUrl: transactionRelayUrl,
+  transactionSubmissionTarget: transactionSubmissionTarget,
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
@@ -554,20 +554,20 @@ Future<String> createOrResumePrivateMigrationDraft({
   required String accountUuid,
   required List<MigrationScheduledTransfer> approvedSchedule,
   required bool spacePreparationBroadcasts,
-  String? transactionRelayUrl,
+  String? transactionSubmissionTarget,
 }) => RustLib.instance.api.crateApiSyncCreateOrResumePrivateMigrationDraft(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
   approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: spacePreparationBroadcasts,
-  transactionRelayUrl: transactionRelayUrl,
+  transactionSubmissionTarget: transactionSubmissionTarget,
 );
 
 Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
+  String? transactionSubmissionTarget,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -579,7 +579,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
     RustLib.instance.api.crateApiSyncCompleteOrchardMigrationDenominationsPczt(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
-      transactionRelayUrl: transactionRelayUrl,
+      transactionSubmissionTarget: transactionSubmissionTarget,
       network: network,
       accountUuid: accountUuid,
       requestId: requestId,
@@ -610,7 +610,7 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
 Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
+  String? transactionSubmissionTarget,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -620,7 +620,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
 }) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
-  transactionRelayUrl: transactionRelayUrl,
+  transactionSubmissionTarget: transactionSubmissionTarget,
   network: network,
   accountUuid: accountUuid,
   requestId: requestId,
@@ -675,7 +675,7 @@ Future<IronwoodMigrationResult>
 migrateOrchardToIronwoodWithMacosStoredMnemonic({
   required String dbPath,
   required String lightwalletdUrl,
-  String? transactionRelayUrl,
+  String? transactionSubmissionTarget,
   required String network,
   required String accountUuid,
   required String password,
@@ -686,7 +686,7 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
     .crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
-      transactionRelayUrl: transactionRelayUrl,
+      transactionSubmissionTarget: transactionSubmissionTarget,
       network: network,
       accountUuid: accountUuid,
       password: password,
@@ -1312,7 +1312,7 @@ class KeystoneSignedMigrationMessage {
 
 class MigrationOutboxBatch {
   final String runId;
-  final String? transactionRelayUrl;
+  final String? transactionSubmissionTarget;
   final int timingMeanBlocks;
   final int timingMaxBlocks;
   final int? nextProofHeight;
@@ -1320,7 +1320,7 @@ class MigrationOutboxBatch {
 
   const MigrationOutboxBatch({
     required this.runId,
-    this.transactionRelayUrl,
+    this.transactionSubmissionTarget,
     required this.timingMeanBlocks,
     required this.timingMaxBlocks,
     this.nextProofHeight,
@@ -1330,7 +1330,7 @@ class MigrationOutboxBatch {
   @override
   int get hashCode =>
       runId.hashCode ^
-      transactionRelayUrl.hashCode ^
+      transactionSubmissionTarget.hashCode ^
       timingMeanBlocks.hashCode ^
       timingMaxBlocks.hashCode ^
       nextProofHeight.hashCode ^
@@ -1342,7 +1342,7 @@ class MigrationOutboxBatch {
       other is MigrationOutboxBatch &&
           runtimeType == other.runtimeType &&
           runId == other.runId &&
-          transactionRelayUrl == other.transactionRelayUrl &&
+          transactionSubmissionTarget == other.transactionSubmissionTarget &&
           timingMeanBlocks == other.timingMeanBlocks &&
           timingMaxBlocks == other.timingMaxBlocks &&
           nextProofHeight == other.nextProofHeight &&

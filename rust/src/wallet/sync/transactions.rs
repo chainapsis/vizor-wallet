@@ -1758,7 +1758,10 @@ pub(crate) fn get_resubmittable_txs_excluding(
                 .try_into()
                 .map_err(|_| "Resubmission transaction ID must be 32 bytes".to_string())?,
         );
-        if super::migration::is_separate_relay_migration_transaction(&read_tx, &txid.to_string())? {
+        if super::migration::is_separate_submission_migration_transaction(
+            &read_tx,
+            &txid.to_string(),
+        )? {
             continue;
         }
         let raw_tx = raw_stmt
@@ -4760,7 +4763,7 @@ mod tests {
     }
 
     #[test]
-    fn resubmit_excludes_separate_relay_migration_transactions() {
+    fn resubmit_excludes_separate_submission_migration_transactions() {
         let db = fresh_db();
         let preparation_txid = fake_txid(0x08);
         let preparation_txid_hex = TxId::from_bytes(preparation_txid).to_string();

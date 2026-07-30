@@ -243,7 +243,7 @@ enum BackgroundMigrationOutboxChannel {
       accountUuid: try string(arguments, "accountUuid"),
       runId: try string(arguments, "runId"),
       lightwalletdUrl: try string(arguments, "lightwalletdUrl"),
-      transactionRelayUrl: try optionalString(arguments, "transactionRelayUrl"),
+      transactionSubmissionTarget: try optionalString(arguments, "transactionSubmissionTarget"),
       timingMeanBlocks: try uint64(arguments, "timingMeanBlocks"),
       timingMaxBlocks: try uint64(arguments, "timingMaxBlocks"),
       createdAt: Date(

@@ -1242,17 +1242,29 @@ fn delete_account_migration_rows_rolls_back_with_account_transaction() {
 #[test]
 fn invalid_denomination_submission_target_fails_closed() {
     assert!(parse_migration_submission_target("run-1", "relay:").is_err());
+    assert!(parse_migration_submission_target("run-1", "lightwalletd:").is_err());
     assert!(parse_migration_submission_target("run-1", "invalid").is_err());
+
+    assert_eq!(
+        parse_migration_submission_target("run-1", "lightwalletd:https://submit.example.com:443")
+            .unwrap(),
+        MigrationSubmissionPolicy::LightwalletdUrl("https://submit.example.com/".to_string())
+    );
 }
 
 #[test]
-fn separate_relay_requires_expiring_denomination_transactions() {
-    let mut stage = pending_test_stage(&"11".repeat(32), vec![1, 2, 3]);
-    let relay =
-        MigrationSubmissionPolicy::SeparateRelay("https://relay.example/submit".to_string());
-    assert!(validate_denomination_stages_for_submission_policy(&relay, &[stage.clone()]).is_err());
-    stage.expiry_height = 1;
-    validate_denomination_stages_for_submission_policy(&relay, &[stage]).unwrap();
+fn separate_submission_requires_expiring_denomination_transactions() {
+    for policy in [
+        MigrationSubmissionPolicy::SeparateRelay("https://relay.example/submit".to_string()),
+        MigrationSubmissionPolicy::LightwalletdUrl("https://submit.example.com/".to_string()),
+    ] {
+        let mut stage = pending_test_stage(&"11".repeat(32), vec![1, 2, 3]);
+        assert!(
+            validate_denomination_stages_for_submission_policy(&policy, &[stage.clone()]).is_err()
+        );
+        stage.expiry_height = 1;
+        validate_denomination_stages_for_submission_policy(&policy, &[stage]).unwrap();
+    }
 }
 
 #[test]
@@ -5147,7 +5159,7 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         &target_values,
         &approved_schedule,
         PreparationTimingPolicy::Immediate,
-        Some("https://relay.one/submit"),
+        Some("relay:https://relay.one/submit"),
     )
     .unwrap();
     let resumed_run_id = create_or_resume_private_migration_draft(
@@ -8050,8 +8062,8 @@ fn migration_outbox_export_decrypts_only_scheduled_children() {
 
     assert_eq!(batch.run_id, "outbox-export");
     assert_eq!(
-        batch.transaction_relay_url.as_deref(),
-        Some("https://relay.example/submit")
+        batch.transaction_submission_target.as_deref(),
+        Some("relay:https://relay.example/submit")
     );
     assert!(batch.timing_mean_blocks > 0);
     assert!(batch.timing_max_blocks >= batch.timing_mean_blocks);

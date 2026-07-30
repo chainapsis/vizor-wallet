@@ -2642,6 +2642,40 @@ final class NativeTransactionRelayClientTests: XCTestCase {
   }
 }
 
+final class NativeLightwalletdSubmissionTargetTests: XCTestCase {
+  func testSubmissionURLRequiresDifferentHostFromSync() {
+    XCTAssertNotNil(
+      NativeLightwalletdClient.transactionSubmissionURL(
+        endpoint: "https://submit.example.com:443",
+        syncEndpoint: "https://sync.example.com:443"
+      )
+    )
+    XCTAssertNil(
+      NativeLightwalletdClient.transactionSubmissionURL(
+        endpoint: "https://SYNC.example.com:9067",
+        syncEndpoint: "https://sync.example.com:443"
+      )
+    )
+  }
+
+  func testSubmissionURLRejectsUnsafeOrigins() {
+    for endpoint in [
+      "http://example.com:9067",
+      "https://user@example.com:443",
+      "https://example.com:443/rpc",
+      "https://example.com:443?token=secret",
+    ] {
+      XCTAssertNil(
+        NativeLightwalletdClient.transactionSubmissionURL(
+          endpoint: endpoint,
+          syncEndpoint: "https://sync.example.com:443"
+        ),
+        endpoint
+      )
+    }
+  }
+}
+
 private final class FreshInstallCleanerHarness {
   var hasSentinel = false
   var markedInstalled = false

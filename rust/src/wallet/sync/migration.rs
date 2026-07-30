@@ -231,24 +231,26 @@ pub(crate) struct DuePendingMigrationTx {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MigrationSubmissionPolicy {
     Lightwalletd,
+    LightwalletdUrl(String),
     SeparateRelay(String),
 }
 
 const LIGHTWALLETD_SUBMISSION_TARGET: &str = "lightwalletd";
+const LIGHTWALLETD_SUBMISSION_PREFIX: &str = "lightwalletd:";
 const SEPARATE_RELAY_SUBMISSION_PREFIX: &str = "relay:";
 
-fn migration_submission_target(transaction_relay_url: Option<&str>) -> Result<String, String> {
-    match transaction_relay_url {
-        Some(url) => {
-            let url = url.trim();
-            if url.is_empty() {
-                return Err("Migration transaction relay URL is empty".to_string());
-            }
-            let url = super::broadcast::validate_transaction_relay_url(url)?;
-            Ok(format!("{SEPARATE_RELAY_SUBMISSION_PREFIX}{url}"))
-        }
-        None => Ok(LIGHTWALLETD_SUBMISSION_TARGET.to_string()),
+fn migration_submission_target(
+    transaction_submission_target: Option<&str>,
+) -> Result<String, String> {
+    let Some(target) = transaction_submission_target else {
+        return Ok(LIGHTWALLETD_SUBMISSION_TARGET.to_string());
+    };
+    let target = target.trim();
+    if target.is_empty() {
+        return Err("Migration transaction submission target is empty".to_string());
     }
+    let policy = parse_migration_submission_target("new", target)?;
+    Ok(encode_migration_submission_policy(&policy))
 }
 
 fn parse_migration_submission_target(
@@ -257,6 +259,10 @@ fn parse_migration_submission_target(
 ) -> Result<MigrationSubmissionPolicy, String> {
     if target == LIGHTWALLETD_SUBMISSION_TARGET {
         return Ok(MigrationSubmissionPolicy::Lightwalletd);
+    }
+    if let Some(url) = target.strip_prefix(LIGHTWALLETD_SUBMISSION_PREFIX) {
+        let url = super::broadcast::validate_lightwalletd_submission_url(url)?;
+        return Ok(MigrationSubmissionPolicy::LightwalletdUrl(url.to_string()));
     }
     if let Some(url) = target.strip_prefix(SEPARATE_RELAY_SUBMISSION_PREFIX) {
         let url = super::broadcast::validate_transaction_relay_url(url)?;
@@ -267,15 +273,27 @@ fn parse_migration_submission_target(
     ))
 }
 
+fn encode_migration_submission_policy(policy: &MigrationSubmissionPolicy) -> String {
+    match policy {
+        MigrationSubmissionPolicy::Lightwalletd => LIGHTWALLETD_SUBMISSION_TARGET.to_string(),
+        MigrationSubmissionPolicy::LightwalletdUrl(url) => {
+            format!("{LIGHTWALLETD_SUBMISSION_PREFIX}{url}")
+        }
+        MigrationSubmissionPolicy::SeparateRelay(url) => {
+            format!("{SEPARATE_RELAY_SUBMISSION_PREFIX}{url}")
+        }
+    }
+}
+
 fn validate_denomination_stages_for_submission_policy(
     policy: &MigrationSubmissionPolicy,
     stages: &[DenominationStageInsert],
 ) -> Result<(), String> {
-    if matches!(policy, MigrationSubmissionPolicy::SeparateRelay(_))
+    if !matches!(policy, MigrationSubmissionPolicy::Lightwalletd)
         && stages.iter().any(|stage| stage.expiry_height == 0)
     {
         return Err(
-            "Separate-relay denomination transactions require a nonzero expiry height".to_string(),
+            "Separate-route denomination transactions require a nonzero expiry height".to_string(),
         );
     }
     Ok(())
@@ -377,13 +395,13 @@ fn migration_submission_record_with_conn(
     Ok(Some((run_id, policy, expiry_height)))
 }
 
-pub(crate) fn is_separate_relay_migration_transaction(
+pub(crate) fn is_separate_submission_migration_transaction(
     conn: &rusqlite::Connection,
     txid_hex: &str,
 ) -> Result<bool, String> {
     migration_submission_record_with_conn(conn, txid_hex).map(|record| {
         record.is_some_and(|(_, policy, _)| {
-            matches!(policy, MigrationSubmissionPolicy::SeparateRelay(_))
+            !matches!(policy, MigrationSubmissionPolicy::Lightwalletd)
         })
     })
 }
@@ -403,7 +421,7 @@ pub(crate) struct MigrationOutboxItem {
 #[derive(Debug)]
 pub(crate) struct MigrationOutboxBatch {
     pub run_id: String,
-    pub transaction_relay_url: Option<String>,
+    pub transaction_submission_target: Option<String>,
     pub timing_mean_blocks: u32,
     pub timing_max_blocks: u32,
     pub next_proof_height: Option<u32>,
@@ -1389,7 +1407,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     denomination_stages: Vec<DenominationStageInsert>,
     approved_schedule: Option<&[MigrationScheduleEntry]>,
     preparation_timing_policy: PreparationTimingPolicy,
-    transaction_relay_url: Option<&str>,
+    transaction_submission_target: Option<&str>,
     password: &[u8],
     salt_base64: &str,
 ) -> Result<String, String> {
@@ -1423,7 +1441,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
     let timing_policy = configured_timing_policy(network);
-    let migration_submission_target = migration_submission_target(transaction_relay_url)?;
+    let migration_submission_target = migration_submission_target(transaction_submission_target)?;
     let migration_submission_policy =
         parse_migration_submission_target(&run_id, &migration_submission_target)?;
     validate_denomination_stages_for_submission_policy(
@@ -1517,7 +1535,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
     target_values_zatoshi: &[u64],
     approved_schedule: &[MigrationScheduleEntry],
     preparation_timing_policy: PreparationTimingPolicy,
-    transaction_relay_url: Option<&str>,
+    transaction_submission_target: Option<&str>,
 ) -> Result<String, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
@@ -1552,7 +1570,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
         .map_err(|e| format!("Encode Keystone migration targets: {e}"))?;
     let schedule_json = serde_json::to_string(approved_schedule)
         .map_err(|e| format!("Encode Keystone migration schedule: {e}"))?;
-    let migration_submission_target = migration_submission_target(transaction_relay_url)?;
+    let migration_submission_target = migration_submission_target(transaction_submission_target)?;
     tx.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -3309,9 +3327,9 @@ pub(crate) fn export_scheduled_migration_outbox(
         return Ok(None);
     };
     let timing_policy = timing_policy_for_run_with_conn(&conn, &run.run_id, network)?;
-    let transaction_relay_url = match migration_submission_policy(db_path, &run.run_id)? {
+    let transaction_submission_target = match migration_submission_policy(db_path, &run.run_id)? {
         MigrationSubmissionPolicy::Lightwalletd => None,
-        MigrationSubmissionPolicy::SeparateRelay(url) => Some(url),
+        policy => Some(encode_migration_submission_policy(&policy)),
     };
     let (timing_mean_blocks, timing_max_blocks) =
         schedule_parameters_with_policy(network, timing_policy);
@@ -3407,7 +3425,7 @@ pub(crate) fn export_scheduled_migration_outbox(
     }
     Ok(Some(MigrationOutboxBatch {
         run_id: run.run_id,
-        transaction_relay_url,
+        transaction_submission_target,
         timing_mean_blocks,
         timing_max_blocks,
         next_proof_height,

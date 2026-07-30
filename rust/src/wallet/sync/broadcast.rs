@@ -11,39 +11,39 @@ use zcash_protocol::consensus::BranchId;
 const TRANSACTION_RELAY_TIMEOUT: Duration = Duration::from_secs(15);
 const TRANSACTION_RELAY_MAX_RESPONSE_BYTES: usize = 64 * 1024;
 
-pub(crate) fn parse_separate_relay_transaction(
+pub(crate) fn parse_separate_submission_transaction(
     txid: TxId,
     raw_tx: &[u8],
     expiry_height: u32,
 ) -> Result<Transaction, String> {
     if expiry_height == 0 {
         return Err(format!(
-            "Separate-relay transaction {txid} has no expiry height"
+            "Separate-route transaction {txid} has no expiry height"
         ));
     }
     let mut reader = Cursor::new(raw_tx);
     let tx = Transaction::read(&mut reader, BranchId::Sapling)
-        .map_err(|e| format!("Parse separate-relay transaction {txid}: {e}"))?;
+        .map_err(|e| format!("Parse separate-route transaction {txid}: {e}"))?;
     if reader.position() != raw_tx.len() as u64 {
         return Err(format!(
-            "Separate-relay transaction {txid} has trailing bytes"
+            "Separate-route transaction {txid} has trailing bytes"
         ));
     }
     if tx.txid() != txid {
         return Err(format!(
-            "Separate-relay transaction bytes do not match {txid}"
+            "Separate-route transaction bytes do not match {txid}"
         ));
     }
     if u32::from(tx.expiry_height()) != expiry_height {
         return Err(format!(
-            "Separate-relay transaction {txid} does not match expiry height {expiry_height}"
+            "Separate-route transaction {txid} does not match expiry height {expiry_height}"
         ));
     }
     if tx.sapling_bundle().is_none()
         && tx.orchard_bundle().is_none()
         && tx.ironwood_bundle().is_none()
     {
-        return Err(format!("Separate-relay transaction {txid} is not shielded"));
+        return Err(format!("Separate-route transaction {txid} is not shielded"));
     }
     Ok(tx)
 }
@@ -174,7 +174,7 @@ pub(super) fn validate_transaction_relay_url(endpoint: &str) -> Result<Url, Stri
 
     match url.scheme() {
         "https" => {}
-        "http" if relay_host_is_loopback(&url) => {}
+        "http" if url_host_is_local(&url) => {}
         "http" => {
             return Err("Transaction relay URL requires HTTPS except for loopback".to_string());
         }
@@ -183,10 +183,59 @@ pub(super) fn validate_transaction_relay_url(endpoint: &str) -> Result<Url, Stri
     Ok(url)
 }
 
-fn relay_host_is_loopback(url: &Url) -> bool {
+pub(super) fn validate_lightwalletd_submission_url(endpoint: &str) -> Result<Url, String> {
+    let url = Url::parse(endpoint)
+        .map_err(|e| format!("Invalid transaction submission lightwalletd URL: {e}"))?;
+    if url.host().is_none() {
+        return Err("Transaction submission lightwalletd URL has no host".to_string());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(
+            "Transaction submission lightwalletd URL must not contain credentials".to_string(),
+        );
+    }
+    if url.query().is_some() || url.fragment().is_some() || url.path() != "/" {
+        return Err(
+            "Transaction submission lightwalletd URL must contain only an origin".to_string(),
+        );
+    }
+    match url.scheme() {
+        "https" => {}
+        "http" if url_host_is_local(&url) => {}
+        "http" => {
+            return Err(
+                "Transaction submission lightwalletd URL requires HTTPS except for local hosts"
+                    .to_string(),
+            );
+        }
+        _ => {
+            return Err("Transaction submission lightwalletd URL must use HTTPS".to_string());
+        }
+    }
+    Ok(url)
+}
+
+pub(super) fn validate_distinct_lightwalletd_submission_url(
+    submission_endpoint: &str,
+    sync_endpoint: &str,
+) -> Result<Url, String> {
+    let submission = validate_lightwalletd_submission_url(submission_endpoint)?;
+    let sync =
+        Url::parse(sync_endpoint).map_err(|e| format!("Invalid sync lightwalletd URL: {e}"))?;
+    let submission_host = submission
+        .host_str()
+        .ok_or("Transaction submission lightwalletd URL has no host")?;
+    let sync_host = sync.host_str().ok_or("Sync lightwalletd URL has no host")?;
+    if submission_host.eq_ignore_ascii_case(sync_host) {
+        return Err("Transaction submission lightwalletd must not use the sync host".to_string());
+    }
+    Ok(submission)
+}
+
+fn url_host_is_local(url: &Url) -> bool {
     match url.host() {
         Some(Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
-        Some(Host::Ipv4(address)) => address.is_loopback(),
+        Some(Host::Ipv4(address)) => address.is_loopback() || address.octets() == [10, 0, 2, 2],
         Some(Host::Ipv6(address)) => address.is_loopback(),
         None => false,
     }
@@ -500,6 +549,53 @@ mod tests {
             "http://[::1]:18232",
         ] {
             TransactionRelayClient::new(url).unwrap_or_else(|error| panic!("{url}: {error}"));
+        }
+    }
+
+    #[test]
+    fn alternate_lightwalletd_requires_a_different_host() {
+        let alternate = validate_distinct_lightwalletd_submission_url(
+            "https://submit.example.com:443",
+            "https://sync.example.com:443",
+        )
+        .expect("different hosts are accepted");
+        assert_eq!(alternate.host_str(), Some("submit.example.com"));
+
+        for alternate in [
+            "https://SYNC.example.com:9067",
+            "https://sync.example.com:443",
+        ] {
+            let error = validate_distinct_lightwalletd_submission_url(
+                alternate,
+                "https://sync.example.com:443",
+            )
+            .expect_err("same host must be rejected regardless of case or port");
+            assert!(error.contains("must not use the sync host"), "{error}");
+        }
+    }
+
+    #[test]
+    fn alternate_lightwalletd_url_rejects_unsafe_origins() {
+        for endpoint in [
+            "http://example.com:9067",
+            "https://user@example.com:443",
+            "https://example.com:443/rpc",
+            "https://example.com:443?token=secret",
+        ] {
+            assert!(
+                validate_lightwalletd_submission_url(endpoint).is_err(),
+                "{endpoint}"
+            );
+        }
+
+        for endpoint in [
+            "https://example.com:443",
+            "http://localhost:18232",
+            "http://127.0.0.1:18232",
+            "http://10.0.2.2:18232",
+        ] {
+            validate_lightwalletd_submission_url(endpoint)
+                .unwrap_or_else(|error| panic!("{endpoint}: {error}"));
         }
     }
 }

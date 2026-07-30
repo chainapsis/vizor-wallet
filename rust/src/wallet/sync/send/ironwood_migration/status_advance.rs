@@ -74,7 +74,7 @@ enum StagedDenominationAdvance {
     Ready,
 }
 
-fn restore_observed_separate_relay_transactions<F>(
+fn restore_observed_separate_submission_transactions<F>(
     conn: &rusqlite::Connection,
     stages: &[super::migration::DenominationStage],
     mut store: F,
@@ -97,7 +97,7 @@ where
         }
         store(raw_tx, identity.mined_height).map_err(|error| {
             format!(
-                "Restore observed separate-relay denomination transaction {}: {error}",
+                "Restore observed separate-route denomination transaction {}: {error}",
                 stage.expected_txid_hex
             )
         })?;
@@ -115,9 +115,9 @@ fn reconcile_mined_denomination_stages(
     pending_password: &[u8],
     pending_salt_base64: &str,
 ) -> Result<Vec<super::migration::DenominationStage>, String> {
-    let uses_separate_relay = matches!(
+    let uses_separate_submission = !matches!(
         super::migration::migration_submission_policy(db_path, run_id)?,
-        super::migration::MigrationSubmissionPolicy::SeparateRelay(_)
+        super::migration::MigrationSubmissionPolicy::Lightwalletd
     );
     super::migration::reconcile_denomination_stage_chain_state(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -127,8 +127,8 @@ fn reconcile_mined_denomination_stages(
         pending_password,
         pending_salt_base64,
     )?;
-    if uses_separate_relay {
-        let restored = restore_observed_separate_relay_transactions(
+    if uses_separate_submission {
+        let restored = restore_observed_separate_submission_transactions(
             &conn,
             &stages,
             |raw_tx, mined_height| {
@@ -142,7 +142,7 @@ fn reconcile_mined_denomination_stages(
         )?;
         if restored > 0 {
             log::info!(
-                "migration: restored {restored} observed separate-relay denomination transaction(s) from retained local bytes"
+                "migration: restored {restored} observed separate-route denomination transaction(s) from retained local bytes"
             );
         }
     }
