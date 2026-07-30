@@ -5262,31 +5262,8 @@ where
     let mut succeeded = Vec::new();
     for pending in candidates {
         let outcome = broadcast(&pending.txid_hex, &pending.raw_tx);
-        if let Err(error) = super::migration::mark_pending_timed_resubmit_attempted(
-            db_path,
-            run_id,
-            &pending.txid_hex,
-            tip,
-        ) {
-            log::warn!(
-                "migration: failed to record timed rebroadcast tip for {}: {error}",
-                pending.txid_hex
-            );
-        }
-        match outcome {
-            Ok(()) => {
-                log::info!(
-                    "migration: timed rebroadcast accepted for previously submitted tx {}",
-                    pending.txid_hex
-                );
-                succeeded.push(pending.txid_hex.clone());
-            }
-            Err(error) => {
-                log::warn!(
-                    "migration: timed rebroadcast failed for {}: {error}",
-                    pending.txid_hex
-                );
-            }
+        if finish_timed_rebroadcast_attempt(db_path, run_id, tip, &pending.txid_hex, outcome) {
+            succeeded.push(pending.txid_hex.clone());
         }
     }
     succeeded
@@ -5301,32 +5278,44 @@ async fn rebroadcast_timed_broadcasted_migration_txs(
     tip: u32,
     candidates: &[super::migration::DuePendingMigrationTx],
 ) {
+    // Thin async adapter over the same per-attempt policy as `_with` (record tip,
+    // log, classify Ok/Err). Keep awaiting outside the sync helper.
     for pending in candidates {
         let outcome = broadcast_raw_transaction(client, &pending.raw_tx).await;
-        if let Err(error) = super::migration::mark_pending_timed_resubmit_attempted(
+        let _ = finish_timed_rebroadcast_attempt(
             db_path,
             run_id,
-            &pending.txid_hex,
             tip,
-        ) {
-            log::warn!(
-                "migration: failed to record timed rebroadcast tip for {}: {error}",
-                pending.txid_hex
+            &pending.txid_hex,
+            outcome,
+        );
+    }
+}
+
+/// Shared post-broadcast policy for timed recovery: always record `tip`, then
+/// log success or failure. Returns whether lightwalletd accepted (incl. soft-accept).
+fn finish_timed_rebroadcast_attempt(
+    db_path: &str,
+    run_id: &str,
+    tip: u32,
+    txid_hex: &str,
+    outcome: Result<(), String>,
+) -> bool {
+    if let Err(error) =
+        super::migration::mark_pending_timed_resubmit_attempted(db_path, run_id, txid_hex, tip)
+    {
+        log::warn!("migration: failed to record timed rebroadcast tip for {txid_hex}: {error}");
+    }
+    match outcome {
+        Ok(()) => {
+            log::info!(
+                "migration: timed rebroadcast accepted for previously submitted tx {txid_hex}"
             );
+            true
         }
-        match outcome {
-            Ok(()) => {
-                log::info!(
-                    "migration: timed rebroadcast accepted for previously submitted tx {}",
-                    pending.txid_hex
-                );
-            }
-            Err(error) => {
-                log::warn!(
-                    "migration: timed rebroadcast failed for {}: {error}",
-                    pending.txid_hex
-                );
-            }
+        Err(error) => {
+            log::warn!("migration: timed rebroadcast failed for {txid_hex}: {error}");
+            false
         }
     }
 }
