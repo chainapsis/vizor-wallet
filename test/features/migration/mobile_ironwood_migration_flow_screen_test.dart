@@ -5742,6 +5742,32 @@ void main() {
           confirmationCount: 0,
           confirmationTarget: 3,
         ),
+        rust_sync.MigrationPreparationTransactionStatus(
+          stageIndex: 1,
+          approximateValueZatoshi: BigInt.from(300_000_000),
+          round: 1,
+          feeZatoshi: BigInt.from(10_000),
+          plannedHeight: 3_000_011,
+          projectedHeight: 3_000_011,
+          projectedCompletionHeight: 3_000_021,
+          outputs: const [],
+          state: rust_sync.MigrationPreparationTransactionState.confirming,
+          confirmationCount: 2,
+          confirmationTarget: 3,
+        ),
+        rust_sync.MigrationPreparationTransactionStatus(
+          stageIndex: 2,
+          approximateValueZatoshi: BigInt.from(250_000_000),
+          round: 1,
+          feeZatoshi: BigInt.from(10_000),
+          plannedHeight: 3_000_012,
+          projectedHeight: 3_000_012,
+          projectedCompletionHeight: 3_000_022,
+          outputs: const [],
+          state: rust_sync.MigrationPreparationTransactionState.broadcasted,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
       ],
     );
     await tester.pumpWidget(
@@ -5777,26 +5803,36 @@ void main() {
     expect(find.text('Rounds remaining'), findsOneWidget);
     expect(find.text('3,000,000'), findsOneWidget);
 
-    final amountRect = tester.getRect(
-      find.byKey(const ValueKey('mobile_ironwood_preparation_amount_0')),
+    final valueFinder = find.byKey(
+      const ValueKey('mobile_ironwood_preparation_value_0'),
     );
-    final percentageRect = tester.getRect(
-      find.byKey(const ValueKey('mobile_ironwood_preparation_percentage_0')),
-    );
+    final valueText = tester.widget<Text>(valueFinder);
+    final valueRect = tester.getRect(valueFinder);
     final stateRect = tester.getRect(
       find.byKey(const ValueKey('mobile_ironwood_preparation_state_0')),
     );
-    final amountToPercentageGap = percentageRect.left - amountRect.right;
-    final percentageToStateGap = stateRect.left - percentageRect.right;
-    expect(amountToPercentageGap, greaterThan(0));
-    expect(percentageToStateGap, greaterThan(0));
+    final valueToStateGap = stateRect.left - valueRect.right;
     expect(
-      amountToPercentageGap,
-      closeTo(percentageToStateGap, 0.5),
+      valueText.data,
+      matches(RegExp(r'^[\d.]+ ZEC [\d.]+%$')),
       reason:
-          'Preparation amount, percentage, and state should use an even '
-          'space-between layout.',
+          'Preparation amount and percentage should read as one left-aligned '
+          'group.',
     );
+    expect(
+      valueToStateGap,
+      closeTo(AppSpacing.xxs, 0.5),
+      reason: 'The state should remain a separate right-aligned group.',
+    );
+    for (final label in ['Confirming 2/3', 'Waiting to be mined']) {
+      final text = tester.widget<Text>(find.text(label));
+      expect(
+        text.overflow,
+        isNot(TextOverflow.ellipsis),
+        reason: '$label should remain fully visible.',
+      );
+    }
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
