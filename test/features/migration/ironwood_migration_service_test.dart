@@ -2204,6 +2204,60 @@ void main() {
     expect(seenSalts[1], seenSalts[0]);
   });
 
+  test('desktop reconciliation checks saved txid without broadcasting', () async {
+    var reconciliationCalls = 0;
+    var broadcastCalls = 0;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      getSessionPassword: () => 'test-password',
+      reconcileMigrationTransactions:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async {
+            reconciliationCalls++;
+            expect(dbPath, '/tmp/wallet.db');
+            expect(network, 'test');
+            expect(accountUuid, 'account-1');
+            expect(password, 'test-password');
+            return _migrationResult();
+          },
+      broadcastDueMigration:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required password,
+            required saltBase64,
+          }) async {
+            broadcastCalls++;
+            return _migrationResult();
+          },
+    );
+
+    await service.reconcileSoftwarePrivateMigrationTransactions(
+      accountUuid: 'account-1',
+    );
+
+    expect(reconciliationCalls, 1);
+    expect(broadcastCalls, 0);
+  });
+
   test('software continuation re-enters the macOS signing path', () async {
     List<rust_sync.MigrationScheduledTransfer>? seenSchedule;
     String? seenSalt;

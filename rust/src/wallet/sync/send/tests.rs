@@ -461,6 +461,46 @@ fn one_due_result_does_not_report_aggregate_txids_when_nothing_was_accepted() {
 }
 
 #[test]
+fn post_broadcast_recovery_reports_the_current_submission_as_accepted() {
+    let migration_result = || IronwoodMigrationResult {
+        txids: "aggregate-a".to_string(),
+        status: migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS.to_string(),
+        broadcasted_count: 1,
+        total_count: 2,
+        message: None,
+        fee_zatoshi: 10_000,
+        migrated_zatoshi: 100_000,
+    };
+
+    let current_submission = one_due_migration_result(recovered_migration_advance(
+        migration_result(),
+        "accepted-after-timeout".to_string(),
+        true,
+    ));
+    let previous_submission = one_due_migration_result(recovered_migration_advance(
+        migration_result(),
+        "accepted-before-this-call".to_string(),
+        false,
+    ));
+
+    assert_eq!(current_submission.txids, "accepted-after-timeout");
+    assert!(previous_submission.txids.is_empty());
+}
+
+#[test]
+fn only_normal_advance_rebroadcasts_a_missing_needs_resign_transaction() {
+    assert!(should_rebroadcast_missing_migration_tx(
+        "needs_resign",
+        true
+    ));
+    assert!(!should_rebroadcast_missing_migration_tx(
+        "needs_resign",
+        false
+    ));
+    assert!(!should_rebroadcast_missing_migration_tx("scheduled", true));
+}
+
+#[test]
 fn one_due_result_preserves_acceptance_when_local_bookkeeping_fails() {
     let totals_before = migration::PendingMigrationTotals {
         txids: vec!["older-pending".to_string()],
@@ -1753,6 +1793,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     let pending = migration::DuePendingMigrationTx {
         txid_hex: pending_txid.to_string(),
         raw_tx: vec![5, 6, 7, 8],
+        status: "scheduled".to_string(),
     };
 
     let result = record_accepted_scheduled_migration_tx(

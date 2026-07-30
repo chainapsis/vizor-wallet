@@ -607,6 +607,7 @@ class IronwoodMigrationService {
     IronwoodMigrationUnbroadcastRetirer? retireUnbroadcastMigration,
     IronwoodMigrationMacosSoftwareStarter? startMacosSoftwareMigration,
     IronwoodMigrationDueBroadcaster? broadcastDueMigration,
+    IronwoodMigrationDueBroadcaster? reconcileMigrationTransactions,
     IronwoodMigrationOutboxPreparer? prepareMigrationOutbox,
     IronwoodMigrationOutboxExporter? exportMigrationOutbox,
     IronwoodMigrationOutboxReceiptReconciler? reconcileMigrationOutboxReceipt,
@@ -694,6 +695,9 @@ class IronwoodMigrationService {
        broadcastDueMigration =
            broadcastDueMigration ??
            rust_sync.broadcastOneDueOrchardMigrationTransaction,
+       reconcileMigrationTransactions =
+           reconcileMigrationTransactions ??
+           rust_sync.reconcileOrchardMigrationTransactions,
        prepareMigrationOutbox =
            prepareMigrationOutbox ?? rust_sync.prepareOrchardMigrationOutbox,
        exportMigrationOutbox =
@@ -787,6 +791,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationUnbroadcastRetirer retireUnbroadcastMigration;
   final IronwoodMigrationMacosSoftwareStarter startMacosSoftwareMigration;
   final IronwoodMigrationDueBroadcaster broadcastDueMigration;
+  final IronwoodMigrationDueBroadcaster reconcileMigrationTransactions;
   final IronwoodMigrationOutboxPreparer prepareMigrationOutbox;
   final IronwoodMigrationOutboxExporter exportMigrationOutbox;
   final IronwoodMigrationOutboxReceiptReconciler
@@ -1382,6 +1387,35 @@ class IronwoodMigrationService {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
       },
+    );
+  }
+
+  /// Repairs local tracking for an already-submitted desktop migration
+  /// transaction without broadcasting a new transaction.
+  Future<rust_sync.IronwoodMigrationResult>
+  reconcileSoftwarePrivateMigrationTransactions({
+    required String accountUuid,
+  }) async {
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+    return _runCredentialOperation(
+      context: context,
+      mayCreateRun: false,
+      prepareOutboxAfterOperation: false,
+      operation: (credential) => reconcileMigrationTransactions(
+        dbPath: dbPath,
+        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        password: credential.password,
+        saltBase64: credential.saltBase64,
+      ),
     );
   }
 

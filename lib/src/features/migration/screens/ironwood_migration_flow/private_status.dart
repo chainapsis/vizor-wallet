@@ -344,13 +344,13 @@ enum _StatusAction { none, needsInput, retry, backHome }
 extension _StatusActionLabels on _StatusAction {
   String get label => switch (this) {
     _StatusAction.needsInput => 'Sign with Keystone',
-    _StatusAction.retry => 'Retry migration',
+    _StatusAction.retry => 'Recover migration',
     _StatusAction.backHome => 'Back home',
     _StatusAction.none => '',
   };
 
   String get busyLabel => switch (this) {
-    _StatusAction.retry => 'Retrying...',
+    _StatusAction.retry => 'Recovering...',
     _ => 'Continuing...',
   };
 }
@@ -437,9 +437,9 @@ _StatusPresentation _statusPresentation(rust_sync.MigrationStatus status) {
           'Vizor hit a recoverable migration error before completing the '
           'Ironwood transition.',
       footer:
-          'No funds are lost. Retry migration after checking that Vizor is '
-          'synced and online.',
-      buttonLabel: 'Retry migration',
+          'No funds are lost. Vizor will check the saved transaction before '
+          'submitting anything again.',
+      buttonLabel: 'Recover migration',
     ),
     _ => const _StatusPresentation(
       title: 'Migration Status',

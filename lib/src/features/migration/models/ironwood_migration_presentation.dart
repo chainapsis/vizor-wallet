@@ -18,6 +18,20 @@ bool migrationHasDueScheduledBroadcast(
   );
 }
 
+bool migrationHasDueRecoverableBroadcast(
+  rust_sync.MigrationStatus status, {
+  required int currentHeight,
+}) {
+  if (currentHeight <= 0) return false;
+  return status.scheduledBroadcasts.any((broadcast) {
+    final broadcastStatus = broadcast.status.toLowerCase();
+    return (broadcastStatus == 'scheduled' ||
+            broadcastStatus == 'needs_resign') &&
+        broadcast.scheduledHeight > 0 &&
+        broadcast.scheduledHeight <= currentHeight;
+  });
+}
+
 bool migrationHasDueProofBatch(
   rust_sync.MigrationStatus status, {
   required int currentHeight,

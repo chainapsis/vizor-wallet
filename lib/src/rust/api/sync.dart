@@ -515,6 +515,28 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
       saltBase64: saltBase64,
     );
 
+/// Reconciles a due migration transaction without submitting anything new.
+///
+/// If the saved txid is already present in the local wallet, lightwalletd
+/// mempool, or chain, this restores local tracking and reschedules the
+/// remaining overdue transfers. A not-found response leaves the transaction
+/// scheduled for the normal privacy-gated broadcast path.
+Future<IronwoodMigrationResult> reconcileOrchardMigrationTransactions({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String password,
+  required String saltBase64,
+}) => RustLib.instance.api.crateApiSyncReconcileOrchardMigrationTransactions(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  password: password,
+  saltBase64: saltBase64,
+);
+
 /// Prepares denomination PCZTs with expiry heights derived from their planned
 /// broadcast heights.
 Future<KeystoneMigrationSigningRequest>

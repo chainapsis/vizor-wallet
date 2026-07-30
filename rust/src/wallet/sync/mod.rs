@@ -69,7 +69,7 @@ pub(crate) use send::{
 pub use send::{
     broadcast_due_orchard_migration_transactions, broadcast_one_due_orchard_migration_transaction,
     estimate_fee, execute_proposal, execute_proposal_with_seed_loader, propose_send,
-    ExecuteProposalResult, IronwoodMigrationResult,
+    reconcile_orchard_migration_transactions, ExecuteProposalResult, IronwoodMigrationResult,
 };
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,

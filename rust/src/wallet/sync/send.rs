@@ -339,6 +339,27 @@ fn one_due_migration_result(advance: MigrationBroadcastAdvance) -> IronwoodMigra
     result
 }
 
+fn recovered_migration_advance(
+    result: IronwoodMigrationResult,
+    recovered_txid: String,
+    recovered_was_current_submission: bool,
+) -> MigrationBroadcastAdvance {
+    MigrationBroadcastAdvance {
+        result,
+        accepted_txids: recovered_was_current_submission
+            .then_some(recovered_txid)
+            .into_iter()
+            .collect(),
+    }
+}
+
+fn should_rebroadcast_missing_migration_tx(
+    pending_status: &str,
+    rebroadcast_needs_resign_if_missing: bool,
+) -> bool {
+    rebroadcast_needs_resign_if_missing && pending_status == "needs_resign"
+}
+
 fn accepted_migration_processing_failure_result(
     totals_before: &super::migration::PendingMigrationTotals,
     accepted_txids: Vec<String>,
@@ -2239,6 +2260,56 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
     Ok(one_due_migration_result(advance))
 }
 
+pub async fn reconcile_orchard_migration_transactions(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    pending_password: zeroize::Zeroizing<Vec<u8>>,
+    pending_salt_base64: &str,
+) -> Result<IronwoodMigrationResult, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let Some(run) = super::migration::active_migration_run(db_path, account_uuid, network)? else {
+        return Ok(IronwoodMigrationResult {
+            txids: String::new(),
+            status: super::migration::PHASE_COMPLETE.to_string(),
+            broadcasted_count: 0,
+            total_count: 0,
+            message: None,
+            fee_zatoshi: 0,
+            migrated_zatoshi: 0,
+        });
+    };
+    let chain_tip_height =
+        u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+            .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
+    let reconciled = reconcile_due_scheduled_migration_tx(
+        db_path,
+        lightwalletd_url,
+        network,
+        &run.run_id,
+        chain_tip_height,
+        pending_password.as_slice(),
+        pending_salt_base64,
+        run.target_values_zatoshi.len() as u32,
+        run.target_values_zatoshi.iter().sum(),
+        true,
+        false,
+        false,
+    )
+    .await?;
+    Ok(reconciled.map(|advance| advance.result).unwrap_or_else(|| {
+        migration_result_from_pending_totals(
+            totals,
+            &run.phase,
+            Some("No submitted migration transaction needs local recovery.".to_string()),
+            run.target_values_zatoshi.len() as u32,
+            run.target_values_zatoshi.iter().sum(),
+        )
+    }))
+}
+
 async fn broadcast_due_orchard_migration_transactions_inner(
     db_path: &str,
     lightwalletd_url: &str,
@@ -2275,6 +2346,24 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
+    if let Some(recovered) = reconcile_due_scheduled_migration_tx(
+        db_path,
+        lightwalletd_url,
+        network,
+        &run.run_id,
+        chain_tip_height,
+        pending_password.as_slice(),
+        pending_salt_base64,
+        run.target_values_zatoshi.len() as u32,
+        run.target_values_zatoshi.iter().sum(),
+        policy.reschedule_wallet_overdue,
+        true,
+        false,
+    )
+    .await?
+    {
+        return Ok(recovered);
+    }
     if super::migration::due_scheduled_pending_count(db_path, &run.run_id, chain_tip_height)? > 0 {
         return broadcast_due_scheduled_migration_txs(
             db_path,
@@ -4769,6 +4858,28 @@ async fn broadcast_due_scheduled_migration_txs(
                 pending.txid_hex,
                 e,
             );
+            // A transport failure can happen after lightwalletd accepted the
+            // bytes but before its response reached Vizor. Resolve that
+            // ambiguity by txid before changing the run to a failed or rebuild
+            // state.
+            if let Some(recovered) = reconcile_due_scheduled_migration_tx(
+                db_path,
+                lightwalletd_url,
+                network,
+                run_id,
+                chain_tip_height,
+                pending_password,
+                pending_salt_base64,
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+                policy.reschedule_wallet_overdue,
+                false,
+                true,
+            )
+            .await?
+            {
+                return Ok(recovered);
+            }
             let message = format!(
                 "Migration broadcast failed for {}. Error: {e}",
                 pending.txid_hex
@@ -4921,6 +5032,245 @@ async fn broadcast_due_scheduled_migration_txs(
         ),
         accepted_txids,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn reconcile_due_scheduled_migration_tx(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    chain_tip_height: u32,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+    fallback_total_count: u32,
+    fallback_migrated_zatoshi: u64,
+    reschedule_wallet_overdue: bool,
+    rebroadcast_needs_resign_if_missing: bool,
+    recovered_was_current_submission: bool,
+) -> Result<Option<MigrationBroadcastAdvance>, String> {
+    // Recovery must run before expiry and re-sign checks. A transaction can
+    // already be in the mempool or chain even though a crash left its durable
+    // migration row in `scheduled` or `needs_resign`.
+    let Some(pending) = super::migration::recoverable_due_pending_tx(
+        db_path,
+        run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    let local_chain_identity = {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        super::migration::local_denomination_chain_identity(&conn, &pending.txid_hex)?
+    };
+
+    let (accepted_raw, mined_height, source, accepted_by_current_submission) = if let Some(
+        chain_identity,
+    ) =
+        local_chain_identity
+    {
+        (
+            None,
+            Some(u64::from(chain_identity.mined_height)),
+            "the local chain",
+            recovered_was_current_submission,
+        )
+    } else {
+        let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await
+        {
+            Ok(client) => client,
+            Err(error) => {
+                let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+                return Ok(Some(MigrationBroadcastAdvance::without_acceptance(
+                    migration_result_from_pending_totals(
+                        totals,
+                        super::migration::PHASE_BROADCAST_SCHEDULED,
+                        Some(format!(
+                            "Vizor could not check whether migration transaction {} was already submitted: {error}",
+                            pending.txid_hex
+                        )),
+                        fallback_total_count,
+                        fallback_migrated_zatoshi,
+                    ),
+                )));
+            }
+        };
+        let txid = parse_txid_hex(&pending.txid_hex)?;
+        match crate::wallet::sync_engine::get_transaction(&mut client, txid.as_ref().to_vec()).await
+        {
+            Ok(remote) => {
+                use zcash_primitives::transaction::Transaction;
+                use zcash_protocol::consensus::BranchId;
+
+                let transaction = Transaction::read(&remote.data[..], BranchId::Sapling)
+                    .map_err(|e| format!("Read recovered migration transaction: {e}"))?;
+                if !transaction
+                    .txid()
+                    .to_string()
+                    .eq_ignore_ascii_case(&pending.txid_hex)
+                {
+                    return Err(format!(
+                        "Recovered migration transaction ID mismatch for {}",
+                        pending.txid_hex
+                    ));
+                }
+                let mined_height = if remote.height == 0 {
+                    None
+                } else {
+                    Some(remote.height)
+                };
+                (
+                    Some(remote.data),
+                    mined_height,
+                    "lightwalletd",
+                    recovered_was_current_submission,
+                )
+            }
+            Err(status)
+                if status.code() == Code::NotFound
+                    && should_rebroadcast_missing_migration_tx(
+                        &pending.status,
+                        rebroadcast_needs_resign_if_missing,
+                    ) =>
+            {
+                match broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
+                    Ok(()) => (
+                        Some(pending.raw_tx.clone()),
+                        None,
+                        "a saved-transaction rebroadcast",
+                        true,
+                    ),
+                    Err(error) if migration_broadcast_failure_requires_rebuild(&error) => {
+                        // A definitive node rejection is the first point at
+                        // which it is safe to replace this expired-schedule
+                        // transaction with a freshly signed one.
+                        return Ok(None);
+                    }
+                    Err(error) => {
+                        let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+                        return Ok(Some(MigrationBroadcastAdvance::without_acceptance(
+                            migration_result_from_pending_totals(
+                                totals,
+                                super::migration::PHASE_BROADCAST_SCHEDULED,
+                                Some(format!(
+                                    "Vizor could not re-submit saved migration transaction {} yet: {error}",
+                                    pending.txid_hex
+                                )),
+                                fallback_total_count,
+                                fallback_migrated_zatoshi,
+                            ),
+                        )));
+                    }
+                }
+            }
+            Err(status) if status.code() == Code::NotFound => return Ok(None),
+            Err(status) => {
+                let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
+                return Ok(Some(MigrationBroadcastAdvance::without_acceptance(
+                    migration_result_from_pending_totals(
+                        totals,
+                        super::migration::PHASE_BROADCAST_SCHEDULED,
+                        Some(format!(
+                            "Vizor could not verify migration transaction {} yet: {status}",
+                            pending.txid_hex
+                        )),
+                        fallback_total_count,
+                        fallback_migrated_zatoshi,
+                    ),
+                )));
+            }
+        }
+    };
+
+    let totals_before = super::migration::pending_totals_for_run(db_path, run_id)?;
+    let bookkeeping_result =
+        with_wallet_db_write_lock("send.migration.recover_scheduled_transaction", || {
+            if let Some(raw_tx) = accepted_raw.as_deref() {
+                super::transactions::decrypt_and_store_transaction(
+                    db_path,
+                    network,
+                    raw_tx,
+                    mined_height,
+                )?;
+            }
+            if reschedule_wallet_overdue {
+                super::migration::reschedule_wallet_overdue_pending_txs_after_accepted(
+                    db_path,
+                    network,
+                    chain_tip_height,
+                    run_id,
+                    &pending.txid_hex,
+                )
+            } else {
+                super::migration::reschedule_overdue_pending_txs_after_accepted(
+                    db_path,
+                    run_id,
+                    network,
+                    chain_tip_height,
+                    &pending.txid_hex,
+                )
+            }?;
+            // Commit the accepted state last. If any earlier bookkeeping
+            // fails, the row remains scheduled/needs_resign and the next
+            // reconciliation pass can safely resume by the same txid.
+            super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)
+        });
+    if let Err(error) = bookkeeping_result {
+        if accepted_by_current_submission {
+            return Ok(Some(accepted_migration_processing_failure_result(
+                &totals_before,
+                vec![pending.txid_hex],
+                error,
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            )));
+        }
+        return Err(error);
+    }
+
+    let post_recovery_state = (|| {
+        Ok::<_, String>((
+            super::migration::pending_totals_for_run(db_path, run_id)?,
+            super::migration::run_phase(db_path, run_id)?,
+        ))
+    })();
+    let (totals, status) = match post_recovery_state {
+        Ok(state) => state,
+        Err(error) if accepted_by_current_submission => {
+            return Ok(Some(accepted_migration_processing_failure_result(
+                &totals_before,
+                vec![pending.txid_hex],
+                error,
+                fallback_total_count,
+                fallback_migrated_zatoshi,
+            )));
+        }
+        Err(error) => return Err(error),
+    };
+    log::info!(
+        "migration: recovered scheduled transaction {} from {}",
+        pending.txid_hex,
+        source
+    );
+    let result = migration_result_from_pending_totals(
+        totals,
+        &status,
+        Some(format!(
+            "Recovered migration transaction {} from {}. Remaining transfers were rescheduled.",
+            pending.txid_hex, source
+        )),
+        fallback_total_count,
+        fallback_migrated_zatoshi,
+    );
+    Ok(Some(recovered_migration_advance(
+        result,
+        pending.txid_hex,
+        accepted_by_current_submission,
+    )))
 }
 
 fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {

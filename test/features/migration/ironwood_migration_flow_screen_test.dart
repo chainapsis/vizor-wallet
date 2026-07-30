@@ -1712,7 +1712,7 @@ void main() {
           activeRunId: 'run-1',
         ),
         title: 'Migration Needs Attention',
-        buttonLabel: 'Retry migration',
+        buttonLabel: 'Recover migration',
         buttonEnabled: true,
       ),
       _StatusUiCase(
@@ -3335,7 +3335,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(continueCount, 0);
-    await tester.tap(find.widgetWithText(AppButton, 'Retry migration'));
+    await tester.tap(find.widgetWithText(AppButton, 'Recover migration'));
     await tester.pumpAndSettle();
 
     expect(continueCount, 1);

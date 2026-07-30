@@ -218,6 +218,7 @@ pub(crate) struct SignedChildProofCandidate {
 pub(crate) struct DuePendingMigrationTx {
     pub txid_hex: String,
     pub raw_tx: Vec<u8>,
+    pub status: String,
 }
 
 #[derive(Debug)]
@@ -1307,19 +1308,21 @@ pub(crate) fn mark_run_phase(
     phase: &str,
     message: Option<&str>,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let now = now_ms()?;
-    conn.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-             WHERE run_id = ?4"
-        ),
-        params![phase, now, message, run_id],
-    )
-    .map_err(|e| format!("Update migration run phase: {e}"))?;
-    Ok(())
+    with_wallet_db_write_lock("migration.mark_run_phase", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let now = now_ms()?;
+        conn.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                 WHERE run_id = ?4"
+            ),
+            params![phase, now, message, run_id],
+        )
+        .map_err(|e| format!("Update migration run phase: {e}"))?;
+        Ok(())
+    })
 }
 
 pub(crate) fn run_phase(db_path: &str, run_id: &str) -> Result<String, String> {
@@ -3098,9 +3101,60 @@ pub(crate) fn due_pending_txs(
         due.push(DuePendingMigrationTx {
             txid_hex,
             raw_tx: raw_tx.to_vec(),
+            status: "scheduled".to_string(),
         });
     }
     Ok(due)
+}
+
+/// Returns the oldest due transaction that may need accepted-state recovery.
+///
+/// Unlike [`due_pending_txs`], this intentionally accepts `needs_resign` rows
+/// and does not require the saved schedule to remain canonical. Recovery by
+/// txid must happen before replacing an expired transaction: the original
+/// bytes may already be in the mempool or chain.
+pub(crate) fn recoverable_due_pending_tx(
+    db_path: &str,
+    run_id: &str,
+    chain_tip_height: u32,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Option<DuePendingMigrationTx>, String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let row = conn
+        .query_row(
+            &format!(
+                "SELECT txid_hex, encrypted_raw_tx, status
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1
+                   AND status IN ('scheduled', 'needs_resign')
+                   AND scheduled_height <= ?2
+                 ORDER BY scheduled_height ASC, txid_hex ASC
+                 LIMIT 1"
+            ),
+            params![run_id, chain_tip_height],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| format!("Read recoverable migration transaction: {e}"))?;
+    let Some((txid_hex, encrypted_raw_tx, status)) = row else {
+        return Ok(None);
+    };
+    let raw_tx =
+        secret_payload::decrypt_payload(encrypted_raw_tx.as_bytes(), password, salt.as_slice())?;
+    Ok(Some(DuePendingMigrationTx {
+        txid_hex,
+        raw_tx: raw_tx.to_vec(),
+        status,
+    }))
 }
 
 pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
@@ -3632,6 +3686,30 @@ pub(crate) fn reschedule_overdue_pending_txs(
     reschedule_overdue_pending_txs_with_options(db_path, run_id, network, chain_tip_height, 0, None)
 }
 
+/// Reschedules every other overdue transfer in the run before an accepted
+/// transaction is durably marked broadcasted.
+///
+/// Keeping the accepted row excluded and still recoverable until the
+/// reschedule commits makes the multi-step recovery resumable: if either this
+/// update or the later broadcast-state update fails, the saved txid remains
+/// eligible for another reconciliation pass.
+pub(crate) fn reschedule_overdue_pending_txs_after_accepted(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    accepted_txid: &str,
+) -> Result<(), String> {
+    reschedule_overdue_pending_txs_with_options(
+        db_path,
+        run_id,
+        network,
+        chain_tip_height,
+        0,
+        Some(accepted_txid),
+    )
+}
+
 fn reschedule_overdue_pending_txs_with_options(
     db_path: &str,
     run_id: &str,
@@ -3809,24 +3887,26 @@ pub(crate) fn mark_pending_broadcasted(
     run_id: &str,
     txid_hex: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let now = now_ms()?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin pending migration broadcast update: {e}"))?;
-    tx.execute(
-        &format!(
-            "UPDATE {PENDING_TXS_TABLE}
-             SET status = 'broadcasted'
-             WHERE run_id = ?1 AND txid_hex = ?2"
-        ),
-        params![run_id, txid_hex],
-    )
-    .map_err(|e| format!("Mark pending migration tx broadcasted: {e}"))?;
-    update_run_after_pending_broadcast(&tx, run_id, now)?;
-    tx.commit()
-        .map_err(|e| format!("Commit pending migration broadcast update: {e}"))
+    with_wallet_db_write_lock("migration.mark_pending_broadcasted", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let now = now_ms()?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin pending migration broadcast update: {e}"))?;
+        tx.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET status = 'broadcasted'
+                 WHERE run_id = ?1 AND txid_hex = ?2"
+            ),
+            params![run_id, txid_hex],
+        )
+        .map_err(|e| format!("Mark pending migration tx broadcasted: {e}"))?;
+        update_run_after_pending_broadcast(&tx, run_id, now)?;
+        tx.commit()
+            .map_err(|e| format!("Commit pending migration broadcast update: {e}"))
+    })
 }
 
 fn update_run_after_pending_broadcast(

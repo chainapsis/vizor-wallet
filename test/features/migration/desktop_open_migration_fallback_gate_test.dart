@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,67 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('coalesces reconciliation and waits for an account advance', () async {
+    final gate = MigrationReconciliationOperationGate();
+    final releaseAdvance = Completer<void>();
+    final reconciliationStarted = Completer<void>();
+    var reconciliationCount = 0;
+
+    Future<void> reconcile() async {
+      reconciliationCount++;
+      reconciliationStarted.complete();
+    }
+
+    final first = gate.run(
+      'account-1',
+      activeAdvance: () => releaseAdvance.future,
+      reconcile: reconcile,
+    );
+    final duplicate = gate.run(
+      'account-1',
+      activeAdvance: () => null,
+      reconcile: reconcile,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(reconciliationCount, 0);
+
+    releaseAdvance.complete();
+    await reconciliationStarted.future;
+    await Future.wait([first, duplicate]);
+
+    expect(reconciliationCount, 1);
+    expect(gate.operationFor('account-1'), isNull);
+  });
+
+  test('account advance can wait for reconciliation to finish', () async {
+    final gate = MigrationReconciliationOperationGate();
+    final reconciliationStarted = Completer<void>();
+    final releaseReconciliation = Completer<void>();
+    var advanceStarted = false;
+
+    final reconciliation = gate.run(
+      'account-1',
+      activeAdvance: () => null,
+      reconcile: () async {
+        reconciliationStarted.complete();
+        await releaseReconciliation.future;
+      },
+    );
+    await reconciliationStarted.future;
+
+    final advance = () async {
+      await gate.waitFor('account-1');
+      advanceStarted = true;
+    }();
+    await Future<void>.delayed(Duration.zero);
+    expect(advanceStarted, isFalse);
+
+    releaseReconciliation.complete();
+    await Future.wait([reconciliation, advance]);
+
+    expect(advanceStarted, isTrue);
+  });
+
   test('fails closed before an authoritative desktop-open height', () {
     final gate = DesktopOpenMigrationFallbackGate();
 
@@ -211,6 +274,29 @@ void main() {
     expect(gate.tryAcquireForAdvance(laterRetry), isFalse);
   });
 
+  test('commits a reservation after rebroadcasting a needs-resign tx', () {
+    final gate = DesktopOpenMigrationFallbackGate()
+      ..observeForegroundEntryHeight(1_000);
+    final recovered = _statusWithScheduledHeight(
+      999,
+      scheduledTxid: 'recovered',
+      broadcastStatus: 'needs_resign',
+    );
+    final laterRetry = _statusWithScheduledHeight(
+      998,
+      scheduledTxid: 'later-retry',
+    );
+    gate.captureOpenStatuses([recovered, laterRetry]);
+
+    expect(gate.tryAcquireForAdvance(recovered), isTrue);
+    gate.completeAdvance(
+      recovered,
+      _result(broadcastedCount: 1, txids: 'recovered'),
+    );
+
+    expect(gate.tryAcquireForAdvance(laterRetry), isFalse);
+  });
+
   test('denomination broadcast does not commit the fallback reservation', () {
     final gate = DesktopOpenMigrationFallbackGate()
       ..observeForegroundEntryHeight(1_000);
@@ -251,6 +337,7 @@ rust_sync.IronwoodMigrationResult _result({
 rust_sync.MigrationStatus _statusWithScheduledHeight(
   int scheduledHeight, {
   String scheduledTxid = 'scheduled-tx',
+  String broadcastStatus = 'scheduled',
   int broadcastedTxCount = 0,
   int confirmedTxCount = 0,
 }) {
@@ -279,7 +366,7 @@ rust_sync.MigrationStatus _statusWithScheduledHeight(
         valueZatoshi: BigInt.from(100000000),
         scheduledAtMs: 0,
         scheduledHeight: scheduledHeight,
-        status: 'scheduled',
+        status: broadcastStatus,
       ),
     ],
     parts: const [],

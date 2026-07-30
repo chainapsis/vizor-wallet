@@ -359,6 +359,28 @@ void main() {
       isTrue,
     );
   });
+
+  test('keeps an expired signed transaction eligible for txid recovery', () {
+    final status = _status(
+      phase: 'ready_to_migrate',
+      broadcasts: [
+        _broadcast('needs_resign', DateTime(2026), scheduledHeight: 1_000),
+      ],
+    );
+
+    expect(
+      migrationHasDueRecoverableBroadcast(status, currentHeight: 999),
+      isFalse,
+    );
+    expect(
+      migrationHasDueRecoverableBroadcast(status, currentHeight: 1_000),
+      isTrue,
+    );
+    expect(
+      migrationHasDueScheduledBroadcast(status, currentHeight: 1_000),
+      isFalse,
+    );
+  });
 }
 
 rust_sync.MigrationScheduledBroadcast _broadcast(

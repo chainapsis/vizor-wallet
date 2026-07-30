@@ -71,7 +71,7 @@ class DesktopOpenMigrationFallbackGate {
     _openOverdueScheduleByTxid.clear();
     for (final status in statuses) {
       for (final broadcast in status.scheduledBroadcasts) {
-        if (broadcast.status.toLowerCase() == 'scheduled' &&
+        if (_isRecoverableBroadcastStatus(broadcast.status) &&
             broadcast.scheduledHeight > 0 &&
             broadcast.scheduledHeight <= entryHeight) {
           _openOverdueScheduleByTxid[broadcast.txidHex] =
@@ -120,7 +120,7 @@ class DesktopOpenMigrationFallbackGate {
         .toSet();
     final acceptedOpenOverdueTx = before.scheduledBroadcasts.any(
       (broadcast) =>
-          broadcast.status.toLowerCase() == 'scheduled' &&
+          _isRecoverableBroadcastStatus(broadcast.status) &&
           _openOverdueScheduleByTxid[broadcast.txidHex] ==
               broadcast.scheduledHeight &&
           resultTxids.contains(broadcast.txidHex.toLowerCase()),
@@ -139,7 +139,7 @@ class DesktopOpenMigrationFallbackGate {
   bool isOpenOverdue(rust_sync.MigrationStatus status) {
     return status.scheduledBroadcasts.any(
       (broadcast) =>
-          broadcast.status.toLowerCase() == 'scheduled' &&
+          _isRecoverableBroadcastStatus(broadcast.status) &&
           _openOverdueScheduleByTxid[broadcast.txidHex] ==
               broadcast.scheduledHeight,
     );
@@ -148,9 +148,55 @@ class DesktopOpenMigrationFallbackGate {
   bool _hasScheduledTransfer(rust_sync.MigrationStatus status) {
     return status.scheduledBroadcasts.any(
       (broadcast) =>
-          broadcast.status.toLowerCase() == 'scheduled' &&
+          _isRecoverableBroadcastStatus(broadcast.status) &&
           broadcast.scheduledHeight > 0,
     );
+  }
+
+  bool _isRecoverableBroadcastStatus(String status) {
+    final normalized = status.toLowerCase();
+    return normalized == 'scheduled' || normalized == 'needs_resign';
+  }
+}
+
+/// Serializes passive reconciliation with account advances while coalescing
+/// duplicate reconciliation requests for the same account.
+class MigrationReconciliationOperationGate {
+  final Map<String, Future<void>> _operations = {};
+
+  Future<void>? operationFor(String accountUuid) => _operations[accountUuid];
+
+  Future<void> waitFor(String accountUuid) async {
+    final operation = _operations[accountUuid];
+    if (operation != null) await operation;
+  }
+
+  Future<void> run(
+    String accountUuid, {
+    required Future<void>? Function() activeAdvance,
+    required Future<void> Function() reconcile,
+  }) {
+    final existing = _operations[accountUuid];
+    if (existing != null) return existing;
+
+    final operation = () async {
+      final advance = activeAdvance();
+      if (advance != null) {
+        try {
+          await advance;
+        } catch (_) {
+          // A failed or ambiguous broadcast is exactly when txid
+          // reconciliation is most useful, so continue after it unwinds.
+        }
+      }
+      await reconcile();
+    }();
+    _operations[accountUuid] = operation;
+    return operation.whenComplete(() {
+      if (identical(_operations[accountUuid], operation)) {
+        _operations.remove(accountUuid);
+      }
+    });
   }
 }
 
@@ -208,10 +254,13 @@ class IronwoodMigrationCoordinator
   bool _hasObservedInitialAccountList = false;
   Future<void>? _backgroundPreparationRecovery;
   final Map<String, DateTime> _lastAdvanceAt = {};
+  final Map<String, DateTime> _lastReconciliationAt = {};
+  final Map<String, String> _lastReconciliationProgressKeys = {};
   final Map<String, ({String progressKey, DateTime retryAt})>
   _outboxRecoveryWindows = {};
   final Map<String, String> _lastAdvanceProgressKeys = {};
   final Map<String, Future<void>> _advanceOperations = {};
+  final _reconciliationGate = MigrationReconciliationOperationGate();
 
   @override
   IronwoodMigrationCoordinatorState build() {
@@ -443,7 +492,7 @@ class IronwoodMigrationCoordinator
     // Its route provider may already have a current status while this
     // coordinator has not completed its first polling pass. Preserve that
     // observed proof state for the explicit user action.
-    final statusForAdvance = status ?? state.statuses[accountUuid];
+    var statusForAdvance = status ?? state.statuses[accountUuid];
     if (statusForAdvance != null &&
         _isChildProofBatchAdvance(statusForAdvance)) {
       grantChildProofBatchPermit(accountUuid);
@@ -460,6 +509,15 @@ class IronwoodMigrationCoordinator
         }
       }
       final service = ref.read(ironwoodMigrationServiceProvider);
+      if (kAppFormFactor == AppFormFactor.desktop &&
+          statusForAdvance != null &&
+          _hasDueRecoverableBroadcast(statusForAdvance)) {
+        await _reconcileDesktopMigration(accountUuid);
+        statusForAdvance = await service.status(
+          network: ref.read(rpcEndpointFailoverProvider).current.networkName,
+          accountUuid: accountUuid,
+        );
+      }
       if (statusForAdvance != null &&
           service.supportsBackgroundMigrationRetry &&
           _manualRetryNeedsOutboxRecovery(statusForAdvance)) {
@@ -642,6 +700,23 @@ class IronwoodMigrationCoordinator
         nextStatuses[account.uuid] = status;
         nextErrors.remove(account.uuid);
 
+        if (_shouldReconcileDesktopMigration(
+          status,
+          accountUuid: account.uuid,
+        )) {
+          await _reconcileDesktopMigration(account.uuid);
+          _lastReconciliationAt[account.uuid] = DateTime.now();
+          _lastReconciliationProgressKeys[account.uuid] =
+              _reconciliationProgressKey(status);
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+          status = await service.status(
+            network: endpoint.networkName,
+            accountUuid: account.uuid,
+          );
+          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+          nextStatuses[account.uuid] = status;
+        }
+
         if (_shouldRecoverDueNativeOutbox(
           status,
           usesNativeOutbox: service.supportsBackgroundMigrationRetry,
@@ -736,12 +811,16 @@ class IronwoodMigrationCoordinator
         state.foregroundProgressPermits.isNotEmpty ||
         state.childProofBatchPermits.isNotEmpty ||
         _lastAdvanceAt.isNotEmpty ||
+        _lastReconciliationAt.isNotEmpty ||
+        _lastReconciliationProgressKeys.isNotEmpty ||
         _outboxRecoveryWindows.isNotEmpty ||
         _lastAdvanceProgressKeys.isNotEmpty;
     if (!hadWalletState) return;
 
     _hasObservedInitialAccountList = false;
     _lastAdvanceAt.clear();
+    _lastReconciliationAt.clear();
+    _lastReconciliationProgressKeys.clear();
     _outboxRecoveryWindows.clear();
     _lastAdvanceProgressKeys.clear();
     _desktopOpenFallbackGate.leaveForeground();
@@ -811,6 +890,56 @@ class IronwoodMigrationCoordinator
       return true;
     }
     return !DateTime.now().isBefore(window.retryAt);
+  }
+
+  bool _shouldReconcileDesktopMigration(
+    rust_sync.MigrationStatus status, {
+    required String accountUuid,
+  }) {
+    if (kAppFormFactor != AppFormFactor.desktop ||
+        !_hasDueRecoverableBroadcast(status)) {
+      _lastReconciliationAt.remove(accountUuid);
+      _lastReconciliationProgressKeys.remove(accountUuid);
+      return false;
+    }
+    final progressKey = _reconciliationProgressKey(status);
+    if (_lastReconciliationProgressKeys[accountUuid] != progressKey) {
+      return true;
+    }
+    final lastAttempt = _lastReconciliationAt[accountUuid];
+    return lastAttempt == null ||
+        DateTime.now().difference(lastAttempt) >= _migrationAdvanceInterval;
+  }
+
+  Future<void> _reconcileDesktopMigration(String accountUuid) {
+    return _reconciliationGate.run(
+      accountUuid,
+      activeAdvance: () => _advanceOperations[accountUuid],
+      reconcile: () => ref
+          .read(ironwoodMigrationServiceProvider)
+          .reconcileSoftwarePrivateMigrationTransactions(
+            accountUuid: accountUuid,
+          ),
+    );
+  }
+
+  String _reconciliationProgressKey(rust_sync.MigrationStatus status) {
+    final scheduled =
+        status.scheduledBroadcasts
+            .where((broadcast) {
+              final broadcastStatus = broadcast.status.toLowerCase();
+              return broadcastStatus == 'scheduled' ||
+                  broadcastStatus == 'needs_resign';
+            })
+            .map(
+              (broadcast) =>
+                  '${broadcast.txidHex.toLowerCase()}:'
+                  '${broadcast.status.toLowerCase()}:'
+                  '${broadcast.scheduledHeight}',
+            )
+            .toList()
+          ..sort();
+    return '${status.activeRunId}:${status.phase}:${scheduled.join(',')}';
   }
 
   /// Whether an explicit retry must go through native outbox recovery instead of
@@ -975,6 +1104,13 @@ class IronwoodMigrationCoordinator
     );
   }
 
+  bool _hasDueRecoverableBroadcast(rust_sync.MigrationStatus status) {
+    return migrationHasDueRecoverableBroadcast(
+      status,
+      currentHeight: _observedBroadcastHeight(),
+    );
+  }
+
   bool _canPrepareNextProof(rust_sync.MigrationStatus status) {
     final nextActionHeight = status.nextActionHeight;
     if (status.signedChildPcztCount <= 0 ||
@@ -1007,9 +1143,22 @@ class IronwoodMigrationCoordinator
   Future<void> _advance(
     String accountUuid, {
     rust_sync.MigrationStatus? status,
-  }) {
+  }) async {
     final existing = _advanceOperations[accountUuid];
-    if (existing != null) return existing;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+    if (_reconciliationGate.operationFor(accountUuid) != null) {
+      await _reconciliationGate.waitFor(accountUuid);
+      // Another caller may have started an advance while this operation was
+      // waiting for reconciliation to release the Rust account guard.
+      final advanceAfterReconciliation = _advanceOperations[accountUuid];
+      if (advanceAfterReconciliation != null) {
+        await advanceAfterReconciliation;
+        return;
+      }
+    }
     final reservesOpenOverdueAllowance =
         kAppFormFactor == AppFormFactor.desktop &&
         status != null &&
@@ -1021,7 +1170,7 @@ class IronwoodMigrationCoordinator
       // `_shouldAdvance`. Keep the ZIP 318 on-open allowance centralized at
       // this last coordinator boundary so no UI or polling entry point can
       // submit a second overdue transfer in the same foreground epoch.
-      return Future.value();
+      return;
     }
     final operation = () async {
       try {
@@ -1045,7 +1194,7 @@ class IronwoodMigrationCoordinator
       }
     }();
     _advanceOperations[accountUuid] = operation;
-    return operation.whenComplete(() {
+    await operation.whenComplete(() {
       if (identical(_advanceOperations[accountUuid], operation)) {
         _advanceOperations.remove(accountUuid);
       }

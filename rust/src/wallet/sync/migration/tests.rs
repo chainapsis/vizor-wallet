@@ -1280,6 +1280,65 @@ fn on_open_storage_recovery_keeps_accepted_tx_and_redraws_every_other_run() {
 }
 
 #[test]
+fn run_recovery_keeps_accepted_tx_recoverable_until_peer_reschedule_finishes() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(&db_path, "run-1", &[100, 200], &[Some(90), Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 503, schedule_start_height = 502
+             WHERE run_id = 'run-1'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    reschedule_overdue_pending_txs_after_accepted(
+        &db_path,
+        "run-1",
+        WalletNetwork::Regtest,
+        503,
+        &txids[0],
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let accepted_state: (String, u32) = conn
+        .query_row(
+            &format!(
+                "SELECT status, scheduled_height FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'run-1' AND txid_hex = ?1"
+            ),
+            params![txids[0]],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(accepted_state, ("scheduled".to_string(), 503));
+    drop(conn);
+
+    mark_pending_broadcasted(&db_path, "run-1", &txids[0]).unwrap();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let accepted_status: String = conn
+        .query_row(
+            &format!(
+                "SELECT status FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'run-1' AND txid_hex = ?1"
+            ),
+            params![txids[0]],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(accepted_status, "broadcasted");
+}
+
+#[test]
 fn overdue_broadcast_crossing_expiry_bucket_requires_resigning_before_send() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
@@ -1311,6 +1370,12 @@ fn overdue_broadcast_crossing_expiry_bucket_requires_resigning_before_send() {
             .unwrap()
             .is_empty()
     );
+    let recoverable =
+        recoverable_due_pending_tx(&db_path, "run-1", 34_560, TEST_PASSWORD, TEST_SALT_BASE64)
+            .unwrap()
+            .expect("needs-resign transaction remains recoverable by its original txid");
+    assert_eq!(recoverable.raw_tx.first(), Some(&0));
+    assert_eq!(recoverable.status, "needs_resign");
 }
 
 #[test]

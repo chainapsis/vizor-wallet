@@ -1657,6 +1657,44 @@ pub fn broadcast_one_due_orchard_migration_transaction(
     })
 }
 
+/// Reconciles a due migration transaction without submitting anything new.
+///
+/// If the saved txid is already present in the local wallet, lightwalletd
+/// mempool, or chain, this restores local tracking and reschedules the
+/// remaining overdue transfers. A not-found response leaves the transaction
+/// scheduled for the normal privacy-gated broadcast path.
+pub fn reconcile_orchard_migration_transactions(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    password: String,
+    salt_base64: String,
+) -> Result<IronwoodMigrationResult, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let password = Zeroizing::new(password.into_bytes());
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        let r = rt.block_on(wallet_sync::reconcile_orchard_migration_transactions(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            password,
+            &salt_base64,
+        ))?;
+        Ok(IronwoodMigrationResult {
+            txids: r.txids,
+            status: r.status,
+            broadcasted_count: r.broadcasted_count,
+            total_count: r.total_count,
+            message: r.message,
+            fee_zatoshi: r.fee_zatoshi,
+            migrated_zatoshi: r.migrated_zatoshi,
+        })
+    })
+}
+
 /// Prepares denomination PCZTs with expiry heights derived from their planned
 /// broadcast heights.
 pub fn prepare_orchard_migration_denominations_pczt(
