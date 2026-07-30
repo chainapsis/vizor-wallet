@@ -712,9 +712,23 @@ void main() {
       ]);
     });
 
-    test('keeps an oversized single message in its own round', () {
+    test('rejects a message no round could ever carry', () {
+      // Giving it its own round does not help: the firmware rejects the round
+      // for the same reason, and by then the user has already approved the
+      // migration and is waiting on a QR that cannot be produced.
+      expect(
+        () => keystoneSigningRoundsForTest([
+          message('big', 600 * 1024),
+          message('small', 10),
+        ], 40),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('still packs a message that only just fits', () {
+      const budget = 512 * 1024 - 16 * 1024;
       final rounds = keystoneSigningRoundsForTest([
-        message('big', 600 * 1024),
+        message('big', budget - 'big'.length),
         message('small', 10),
       ], 40);
       expect(

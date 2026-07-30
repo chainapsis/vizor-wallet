@@ -1948,6 +1948,15 @@ List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRounds(
   var roundBytes = 0;
   for (final message in messages) {
     final messageBytes = message.redactedPczt.length + message.id.length;
+    // A round cannot be split below one message, so a transaction that alone
+    // exceeds the budget can never be encoded. Fail here rather than let the
+    // firmware limit reject the request after the user approves the migration.
+    if (messageBytes > _keystoneSigningRoundByteBudget) {
+      throw StateError(
+        'A migration transaction is too large for one Keystone signing '
+        'request.',
+      );
+    }
     final overflowsByteBudget =
         round.isNotEmpty &&
         roundBytes + messageBytes > _keystoneSigningRoundByteBudget;

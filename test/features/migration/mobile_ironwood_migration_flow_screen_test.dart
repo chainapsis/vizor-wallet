@@ -8069,6 +8069,41 @@ void main() {
     expect(discarded, ['denomination-request']);
   });
 
+  testWidgets('a screen torn down mid-preparation discards its request', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final discarded = <String>[];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          onDiscardKeystoneRequest: (requestId) async =>
+              discarded.add(requestId),
+        ),
+        hardware: true,
+        privatePlan: _plan,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_ironwood_options_continue_button')),
+    );
+    await tester.pump();
+    // Rust now holds the request, but the screen is torn down before its
+    // minimum display window ends, so nothing has stored it for dispose.
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(discarded, ['denomination-request']);
+  });
+
   testWidgets('a just-denied notification prompt explains the next step', (
     tester,
   ) async {

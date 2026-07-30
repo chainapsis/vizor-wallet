@@ -312,7 +312,16 @@ class _MobileIronwoodMigrationStartScreenState
         plan,
       );
       await minimumDelay;
-      if (!mounted) return;
+      if (!mounted) {
+        // The request exists in Rust from here on, but nothing has stored it
+        // for `dispose` yet. Leaving it behind would make Rust reject every
+        // later attempt for this account until the process restarts.
+        final orphanedEntry = continuation.combinedEntry;
+        if (orphanedEntry != null) {
+          await _discardKeystoneCombinedRequest(orphanedEntry);
+        }
+        return;
+      }
 
       if (continuation.destination ==
           _PrivateMigrationContinuationDestination.keystoneCombinedSigning) {
