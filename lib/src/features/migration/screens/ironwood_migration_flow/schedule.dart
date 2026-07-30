@@ -1330,6 +1330,10 @@ class _MigrationScheduleContent extends StatelessWidget {
                       part: part,
                       total: total,
                       currentHeight: currentHeight,
+                      waitingWindowHeight: migrationPartWaitingWindowHeight(
+                        status: status,
+                        part: part,
+                      ),
                     ),
                   );
                 },
@@ -1348,12 +1352,14 @@ class _MigrationScheduleRow extends StatelessWidget {
     required this.part,
     required this.total,
     required this.currentHeight,
+    this.waitingWindowHeight,
   });
 
   final int number;
   final rust_sync.MigrationPartStatus part;
   final BigInt total;
   final int currentHeight;
+  final int? waitingWindowHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -1364,6 +1370,7 @@ class _MigrationScheduleRow extends StatelessWidget {
         number,
         part,
         currentHeight: currentHeight,
+        waitingWindowHeight: waitingWindowHeight,
       ),
       excludeSemantics: true,
       child: SizedBox(
@@ -1403,6 +1410,7 @@ class _MigrationScheduleRow extends StatelessWidget {
                 _MigrationSchedulePartStatus(
                   part: part,
                   currentHeight: currentHeight,
+                  waitingWindowHeight: waitingWindowHeight,
                 ),
               ],
             ),
@@ -1417,10 +1425,12 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
   const _MigrationSchedulePartStatus({
     required this.part,
     required this.currentHeight,
+    this.waitingWindowHeight,
   });
 
   final rust_sync.MigrationPartStatus part;
   final int currentHeight;
+  final int? waitingWindowHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -1451,7 +1461,10 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
             : originalHeight != null && originalHeight != effectiveHeight
             ? 'Rescheduled #${formatGroupedInteger(effectiveHeight)}'
             : 'Scheduled #${formatGroupedInteger(effectiveHeight)}',
-      rust_sync.MigrationPartState.preparing => 'Preparing',
+      rust_sync.MigrationPartState.preparing =>
+        waitingWindowHeight == null
+            ? 'Preparing'
+            : 'Window #${formatGroupedInteger(waitingWindowHeight!)}',
       rust_sync.MigrationPartState.needsInput => 'Ready to sign',
     };
     final textStyle = AppTypography.labelLarge.copyWith(
@@ -1501,12 +1514,17 @@ String _migrationScheduleRowSemantics(
   int number,
   rust_sync.MigrationPartStatus part, {
   required int currentHeight,
+  int? waitingWindowHeight,
 }) {
   final originalHeight = part.originalScheduledHeight ?? part.scheduledHeight;
   final effectiveHeight = part.effectiveScheduledHeight ?? part.scheduledHeight;
   final minedHeight = part.minedHeight;
   final stateLabel = switch (part.state) {
-    rust_sync.MigrationPartState.preparing => 'preparing',
+    rust_sync.MigrationPartState.preparing =>
+      waitingWindowHeight == null
+          ? 'preparing'
+          : 'waiting for window at block '
+                '${formatGroupedInteger(waitingWindowHeight)}',
     rust_sync.MigrationPartState.scheduled =>
       effectiveHeight == null
           ? 'schedule pending'

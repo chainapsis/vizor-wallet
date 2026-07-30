@@ -230,6 +230,10 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
                         total: total,
                         currentHeight: currentHeight,
                         projectedHeight: projectedHeights[part.partIndex],
+                        waitingWindowHeight: migrationPartWaitingWindowHeight(
+                          status: status,
+                          part: part,
+                        ),
                       );
                     },
                   ),
@@ -256,6 +260,7 @@ class _MobileMigrationPartScheduleRow extends StatelessWidget {
     required this.total,
     required this.currentHeight,
     this.projectedHeight,
+    this.waitingWindowHeight,
     super.key,
   });
 
@@ -267,6 +272,9 @@ class _MobileMigrationPartScheduleRow extends StatelessWidget {
   /// Derived expected height for a part Rust has not assigned one to yet.
   final int? projectedHeight;
 
+  /// Exact ZIP 318 window this part is waiting for.
+  final int? waitingWindowHeight;
+
   @override
   Widget build(BuildContext context) {
     final (label, icon, iconSize, color) = _migrationPartScheduleState(
@@ -274,6 +282,7 @@ class _MobileMigrationPartScheduleRow extends StatelessWidget {
       part,
       currentHeight: currentHeight,
       projectedHeight: projectedHeight,
+      waitingWindowHeight: waitingWindowHeight,
     );
     return SizedBox(
       height: 72,
@@ -314,7 +323,7 @@ class _MobileMigrationPartScheduleRow extends StatelessWidget {
               ),
               const SizedBox(width: AppSpacing.xs),
               SizedBox(
-                width: 150,
+                width: waitingWindowHeight == null ? 150 : 180,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -920,6 +929,7 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
   rust_sync.MigrationPartStatus part, {
   required int currentHeight,
   int? projectedHeight,
+  int? waitingWindowHeight,
 }) {
   final scheduledHeight = part.effectiveScheduledHeight ?? part.scheduledHeight;
   final scheduledInFuture =
@@ -959,7 +969,9 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
       const Color(0xFFB83AD9),
     ),
     rust_sync.MigrationPartState.preparing => (
-      estimatedLabel ?? 'Preparing',
+      waitingWindowHeight == null
+          ? (estimatedLabel ?? 'Preparing')
+          : 'Window #${formatGroupedInteger(waitingWindowHeight)}',
       AppIcons.block,
       16,
       context.colors.text.secondary,

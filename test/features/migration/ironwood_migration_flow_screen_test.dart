@@ -3608,6 +3608,65 @@ void main() {
     },
   );
 
+  testWidgets(
+    'migration schedule shows the user-facing window for anchor-waiting parts',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationBroadcastScheduledPhase,
+        activeRunId: 'run-1',
+        targetValuesZatoshi: const [10_000_000, 20_000_000],
+        totalCount: 2,
+        signedChildPcztCount: 1,
+        nextProofWindowHeight: 4_224_935,
+        nextProofWindowPartIndices: const [0],
+        proofReady: false,
+        parts: [
+          _migrationPart(
+            0,
+            10_000_000,
+            rust_sync.MigrationPartState.preparing,
+            scheduledHeight: 4_225_079,
+          ),
+          _migrationPart(1, 20_000_000, rust_sync.MigrationPartState.preparing),
+        ],
+      );
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          initialLocation: '/migration/private/schedule',
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 4_224_900,
+            chainTipHeight: 4_224_900,
+          ),
+          disableAnimations: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Window #4,224,935'), findsOneWidget);
+      expect(find.text('Preparing'), findsOneWidget);
+      expect(find.textContaining('Anchor'), findsNothing);
+      expect(find.textContaining('4,225,079'), findsNothing);
+      expect(
+        find.bySemanticsLabel(
+          'Note 1, 0.1 ZEC, waiting for window at block 4,224,935.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('migration schedule distinguishes states from future heights', (
     tester,
   ) async {

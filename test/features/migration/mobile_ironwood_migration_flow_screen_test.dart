@@ -521,6 +521,8 @@ rust_sync.MigrationStatus _status({
   List<rust_sync.MigrationPartStatus> parts = const [],
   List<int> targetValues = const [412_000_000, 412_000_000, 412_000_000],
   int? nextActionHeight,
+  int? nextProofWindowHeight,
+  List<int>? nextProofWindowPartIndices,
   bool? proofReady = true,
   int? estimatedCompletionHeight,
   int? nextActionPartIndex,
@@ -558,6 +560,10 @@ rust_sync.MigrationStatus _status({
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    nextProofWindowHeight: nextProofWindowHeight,
+    nextProofWindowPartIndices: nextProofWindowPartIndices == null
+        ? null
+        : frb.Uint32List.fromList(nextProofWindowPartIndices),
     proofReady: proofReady,
     estimatedCompletionHeight: estimatedCompletionHeight,
     nextActionPartIndex: nextActionPartIndex,
@@ -6665,6 +6671,67 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'shows a window height instead of a broadcast estimate while waiting',
+    (tester) async {
+      _useMobileViewport(tester);
+      final status = _status(
+        phase: kIronwoodMigrationBroadcastScheduledPhase,
+        targetValues: const [200_000_000, 400_000_000],
+        signedChildPcztCount: 1,
+        nextProofWindowHeight: 4_224_935,
+        nextProofWindowPartIndices: const [0],
+        proofReady: false,
+        parts: [
+          rust_sync.MigrationPartStatus(
+            partIndex: 0,
+            scheduleOrder: 0,
+            valueZatoshi: BigInt.from(200_000_000),
+            state: rust_sync.MigrationPartState.preparing,
+            scheduledHeight: 4_225_079,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+          rust_sync.MigrationPartStatus(
+            partIndex: 1,
+            scheduleOrder: 1,
+            valueZatoshi: BigInt.from(400_000_000),
+            state: rust_sync.MigrationPartState.preparing,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/schedule',
+          migrationService: _migrationService(),
+          status: status,
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 4_224_900,
+            chainTipHeight: 4_224_900,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('mobile_ironwood_migration_schedule_part_0'),
+          ),
+          matching: find.text('Window #4,224,935'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Anchor'), findsNothing);
+      expect(find.textContaining('4,225,079'), findsNothing);
+      expect(find.text('~4,225,079'), findsNothing);
+    },
+  );
 
   testWidgets('keeps the preparing label when no cadence is known', (
     tester,

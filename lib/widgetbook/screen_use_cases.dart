@@ -3792,14 +3792,14 @@ rust_sync.MigrationStatus _previewMigrationScheduleStatus() {
             ? rust_sync.MigrationPartState.completed
             : index == 4
             ? rust_sync.MigrationPartState.confirming
-            : rust_sync.MigrationPartState.scheduled,
+            : rust_sync.MigrationPartState.preparing,
         scheduleOrder: index,
         scheduledHeight: 3_000_030 + index * 18,
         confirmationCount: index == 4 ? 1 : null,
       ),
   ];
   return rust_sync.MigrationStatus(
-    phase: kIronwoodMigrationWaitingConfirmationsPhase,
+    phase: kIronwoodMigrationBroadcastScheduledPhase,
     activeRunId: 'migration-schedule-preview-run',
     targetValuesZatoshi: frb.Uint64List.fromList(
       _migrationSchedulePreviewValues,
@@ -3809,16 +3809,19 @@ rust_sync.MigrationStatus _previewMigrationScheduleStatus() {
     denominationConfirmationTarget: 3,
     denominationSplitCompletedCount: 1,
     denominationSplitTotalCount: 1,
-    pendingTxCount: parts.length,
+    pendingTxCount: 5,
     broadcastedTxCount: 5,
     confirmedTxCount: 4,
     totalCount: parts.length,
-    signedChildPcztCount: 0,
+    signedChildPcztCount: 4,
     pendingSplitStageCount: 0,
     canAbandon: false,
     signingBatchLimit: 8,
     scheduleMeanDelayBlocks: 108,
     scheduleMaxDelayBlocks: 432,
+    nextProofWindowHeight: 3_000_144,
+    nextProofWindowPartIndices: frb.Uint32List.fromList(const [5, 6, 7, 8]),
+    proofReady: false,
     estimatedCompletionHeight: 3_000_216,
     scheduledBroadcasts: const [],
     parts: parts,

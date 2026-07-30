@@ -658,6 +658,78 @@ void main() {
       );
     });
   });
+
+  group('migrationPartWaitingWindowHeight', () {
+    test('returns the window only for preparing parts assigned to it', () {
+      final waiting = _part(index: 1);
+      final other = _part(index: 2);
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        parts: [waiting, other],
+        nextProofWindowHeight: 4_224_935,
+        nextProofWindowPartIndices: const [1],
+        proofReady: false,
+      );
+
+      expect(
+        migrationPartWaitingWindowHeight(status: status, part: waiting),
+        4_224_935,
+      );
+      expect(
+        migrationPartWaitingWindowHeight(status: status, part: other),
+        isNull,
+      );
+    });
+
+    test('does not report a window once proofs are ready', () {
+      final part = _part(index: 1);
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        parts: [part],
+        nextProofWindowHeight: 4_224_935,
+        nextProofWindowPartIndices: const [1],
+        proofReady: true,
+      );
+
+      expect(
+        migrationPartWaitingWindowHeight(status: status, part: part),
+        isNull,
+      );
+    });
+
+    test('does not report a window without an applicable proof action', () {
+      final part = _part(index: 1);
+      final status = _status(
+        phase: 'waiting_confirmations',
+        broadcasts: const [],
+        parts: [part],
+        nextProofWindowHeight: 4_224_935,
+        nextProofWindowPartIndices: const [1],
+      );
+
+      expect(
+        migrationPartWaitingWindowHeight(status: status, part: part),
+        isNull,
+      );
+    });
+
+    test('does not treat a projected broadcast height as a window', () {
+      final part = _part(index: 1, scheduledHeight: 4_225_079);
+      final status = _status(
+        phase: 'broadcast_scheduled',
+        broadcasts: const [],
+        parts: [part],
+        proofReady: false,
+      );
+
+      expect(
+        migrationPartWaitingWindowHeight(status: status, part: part),
+        isNull,
+      );
+    });
+  });
 }
 
 rust_sync.MigrationScheduledBroadcast _broadcast(
@@ -682,6 +754,9 @@ rust_sync.MigrationStatus _status({
   List<int>? currentSigningPartIndices,
   int? totalCount,
   int? nextActionHeight,
+  int? nextProofWindowHeight,
+  List<int>? nextProofWindowPartIndices,
+  bool? proofReady,
   int? estimatedCompletionHeight,
   int confirmationTarget = 0,
   int scheduleMeanDelayBlocks = 144,
@@ -707,6 +782,11 @@ rust_sync.MigrationStatus _status({
     scheduleMeanDelayBlocks: scheduleMeanDelayBlocks,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
+    nextProofWindowHeight: nextProofWindowHeight,
+    nextProofWindowPartIndices: nextProofWindowPartIndices == null
+        ? null
+        : frb.Uint32List.fromList(nextProofWindowPartIndices),
+    proofReady: proofReady,
     estimatedCompletionHeight: estimatedCompletionHeight,
     scheduledBroadcasts: broadcasts,
     currentSigningPartIndices: currentSigningPartIndices == null

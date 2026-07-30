@@ -92,6 +92,30 @@ List<rust_sync.MigrationPartStatus> orderedMigrationParts(
   Iterable<rust_sync.MigrationPartStatus> parts,
 ) => [...parts]..sort(compareMigrationPartsByExpectedProcessingOrder);
 
+/// Returns the exact ZIP 318 window height while [part] is waiting for it.
+///
+/// A preparing part can also carry a projected broadcast height, so
+/// `scheduledHeight` is not evidence that it is waiting for an anchor window.
+/// Rust exposes that relationship explicitly through
+/// `nextProofWindowPartIndices`; use only that authoritative mapping.
+int? migrationPartWaitingWindowHeight({
+  required rust_sync.MigrationStatus status,
+  required rust_sync.MigrationPartStatus part,
+}) {
+  if (part.state != rust_sync.MigrationPartState.preparing ||
+      status.proofReady != false) {
+    return null;
+  }
+  final windowHeight = status.nextProofWindowHeight;
+  final waitingPartIndices = status.nextProofWindowPartIndices;
+  if (windowHeight == null ||
+      waitingPartIndices == null ||
+      !waitingPartIndices.contains(part.partIndex)) {
+    return null;
+  }
+  return windowHeight;
+}
+
 List<rust_sync.MigrationPreparationTransactionStatus>
 orderedMigrationPreparationTransactions(rust_sync.MigrationStatus status) {
   final transactions = [...?status.preparationTransactions];
