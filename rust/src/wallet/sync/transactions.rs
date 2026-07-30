@@ -1027,29 +1027,17 @@ fn read_history_base_by_txid(
     Ok(row)
 }
 
-/// Account-scoped stand-in for `v_transactions`, minus `transactions.raw`.
+/// Account-scoped stand-in for `v_transactions`, without `transactions.raw`.
 ///
-/// `v_transactions` selects `transactions.raw` and aggregates over it.
-/// SQLite cannot eliminate that column from inside the view's aggregate,
-/// so every reference materializes every raw transaction blob even when
-/// the caller never reads them, and the outer `account_uuid` predicate
-/// cannot be pushed through the view's `UNION` CTEs to reduce the work.
-/// On a 9-account wallet (1008 txs, ~37 MB of raw blobs) that costs
-/// ~1.8s of CPU per reference; the same rows without `raw`, with the
-/// account filter applied before grouping, cost ~0.04s.
+/// The upstream view aggregates `raw`, so SQLite materializes every blob
+/// and cannot push an outer account filter into the view. This copy drops
+/// `raw`, filters by `?1` early, and keeps the `notes` / `sent_note_counts`
+/// CTEs verbatim so row identity matches.
 ///
-/// This mirrors the upstream view definition exactly except that it
-/// drops `raw` and the columns this module does not read, and filters
-/// by `?1`. The `notes` and `sent_note_counts` CTEs are copied verbatim
-/// so their `UNION` de-duplication keeps identical row identity.
-///
-/// Mirrored from `zcash_client_sqlite` 0.22.0-rc.4, `VIEW_TRANSACTIONS`:
+/// Source: `zcash_client_sqlite` 0.22.0-rc.4 `VIEW_TRANSACTIONS`
 /// <https://github.com/zcash/librustzcash/blob/65a3add2f1d9b9ea455a71a9c33f9219dbc9e614/zcash_client_sqlite/src/wallet/db.rs#L1320-L1438>
 ///
-/// `history_bases_match_v_transactions` pins the two row-for-row. If a
-/// `zcash_client_sqlite` upgrade changes `v_transactions`, that test is
-/// the tripwire — re-check this SQL against the new view definition and
-/// update the permalink above to the new release tag.
+/// `history_bases_match_v_transactions` is the tripwire if the view changes.
 const HISTORY_BASES_CTE: &str = r#"
         WITH vt AS (
             WITH
