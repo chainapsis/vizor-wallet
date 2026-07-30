@@ -196,10 +196,13 @@ class _MobileIronwoodMigrationCompleteScreenState
     if (completedStatus == null || data == null) {
       return const _MobileMigrationLoadingScreen();
     }
-    return _MigrationCompleteSurface(
-      status: completedStatus,
-      fallbackAmountText: data.amountText,
-      onDone: () => context.go('/home'),
+    return _MobileIronwoodMigrationBackScope(
+      onFallback: () => context.go('/home'),
+      child: _MigrationCompleteSurface(
+        status: completedStatus,
+        fallbackAmountText: data.amountText,
+        onDone: () => context.go('/home'),
+      ),
     );
   }
 }

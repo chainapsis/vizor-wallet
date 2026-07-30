@@ -279,7 +279,10 @@ class _MobileMigrationNotificationPermissionScreenState
 
   Future<void> _allowNotifications() async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _continueError = null;
+    });
     try {
       final service = ref.read(ironwoodMigrationServiceProvider);
       final current = await service.notificationAuthorizationStatus();
@@ -297,6 +300,14 @@ class _MobileMigrationNotificationPermissionScreenState
       if (status == IronwoodMigrationNotificationAuthorizationStatus.denied) {
         if (wasDenied) {
           await service.openNotificationSystemSettings();
+        } else {
+          // The system dialog was just dismissed, and the same button now
+          // routes to Settings instead. Say so rather than looking inert.
+          setState(() {
+            _continueError =
+                'Notifications are still off. Allow them from Settings, or '
+                'continue without notifications.';
+          });
         }
       }
     } catch (_) {
@@ -345,12 +356,15 @@ class _MobileMigrationNotificationPermissionScreenState
 
   @override
   Widget build(BuildContext context) {
-    return _MigrationNotificationPromptPreview(
-      busy: _busy,
-      errorMessage: _continueError,
-      onBack: () => context.go('/migration/options'),
-      onAllow: () => unawaited(_allowNotifications()),
-      onNotNow: () => unawaited(_confirmNotNow()),
+    return _MobileIronwoodMigrationBackScope(
+      onFallback: () => context.go('/migration/options'),
+      child: _MigrationNotificationPromptPreview(
+        busy: _busy,
+        errorMessage: _continueError,
+        onBack: () => context.go('/migration/options'),
+        onAllow: () => unawaited(_allowNotifications()),
+        onNotNow: () => unawaited(_confirmNotNow()),
+      ),
     );
   }
 }
@@ -1853,7 +1867,8 @@ class _MigrationProgressStatus extends StatelessWidget {
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
         'All is well. Broadcasting notes…',
-        '~2 hrs 15 mins.\n'
+        'Next migration step expected in\n'
+            '~2 hrs 15 mins.\n'
             'Notifications are on. You can leave Vizor and check back later.',
       ),
       _MigrationProgressState.confirming => (
@@ -1915,9 +1930,7 @@ class _MigrationProgressStatus extends StatelessWidget {
             )
           else if (broadcasting)
             Text(
-              'Next migration step expected in\n'
-              '${_migrationTimingFromBody(bodyOverride) ?? '~2 hrs 15 mins'}.\n'
-              'Notifications are on. You can leave Vizor and check back later.',
+              bodyOverride ?? body,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.accent,

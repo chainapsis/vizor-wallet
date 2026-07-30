@@ -38,6 +38,7 @@ import '../../widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../ironwood_migration_flow_screen.dart';
 
 part 'mobile_ironwood_migration_models.dart';
+part 'mobile_ironwood_migration_back_scope.dart';
 part 'mobile_ironwood_migration_routes.dart';
 part 'mobile_ironwood_migration_start.dart';
 part 'mobile_ironwood_migration_schedule.dart';

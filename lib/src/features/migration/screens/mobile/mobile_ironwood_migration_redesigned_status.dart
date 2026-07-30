@@ -55,7 +55,9 @@ class _MobileMigrationRedesignedStatusState
   bool _hasCompletedSurfaceRefresh = false;
   int _statusFreshnessEpoch = 0;
   int _refreshedStatusEpoch = -1;
-  bool _notificationsAuthorized = false;
+  // Null until the first authorization lookup resolves, so copy can stay quiet
+  // about notifications instead of claiming they are off.
+  bool? _notificationsAuthorized;
   IronwoodMigrationPreparationRuntimeState _preparationRuntimeState =
       IronwoodMigrationPreparationRuntimeState.idle;
   bool _showPreparationComplete = false;
@@ -205,6 +207,10 @@ class _MobileMigrationRedesignedStatusState
       if (!(ref.read(syncProvider).value?.isSyncing ?? false)) {
         await _showPreparationCompleteIfNeeded();
       }
+      if (accountUuid != null &&
+          _shouldAutomaticallyResumePreparation(accountUuid)) {
+        await _continuePreparation(accountUuid);
+      }
     } catch (_) {
       // The status surface remains usable when runtime inspection fails.
     } finally {
@@ -213,6 +219,37 @@ class _MobileMigrationRedesignedStatusState
         unawaited(_initializeCurrentSessionSurface());
       }
     }
+  }
+
+  /// Whether this reentry should restart the software preparation advance on
+  /// its own. Backgrounding drops the foreground permit, and iOS before 26
+  /// reports no runtime state at all, so without this every return to the app
+  /// blames the user for leaving and waits for a manual continue.
+  bool _shouldAutomaticallyResumePreparation(String accountUuid) {
+    if (widget.isHardware || _actionRunning) return false;
+    if (widget.status.phase !=
+        kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+      return false;
+    }
+    // `widget.isHardware` is false while the account list is still loading, so
+    // the account record decides. A Keystone run needs the device, never this.
+    final accountState = ref.read(accountProvider).value;
+    final account = accountState?.activeAccountUuid == accountUuid
+        ? accountState?.activeAccount
+        : null;
+    if (account == null || account.isHardware) return false;
+    // Work the native task or an in-flight advance already owns must never be
+    // restarted from here.
+    if (_preparationRuntimeState !=
+            IronwoodMigrationPreparationRuntimeState.idle &&
+        _preparationRuntimeState !=
+            IronwoodMigrationPreparationRuntimeState.disabled) {
+      return false;
+    }
+    final coordinator = ref.read(ironwoodMigrationCoordinatorProvider);
+    return coordinator.errors[accountUuid] == null &&
+        !coordinator.foregroundProgressPermits.contains(accountUuid) &&
+        !coordinator.advancingAccounts.contains(accountUuid);
   }
 
   void _handleSyncActivity(bool isSyncing) {
@@ -296,10 +333,12 @@ class _MobileMigrationRedesignedStatusState
 
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final runId = widget.status.activeRunId;
-    if (accountUuid == null || runId == null || !_notificationsAuthorized) {
+    if (accountUuid == null ||
+        runId == null ||
+        _notificationsAuthorized != true) {
       if (mounted) {
         setState(
-          () => _preparationRuntimeState = !_notificationsAuthorized
+          () => _preparationRuntimeState = _notificationsAuthorized != true
               ? IronwoodMigrationPreparationRuntimeState.disabled
               : IronwoodMigrationPreparationRuntimeState.idle,
         );
@@ -365,13 +404,26 @@ class _MobileMigrationRedesignedStatusState
     }
   }
 
+  /// Phases whose surface actually hosts the modal. Setting the flag anywhere
+  /// else only suppresses the sync surface while nothing replaces it.
+  static const _preparationCompletePhases = {
+    kIronwoodMigrationReadyToMigratePhase,
+    kIronwoodMigrationBroadcastScheduledPhase,
+    kIronwoodMigrationBroadcastingPhase,
+    kIronwoodMigrationWaitingConfirmationsPhase,
+  };
+
   Future<void> _showPreparationCompleteIfNeeded() async {
     if (ref.read(syncProvider).value?.isSyncing ?? false) return;
     final status = widget.status;
     final runId = status.activeRunId;
-    if (runId == null ||
-        status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
-        status.phase == kIronwoodMigrationCompletePhase) {
+    if (runId == null || !_preparationCompletePhases.contains(status.phase)) {
+      return;
+    }
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid != null &&
+        ref.read(ironwoodMigrationCoordinatorProvider).errors[accountUuid] !=
+            null) {
       return;
     }
     final prefs = await SharedPreferences.getInstance();
@@ -379,6 +431,9 @@ class _MobileMigrationRedesignedStatusState
     if (prefs.getBool(key) ?? false) return;
     if (!mounted) return;
     setState(() => _showPreparationComplete = true);
+    // Recorded as the modal becomes visible, not on Done: a system back that
+    // pops this route would otherwise bring the modal back on every reentry.
+    await prefs.setBool(key, true);
   }
 
   Future<void> _dismissPreparationComplete() async {
@@ -397,6 +452,25 @@ class _MobileMigrationRedesignedStatusState
 
   @override
   Widget build(BuildContext context) {
+    // This screen returns from a dozen different branches, so the back
+    // handling is wrapped once out here instead of at every return.
+    final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
+    final actionInProgress =
+        _actionRunning ||
+        (accountUuid != null &&
+            ref
+                .watch(ironwoodMigrationCoordinatorProvider)
+                .advancingAccounts
+                .contains(accountUuid));
+    return _MobileIronwoodMigrationBackScope(
+      // An advance in flight owns the foreground permit; leaving mid-action
+      // strands the run until the next reentry.
+      onFallback: actionInProgress ? null : () => context.go('/home'),
+      child: _buildStatusSurface(context),
+    );
+  }
+
+  Widget _buildStatusSurface(BuildContext context) {
     ref.listen(syncProvider, (previous, next) {
       final wasSyncing = previous?.value?.isSyncing ?? false;
       final isSyncing = next.value?.isSyncing ?? false;
@@ -445,10 +519,16 @@ class _MobileMigrationRedesignedStatusState
     if (widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase ||
         widget.status.phase ==
             kIronwoodMigrationAwaitingDenominationSignaturePhase) {
+      // Rust never writes `awaiting_denomination_signature`, so a hardware
+      // draft that still needs a split signature is durably stored as
+      // `awaiting_preparation`. Both phases mean the same thing for a Keystone
+      // account: only the device can move preparation forward.
       final awaitingKeystoneSignature =
           widget.isHardware &&
-          widget.status.phase ==
-              kIronwoodMigrationAwaitingDenominationSignaturePhase;
+          (widget.status.phase ==
+                  kIronwoodMigrationAwaitingDenominationSignaturePhase ||
+              widget.status.phase ==
+                  kIronwoodMigrationAwaitingPreparationPhase);
       final softwareResumeFailed =
           !widget.isHardware && _softwarePreparationResumeError != null;
       return _MigrationPreparationPreview(
@@ -506,6 +586,10 @@ class _MobileMigrationRedesignedStatusState
             kIronwoodMigrationWaitingDenomConfirmationsPhase) {
       return _MigrationPreparationPreview(
         state: _MigrationPreparationState.paused,
+        // A recorded failure, not backgrounding, is why this run stopped.
+        pausedMessage: _mobilePrivateMigrationStartErrorMessage(
+          coordinatorError,
+        ),
         onBack: () => context.go('/home'),
         onViewSchedule: viewPreparationSchedule,
         onContinue: accountUuid == null || _actionRunning
@@ -748,7 +832,7 @@ class _MobileMigrationRedesignedStatusState
     )) {
       return _MigrationProgressState.readyToSubmit;
     }
-    return _notificationsAuthorized
+    return _notificationsAuthorized == true
         ? _MigrationProgressState.waitingNotificationsOn
         : _MigrationProgressState.waitingNotificationsOff;
   }
@@ -818,12 +902,21 @@ class _MobileMigrationRedesignedStatusState
           'is available and approve the next migration batch.';
     }
     if (state == _MigrationProgressState.broadcasting) {
-      if (_notificationsAuthorized) {
-        return '$timing until the next migration step. Notifications are on; '
-            'you can leave Vizor and check back later.';
-      }
-      return '$timing until the next migration step. Open Vizor again to '
-          'continue because notifications are disabled.';
+      // The broadcasting status view renders this verbatim, so the timing and
+      // notification lines are composed once, here.
+      final expectation =
+          timing == 'Timing is updating' || timing == 'ready now'
+          ? 'Next migration step is on the way.'
+          : 'Next migration step expected in\n$timing.';
+      return switch (_notificationsAuthorized) {
+        true =>
+          '$expectation\nNotifications are on. You can leave Vizor and check '
+              'back later.',
+        false =>
+          '$expectation\nNotifications are disabled. Open Vizor again to '
+              'continue.',
+        null => expectation,
+      };
     }
     if (state == _MigrationProgressState.readyToSubmit) {
       return 'The scheduled transaction is ready for automatic submission. '

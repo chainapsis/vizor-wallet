@@ -959,6 +959,11 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _stopProofPolling();
       _requestCompleted = true;
       _pendingSignedMessages = null;
+      if (widget.mobileLayout) {
+        // Mobile lands on home, which reads the migration CTA and the
+        // post-migration state directly.
+        _invalidateIronwoodMigrationStatusState(ref);
+      }
       context.go('/home');
       return;
     }

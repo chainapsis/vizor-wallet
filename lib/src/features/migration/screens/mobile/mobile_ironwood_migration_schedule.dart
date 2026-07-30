@@ -100,44 +100,49 @@ class _MobileMigrationScheduleLoader extends ConsumerWidget {
       }
     }
 
-    return Scaffold(
-      backgroundColor: context.colors.background.window,
-      body: SafeArea(
-        child: Column(
-          children: [
-            MobileTopNav.back(
-              title: preparation
-                  ? 'Preparation Schedule'
-                  : 'Migration Schedule',
-              titleStyle: AppTypography.headlineSmall.copyWith(
-                color: context.colors.text.accent,
+    return _MobileIronwoodMigrationBackScope(
+      // Same destination as the chevron: the scope pops when this screen was
+      // pushed, and falls back to the status route when it was not.
+      onFallback: () => context.go('/migration/private/status'),
+      child: Scaffold(
+        backgroundColor: context.colors.background.window,
+        body: SafeArea(
+          child: Column(
+            children: [
+              MobileTopNav.back(
+                title: preparation
+                    ? 'Preparation Schedule'
+                    : 'Migration Schedule',
+                titleStyle: AppTypography.headlineSmall.copyWith(
+                  color: context.colors.text.accent,
+                ),
+                onBack: returnToStatus,
               ),
-              onBack: returnToStatus,
-            ),
-            Expanded(
-              child: unavailable
-                  ? _MobileMigrationScheduleError(onRetry: onRetry)
-                  : status == null
-                  ? const Center(
-                      child: AppIcon(
-                        AppIcons.loader,
-                        size: 24,
-                        semanticLabel: 'Loading migration schedule',
+              Expanded(
+                child: unavailable
+                    ? _MobileMigrationScheduleError(onRetry: onRetry)
+                    : status == null
+                    ? const Center(
+                        child: AppIcon(
+                          AppIcons.loader,
+                          size: 24,
+                          semanticLabel: 'Loading migration schedule',
+                        ),
+                      )
+                    : preparation
+                    ? _MobilePreparationScheduleContent(
+                        status: status,
+                        currentHeight: currentHeight,
+                        onReturn: returnToStatus,
+                      )
+                    : _MobileMigrationScheduleContent(
+                        status: status,
+                        currentHeight: currentHeight,
+                        onReturn: returnToStatus,
                       ),
-                    )
-                  : preparation
-                  ? _MobilePreparationScheduleContent(
-                      status: status,
-                      currentHeight: currentHeight,
-                      onReturn: returnToStatus,
-                    )
-                  : _MobileMigrationScheduleContent(
-                      status: status,
-                      currentHeight: currentHeight,
-                      onReturn: returnToStatus,
-                    ),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );

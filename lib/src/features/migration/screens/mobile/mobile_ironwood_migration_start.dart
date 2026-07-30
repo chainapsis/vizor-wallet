@@ -194,10 +194,14 @@ class _MobileIronwoodMigrationStartScreenState
   String? _error;
   var _messageIndex = 0;
   var _isPreparing = false;
+  var _keystoneHandedOff = false;
+  late final IronwoodMigrationService _migrationService;
 
   @override
   void initState() {
     super.initState();
+    // Held for `dispose`, which runs after `ref` can no longer be read.
+    _migrationService = ref.read(ironwoodMigrationServiceProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_prepare());
     });
@@ -206,7 +210,37 @@ class _MobileIronwoodMigrationStartScreenState
   @override
   void dispose() {
     _messageTimer?.cancel();
+    final entry = _keystoneCombinedEntry;
+    if (entry != null && !_keystoneHandedOff) {
+      // The request already exists in Rust. Leaving it behind would make it
+      // reject every later preparation for this account.
+      unawaited(_discardKeystoneCombinedRequest(entry));
+    }
     super.dispose();
+  }
+
+  Future<void> _discardKeystoneCombinedRequest(
+    MobileIronwoodMigrationKeystoneCombinedSignEntry entry,
+  ) async {
+    try {
+      await _migrationService.discardKeystonePrivateMigrationRequest(
+        accountUuid: entry.accountUuid,
+        requestId: entry.request.requestId,
+      );
+    } catch (error) {
+      debugPrint('Failed to discard the Keystone signing request: $error');
+    }
+  }
+
+  Future<void> _cancelKeystoneSigning() async {
+    if (_phase != _MobileMigrationStartPhase.keystoneReady) return;
+    final entry = _keystoneCombinedEntry;
+    _keystoneCombinedEntry = null;
+    _destination = null;
+    _messageTimer?.cancel();
+    if (entry != null) await _discardKeystoneCombinedRequest(entry);
+    if (!mounted) return;
+    context.go('/migration/options');
   }
 
   void _startMessageRotation() {
@@ -327,6 +361,7 @@ class _MobileIronwoodMigrationStartScreenState
             _PrivateMigrationContinuationDestination.keystoneCombinedSigning) {
       return;
     }
+    _keystoneHandedOff = true;
     _openPrivateMigrationDestination(context, (
       destination:
           _PrivateMigrationContinuationDestination.keystoneCombinedSigning,
@@ -339,8 +374,19 @@ class _MobileIronwoodMigrationStartScreenState
   Widget build(BuildContext context) {
     final loading = _phase == _MobileMigrationStartPhase.loading;
     final ready = _phase == _MobileMigrationStartPhase.keystoneReady;
-    return PopScope(
-      canPop: _phase == _MobileMigrationStartPhase.error,
+    return _MobileIronwoodMigrationBackScope(
+      // Loading is mid-preparation and stays put. keystoneReady leaves through
+      // the same cancel path as its on-screen button, so the prepared signing
+      // request is discarded instead of orphaned.
+      onFallback: switch (_phase) {
+        _MobileMigrationStartPhase.loading => null,
+        _MobileMigrationStartPhase.keystoneReady => () => unawaited(
+          _cancelKeystoneSigning(),
+        ),
+        _MobileMigrationStartPhase.error => () => context.go(
+          '/migration/options',
+        ),
+      },
       child: _MigrationPreviewPage(
         navTitle: 'Preparing your migration',
         showBackButton: _phase == _MobileMigrationStartPhase.error,
@@ -348,19 +394,33 @@ class _MobileIronwoodMigrationStartScreenState
             ? () => context.go('/migration/options')
             : null,
         bottom: ready
-            ? SizedBox(
-                width: double.infinity,
-                child: AppButton(
-                  key: const ValueKey(
-                    'mobile_ironwood_migration_start_continue_button',
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppButton(
+                    key: const ValueKey(
+                      'mobile_ironwood_migration_start_continue_button',
+                    ),
+                    expand: true,
+                    constrainContent: true,
+                    height: 50,
+                    onPressed: _continueWithKeystone,
+                    leading: const AppIcon(AppIcons.qr, size: 20),
+                    child: const Text('Continue'),
                   ),
-                  expand: true,
-                  constrainContent: true,
-                  height: 50,
-                  onPressed: _continueWithKeystone,
-                  leading: const AppIcon(AppIcons.qr, size: 20),
-                  child: const Text('Continue'),
-                ),
+                  const SizedBox(height: AppSpacing.s),
+                  AppButton(
+                    key: const ValueKey(
+                      'mobile_ironwood_migration_start_cancel_button',
+                    ),
+                    variant: AppButtonVariant.ghost,
+                    expand: true,
+                    constrainContent: true,
+                    height: 50,
+                    onPressed: () => unawaited(_cancelKeystoneSigning()),
+                    child: const Text('Cancel'),
+                  ),
+                ],
               )
             : _phase == _MobileMigrationStartPhase.error
             ? SizedBox(
@@ -417,16 +477,27 @@ class _MobileMigrationStartPreview extends StatelessWidget {
       navTitle: 'Preparing your migration',
       showBackButton: false,
       bottom: ready
-          ? SizedBox(
-              width: double.infinity,
-              child: AppButton(
-                expand: true,
-                constrainContent: true,
-                height: 50,
-                onPressed: _noopMigrationPreviewAction,
-                leading: const AppIcon(AppIcons.qr, size: 20),
-                child: const Text('Continue'),
-              ),
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppButton(
+                  expand: true,
+                  constrainContent: true,
+                  height: 50,
+                  onPressed: _noopMigrationPreviewAction,
+                  leading: const AppIcon(AppIcons.qr, size: 20),
+                  child: const Text('Continue'),
+                ),
+                const SizedBox(height: AppSpacing.s),
+                AppButton(
+                  variant: AppButtonVariant.ghost,
+                  expand: true,
+                  constrainContent: true,
+                  height: 50,
+                  onPressed: _noopMigrationPreviewAction,
+                  child: const Text('Cancel'),
+                ),
+              ],
             )
           : null,
       child: Center(
