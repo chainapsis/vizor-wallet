@@ -343,6 +343,18 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildIronwoodMigrationHowItWorksUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'What to expect',
+                      builder: buildIronwoodMigrationWhatToExpectUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration options',
+                      builder: buildIronwoodMigrationOptionsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Finding private batches',
+                      builder: buildIronwoodMigrationAnalyzingUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Preparing',
                       builder:
                           buildIronwoodMigrationPrivateStatusWaitingUseCase,

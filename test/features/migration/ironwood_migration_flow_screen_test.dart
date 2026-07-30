@@ -232,6 +232,93 @@ void main() {
     expect(find.text('Immediate'), findsOneWidget);
   });
 
+  testWidgets(
+    'what-to-expect illustrations preserve the Figma overflow geometry',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1080, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(initialLocation: '/migration/what-to-expect'),
+      );
+      await tester.pumpAndSettle();
+
+      for (var index = 0; index < 4; index++) {
+        expect(
+          tester.getSize(
+            find.byKey(ValueKey('ironwood_migration_expectation_tile_$index')),
+          ),
+          const Size.square(48),
+        );
+      }
+
+      final firstTile = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_expectation_tile_0')),
+      );
+      final firstViewport = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_expectation_viewport_0')),
+      );
+      expect(firstViewport.top, firstTile.top);
+      expect(firstViewport.bottom, firstTile.bottom + 6);
+
+      for (final index in [1, 2]) {
+        final tile = tester.getRect(
+          find.byKey(ValueKey('ironwood_migration_expectation_tile_$index')),
+        );
+        final viewport = tester.getRect(
+          find.byKey(
+            ValueKey('ironwood_migration_expectation_viewport_$index'),
+          ),
+        );
+        expect(viewport.top, tile.top - 6);
+        expect(viewport.bottom, tile.bottom);
+      }
+
+      expect(
+        tester.getRect(
+          find.byKey(
+            const ValueKey('ironwood_migration_expectation_viewport_3'),
+          ),
+        ),
+        tester.getRect(
+          find.byKey(const ValueKey('ironwood_migration_expectation_tile_3')),
+        ),
+      );
+    },
+  );
+
+  testWidgets('migration options use the exact Figma shield and fast icons', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_migrationOptionsHarness());
+    await tester.pumpAndSettle();
+
+    final privateIcon = find.descendant(
+      of: find.byKey(const ValueKey('ironwood_migration_private_option')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.shieldKeyhole,
+      ),
+    );
+    final immediateIcon = find.descendant(
+      of: find.byKey(const ValueKey('ironwood_migration_fast_option')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.migrationFast,
+      ),
+    );
+
+    expect(privateIcon, findsOneWidget);
+    expect(immediateIcon, findsOneWidget);
+    expect(tester.getSize(privateIcon), const Size.square(20));
+    expect(tester.getSize(immediateIcon), const Size.square(20));
+  });
+
   testWidgets('option selection does not move card content', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1440, 900);
@@ -416,6 +503,12 @@ void main() {
       find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
       findsOneWidget,
     );
+    final analyzingDonut = find.byKey(
+      const ValueKey('ironwood_migration_analyzing_donut'),
+    );
+    expect(analyzingDonut, findsOneWidget);
+    expect(tester.getSize(analyzingDonut), const Size.square(256));
+    final analyzingDonutRect = tester.getRect(analyzingDonut);
     expect(find.text('Analyzing your balance...'), findsOneWidget);
     expect(find.text('Ironwood Migration'), findsNothing);
 
@@ -443,6 +536,39 @@ void main() {
     expect(find.text('Ironwood Migration'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 81));
+
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Ironwood Migration'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 849));
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Ironwood Migration'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Semantics>(
+            find.descendant(
+              of: analyzingDonut,
+              matching: find.byType(Semantics),
+            ),
+          )
+          .properties
+          .value,
+      '100%',
+    );
+
+    await tester.pump(const Duration(milliseconds: 16));
     await tester.pump();
 
     expect(
@@ -450,6 +576,11 @@ void main() {
       findsNothing,
     );
     expect(find.text('Ironwood Migration'), findsOneWidget);
+    final reviewDonut = find.byKey(
+      const ValueKey('ironwood_migration_review_donut'),
+    );
+    expect(reviewDonut, findsOneWidget);
+    expect(tester.getRect(reviewDonut), analyzingDonutRect);
   });
 
   testWidgets('private review shows plan without preparing a transaction', (

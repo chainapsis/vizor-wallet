@@ -857,29 +857,57 @@ class _MigrationExpectationIllustration extends StatelessWidget {
       2 => const Color(0xFF00A460),
       _ => const Color(0xFFB90A4A),
     };
+    final viewportTop = switch (index) {
+      1 || 2 => -6.0,
+      _ => 0.0,
+    };
+    final viewportHeight = index == 3 ? 48.0 : 54.0;
     final imageRect = switch (index) {
       0 => const Rect.fromLTWH(-27.12, -8.70, 102.39, 68.70),
-      1 => const Rect.fromLTWH(-9.75, -11.43, 69.19, 69.13),
-      2 => const Rect.fromLTWH(-18.11, -12.50, 84, 84),
+      1 => const Rect.fromLTWH(-9.75, -5.43, 69.19, 69.13),
+      2 => const Rect.fromLTWH(-18.11, -6.50, 84, 84),
       _ => const Rect.fromLTWH(0, 0, 48, 48),
     };
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadii.small),
-      child: ColoredBox(
-        color: background,
-        child: SizedBox.square(
-          dimension: 48,
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned.fromRect(
-                rect: imageRect,
-                child: Image.asset(asset, fit: BoxFit.fill),
-              ),
-            ],
-          ),
+    final image = Stack(
+      children: [
+        Positioned.fromRect(
+          rect: imageRect,
+          child: Image.asset(asset, fit: BoxFit.fill),
         ),
+      ],
+    );
+    final clippedImage = index == 0
+        ? ClipRect(child: image)
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            child: image,
+          );
+
+    return SizedBox.square(
+      key: ValueKey('ironwood_migration_expectation_tile_$index'),
+      dimension: 48,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(AppRadii.small),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: viewportTop,
+            width: 48,
+            height: viewportHeight,
+            child: SizedBox(
+              key: ValueKey('ironwood_migration_expectation_viewport_$index'),
+              child: clippedImage,
+            ),
+          ),
+        ],
       ),
     );
   }
