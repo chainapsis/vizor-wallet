@@ -190,6 +190,58 @@ void main() {
     },
   );
 
+  test(
+    'refreshes the active home balance after a successful store retry',
+    () async {
+      // Accepted-but-unstored rows stay `broadcasted`; a successful store-from-
+      // raw only clears the durable storage-retry message. The coordinator must
+      // still refresh SyncState so home no longer shows pre-store Orchard funds.
+      const storageRetryMessage =
+          'Migration transaction aa was accepted by lightwalletd, but local '
+          'wallet storage failed: boom. Vizor will retry until local state is '
+          'recorded.';
+      final statuses = {
+        _softwareUuid: _status(
+          'waiting_migration_confirmations',
+          broadcastedTxCount: 1,
+          message: storageRetryMessage,
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        syncState: SyncState(),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      await coordinator.refreshNow();
+      final sync = container.read(syncProvider.notifier) as FakeSyncNotifier;
+      expect(sync.balanceRefreshes, 0);
+
+      statuses[_softwareUuid] = _status(
+        'waiting_migration_confirmations',
+        broadcastedTxCount: 1,
+      );
+      await coordinator.refreshNow();
+      expect(sync.balanceRefreshes, 1);
+
+      await coordinator.refreshNow();
+      expect(sync.balanceRefreshes, 1);
+    },
+  );
+
   test('non-outbox mobile waits until a scheduled migration is due', () async {
     final statuses = {
       _softwareUuid: _status('broadcast_scheduled', scheduledHeight: 1_000),
@@ -2124,6 +2176,7 @@ rust_sync.MigrationStatus _status(
   int signedChildPcztCount = 0,
   int? nextActionHeight,
   bool? proofReady,
+  String? message,
 }) {
   return rust_sync.MigrationStatus(
     phase: phase,
@@ -2140,6 +2193,7 @@ rust_sync.MigrationStatus _status(
     totalCount: 1,
     signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: 0,
+    message: message,
     canAbandon: false,
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,

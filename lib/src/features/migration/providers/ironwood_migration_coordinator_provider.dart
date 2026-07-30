@@ -875,7 +875,11 @@ class IronwoodMigrationCoordinator
         previous.denominationConfirmationCount !=
             current.denominationConfirmationCount ||
         previous.denominationSplitCompletedCount !=
-            current.denominationSplitCompletedCount) {
+            current.denominationSplitCompletedCount ||
+        // Successful store-from-raw for an already-broadcasted unmined row
+        // clears the durable storage-retry last_error without changing counts
+        // or part state. Treat that message transition as a balance change.
+        previous.message != current.message) {
       return true;
     }
 

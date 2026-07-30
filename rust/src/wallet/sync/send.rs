@@ -669,7 +669,7 @@ fn retry_store_then_pending_migration_policy_rebuild_message(
     pending_password: &[u8],
     pending_salt_base64: &str,
 ) -> Result<Option<String>, String> {
-    retry_store_broadcasted_migration_txs_missing_local(
+    let _stored = retry_store_broadcasted_migration_txs_missing_local(
         db_path,
         network,
         run_id,
@@ -5352,22 +5352,33 @@ where
     Ok(None)
 }
 
+/// Retry local wallet storage for network-accepted (`broadcasted`) rows that
+/// still lack `transactions.raw`. Returns how many rows were newly stored.
+///
+/// On any successful store, clears the run's durable storage-retry
+/// `last_error` so `MigrationStatus.message` changes even though the row
+/// remains `broadcasted`. The coordinator uses that message diff to refresh
+/// home balances after an otherwise status-stable store. Remaining failures
+/// re-stamp `last_error` afterward.
 fn retry_store_broadcasted_migration_txs_missing_local(
     db_path: &str,
     network: WalletNetwork,
     run_id: &str,
     pending_password: &[u8],
     pending_salt_base64: &str,
-) -> Result<(), String> {
+) -> Result<u32, String> {
     let missing = super::migration::broadcasted_pending_txs_missing_local_identity(
         db_path,
         run_id,
         pending_password,
         pending_salt_base64,
     )?;
+    let mut stored = 0u32;
+    let mut last_failure: Option<String> = None;
     for pending in missing {
         match decrypt_and_store_migration_tx(db_path, network, &pending.raw_tx) {
             Ok(()) => {
+                stored = stored.saturating_add(1);
                 log::info!(
                     "migration: recorded previously accepted tx {} after local store retry",
                     pending.txid_hex
@@ -5380,12 +5391,19 @@ fn retry_store_broadcasted_migration_txs_missing_local(
                     &error,
                 );
                 log::warn!("migration: {message}");
-                let phase = super::migration::run_phase(db_path, run_id)?;
-                super::migration::mark_run_phase(db_path, run_id, &phase, Some(&message))?;
+                last_failure = Some(message);
             }
         }
     }
-    Ok(())
+    if stored > 0 {
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, None)?;
+    }
+    if let Some(message) = last_failure.as_deref() {
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, Some(message))?;
+    }
+    Ok(stored)
 }
 
 fn migration_result_from_pending_totals(
