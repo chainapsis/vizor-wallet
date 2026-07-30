@@ -279,9 +279,6 @@ class _IronwoodMigrationScheduleRouteState
               child: _MigrationManageModal(
                 stage: _manageStage,
                 choice: _manageChoice,
-                immediatePlan: widget.previewStatus == null
-                    ? null
-                    : widget.previewImmediatePlan,
                 canFinishImmediately: canFinishImmediately,
                 canStop: canStop,
                 submitting: _submitting,
@@ -362,7 +359,6 @@ class _MigrationManageModal extends StatelessWidget {
   const _MigrationManageModal({
     required this.stage,
     required this.choice,
-    required this.immediatePlan,
     required this.canFinishImmediately,
     required this.canStop,
     required this.submitting,
@@ -375,7 +371,6 @@ class _MigrationManageModal extends StatelessWidget {
 
   final _MigrationManageStage stage;
   final _MigrationManageChoice choice;
-  final rust_sync.OrchardMigrationImmediatePlan? immediatePlan;
   final bool canFinishImmediately;
   final bool canStop;
   final bool submitting;
@@ -409,7 +404,7 @@ class _MigrationManageModal extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Manage migration',
+          'Manage Migration',
           style: AppTypography.bodyLarge.copyWith(
             color: colors.text.accent,
             fontWeight: FontWeight.w600,
@@ -418,7 +413,7 @@ class _MigrationManageModal extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         _MigrationManageChoiceRow(
           key: const ValueKey('ironwood_migration_manage_immediate_option'),
-          label: 'Migrate immediately',
+          label: 'Switch to Immediate',
           selected: choice == _MigrationManageChoice.immediate,
           enabled: canFinishImmediately,
           onTap: () => onChoiceChanged(_MigrationManageChoice.immediate),
@@ -426,7 +421,7 @@ class _MigrationManageModal extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         _MigrationManageChoiceRow(
           key: const ValueKey('ironwood_migration_manage_stop_option'),
-          label: 'Cancel migration',
+          label: 'Stop Migration',
           selected: choice == _MigrationManageChoice.stop,
           enabled: canStop,
           onTap: () => onChoiceChanged(_MigrationManageChoice.stop),
@@ -451,13 +446,12 @@ class _MigrationManageModal extends StatelessWidget {
 
   Widget _buildImmediate(BuildContext context) {
     final colors = context.colors;
-    final plan = immediatePlan;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Migrate immediately',
+          'Switch to Immediate',
           style: AppTypography.bodyLarge.copyWith(
             color: colors.text.accent,
             fontWeight: FontWeight.w600,
@@ -465,27 +459,24 @@ class _MigrationManageModal extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          plan == null
-              ? 'The private migration will stop. You will review the current '
-                    'amount and fee before authorising an Immediate migration.'
-              : '${_formatZecAmountCompact(plan.migratedZatoshi)} ZEC will be '
-                    'migrated in one transaction with an estimated fee of '
-                    '${_formatZecAmountCompact(plan.feeZatoshi)} ZEC.',
+          'Process the remaining migration immediately.',
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
         const _MigrationManageBullet(
-          text: 'The remaining notes will be linked in one transaction.',
+          text:
+              'Remaining split notes will be processed as an immediate '
+              'migration, slightly increasing traceability',
         ),
         const SizedBox(height: AppSpacing.xs),
         const _MigrationManageBullet(
-          text: 'The amount and timing will be visible together.',
+          text: 'Transactions already broadcast will not be reverted',
         ),
         const SizedBox(height: AppSpacing.xs),
         const _MigrationManageBullet(
-          text: 'This action cannot be undone after it is submitted.',
+          text: 'There’s no way to revert an immediate migration',
         ),
         if (error != null) ...[
           const SizedBox(height: AppSpacing.sm),
@@ -515,7 +506,7 @@ class _MigrationManageModal extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Are you sure you want to cancel?',
+          'Are you sure you want to stop?',
           style: AppTypography.bodyLarge.copyWith(
             color: colors.text.accent,
             fontWeight: FontWeight.w600,
@@ -523,9 +514,8 @@ class _MigrationManageModal extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          'Vizor will discard migration work that has not been submitted. '
-          'Transactions already sent to the network cannot be cancelled and '
-          'will remain in your wallet history.',
+          'This cancels the remaining scheduled migration transactions. '
+          'You can re-start the migration from the home page.',
           style: AppTypography.bodyMedium.copyWith(
             color: colors.text.secondary,
           ),

@@ -2870,16 +2870,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Manage migration'), findsOneWidget);
-    expect(find.text('Migrate immediately'), findsOneWidget);
-    expect(find.text('Cancel migration'), findsOneWidget);
+    expect(find.text('Manage Migration'), findsOneWidget);
+    expect(find.text('Switch to Immediate'), findsOneWidget);
+    expect(find.text('Stop Migration'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('ironwood_migration_manage_continue_button')),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Migrate immediately'), findsOneWidget);
+    expect(find.text('Switch to Immediate'), findsOneWidget);
     expect(
       find.byKey(
         const ValueKey('ironwood_confirm_finish_migration_immediately_button'),
@@ -2887,9 +2887,22 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.textContaining(
-        'You will review the current amount and fee before authorising',
+      find.text('Process the remaining migration immediately.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Remaining split notes will be processed as an immediate migration, '
+        'slightly increasing traceability',
       ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Transactions already broadcast will not be reverted'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('There’s no way to revert an immediate migration'),
       findsOneWidget,
     );
 
@@ -2970,10 +2983,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Are you sure you want to cancel?'), findsOneWidget);
+      expect(find.text('Are you sure you want to stop?'), findsOneWidget);
       expect(
-        find.textContaining(
-          'Transactions already sent to the network cannot be cancelled',
+        find.text(
+          'This cancels the remaining scheduled migration transactions. '
+          'You can re-start the migration from the home page.',
         ),
         findsOneWidget,
       );
