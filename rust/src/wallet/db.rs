@@ -196,6 +196,11 @@ pub(crate) fn open_readonly_conn_with_timeout(
         conn.busy_timeout(timeout)
             .map_err(|e| format!("Failed to configure DB busy timeout: {e}"))?;
     }
+    // Same module write paths get via `configure_wallet_connection`.
+    // Needed so read-only history queries can bind txid sets with `rarray`
+    // instead of re-scanning `v_transactions` (and its `raw` blobs).
+    rusqlite::vtab::array::load_module(&conn)
+        .map_err(|e| format!("Failed to load SQLite array module: {e}"))?;
     Ok(conn)
 }
 

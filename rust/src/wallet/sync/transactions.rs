@@ -19,9 +19,10 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
+    rc::Rc,
 };
 
-use rusqlite::OptionalExtension;
+use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
 use zcash_primitives::transaction::Transaction;
@@ -437,6 +438,7 @@ struct TxBase {
     spent_orchard_note: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct TxOutput {
     txid: Vec<u8>,
     output_pool: i64,
@@ -564,7 +566,15 @@ pub fn get_transaction_history(
         return Ok(Vec::new());
     }
 
-    let outputs_by_txid = read_history_outputs(&read_tx, &uuid_bytes)?;
+    // Bind the txids already in `bases` instead of re-querying
+    // `v_transactions` for DISTINCT txid. That view selects
+    // `transactions.raw`, so a second pass would re-materialize every
+    // raw blob even though this path never reads them.
+    let outputs_by_txid = read_history_outputs(
+        &read_tx,
+        &uuid_bytes,
+        bases.iter().map(|base| base.txid.as_slice()),
+    )?;
     let summaries: HashMap<Vec<u8>, ActivitySummary> = bases
         .iter()
         .map(|base| {
@@ -1058,10 +1068,23 @@ fn read_history_bases(
         .map_err(|e| format!("Row error: {e}"))
 }
 
-fn read_history_outputs(
+fn read_history_outputs<'a>(
     conn: &rusqlite::Connection,
     account_uuid: &[u8],
+    txids: impl IntoIterator<Item = &'a [u8]>,
 ) -> Result<HashMap<Vec<u8>, Vec<TxOutput>>, String> {
+    let mut seen = HashSet::<&[u8]>::new();
+    let txid_array: Array = Rc::new(
+        txids
+            .into_iter()
+            .filter(|txid| seen.insert(*txid))
+            .map(|txid| Value::Blob(txid.to_vec()))
+            .collect(),
+    );
+    if txid_array.is_empty() {
+        return Ok(HashMap::new());
+    }
+
     let mut stmt = conn
         .prepare(
             r#"
@@ -1107,11 +1130,7 @@ fn read_history_outputs(
                 LIMIT 1
             ) AS note_version
         FROM v_tx_outputs txo
-        JOIN (
-            SELECT DISTINCT txid
-            FROM v_transactions
-            WHERE account_uuid = ?1
-        ) active_tx ON active_tx.txid = txo.txid
+        JOIN rarray(?2) AS active_tx ON active_tx.value = txo.txid
         WHERE txo.from_account_uuid = ?1
            OR txo.to_account_uuid = ?1
         "#,
@@ -1119,7 +1138,7 @@ fn read_history_outputs(
         .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
-        .query_map(rusqlite::params![account_uuid], |row| {
+        .query_map(rusqlite::params![account_uuid, txid_array], |row| {
             Ok(TxOutput {
                 txid: row.get(0)?,
                 output_pool: row.get(1)?,
@@ -2962,6 +2981,349 @@ mod tests {
             get_export_birthday_anchor(db.path().to_str().unwrap(), &account.to_string()).unwrap();
 
         assert_eq!(got.block_height, 333_100);
+    }
+
+    /// Old `read_history_outputs` filter: DISTINCT txid from
+    /// `v_transactions` for the active account. Kept only as the
+    /// equivalence oracle for the `rarray(bases)` path.
+    fn read_history_outputs_via_v_transactions_distinct(
+        conn: &rusqlite::Connection,
+        account_uuid: &[u8],
+    ) -> Result<HashMap<Vec<u8>, Vec<TxOutput>>, String> {
+        let mut stmt = conn
+            .prepare(
+                r#"
+            SELECT
+                txo.txid,
+                txo.output_pool,
+                txo.output_index,
+                txo.from_account_uuid,
+                txo.to_account_uuid,
+                txo.to_address,
+                (
+                    SELECT sn.to_address
+                    FROM sent_notes sn
+                    JOIN transactions st ON st.id_tx = sn.transaction_id
+                    JOIN accounts from_acc ON from_acc.id = sn.from_account_id
+                    WHERE st.txid = txo.txid
+                      AND from_acc.uuid = ?1
+                      AND sn.output_pool = txo.output_pool
+                      AND sn.output_index = txo.output_index
+                      AND sn.to_address IS NOT NULL
+                    LIMIT 1
+                ) AS sent_to_address,
+                NULL AS transparent_receiver_address,
+                (
+                    SELECT a.key_scope
+                    FROM accounts acc
+                    JOIN addresses a ON a.account_id = acc.id
+                    WHERE acc.uuid = txo.to_account_uuid
+                      AND (
+                          a.address = txo.to_address
+                          OR a.cached_transparent_receiver_address = txo.to_address
+                      )
+                    LIMIT 1
+                ) AS to_key_scope,
+                txo.value,
+                txo.memo,
+                (
+                    SELECT orn.note_version
+                    FROM orchard_received_notes orn
+                    WHERE txo.output_pool IN (3, 4)
+                      AND orn.transaction_id = txo.transaction_id
+                      AND orn.action_index = txo.output_index
+                    LIMIT 1
+                ) AS note_version
+            FROM v_tx_outputs txo
+            JOIN (
+                SELECT DISTINCT txid
+                FROM v_transactions
+                WHERE account_uuid = ?1
+            ) active_tx ON active_tx.txid = txo.txid
+            WHERE txo.from_account_uuid = ?1
+               OR txo.to_account_uuid = ?1
+            "#,
+            )
+            .map_err(|e| format!("SQL error: {e}"))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![account_uuid], |row| {
+                Ok(TxOutput {
+                    txid: row.get(0)?,
+                    output_pool: row.get(1)?,
+                    output_index: row.get(2)?,
+                    from_account_uuid: row.get(3)?,
+                    to_account_uuid: row.get(4)?,
+                    to_address: row.get(5)?,
+                    sent_to_address: row.get(6)?,
+                    transparent_receiver_address: row.get(7)?,
+                    to_key_scope: row.get(8)?,
+                    value: row.get::<_, i64>(9)?.unsigned_abs(),
+                    memo: row.get(10)?,
+                    note_version: row.get(11)?,
+                })
+            })
+            .map_err(|e| format!("Query error: {e}"))?;
+
+        let mut outputs = HashMap::<Vec<u8>, Vec<TxOutput>>::new();
+        for row in rows {
+            let output = row.map_err(|e| format!("Row error: {e}"))?;
+            outputs.entry(output.txid.clone()).or_default().push(output);
+        }
+        Ok(outputs)
+    }
+
+    fn distinct_v_transactions_txids(
+        conn: &rusqlite::Connection,
+        account_uuid: &[u8],
+    ) -> Result<HashSet<Vec<u8>>, String> {
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT txid FROM v_transactions WHERE account_uuid = ?1")
+            .map_err(|e| format!("SQL error: {e}"))?;
+        let rows = stmt
+            .query_map(rusqlite::params![account_uuid], |row| row.get(0))
+            .map_err(|e| format!("Query error: {e}"))?;
+        rows.collect::<Result<HashSet<_>, _>>()
+            .map_err(|e| format!("Row error: {e}"))
+    }
+
+    fn sorted_history_outputs(outputs: &HashMap<Vec<u8>, Vec<TxOutput>>) -> Vec<TxOutput> {
+        let mut flat: Vec<TxOutput> = outputs.values().flatten().cloned().collect();
+        flat.sort_by(|a, b| {
+            (
+                &a.txid,
+                a.output_pool,
+                a.output_index,
+                &a.from_account_uuid,
+                &a.to_account_uuid,
+                a.value,
+            )
+                .cmp(&(
+                    &b.txid,
+                    b.output_pool,
+                    b.output_index,
+                    &b.from_account_uuid,
+                    &b.to_account_uuid,
+                    b.value,
+                ))
+        });
+        flat
+    }
+
+    #[test]
+    fn history_outputs_rarray_matches_v_transactions_distinct_txids() {
+        // `read_history_outputs` binds txids from `read_history_bases`
+        // via `rarray` instead of re-deriving
+        // `SELECT DISTINCT txid FROM v_transactions`. These setups pin
+        // that the two filters stay row-identical.
+        struct Case {
+            name: &'static str,
+            setup: fn(&NamedTempFile, uuid::Uuid, uuid::Uuid),
+        }
+
+        let cases = [
+            Case {
+                name: "empty",
+                setup: |_, _, _| {},
+            },
+            Case {
+                name: "one_received",
+                setup: |db, account, _| {
+                    let txid = fake_txid(0x01);
+                    insert_history_tx(
+                        db,
+                        account,
+                        &txid,
+                        Some(100),
+                        0,
+                        None,
+                        1_000_000,
+                        0,
+                        1_000_000,
+                        false,
+                        Some("2026-01-01T00:00:00Z"),
+                    );
+                    insert_output(db, &txid, 3, None, Some(account), 1_000_000, false);
+                },
+            },
+            Case {
+                name: "many_mixed",
+                setup: |db, account, _| {
+                    for (i, (pool, delta, spent, received, from_self, to_self)) in [
+                        (3_i64, 500_000_i64, 0_i64, 500_000_i64, false, true),
+                        (3, -400_000, 400_000, 0, true, false),
+                        (0, -250_000, 250_000, 0, true, false),
+                        (3, 0, 100_000, 100_000, true, true),
+                        (4, 75_000, 0, 75_000, false, true),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let txid = fake_txid(0x10 + i as u8);
+                        insert_history_tx(
+                            db,
+                            account,
+                            &txid,
+                            Some(200 + i as i64),
+                            i as i64,
+                            None,
+                            delta,
+                            spent,
+                            received,
+                            false,
+                            Some("2026-01-02T00:00:00Z"),
+                        );
+                        // Fat raw must not change the output filter set.
+                        set_history_tx_raw(db, account, &txid, &vec![0xAB; 64 * (i + 1)]);
+                        let from = from_self.then_some(account);
+                        let to = to_self.then_some(account);
+                        insert_output(db, &txid, pool, from, to, received.max(spent), false);
+                        if from_self && to_self {
+                            insert_output(db, &txid, pool, Some(account), None, 1, true);
+                        }
+                    }
+                },
+            },
+            Case {
+                name: "other_account_only",
+                setup: |db, _, other| {
+                    let txid = fake_txid(0x20);
+                    insert_history_tx(
+                        db,
+                        other,
+                        &txid,
+                        Some(300),
+                        0,
+                        None,
+                        2_000_000,
+                        0,
+                        2_000_000,
+                        false,
+                        None,
+                    );
+                    insert_output(db, &txid, 3, None, Some(other), 2_000_000, false);
+                },
+            },
+            Case {
+                name: "mixed_accounts",
+                setup: |db, account, other| {
+                    let ours = fake_txid(0x30);
+                    let theirs = fake_txid(0x31);
+                    insert_history_tx(
+                        db,
+                        account,
+                        &ours,
+                        Some(400),
+                        0,
+                        None,
+                        3_000_000,
+                        0,
+                        3_000_000,
+                        false,
+                        None,
+                    );
+                    insert_output(db, &ours, 3, None, Some(account), 3_000_000, false);
+                    insert_history_tx(
+                        db,
+                        other,
+                        &theirs,
+                        Some(401),
+                        0,
+                        None,
+                        4_000_000,
+                        0,
+                        4_000_000,
+                        false,
+                        None,
+                    );
+                    insert_output(db, &theirs, 3, None, Some(other), 4_000_000, false);
+                },
+            },
+            Case {
+                name: "tx_without_outputs",
+                setup: |db, account, _| {
+                    insert_history_tx(
+                        db,
+                        account,
+                        &fake_txid(0x40),
+                        Some(500),
+                        0,
+                        None,
+                        0,
+                        0,
+                        0,
+                        false,
+                        None,
+                    );
+                },
+            },
+            Case {
+                name: "duplicate_v_transactions_rows",
+                setup: |db, account, _| {
+                    let txid = fake_txid(0x50);
+                    insert_history_tx(
+                        db,
+                        account,
+                        &txid,
+                        Some(600),
+                        0,
+                        None,
+                        1_000_000,
+                        0,
+                        1_000_000,
+                        false,
+                        None,
+                    );
+                    // Second view row for the same account+txid: DISTINCT
+                    // collapses it; rarray dedupes the same way so the
+                    // joined output rows stay identical.
+                    let conn = rusqlite::Connection::open(db.path()).unwrap();
+                    conn.execute(
+                        "INSERT INTO v_transactions (
+                             account_uuid, txid, raw, mined_height, expired_unmined,
+                             account_balance_delta, fee_paid, block_time, total_spent,
+                             total_received, is_shielding, expiry_height, tx_index
+                         ) VALUES (?1, ?2, NULL, 600, 0, 1_000_000, 0, 0, 0, 1_000_000, 0, NULL, 0)",
+                        rusqlite::params![account.as_bytes().as_slice(), txid.as_slice()],
+                    )
+                    .unwrap();
+                    insert_output(db, &txid, 3, None, Some(account), 1_000_000, false);
+                },
+            },
+        ];
+
+        for case in cases {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let other = second_test_account_uuid();
+            (case.setup)(&db, account, other);
+
+            let conn = open_readonly_conn(db.path().to_str().unwrap()).unwrap();
+            let account_bytes = account.as_bytes().as_slice();
+            let bases = read_history_bases(&conn, account_bytes).unwrap();
+            let base_txids: HashSet<Vec<u8>> = bases.iter().map(|base| base.txid.clone()).collect();
+            let distinct_txids = distinct_v_transactions_txids(&conn, account_bytes).unwrap();
+            assert_eq!(
+                base_txids, distinct_txids,
+                "{}: bases txids must equal DISTINCT v_transactions.txid",
+                case.name
+            );
+
+            let via_rarray = read_history_outputs(
+                &conn,
+                account_bytes,
+                bases.iter().map(|base| base.txid.as_slice()),
+            )
+            .unwrap();
+            let via_view =
+                read_history_outputs_via_v_transactions_distinct(&conn, account_bytes).unwrap();
+            assert_eq!(
+                sorted_history_outputs(&via_rarray),
+                sorted_history_outputs(&via_view),
+                "{}: rarray(bases) outputs must match DISTINCT v_transactions join",
+                case.name
+            );
+        }
     }
 
     #[test]
