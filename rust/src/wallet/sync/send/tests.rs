@@ -1024,14 +1024,64 @@ fn unbroadcast_recovery_requires_scheduled_transactions_past_the_safety_window()
         txid_hex: "10".repeat(32),
         status: "scheduled".to_string(),
         scheduled_height: 100,
+        expiry_height: 200,
+        attempt_state: migration::MigrationBroadcastAttemptState::NotAttempted,
     };
 
     assert_eq!(
-        validate_unbroadcast_migration_recovery_candidates(std::slice::from_ref(&scheduled), 109,)
-            .unwrap_err(),
+        validate_unbroadcast_migration_recovery_candidates(
+            std::slice::from_ref(&scheduled),
+            &migration::MigrationSubmissionPolicy::Lightwalletd,
+            109,
+        )
+        .unwrap_err(),
         "Migration recovery must wait until block 110"
     );
-    validate_unbroadcast_migration_recovery_candidates(&[scheduled], 110).unwrap();
+    validate_unbroadcast_migration_recovery_candidates(
+        &[scheduled],
+        &migration::MigrationSubmissionPolicy::Lightwalletd,
+        110,
+    )
+    .unwrap();
+}
+
+#[test]
+fn unbroadcast_recovery_separate_attempt_waits_until_transaction_expiry() {
+    for policy in [
+        migration::MigrationSubmissionPolicy::SeparateRelay(
+            "https://relay.example/submit".to_string(),
+        ),
+        migration::MigrationSubmissionPolicy::LightwalletdUrl(
+            "https://submit.example:443".to_string(),
+        ),
+    ] {
+        for attempt_state in [
+            migration::MigrationBroadcastAttemptState::Attempted,
+            migration::MigrationBroadcastAttemptState::UnknownLegacy,
+        ] {
+            let scheduled = migration::UnbroadcastMigrationRecoveryCandidate {
+                txid_hex: "30".repeat(32),
+                status: "scheduled".to_string(),
+                scheduled_height: 100,
+                expiry_height: 200,
+                attempt_state,
+            };
+
+            assert_eq!(
+                validate_unbroadcast_migration_recovery_candidates(
+                    std::slice::from_ref(&scheduled),
+                    &policy,
+                    199,
+                )
+                .unwrap_err(),
+                format!(
+                    "Migration recovery must wait until separately submitted transaction {} expires at block 200",
+                    scheduled.txid_hex
+                )
+            );
+            validate_unbroadcast_migration_recovery_candidates(&[scheduled], &policy, 200).unwrap();
+        }
+    }
 }
 
 #[test]
@@ -1040,10 +1090,17 @@ fn unbroadcast_recovery_rejects_a_transaction_marked_as_broadcasted() {
         txid_hex: "20".repeat(32),
         status: "broadcasted".to_string(),
         scheduled_height: 100,
+        expiry_height: 200,
+        attempt_state: migration::MigrationBroadcastAttemptState::Attempted,
     };
 
     assert_eq!(
-        validate_unbroadcast_migration_recovery_candidates(&[broadcasted], 200).unwrap_err(),
+        validate_unbroadcast_migration_recovery_candidates(
+            &[broadcasted],
+            &migration::MigrationSubmissionPolicy::Lightwalletd,
+            200,
+        )
+        .unwrap_err(),
         format!(
             "Migration transaction {} was already marked as broadcasted",
             "20".repeat(32)

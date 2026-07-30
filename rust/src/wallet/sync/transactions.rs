@@ -1672,6 +1672,7 @@ pub(crate) struct ResubmittableTx {
     pub txid_bytes: Vec<u8>,
     pub raw_tx: Vec<u8>,
     pub expiry_height: u32,
+    pub migration_submission_policy: Option<super::migration::MigrationSubmissionPolicy>,
 }
 
 /// Return every wallet transaction that is eligible for automatic
@@ -1758,12 +1759,11 @@ pub(crate) fn get_resubmittable_txs_excluding(
                 .try_into()
                 .map_err(|_| "Resubmission transaction ID must be 32 bytes".to_string())?,
         );
-        if super::migration::is_separate_submission_migration_transaction(
-            &read_tx,
-            &txid.to_string(),
-        )? {
-            continue;
-        }
+        let migration_submission_policy =
+            super::migration::migration_submission_policy_for_transaction(
+                &read_tx,
+                &txid.to_string(),
+            )?;
         let raw_tx = raw_stmt
             .query_row([&txid_bytes], |row| row.get::<_, Vec<u8>>(0))
             .map_err(|e| format!("Raw transaction query error: {e}"))?;
@@ -1771,6 +1771,7 @@ pub(crate) fn get_resubmittable_txs_excluding(
             txid_bytes,
             raw_tx,
             expiry_height,
+            migration_submission_policy,
         });
     }
     Ok(resubmittable)
@@ -4763,7 +4764,7 @@ mod tests {
     }
 
     #[test]
-    fn resubmit_excludes_separate_submission_migration_transactions() {
+    fn resubmit_preserves_separate_migration_routes() {
         let db = fresh_db();
         let preparation_txid = fake_txid(0x08);
         let preparation_txid_hex = TxId::from_bytes(preparation_txid).to_string();
@@ -4814,6 +4815,13 @@ mod tests {
         )
         .unwrap();
         conn.execute(
+            "INSERT INTO vizor_migration_runs
+                (run_id, created_at_ms, denomination_submission_target)
+             VALUES ('run-2', 2, 'lightwalletd:https://submit.example:443')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
             "INSERT INTO vizor_migration_denomination_stages
                 (run_id, expected_txid_hex, expiry_height)
              VALUES ('run-1', ?1, 1000100)",
@@ -4823,14 +4831,32 @@ mod tests {
         conn.execute(
             "INSERT INTO vizor_migration_pending_txs
                 (run_id, txid_hex, expiry_height)
-             VALUES ('run-1', ?1, 1000100)",
+             VALUES ('run-2', ?1, 1000100)",
             [migration_txid_hex],
         )
         .unwrap();
         drop(conn);
 
         let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
-        assert!(got.is_empty());
+        assert_eq!(got.len(), 2);
+        let preparation = got
+            .iter()
+            .find(|tx| tx.txid_bytes == preparation_txid)
+            .unwrap();
+        assert!(matches!(
+            preparation.migration_submission_policy.as_ref(),
+            Some(super::super::migration::MigrationSubmissionPolicy::SeparateRelay(url))
+                if url == "https://relay.example/submit"
+        ));
+        let migration = got
+            .iter()
+            .find(|tx| tx.txid_bytes == migration_txid)
+            .unwrap();
+        assert!(matches!(
+            migration.migration_submission_policy.as_ref(),
+            Some(super::super::migration::MigrationSubmissionPolicy::LightwalletdUrl(url))
+                if url == "https://submit.example/"
+        ));
     }
 
     #[test]
