@@ -1047,7 +1047,14 @@ class IronwoodMigrationCoordinator
                             status.signedChildPcztCount == 0 &&
                             _hasScheduledBroadcast(status)) ||
                         (!usesNativeOutbox &&
-                            _hasDueScheduledBroadcast(status)) ||
+                            (_hasDueScheduledBroadcast(status) ||
+                                // Accepted parts can stay broadcasted while
+                                // later parts are still scheduled (and may
+                                // have been rescheduled into the future).
+                                // Keep calling advance so store-from-raw
+                                // retries without waiting for the next due
+                                // height.
+                                _hasBroadcastedPendingRetry(status))) ||
                         (hasChildProofBatchPermit && canPrepareNextProof))) ||
                 // Keep calling into broadcast_due_scheduled after the last
                 // part flips phase so accepted-but-unstored txs and expiry
@@ -1087,6 +1094,16 @@ class IronwoodMigrationCoordinator
           broadcast.status.toLowerCase() == 'scheduled' &&
           broadcast.scheduledHeight > 0 &&
           broadcast.scheduledHeight <= currentHeight,
+    );
+  }
+
+  /// True when at least one part is network-accepted (`broadcasted`) and may
+  /// still need local store-from-raw retry. Used on non-outbox mobile so
+  /// advance keeps running while later parts remain scheduled in the future.
+  bool _hasBroadcastedPendingRetry(rust_sync.MigrationStatus status) {
+    if (status.broadcastedTxCount > 0) return true;
+    return status.scheduledBroadcasts.any(
+      (broadcast) => broadcast.status.toLowerCase() == 'broadcasted',
     );
   }
 

@@ -212,9 +212,11 @@ void main() {
     addTearDown(subscription.close);
     await container.read(syncProvider.future);
 
-    await container
-        .read(ironwoodMigrationCoordinatorProvider.notifier)
-        .refreshNow();
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantForegroundProgressPermit(_softwareUuid);
+    await coordinator.refreshNow();
 
     expect(broadcasts, isEmpty);
   });
@@ -232,6 +234,55 @@ void main() {
         softwareStarts: [],
         broadcasts: broadcasts,
         usesNativeOutbox: false,
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantForegroundProgressPermit(_softwareUuid);
+      await coordinator.refreshNow();
+
+      expect(broadcasts, [_softwareUuid]);
+    },
+  );
+
+  test(
+    'non-outbox mobile advances broadcast_scheduled for store retry before next due height',
+    () async {
+      final statuses = {
+        _softwareUuid: _status(
+          'broadcast_scheduled',
+          broadcastedTxCount: 1,
+          scheduledHeight: 1_200,
+          scheduledStatus: 'scheduled',
+          extraBroadcasts: [
+            rust_sync.MigrationScheduledBroadcast(
+              txidHex: 'accepted-unstored',
+              valueZatoshi: BigInt.from(50000000),
+              scheduledAtMs: 0,
+              scheduledHeight: 1_000,
+              status: 'broadcasted',
+            ),
+          ],
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+        usesNativeOutbox: false,
+        // Tip is past the accepted part but before the later scheduled part.
+        syncState: SyncState(scannedHeight: 1_050, chainTipHeight: 1_051),
       );
       addTearDown(container.dispose);
       final subscription = container.listen(
@@ -2065,8 +2116,11 @@ rust_sync.MigrationStatus _status(
   String phase, {
   String? activeRunId = 'run-1',
   int confirmedTxCount = 0,
+  int broadcastedTxCount = 0,
   int? scheduledHeight,
   String scheduledTxid = 'scheduled-tx',
+  String scheduledStatus = 'scheduled',
+  List<rust_sync.MigrationScheduledBroadcast> extraBroadcasts = const [],
   int signedChildPcztCount = 0,
   int? nextActionHeight,
   bool? proofReady,
@@ -2081,7 +2135,7 @@ rust_sync.MigrationStatus _status(
     denominationSplitCompletedCount: 1,
     denominationSplitTotalCount: 1,
     pendingTxCount: 1,
-    broadcastedTxCount: 0,
+    broadcastedTxCount: broadcastedTxCount,
     confirmedTxCount: confirmedTxCount,
     totalCount: 1,
     signedChildPcztCount: signedChildPcztCount,
@@ -2092,17 +2146,17 @@ rust_sync.MigrationStatus _status(
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
     proofReady: proofReady,
-    scheduledBroadcasts: scheduledHeight == null
-        ? const []
-        : [
-            rust_sync.MigrationScheduledBroadcast(
-              txidHex: scheduledTxid,
-              valueZatoshi: BigInt.from(100000000),
-              scheduledAtMs: 0,
-              scheduledHeight: scheduledHeight,
-              status: 'scheduled',
-            ),
-          ],
+    scheduledBroadcasts: [
+      if (scheduledHeight != null)
+        rust_sync.MigrationScheduledBroadcast(
+          txidHex: scheduledTxid,
+          valueZatoshi: BigInt.from(100000000),
+          scheduledAtMs: 0,
+          scheduledHeight: scheduledHeight,
+          status: scheduledStatus,
+        ),
+      ...extraBroadcasts,
+    ],
     parts: const [],
   );
 }
