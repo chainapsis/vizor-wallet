@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:fixnum/fixnum.dart';
@@ -35,9 +36,14 @@ class RegtestLightwalletdProxy
   int? _slowHeight;
   int _sendTransactionFailuresRemaining = 0;
   int _failedSendTransactionCount = 0;
+  bool _stallNextAddressUtxosAfterHeaders = false;
+  Completer<void>? _addressUtxosStallRelease;
+  int _addressUtxosStreamCallCount = 0;
+  bool _serveEmptyGenesisTreeState = false;
 
   String get url => 'http://127.0.0.1:$listenPort';
   int get failedSendTransactionCount => _failedSendTransactionCount;
+  int get addressUtxosStreamCallCount => _addressUtxosStreamCallCount;
 
   Future<void> start() async {
     _server = grpc.Server.create(services: [this]);
@@ -49,6 +55,7 @@ class RegtestLightwalletdProxy
   }
 
   Future<void> stop() async {
+    releaseStalledAddressUtxosStream();
     await _server?.shutdown();
     await _channel.shutdown();
   }
@@ -76,6 +83,29 @@ class RegtestLightwalletdProxy
     }
     _sendTransactionFailuresRemaining = count;
     _log('primary proxy will fail next $count SendTransaction call(s)');
+  }
+
+  void stallNextAddressUtxosStreamAfterHeaders() {
+    _stallNextAddressUtxosAfterHeaders = true;
+    _addressUtxosStallRelease = Completer<void>();
+    _addressUtxosStreamCallCount = 0;
+    _log(
+      'primary proxy will stall the first GetAddressUtxosStream call '
+      'after response headers, then forward retries',
+    );
+  }
+
+  void releaseStalledAddressUtxosStream() {
+    _stallNextAddressUtxosAfterHeaders = false;
+    final release = _addressUtxosStallRelease;
+    if (release != null && !release.isCompleted) {
+      release.complete();
+    }
+  }
+
+  void serveEmptyGenesisTreeState() {
+    _serveEmptyGenesisTreeState = true;
+    _log('primary proxy will serve an empty genesis tree state');
   }
 
   void _throwIfDown() {
@@ -233,8 +263,17 @@ class RegtestLightwalletdProxy
   Future<service.TreeState> getTreeState(
     grpc.ServiceCall call,
     service.BlockID request,
-  ) {
+  ) async {
     _throwIfDown();
+    if (_serveEmptyGenesisTreeState &&
+        request.height == Int64.ZERO &&
+        request.hash.isEmpty) {
+      return service.TreeState(
+        network: 'regtest',
+        height: Int64.ZERO,
+        hash: List.filled(64, '0').join(),
+      );
+    }
     return _client.getTreeState(request);
   }
 
@@ -269,9 +308,21 @@ class RegtestLightwalletdProxy
   Stream<service.GetAddressUtxosReply> getAddressUtxosStream(
     grpc.ServiceCall call,
     service.GetAddressUtxosArg request,
-  ) {
+  ) async* {
     _throwIfDown();
-    return _client.getAddressUtxosStream(request);
+    _addressUtxosStreamCallCount += 1;
+    if (_stallNextAddressUtxosAfterHeaders) {
+      _stallNextAddressUtxosAfterHeaders = false;
+      call.sendHeaders();
+      _log(
+        'primary proxy stalled GetAddressUtxosStream after response headers',
+      );
+      await _addressUtxosStallRelease!.future;
+      throw grpc.GrpcError.unavailable(
+        'released stalled GetAddressUtxosStream',
+      );
+    }
+    yield* _client.getAddressUtxosStream(request);
   }
 
   @override

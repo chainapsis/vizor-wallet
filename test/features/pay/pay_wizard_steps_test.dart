@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/features/pay/widgets/pay_add_contact_modal.dart
 import 'package:zcash_wallet/src/features/pay/widgets/pay_amount_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_recipient_step.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_review_step.dart';
+import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_page.dart';
 import 'package:zcash_wallet/src/features/pay/widgets/pay_wizard_stepper.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
 
@@ -395,6 +396,27 @@ void main() {
             ?.fontSize,
         AppTypography.displayLarge.fontSize,
       );
+      final assetSelector = find.byKey(const ValueKey('pay_asset_selector'));
+      expect(
+        find.descendant(
+          of: assetSelector,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is AppIcon && widget.name == AppIcons.expand,
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: assetSelector,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is AppIcon &&
+                widget.name == AppIcons.doubleArrowVertical,
+          ),
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('uses the fixed-width action and shared validation contract', (
@@ -422,6 +444,37 @@ void main() {
         find.byKey(const ValueKey('pay_amount_continue_button')),
       );
       expect(continued, isTrue);
+    });
+
+    testWidgets('long quote errors wrap without ellipsis', (tester) async {
+      final controller = TextEditingController(text: '25');
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        _harness(
+          PayAmountStep(
+            state: _amountState.copyWith(
+              quoteError:
+                  'This route or address was rejected.\n'
+                  'Edit the details and request a new quote.',
+            ),
+            controller: controller,
+            focusNode: focusNode,
+            onAmountChanged: (_) {},
+            onFiatAmountChanged: (_) {},
+            onToggleFiatInputMode: () {},
+            onOpenAssetSelector: () {},
+          ),
+        ),
+      );
+
+      final error = tester.widget<Text>(
+        find.byKey(const ValueKey('pay_amount_error')),
+      );
+      expect(error.maxLines, isNull);
+      expect(error.overflow, isNull);
     });
   });
 
@@ -708,6 +761,29 @@ void main() {
         find.byKey(const ValueKey('pay_select_recipient_button')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('long quote errors use the content width and wrap fully', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          _recipientStep(
+            typedAddress: _unknownAddress,
+            quoteError:
+                'This route or address was rejected.\n'
+                'Edit the details and request a new quote.',
+          ),
+        ),
+      );
+
+      final errorFinder = find.byKey(
+        const ValueKey('pay_recipient_quote_error'),
+      );
+      final error = tester.widget<Text>(errorFinder);
+      expect(tester.getSize(errorFinder).width, PayWizardPage.innerWidth);
+      expect(error.maxLines, isNull);
+      expect(error.overflow, isNull);
     });
 
     testWidgets('unsupported asset disables recipient review with an error', (

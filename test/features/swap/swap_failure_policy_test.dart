@@ -53,6 +53,24 @@ void main() {
     );
   });
 
+  test('pay quote amount minimum failures use payment copy', () {
+    const error = OneClickApiException(
+      'NEAR Intents quote failed (400): '
+      '{"message":"Amount is too low for bridge, try at least 74256"}',
+      statusCode: 400,
+      providerMessage: 'Amount is too low for bridge, try at least 74256',
+    );
+
+    expect(
+      swapFailureMessage(
+        SwapFailureOperation.quote,
+        error,
+        surface: SwapFailureSurface.pay,
+      ),
+      'Amount is too low for this payment.\nTry a larger amount.',
+    );
+  });
+
   test('no quotes found failures follow the low amount guidance', () {
     const error = OneClickApiException(
       'NEAR Intents quote failed (400): {"message":"No quotes found"}',

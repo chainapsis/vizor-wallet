@@ -27,6 +27,9 @@ import '../src/features/swap/widgets/swap_asset_selector_modal.dart';
 const _previewWindowSize = Size(1080, 720);
 const _contactAddress = '0x52908400098527886E0F7030069857D2E4169EE7';
 const _newRecipientAddress = '0x1234567890123456789012345678901234567890';
+const _recipientQuoteError =
+    'This route or address was rejected.\n'
+    'Edit the details and request a new quote.';
 
 Widget buildPayAmountUseCase(BuildContext context) {
   return const _PayDesktopFrame(child: _PayAmountPreview());
@@ -39,6 +42,15 @@ Widget buildPayRecipientUseCase(BuildContext context) {
 Widget buildPayRecipientNewAddressUseCase(BuildContext context) {
   return const _PayDesktopFrame(
     child: _PayRecipientPreview(initialAddress: _newRecipientAddress),
+  );
+}
+
+Widget buildPayRecipientQuoteErrorUseCase(BuildContext context) {
+  return const _PayDesktopFrame(
+    child: _PayRecipientPreview(
+      initialAddress: _newRecipientAddress,
+      quoteError: _recipientQuoteError,
+    ),
   );
 }
 
@@ -169,9 +181,10 @@ class _PayAmountPreviewState extends State<_PayAmountPreview> {
 }
 
 class _PayRecipientPreview extends StatefulWidget {
-  const _PayRecipientPreview({this.initialAddress = ''});
+  const _PayRecipientPreview({this.initialAddress = '', this.quoteError});
 
   final String initialAddress;
+  final String? quoteError;
 
   @override
   State<_PayRecipientPreview> createState() => _PayRecipientPreviewState();
@@ -214,7 +227,7 @@ class _PayRecipientPreviewState extends State<_PayRecipientPreview> {
       addressError: issue,
       contacts: _previewContacts,
       busy: false,
-      quoteError: null,
+      quoteError: widget.quoteError,
       onSelectRecipient: () {},
       onAddToContacts: () {},
     );

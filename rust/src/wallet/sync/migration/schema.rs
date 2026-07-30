@@ -549,6 +549,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             schedule_start_height INTEGER,
             scheduled_height INTEGER NOT NULL DEFAULT 0,
             original_scheduled_height INTEGER,
+            broadcast_attempted INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL,
             metadata_json TEXT NOT NULL
         );
@@ -587,6 +588,29 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
     .map_err(|e| format!("Initialize migration schema: {e}"))?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "part_index", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "anchor_boundary_height", "INTEGER")?;
+    let had_broadcast_attempted =
+        table_column_exists(conn, PENDING_TXS_TABLE, "broadcast_attempted")?;
+    add_column_if_missing(
+        conn,
+        PENDING_TXS_TABLE,
+        "broadcast_attempted",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    if !had_broadcast_attempted {
+        // Existing scheduled rows may predate the durable marker. Keep that
+        // uncertainty distinct from a known attempt: stop can safely discard
+        // an unknown row whose broadcast height is still in the future, while
+        // reconciling an unknown row that could already have been submitted.
+        conn.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET broadcast_attempted = 2
+                 WHERE status = 'scheduled'"
+            ),
+            [],
+        )
+        .map_err(|e| format!("Backfill migration broadcast attempts: {e}"))?;
+    }
     add_column_if_missing(
         conn,
         RUNS_TABLE,

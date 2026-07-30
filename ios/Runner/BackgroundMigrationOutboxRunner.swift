@@ -217,11 +217,10 @@ enum BackgroundMigrationOutboxRunner {
     }
 
     if cancellation.isCancelled {
-      recordUncertain(
+      recordCancelledBeforeSubmission(
         store: store,
         itemId: selection.item.itemId,
-        error: "Background execution expired before submission.",
-        at: now
+        error: "Background execution expired before submission."
       )
       return BackgroundMigrationOutboxRunResult(
         transport: .cancelled,
@@ -338,6 +337,16 @@ enum BackgroundMigrationOutboxRunner {
   ) {
     _ = try? store.update { snapshot in
       try snapshot.recordUncertain(itemId: itemId, error: error, at: date)
+    }
+  }
+
+  private static func recordCancelledBeforeSubmission(
+    store: BackgroundMigrationOutboxStore,
+    itemId: String,
+    error: String
+  ) {
+    _ = try? store.update { snapshot in
+      try snapshot.recordCancelledBeforeSubmission(itemId: itemId, error: error)
     }
   }
 }

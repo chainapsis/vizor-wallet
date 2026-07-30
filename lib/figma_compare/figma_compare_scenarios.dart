@@ -247,6 +247,21 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildIronwoodMigrationPreparationScheduleUseCase,
   ),
   FigmaCompareScenario(
+    id: 'ironwood-migration-manage-schedule',
+    description: 'Ironwood migration schedule management choices',
+    builder: buildIronwoodMigrationManageScheduleUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-immediate-confirmation',
+    description: 'Ironwood immediate migration final confirmation',
+    builder: buildIronwoodMigrationImmediateConfirmationUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'ironwood-migration-stop-confirmation',
+    description: 'Ironwood migration cancellation final confirmation',
+    builder: buildIronwoodMigrationStopConfirmationUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-complete',
     description: 'Ironwood migration completion',
     builder: buildIronwoodMigrationCompleteUseCase,

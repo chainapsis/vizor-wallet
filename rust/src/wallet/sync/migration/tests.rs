@@ -145,6 +145,139 @@ fn create_outbox_test_run(
     txids
 }
 
+#[test]
+fn stopping_a_run_discards_only_unsubmitted_work() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let txids = create_outbox_test_run(&db_path, "run-stop", &[10, 20], &[None, None]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE} SET status = 'broadcasted'
+             WHERE run_id = 'run-stop' AND txid_hex = ?1"
+        ),
+        params![txids[0]],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {STAGES_TABLE}
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height,
+              scheduled_height, expiry_height, fee_zatoshi, status)
+             VALUES
+             ('run-stop', 0, 'pczt', 'sigs', 'raw', ?1, 100, 100, 200, 10, 'pending'),
+             ('run-stop', 1, 'pczt', 'sigs', 'raw', ?2, 100, 100, 200, 10, 'broadcasted')"
+        ),
+        params!["aa".repeat(32), "bb".repeat(32)],
+    )
+    .unwrap();
+    drop(conn);
+
+    abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-stop").unwrap();
+    // Repeating an already-completed stop is safe for UI retries.
+    abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-stop").unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = 'run-stop'"),
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_ABANDONED);
+    let remaining_pending = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM {PENDING_TXS_TABLE} WHERE run_id = 'run-stop'"),
+            [],
+            |row| row.get::<_, u32>(0),
+        )
+        .unwrap();
+    assert_eq!(remaining_pending, 1);
+    let remaining_status = conn
+        .query_row(
+            &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE run_id = 'run-stop'"),
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    assert_eq!(remaining_status, "broadcasted");
+    let remaining_stage = conn
+        .query_row(
+            &format!("SELECT status FROM {STAGES_TABLE} WHERE run_id = 'run-stop'"),
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    assert_eq!(remaining_stage, "broadcasted");
+}
+
+#[test]
+fn stop_candidates_track_attempts_for_children_and_denomination_stages() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let child_txids = create_outbox_test_run(&db_path, "run-attempts", &[10], &[None]);
+    let stage_txid = "aa".repeat(32);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {STAGES_TABLE}
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height,
+              scheduled_height, expiry_height, fee_zatoshi, status)
+             VALUES ('run-attempts', 0, 'pczt', 'sigs', 'raw', ?1,
+                     100, 100, 200, 10, 'pending')"
+        ),
+        params![stage_txid],
+    )
+    .unwrap();
+    drop(conn);
+
+    let initial = scheduled_migration_stop_candidates(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-attempts",
+    )
+    .unwrap();
+    assert_eq!(initial.len(), 2);
+    assert!(initial
+        .iter()
+        .all(|candidate| candidate.attempt_state == MigrationBroadcastAttemptState::NotAttempted));
+
+    mark_pending_broadcast_attempted(&db_path, "run-attempts", &child_txids[0]).unwrap();
+    mark_denomination_broadcast_attempted(&db_path, "run-attempts", &stage_txid).unwrap();
+
+    let attempted = scheduled_migration_stop_candidates(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-attempts",
+    )
+    .unwrap();
+    assert_eq!(attempted.len(), 2);
+    assert!(attempted
+        .iter()
+        .all(|candidate| candidate.attempt_state == MigrationBroadcastAttemptState::Attempted));
+    assert!(attempted.iter().any(|candidate| {
+        candidate.kind == MigrationStopCandidateKind::MigrationTransaction
+            && candidate.txid_hex == child_txids[0]
+    }));
+    assert!(attempted.iter().any(|candidate| {
+        candidate.kind == MigrationStopCandidateKind::DenominationStage
+            && candidate.txid_hex == stage_txid
+    }));
+}
+
 fn pending_test_stage(expected_txid_hex: &str, raw_tx: Vec<u8>) -> DenominationStageInsert {
     DenominationStageInsert {
         stage_index: 0,
@@ -1511,7 +1644,7 @@ fn planner_accepts_only_zip318_one_two_five_denominations() {
 }
 
 #[test]
-fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries() {
+fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
     assert_eq!(ZIP318_ANCHOR_AGE_CAP, 4);
 
     assert_eq!(
@@ -1529,15 +1662,15 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
 
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000),
-        vec![5616, 5472, 5328, 5184, 5040]
+        vec![5472, 5328, 5184, 5040]
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5600, 5000),
-        vec![5616]
+        Vec::<u32>::new()
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5900, 5600, 5000),
-        vec![5760, 5616]
+        vec![5616]
     );
 
     assert!(zip318_anchor_boundary_is_candidate(
@@ -1547,7 +1680,7 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
         5000,
         5000
     ));
-    assert!(zip318_anchor_boundary_is_candidate(
+    assert!(!zip318_anchor_boundary_is_candidate(
         WalletNetwork::Test,
         5616,
         5700,
@@ -1557,12 +1690,12 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
     assert_eq!(
         zip318_anchor_candidate_boundaries_with_policy(
             WalletNetwork::Test,
-            MigrationTimingPolicy::Standard,
+            MigrationTimingPolicy::Standard90MinutesLatestAnchor,
             5700,
             5000,
             5000,
         ),
-        vec![5472, 5328, 5184, 5040]
+        vec![5616, 5472, 5328, 5184, 5040]
     );
     assert!(!zip318_anchor_boundary_is_candidate(
         WalletNetwork::Test,
@@ -1582,8 +1715,11 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
     let latest_boundary = ZIP318_ANCHOR_BUCKET_MODULUS * (ZIP318_ANCHOR_AGE_CAP.saturating_add(2));
     let capped_candidates =
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, latest_boundary, 1, 0);
-    assert_eq!(capped_candidates.len(), ZIP318_ANCHOR_AGE_CAP as usize + 1);
-    assert_eq!(capped_candidates.first(), Some(&latest_boundary));
+    assert_eq!(capped_candidates.len(), ZIP318_ANCHOR_AGE_CAP as usize);
+    assert_eq!(
+        capped_candidates.first(),
+        Some(&(latest_boundary - ZIP318_ANCHOR_BUCKET_MODULUS))
+    );
     assert_eq!(
         capped_candidates.last(),
         Some(&(latest_boundary - ZIP318_ANCHOR_BUCKET_MODULUS * ZIP318_ANCHOR_AGE_CAP))
@@ -1650,11 +1786,11 @@ fn proof_retry_waits_until_the_next_boundary_is_trusted() {
 fn proof_readiness_ages_the_boundary_containing_the_prepared_note() {
     assert_eq!(
         estimated_proof_ready_height(WalletNetwork::Main, 142).unwrap(),
-        146
+        290
     );
     assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Main, 142).unwrap(),
-        2
+        146
     );
     assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Regtest, 10).unwrap(),
@@ -1701,7 +1837,7 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
     }
     assert_eq!(
         zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5600, 5000),
-        Some(5616)
+        None
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Regtest, 503, 501, 500)[0],
@@ -2759,7 +2895,7 @@ fn mainnet_run_reads_its_persisted_timing_policy() {
 }
 
 #[test]
-fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
+fn new_mainnet_draft_persists_ninety_minute_policy() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -2781,7 +2917,7 @@ fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
 
     assert_eq!(
         timing_policy_for_run(&db_path, &run_id, WalletNetwork::Main).unwrap(),
-        MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+        MigrationTimingPolicy::Standard90Minutes,
     );
 }
 
@@ -2959,7 +3095,7 @@ fn fast_testnet_adoption_preserves_signed_preparation_schedule() {
 }
 
 #[test]
-fn configured_latest_anchor_policy_does_not_retime_existing_runs() {
+fn configured_timing_policy_does_not_retime_existing_runs() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     for (account_uuid, run_id, timing_policy, retry_height) in [
@@ -5289,6 +5425,46 @@ fn confirmation_reconciliation_requeues_child_reorged_before_trusted_depth() {
         )
         .unwrap();
     assert_eq!(lock_state, "locked");
+
+    // A post-sync reconciliation that started from a stale active-run
+    // snapshot must not mutate or reactivate a run after stop wins.
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+        params![PHASE_ABANDONED, run_id],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET status = 'confirmed', scheduled_at_ms = 1
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .unwrap();
+
+    reconcile_run_confirmations(&conn, run_id).unwrap();
+
+    let terminal_phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let (terminal_pending_status, terminal_scheduled_at_ms): (String, i64) = conn
+        .query_row(
+            &format!(
+                "SELECT status, scheduled_at_ms
+                 FROM {PENDING_TXS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(terminal_phase, PHASE_ABANDONED);
+    assert_eq!(terminal_pending_status, "confirmed");
+    assert_eq!(terminal_scheduled_at_ms, 1);
 }
 
 #[test]
@@ -6497,6 +6673,59 @@ fn status_reconciliation_preserves_reincluded_parent_and_resets_offchain_depende
     assert_eq!(
         statuses,
         vec!["awaiting_inputs", "awaiting_inputs", "confirmed"]
+    );
+
+    // A stale post-sync snapshot must not apply the same reorg recovery after
+    // the user has stopped the run.
+    conn.execute(
+        "UPDATE vizor_migration_denomination_stages
+         SET status = 'confirmed', confirmed_mined_height = 20,
+             confirmed_block_hash = zeroblob(32)
+         WHERE run_id = ?1 AND stage_index = 0",
+        params![run_id],
+    )
+    .unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+        params![PHASE_ABANDONED, run_id],
+    )
+    .unwrap();
+    let statuses_before_stop_reconciliation = conn
+        .prepare(
+            "SELECT status FROM vizor_migration_denomination_stages
+             WHERE run_id = ?1 ORDER BY stage_index",
+        )
+        .unwrap()
+        .query_map(params![run_id], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    drop(conn);
+
+    reconcile_denomination_stage_chain_state(db_path, run_id).unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let statuses_after_stop_reconciliation = conn
+        .prepare(
+            "SELECT status FROM vizor_migration_denomination_stages
+             WHERE run_id = ?1 ORDER BY stage_index",
+        )
+        .unwrap()
+        .query_map(params![run_id], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(phase, PHASE_ABANDONED);
+    assert_eq!(
+        statuses_after_stop_reconciliation,
+        statuses_before_stop_reconciliation
     );
 }
 
