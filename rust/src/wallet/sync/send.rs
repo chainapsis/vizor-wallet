@@ -656,6 +656,29 @@ fn pending_migration_policy_rebuild_message(
     Ok(None)
 }
 
+/// Persist accepted-but-unstored migration txs, reconcile confirmations, then
+/// evaluate fee/input policy rebuild. Store must run before retirement so a
+/// lightwalletd-accepted tx is recorded locally before the run goes terminal
+/// and note locks are released.
+fn retry_store_then_pending_migration_policy_rebuild_message(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    chain_tip_height: u32,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<Option<String>, String> {
+    retry_store_broadcasted_migration_txs_missing_local(
+        db_path,
+        network,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    super::migration::reconcile_run_pending_confirmations(db_path, run_id)?;
+    pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)
+}
+
 pub fn propose_send(
     db_path: &str,
     network: WalletNetwork,
@@ -1362,12 +1385,16 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                     let chain_tip_height =
                         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
                             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-                    if let Some(message) = pending_migration_policy_rebuild_message(
-                        db_path,
-                        network,
-                        &run.run_id,
-                        chain_tip_height,
-                    )? {
+                    if let Some(message) =
+                        retry_store_then_pending_migration_policy_rebuild_message(
+                            db_path,
+                            network,
+                            &run.run_id,
+                            chain_tip_height,
+                            pending_password.as_slice(),
+                            pending_salt_base64,
+                        )?
+                    {
                         drop(seed);
                         super::migration::retire_run_for_rebuild(
                             db_path,
@@ -1974,9 +2001,14 @@ async fn prepare_orchard_migration_outbox(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-    if let Some(message) =
-        pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
-    {
+    if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
+        db_path,
+        network,
+        &run.run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )? {
         super::migration::retire_run_for_rebuild(db_path, network, &run.run_id, &message)?;
         let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
         return Ok(migration_result_from_pending_totals(
@@ -4639,9 +4671,18 @@ async fn broadcast_due_scheduled_migration_txs(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-    if let Some(message) =
-        pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)?
-    {
+    // Store accepted-but-unstored rows before fee-policy retirement and before
+    // expiry handling. Policy rebuild would otherwise go terminal and release
+    // locks without recording network-accepted state; expiry flips
+    // `broadcasted` → `needs_resign` and would drop rows out of store-retry.
+    if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
+        db_path,
+        network,
+        run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )? {
         super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
         return Ok(MigrationBroadcastAdvance::without_acceptance(
             migration_result_from_pending_totals(
@@ -4653,19 +4694,6 @@ async fn broadcast_due_scheduled_migration_txs(
             ),
         ));
     }
-
-    // Retry local store for already-accepted parts before expiry handling.
-    // Expiry flips `broadcasted` → `needs_resign`, which would drop not-yet-
-    // stored accepted rows out of this retry path. Reconcile confirmations
-    // after a successful store so a mined tx can become `confirmed` first.
-    retry_store_broadcasted_migration_txs_missing_local(
-        db_path,
-        network,
-        run_id,
-        pending_password,
-        pending_salt_base64,
-    )?;
-    super::migration::reconcile_run_pending_confirmations(db_path, run_id)?;
 
     let expired_count =
         super::migration::expired_unconfirmed_pending_count(db_path, run_id, chain_tip_height)?;
