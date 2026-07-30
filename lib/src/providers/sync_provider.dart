@@ -598,6 +598,19 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   StreamSubscription? _mempoolSub;
   bool _mempoolRefreshInFlight = false;
   bool _mempoolRefreshQueued = false;
+  // Single-flight for balance/history refreshes. Every trigger (account
+  // switch, unlock, resume, mempool, sync completion, recovery) funnels
+  // through `_requestBalanceRefresh`, so overlapping triggers cannot each
+  // pay for a full `getBalance` + `getTransactionHistory` pass.
+  //
+  // Trailing, not just joining: a request that arrives mid-flight queues
+  // one more pass instead of adopting the in-flight result, because that
+  // result may have been read before the event that triggered it (a send,
+  // say). Callers still await data that reflects their trigger.
+  bool _balanceRefreshInFlight = false;
+  bool _balanceRefreshQueued = false;
+  bool _balanceRefreshQueuedReleaseSnapshot = false;
+  Future<void>? _balanceRefreshChain;
 
   @override
   Future<SyncState> build() async {
@@ -606,7 +619,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
-        _refreshBalance();
+        unawaited(_requestBalanceRefresh());
         _checkAndSync();
       },
       onHide: () {
@@ -1431,6 +1444,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopMempoolObserver();
     _mempoolRefreshInFlight = false;
     _mempoolRefreshQueued = false;
+    // Drop any queued follow-up pass. `_balanceRefreshInFlight` is left to
+    // the running pass's `finally`: clearing it here would let a new pass
+    // start alongside the one still unwinding. The loop's `!_requiresUnlock`
+    // guard stops it after the current iteration, and `_refreshBalance`
+    // bails immediately while locked.
+    _balanceRefreshQueued = false;
+    _balanceRefreshQueuedReleaseSnapshot = false;
     state = AsyncData(SyncState());
 
     // Sign-out should cancel the current Rust run immediately so unlock
@@ -1685,7 +1705,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       do {
         _mempoolRefreshQueued = false;
         try {
-          await _refreshBalance();
+          await _requestBalanceRefresh();
         } catch (e, st) {
           log('Mempool: refresh failed: $e\n$st');
         }
@@ -2097,9 +2117,55 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   /// Public: refresh balance and recent transactions (e.g. after send).
   Future<void> refreshAfterSend() =>
-      _refreshBalance(releaseSnapshotOnAuthoritativeBalance: true);
+      _requestBalanceRefresh(releaseSnapshotOnAuthoritativeBalance: true);
 
-  Future<void> refreshAfterUnlock() => _refreshBalance();
+  Future<void> refreshAfterUnlock() => _requestBalanceRefresh();
+
+  /// Coalesce concurrent refresh triggers into one running pass.
+  ///
+  /// Returns a future that completes once a pass that started *after*
+  /// this call's trigger has finished, so awaiting it still yields data
+  /// reflecting the caller's event.
+  Future<void> _requestBalanceRefresh({
+    bool releaseSnapshotOnAuthoritativeBalance = false,
+  }) {
+    if (releaseSnapshotOnAuthoritativeBalance) {
+      _balanceRefreshQueuedReleaseSnapshot = true;
+    }
+    if (_balanceRefreshInFlight) {
+      _balanceRefreshQueued = true;
+      // Non-null whenever a pass is in flight; the fallback keeps this
+      // total if the two ever drift.
+      return _balanceRefreshChain ?? Future<void>.value();
+    }
+
+    _balanceRefreshInFlight = true;
+    final chain = _runCoalescedBalanceRefresh();
+    _balanceRefreshChain = chain;
+    return chain;
+  }
+
+  Future<void> _runCoalescedBalanceRefresh() async {
+    try {
+      do {
+        _balanceRefreshQueued = false;
+        final releaseSnapshot = _balanceRefreshQueuedReleaseSnapshot;
+        _balanceRefreshQueuedReleaseSnapshot = false;
+        try {
+          await _refreshBalance(
+            releaseSnapshotOnAuthoritativeBalance: releaseSnapshot,
+          );
+        } catch (e, st) {
+          log('SyncNotifier: coalesced balance refresh failed: $e\n$st');
+        }
+      } while (_balanceRefreshQueued && !_requiresUnlock);
+    } finally {
+      _balanceRefreshInFlight = false;
+      _balanceRefreshQueued = false;
+      _balanceRefreshQueuedReleaseSnapshot = false;
+      _balanceRefreshChain = null;
+    }
+  }
 
   Future<void> _ensureAuthoritativeBalanceRecovery() {
     final existing = _authoritativeBalanceRecovery;
@@ -2145,7 +2211,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       if (syncInProgress) continue;
 
       try {
-        await _refreshBalance();
+        await _requestBalanceRefresh();
       } catch (e, st) {
         log('SyncNotifier: authoritative balance recovery failed: $e\n$st');
       }
