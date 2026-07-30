@@ -623,6 +623,28 @@ void main() {
       final stageRect = tester.getRect(
         find.byKey(const ValueKey('ironwood_migration_stage_header')),
       );
+      final titleFinder = find.byKey(
+        const ValueKey('ironwood_migration_review_title'),
+      );
+      expect(titleFinder, findsOneWidget);
+      final title = tester.widget<Text>(titleFinder);
+      final titleRect = tester.getRect(titleFinder);
+      expect(title.textAlign, TextAlign.center);
+      expect(title.style?.fontFamily, AppTypography.headlineSmall.fontFamily);
+      expect(title.style?.fontSize, AppTypography.headlineSmall.fontSize);
+      expect(title.style?.fontWeight, AppTypography.headlineSmall.fontWeight);
+      expect(titleRect.left, closeTo(stageRect.left, 0.01));
+      expect(titleRect.right, closeTo(stageRect.right, 0.01));
+      expect(stageRect.top - titleRect.top, closeTo(38, 0.01));
+
+      final reviewDonutFinder = find.byKey(
+        const ValueKey('ironwood_migration_review_donut'),
+      );
+      final reviewDonut = tester.widget<CustomPaint>(reviewDonutFinder);
+      expect(tester.getSize(reviewDonutFinder), const Size.square(256));
+      final dynamic reviewPainter = reviewDonut.painter;
+      expect(reviewPainter.outerDiameter, 256);
+
       final completionRect = tester.getRect(
         find.byKey(const ValueKey('ironwood_migration_review_completion_row')),
       );
@@ -2281,6 +2303,63 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your\n0.6 ZEC\nare on Ironwood!'), findsOneWidget);
+    final completeRoot = find.byKey(
+      const ValueKey('ironwood_migration_complete_content'),
+    );
+    final completeRootRect = tester.getRect(completeRoot);
+    expect(tester.getSize(completeRoot), const Size(420, 656));
+    expect(
+      tester
+          .widget<Stack>(
+            find.byKey(const ValueKey('ironwood_migration_complete_stack')),
+          )
+          .clipBehavior,
+      Clip.none,
+    );
+    expect(
+      tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_complete_hero')),
+      ),
+      Rect.fromLTWH(
+        completeRootRect.left + 12,
+        completeRootRect.top + 75.5,
+        396,
+        220,
+      ),
+    );
+    expect(
+      tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_complete_coins')),
+      ),
+      Rect.fromLTWH(
+        completeRootRect.left + 110,
+        completeRootRect.top + 75.5,
+        200,
+        200,
+      ),
+    );
+    expect(
+      tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_complete_copy')),
+      ),
+      Rect.fromLTWH(
+        completeRootRect.left + 65,
+        completeRootRect.top + 343.5,
+        290,
+        153,
+      ),
+    );
+    expect(
+      tester
+              .getRect(
+                find.byKey(
+                  const ValueKey('ironwood_migration_status_action_button'),
+                ),
+              )
+              .top -
+          completeRootRect.top,
+      closeTo(544.5, 0.01),
+    );
     expect(find.text('Back home'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Done'), findsOneWidget);
   });
@@ -3350,13 +3429,74 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preparation Schedule'), findsOneWidget);
+    final preparationRoot = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_content'),
+    );
+    final preparationTitle = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_title'),
+    );
+    final preparationSummary = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_summary'),
+    );
+    final preparationList = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_list'),
+    );
+    final preparationRootRect = tester.getRect(preparationRoot);
+    expect(tester.getSize(preparationRoot), const Size(420, 656));
+    expect(
+      tester.getRect(preparationTitle).top - preparationRootRect.top,
+      closeTo(28, 0.01),
+    );
+    expect(tester.widget<Text>(preparationTitle).textAlign, TextAlign.center);
+    expect(
+      tester.getRect(preparationSummary),
+      Rect.fromLTWH(
+        preparationRootRect.left + 12,
+        preparationRootRect.top + 72,
+        396,
+        104,
+      ),
+    );
+    expect(
+      tester.getRect(preparationList),
+      Rect.fromLTWH(
+        preparationRootRect.left + 12,
+        preparationRootRect.top + 188,
+        396,
+        468,
+      ),
+    );
+    final firstPreparationSurface = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_surface_0'),
+    );
+    expect(
+      tester.getRect(firstPreparationSurface),
+      Rect.fromLTWH(
+        preparationRootRect.left + 12,
+        preparationRootRect.top + 232,
+        396,
+        56,
+      ),
+    );
+    final firstOutput = find.byKey(
+      const ValueKey('ironwood_migration_preparation_output_0_0'),
+    );
+    final secondOutput = find.byKey(
+      const ValueKey('ironwood_migration_preparation_output_0_1'),
+    );
+    expect(tester.getSize(firstOutput).height, 24);
+    expect(tester.getSize(secondOutput).height, 24);
+    expect(
+      tester.getRect(secondOutput).top - tester.getRect(firstOutput).bottom,
+      8,
+    );
     expect(find.text('Current round'), findsOneWidget);
     expect(find.text('1 of 2'), findsOneWidget);
     expect(find.text('Ready to migrate'), findsOneWidget);
     expect(find.text('Current block'), findsOneWidget);
     expect(find.text('1,000'), findsOneWidget);
     expect(find.text('#1,010'), findsOneWidget);
-    expect(find.text('Expected by #1,171'), findsOneWidget);
+    expect(find.text('Expected by #1,171'), findsNothing);
     expect(find.text('Expected #1,171'), findsOneWidget);
     expect(find.text('3. 2 ZEC'), findsOneWidget);
     expect(find.text('4. 3 ZEC'), findsOneWidget);
@@ -4158,6 +4298,70 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Left to migrate'), findsOneWidget);
+    final scheduleRoot = find.byKey(
+      const ValueKey('ironwood_migration_schedule_content'),
+    );
+    final scheduleTitle = find.byKey(
+      const ValueKey('ironwood_migration_schedule_title'),
+    );
+    final scheduleSummary = find.byKey(
+      const ValueKey('ironwood_migration_schedule_summary'),
+    );
+    final scheduleList = find.byKey(
+      const ValueKey('ironwood_migration_schedule_list'),
+    );
+    final scheduleRootRect = tester.getRect(scheduleRoot);
+    expect(tester.getSize(scheduleRoot), const Size(420, 656));
+    expect(
+      tester.getRect(scheduleTitle).top - scheduleRootRect.top,
+      closeTo(16, 0.01),
+    );
+    expect(tester.widget<Text>(scheduleTitle).textAlign, TextAlign.center);
+    expect(
+      tester.getRect(scheduleSummary),
+      Rect.fromLTWH(
+        scheduleRootRect.left + 28,
+        scheduleRootRect.top + 72,
+        364,
+        80,
+      ),
+    );
+    expect(
+      tester.getRect(scheduleList),
+      Rect.fromLTWH(
+        scheduleRootRect.left + 12,
+        scheduleRootRect.top + 180,
+        396,
+        476,
+      ),
+    );
+    final firstScheduleSurface = find.byKey(
+      const ValueKey('ironwood_migration_schedule_surface_0'),
+    );
+    expect(
+      tester.getRect(firstScheduleSurface),
+      Rect.fromLTWH(
+        scheduleRootRect.left + 12,
+        scheduleRootRect.top + 196,
+        396,
+        56,
+      ),
+    );
+    final scheduleDecoration =
+        tester.widget<DecoratedBox>(firstScheduleSurface).decoration
+            as BoxDecoration;
+    expect(scheduleDecoration.borderRadius, BorderRadius.circular(16));
+    final completedStatus = find.byKey(
+      const ValueKey('ironwood_migration_schedule_status_0'),
+    );
+    final completedIcon = find.descendant(
+      of: completedStatus,
+      matching: find.byType(AppIcon),
+    );
+    expect(
+      tester.getRect(completedIcon).left,
+      lessThan(tester.getRect(find.text('Completed at block 4,209,997')).left),
+    );
     expect(find.text('0.5 ZEC'), findsOneWidget);
     expect(find.text('in ~50 minutes'), findsOneWidget);
     expect(find.text('Completed at block 4,209,997'), findsOneWidget);

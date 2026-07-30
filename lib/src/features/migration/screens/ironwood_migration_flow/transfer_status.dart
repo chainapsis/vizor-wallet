@@ -181,56 +181,102 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     return SizedBox(
+      key: const ValueKey('ironwood_migration_complete_content'),
       width: 420,
       height: 656,
       child: Stack(
+        key: const ValueKey('ironwood_migration_complete_stack'),
+        clipBehavior: Clip.none,
         children: [
           Positioned(
-            left: 70,
-            top: 54,
-            width: 280,
-            height: 210,
+            left: 12,
+            top: 75.5,
+            width: 396,
+            height: 220,
             child: Stack(
-              fit: StackFit.expand,
+              key: const ValueKey('ironwood_migration_complete_hero'),
+              clipBehavior: Clip.none,
               children: [
-                CustomPaint(painter: _MigrationCompleteRibbonPainter()),
-                Image.asset(
-                  'assets/illustrations/ironwood_migration_done_coins.png',
-                  fit: BoxFit.contain,
+                Positioned(
+                  left: 93.58984375,
+                  top: 25.9231032198,
+                  width: 226.6364541916,
+                  height: 171.011320144,
+                  child: SizedBox(
+                    key: const ValueKey('ironwood_migration_complete_ribbon'),
+                    child: Center(
+                      child: Transform.rotate(
+                        angle: -15.62 * math.pi / 180,
+                        child: SizedBox(
+                          width: 201.426,
+                          height: 121.245,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned(
+                                left: -16.195,
+                                top: -30,
+                                width: 230.312,
+                                height: 169.943,
+                                child: SvgPicture.asset(
+                                  'assets/illustrations/ironwood_migration_done_ribbon.svg',
+                                  fit: BoxFit.fill,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 98,
+                  top: 0,
+                  width: 200,
+                  height: 200,
+                  child: Image.asset(
+                    key: const ValueKey('ironwood_migration_complete_coins'),
+                    'assets/illustrations/ironwood_migration_done_coins.png',
+                    fit: BoxFit.fill,
+                  ),
                 ),
               ],
             ),
           ),
           Positioned(
-            left: 40,
-            top: 270,
-            width: 340,
-            child: Column(
-              children: [
-                Text(
-                  'Your\n${_formatZecAmountCompact(totalZatoshi)} ZEC\n'
-                  'are on Ironwood!',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: colors.text.accent,
-                    height: 1.08,
+            left: 65,
+            top: 343.5,
+            width: 290,
+            height: 153,
+            child: SizedBox(
+              key: const ValueKey('ironwood_migration_complete_copy'),
+              child: Column(
+                children: [
+                  Text(
+                    'Your\n${_formatZecAmountCompact(totalZatoshi)} ZEC\n'
+                    'are on Ironwood!',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.headlineLarge.copyWith(
+                      color: colors.text.accent,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Migration completed successfully and you can\n'
-                  'spend your funds as usual.',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
+                  const SizedBox(height: 12),
+                  Text(
+                    'Migration completed successfully and you can\n'
+                    'spend your funds as usual.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: colors.text.secondary,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           Positioned(
             left: 162,
-            top: 510,
+            top: 544.5,
             width: 96,
             child: AppButton(
               key: const ValueKey('ironwood_migration_status_action_button'),
@@ -246,30 +292,6 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
       ),
     );
   }
-}
-
-class _MigrationCompleteRibbonPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF009C5D)
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(size.width * 0.18, size.height * 0.38)
-      ..lineTo(size.width * 0.43, size.height * 0.20)
-      ..lineTo(size.width * 0.72, size.height * 0.31)
-      ..lineTo(size.width * 0.72, size.height * 0.52)
-      ..lineTo(size.width * 0.88, size.height * 0.60)
-      ..lineTo(size.width * 0.62, size.height * 0.80)
-      ..lineTo(size.width * 0.34, size.height * 0.69)
-      ..lineTo(size.width * 0.34, size.height * 0.52)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _MigrationCompleteRibbonPainter oldDelegate) =>
-      false;
 }
 
 class _MigrationLiveStatusContent extends StatelessWidget {

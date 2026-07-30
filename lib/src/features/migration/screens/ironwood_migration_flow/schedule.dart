@@ -748,48 +748,71 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
     final remainingBlocks = math.max(0, finalProjectedHeight - currentHeight);
 
     return SizedBox(
+      key: const ValueKey('ironwood_migration_preparation_schedule_content'),
       width: 420,
       height: 656,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 34),
-          Text(
-            'Preparation Schedule',
-            textAlign: TextAlign.center,
-            style: AppTypography.headlineSmall.copyWith(
-              color: colors.text.accent,
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 44,
+            child: Center(
+              child: Text(
+                key: const ValueKey(
+                  'ironwood_migration_preparation_schedule_title',
+                ),
+                'Preparation Schedule',
+                textAlign: TextAlign.center,
+                style: AppTypography.headlineSmall.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 35),
+          const SizedBox(height: 12),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Column(
-              children: [
-                _MigrationSummaryMetric(
-                  label: 'Current round',
-                  value: rounds.isEmpty
-                      ? 'Preparing'
-                      : '$currentRound of ${rounds.length}',
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: SizedBox(
+              key: const ValueKey(
+                'ironwood_migration_preparation_schedule_summary',
+              ),
+              height: 104,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
                 ),
-                const SizedBox(height: 16),
-                _MigrationSummaryMetric(
-                  label: 'Ready to migrate',
-                  value: !hasCompletionProjection
-                      ? 'Calculating'
-                      : '#${formatGroupedInteger(finalProjectedHeight)}'
-                            '${remainingBlocks > 0 ? ' · ${_formatPreparationDuration(remainingBlocks)}' : ''}',
-                  valueIcon: hasCompletionProjection ? AppIcons.block : null,
-                  secondary: true,
+                child: Column(
+                  children: [
+                    _MigrationSummaryMetric(
+                      label: 'Current round',
+                      value: rounds.isEmpty
+                          ? 'Preparing'
+                          : '$currentRound of ${rounds.length}',
+                    ),
+                    const SizedBox(height: 16),
+                    _MigrationSummaryMetric(
+                      label: 'Ready to migrate',
+                      value: !hasCompletionProjection
+                          ? 'Calculating'
+                          : '#${formatGroupedInteger(finalProjectedHeight)}'
+                                '${remainingBlocks > 0 ? ' · ${_formatPreparationDuration(remainingBlocks)}' : ''}',
+                      valueIcon: hasCompletionProjection
+                          ? AppIcons.block
+                          : null,
+                      secondary: true,
+                    ),
+                    const SizedBox(height: 16),
+                    _MigrationSummaryMetric(
+                      label: 'Current block',
+                      value: formatGroupedInteger(currentHeight),
+                      valueIcon: AppIcons.block,
+                      secondary: true,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                _MigrationSummaryMetric(
-                  label: 'Current block',
-                  value: formatGroupedInteger(currentHeight),
-                  valueIcon: AppIcons.block,
-                  secondary: true,
-                ),
-              ],
+              ),
             ),
           ),
           if (onManage != null) ...[
@@ -797,7 +820,7 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
             _MigrationManageButton(onPressed: onManage!),
             const SizedBox(height: 8),
           ] else
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
           Expanded(
             child: transactions.isEmpty
                 ? Center(
@@ -809,22 +832,18 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
                     ),
                   )
                 : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: ListView.builder(
                       key: const ValueKey(
                         'ironwood_migration_preparation_schedule_list',
                       ),
-                      padding: const EdgeInsets.only(top: 4, bottom: 12),
+                      padding: EdgeInsets.zero,
                       itemCount: rounds.length,
-                      itemBuilder: (context, index) => Padding(
-                        padding: EdgeInsets.only(
-                          bottom: index == rounds.length - 1 ? 0 : 20,
-                        ),
-                        child: _MigrationPreparationRoundSection(
-                          round: rounds[index],
-                          currentHeight: currentHeight,
-                        ),
-                      ),
+                      itemBuilder: (context, index) =>
+                          _MigrationPreparationRoundSection(
+                            round: rounds[index],
+                            currentHeight: currentHeight,
+                          ),
                     ),
                   ),
           ),
@@ -892,16 +911,16 @@ class _MigrationPreparationRoundSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final projectedHeight = round.transactions.fold<int>(
-      0,
-      (height, item) => math.max(height, item.transaction.projectedHeight),
-    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 24,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Align(
+              alignment: Alignment.centerLeft,
               child: Text(
                 'Split round ${round.number}',
                 style: AppTypography.labelLarge.copyWith(
@@ -910,16 +929,9 @@ class _MigrationPreparationRoundSection extends StatelessWidget {
                 ),
               ),
             ),
-            if (projectedHeight > currentHeight)
-              Text(
-                'Expected by #${formatGroupedInteger(projectedHeight)}',
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-          ],
+          ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         for (var index = 0; index < round.transactions.length; index++) ...[
           _MigrationPreparationStageCard(
             key: ValueKey(
@@ -930,8 +942,9 @@ class _MigrationPreparationRoundSection extends StatelessWidget {
             currentHeight: currentHeight,
           ),
           if (index != round.transactions.length - 1)
-            const SizedBox(height: 10),
+            const SizedBox(height: 20),
         ],
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -958,7 +971,10 @@ class _MigrationPreparationStageCard extends StatelessWidget {
       child: Column(
         children: [
           SizedBox(
-            height: 50,
+            key: ValueKey(
+              'ironwood_migration_preparation_schedule_surface_${transaction.stageIndex}',
+            ),
+            height: 56,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: colors.background.ground,
@@ -991,11 +1007,22 @@ class _MigrationPreparationStageCard extends StatelessWidget {
           ),
           if (transaction.outputs.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 12, 0),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Column(
                 children: [
-                  for (final output in transaction.outputs)
-                    _MigrationPreparationOutputRow(output: output),
+                  for (
+                    var outputIndex = 0;
+                    outputIndex < transaction.outputs.length;
+                    outputIndex++
+                  ) ...[
+                    if (outputIndex > 0) const SizedBox(height: 8),
+                    _MigrationPreparationOutputRow(
+                      key: ValueKey(
+                        'ironwood_migration_preparation_output_${transaction.stageIndex}_$outputIndex',
+                      ),
+                      output: transaction.outputs[outputIndex],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1006,7 +1033,7 @@ class _MigrationPreparationStageCard extends StatelessWidget {
 }
 
 class _MigrationPreparationOutputRow extends StatelessWidget {
-  const _MigrationPreparationOutputRow({required this.output});
+  const _MigrationPreparationOutputRow({required this.output, super.key});
 
   final rust_sync.MigrationPreparationOutputStatus output;
 
@@ -1021,7 +1048,7 @@ class _MigrationPreparationOutputRow extends StatelessWidget {
         'Used in round ${output.nextRound ?? 1}',
     };
     return SizedBox(
-      height: 26,
+      height: 24,
       child: Row(
         children: [
           Text(
@@ -1045,7 +1072,7 @@ class _MigrationPreparationOutputRow extends StatelessWidget {
           Text(
             destination,
             textAlign: TextAlign.right,
-            style: AppTypography.bodySmall.copyWith(
+            style: AppTypography.labelMedium.copyWith(
               color: colors.text.secondary,
             ),
           ),
@@ -1103,17 +1130,6 @@ class _MigrationPreparationScheduleStatus extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (active)
-          IronwoodMigrationShimmerText(
-            text: label,
-            style: style,
-            baseColor: colors.text.secondary,
-            highlightColor: colors.text.accent,
-            textAlign: TextAlign.right,
-          )
-        else
-          Text(label, textAlign: TextAlign.right, style: style),
-        const SizedBox(width: 4),
         AppIcon(
           completed
               ? AppIcons.checkCircle
@@ -1131,6 +1147,17 @@ class _MigrationPreparationScheduleStatus extends StatelessWidget {
               ? colors.icon.accent
               : colors.icon.regular,
         ),
+        const SizedBox(width: 4),
+        if (active)
+          IronwoodMigrationShimmerText(
+            text: label,
+            style: style,
+            baseColor: colors.text.secondary,
+            highlightColor: colors.text.accent,
+            textAlign: TextAlign.right,
+          )
+        else
+          Text(label, textAlign: TextAlign.right, style: style),
       ],
     );
   }
@@ -1261,23 +1288,26 @@ class _MigrationScheduleContent extends StatelessWidget {
     final leftToMigrate = total - completed;
 
     return SizedBox(
+      key: const ValueKey('ironwood_migration_schedule_content'),
       width: 420,
       height: 656,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Text(
+            key: const ValueKey('ironwood_migration_schedule_title'),
             'Migration Schedule',
             textAlign: TextAlign.center,
             style: AppTypography.headlineSmall.copyWith(
               color: colors.text.accent,
             ),
           ),
-          const SizedBox(height: 35),
+          const SizedBox(height: 36),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: Column(
+              key: const ValueKey('ironwood_migration_schedule_summary'),
               children: [
                 _MigrationSummaryMetric(
                   label: 'Left to migrate',
@@ -1310,13 +1340,13 @@ class _MigrationScheduleContent extends StatelessWidget {
             _MigrationManageButton(onPressed: onManage!),
             const SizedBox(height: 8),
           ] else
-            const SizedBox(height: 20),
+            const SizedBox(height: 28),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: ListView.separated(
                 key: const ValueKey('ironwood_migration_schedule_list'),
-                padding: const EdgeInsets.only(top: 8, bottom: 8),
+                padding: const EdgeInsets.only(top: 16, bottom: 8),
                 itemCount: parts.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
@@ -1369,9 +1399,12 @@ class _MigrationScheduleRow extends StatelessWidget {
       child: SizedBox(
         height: 56,
         child: DecoratedBox(
+          key: ValueKey(
+            'ironwood_migration_schedule_surface_${part.partIndex}',
+          ),
           decoration: BoxDecoration(
             color: colors.background.ground,
-            borderRadius: BorderRadius.circular(AppRadii.large),
+            borderRadius: BorderRadius.circular(AppRadii.medium),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1478,8 +1511,11 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
         : colors.icon.regular;
 
     return Row(
+      key: ValueKey('ironwood_migration_schedule_status_${part.partIndex}'),
       mainAxisSize: MainAxisSize.min,
       children: [
+        AppIcon(icon, size: 16, color: iconColor),
+        const SizedBox(width: 4),
         if (active)
           IronwoodMigrationShimmerText(
             text: label,
@@ -1490,8 +1526,6 @@ class _MigrationSchedulePartStatus extends StatelessWidget {
           )
         else
           Text(label, textAlign: TextAlign.right, style: textStyle),
-        const SizedBox(width: 4),
-        AppIcon(icon, size: 16, color: iconColor),
       ],
     );
   }

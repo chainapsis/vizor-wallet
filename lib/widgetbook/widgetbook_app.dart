@@ -359,6 +359,14 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildIronwoodMigrationPrivateReviewUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Preparation schedule',
+                      builder: buildIronwoodMigrationPreparationScheduleUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration schedule',
+                      builder: buildIronwoodMigrationScheduleUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Preparing',
                       builder:
                           buildIronwoodMigrationPrivateStatusWaitingUseCase,
@@ -367,6 +375,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Migrating',
                       builder:
                           buildIronwoodMigrationPrivateStatusMigratingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration complete',
+                      builder: buildIronwoodMigrationCompleteUseCase,
                     ),
                   ],
                 ),

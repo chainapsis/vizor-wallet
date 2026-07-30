@@ -617,19 +617,21 @@ class _MigrationReviewContent extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            top: 12,
+            top: 16,
             left: 12,
             width: 396,
             child: Text(
+              key: const ValueKey('ironwood_migration_review_title'),
               'Ironwood Migration',
-              style: AppTypography.bodyLarge.copyWith(
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
               ),
             ),
           ),
           Positioned(
             left: 12,
-            top: 58,
+            top: 54,
             width: 396,
             child: const _MigrationStageHeader(
               key: ValueKey('ironwood_migration_stage_header'),
@@ -775,6 +777,8 @@ class _MigrationStartRingPainter extends CustomPainter {
 
   final Color color;
 
+  double get outerDiameter => _migrationStatusRingOuterDiameter;
+
   static const _weights = [0.14, 0.08, 0.09, 0.12, 0.08, 0.15, 0.1, 0.12, 0.12];
   static const _visibleGap = 0.055;
 
@@ -782,12 +786,17 @@ class _MigrationStartRingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 12
+      ..strokeWidth = _migrationStatusRingMaxStrokeWidth
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-    final rect = Rect.fromCircle(
+    final availableOuterDiameter = math.min(
+      outerDiameter,
+      math.min(size.width, size.height),
+    );
+    final rect = Rect.fromCenter(
       center: size.center(Offset.zero),
-      radius: math.min(size.width, size.height) / 2 - paint.strokeWidth,
+      width: availableOuterDiameter - paint.strokeWidth,
+      height: availableOuterDiameter - paint.strokeWidth,
     );
     const fullSweep = math.pi * 2;
     final radius = rect.width / 2;
