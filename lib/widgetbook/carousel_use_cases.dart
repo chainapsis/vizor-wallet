@@ -28,12 +28,12 @@ const _preparationItems = [
     tileColor: _walletTile,
     icon: AppIcons.wallet,
   ),
-  AppCarouselItem.image(
+  AppCarouselItem.icon(
     message:
         'We may have to do multiple rounds of note splitting depending on '
         'your balance.',
     tileColor: _helmetTile,
-    imageAsset: _helmetAsset,
+    icon: AppIcons.migrationSplit,
   ),
 ];
 

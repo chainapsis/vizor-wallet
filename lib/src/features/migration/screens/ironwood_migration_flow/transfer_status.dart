@@ -20,12 +20,12 @@ const _migrationPreparationCarouselItems = [
     tileColor: _migrationCarouselGreen,
     icon: AppIcons.wallet,
   ),
-  AppCarouselItem.image(
+  AppCarouselItem.icon(
     message:
         'We may have to do multiple rounds of note splitting depending on '
         'your balance.',
     tileColor: _migrationCarouselCrimson,
-    imageAsset: _ironwoodMigrationExpectationRunningAsset,
+    icon: AppIcons.migrationSplit,
   ),
 ];
 
@@ -180,96 +180,139 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final usesLargeText = MediaQuery.textScalerOf(context).scale(1) > 1;
+    final copy = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Your\n${_formatZecAmountCompact(totalZatoshi)} ZEC\n'
+          'are on Ironwood!',
+          textAlign: TextAlign.center,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Migration completed successfully and you can\n'
+          'spend your funds as usual.',
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+      ],
+    );
+    final action = AppButton(
+      key: const ValueKey('ironwood_migration_status_action_button'),
+      onPressed: onDone,
+      height: 36,
+      minWidth: 96,
+      expand: true,
+      child: const Text('Done'),
+    );
     return SizedBox(
+      key: const ValueKey('ironwood_migration_complete_content'),
       width: 420,
       height: 656,
       child: Stack(
+        key: const ValueKey('ironwood_migration_complete_stack'),
+        clipBehavior: Clip.none,
         children: [
           Positioned(
-            left: 70,
-            top: 54,
-            width: 280,
-            height: 210,
+            left: 12,
+            top: 75.5,
+            width: 396,
+            height: 220,
             child: Stack(
-              fit: StackFit.expand,
+              key: const ValueKey('ironwood_migration_complete_hero'),
+              clipBehavior: Clip.none,
               children: [
-                CustomPaint(painter: _MigrationCompleteRibbonPainter()),
-                Image.asset(
-                  'assets/illustrations/ironwood_migration_done_coins.png',
-                  fit: BoxFit.contain,
+                Positioned(
+                  left: 93.58984375,
+                  top: 25.9231032198,
+                  width: 226.6364541916,
+                  height: 171.011320144,
+                  child: SizedBox(
+                    key: const ValueKey('ironwood_migration_complete_ribbon'),
+                    child: Center(
+                      child: Transform.rotate(
+                        angle: -15.62 * math.pi / 180,
+                        child: SizedBox(
+                          width: 201.426,
+                          height: 121.245,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned(
+                                left: -16.195,
+                                top: -30,
+                                width: 230.312,
+                                height: 169.943,
+                                child: SvgPicture.asset(
+                                  'assets/illustrations/ironwood_migration_done_ribbon.svg',
+                                  fit: BoxFit.fill,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 98,
+                  top: 0,
+                  width: 200,
+                  height: 200,
+                  child: Image.asset(
+                    key: const ValueKey('ironwood_migration_complete_coins'),
+                    'assets/illustrations/ironwood_migration_done_coins.png',
+                    fit: BoxFit.fill,
+                  ),
                 ),
               ],
             ),
           ),
-          Positioned(
-            left: 40,
-            top: 270,
-            width: 340,
-            child: Column(
-              children: [
-                Text(
-                  'Your\n${_formatZecAmountCompact(totalZatoshi)} ZEC\n'
-                  'are on Ironwood!',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.headlineLarge.copyWith(
-                    color: colors.text.accent,
-                    height: 1.08,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Migration completed successfully and you can\n'
-                  'spend your funds as usual.',
-                  textAlign: TextAlign.center,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: colors.text.secondary,
-                  ),
-                ),
-              ],
+          if (!usesLargeText) ...[
+            Positioned(
+              left: 65,
+              top: 343.5,
+              width: 290,
+              height: 153,
+              child: SizedBox(
+                key: const ValueKey('ironwood_migration_complete_copy'),
+                child: copy,
+              ),
             ),
-          ),
-          Positioned(
-            left: 162,
-            top: 510,
-            width: 96,
-            child: AppButton(
-              key: const ValueKey('ironwood_migration_status_action_button'),
-              onPressed: onDone,
-              variant: AppButtonVariant.secondary,
-              height: 36,
-              minWidth: 96,
-              expand: true,
-              child: const Text('Done'),
+            Positioned(left: 162, top: 544.5, width: 96, child: action),
+          ] else
+            Positioned(
+              left: 12,
+              top: 296,
+              width: 396,
+              bottom: 8,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: SizedBox(
+                        key: const ValueKey('ironwood_migration_complete_copy'),
+                        width: 396,
+                        child: copy,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(width: 96, child: action),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
   }
-}
-
-class _MigrationCompleteRibbonPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF009C5D)
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(size.width * 0.18, size.height * 0.38)
-      ..lineTo(size.width * 0.43, size.height * 0.20)
-      ..lineTo(size.width * 0.72, size.height * 0.31)
-      ..lineTo(size.width * 0.72, size.height * 0.52)
-      ..lineTo(size.width * 0.88, size.height * 0.60)
-      ..lineTo(size.width * 0.62, size.height * 0.80)
-      ..lineTo(size.width * 0.34, size.height * 0.69)
-      ..lineTo(size.width * 0.34, size.height * 0.52)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _MigrationCompleteRibbonPainter oldDelegate) =>
-      false;
 }
 
 class _MigrationLiveStatusContent extends StatelessWidget {
@@ -352,6 +395,7 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                 top: 54,
                 width: 396,
                 child: _MigrationStageHeader(
+                  key: const ValueKey('ironwood_migration_stage_header'),
                   stage: isPreparing
                       ? _MigrationStage.preparation
                       : isComplete
@@ -496,18 +540,24 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                 ),
               ),
               Positioned(
-                left: 28,
+                left: 12,
                 top: isPreparing ? 382 : 390,
-                width: 364,
+                width: 396,
                 child: isPreparing
                     ? Column(
                         children: [
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_overall_progress',
+                            ),
                             label: 'Overall progress',
                             value: _overallPreparationProgressDisplay(status),
                           ),
                           const SizedBox(height: 16),
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_estimated_completion',
+                            ),
                             label: 'Est. completion',
                             value: _preparationCompletionEstimateDisplay(
                               status,
@@ -517,6 +567,9 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_current_block',
+                            ),
                             label: 'Current block',
                             value: formatGroupedInteger(currentHeight),
                             valueIcon: AppIcons.block,
@@ -527,12 +580,18 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                     : Column(
                         children: [
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_left_to_migrate',
+                            ),
                             label: 'Left to migrate',
                             value:
                                 '${_formatZecAmountCompact(leftToMigrate > BigInt.zero ? leftToMigrate : BigInt.zero)} ZEC',
                           ),
                           const SizedBox(height: 16),
                           _MigrationSummaryMetric(
+                            key: const ValueKey(
+                              'ironwood_migration_summary_estimated_completion',
+                            ),
                             label: 'Est. completion',
                             value: _migrationCompletionEstimateDisplay(
                               status,
@@ -887,6 +946,7 @@ class _MigrationRingDetail extends StatelessWidget {
 
 class _MigrationSummaryMetric extends StatelessWidget {
   const _MigrationSummaryMetric({
+    super.key,
     required this.label,
     required this.value,
     this.secondary = false,
@@ -909,22 +969,33 @@ class _MigrationSummaryMetric extends StatelessWidget {
     );
     return Row(
       children: [
-        Expanded(child: Text(label, style: style)),
+        Text(label, style: style),
         const SizedBox(width: 16),
-        if (valueIcon != null) ...[
-          AppIcon(valueIcon!, size: 16, color: context.colors.icon.regular),
-          const SizedBox(width: 4),
-        ],
-        Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
+        Expanded(
+          child: Align(
             alignment: Alignment.centerRight,
-            child: Text(
-              value,
-              maxLines: 1,
-              softWrap: false,
-              textAlign: TextAlign.right,
-              style: style,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (valueIcon != null) ...[
+                    AppIcon(
+                      valueIcon!,
+                      size: 16,
+                      color: context.colors.icon.regular,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    value,
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.right,
+                    style: style,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1424,6 +1495,8 @@ class _MigrationPreparationAnimatedRingPainter extends CustomPainter {
   final Animation<double> progress;
   final bool reduceMotion;
 
+  double get outerDiameter => _migrationStatusRingOuterDiameter;
+
   List<_MigrationRingVisualSegment> get segments {
     final eased = Curves.easeOutBack.transform(progress.value);
     return [
@@ -1445,6 +1518,7 @@ class _MigrationPreparationAnimatedRingPainter extends CustomPainter {
       rotation: 0,
       motionPhase: 0,
       reduceMotion: reduceMotion,
+      outerDiameter: outerDiameter,
     ).paint(canvas, size);
   }
 
@@ -1490,8 +1564,8 @@ class _MigrationRingVisualSegment {
   final double presence;
 }
 
-// At the ring's 104 px radius this produces roughly one logical pixel of
-// center-line arc. With rounded 12 px caps it reads as a single dot instead of
+// At the ring's 121.6 px center-line radius this produces roughly one logical
+// pixel of arc. With rounded 12.8 px caps it reads as a single dot instead of
 // disappearing, while remaining small enough not to distort normal notes.
 const _migrationRingMinimumSegmentWeight = 0.0025;
 
@@ -1700,18 +1774,23 @@ bool _sameVisualSegments(
   return true;
 }
 
+const _migrationStatusRingOuterDiameter = 256.0;
+const _migrationStatusRingMaxStrokeWidth = 12.8;
+
 class _MigrationRingVisualPainter extends CustomPainter {
   const _MigrationRingVisualPainter({
     required this.segments,
     required this.rotation,
     required this.motionPhase,
     required this.reduceMotion,
+    this.outerDiameter = _migrationStatusRingOuterDiameter,
   });
 
   final List<_MigrationRingVisualSegment> segments;
   final double rotation;
   final double motionPhase;
   final bool reduceMotion;
+  final double outerDiameter;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1722,11 +1801,6 @@ class _MigrationRingVisualPainter extends CustomPainter {
     );
     if (positiveWeight <= 0) return;
 
-    final rect = Rect.fromCenter(
-      center: size.center(Offset.zero),
-      width: 208,
-      height: 208,
-    );
     // Presence is animated separately from value. A tiny live note must keep
     // its full gap, while a segment that is actually entering or leaving the
     // morph gradually acquires or surrenders that gap.
@@ -1738,9 +1812,28 @@ class _MigrationRingVisualPainter extends CustomPainter {
       (sum, value) => sum + value,
     );
     if (effectiveCount <= 0) return;
+    final availableOuterDiameter = math.min(
+      outerDiameter,
+      math.min(size.width, size.height),
+    );
+    if (availableOuterDiameter <= 0) return;
+    final estimatedRadius = math.max(
+      1.0,
+      (availableOuterDiameter - _migrationStatusRingMaxStrokeWidth) / 2,
+    );
+    final availablePerSegment = math.pi * 2 * estimatedRadius / effectiveCount;
+    final strokeWidth = math.min(
+      _migrationStatusRingMaxStrokeWidth,
+      math.max(1.0, availablePerSegment - 1),
+    );
+    final centerLineDiameter = availableOuterDiameter - strokeWidth;
+    if (centerLineDiameter <= 0) return;
+    final rect = Rect.fromCenter(
+      center: size.center(Offset.zero),
+      width: centerLineDiameter,
+      height: centerLineDiameter,
+    );
     final radius = rect.width / 2;
-    final availablePerSegment = math.pi * 2 * radius / effectiveCount;
-    final strokeWidth = math.min(12.0, math.max(1.0, availablePerSegment - 1));
     final dotCenterLineSweep = 1 / radius;
     final gap = math.min(
       0.17,
@@ -1840,8 +1933,6 @@ class _MigrationPreparationRingPainter extends CustomPainter {
   final List<double> weights;
   final double rotation;
 
-  static const _ringOuterDiameter = 220.0;
-
   // Decorative only: the ratios intentionally do not represent note value or
   // confirmation progress, but they still form one complete ring.
   static const initialSegmentRatios = <double>[
@@ -1862,13 +1953,17 @@ class _MigrationPreparationRingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 12
+      ..strokeWidth = _migrationStatusRingMaxStrokeWidth
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
+    final outerDiameter = math.min(
+      _migrationStatusRingOuterDiameter,
+      math.min(size.width, size.height),
+    );
     final rect = Rect.fromCenter(
       center: size.center(Offset.zero),
-      width: _ringOuterDiameter - paint.strokeWidth,
-      height: _ringOuterDiameter - paint.strokeWidth,
+      width: outerDiameter - paint.strokeWidth,
+      height: outerDiameter - paint.strokeWidth,
     );
     final fullSweep = math.pi * 2;
     final radius = rect.width / 2;

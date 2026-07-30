@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -15,6 +16,7 @@ import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_carousel.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
@@ -46,6 +48,238 @@ void main() {
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
+  });
+
+  testWidgets(
+    'how-it-works carousel exposes the Figma geometry and desktop cursor',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1080, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(initialLocation: '/migration/how-it-works'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('How the Migration Works'), findsOneWidget);
+      expect(
+        tester.getSize(
+          find.byKey(
+            const ValueKey('ironwood_migration_how_carousel_viewport'),
+          ),
+        ),
+        const Size(700, 320),
+      );
+      final cardSize = tester.getSize(
+        find.byKey(const ValueKey('ironwood_migration_how_card_0')),
+      );
+      expect(cardSize.width, moreOrLessEquals(396));
+      expect(cardSize.height, moreOrLessEquals(280));
+      expect(
+        tester.getTopLeft(
+          find.byKey(const ValueKey('ironwood_migration_how_card_0')),
+        ),
+        const Offset(474, 220),
+      );
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(
+                const ValueKey('ironwood_migration_how_card_opacity_0'),
+              ),
+            )
+            .opacity,
+        1,
+      );
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(
+                const ValueKey('ironwood_migration_how_card_opacity_1'),
+              ),
+            )
+            .opacity,
+        moreOrLessEquals(0.3),
+      );
+
+      final dragRegion = tester.widget<MouseRegion>(
+        find.byKey(
+          const ValueKey('ironwood_migration_how_carousel_drag_region'),
+        ),
+      );
+      expect(dragRegion.cursor, SystemMouseCursors.grab);
+    },
+  );
+
+  testWidgets('how-it-works carousel supports card and indicator clicks', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(initialLocation: '/migration/how-it-works'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Step 2').hitTestable());
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('0.1 ZEC / 1 ZEC / 5 ZEC'), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ironwood_migration_how_indicator_1')),
+      ),
+      const Size(40, 8),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_how_indicator_2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ironwood_migration_how_indicator_2')),
+      ),
+      const Size(40, 8),
+    );
+  });
+
+  testWidgets(
+    'how-it-works carousel cards and indicators support keyboard activation',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1080, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(initialLocation: '/migration/how-it-works'),
+      );
+      await tester.pumpAndSettle();
+
+      final secondCardAction = find.byKey(
+        const ValueKey('ironwood_migration_how_card_action_1'),
+      );
+      expect(secondCardAction, findsOneWidget);
+      Focus.of(tester.element(secondCardAction)).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.getSize(
+          find.byKey(const ValueKey('ironwood_migration_how_indicator_1')),
+        ),
+        const Size(40, 8),
+      );
+
+      final thirdIndicatorAction = find.byKey(
+        const ValueKey('ironwood_migration_how_indicator_action_2'),
+      );
+      expect(thirdIndicatorAction, findsOneWidget);
+      expect(
+        tester
+            .getSize(
+              find.byKey(
+                const ValueKey('ironwood_migration_how_indicator_hit_target_2'),
+              ),
+            )
+            .height,
+        greaterThanOrEqualTo(32),
+      );
+      Focus.of(tester.element(thirdIndicatorAction)).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.getSize(
+          find.byKey(const ValueKey('ironwood_migration_how_indicator_2')),
+        ),
+        const Size(40, 8),
+      );
+    },
+  );
+
+  testWidgets('how-it-works carousel supports mouse dragging', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(initialLocation: '/migration/how-it-works'),
+    );
+    await tester.pumpAndSettle();
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    final firstCard = find.byKey(
+      const ValueKey('ironwood_migration_how_card_0'),
+    );
+    final center = tester.getCenter(firstCard);
+    await mouse.addPointer(location: center);
+    expect(
+      tester
+          .widget<MouseRegion>(
+            find.byKey(const ValueKey('ironwood_migration_how_card_cursor_1')),
+          )
+          .cursor,
+      SystemMouseCursors.click,
+    );
+    await mouse.down(center);
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<MouseRegion>(
+            find.byKey(
+              const ValueKey('ironwood_migration_how_carousel_drag_region'),
+            ),
+          )
+          .cursor,
+      SystemMouseCursors.grabbing,
+    );
+    final cardCursorRegions = find.byWidgetPredicate(
+      (widget) =>
+          widget is MouseRegion &&
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith(
+            'ironwood_migration_how_card_cursor_',
+          ),
+    );
+    expect(cardCursorRegions, findsAtLeastNWidgets(2));
+    for (final region in tester.widgetList<MouseRegion>(cardCursorRegions)) {
+      expect(region.cursor, MouseCursor.defer);
+    }
+
+    await mouse.moveBy(const Offset(-412, 0));
+    await tester.pump();
+    expect(
+      tester
+          .widget<MouseRegion>(
+            find.byKey(
+              const ValueKey('ironwood_migration_how_carousel_drag_region'),
+            ),
+          )
+          .cursor,
+      SystemMouseCursors.grabbing,
+    );
+    await mouse.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ironwood_migration_how_indicator_1')),
+      ),
+      const Size(40, 8),
+    );
   });
 
   testWidgets('what-to-expect screen shows the four migration expectations', (
@@ -85,6 +319,93 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Immediate'), findsOneWidget);
+  });
+
+  testWidgets(
+    'what-to-expect illustrations preserve the Figma overflow geometry',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1080, 720);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(initialLocation: '/migration/what-to-expect'),
+      );
+      await tester.pumpAndSettle();
+
+      for (var index = 0; index < 4; index++) {
+        expect(
+          tester.getSize(
+            find.byKey(ValueKey('ironwood_migration_expectation_tile_$index')),
+          ),
+          const Size.square(48),
+        );
+      }
+
+      final firstTile = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_expectation_tile_0')),
+      );
+      final firstViewport = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_expectation_viewport_0')),
+      );
+      expect(firstViewport.top, firstTile.top);
+      expect(firstViewport.bottom, firstTile.bottom + 6);
+
+      for (final index in [1, 2]) {
+        final tile = tester.getRect(
+          find.byKey(ValueKey('ironwood_migration_expectation_tile_$index')),
+        );
+        final viewport = tester.getRect(
+          find.byKey(
+            ValueKey('ironwood_migration_expectation_viewport_$index'),
+          ),
+        );
+        expect(viewport.top, tile.top - 6);
+        expect(viewport.bottom, tile.bottom);
+      }
+
+      expect(
+        tester.getRect(
+          find.byKey(
+            const ValueKey('ironwood_migration_expectation_viewport_3'),
+          ),
+        ),
+        tester.getRect(
+          find.byKey(const ValueKey('ironwood_migration_expectation_tile_3')),
+        ),
+      );
+    },
+  );
+
+  testWidgets('migration options use the exact Figma shield and fast icons', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_migrationOptionsHarness());
+    await tester.pumpAndSettle();
+
+    final privateIcon = find.descendant(
+      of: find.byKey(const ValueKey('ironwood_migration_private_option')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.shieldKeyhole,
+      ),
+    );
+    final immediateIcon = find.descendant(
+      of: find.byKey(const ValueKey('ironwood_migration_fast_option')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.migrationFast,
+      ),
+    );
+
+    expect(privateIcon, findsOneWidget);
+    expect(immediateIcon, findsOneWidget);
+    expect(tester.getSize(privateIcon), const Size.square(20));
+    expect(tester.getSize(immediateIcon), const Size.square(20));
   });
 
   testWidgets('option selection does not move card content', (tester) async {
@@ -271,6 +592,12 @@ void main() {
       find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
       findsOneWidget,
     );
+    final analyzingDonut = find.byKey(
+      const ValueKey('ironwood_migration_analyzing_donut'),
+    );
+    expect(analyzingDonut, findsOneWidget);
+    expect(tester.getSize(analyzingDonut), const Size.square(256));
+    final analyzingDonutRect = tester.getRect(analyzingDonut);
     expect(find.text('Analyzing your balance...'), findsOneWidget);
     expect(find.text('Ironwood Migration'), findsNothing);
 
@@ -298,6 +625,51 @@ void main() {
     expect(find.text('Ironwood Migration'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 81));
+
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Ironwood Migration'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 849));
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('Ironwood Migration'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<Semantics>(
+            find.descendant(
+              of: analyzingDonut,
+              matching: find.byType(Semantics),
+            ),
+          )
+          .properties
+          .value,
+      '100%',
+    );
+    expect(
+      tester
+          .widget<Semantics>(
+            find.descendant(
+              of: analyzingDonut,
+              matching: find.byType(Semantics),
+            ),
+          )
+          .properties
+          .liveRegion,
+      isNot(isTrue),
+    );
+
+    await tester.pump(const Duration(milliseconds: 16));
     await tester.pump();
 
     expect(
@@ -305,7 +677,75 @@ void main() {
       findsNothing,
     );
     expect(find.text('Ironwood Migration'), findsOneWidget);
+    final reviewDonut = find.byKey(
+      const ValueKey('ironwood_migration_review_donut'),
+    );
+    expect(reviewDonut, findsOneWidget);
+    expect(tester.getRect(reviewDonut), analyzingDonutRect);
   });
+
+  testWidgets(
+    'private review keeps donut and message progress when the plan arrives',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final planCompleter = Completer<rust_sync.OrchardMigrationPrivatePlan?>();
+      addTearDown(() {
+        if (!planCompleter.isCompleted) {
+          planCompleter.complete(_privatePlan());
+        }
+      });
+      await tester.pumpWidget(
+        _migrationOptionsHarness(
+          initialLocation: '/migration/private/review',
+          migrationService: _privatePlanService(() => planCompleter.future),
+          usePrivatePreview: false,
+          analyzingMinimumDuration: const Duration(seconds: 6),
+          disableAnimations: false,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1930));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final analyzingDonut = find.byKey(
+        const ValueKey('ironwood_migration_analyzing_donut'),
+      );
+      String donutValue() => tester
+          .widget<Semantics>(
+            find.descendant(
+              of: analyzingDonut,
+              matching: find.byType(Semantics),
+            ),
+          )
+          .properties
+          .value!;
+      int percent(String value) =>
+          int.parse(value.substring(0, value.length - 1));
+
+      expect(find.text('Finding private batches...'), findsOneWidget);
+      final progressBeforePlan = percent(donutValue());
+      expect(progressBeforePlan, greaterThan(0));
+
+      planCompleter.complete(_privatePlan());
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Finding private batches...'), findsOneWidget);
+      expect(percent(donutValue()), greaterThanOrEqualTo(progressBeforePlan));
+
+      await tester.pump(const Duration(milliseconds: 3670));
+      await tester.pump(const Duration(milliseconds: 849));
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump();
+
+      expect(find.text('Ironwood Migration'), findsOneWidget);
+    },
+  );
 
   testWidgets('private review shows plan without preparing a transaction', (
     tester,
@@ -328,6 +768,75 @@ void main() {
     expect(find.text('Review shuffle'), findsNothing);
     expect(find.widgetWithText(AppButton, 'Start migration'), findsOneWidget);
   });
+
+  testWidgets(
+    'private review aligns its summary and keep-running content to the stage header',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _migrationOptionsHarness(initialLocation: '/migration/private/review'),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final stageRect = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_stage_header')),
+      );
+      final titleFinder = find.byKey(
+        const ValueKey('ironwood_migration_review_title'),
+      );
+      expect(titleFinder, findsOneWidget);
+      final title = tester.widget<Text>(titleFinder);
+      final titleRect = tester.getRect(titleFinder);
+      expect(title.textAlign, TextAlign.center);
+      expect(title.style?.fontFamily, AppTypography.headlineSmall.fontFamily);
+      expect(title.style?.fontSize, AppTypography.headlineSmall.fontSize);
+      expect(title.style?.fontWeight, AppTypography.headlineSmall.fontWeight);
+      expect(titleRect.left, closeTo(stageRect.left, 0.01));
+      expect(titleRect.right, closeTo(stageRect.right, 0.01));
+      expect(stageRect.top - titleRect.top, closeTo(38, 0.01));
+
+      final reviewDonutFinder = find.byKey(
+        const ValueKey('ironwood_migration_review_donut'),
+      );
+      final reviewDonut = tester.widget<CustomPaint>(reviewDonutFinder);
+      expect(tester.getSize(reviewDonutFinder), const Size.square(256));
+      final dynamic reviewPainter = reviewDonut.painter;
+      expect(reviewPainter.outerDiameter, 256);
+
+      final completionRect = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_review_completion_row')),
+      );
+      final keepRunningRect = tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_keep_running_content')),
+      );
+      expect(completionRect.left, closeTo(stageRect.left, 0.01));
+      expect(completionRect.right, closeTo(stageRect.right, 0.01));
+      expect(keepRunningRect.left, closeTo(stageRect.left, 0.01));
+      expect(keepRunningRect.right, closeTo(stageRect.right, 0.01));
+
+      final iconTile = find.byKey(
+        const ValueKey('ironwood_migration_keep_running_icon_tile'),
+      );
+      expect(tester.getSize(iconTile), const Size.square(48));
+      final tileDecoration =
+          tester.widget<DecoratedBox>(iconTile).decoration as BoxDecoration;
+      expect(tileDecoration.color, const Color(0xFFB90A4A));
+      expect(tileDecoration.borderRadius, BorderRadius.circular(12));
+      expect(find.text('Keep Vizor running'), findsOneWidget);
+      expect(
+        find.text(
+          'Preparation continues while the app is minimized, then migration '
+          'starts automatically.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('private review starts software migration and opens status', (
     tester,
@@ -1098,6 +1607,62 @@ void main() {
         find.byKey(const ValueKey('ironwood_migration_preparation_loader')),
         findsNothing,
       );
+    },
+  );
+
+  testWidgets(
+    'preparing and migrating rings fill the 256px Figma chart frame',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(status: _status(), disableAnimations: true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final paintFinder = find.byKey(
+        const ValueKey('ironwood_migration_ring_paint'),
+      );
+      final preparingPaint = tester.widget<CustomPaint>(paintFinder);
+      expect(preparingPaint.size, const Size.square(256));
+      final dynamic preparingPainter = preparingPaint.painter;
+      expect(preparingPainter.outerDiameter, 256);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          disableAnimations: true,
+          status: _migrationStatus(
+            phase: kIronwoodMigrationBroadcastScheduledPhase,
+            activeRunId: 'run-figma-ring',
+            targetValuesZatoshi: const [10_000_000, 20_000_000],
+            totalCount: 2,
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.migrating,
+              ),
+              _migrationPart(
+                1,
+                20_000_000,
+                rust_sync.MigrationPartState.scheduled,
+                scheduledHeight: 1_200,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final migratingPaint = tester.widget<CustomPaint>(paintFinder);
+      expect(migratingPaint.size, const Size.square(256));
+      final dynamic migratingPainter = migratingPaint.painter;
+      expect(migratingPainter.outerDiameter, 256);
     },
   );
 
@@ -1901,9 +2466,126 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your\n0.6 ZEC\nare on Ironwood!'), findsOneWidget);
+    final completeRoot = find.byKey(
+      const ValueKey('ironwood_migration_complete_content'),
+    );
+    final completeRootRect = tester.getRect(completeRoot);
+    expect(tester.getSize(completeRoot), const Size(420, 656));
+    expect(
+      tester
+          .widget<Stack>(
+            find.byKey(const ValueKey('ironwood_migration_complete_stack')),
+          )
+          .clipBehavior,
+      Clip.none,
+    );
+    expect(
+      tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_complete_hero')),
+      ),
+      Rect.fromLTWH(
+        completeRootRect.left + 12,
+        completeRootRect.top + 75.5,
+        396,
+        220,
+      ),
+    );
+    expect(
+      tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_complete_coins')),
+      ),
+      Rect.fromLTWH(
+        completeRootRect.left + 110,
+        completeRootRect.top + 75.5,
+        200,
+        200,
+      ),
+    );
+    expect(
+      tester.getRect(
+        find.byKey(const ValueKey('ironwood_migration_complete_copy')),
+      ),
+      Rect.fromLTWH(
+        completeRootRect.left + 65,
+        completeRootRect.top + 343.5,
+        290,
+        153,
+      ),
+    );
+    expect(
+      tester
+              .getRect(
+                find.byKey(
+                  const ValueKey('ironwood_migration_status_action_button'),
+                ),
+              )
+              .top -
+          completeRootRect.top,
+      closeTo(544.5, 0.01),
+    );
     expect(find.text('Back home'), findsNothing);
-    expect(find.widgetWithText(AppButton, 'Done'), findsOneWidget);
+    final doneButton = find.widgetWithText(AppButton, 'Done');
+    expect(doneButton, findsOneWidget);
+    expect(
+      tester.widget<AppButton>(doneButton).variant,
+      AppButtonVariant.primary,
+    );
   });
+
+  testWidgets(
+    'private complete status keeps copy clear of the action at large text scale',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final flutterErrors = <FlutterErrorDetails>[];
+      final originalOnError = FlutterError.onError;
+      FlutterError.onError = flutterErrors.add;
+      addTearDown(() => FlutterError.onError = originalOnError);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          status: _migrationStatus(
+            phase: kIronwoodMigrationCompletePhase,
+            activeRunId: 'run-1',
+            targetValuesZatoshi: const [60_000_000],
+            broadcastedTxCount: 1,
+            confirmedTxCount: 1,
+            totalCount: 1,
+            parts: [
+              _migrationPart(
+                0,
+                60_000_000,
+                rust_sync.MigrationPartState.completed,
+              ),
+            ],
+          ),
+          textScaler: const TextScaler.linear(1.5),
+        ),
+      );
+      await tester.pumpAndSettle();
+      FlutterError.onError = originalOnError;
+
+      expect(
+        flutterErrors.where(
+          (details) => details.toString().contains('transfer_status.dart'),
+        ),
+        isEmpty,
+      );
+      final body = find.text(
+        'Migration completed successfully and you can\n'
+        'spend your funds as usual.',
+      );
+      final action = find.byKey(
+        const ValueKey('ironwood_migration_status_action_button'),
+      );
+      expect(
+        tester.getRect(body).bottom,
+        lessThanOrEqualTo(tester.getRect(action).top),
+      );
+    },
+  );
 
   testWidgets('private complete fallback without run details returns home', (
     tester,
@@ -2410,6 +3092,111 @@ void main() {
     },
   );
 
+  testWidgets(
+    'preparing and migrating summary rows align labels left and values right',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      void expectRowAlignment(Finder row) {
+        final texts = find.descendant(of: row, matching: find.byType(Text));
+        expect(texts, findsNWidgets(2));
+        final rowRect = tester.getRect(row);
+        final stageRect = tester.getRect(
+          find.byKey(const ValueKey('ironwood_migration_stage_header')),
+        );
+        expect(rowRect.left, closeTo(stageRect.left, 0.01));
+        expect(rowRect.right, closeTo(stageRect.right, 0.01));
+        expect(tester.getRect(texts.at(0)).left, closeTo(rowRect.left, 0.01));
+        expect(tester.getRect(texts.at(1)).right, closeTo(rowRect.right, 0.01));
+      }
+
+      await tester.pumpWidget(
+        _privateStatusHarness(status: _status(), disableAnimations: true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expectRowAlignment(
+        find.byKey(
+          const ValueKey('ironwood_migration_summary_overall_progress'),
+        ),
+      );
+      expectRowAlignment(
+        find.byKey(
+          const ValueKey('ironwood_migration_summary_estimated_completion'),
+        ),
+      );
+      expectRowAlignment(
+        find.byKey(const ValueKey('ironwood_migration_summary_current_block')),
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          disableAnimations: true,
+          status: _migrationStatus(
+            phase: kIronwoodMigrationBroadcastScheduledPhase,
+            activeRunId: 'run-figma-summary',
+            targetValuesZatoshi: const [10_000_000, 20_000_000],
+            totalCount: 2,
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.migrating,
+              ),
+              _migrationPart(
+                1,
+                20_000_000,
+                rust_sync.MigrationPartState.scheduled,
+                scheduledHeight: 1_200,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expectRowAlignment(
+        find.byKey(
+          const ValueKey('ironwood_migration_summary_left_to_migrate'),
+        ),
+      );
+      expectRowAlignment(
+        find.byKey(
+          const ValueKey('ironwood_migration_summary_estimated_completion'),
+        ),
+      );
+    },
+  );
+
+  testWidgets(
+    'preparation carousel uses the Figma split icon for multiple rounds',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(status: _status(), disableAnimations: true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final carousel = tester.widget<AppCarousel>(find.byType(AppCarousel));
+      final multipleRoundsItem = carousel.items[2];
+      expect(multipleRoundsItem.icon, AppIcons.migrationSplit);
+      expect(multipleRoundsItem.iconSize, 20);
+      expect(multipleRoundsItem.imageAsset, isNull);
+    },
+  );
+
   testWidgets('many tiny note segments render without overlap exceptions', (
     tester,
   ) async {
@@ -2865,13 +3652,74 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Preparation Schedule'), findsOneWidget);
+    final preparationRoot = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_content'),
+    );
+    final preparationTitle = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_title'),
+    );
+    final preparationSummary = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_summary'),
+    );
+    final preparationList = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_list'),
+    );
+    final preparationRootRect = tester.getRect(preparationRoot);
+    expect(tester.getSize(preparationRoot), const Size(420, 656));
+    expect(
+      tester.getRect(preparationTitle).top - preparationRootRect.top,
+      closeTo(28, 0.01),
+    );
+    expect(tester.widget<Text>(preparationTitle).textAlign, TextAlign.center);
+    expect(
+      tester.getRect(preparationSummary),
+      Rect.fromLTWH(
+        preparationRootRect.left + 12,
+        preparationRootRect.top + 72,
+        396,
+        104,
+      ),
+    );
+    expect(
+      tester.getRect(preparationList),
+      Rect.fromLTWH(
+        preparationRootRect.left + 12,
+        preparationRootRect.top + 188,
+        396,
+        468,
+      ),
+    );
+    final firstPreparationSurface = find.byKey(
+      const ValueKey('ironwood_migration_preparation_schedule_surface_0'),
+    );
+    expect(
+      tester.getRect(firstPreparationSurface),
+      Rect.fromLTWH(
+        preparationRootRect.left + 12,
+        preparationRootRect.top + 232,
+        396,
+        56,
+      ),
+    );
+    final firstOutput = find.byKey(
+      const ValueKey('ironwood_migration_preparation_output_0_0'),
+    );
+    final secondOutput = find.byKey(
+      const ValueKey('ironwood_migration_preparation_output_0_1'),
+    );
+    expect(tester.getSize(firstOutput).height, 24);
+    expect(tester.getSize(secondOutput).height, 24);
+    expect(
+      tester.getRect(secondOutput).top - tester.getRect(firstOutput).bottom,
+      8,
+    );
     expect(find.text('Current round'), findsOneWidget);
     expect(find.text('1 of 2'), findsOneWidget);
     expect(find.text('Ready to migrate'), findsOneWidget);
     expect(find.text('Current block'), findsOneWidget);
     expect(find.text('1,000'), findsOneWidget);
     expect(find.text('#1,010'), findsOneWidget);
-    expect(find.text('Expected by #1,171'), findsOneWidget);
+    expect(find.text('Expected by #1,171'), findsNothing);
     expect(find.text('Expected #1,171'), findsOneWidget);
     expect(find.text('3. 2 ZEC'), findsOneWidget);
     expect(find.text('4. 3 ZEC'), findsOneWidget);
@@ -2906,6 +3754,77 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Transaction 3'), findsOneWidget);
   });
+
+  testWidgets(
+    'preparation schedule summary grows with accessibility text scaling',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final flutterErrors = <FlutterErrorDetails>[];
+      final originalOnError = FlutterError.onError;
+      FlutterError.onError = flutterErrors.add;
+      addTearDown(() => FlutterError.onError = originalOnError);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        preparationMeanDelayBlocks: 24,
+        preparationTransactions: [
+          _preparationTransaction(
+            0,
+            500_000_000,
+            rust_sync.MigrationPreparationTransactionState.scheduled,
+            scheduledHeight: 1_010,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          initialLocation: '/migration/private/preparation-schedule',
+          syncState: SyncState(
+            accountUuid: 'account-1',
+            hasAccountScopedData: true,
+            scannedHeight: 1_000,
+            chainTipHeight: 1_000,
+          ),
+          disableAnimations: true,
+          textScaler: const TextScaler.linear(1.5),
+        ),
+      );
+      await tester.pumpAndSettle();
+      FlutterError.onError = originalOnError;
+
+      expect(
+        flutterErrors.where(
+          (details) => details.toString().contains('schedule.dart'),
+        ),
+        isEmpty,
+      );
+      final summary = find.byKey(
+        const ValueKey('ironwood_migration_preparation_schedule_summary'),
+      );
+      final scheduleList = find.byKey(
+        const ValueKey('ironwood_migration_preparation_schedule_list'),
+      );
+      final summaryRect = tester.getRect(summary);
+      expect(summaryRect.height, greaterThan(104));
+      expect(
+        tester.getRect(find.text('Current block')).bottom,
+        lessThanOrEqualTo(summaryRect.bottom),
+      );
+      expect(
+        tester.getRect(scheduleList).top,
+        greaterThanOrEqualTo(summaryRect.bottom + 12),
+      );
+    },
+  );
 
   testWidgets('migration schedule stops before opening the Immediate review', (
     tester,
@@ -3732,6 +4651,70 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Left to migrate'), findsOneWidget);
+    final scheduleRoot = find.byKey(
+      const ValueKey('ironwood_migration_schedule_content'),
+    );
+    final scheduleTitle = find.byKey(
+      const ValueKey('ironwood_migration_schedule_title'),
+    );
+    final scheduleSummary = find.byKey(
+      const ValueKey('ironwood_migration_schedule_summary'),
+    );
+    final scheduleList = find.byKey(
+      const ValueKey('ironwood_migration_schedule_list'),
+    );
+    final scheduleRootRect = tester.getRect(scheduleRoot);
+    expect(tester.getSize(scheduleRoot), const Size(420, 656));
+    expect(
+      tester.getRect(scheduleTitle).top - scheduleRootRect.top,
+      closeTo(16, 0.01),
+    );
+    expect(tester.widget<Text>(scheduleTitle).textAlign, TextAlign.center);
+    expect(
+      tester.getRect(scheduleSummary),
+      Rect.fromLTWH(
+        scheduleRootRect.left + 28,
+        scheduleRootRect.top + 72,
+        364,
+        80,
+      ),
+    );
+    expect(
+      tester.getRect(scheduleList),
+      Rect.fromLTWH(
+        scheduleRootRect.left + 12,
+        scheduleRootRect.top + 180,
+        396,
+        476,
+      ),
+    );
+    final firstScheduleSurface = find.byKey(
+      const ValueKey('ironwood_migration_schedule_surface_0'),
+    );
+    expect(
+      tester.getRect(firstScheduleSurface),
+      Rect.fromLTWH(
+        scheduleRootRect.left + 12,
+        scheduleRootRect.top + 196,
+        396,
+        56,
+      ),
+    );
+    final scheduleDecoration =
+        tester.widget<DecoratedBox>(firstScheduleSurface).decoration
+            as BoxDecoration;
+    expect(scheduleDecoration.borderRadius, BorderRadius.circular(16));
+    final completedStatus = find.byKey(
+      const ValueKey('ironwood_migration_schedule_status_0'),
+    );
+    final completedIcon = find.descendant(
+      of: completedStatus,
+      matching: find.byType(AppIcon),
+    );
+    expect(
+      tester.getRect(completedIcon).left,
+      lessThan(tester.getRect(find.text('Completed at block 4,209,997')).left),
+    );
     expect(find.text('0.5 ZEC'), findsOneWidget);
     expect(find.text('in ~50 minutes'), findsOneWidget);
     expect(find.text('Completed at block 4,209,997'), findsOneWidget);
@@ -4298,6 +5281,8 @@ Widget _migrationOptionsHarness({
   Duration analyzingMinimumDuration = Duration.zero,
   bool disableAnimations = true,
   bool useImmediatePreview = true,
+  bool usePrivatePreview = true,
+  TextScaler textScaler = TextScaler.noScaling,
   rust_sync.KeystoneMigrationSigningRequest? previewCombinedSigningRequest,
   List<String> previewCombinedSigningUrParts = const [],
   rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
@@ -4340,7 +5325,9 @@ Widget _migrationOptionsHarness({
             accountName: 'Account 1',
             profilePictureId: kDefaultProfilePictureId,
           ),
-          previewPrivatePlan: previewPrivatePlan ?? _privatePlan(),
+          previewPrivatePlan: usePrivatePreview
+              ? previewPrivatePlan ?? _privatePlan()
+              : null,
         ),
       ),
       GoRoute(
@@ -4404,7 +5391,14 @@ Widget _migrationOptionsHarness({
       ),
       GoRoute(
         path: '/migration/how-it-works',
-        builder: (_, _) => const Text('how it works'),
+        builder: (_, _) => IronwoodMigrationFlowScreen(
+          step: IronwoodMigrationFlowStep.howItWorks,
+          previewData: IronwoodMigrationFlowData(
+            amountZatoshi: BigInt.from(10_000_000),
+            accountName: 'Account 1',
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+        ),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home')),
       GoRoute(path: '/swap', builder: (_, _) => const Text('swap')),
@@ -4469,7 +5463,7 @@ Widget _migrationOptionsHarness({
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
           disableAnimations: disableAnimations,
-          textScaler: TextScaler.noScaling,
+          textScaler: textScaler,
         ),
         child: AppTheme(data: AppThemeData.light, child: child!),
       ),
@@ -4709,6 +5703,7 @@ Widget _privateStatusHarness({
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
   bool disableAnimations = false,
+  TextScaler textScaler = TextScaler.noScaling,
 }) {
   return _migrationEntryHarness(
     ctaState: IronwoodHomeMigrationCtaState.resume(
@@ -4725,6 +5720,7 @@ Widget _privateStatusHarness({
     coordinatorStatus: coordinatorStatus,
     syncState: syncState,
     disableAnimations: disableAnimations,
+    textScaler: textScaler,
   );
 }
 
@@ -4862,6 +5858,7 @@ Widget _migrationEntryHarness({
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
   bool disableAnimations = false,
+  TextScaler textScaler = TextScaler.noScaling,
   Future<void> Function({required String accountUuid, required String runId})?
   onStop,
 }) {
@@ -4983,7 +5980,7 @@ Widget _migrationEntryHarness({
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(
           disableAnimations: disableAnimations,
-          textScaler: TextScaler.noScaling,
+          textScaler: textScaler,
         ),
         child: AppTheme(data: AppThemeData.light, child: child!),
       ),
@@ -5239,6 +6236,21 @@ IronwoodMigrationService _immediatePlanService(
         ({required dbPath, required network, required accountUuid}) async =>
             _privatePlan(),
     getImmediatePlan:
+        ({required dbPath, required network, required accountUuid}) =>
+            getPlan(),
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+  );
+}
+
+IronwoodMigrationService _privatePlanService(
+  Future<rust_sync.OrchardMigrationPrivatePlan?> Function() getPlan,
+) {
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _migrationStatus(),
+    getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) =>
             getPlan(),
     secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),

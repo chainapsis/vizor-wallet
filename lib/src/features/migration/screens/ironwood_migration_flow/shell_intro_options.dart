@@ -298,6 +298,15 @@ class _IronwoodMigrationHowItWorksContent extends StatefulWidget {
 
 class _IronwoodMigrationHowItWorksContentState
     extends State<_IronwoodMigrationHowItWorksContent> {
+  static const _carouselWidth = 700.0;
+  static const _carouselHeight = 320.0;
+  static const _cardWidth = 396.0;
+  static const _cardHeight = 280.0;
+  static const _pageExtent = 412.0;
+  static const _pageInset = (_pageExtent - _cardWidth) / 2;
+  static const _viewportFraction = _pageExtent / _carouselWidth;
+  static const _inactiveOpacity = 0.3;
+
   static const _steps = [
     (
       title: 'Orchard (legacy shielded) balance is frozen',
@@ -308,24 +317,25 @@ class _IronwoodMigrationHowItWorksContentState
     (
       title: 'Pre-migration preparations',
       body:
-          'Vizor splits your total balance into smaller, common-sized notes '
-          'before migrating.',
+          'Vizor splits your total balance into many smaller notes '
+          '(e.g. 0.1 ZEC / 1 ZEC / 5 ZEC) before migrating.',
     ),
     (
       title: 'Delayed and randomized migrations',
       body:
-          'Vizor sends parts at staggered intervals across multiple batches '
-          'to reduce traceability.',
+          'Vizor slowly sends parts at staggered intervals across multiple '
+          'batches to reduce traceability.',
     ),
   ];
 
   late final PageController _pageController;
   var _page = 0;
+  var _pointerDown = false;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
+    _pageController = PageController(viewportFraction: _viewportFraction);
   }
 
   @override
@@ -336,13 +346,33 @@ class _IronwoodMigrationHowItWorksContentState
 
   void _next() {
     if (_page < _steps.length - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 360),
-        curve: Curves.easeOutCubic,
-      );
+      _animateToPage(_page + 1);
       return;
     }
     context.go('/migration/what-to-expect');
+  }
+
+  void _animateToPage(int page) {
+    if (page == _page || !_pageController.hasClients) return;
+    _pageController.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _setPointerDown(bool pointerDown) {
+    if (_pointerDown == pointerDown) return;
+    setState(() => _pointerDown = pointerDown);
+  }
+
+  double _opacityFor(int index) {
+    final position = _pageController.hasClients
+        ? _pageController.page ?? _page.toDouble()
+        : _page.toDouble();
+    return (1 - (position - index).abs() * (1 - _inactiveOpacity))
+        .clamp(_inactiveOpacity, 1)
+        .toDouble();
   }
 
   @override
@@ -350,13 +380,13 @@ class _IronwoodMigrationHowItWorksContentState
     final colors = context.colors;
 
     return SizedBox(
-      width: 420,
+      width: _carouselWidth,
       height: 656,
       child: Stack(
         children: [
           Positioned(
-            left: 12,
-            top: 45,
+            left: 152,
+            top: 78,
             width: 396,
             child: Text(
               'How the Migration Works',
@@ -367,107 +397,193 @@ class _IronwoodMigrationHowItWorksContentState
             ),
           ),
           Positioned(
-            left: 12,
-            top: 142,
-            width: 396,
-            height: 280,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: _steps.length,
-              onPageChanged: (value) => setState(() => _page = value),
-              itemBuilder: (context, index) {
-                final step = _steps[index];
-                return DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.background.ground,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        height: 160,
-                        child: Stack(
-                          children: [
-                            Positioned(
-                              left: 16,
-                              top: 24,
-                              child: Text(
-                                'Step ${index + 1}',
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: colors.text.secondary,
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              width: 190,
-                              height: 160,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Image.asset(
-                                  _ironwoodMigrationHowStepAssets[index],
-                                  fit: BoxFit.cover,
-                                  alignment: Alignment.center,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+            left: 0,
+            top: 144,
+            width: _carouselWidth,
+            height: _carouselHeight,
+            child: MouseRegion(
+              key: const ValueKey(
+                'ironwood_migration_how_carousel_drag_region',
+              ),
+              cursor: _pointerDown
+                  ? SystemMouseCursors.grabbing
+                  : SystemMouseCursors.grab,
+              child: Listener(
+                onPointerDown: (_) => _setPointerDown(true),
+                onPointerUp: (_) => _setPointerDown(false),
+                onPointerCancel: (_) => _setPointerDown(false),
+                child: ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (bounds) => const LinearGradient(
+                    colors: [
+                      Color(0x00FFFFFF),
+                      Color(0xFFFFFFFF),
+                      Color(0xFFFFFFFF),
+                      Color(0x00FFFFFF),
+                    ],
+                    stops: [0, 0.15, 0.85, 1],
+                  ).createShader(bounds),
+                  child: Align(
+                    child: SizedBox(
+                      key: const ValueKey(
+                        'ironwood_migration_how_carousel_viewport',
                       ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  step.title,
-                                  style: AppTypography.labelLarge.copyWith(
-                                    color: colors.text.accent,
+                      width: _carouselWidth,
+                      height: _carouselHeight,
+                      child: Align(
+                        child: SizedBox(
+                          height: _cardHeight,
+                          child: ScrollConfiguration(
+                            behavior:
+                                const _IronwoodMigrationCarouselScrollBehavior(),
+                            child: PageView.builder(
+                              key: const ValueKey(
+                                'ironwood_migration_how_page_view',
+                              ),
+                              controller: _pageController,
+                              itemCount: _steps.length,
+                              physics: const PageScrollPhysics(),
+                              onPageChanged: (value) =>
+                                  setState(() => _page = value),
+                              itemBuilder: (context, index) {
+                                final step = _steps[index];
+                                return AnimatedBuilder(
+                                  animation: _pageController,
+                                  builder: (context, child) => Opacity(
+                                    key: ValueKey(
+                                      'ironwood_migration_how_'
+                                      'card_opacity_$index',
+                                    ),
+                                    opacity: _opacityFor(index),
+                                    child: child,
                                   ),
-                                ),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  width: 330,
-                                  child: Text(
-                                    step.body,
-                                    style: AppTypography.bodyMedium.copyWith(
-                                      color: colors.text.secondary,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: _pageInset,
+                                    ),
+                                    child: Semantics(
+                                      container: true,
+                                      button: index != _page,
+                                      selected: index == _page,
+                                      label: index == _page
+                                          ? 'Migration step ${index + 1} of '
+                                                '${_steps.length}. '
+                                                '${step.title}. ${step.body}'
+                                          : 'Show migration step '
+                                                '${index + 1} of '
+                                                '${_steps.length}',
+                                      onTap: index == _page
+                                          ? null
+                                          : () => _animateToPage(index),
+                                      child: ExcludeSemantics(
+                                        child: _IronwoodMigrationCarouselAction(
+                                          actionKey: ValueKey(
+                                            'ironwood_migration_how_'
+                                            'card_action_$index',
+                                          ),
+                                          onActivate: index == _page
+                                              ? null
+                                              : () => _animateToPage(index),
+                                          borderRadius: BorderRadius.circular(
+                                            AppRadii.large,
+                                          ),
+                                          child: MouseRegion(
+                                            key: ValueKey(
+                                              'ironwood_migration_how_'
+                                              'card_cursor_$index',
+                                            ),
+                                            cursor: _pointerDown
+                                                ? MouseCursor.defer
+                                                : index == _page
+                                                ? MouseCursor.defer
+                                                : SystemMouseCursors.click,
+                                            child: GestureDetector(
+                                              behavior: HitTestBehavior.opaque,
+                                              onTap: index == _page
+                                                  ? null
+                                                  : () => _animateToPage(index),
+                                              child:
+                                                  _IronwoodMigrationHowStepCard(
+                                                    key: ValueKey(
+                                                      'ironwood_migration_how_'
+                                                      'card_$index',
+                                                    ),
+                                                    index: index,
+                                                    title: step.title,
+                                                    body: step.body,
+                                                  ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                );
+                              },
                             ),
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                );
-              },
+                ),
+              ),
             ),
           ),
           Positioned(
-            left: 166,
-            top: 454,
+            left: 306,
+            top: 482,
             width: 88,
-            height: 8,
+            height: 32,
             child: Row(
               children: [
                 for (var index = 0; index < _steps.length; index++) ...[
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    width: index == _page ? 40 : 20,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: index == _page
-                          ? colors.background.inverse
-                          : colors.background.overlay,
+                  Semantics(
+                    button: true,
+                    selected: index == _page,
+                    label:
+                        'Show migration step ${index + 1} of ${_steps.length}',
+                    onTap: () => _animateToPage(index),
+                    child: _IronwoodMigrationCarouselAction(
+                      actionKey: ValueKey(
+                        'ironwood_migration_how_indicator_action_$index',
+                      ),
+                      onActivate: () => _animateToPage(index),
                       borderRadius: BorderRadius.circular(AppRadii.full),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _animateToPage(index),
+                          child: AnimatedContainer(
+                            key: ValueKey(
+                              'ironwood_migration_how_'
+                              'indicator_hit_target_$index',
+                            ),
+                            duration: const Duration(milliseconds: 220),
+                            width: index == _page ? 40 : 20,
+                            height: 32,
+                            child: Center(
+                              child: AnimatedContainer(
+                                key: ValueKey(
+                                  'ironwood_migration_how_indicator_$index',
+                                ),
+                                duration: const Duration(milliseconds: 220),
+                                width: index == _page ? 40 : 20,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: index == _page
+                                      ? colors.background.inverse
+                                      : colors.background.overlay,
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.full,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                   if (index < _steps.length - 1) const SizedBox(width: 4),
@@ -476,7 +592,7 @@ class _IronwoodMigrationHowItWorksContentState
             ),
           ),
           Positioned(
-            left: 95,
+            left: 235,
             top: 596,
             width: 230,
             child: AppButton(
@@ -496,6 +612,218 @@ class _IronwoodMigrationHowItWorksContentState
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _IronwoodMigrationCarouselAction extends StatelessWidget {
+  const _IronwoodMigrationCarouselAction({
+    required this.actionKey,
+    required this.onActivate,
+    required this.borderRadius,
+    required this.child,
+  });
+
+  final Key actionKey;
+  final VoidCallback? onActivate;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      canRequestFocus: onActivate != null,
+      onKeyEvent: (_, event) {
+        if (onActivate == null || event is! KeyDownEvent) {
+          return KeyEventResult.ignored;
+        }
+        final key = event.logicalKey;
+        if (key != LogicalKeyboardKey.enter &&
+            key != LogicalKeyboardKey.numpadEnter &&
+            key != LogicalKeyboardKey.space) {
+          return KeyEventResult.ignored;
+        }
+        onActivate!();
+        return KeyEventResult.handled;
+      },
+      child: Builder(
+        builder: (context) {
+          final focused = Focus.of(context).hasFocus;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              KeyedSubtree(key: actionKey, child: child),
+              if (focused)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: context.colors.state.focusRing,
+                          width: 2,
+                        ),
+                        borderRadius: borderRadius,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _IronwoodMigrationCarouselScrollBehavior extends ScrollBehavior {
+  const _IronwoodMigrationCarouselScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    ...super.dragDevices,
+    PointerDeviceKind.mouse,
+  };
+}
+
+class _IronwoodMigrationHowStepCard extends StatelessWidget {
+  const _IronwoodMigrationHowStepCard({
+    required this.index,
+    required this.title,
+    required this.body,
+    super.key,
+  });
+
+  final int index;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: _IronwoodMigrationHowItWorksContentState._cardWidth,
+      height: _IronwoodMigrationHowItWorksContentState._cardHeight,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        child: ColoredBox(
+          color: colors.background.ground,
+          child: Column(
+            children: [
+              SizedBox(
+                height: 160,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadii.medium),
+                  child: Stack(
+                    children: [
+                      _IronwoodMigrationHowStepIllustration(index: index),
+                      Positioned(
+                        left: 19,
+                        top: 24,
+                        child: Text(
+                          'Step ${index + 1}',
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.secondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 120,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: AppTypography.labelLarge.copyWith(
+                            color: colors.text.accent,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: index == 0 ? 287 : 364,
+                          child: Text(
+                            body,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: colors.text.secondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IronwoodMigrationHowStepIllustration extends StatelessWidget {
+  const _IronwoodMigrationHowStepIllustration({required this.index});
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final geometry = switch (index) {
+      0 => (
+        containerLeft: 226.0,
+        containerWidth: 170.0,
+        imageLeft: -11.764,
+        imageTop: 8.672,
+        imageWidth: 199.529,
+        imageHeight: 131.728,
+      ),
+      1 => (
+        containerLeft: 226.0,
+        containerWidth: 170.0,
+        imageLeft: -42.007,
+        imageTop: -4.8,
+        imageWidth: 254.507,
+        imageHeight: 169.664,
+      ),
+      _ => (
+        containerLeft: 174.0,
+        containerWidth: 160.0,
+        imageLeft: -51.92,
+        imageTop: 0.0,
+        imageWidth: 264.24,
+        imageHeight: 174.0,
+      ),
+    };
+
+    return Positioned(
+      left: geometry.containerLeft,
+      top: 0,
+      width: geometry.containerWidth,
+      height: 160,
+      child: ClipRect(
+        child: Stack(
+          children: [
+            Positioned(
+              left: geometry.imageLeft,
+              top: geometry.imageTop,
+              width: geometry.imageWidth,
+              height: geometry.imageHeight,
+              child: Image.asset(
+                _ironwoodMigrationHowStepAssets[index],
+                fit: BoxFit.fill,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -634,29 +962,57 @@ class _MigrationExpectationIllustration extends StatelessWidget {
       2 => const Color(0xFF00A460),
       _ => const Color(0xFFB90A4A),
     };
+    final viewportTop = switch (index) {
+      1 || 2 => -6.0,
+      _ => 0.0,
+    };
+    final viewportHeight = index == 3 ? 48.0 : 54.0;
     final imageRect = switch (index) {
       0 => const Rect.fromLTWH(-27.12, -8.70, 102.39, 68.70),
-      1 => const Rect.fromLTWH(-9.75, -11.43, 69.19, 69.13),
-      2 => const Rect.fromLTWH(-18.11, -12.50, 84, 84),
+      1 => const Rect.fromLTWH(-9.75, -5.43, 69.19, 69.13),
+      2 => const Rect.fromLTWH(-18.11, -6.50, 84, 84),
       _ => const Rect.fromLTWH(0, 0, 48, 48),
     };
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadii.small),
-      child: ColoredBox(
-        color: background,
-        child: SizedBox.square(
-          dimension: 48,
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              Positioned.fromRect(
-                rect: imageRect,
-                child: Image.asset(asset, fit: BoxFit.fill),
-              ),
-            ],
-          ),
+    final image = Stack(
+      children: [
+        Positioned.fromRect(
+          rect: imageRect,
+          child: Image.asset(asset, fit: BoxFit.fill),
         ),
+      ],
+    );
+    final clippedImage = index == 0
+        ? ClipRect(child: image)
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            child: image,
+          );
+
+    return SizedBox.square(
+      key: ValueKey('ironwood_migration_expectation_tile_$index'),
+      dimension: 48,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(AppRadii.small),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: viewportTop,
+            width: 48,
+            height: viewportHeight,
+            child: SizedBox(
+              key: ValueKey('ironwood_migration_expectation_viewport_$index'),
+              child: clippedImage,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -339,6 +339,39 @@ class WidgetbookApp extends StatelessWidget {
                   name: 'Desktop',
                   useCases: [
                     WidgetbookUseCase(
+                      name: 'How it works',
+                      builder: buildIronwoodMigrationHowItWorksUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'What to expect',
+                      builder: buildIronwoodMigrationWhatToExpectUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration options',
+                      builder: buildIronwoodMigrationOptionsUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Finding private batches',
+                      builder: buildIronwoodMigrationAnalyzingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Private review',
+                      builder: buildIronwoodMigrationPrivateReviewUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation schedule',
+                      builder: buildIronwoodMigrationPreparationScheduleUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Preparation schedule · Large text',
+                      builder:
+                          buildIronwoodMigrationPreparationScheduleLargeTextUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration schedule',
+                      builder: buildIronwoodMigrationScheduleUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Preparing',
                       builder:
                           buildIronwoodMigrationPrivateStatusWaitingUseCase,
@@ -347,6 +380,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Migrating',
                       builder:
                           buildIronwoodMigrationPrivateStatusMigratingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration complete',
+                      builder: buildIronwoodMigrationCompleteUseCase,
                     ),
                   ],
                 ),

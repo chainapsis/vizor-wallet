@@ -19,6 +19,7 @@ class _IronwoodMigrationPrivateReviewContent extends ConsumerStatefulWidget {
 class _IronwoodMigrationPrivateReviewContentState
     extends ConsumerState<_IronwoodMigrationPrivateReviewContent> {
   bool _isStarting = false;
+  bool _hasCompletedAnalyzingTransition = false;
   String? _startError;
   late final Future<void> _minimumAnalyzingDelay;
 
@@ -151,11 +152,11 @@ class _IronwoodMigrationPrivateReviewContentState
         ? ref.watch(ironwoodMigrationPrivatePlanProvider)
         : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
-    if (planAsync.isLoading) return const _MigrationAnalyzingContent();
     return FutureBuilder<void>(
       future: _minimumAnalyzingDelay,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
+        if (planAsync.isLoading ||
+            snapshot.connectionState != ConnectionState.done) {
           return const _MigrationAnalyzingContent();
         }
         if (planAsync.hasError || plan == null) {
@@ -171,6 +172,18 @@ class _IronwoodMigrationPrivateReviewContentState
           );
         }
 
+        if (!_hasCompletedAnalyzingTransition) {
+          return _MigrationAnalyzingContent(
+            isReady: true,
+            onCompleted: () {
+              if (!mounted) return;
+              setState(() {
+                _hasCompletedAnalyzingTransition = true;
+              });
+            },
+          );
+        }
+
         return _MigrationReviewContent(
           plan: plan,
           isStarting: _isStarting,
@@ -183,7 +196,10 @@ class _IronwoodMigrationPrivateReviewContentState
 }
 
 class _MigrationAnalyzingContent extends StatefulWidget {
-  const _MigrationAnalyzingContent();
+  const _MigrationAnalyzingContent({this.isReady = false, this.onCompleted});
+
+  final bool isReady;
+  final VoidCallback? onCompleted;
 
   @override
   State<_MigrationAnalyzingContent> createState() =>
@@ -191,21 +207,35 @@ class _MigrationAnalyzingContent extends StatefulWidget {
 }
 
 class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _messages = [
     'Analyzing your balance...',
     'Finding private batches...',
     'Preparing your migration plan...',
   ];
-  static const _switchDuration = Duration(milliseconds: 320);
+  static const _switchDuration = Duration(milliseconds: 240);
 
   late final AnimationController _shimmer = AnimationController(
     vsync: this,
     duration: _MigrationAnalyzingMotion.period,
   );
+  late final AnimationController _donutController = AnimationController(
+    vsync: this,
+    duration: _MigrationAnalyzingMotion.preparationPeriod,
+  );
+  late final Animation<double> _donutProgress = _MigrationAnalyzingMotion
+      .donutProgress
+      .animate(_donutController);
+  late final AnimationController _completionController = AnimationController(
+    vsync: this,
+    duration: _MigrationAnalyzingMotion.completionPeriod,
+  )..addStatusListener(_handleCompletionStatus);
+  Animation<double> _completionProgress = const AlwaysStoppedAnimation(0);
   Timer? _reducedMotionMessageTimer;
   var _messageIndex = 0;
   var _advancedMessageThisCycle = false;
+  var _completionStarted = false;
+  var _completionDispatched = false;
 
   bool get _shouldAnimate =>
       !(MediaQuery.maybeOf(context)?.disableAnimations ?? false);
@@ -220,6 +250,13 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _syncAnimation();
+    if (widget.isReady) _beginCompletion();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MigrationAnalyzingContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isReady && widget.isReady) _beginCompletion();
   }
 
   void _syncAnimation() {
@@ -227,15 +264,52 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
       _reducedMotionMessageTimer?.cancel();
       _reducedMotionMessageTimer = null;
       if (!_shimmer.isAnimating) _shimmer.repeat();
+      if (_donutController.status == AnimationStatus.dismissed) {
+        _donutController.forward();
+      }
     } else {
       _shimmer
         ..stop()
         ..value = 0;
+      _donutController
+        ..stop()
+        ..value = 0;
+      if (widget.isReady) {
+        _completionController.value = 1;
+      }
       _reducedMotionMessageTimer ??= Timer.periodic(
         _MigrationAnalyzingMotion.period,
         (_) => _advanceMessage(),
       );
     }
+  }
+
+  void _beginCompletion() {
+    if (_completionStarted) return;
+    _completionStarted = true;
+
+    final startProgress = _shouldAnimate
+        ? _donutProgress.value
+        : _MigrationAnalyzingMotion.reducedMotionProgress;
+    _donutController.stop();
+    _completionProgress = Tween<double>(begin: startProgress, end: 1).animate(
+      CurvedAnimation(parent: _completionController, curve: Curves.easeInOut),
+    );
+
+    if (_shouldAnimate) {
+      _completionController.forward(from: 0);
+    } else {
+      _completionController.value = 1;
+    }
+    setState(() {});
+  }
+
+  void _handleCompletionStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || _completionDispatched) return;
+    _completionDispatched = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onCompleted?.call();
+    });
   }
 
   void _handleShimmerTick() {
@@ -264,6 +338,10 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
     _reducedMotionMessageTimer?.cancel();
     _shimmer.removeListener(_handleShimmerTick);
     _shimmer.dispose();
+    _donutController.dispose();
+    _completionController
+      ..removeStatusListener(_handleCompletionStatus)
+      ..dispose();
     super.dispose();
   }
 
@@ -275,39 +353,52 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
       key: const ValueKey('ironwood_migration_analyzing_screen'),
       width: 420,
       height: 656,
-      child: Column(
+      child: Stack(
         children: [
-          const SizedBox(height: 178),
-          const IronwoodMigrationAnalyzingProgressBar(),
-          const SizedBox(height: 72),
-          AnimatedBuilder(
-            animation: _shimmer,
-            builder: (context, _) {
-              return AnimatedSwitcher(
-                duration: _shouldAnimate ? _switchDuration : Duration.zero,
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) =>
-                    FadeTransition(opacity: animation, child: child),
-                child: _MigrationAnalyzingShimmerText(
-                  key: ValueKey(title),
-                  label: title,
-                  baseColor: colors.text.muted,
-                  highlightColor: colors.text.accent,
-                  progress: _shimmer.value,
-                ),
-              );
-            },
+          Positioned(
+            left: _migrationPlanDonutLeft,
+            top: _migrationPlanDonutTop,
+            width: _migrationPlanDonutSize,
+            height: _migrationPlanDonutSize,
+            child: _MigrationAnalyzingDonut(
+              progress: _completionStarted
+                  ? _completionProgress
+                  : _shouldAnimate
+                  ? _donutProgress
+                  : const AlwaysStoppedAnimation(
+                      _MigrationAnalyzingMotion.reducedMotionProgress,
+                    ),
+              child: AnimatedBuilder(
+                animation: _shimmer,
+                builder: (context, _) {
+                  return AnimatedSwitcher(
+                    duration: _shouldAnimate ? _switchDuration : Duration.zero,
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeOutCubic,
+                    transitionBuilder: (child, animation) =>
+                        FadeTransition(opacity: animation, child: child),
+                    child: _MigrationAnalyzingShimmerText(
+                      key: ValueKey(title),
+                      label: title,
+                      baseColor: colors.text.muted,
+                      highlightColor: colors.text.accent,
+                      progress: _shimmer.value,
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: 298,
+          Positioned(
+            left: 60,
+            top: 424,
+            width: 300,
             child: Text(
-              'Vizor is working hard to find a perfect balance of safety, '
-              'privacy, and speed for your migration',
+              'Vizor is working hard to find a perfect balance\n'
+              'of safety, privacy, and speed for your migration',
               textAlign: TextAlign.center,
-              style: AppTypography.bodyMediumStrong.copyWith(
-                color: colors.text.primary,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.accent,
               ),
             ),
           ),
@@ -317,11 +408,133 @@ class _MigrationAnalyzingContentState extends State<_MigrationAnalyzingContent>
   }
 }
 
+class _MigrationAnalyzingDonut extends StatelessWidget {
+  const _MigrationAnalyzingDonut({required this.progress, required this.child});
+
+  final Animation<double> progress;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox.square(
+      key: const ValueKey('ironwood_migration_analyzing_donut'),
+      dimension: _migrationPlanDonutSize,
+      child: AnimatedBuilder(
+        animation: progress,
+        builder: (context, child) => Semantics(
+          label: 'Preparing private migration plan',
+          value: '${(progress.value * 100).round()}%',
+          child: CustomPaint(
+            painter: _MigrationAnalyzingDonutPainter(
+              progress: progress.value,
+              trackColor: colors.text.accent.withValues(alpha: 0.15),
+              progressColor: colors.text.accent,
+            ),
+            child: child,
+          ),
+        ),
+        child: Center(
+          child: SizedBox(width: 200, child: Center(child: child)),
+        ),
+      ),
+    );
+  }
+}
+
+class _MigrationAnalyzingDonutPainter extends CustomPainter {
+  const _MigrationAnalyzingDonutPainter({
+    required this.progress,
+    required this.trackColor,
+    required this.progressColor,
+  });
+
+  final double progress;
+  final Color trackColor;
+  final Color progressColor;
+
+  static const _strokeWidth = 12.8;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = math.min(size.width, size.height) / 2 - _strokeWidth / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..strokeWidth = _strokeWidth
+      ..style = PaintingStyle.stroke;
+    canvas.drawCircle(center, radius, trackPaint);
+
+    if (progress <= 0) return;
+    final progressPaint = Paint()
+      ..color = progressColor
+      ..strokeWidth = _strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    canvas.drawArc(
+      rect,
+      -math.pi / 2,
+      math.pi * 2 * progress.clamp(0.0, 1.0),
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MigrationAnalyzingDonutPainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.trackColor != trackColor ||
+      oldDelegate.progressColor != progressColor;
+}
+
 abstract final class _MigrationAnalyzingMotion {
   static const period = Duration(seconds: 2);
+  static const preparationPeriod = Duration(milliseconds: 9500);
+  static const completionPeriod = Duration(milliseconds: 850);
+  static const reducedMotionProgress = 0.28;
   static const messageAdvanceProgress = 0.96;
   static const cycleResetProgress = 0.2;
   static const _bandHalf = 0.18;
+
+  static final donutProgress = TweenSequence<double>([
+    _hold(0, 350),
+    _ramp(0, 0.15, 1000),
+    _hold(0.15, 250),
+    _ramp(0.15, 0.40, 950),
+    _hold(0.40, 150),
+    _ramp(0.40, 0.47, 550),
+    _hold(0.47, 750),
+    _ramp(0.47, 0.63, 1050),
+    _hold(0.63, 300),
+    _ramp(0.63, 0.71, 500),
+    _hold(0.71, 850),
+    _ramp(0.71, 0.86, 900),
+    _hold(0.86, 400),
+    _ramp(0.86, 0.97, 950),
+    _hold(0.97, 550),
+  ]);
+
+  static TweenSequenceItem<double> _ramp(
+    double begin,
+    double end,
+    double milliseconds,
+  ) {
+    return TweenSequenceItem(
+      tween: Tween<double>(
+        begin: begin,
+        end: end,
+      ).chain(CurveTween(curve: Curves.easeInOut)),
+      weight: milliseconds,
+    );
+  }
+
+  static TweenSequenceItem<double> _hold(double value, double milliseconds) {
+    return TweenSequenceItem(
+      tween: ConstantTween<double>(value),
+      weight: milliseconds,
+    );
+  }
 }
 
 class _MigrationAnalyzingShimmerText extends StatelessWidget {
@@ -366,13 +579,18 @@ class _MigrationAnalyzingShimmerText extends StatelessWidget {
       child: Text(
         label,
         textAlign: TextAlign.center,
-        style: AppTypography.headlineSmall.copyWith(
+        style: AppTypography.labelLarge.copyWith(
           color: const Color(0xFFFFFFFF),
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
 }
+
+const _migrationPlanDonutLeft = 82.0;
+const _migrationPlanDonutTop = 108.0;
+const _migrationPlanDonutSize = 256.0;
 
 class _MigrationReviewContent extends StatelessWidget {
   const _MigrationReviewContent({
@@ -398,30 +616,34 @@ class _MigrationReviewContent extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            top: 12,
+            top: 16,
             left: 12,
             width: 396,
             child: Text(
+              key: const ValueKey('ironwood_migration_review_title'),
               'Ironwood Migration',
-              style: AppTypography.bodyLarge.copyWith(
+              textAlign: TextAlign.center,
+              style: AppTypography.headlineSmall.copyWith(
                 color: colors.text.accent,
               ),
             ),
           ),
           Positioned(
             left: 12,
-            top: 58,
+            top: 54,
             width: 396,
             child: const _MigrationStageHeader(
+              key: ValueKey('ironwood_migration_stage_header'),
               stage: _MigrationStage.preparation,
             ),
           ),
           Positioned(
-            left: 82,
-            top: 108,
-            width: 256,
-            height: 256,
+            left: _migrationPlanDonutLeft,
+            top: _migrationPlanDonutTop,
+            width: _migrationPlanDonutSize,
+            height: _migrationPlanDonutSize,
             child: CustomPaint(
+              key: const ValueKey('ironwood_migration_review_donut'),
               painter: _MigrationStartRingPainter(
                 color: colors.text.muted.withValues(alpha: 0.32),
               ),
@@ -453,34 +675,59 @@ class _MigrationReviewContent extends StatelessWidget {
             top: 386,
             width: 396,
             child: _ImmediateReviewRow(
+              key: const ValueKey('ironwood_migration_review_completion_row'),
               label: 'Migration complete in',
               value: completionEstimate,
             ),
           ),
           Positioned(
-            left: 44,
+            left: 12,
             top: 442,
-            width: 332,
+            width: 396,
             child: Row(
+              key: const ValueKey('ironwood_migration_keep_running_content'),
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.asset(
-                    _ironwoodMigrationExpectationRunningAsset,
-                    width: 32,
-                    height: 32,
-                    fit: BoxFit.cover,
+                DecoratedBox(
+                  key: const ValueKey(
+                    'ironwood_migration_keep_running_icon_tile',
+                  ),
+                  decoration: BoxDecoration(
+                    color: _migrationCarouselCrimson,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox.square(
+                      dimension: 48,
+                      child: Image.asset(
+                        _ironwoodMigrationExpectationRunningAsset,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 Expanded(
-                  child: Text(
-                    'Keep Vizor running. Preparation continues while the app '
-                    'is minimized, then migration starts automatically.',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Keep Vizor running',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.accent,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Preparation continues while the app is minimized, '
+                        'then migration starts automatically.',
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -529,6 +776,8 @@ class _MigrationStartRingPainter extends CustomPainter {
 
   final Color color;
 
+  double get outerDiameter => _migrationStatusRingOuterDiameter;
+
   static const _weights = [0.14, 0.08, 0.09, 0.12, 0.08, 0.15, 0.1, 0.12, 0.12];
   static const _visibleGap = 0.055;
 
@@ -536,12 +785,17 @@ class _MigrationStartRingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 12
+      ..strokeWidth = _migrationStatusRingMaxStrokeWidth
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-    final rect = Rect.fromCircle(
+    final availableOuterDiameter = math.min(
+      outerDiameter,
+      math.min(size.width, size.height),
+    );
+    final rect = Rect.fromCenter(
       center: size.center(Offset.zero),
-      radius: math.min(size.width, size.height) / 2 - paint.strokeWidth,
+      width: availableOuterDiameter - paint.strokeWidth,
+      height: availableOuterDiameter - paint.strokeWidth,
     );
     const fullSweep = math.pi * 2;
     final radius = rect.width / 2;

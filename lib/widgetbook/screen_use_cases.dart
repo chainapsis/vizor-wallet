@@ -975,6 +975,17 @@ Widget buildIronwoodMigrationPreparationScheduleUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationPreparationScheduleLargeTextUseCase(
+  BuildContext context,
+) {
+  return MediaQuery(
+    data: MediaQuery.of(
+      context,
+    ).copyWith(textScaler: const TextScaler.linear(1.5)),
+    child: buildIronwoodMigrationPreparationScheduleUseCase(context),
+  );
+}
+
 Widget buildIronwoodMigrationManageScheduleUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/private/schedule',
