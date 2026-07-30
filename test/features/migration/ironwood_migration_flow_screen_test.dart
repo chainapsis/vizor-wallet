@@ -1378,6 +1378,62 @@ void main() {
   );
 
   testWidgets(
+    'preparing and migrating rings fill the 256px Figma chart frame',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(status: _status(), disableAnimations: true),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final paintFinder = find.byKey(
+        const ValueKey('ironwood_migration_ring_paint'),
+      );
+      final preparingPaint = tester.widget<CustomPaint>(paintFinder);
+      expect(preparingPaint.size, const Size.square(256));
+      final dynamic preparingPainter = preparingPaint.painter;
+      expect(preparingPainter.outerDiameter, 256);
+
+      await tester.pumpWidget(
+        _privateStatusHarness(
+          disableAnimations: true,
+          status: _migrationStatus(
+            phase: kIronwoodMigrationBroadcastScheduledPhase,
+            activeRunId: 'run-figma-ring',
+            targetValuesZatoshi: const [10_000_000, 20_000_000],
+            totalCount: 2,
+            parts: [
+              _migrationPart(
+                0,
+                10_000_000,
+                rust_sync.MigrationPartState.migrating,
+              ),
+              _migrationPart(
+                1,
+                20_000_000,
+                rust_sync.MigrationPartState.scheduled,
+                scheduledHeight: 1_200,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final migratingPaint = tester.widget<CustomPaint>(paintFinder);
+      expect(migratingPaint.size, const Size.square(256));
+      final dynamic migratingPainter = migratingPaint.painter;
+      expect(migratingPainter.outerDiameter, 256);
+    },
+  );
+
+  testWidgets(
     'preparation ring reshapes and spins without rebuilding the paint layer',
     (tester) async {
       tester.view.devicePixelRatio = 1;

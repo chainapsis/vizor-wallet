@@ -756,12 +756,12 @@ class _MigrationStartRingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 12.8
+      ..strokeWidth = 12
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     final rect = Rect.fromCircle(
       center: size.center(Offset.zero),
-      radius: math.min(size.width, size.height) / 2 - paint.strokeWidth / 2,
+      radius: math.min(size.width, size.height) / 2 - paint.strokeWidth,
     );
     const fullSweep = math.pi * 2;
     final radius = rect.width / 2;

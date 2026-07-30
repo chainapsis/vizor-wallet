@@ -1424,6 +1424,8 @@ class _MigrationPreparationAnimatedRingPainter extends CustomPainter {
   final Animation<double> progress;
   final bool reduceMotion;
 
+  double get outerDiameter => _migrationStatusRingOuterDiameter;
+
   List<_MigrationRingVisualSegment> get segments {
     final eased = Curves.easeOutBack.transform(progress.value);
     return [
@@ -1445,6 +1447,7 @@ class _MigrationPreparationAnimatedRingPainter extends CustomPainter {
       rotation: 0,
       motionPhase: 0,
       reduceMotion: reduceMotion,
+      outerDiameter: outerDiameter,
     ).paint(canvas, size);
   }
 
@@ -1490,8 +1493,8 @@ class _MigrationRingVisualSegment {
   final double presence;
 }
 
-// At the ring's 104 px radius this produces roughly one logical pixel of
-// center-line arc. With rounded 12 px caps it reads as a single dot instead of
+// At the ring's 121.6 px center-line radius this produces roughly one logical
+// pixel of arc. With rounded 12.8 px caps it reads as a single dot instead of
 // disappearing, while remaining small enough not to distort normal notes.
 const _migrationRingMinimumSegmentWeight = 0.0025;
 
@@ -1700,18 +1703,23 @@ bool _sameVisualSegments(
   return true;
 }
 
+const _migrationStatusRingOuterDiameter = 256.0;
+const _migrationStatusRingMaxStrokeWidth = 12.8;
+
 class _MigrationRingVisualPainter extends CustomPainter {
   const _MigrationRingVisualPainter({
     required this.segments,
     required this.rotation,
     required this.motionPhase,
     required this.reduceMotion,
+    this.outerDiameter = _migrationStatusRingOuterDiameter,
   });
 
   final List<_MigrationRingVisualSegment> segments;
   final double rotation;
   final double motionPhase;
   final bool reduceMotion;
+  final double outerDiameter;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1722,11 +1730,6 @@ class _MigrationRingVisualPainter extends CustomPainter {
     );
     if (positiveWeight <= 0) return;
 
-    final rect = Rect.fromCenter(
-      center: size.center(Offset.zero),
-      width: 208,
-      height: 208,
-    );
     // Presence is animated separately from value. A tiny live note must keep
     // its full gap, while a segment that is actually entering or leaving the
     // morph gradually acquires or surrenders that gap.
@@ -1738,9 +1741,28 @@ class _MigrationRingVisualPainter extends CustomPainter {
       (sum, value) => sum + value,
     );
     if (effectiveCount <= 0) return;
+    final availableOuterDiameter = math.min(
+      outerDiameter,
+      math.min(size.width, size.height),
+    );
+    if (availableOuterDiameter <= 0) return;
+    final estimatedRadius = math.max(
+      1.0,
+      (availableOuterDiameter - _migrationStatusRingMaxStrokeWidth) / 2,
+    );
+    final availablePerSegment = math.pi * 2 * estimatedRadius / effectiveCount;
+    final strokeWidth = math.min(
+      _migrationStatusRingMaxStrokeWidth,
+      math.max(1.0, availablePerSegment - 1),
+    );
+    final centerLineDiameter = availableOuterDiameter - strokeWidth;
+    if (centerLineDiameter <= 0) return;
+    final rect = Rect.fromCenter(
+      center: size.center(Offset.zero),
+      width: centerLineDiameter,
+      height: centerLineDiameter,
+    );
     final radius = rect.width / 2;
-    final availablePerSegment = math.pi * 2 * radius / effectiveCount;
-    final strokeWidth = math.min(12.0, math.max(1.0, availablePerSegment - 1));
     final dotCenterLineSweep = 1 / radius;
     final gap = math.min(
       0.17,
@@ -1840,8 +1862,6 @@ class _MigrationPreparationRingPainter extends CustomPainter {
   final List<double> weights;
   final double rotation;
 
-  static const _ringOuterDiameter = 220.0;
-
   // Decorative only: the ratios intentionally do not represent note value or
   // confirmation progress, but they still form one complete ring.
   static const initialSegmentRatios = <double>[
@@ -1862,13 +1882,17 @@ class _MigrationPreparationRingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 12
+      ..strokeWidth = _migrationStatusRingMaxStrokeWidth
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
+    final outerDiameter = math.min(
+      _migrationStatusRingOuterDiameter,
+      math.min(size.width, size.height),
+    );
     final rect = Rect.fromCenter(
       center: size.center(Offset.zero),
-      width: _ringOuterDiameter - paint.strokeWidth,
-      height: _ringOuterDiameter - paint.strokeWidth,
+      width: outerDiameter - paint.strokeWidth,
+      height: outerDiameter - paint.strokeWidth,
     );
     final fullSweep = math.pi * 2;
     final radius = rect.width / 2;
