@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, seq::SliceRandom, CryptoRng, Rng, RngCore};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zeroize::Zeroizing;
@@ -3131,9 +3131,10 @@ pub(crate) fn unbroadcast_migration_recovery_candidates(
 
 /// Promotes pending migration rows to `confirmed` when the wallet already has
 /// local chain identity for their txids (and demotes orphaned `confirmed` rows
-/// after a reorg). Call before due selection, expiry recovery, **and**
-/// noncanonical broadcast-height recovery so a mined-but-still-`scheduled` part
-/// cannot head-of-line block later due parts or be flipped to `needs_resign`.
+/// after a reorg). Call before due selection. Expiry and noncanonical
+/// broadcast-height recovery call [`reconcile_run_confirmations`] inside their
+/// own IMMEDIATE write transaction instead of this helper, so identity checks
+/// and `needs_resign` updates stay atomic against concurrent sync writers.
 pub(crate) fn reconcile_run_pending_confirmations(
     db_path: &str,
     run_id: &str,
@@ -3397,15 +3398,18 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
     chain_tip_height: u32,
 ) -> Result<u32, String> {
     // Outbox export and broadcast advance call this before due selection.
-    // Reconcile first so a mined-but-still-`scheduled` part whose tip crossed a
-    // ZIP 318 expiry window is promoted to `confirmed` instead of `needs_resign`.
-    reconcile_run_pending_confirmations(db_path, run_id)?;
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    // Reconcile and the needs_resign flip share one IMMEDIATE transaction so a
+    // mined-but-still-`scheduled` part whose tip crossed a ZIP 318 expiry
+    // window is promoted to `confirmed` instead of `needs_resign`, and
+    // foreground sync cannot commit that chain identity between the check and
+    // the status update.
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let canonical_expiry = zip318_canonical_migration_expiry_height(chain_tip_height)?;
     let tx = conn
-        .unchecked_transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| format!("Begin migration broadcast-height validation: {e}"))?;
+    reconcile_run_confirmations(&tx, run_id)?;
     let affected = tx
         .execute(
             &format!(
@@ -3533,15 +3537,16 @@ pub(crate) fn mark_expired_pending_parts_for_resign(
     chain_tip_height: u32,
 ) -> Result<u32, String> {
     // Resume (`migrate_orchard_to_ironwood`) and outbox export call this before
-    // `due_pending_txs`. Reconcile first so a mined-but-still-`scheduled` part
-    // past its expiry height is promoted to `confirmed` instead of
-    // `needs_resign`.
-    reconcile_run_pending_confirmations(db_path, run_id)?;
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    // `due_pending_txs`. Reconcile and the needs_resign flip share one IMMEDIATE
+    // transaction so a mined-but-still-`scheduled` part past its expiry height
+    // is promoted to `confirmed` instead of `needs_resign`, and foreground sync
+    // cannot commit that chain identity between the check and the status update.
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let tx = conn
-        .unchecked_transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| format!("Begin expired migration recovery: {e}"))?;
+    reconcile_run_confirmations(&tx, run_id)?;
     let updated = tx
         .execute(
             &format!(
