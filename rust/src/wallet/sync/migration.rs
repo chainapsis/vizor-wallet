@@ -94,8 +94,10 @@ pub(crate) const PHASE_WAITING_FOR_IRONWOOD_SPENDABILITY: &str =
     "waiting_for_ironwood_spendability";
 pub(crate) const PHASE_READY_TO_PREPARE: &str = "ready_to_prepare";
 pub(crate) const PHASE_AWAITING_PREPARATION: &str = "awaiting_preparation";
-// Kept readable so drafts created by pre-unification mobile builds remain
-// resumable after an upgrade.
+// Never written. This phase is only ever read: it widens draft matching and
+// the `WHERE phase IN (...)` filters below, and it has been read-only since it
+// was introduced, so no shipped build can have stored it. A hardware draft that
+// still needs its split signature is stored as `PHASE_AWAITING_PREPARATION`.
 pub(crate) const PHASE_AWAITING_DENOMINATION_SIGNATURE: &str = "awaiting_denomination_signature";
 pub(crate) const PHASE_WAITING_DENOM_CONFIRMATIONS: &str = "waiting_denom_confirmations";
 pub(crate) const PHASE_READY_TO_MIGRATE: &str = "ready_to_migrate";
@@ -104,6 +106,9 @@ pub(crate) const PHASE_BROADCAST_SCHEDULED: &str = "broadcast_scheduled";
 pub(crate) const PHASE_BROADCASTING: &str = "broadcasting";
 pub(crate) const PHASE_WAITING_MIGRATION_CONFIRMATIONS: &str = "waiting_migration_confirmations";
 pub(crate) const PHASE_COMPLETE: &str = "complete";
+// Never written either. Reads only: an anchor-retention filter and the
+// user-action decision below both accept it, but nothing stores it, so any
+// surface that exists solely to present a paused run is unreachable.
 pub(crate) const PHASE_PAUSED: &str = "paused";
 pub(crate) const PHASE_FAILED_RECOVERABLE: &str = "failed_recoverable";
 pub(crate) const PHASE_FAILED_TERMINAL: &str = "failed_terminal";

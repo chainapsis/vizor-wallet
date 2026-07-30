@@ -716,7 +716,7 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final transactions = _orderedPreparationTransactions(status);
+    final transactions = orderedMigrationPreparationTransactions(status);
     final rounds = _preparationRounds(transactions);
     final currentRound = _currentPreparationRound(rounds);
     final projectionIsRecalculating = transactions.any(
@@ -1240,8 +1240,7 @@ class _MigrationScheduleContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final parts = [..._displayMigrationParts(status)]
-      ..sort(_compareMigrationPartsByExpectedProcessingOrder);
+    final parts = orderedMigrationParts(_displayMigrationParts(status));
     final total = _sumTargetValues(status);
     final completed = parts
         .where((part) => part.state == rust_sync.MigrationPartState.completed)

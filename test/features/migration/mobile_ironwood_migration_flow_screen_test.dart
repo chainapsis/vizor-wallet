@@ -1039,6 +1039,11 @@ IronwoodMigrationService _migrationService({
   requestNotificationAuthorization,
   IronwoodMigrationNotificationSettingsOpener? openNotificationSettings,
   IronwoodMigrationPreparationRuntimeStateGetter? getPreparationRuntimeState,
+  // Left null by default so the service applies its own convention: a caller
+  // that injects a runtime-state source is treated as capable. Pass `() async
+  // => false` to model an iOS build without the continued-processing task.
+  IronwoodMigrationPreparationTrackingSupportCheck?
+  supportsBackgroundPreparationTracking,
   IronwoodMigrationPreparationForegroundContinuationAcknowledger?
   acknowledgePreparationForegroundContinuation,
   Future<rust_sync.OrchardMigrationPrivatePlan?> Function()? onGetPrivatePlan,
@@ -1100,6 +1105,8 @@ IronwoodMigrationService _migrationService({
         getPreparationRuntimeState ??
         ({required network, required accountUuid, required runId}) async =>
             IronwoodMigrationPreparationRuntimeState.idle,
+    supportsBackgroundPreparationTracking:
+        supportsBackgroundPreparationTracking,
     acknowledgePreparationForegroundContinuation:
         acknowledgePreparationForegroundContinuation ??
         ({required network, required accountUuid, required runId}) async {},
@@ -3240,16 +3247,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // A foreground user gets the late broadcast retried for them, so the tap is
-    // measured as an additional attempt on top of the automatic one.
-    expect(find.text('Retry broadcast'), findsOneWidget);
-    final automaticAttempts = continueCount;
-    expect(automaticAttempts, greaterThanOrEqualTo(1));
+    // The late broadcast is offered, never taken on the user's behalf.
+    expect(find.text('Submit scheduled transaction'), findsOneWidget);
+    expect(continueCount, 0);
 
-    await tester.tap(find.text('Retry broadcast'));
+    await tester.tap(find.text('Submit scheduled transaction'));
     await tester.pumpAndSettle();
 
-    expect(continueCount, greaterThan(automaticAttempts));
+    // The tap is what starts it. How many times the coordinator then advances
+    // is its own business: granting the permit also lets the next poll run.
+    expect(continueCount, greaterThanOrEqualTo(1));
   });
 
   testWidgets('keeps migration status actions reachable on compact screens', (
@@ -3266,6 +3273,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // `awaiting_denomination_signature` is a phase Rust never writes (see
+  // `ironwood_migration_phases.dart`). This test and the "returns home" test
+  // below are fail-safe coverage: if a future Rust change starts writing it,
+  // the status screen must still render and stay navigable rather than bounce
+  // the user home. The reachable hardware-draft path is
+  // `awaiting_preparation`, covered by the three tests after them.
   testWidgets('waits for explicit continuation before Keystone split signing', (
     tester,
   ) async {
@@ -3395,35 +3408,6 @@ void main() {
       );
     },
   );
-
-  testWidgets('resumes a saved Keystone draft from migration status', (
-    tester,
-  ) async {
-    _useMobileViewport(tester);
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(),
-        hardware: true,
-        status: _status(
-          phase: kIronwoodMigrationAwaitingDenominationSignaturePhase,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Preparing your migration'), findsOneWidget);
-    expect(find.text('Continue with Keystone'), findsOneWidget);
-    expect(
-      find.text('Preparation needs another Keystone signature.'),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.text('Continue with Keystone'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('keystone denomination sign route'), findsOneWidget);
-  });
 
   testWidgets('renders the mobile Keystone split signing QR', (tester) async {
     _useMobileViewport(tester, size: const Size(320, 568));
@@ -4710,6 +4694,10 @@ void main() {
     );
   });
 
+  // `failed_recoverable` is the reachable case here. `paused` is a phase Rust
+  // never writes (see `ironwood_migration_phases.dart`); it stays in the loop as
+  // fail-safe coverage so a phase that only ever arrives from a future Rust
+  // change still renders an actionable screen instead of a dead end.
   testWidgets('shows durable paused and recoverable failures as actionable', (
     tester,
   ) async {
@@ -4958,7 +4946,7 @@ void main() {
     final action = find.byKey(
       const ValueKey('mobile_ironwood_keystone_batch_sign_button'),
     );
-    expect(find.text('Retry broadcast'), findsOneWidget);
+    expect(find.text('Submit scheduled transaction'), findsOneWidget);
     expect(find.textContaining('Sign batch'), findsNothing);
     await tester.ensureVisible(action);
     await tester.pumpAndSettle();
@@ -5019,66 +5007,48 @@ void main() {
 
       expect(find.text('Prepare batch #2'), findsOneWidget);
       expect(find.text('Batch #2'), findsOneWidget);
-      expect(find.text('Retry broadcast'), findsNothing);
+      expect(find.text('Submit scheduled transaction'), findsNothing);
     },
   );
 
-  testWidgets('prepares a due software proof batch without waiting for a tap', (
+  testWidgets('advances a due proof batch only when its button is tapped', (
     tester,
   ) async {
     _seenPreparationComplete();
     _useMobileViewport(tester, size: const Size(320, 568));
     final coordinator = _AutomaticActionTestMigrationCoordinator();
+    final syncNotifier = FakeSyncNotifier(_heightSyncState(3_000_000));
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/private/status',
         migrationService: _migrationService(),
         migrationCoordinator: () => coordinator,
         status: _dueProofBatchStatus(),
-        syncState: _heightSyncState(3_000_000),
+        syncNotifier: syncNotifier,
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(coordinator.retryCount, 1);
-    // The automatic path has to carry the observed status, exactly like the
-    // button, or the coordinator cannot tell this is a child-proof advance.
-    expect(coordinator.retriedStatuses.single, isNotNull);
+    // A batch that is already due on arrival is an invitation, not a trigger:
+    // the notification called the user here to approve this step themselves.
     expect(find.text('Prepare batch #1'), findsOneWidget);
-  });
+    expect(coordinator.retryCount, 0);
 
-  testWidgets('prepares a batch that becomes due while the screen is shown', (
-    tester,
-  ) async {
-    _seenPreparationComplete();
-    _useMobileViewport(tester, size: const Size(320, 568));
-    final coordinator = _AutomaticActionTestMigrationCoordinator();
-    var due = false;
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(),
-        migrationCoordinator: () => coordinator,
-        status: _dueProofBatchStatus(),
-        ctaBuilder: () => IronwoodHomeMigrationCtaState.resume(
-          network: 'main',
-          accountUuid: 'account-1',
-          status: _dueProofBatchStatus(
-            nextActionHeight: due ? 3_000_000 : 3_000_100,
-          ),
-        ),
-        syncState: _heightSyncState(3_000_000),
-      ),
-    );
+    // Neither a refreshed status nor chain progress may start it either.
+    coordinator.republishStatus();
+    await tester.pumpAndSettle();
+    syncNotifier.emit(_heightSyncState(3_000_010));
     await tester.pumpAndSettle();
 
     expect(coordinator.retryCount, 0);
 
-    due = true;
-    coordinator.republishStatus();
+    await tester.tap(find.text('Prepare batch #1'));
     await tester.pumpAndSettle();
 
     expect(coordinator.retryCount, 1);
+    // The tap has to carry the observed status or the coordinator cannot tell
+    // this is a child-proof advance.
+    expect(coordinator.retriedStatuses.single, isNotNull);
   });
 
   testWidgets('never starts Keystone signing for the user', (tester) async {
@@ -5105,32 +5075,6 @@ void main() {
     expect(find.text('keystone batch sign route'), findsNothing);
   });
 
-  testWidgets('prepares a due Keystone proof batch once signatures exist', (
-    tester,
-  ) async {
-    _seenPreparationComplete();
-    _useMobileViewport(tester, size: const Size(320, 568));
-    final coordinator = _AutomaticActionTestMigrationCoordinator();
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(),
-        migrationCoordinator: () => coordinator,
-        status: _status(
-          phase: kIronwoodMigrationReadyToMigratePhase,
-          signedChildPcztCount: 1,
-          nextActionHeight: 3_000_000,
-        ),
-        hardware: true,
-        syncState: _heightSyncState(3_000_000),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(coordinator.retryCount, 1);
-    expect(find.text('keystone batch sign route'), findsNothing);
-  });
-
   testWidgets('leaves a recorded migration failure to the user', (
     tester,
   ) async {
@@ -5152,61 +5096,6 @@ void main() {
 
     expect(coordinator.retryCount, 0);
     expect(find.text('Retry'), findsOneWidget);
-  });
-
-  testWidgets('attempts one automatic advance per due target', (tester) async {
-    _seenPreparationComplete();
-    _useMobileViewport(tester, size: const Size(320, 568));
-    final coordinator = _AutomaticActionTestMigrationCoordinator();
-    final syncNotifier = FakeSyncNotifier(_heightSyncState(3_000_000));
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(),
-        migrationCoordinator: () => coordinator,
-        status: _dueProofBatchStatus(),
-        syncNotifier: syncNotifier,
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(coordinator.retryCount, 1);
-
-    // The same due batch republished, and a chain tip that moves without
-    // changing which batch is due, must not queue a second advance.
-    coordinator.republishStatus();
-    await tester.pumpAndSettle();
-    syncNotifier.emit(_heightSyncState(3_000_010));
-    await tester.pumpAndSettle();
-
-    expect(coordinator.retryCount, 1);
-  });
-
-  testWidgets('retries the same due target once its cooldown passes', (
-    tester,
-  ) async {
-    _seenPreparationComplete();
-    _useMobileViewport(tester, size: const Size(320, 568));
-    final coordinator = _AutomaticActionTestMigrationCoordinator();
-    await tester.pumpWidget(
-      _productionApp(
-        initialLocation: '/migration/private/status',
-        migrationService: _migrationService(),
-        migrationCoordinator: () => coordinator,
-        status: _dueProofBatchStatus(),
-        syncState: _heightSyncState(3_000_000),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(coordinator.retryCount, 1);
-
-    // A recovery that ends in "waiting" leaves the status unchanged, so the
-    // only path back to this target is the attempt guard expiring.
-    await tester.pump(const Duration(seconds: 61));
-    await tester.pumpAndSettle();
-
-    expect(coordinator.retryCount, 2);
   });
 
   testWidgets('offers Keystone signing when recovery needs a signature', (
@@ -5398,7 +5287,11 @@ void main() {
     await tester.pumpWidget(
       _productionApp(
         initialLocation: '/migration/private/status',
-        migrationService: _migrationService(),
+        // `ios: true` is what makes this an unauthorized-notifications case
+        // rather than a device with no background preparation lane at all. The
+        // two produce different copy, and only the platform flag separates
+        // them.
+        migrationService: _migrationService(ios: true),
         // The automatic resume runs but grants no permit here, so the manual
         // affordance and its cause copy stay on screen.
         migrationCoordinator: _DurablePhaseRetryTestMigrationCoordinator.new,
@@ -6147,6 +6040,50 @@ void main() {
     },
   );
 
+  testWidgets('names the device limit instead of asking for notifications when '
+      'background preparation tracking is unavailable', (tester) async {
+    _useMobileViewport(tester);
+    final coordinator = _DurablePhaseRetryTestMigrationCoordinator();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.denied,
+          supportsBackgroundPreparationTracking: () async => false,
+        ),
+        // The automatic resume runs but grants no permit here, so the paused
+        // surface and its cause copy stay on screen.
+        migrationCoordinator: () => coordinator,
+        status: _status(
+          phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'This device can\u2019t confirm in the background. Keep Vizor open.',
+      ),
+      findsOneWidget,
+    );
+    // Granting notifications cannot enable a lane this OS build lacks, so the
+    // notification ask must not appear.
+    expect(
+      find.text(
+        'Allow notifications to continue in the background, or keep '
+        'Vizor open.',
+      ),
+      findsNothing,
+    );
+    expect(
+      find.text('Confirming in the background. You can close Vizor.'),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'waits for preparation runtime inspection before choosing resume state',
     (tester) async {
@@ -6788,6 +6725,73 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('~3,'), findsNothing);
+  });
+
+  testWidgets('separates a merely due scheduled part from an overdue one', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final status = _status(
+      phase: kIronwoodMigrationBroadcastScheduledPhase,
+      targetValues: const [200_000_000, 400_000_000],
+      parts: [
+        // Its block has passed but the late grace window has not: the part is
+        // waiting to be submitted, which is not a failure.
+        rust_sync.MigrationPartStatus(
+          partIndex: 0,
+          scheduleOrder: 0,
+          valueZatoshi: BigInt.from(200_000_000),
+          state: rust_sync.MigrationPartState.scheduled,
+          scheduledHeight: 3_000_000 - kIronwoodMigrationLateGraceBlocks + 1,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+        // Past the same grace window the status screen uses, so the schedule
+        // must not keep calling it due.
+        rust_sync.MigrationPartStatus(
+          partIndex: 1,
+          scheduleOrder: 1,
+          valueZatoshi: BigInt.from(400_000_000),
+          state: rust_sync.MigrationPartState.scheduled,
+          scheduledHeight: 3_000_000 - kIronwoodMigrationLateGraceBlocks,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/schedule',
+        migrationService: _migrationService(),
+        status: status,
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_migration_schedule_part_0'),
+        ),
+        matching: find.text('Due now'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('mobile_ironwood_migration_schedule_part_1'),
+        ),
+        matching: find.text('Overdue'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('opens the preparation transaction schedule from preparation', (
@@ -7747,6 +7751,64 @@ void main() {
         initialLocation: '/migration/private/status',
         migrationService: _migrationService(),
         status: _status(phase: kIronwoodMigrationWaitingConfirmationsPhase),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Ironwood Migration'), findsOneWidget);
+
+    await _simulateSystemBack(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+  });
+
+  testWidgets('the migration status chevron leaves mid-advance', (
+    tester,
+  ) async {
+    // The coordinator owns the advance and keeps running it off-screen, so
+    // "preparing batch #n" is no reason to hold the user on this surface.
+    _seenPreparationComplete();
+    _useMobileViewport(tester);
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        migrationCoordinator: _AdvancingTestMigrationCoordinator.new,
+        status: _status(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          nextActionHeight: 3_000_020,
+        ),
+        syncState: _heightSyncState(3_000_000),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Ironwood Migration'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('home route'), findsOneWidget);
+    // The end-of-test verification runs before tear-downs, so release the
+    // handle here rather than through `addTearDown`.
+    semantics.dispose();
+  });
+
+  testWidgets('system back leaves the migration status mid-advance', (
+    tester,
+  ) async {
+    _seenPreparationComplete();
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(),
+        migrationCoordinator: _AdvancingTestMigrationCoordinator.new,
+        status: _status(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          nextActionHeight: 3_000_020,
+        ),
+        syncState: _heightSyncState(3_000_000),
       ),
     );
     await tester.pumpAndSettle();

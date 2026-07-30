@@ -624,12 +624,18 @@ const _migrationPreparationBackgroundTrackingMessage =
     'Confirming in the background. You can close Vizor.';
 const _migrationPreparationNotificationsDisabledMessage =
     'Allow notifications to continue in the background, or keep Vizor open.';
+// Deliberately distinct from the message above: this device has no background
+// preparation lane at all, so telling the user to allow notifications would
+// promise something granting them cannot deliver.
+const _migrationPreparationBackgroundUnsupportedMessage =
+    'This device can\u2019t confirm in the background. Keep Vizor open.';
 
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
     this.isKeystone = false,
     this.pausedMessage,
+    this.deviceLimitMessage,
     this.onBack,
     this.onContinue,
     this.onViewSchedule,
@@ -638,6 +644,12 @@ class _MigrationPreparationPreview extends StatelessWidget {
   final _MigrationPreparationState state;
   final bool isKeystone;
   final String? pausedMessage;
+
+  /// Set when this device cannot track preparation while Vizor is closed.
+  ///
+  /// Outranks [pausedMessage] and the waiting default because it is the only
+  /// message naming a limit the user cannot resolve from settings.
+  final String? deviceLimitMessage;
   final VoidCallback? onBack;
   final VoidCallback? onContinue;
   final VoidCallback? onViewSchedule;
@@ -677,6 +689,7 @@ class _MigrationPreparationPreview extends StatelessWidget {
           _MigrationPreparationDial(
             state: state,
             pausedMessage: pausedMessage,
+            deviceLimitMessage: deviceLimitMessage,
             onViewSchedule: onViewSchedule,
           ),
           const SizedBox(height: AppSpacing.base),
@@ -694,11 +707,13 @@ class _MigrationPreparationDial extends StatelessWidget {
   const _MigrationPreparationDial({
     required this.state,
     this.pausedMessage,
+    this.deviceLimitMessage,
     this.onViewSchedule,
   });
 
   final _MigrationPreparationState state;
   final String? pausedMessage;
+  final String? deviceLimitMessage;
   final VoidCallback? onViewSchedule;
 
   @override
@@ -737,7 +752,8 @@ class _MigrationPreparationDial extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   paused
-                      ? pausedMessage ??
+                      ? deviceLimitMessage ??
+                            pausedMessage ??
                             'Preparation was paused because you left.'
                       : syncing
                       ? 'Syncing your wallet…'
@@ -746,7 +762,13 @@ class _MigrationPreparationDial extends StatelessWidget {
                             _migrationPreparationAdvancingMessage,
                           _MigrationPreparationState.backgroundTracking =>
                             _migrationPreparationBackgroundTrackingMessage,
-                          _ => 'Preparation will\ntake 10–20 min',
+                          // A waiting device that cannot track in the
+                          // background must say so here too: the neutral
+                          // duration copy would let the user close Vizor and
+                          // silently stall the run.
+                          _ =>
+                            deviceLimitMessage ??
+                                'Preparation will\ntake 10–20 min',
                         },
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMediumStrong.copyWith(

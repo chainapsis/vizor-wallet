@@ -21,7 +21,8 @@ const _migrationPreparationCarouselItems = [
     icon: AppIcons.wallet,
   ),
   AppCarouselItem.image(
-    message: 'We may have to do multiple rounds of note splitting depending on '
+    message:
+        'We may have to do multiple rounds of note splitting depending on '
         'your balance.',
     tileColor: _migrationCarouselCrimson,
     imageAsset: _ironwoodMigrationExpectationRunningAsset,
@@ -30,13 +31,15 @@ const _migrationPreparationCarouselItems = [
 
 final _migrationInProgressCarouselItems = [
   const AppCarouselItem.icon(
-    message: 'You can close Vizor anytime. Migration will pause, and you can '
+    message:
+        'You can close Vizor anytime. Migration will pause, and you can '
         'restart it when you return.',
     tileColor: _migrationCarouselPurple,
     icon: AppIcons.pause,
   ),
   AppCarouselItem.icon(
-    message: 'Each Zcash block takes about $_migrationEstimatedSecondsPerBlock '
+    message:
+        'Each Zcash block takes about $_migrationEstimatedSecondsPerBlock '
         'seconds to create, but timing can vary with network conditions.',
     tileColor: _migrationCarouselGreen,
     icon: AppIcons.migrationTimer,
@@ -85,14 +88,14 @@ class _MigrationStatusContent extends StatelessWidget {
         // migrate. It must not paint the transfer ring green before any
         // migration note has actually been signed and confirmed.
         : status.phase == kIronwoodMigrationReadyToMigratePhase &&
-                !migrationHasTransferProgress(status)
-            ? List<_MigrationBatchStatus>.filled(
-                values.length,
-                _MigrationBatchStatus.scheduled,
-              )
-            : parts.isNotEmpty
-                ? [for (final part in parts) _migrationBatchStatus(part.state)]
-                : _legacyMigrationBatchStatuses(status, values.length);
+              !migrationHasTransferProgress(status)
+        ? List<_MigrationBatchStatus>.filled(
+            values.length,
+            _MigrationBatchStatus.scheduled,
+          )
+        : parts.isNotEmpty
+        ? [for (final part in parts) _migrationBatchStatus(part.state)]
+        : _legacyMigrationBatchStatuses(status, values.length);
     final signingPartIndices =
         status.currentSigningPartIndices?.toSet() ?? const <int>{};
     final signingSegmentIndices = <int>[];
@@ -139,7 +142,7 @@ class _MigrationStatusContent extends StatelessWidget {
             onAction: onAction,
             waitingForAnchor:
                 status.phase == kIronwoodMigrationReadyToMigratePhase &&
-                    status.proofReady == false,
+                status.proofReady == false,
           );
     return SizedBox(
       width: 560,
@@ -352,8 +355,8 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                   stage: isPreparing
                       ? _MigrationStage.preparation
                       : isComplete
-                          ? _MigrationStage.finish
-                          : _MigrationStage.migration,
+                      ? _MigrationStage.finish
+                      : _MigrationStage.migration,
                 ),
               ),
               Positioned(
@@ -468,9 +471,8 @@ class _MigrationLiveStatusContent extends StatelessWidget {
                                   key: const ValueKey(
                                     'ironwood_migration_view_schedule_button',
                                   ),
-                                  onPressed: () => context.go(
-                                    '/migration/private/schedule',
-                                  ),
+                                  onPressed: () =>
+                                      context.go('/migration/private/schedule'),
                                   variant: AppButtonVariant.ghost,
                                   height: 28,
                                   contentPadding: const EdgeInsets.symmetric(
@@ -735,29 +737,28 @@ _PreparationRingPresentation _preparationRingPresentation(
 
 int _preparationTotalCount(rust_sync.MigrationStatus status) =>
     _preparationTransactions(status).isNotEmpty
-        ? _preparationTransactions(status).length
-        : status.denominationSplitTotalCount;
+    ? _preparationTransactions(status).length
+    : status.denominationSplitTotalCount;
 
 int _preparationCompletedCount(rust_sync.MigrationStatus status) =>
     _preparationTransactions(status).isNotEmpty
-        ? _preparationTransactions(status)
-            .where(
-              (item) =>
-                  item.state ==
-                  rust_sync.MigrationPreparationTransactionState.completed,
-            )
-            .length
-        : status.denominationSplitCompletedCount;
+    ? _preparationTransactions(status)
+          .where(
+            (item) =>
+                item.state ==
+                rust_sync.MigrationPreparationTransactionState.completed,
+          )
+          .length
+    : status.denominationSplitCompletedCount;
 
 List<rust_sync.MigrationPreparationTransactionStatus> _preparationTransactions(
   rust_sync.MigrationStatus status,
-) =>
-    status.preparationTransactions ?? const [];
+) => status.preparationTransactions ?? const [];
 
 int _preparationRemainingCount(rust_sync.MigrationStatus status) => math.max(
-      0,
-      _preparationTotalCount(status) - _preparationCompletedCount(status),
-    );
+  0,
+  _preparationTotalCount(status) - _preparationCompletedCount(status),
+);
 
 int? _overallTransactionTotalCount(rust_sync.MigrationStatus status) {
   final migrationTotal = status.totalCount;
@@ -899,8 +900,9 @@ class _MigrationSummaryMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        secondary ? context.colors.text.primary : context.colors.text.accent;
+    final color = secondary
+        ? context.colors.text.primary
+        : context.colors.text.accent;
     final style = AppTypography.labelLarge.copyWith(
       color: color,
       fontWeight: FontWeight.w400,
@@ -946,53 +948,52 @@ class _MigrationSigningBatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: context.colors.background.ground,
-          borderRadius: BorderRadius.circular(AppRadii.large),
-          border: Border.all(color: context.colors.border.subtle),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          child: Row(
-            children: [
-              const AppIcon(AppIcons.checkCircle, size: 16),
-              const SizedBox(width: 8),
-              Text(
-                'Batch #$batchNumber ($noteCount notes)',
-                style: AppTypography.labelLarge,
-              ),
-              const Spacer(),
-              Text.rich(
-                TextSpan(
-                  text: '${_formatZecAmountCompact(value)} ZEC ',
-                  style: AppTypography.labelLarge,
-                  children: [
-                    TextSpan(
-                      text: '($percentage)',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: context.colors.text.secondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+    decoration: BoxDecoration(
+      color: context.colors.background.ground,
+      borderRadius: BorderRadius.circular(AppRadii.large),
+      border: Border.all(color: context.colors.border.subtle),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Row(
+        children: [
+          const AppIcon(AppIcons.checkCircle, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            'Batch #$batchNumber ($noteCount notes)',
+            style: AppTypography.labelLarge,
           ),
-        ),
-      );
+          const Spacer(),
+          Text.rich(
+            TextSpan(
+              text: '${_formatZecAmountCompact(value)} ZEC ',
+              style: AppTypography.labelLarge,
+              children: [
+                TextSpan(
+                  text: '($percentage)',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: context.colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 BigInt _migrationCompletedAmount(
   List<BigInt> values,
   List<_MigrationBatchStatus> statuses,
-) =>
-    values.indexed.fold<BigInt>(BigInt.zero, (sum, entry) {
-      final (index, value) = entry;
-      return index < statuses.length &&
-              statuses[index] == _MigrationBatchStatus.complete
-          ? sum + value
-          : sum;
-    });
+) => values.indexed.fold<BigInt>(BigInt.zero, (sum, entry) {
+  final (index, value) = entry;
+  return index < statuses.length &&
+          statuses[index] == _MigrationBatchStatus.complete
+      ? sum + value
+      : sum;
+});
 
 bool _shouldShowPreparingStatusContent(
   rust_sync.MigrationStatus status,
@@ -1231,7 +1232,8 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
   }
 
   void _syncMotionController() {
-    final shouldRun = !_reduceMotion &&
+    final shouldRun =
+        !_reduceMotion &&
         !widget.preparing &&
         (_segmentsNeedMotion(_morphFrom) || _segmentsNeedMotion(_morphTo));
     if (shouldRun) {
@@ -1397,15 +1399,14 @@ class _MigrationMorphingRingState extends State<_MigrationMorphingRing>
 
   List<_MigrationRingVisualSegment> _preparationSegments(
     List<double> weights,
-  ) =>
-      [
-        for (final weight in weights)
-          _MigrationRingVisualSegment(
-            weight: weight,
-            color: widget.preparationColor,
-            highlightColor: widget.preparationColor,
-          ),
-      ];
+  ) => [
+    for (final weight in weights)
+      _MigrationRingVisualSegment(
+        weight: weight,
+        color: widget.preparationColor,
+        highlightColor: widget.preparationColor,
+      ),
+  ];
 }
 
 class _MigrationPreparationAnimatedRingPainter extends CustomPainter {
@@ -1428,7 +1429,8 @@ class _MigrationPreparationAnimatedRingPainter extends CustomPainter {
     return [
       for (var index = 0; index < fromWeights.length; index++)
         _MigrationRingVisualSegment(
-          weight: fromWeights[index] +
+          weight:
+              fromWeights[index] +
               ((toWeights[index] - fromWeights[index]) * eased),
           color: color,
           highlightColor: color,
@@ -1459,14 +1461,14 @@ class _MigrationPreparationAnimatedRingPainter extends CustomPainter {
 typedef _MigrationRingPalette = ({
   Color scheduled,
   Color needsInput,
-  Color complete
+  Color complete,
 });
 
 _MigrationRingPalette _migrationRingPalette(AppColors colors) => (
-      scheduled: colors.text.positiveStrong.withValues(alpha: 0.20),
-      needsInput: colors.background.inverse,
-      complete: const Color(0xFF00C875),
-    );
+  scheduled: colors.text.positiveStrong.withValues(alpha: 0.20),
+  needsInput: colors.background.inverse,
+  complete: const Color(0xFF00C875),
+);
 
 enum _MigrationRingMotion { none, shimmer, blink }
 
@@ -1579,35 +1581,35 @@ _MigrationRingVisualSegment _migrationRingStatusSegment({
 }) {
   final (color, highlightColor, motion) = switch (status) {
     _MigrationBatchStatus.none => (
-        const Color(0xFF3F4040),
-        const Color(0xFF3F4040),
-        _MigrationRingMotion.none,
-      ),
+      const Color(0xFF3F4040),
+      const Color(0xFF3F4040),
+      _MigrationRingMotion.none,
+    ),
     _MigrationBatchStatus.preparing => (
-        palette.scheduled,
-        palette.scheduled,
-        _MigrationRingMotion.none,
-      ),
+      palette.scheduled,
+      palette.scheduled,
+      _MigrationRingMotion.none,
+    ),
     _MigrationBatchStatus.scheduled => (
-        palette.scheduled,
-        palette.scheduled,
-        _MigrationRingMotion.none,
-      ),
+      palette.scheduled,
+      palette.scheduled,
+      _MigrationRingMotion.none,
+    ),
     _MigrationBatchStatus.migrating || _MigrationBatchStatus.confirming => (
-        palette.scheduled,
-        palette.complete,
-        _MigrationRingMotion.shimmer,
-      ),
+      palette.scheduled,
+      palette.complete,
+      _MigrationRingMotion.shimmer,
+    ),
     _MigrationBatchStatus.complete => (
-        palette.complete,
-        palette.complete,
-        _MigrationRingMotion.none,
-      ),
+      palette.complete,
+      palette.complete,
+      _MigrationRingMotion.none,
+    ),
     _MigrationBatchStatus.needsInput => (
-        palette.needsInput,
-        palette.needsInput,
-        _MigrationRingMotion.blink,
-      ),
+      palette.needsInput,
+      palette.needsInput,
+      _MigrationRingMotion.blink,
+    ),
   };
   return _MigrationRingVisualSegment(
     weight: weight,
@@ -1660,8 +1662,8 @@ _MigrationRingVisualSegment _interpolateVisualSegment(
   final motion = from.motion == to.motion
       ? from.motion
       : to.motion != _MigrationRingMotion.none
-          ? to.motion
-          : from.motion;
+      ? to.motion
+      : from.motion;
   return _MigrationRingVisualSegment(
     weight: from.weight + (to.weight - from.weight) * t,
     color: Color.lerp(from.color, to.color, t)!,
@@ -1906,17 +1908,14 @@ class _MigrationPreparationRingPainter extends CustomPainter {
 
 _MigrationBatchStatus _migrationBatchStatus(
   rust_sync.MigrationPartState state,
-) =>
-    switch (state) {
-      rust_sync.MigrationPartState.preparing => _MigrationBatchStatus.preparing,
-      rust_sync.MigrationPartState.scheduled => _MigrationBatchStatus.scheduled,
-      rust_sync.MigrationPartState.migrating => _MigrationBatchStatus.migrating,
-      rust_sync.MigrationPartState.confirming =>
-        _MigrationBatchStatus.confirming,
-      rust_sync.MigrationPartState.completed => _MigrationBatchStatus.complete,
-      rust_sync.MigrationPartState.needsInput =>
-        _MigrationBatchStatus.needsInput,
-    };
+) => switch (state) {
+  rust_sync.MigrationPartState.preparing => _MigrationBatchStatus.preparing,
+  rust_sync.MigrationPartState.scheduled => _MigrationBatchStatus.scheduled,
+  rust_sync.MigrationPartState.migrating => _MigrationBatchStatus.migrating,
+  rust_sync.MigrationPartState.confirming => _MigrationBatchStatus.confirming,
+  rust_sync.MigrationPartState.completed => _MigrationBatchStatus.complete,
+  rust_sync.MigrationPartState.needsInput => _MigrationBatchStatus.needsInput,
+};
 
 List<_MigrationBatchStatus> _legacyMigrationBatchStatuses(
   rust_sync.MigrationStatus status,
@@ -1929,7 +1928,8 @@ List<_MigrationBatchStatus> _legacyMigrationBatchStatuses(
     );
   }
 
-  final hasBroadcastSchedule = status.scheduledBroadcasts.isNotEmpty ||
+  final hasBroadcastSchedule =
+      status.scheduledBroadcasts.isNotEmpty ||
       status.phase == kIronwoodMigrationBroadcastScheduledPhase ||
       status.phase == kIronwoodMigrationBroadcastingPhase ||
       status.phase == kIronwoodMigrationWaitingConfirmationsPhase;

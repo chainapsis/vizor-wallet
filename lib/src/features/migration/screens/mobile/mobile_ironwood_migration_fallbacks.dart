@@ -73,9 +73,9 @@ String _compactZec(BigInt zatoshi) {
 }
 
 String _migrationDisplayZec(BigInt zatoshi) {
-  final amount = ZecAmount.fromZatoshi(zatoshi)
-      .compactBalancePretty(minFractionDigits: 0, maxFractionDigits: 4)
-      .amountText;
+  final amount = ZecAmount.fromZatoshi(
+    zatoshi,
+  ).compactBalancePretty(minFractionDigits: 0, maxFractionDigits: 4).amountText;
   final separator = amount.indexOf('.');
   final whole = separator < 0 ? amount : amount.substring(0, separator);
   final fraction = separator < 0 ? '' : amount.substring(separator);

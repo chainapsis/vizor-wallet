@@ -46,9 +46,7 @@ class _MobileIronwoodWaitingStatusCard extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: SizedBox(
-                  key: const ValueKey(
-                    'mobile_ironwood_waiting_step_connector',
-                  ),
+                  key: const ValueKey('mobile_ironwood_waiting_step_connector'),
                   width: 24,
                   height: 34,
                   child: Center(

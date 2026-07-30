@@ -967,14 +967,34 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
     rust_sync.MigrationPartState.scheduled => (
       scheduledHeight == null
           ? (estimatedLabel ?? 'Schedule pending')
-          : scheduledHeight <= currentHeight
-          ? 'Due now'
-          : formatGroupedInteger(scheduledHeight),
+          : scheduledInFuture
+          ? formatGroupedInteger(scheduledHeight)
+          : _migrationScheduledPartIsOverdue(
+              scheduledHeight,
+              currentHeight: currentHeight,
+            )
+          ? 'Overdue'
+          : 'Due now',
       scheduledInFuture || showEstimateIcon ? AppIcons.block : null,
       scheduledInFuture || showEstimateIcon ? 16 : 0,
       context.colors.text.secondary,
     ),
   };
+}
+
+/// Whether a scheduled part has fallen past its late window.
+///
+/// Passing the scheduled block is not a failure — the part is simply not
+/// submitted yet — so the schedule keeps reading `Due now` for the whole grace
+/// window. Only past [kIronwoodMigrationLateGraceBlocks] does the status screen
+/// treat the same part as needing the user, and this row must not disagree with
+/// it, so both read lateness off that one constant.
+bool _migrationScheduledPartIsOverdue(
+  int scheduledHeight, {
+  required int currentHeight,
+}) {
+  if (currentHeight <= 0 || scheduledHeight <= 0) return false;
+  return currentHeight >= scheduledHeight + kIronwoodMigrationLateGraceBlocks;
 }
 
 List<(int, List<rust_sync.MigrationPreparationTransactionStatus>)>

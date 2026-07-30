@@ -25,11 +25,10 @@ class MobileIronwoodMigrationPartPresentation {
 
 List<rust_sync.MigrationPartStatus> _orderedMobileMigrationParts(
   Iterable<rust_sync.MigrationPartStatus> parts,
-) =>
-    orderedMigrationParts(parts);
+) => orderedMigrationParts(parts);
 
 List<MobileIronwoodMigrationPartPresentation>
-    _mobileMigrationPartPresentations({
+_mobileMigrationPartPresentations({
   required rust_sync.MigrationStatus? status,
   required rust_sync.OrchardMigrationPrivatePlan? previewPlan,
   required List<MobileIronwoodMigrationPartPresentation>? explicitParts,
@@ -50,7 +49,8 @@ List<MobileIronwoodMigrationPartPresentation>
     final orderedParts = _orderedMobileMigrationParts(statusParts);
     return List.generate(orderedParts.length, (displayIndex) {
       final part = orderedParts[displayIndex];
-      final needsAttention = part.txidHex != null &&
+      final needsAttention =
+          part.txidHex != null &&
           lateScheduledTxids.contains(part.txidHex!.toLowerCase());
       return MobileIronwoodMigrationPartPresentation(
         label: 'Part ${displayIndex + 1}',
@@ -84,8 +84,7 @@ List<MobileIronwoodMigrationPartPresentation>
             'needs_input' => MobileIronwoodMigrationPartStatus.needsInput,
             'broadcasted' ||
             'submitted' ||
-            'mined' =>
-              MobileIronwoodMigrationPartStatus.active,
+            'mined' => MobileIronwoodMigrationPartStatus.active,
             _ => MobileIronwoodMigrationPartStatus.pending,
           },
           detail: '${_compactZec(broadcasts[index].valueZatoshi)} ZEC',
@@ -95,14 +94,14 @@ List<MobileIronwoodMigrationPartPresentation>
             'broadcasted' ||
             'submitted' ||
             'mined' ||
-            'needs_input' =>
-              null,
-            _ => currentHeight == null || currentHeight <= 0
-                ? 'Queued'
-                : migrationHeightRemainingDurationLabel(
-                    broadcasts[index].scheduledHeight,
-                    currentHeight: currentHeight,
-                  ),
+            'needs_input' => null,
+            _ =>
+              currentHeight == null || currentHeight <= 0
+                  ? 'Queued'
+                  : migrationHeightRemainingDurationLabel(
+                      broadcasts[index].scheduledHeight,
+                      currentHeight: currentHeight,
+                    ),
           },
         ),
     ];
@@ -125,16 +124,13 @@ List<MobileIronwoodMigrationPartPresentation>
           status: index < confirmedCount
               ? MobileIronwoodMigrationPartStatus.complete
               : index < activeCount
-                  ? MobileIronwoodMigrationPartStatus.active
-                  : MobileIronwoodMigrationPartStatus.pending,
+              ? MobileIronwoodMigrationPartStatus.active
+              : MobileIronwoodMigrationPartStatus.pending,
           detail: '${_compactZec(targetValues[index])} ZEC',
           valueZatoshi: targetValues[index],
           eta: index == status.nextActionPartIndex
               ? _mobileWaitingLabel(status, currentHeight: currentHeight)
-              : _mobilePlannedPartDurationLabel(
-                  previewPlan,
-                  partIndex: index,
-                ),
+              : _mobilePlannedPartDurationLabel(previewPlan, partIndex: index),
         ),
     ];
   }
@@ -155,24 +151,23 @@ List<MobileIronwoodMigrationPartPresentation>
 MobileIronwoodMigrationPartStatus _mobileMigrationPartStatus(
   rust_sync.MigrationPartStatus part, {
   bool needsAttention = false,
-}) =>
-    needsAttention
-        ? MobileIronwoodMigrationPartStatus.needsInput
-        : switch (part.state) {
-            rust_sync.MigrationPartState.completed =>
-              MobileIronwoodMigrationPartStatus.complete,
-            rust_sync.MigrationPartState.needsInput =>
-              MobileIronwoodMigrationPartStatus.needsInput,
-            rust_sync.MigrationPartState.scheduled =>
-              MobileIronwoodMigrationPartStatus.pending,
-            rust_sync.MigrationPartState.preparing
-                when part.scheduledHeight != null =>
-              MobileIronwoodMigrationPartStatus.pending,
-            rust_sync.MigrationPartState.preparing ||
-            rust_sync.MigrationPartState.migrating ||
-            rust_sync.MigrationPartState.confirming =>
-              MobileIronwoodMigrationPartStatus.active,
-          };
+}) => needsAttention
+    ? MobileIronwoodMigrationPartStatus.needsInput
+    : switch (part.state) {
+        rust_sync.MigrationPartState.completed =>
+          MobileIronwoodMigrationPartStatus.complete,
+        rust_sync.MigrationPartState.needsInput =>
+          MobileIronwoodMigrationPartStatus.needsInput,
+        rust_sync.MigrationPartState.scheduled =>
+          MobileIronwoodMigrationPartStatus.pending,
+        rust_sync.MigrationPartState.preparing
+            when part.scheduledHeight != null =>
+          MobileIronwoodMigrationPartStatus.pending,
+        rust_sync.MigrationPartState.preparing ||
+        rust_sync.MigrationPartState.migrating ||
+        rust_sync.MigrationPartState.confirming =>
+          MobileIronwoodMigrationPartStatus.active,
+      };
 
 Set<String> _mobileLateScheduledTxids(
   rust_sync.MigrationStatus status, {
@@ -219,10 +214,10 @@ String? _mobileMigrationPartDetail(
   }
   return switch (part.state) {
     rust_sync.MigrationPartState.scheduled => _mobileScheduledPartLabel(
-        part,
-        status: status,
-        currentHeight: currentHeight,
-      ),
+      part,
+      status: status,
+      currentHeight: currentHeight,
+    ),
     rust_sync.MigrationPartState.migrating => 'Migrating...',
     rust_sync.MigrationPartState.needsInput => null,
     _ => null,
@@ -251,11 +246,11 @@ String _mobileWaitingLabel(
   final nextHeight = status.nextActionHeight;
   final timing =
       nextHeight == null || currentHeight == null || currentHeight <= 0
-          ? null
-          : migrationHeightRemainingDurationLabel(
-              nextHeight,
-              currentHeight: currentHeight,
-            );
+      ? null
+      : migrationHeightRemainingDurationLabel(
+          nextHeight,
+          currentHeight: currentHeight,
+        );
   if (timing != null &&
       status.signedChildPcztCount > 0 &&
       status.pendingTxCount == 0) {
