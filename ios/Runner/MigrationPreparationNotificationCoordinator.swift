@@ -198,6 +198,13 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
   private let defaults: UserDefaults
   private var state: MigrationPreparationNotificationBatchState
   private var submissionGeneration: UInt64 = 0
+  /// Callers waiting on the summary that currently carries their events.
+  ///
+  /// A replacement submission absorbs the events of the one it supersedes, so
+  /// whichever submission is current answers everyone. Letting a superseded
+  /// callback report its own failure would tell a caller its alert never
+  /// registered while the replacement was delivering it.
+  private var pendingSubmissionCompletions: [(Bool) -> Void] = []
 
   init(
     center: MigrationPreparationNotificationCenter =
@@ -283,6 +290,9 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
           withIdentifiers: [Self.summaryIdentifier]
         )
         self.removeDeliveredSummary()
+        // Nothing is left to announce, so a caller still waiting on this
+        // summary got what it needed rather than losing its alert.
+        self.flushSubmissionCompletions(true)
         return
       }
       self.center.getPendingNotificationRequests { requests in
@@ -323,6 +333,9 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
           withIdentifiers: [Self.summaryIdentifier]
         )
         self.removeDeliveredSummary()
+        // Nothing is left to announce, so a caller still waiting on this
+        // summary got what it needed rather than losing its alert.
+        self.flushSubmissionCompletions(true)
         return
       }
       // Retention shrank the batch but left scopes behind. The request already
@@ -370,6 +383,9 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
         withIdentifiers: [Self.summaryIdentifier]
       )
       self.removeDeliveredSummary()
+      // Suppression means the app is already in front of the user, so the
+      // events it stands in for are accounted for.
+      self.flushSubmissionCompletions(true)
     }
   }
 
@@ -378,6 +394,9 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
       self.submissionGeneration &+= 1
       self.state.reset()
       self.persistState()
+      // A teardown drops the alert outright; report that plainly so the caller
+      // keeps its own recovery boundary.
+      self.flushSubmissionCompletions(false)
       self.center.removePendingNotificationRequests(
         withIdentifiers: [Self.summaryIdentifier]
       )
@@ -399,6 +418,7 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
     state.batchDeadline = deadline
     submissionGeneration &+= 1
     let generation = submissionGeneration
+    pendingSubmissionCompletions.append(completion)
     let content = UNMutableNotificationContent()
     content.title = summary.title
     content.body = summary.body
@@ -418,15 +438,26 @@ final class MigrationPreparationNotificationCoordinator: @unchecked Sendable {
     center.add(request) { error in
       self.queue.async {
         guard generation == self.submissionGeneration else {
-          completion(false)
+          // Superseded. The replacement submission owns every waiter now,
+          // including this caller, and reports the outcome that actually
+          // reached the notification center.
           return
         }
         if error == nil {
           self.state.markAccepted(summary.events)
           self.persistState()
         }
-        completion(error == nil)
+        self.flushSubmissionCompletions(error == nil)
       }
+    }
+  }
+
+  /// Answers every caller waiting on the current summary.
+  private func flushSubmissionCompletions(_ submitted: Bool) {
+    let completions = pendingSubmissionCompletions
+    pendingSubmissionCompletions.removeAll()
+    for completion in completions {
+      completion(submitted)
     }
   }
 
