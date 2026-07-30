@@ -7,6 +7,30 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('throttles a failed reconciliation attempt', () async {
+    var now = DateTime(2026, 7, 30);
+    final throttle = MigrationReconciliationAttemptThrottle(
+      interval: const Duration(seconds: 30),
+      now: () => now,
+    );
+
+    expect(throttle.shouldAttempt('account-1', 'progress-1'), isTrue);
+    await expectLater(
+      throttle.run<void>(
+        'account-1',
+        'progress-1',
+        () async => throw StateError('lightwalletd unavailable'),
+      ),
+      throwsStateError,
+    );
+
+    expect(throttle.shouldAttempt('account-1', 'progress-1'), isFalse);
+    expect(throttle.shouldAttempt('account-1', 'progress-2'), isTrue);
+
+    now = now.add(const Duration(seconds: 30));
+    expect(throttle.shouldAttempt('account-1', 'progress-1'), isTrue);
+  });
+
   test('coalesces reconciliation and waits for an account advance', () async {
     final gate = MigrationReconciliationOperationGate();
     final releaseAdvance = Completer<void>();

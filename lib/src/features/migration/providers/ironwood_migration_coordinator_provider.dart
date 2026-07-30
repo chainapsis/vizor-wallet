@@ -200,6 +200,51 @@ class MigrationReconciliationOperationGate {
   }
 }
 
+/// Throttles repeated automatic reconciliation attempts for unchanged
+/// migration progress, including attempts that fail.
+class MigrationReconciliationAttemptThrottle {
+  MigrationReconciliationAttemptThrottle({
+    this.interval = _migrationAdvanceInterval,
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
+
+  final Duration interval;
+  final DateTime Function() _now;
+  final Map<String, DateTime> _lastAttemptAt = {};
+  final Map<String, String> _lastProgressKeys = {};
+
+  bool get hasState =>
+      _lastAttemptAt.isNotEmpty || _lastProgressKeys.isNotEmpty;
+
+  bool shouldAttempt(String accountUuid, String progressKey) {
+    if (_lastProgressKeys[accountUuid] != progressKey) return true;
+    final lastAttempt = _lastAttemptAt[accountUuid];
+    return lastAttempt == null || _now().difference(lastAttempt) >= interval;
+  }
+
+  Future<T> run<T>(
+    String accountUuid,
+    String progressKey,
+    Future<T> Function() operation,
+  ) {
+    // Record before invoking the operation so transient failures are throttled
+    // just like successful no-op reconciliation attempts.
+    _lastAttemptAt[accountUuid] = _now();
+    _lastProgressKeys[accountUuid] = progressKey;
+    return operation();
+  }
+
+  void clearAccount(String accountUuid) {
+    _lastAttemptAt.remove(accountUuid);
+    _lastProgressKeys.remove(accountUuid);
+  }
+
+  void clear() {
+    _lastAttemptAt.clear();
+    _lastProgressKeys.clear();
+  }
+}
+
 class IronwoodMigrationCoordinatorState {
   const IronwoodMigrationCoordinatorState({
     this.statuses = const {},
@@ -254,13 +299,12 @@ class IronwoodMigrationCoordinator
   bool _hasObservedInitialAccountList = false;
   Future<void>? _backgroundPreparationRecovery;
   final Map<String, DateTime> _lastAdvanceAt = {};
-  final Map<String, DateTime> _lastReconciliationAt = {};
-  final Map<String, String> _lastReconciliationProgressKeys = {};
   final Map<String, ({String progressKey, DateTime retryAt})>
   _outboxRecoveryWindows = {};
   final Map<String, String> _lastAdvanceProgressKeys = {};
   final Map<String, Future<void>> _advanceOperations = {};
   final _reconciliationGate = MigrationReconciliationOperationGate();
+  final _reconciliationThrottle = MigrationReconciliationAttemptThrottle();
 
   @override
   IronwoodMigrationCoordinatorState build() {
@@ -704,10 +748,11 @@ class IronwoodMigrationCoordinator
           status,
           accountUuid: account.uuid,
         )) {
-          await _reconcileDesktopMigration(account.uuid);
-          _lastReconciliationAt[account.uuid] = DateTime.now();
-          _lastReconciliationProgressKeys[account.uuid] =
-              _reconciliationProgressKey(status);
+          await _reconciliationThrottle.run(
+            account.uuid,
+            _reconciliationProgressKey(status),
+            () => _reconcileDesktopMigration(account.uuid),
+          );
           if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           status = await service.status(
             network: endpoint.networkName,
@@ -811,16 +856,14 @@ class IronwoodMigrationCoordinator
         state.foregroundProgressPermits.isNotEmpty ||
         state.childProofBatchPermits.isNotEmpty ||
         _lastAdvanceAt.isNotEmpty ||
-        _lastReconciliationAt.isNotEmpty ||
-        _lastReconciliationProgressKeys.isNotEmpty ||
+        _reconciliationThrottle.hasState ||
         _outboxRecoveryWindows.isNotEmpty ||
         _lastAdvanceProgressKeys.isNotEmpty;
     if (!hadWalletState) return;
 
     _hasObservedInitialAccountList = false;
     _lastAdvanceAt.clear();
-    _lastReconciliationAt.clear();
-    _lastReconciliationProgressKeys.clear();
+    _reconciliationThrottle.clear();
     _outboxRecoveryWindows.clear();
     _lastAdvanceProgressKeys.clear();
     _desktopOpenFallbackGate.leaveForeground();
@@ -898,17 +941,11 @@ class IronwoodMigrationCoordinator
   }) {
     if (kAppFormFactor != AppFormFactor.desktop ||
         !_hasDueRecoverableBroadcast(status)) {
-      _lastReconciliationAt.remove(accountUuid);
-      _lastReconciliationProgressKeys.remove(accountUuid);
+      _reconciliationThrottle.clearAccount(accountUuid);
       return false;
     }
     final progressKey = _reconciliationProgressKey(status);
-    if (_lastReconciliationProgressKeys[accountUuid] != progressKey) {
-      return true;
-    }
-    final lastAttempt = _lastReconciliationAt[accountUuid];
-    return lastAttempt == null ||
-        DateTime.now().difference(lastAttempt) >= _migrationAdvanceInterval;
+    return _reconciliationThrottle.shouldAttempt(accountUuid, progressKey);
   }
 
   Future<void> _reconcileDesktopMigration(String accountUuid) {
