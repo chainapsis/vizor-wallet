@@ -2802,6 +2802,82 @@ void main() {
     expect(seenSalts[1], seenSalts[0]);
   });
 
+  test(
+    'continuation switches sync hosts and retries a submission collision once',
+    () async {
+      const collidingEndpoint = RpcEndpointConfig(
+        networkName: 'test',
+        lightwalletdUrl: 'https://submission.example:443',
+      );
+      const distinctEndpoint = RpcEndpointConfig(
+        networkName: 'test',
+        lightwalletdUrl: 'https://sync.example:443',
+      );
+      var currentEndpoint = collidingEndpoint;
+      var switchCount = 0;
+      final broadcastEndpoints = <String>[];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(activeRunId: 'run-1'),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: () => currentEndpoint,
+        switchToDistinctSyncEndpoint:
+            ({required attemptedEndpoint, required reason}) async {
+              expect(attemptedEndpoint, same(collidingEndpoint));
+              expect(
+                reason.toString(),
+                contains(
+                  'Transaction submission lightwalletd must not use the sync host',
+                ),
+              );
+              switchCount++;
+              currentEndpoint = distinctEndpoint;
+              return true;
+            },
+        getSessionPassword: () => 'test-password',
+        isHardwareAccount: (_) => true,
+        broadcastDueMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              broadcastEndpoints.add(lightwalletdUrl);
+              if (broadcastEndpoints.length == 1) {
+                return _migrationResult(
+                  status: 'failed_recoverable',
+                  message:
+                      'Migration submission target is invalid: '
+                      'Transaction submission lightwalletd must not use the sync host',
+                );
+              }
+              return _migrationResult();
+            },
+      );
+
+      final result = await service.continueSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+      );
+
+      expect(result.status, 'broadcasted');
+      expect(switchCount, 1);
+      expect(broadcastEndpoints, [
+        collidingEndpoint.normalizedLightwalletdUrl,
+        distinctEndpoint.normalizedLightwalletdUrl,
+      ]);
+    },
+  );
+
   test('software continuation re-enters the macOS signing path', () async {
     List<rust_sync.MigrationScheduledTransfer>? seenSchedule;
     String? seenSalt;
@@ -5385,12 +5461,14 @@ _boundBackgroundCredentialStore({String runId = 'run-1'}) async {
 
 rust_sync.IronwoodMigrationResult _migrationResult({
   String status = 'broadcasted',
+  String? message,
 }) {
   return rust_sync.IronwoodMigrationResult(
     txids: 'txid',
     status: status,
     broadcastedCount: 1,
     totalCount: 1,
+    message: message,
     feeZatoshi: BigInt.from(10_000),
     migratedZatoshi: BigInt.from(100_000_000),
   );

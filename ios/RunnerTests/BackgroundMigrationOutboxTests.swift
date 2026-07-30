@@ -88,6 +88,50 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(snapshot.announcedBroadcastCompleteBatchIds)
   }
 
+  func testSnapshotMigratesTheLegacyTransactionRelayUrl() throws {
+    let relayUrl = "https://relay.example/submit"
+    let snapshot = BackgroundMigrationOutboxSnapshot(
+      batches: [
+        makeBatch(
+          batchId: "batch-a",
+          account: "account-a",
+          transactionSubmissionTarget: "relay:\(relayUrl)"
+        )
+      ]
+    )
+    let encoded = try JSONEncoder().encode(snapshot)
+    var json = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    var batches = try XCTUnwrap(json["batches"] as? [[String: Any]])
+    batches[0].removeValue(forKey: "transactionSubmissionTarget")
+    batches[0]["transactionRelayUrl"] = relayUrl
+    json["batches"] = batches
+
+    let legacySnapshot = try JSONSerialization.data(withJSONObject: json)
+    let decoded = try JSONDecoder().decode(
+      BackgroundMigrationOutboxSnapshot.self,
+      from: legacySnapshot
+    )
+
+    XCTAssertEqual(
+      decoded.batches.first?.transactionSubmissionTarget,
+      "relay:\(relayUrl)"
+    )
+    let migrated = try JSONEncoder().encode(decoded)
+    let migratedJson = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: migrated) as? [String: Any]
+    )
+    let migratedBatch = try XCTUnwrap(
+      (migratedJson["batches"] as? [[String: Any]])?.first
+    )
+    XCTAssertEqual(
+      migratedBatch["transactionSubmissionTarget"] as? String,
+      "relay:\(relayUrl)"
+    )
+    XCTAssertNil(migratedBatch["transactionRelayUrl"])
+  }
+
   func testDiscardBatchRemovesAnIdleRecordButKeepsTheAccountScope() throws {
     var snapshot = BackgroundMigrationOutboxSnapshot()
     let batch = makeBatch(batchId: "batch-a", account: "account-a")

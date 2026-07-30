@@ -20,6 +20,8 @@ import 'ironwood_migration_operation_registry.dart';
 
 const _credentialRecoveryRequiredError =
     'Ironwood migration credential is missing for the active run.';
+const _migrationSubmissionSyncHostCollision =
+    'transaction submission lightwalletd must not use the sync host';
 
 bool ironwoodMigrationNeedsCredentialRecovery(String? error) {
   return error?.contains(_credentialRecoveryRequiredError) ?? false;
@@ -121,6 +123,11 @@ typedef IronwoodMigrationWalletDbPathGetter = Future<String> Function();
 typedef IronwoodMigrationEndpointGetter = RpcEndpointConfig Function();
 typedef IronwoodMigrationTransactionSubmissionTargetGetter =
     String? Function(RpcEndpointConfig syncEndpoint);
+typedef IronwoodMigrationDistinctSyncEndpointSwitcher =
+    Future<bool> Function({
+      required RpcEndpointConfig attemptedEndpoint,
+      required Object reason,
+    });
 typedef IronwoodMigrationPasswordGetter = String Function();
 typedef IronwoodMigrationMnemonicBytesGetter =
     Future<List<int>?> Function(String accountUuid);
@@ -658,6 +665,7 @@ class IronwoodMigrationService {
     IronwoodMigrationEndpointGetter? getEndpoint,
     IronwoodMigrationTransactionSubmissionTargetGetter?
     getTransactionSubmissionTarget,
+    IronwoodMigrationDistinctSyncEndpointSwitcher? switchToDistinctSyncEndpoint,
     IronwoodMigrationPasswordGetter? getSessionPassword,
     IronwoodMigrationMnemonicBytesGetter? getMnemonicBytesForAccount,
     IronwoodMigrationPlatformCheck? isMacOS,
@@ -729,6 +737,8 @@ class IronwoodMigrationService {
        getEndpoint = getEndpoint ?? _missingEndpoint,
        getTransactionSubmissionTarget =
            getTransactionSubmissionTarget ?? ((_) => null),
+       switchToDistinctSyncEndpoint =
+           switchToDistinctSyncEndpoint ?? _neverSwitchSyncEndpoint,
        getSessionPassword = getSessionPassword ?? _missingSessionPassword,
        getMnemonicBytesForAccount =
            getMnemonicBytesForAccount ?? _missingMnemonicBytesForAccount,
@@ -869,6 +879,8 @@ class IronwoodMigrationService {
   final IronwoodMigrationEndpointGetter getEndpoint;
   final IronwoodMigrationTransactionSubmissionTargetGetter
   getTransactionSubmissionTarget;
+  final IronwoodMigrationDistinctSyncEndpointSwitcher
+  switchToDistinctSyncEndpoint;
   final IronwoodMigrationPasswordGetter getSessionPassword;
   final IronwoodMigrationMnemonicBytesGetter getMnemonicBytesForAccount;
   final IronwoodMigrationPlatformCheck isMacOS;
@@ -1564,9 +1576,53 @@ class IronwoodMigrationService {
 
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
     required String accountUuid,
+  }) => _continueSoftwarePrivateMigration(
+    accountUuid: accountUuid,
+    maySwitchEndpoint: true,
+  );
+
+  Future<rust_sync.IronwoodMigrationResult> _continueSoftwarePrivateMigration({
+    required String accountUuid,
+    required bool maySwitchEndpoint,
+  }) async {
+    final endpoint = getEndpoint();
+    try {
+      final result = await _continueSoftwarePrivateMigrationAtEndpoint(
+        accountUuid: accountUuid,
+        endpoint: endpoint,
+      );
+      if (await _switchEndpointForSubmissionCollision(
+        endpoint: endpoint,
+        reason: result.message,
+        maySwitchEndpoint: maySwitchEndpoint,
+      )) {
+        return _continueSoftwarePrivateMigration(
+          accountUuid: accountUuid,
+          maySwitchEndpoint: false,
+        );
+      }
+      return result;
+    } catch (error, stackTrace) {
+      if (await _switchEndpointForSubmissionCollision(
+        endpoint: endpoint,
+        reason: error,
+        maySwitchEndpoint: maySwitchEndpoint,
+      )) {
+        return _continueSoftwarePrivateMigration(
+          accountUuid: accountUuid,
+          maySwitchEndpoint: false,
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  Future<rust_sync.IronwoodMigrationResult>
+  _continueSoftwarePrivateMigrationAtEndpoint({
+    required String accountUuid,
+    required RpcEndpointConfig endpoint,
   }) async {
     final dbPath = await getWalletDbPath();
-    final endpoint = getEndpoint();
     final context = _MigrationCredentialContext(
       dbPath: dbPath,
       network: endpoint.networkName,
@@ -1664,6 +1720,26 @@ class IronwoodMigrationService {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);
         }
       },
+    );
+  }
+
+  Future<bool> _switchEndpointForSubmissionCollision({
+    required RpcEndpointConfig endpoint,
+    required Object? reason,
+    required bool maySwitchEndpoint,
+  }) {
+    if (!maySwitchEndpoint ||
+        reason == null ||
+        !reason.toString().toLowerCase().contains(
+          _migrationSubmissionSyncHostCollision,
+        )) {
+      return Future.value(false);
+    }
+    // Rust rejects this invariant before opening the submission transport, so
+    // changing only the sync endpoint and retrying once cannot double-submit.
+    return switchToDistinctSyncEndpoint(
+      attemptedEndpoint: endpoint,
+      reason: reason,
     );
   }
 
@@ -2949,6 +3025,14 @@ final ironwoodMigrationServiceProvider = Provider<IronwoodMigrationService>((
     secureStore: AppSecureStore.instance,
     getEndpoint: () => ref.read(rpcEndpointFailoverProvider).current,
     getTransactionSubmissionTarget: transactionSubmissionTargetForSyncEndpoint,
+    switchToDistinctSyncEndpoint:
+        ({required attemptedEndpoint, required reason}) => ref
+            .read(rpcEndpointFailoverProvider.notifier)
+            .switchToDistinctHostFor(
+              reason,
+              endpoint: attemptedEndpoint,
+              operation: 'migration submission separation',
+            ),
     getSessionPassword: () => ref
         .read(appSecurityProvider.notifier)
         .requireSessionPasswordForNativeSecretUse(),
@@ -2972,6 +3056,11 @@ RpcEndpointConfig _missingEndpoint() {
 String _missingSessionPassword() {
   throw StateError('Ironwood migration password getter is not configured.');
 }
+
+Future<bool> _neverSwitchSyncEndpoint({
+  required RpcEndpointConfig attemptedEndpoint,
+  required Object reason,
+}) async => false;
 
 Future<List<int>?> _missingMnemonicBytesForAccount(String accountUuid) {
   throw StateError('Ironwood migration mnemonic getter is not configured.');

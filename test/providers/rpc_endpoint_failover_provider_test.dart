@@ -178,6 +178,37 @@ void main() {
   });
 
   test(
+    'switchToDistinctHostFor rotates without recording endpoint failure',
+    () async {
+      final primary = defaultRpcEndpointConfig('main');
+      final container = _container(
+        primary: primary,
+        chainNameByUrl: {'https://eu.zec.stardust.rest:443': 'main'},
+        heightByUrl: {'https://eu.zec.stardust.rest:443': BigInt.from(10)},
+        settings: const RpcEndpointFailoverSettings(primaryFailureThreshold: 3),
+      );
+      addTearDown(container.dispose);
+
+      final switched = await container
+          .read(rpcEndpointFailoverProvider.notifier)
+          .switchToDistinctHostFor(
+            'Transaction submission lightwalletd must not use the sync host',
+            operation: 'migration submission separation',
+          );
+
+      final state = container.read(rpcEndpointFailoverProvider);
+      expect(switched, isTrue);
+      expect(state.current.presetId, 'eu-zec-stardust');
+      expect(state.primaryFailureCount, 0);
+      expect(state.lastFailure, isNull);
+      expect(
+        state.lastEvent?.message,
+        'Switched sync endpoint to keep migration submission separate.',
+      );
+    },
+  );
+
+  test(
     'runWithEndpointFallback retries after current fallback fails',
     () async {
       final primary = defaultRpcEndpointConfig('main');
