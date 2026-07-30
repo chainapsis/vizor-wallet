@@ -1934,6 +1934,151 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     )
 }
 
+async fn reconcile_scheduled_migration_txs_before_abandon(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+    native_attempted_txids: &[String],
+) -> Result<(), String> {
+    let candidates = super::migration::scheduled_migration_stop_candidates(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+    )?;
+    let native_attempted_txids = native_attempted_txids
+        .iter()
+        .map(|txid| txid.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    let has_known_or_legacy_attempt = candidates.iter().any(|candidate| {
+        native_attempted_txids.contains(&candidate.txid_hex.to_ascii_lowercase())
+            || candidate.attempt_state
+                != super::migration::MigrationBroadcastAttemptState::NotAttempted
+    });
+    // The caller has quiesced native work, while ActiveIronwoodMigration
+    // excludes foreground work. A durable "never attempted" marker therefore
+    // makes an item safe to discard without any network dependency.
+    if !has_known_or_legacy_attempt {
+        return Ok(());
+    }
+
+    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| format!("Open migration stop reconciliation endpoint: {e}"))?;
+    let chain_tip = sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| format!("Read migration stop reconciliation chain tip: {e}"))?;
+    let chain_tip_height = u32::try_from(chain_tip.height)
+        .map_err(|_| "Migration stop reconciliation chain tip exceeds u32")?;
+
+    let attempted_candidates = candidates
+        .into_iter()
+        .filter(|candidate| {
+            migration_stop_candidate_requires_reconciliation(
+                candidate,
+                native_attempted_txids.contains(&candidate.txid_hex.to_ascii_lowercase()),
+                chain_tip_height,
+            )
+        })
+        .collect::<Vec<_>>();
+    for candidate in attempted_candidates {
+        let txid = parse_txid_hex(&candidate.txid_hex)?;
+        match sync_engine::get_transaction(&mut client, txid.as_ref().to_vec()).await {
+            Ok(raw_tx) => {
+                decrypt_and_store_migration_tx(db_path, network, &raw_tx.data)?;
+                match candidate.kind {
+                    super::migration::MigrationStopCandidateKind::MigrationTransaction => {
+                        super::migration::mark_pending_broadcasted(
+                            db_path,
+                            expected_run_id,
+                            &candidate.txid_hex,
+                        )?;
+                    }
+                    super::migration::MigrationStopCandidateKind::DenominationStage => {
+                        let conn =
+                            open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+                        super::migration::mark_denomination_stage_broadcasted(
+                            &conn,
+                            expected_run_id,
+                            &candidate.txid_hex,
+                        )?;
+                    }
+                }
+            }
+            Err(status) if status.code() == Code::NotFound => {
+                // Before expiry an attempted submission may have been accepted
+                // moments ago but not indexed yet. At or after expiry, the
+                // same endpoint's chain tip proves an absent transaction can
+                // no longer be mined, so stop may safely discard it. Zero is
+                // the legacy no-expiry sentinel and never provides that proof.
+                if migration_stop_candidate_is_expired(candidate.expiry_height, chain_tip_height) {
+                    continue;
+                }
+                if candidate.expiry_height == 0 {
+                    return Err(format!(
+                        "Migration cannot stop until non-expiring transaction {} is reconciled",
+                        candidate.txid_hex
+                    ));
+                }
+                return Err(format!(
+                    "Migration cannot stop until transaction {} is reconciled or expires at block {}",
+                    candidate.txid_hex, candidate.expiry_height
+                ));
+            }
+            Err(status) => {
+                return Err(format!(
+                    "Could not reconcile migration transaction {} before stopping: {status}",
+                    candidate.txid_hex
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn migration_stop_candidate_is_expired(expiry_height: u32, chain_tip_height: u32) -> bool {
+    expiry_height > 0 && chain_tip_height >= expiry_height
+}
+
+fn migration_stop_candidate_requires_reconciliation(
+    candidate: &super::migration::MigrationStopCandidate,
+    native_attempted: bool,
+    chain_tip_height: u32,
+) -> bool {
+    native_attempted
+        || match candidate.attempt_state {
+            super::migration::MigrationBroadcastAttemptState::NotAttempted => false,
+            super::migration::MigrationBroadcastAttemptState::Attempted => true,
+            super::migration::MigrationBroadcastAttemptState::UnknownLegacy => {
+                candidate.broadcast_height <= chain_tip_height
+            }
+        }
+}
+
+pub(crate) async fn abandon_orchard_migration(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+    native_attempted_txids: &[String],
+) -> Result<(), String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    reconcile_scheduled_migration_txs_before_abandon(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        expected_run_id,
+        native_attempted_txids,
+    )
+    .await?;
+    super::migration::abandon_run(db_path, account_uuid, network, expected_run_id)?;
+    discard_keystone_migration_requests_for_run(account_uuid, network, expected_run_id)
+}
+
 async fn prepare_orchard_migration_outbox(
     db_path: &str,
     lightwalletd_url: &str,
@@ -4516,7 +4661,19 @@ async fn broadcast_pending_denomination_stages(
         if policy.is_cancelled() {
             break;
         }
+        super::migration::mark_denomination_broadcast_attempted(
+            db_path,
+            run_id,
+            &stage.expected_txid_hex,
+        )?;
         if let Err(e) = broadcast_raw_transaction(&mut client, &stage.raw_tx).await {
+            if migration_broadcast_failure_requires_rebuild(&e) {
+                super::migration::clear_denomination_broadcast_attempted(
+                    db_path,
+                    run_id,
+                    &stage.expected_txid_hex,
+                )?;
+            }
             return Ok(Some(CreatedBroadcastResult {
                 txids,
                 status: if broadcasted_count == 0 {
@@ -4763,6 +4920,7 @@ async fn broadcast_due_scheduled_migration_txs(
             )?;
             break;
         }
+        super::migration::mark_pending_broadcast_attempted(db_path, run_id, &pending.txid_hex)?;
         if let Err(e) = broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
             log::error!(
                 "migration: broadcast rejected for {}: {}",

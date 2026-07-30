@@ -1291,6 +1291,28 @@ pub fn retire_unbroadcast_orchard_migration(
     })
 }
 
+pub fn abandon_orchard_migration(
+    db_path: String,
+    lightwalletd_url: String,
+    network: String,
+    account_uuid: String,
+    expected_run_id: String,
+    native_attempted_txids: Vec<String>,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio: {e}"))?;
+        rt.block_on(wallet_sync::abandon_orchard_migration(
+            &db_path,
+            &lightwalletd_url,
+            network,
+            &account_uuid,
+            &expected_run_id,
+            &native_attempted_txids,
+        ))
+    })
+}
+
 pub fn get_orchard_migration_status(
     db_path: String,
     network: String,

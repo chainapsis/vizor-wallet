@@ -403,6 +403,22 @@ Future<void> retireUnbroadcastOrchardMigration({
   expectedRunId: expectedRunId,
 );
 
+Future<void> abandonOrchardMigration({
+  required String dbPath,
+  required String lightwalletdUrl,
+  required String network,
+  required String accountUuid,
+  required String expectedRunId,
+  required List<String> nativeAttemptedTxids,
+}) => RustLib.instance.api.crateApiSyncAbandonOrchardMigration(
+  dbPath: dbPath,
+  lightwalletdUrl: lightwalletdUrl,
+  network: network,
+  accountUuid: accountUuid,
+  expectedRunId: expectedRunId,
+  nativeAttemptedTxids: nativeAttemptedTxids,
+);
+
 Future<MigrationStatus> getOrchardMigrationStatus({
   required String dbPath,
   required String network,
