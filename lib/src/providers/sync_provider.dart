@@ -1438,11 +1438,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _stopMempoolObserver();
     _mempoolRefreshInFlight = false;
     _mempoolRefreshQueued = false;
-    // Drop any queued follow-up pass. `_balanceRefreshInFlight` is left to
-    // the running pass's `finally`: clearing it here would let a new pass
-    // start alongside the one still unwinding. The loop's `!_requiresUnlock`
-    // guard stops it after the current iteration, and `_refreshBalance`
-    // bails immediately while locked.
+    // Drop any queued follow-up. Leave `_balanceRefreshInFlight` to the
+    // running pass's `finally` so a new pass cannot start alongside it.
     _balanceRefreshQueued = false;
     _balanceRefreshQueuedReleaseSnapshot = false;
     state = AsyncData(SyncState());
