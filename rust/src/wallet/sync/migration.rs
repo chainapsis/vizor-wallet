@@ -3215,7 +3215,7 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
     if !invalid_stages.is_empty() || !identities_to_record.is_empty() {
         let reconciliation_applied = with_wallet_db_write_lock(
             "migration.reconcile_stage_chain_state",
-            || {
+            || -> Result<bool, String> {
                 // Keep main's longer SQLite wait for this reconciliation while
                 // serializing the actual mutation with foreground wallet writers.
                 let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
@@ -4450,91 +4450,88 @@ pub(crate) fn abandon_run(
     network: WalletNetwork,
     expected_run_id: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let run = conn
-        .query_row(
+    with_migration_write_conn(db_path, "migration.abandon_run", |conn| {
+        let run = conn
+            .query_row(
+                &format!(
+                    "SELECT account_uuid, network, phase
+                     FROM {RUNS_TABLE}
+                     WHERE run_id = ?1"
+                ),
+                params![expected_run_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Read migration run before stopping: {e}"))?
+            .ok_or_else(|| format!("Migration run {expected_run_id} was not found"))?;
+        if run.0 != account_uuid || run.1 != network_name(network) {
+            return Err("Migration run does not belong to this wallet account".to_string());
+        }
+        if run.2 == PHASE_ABANDONED {
+            return Ok(());
+        }
+        if matches!(run.2.as_str(), PHASE_COMPLETE | PHASE_FAILED_TERMINAL) {
+            return Err(format!("Migration run is already terminal ({})", run.2));
+        }
+
+        let now = now_ms()?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin migration stop transition: {e}"))?;
+        let transitioned = tx
+            .execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                     WHERE run_id = ?4 AND phase = ?5"
+                ),
+                params![
+                    PHASE_ABANDONED,
+                    now,
+                    "Migration stopped by the user.",
+                    expected_run_id,
+                    run.2
+                ],
+            )
+            .map_err(|e| format!("Mark migration stopped: {e}"))?;
+        if transitioned != 1 {
+            return Err("Migration phase changed while stopping; retry.".to_string());
+        }
+
+        // A prepared child PCZT has not reached the network. Once the run is
+        // terminal it must never be promoted by a later foreground retry.
+        tx.execute(
+            &format!("DELETE FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
+            params![expected_run_id],
+        )
+        .map_err(|e| format!("Discard unsubmitted migration proofs: {e}"))?;
+        tx.execute(
             &format!(
-                "SELECT account_uuid, network, phase
-                 FROM {RUNS_TABLE}
+                "DELETE FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1 AND status IN ('scheduled', 'needs_resign')"
+            ),
+            params![expected_run_id],
+        )
+        .map_err(|e| format!("Discard unsubmitted migration transactions: {e}"))?;
+
+        tx.execute(
+            &format!(
+                "UPDATE {PREPARED_NOTES_TABLE}
+                 SET lock_state = 'unlocked'
                  WHERE run_id = ?1"
             ),
             params![expected_run_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            },
         )
-        .optional()
-        .map_err(|e| format!("Read migration run before stopping: {e}"))?
-        .ok_or_else(|| format!("Migration run {expected_run_id} was not found"))?;
-    if run.0 != account_uuid || run.1 != network_name(network) {
-        return Err("Migration run does not belong to this wallet account".to_string());
-    }
-    if run.2 == PHASE_ABANDONED {
-        drop(conn);
-        reconcile_wallet_locks_for_run(db_path, network, expected_run_id)?;
-        return discard_unsubmitted_preparation_stages(db_path, expected_run_id);
-    }
-    if matches!(run.2.as_str(), PHASE_COMPLETE | PHASE_FAILED_TERMINAL) {
-        return Err(format!("Migration run is already terminal ({})", run.2));
-    }
-
-    let now = now_ms()?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin migration stop transition: {e}"))?;
-    let transitioned = tx
-        .execute(
-            &format!(
-                "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-             WHERE run_id = ?4 AND phase = ?5"
-            ),
-            params![
-                PHASE_ABANDONED,
-                now,
-                "Migration stopped by the user.",
-                expected_run_id,
-                run.2
-            ],
-        )
-        .map_err(|e| format!("Mark migration stopped: {e}"))?;
-    if transitioned != 1 {
-        return Err("Migration phase changed while stopping; retry.".to_string());
-    }
-
-    // A prepared child PCZT has not reached the network. Once the run is
-    // terminal it must never be promoted by a later foreground retry.
-    tx.execute(
-        &format!("DELETE FROM {SIGNED_CHILD_PCZTS_TABLE} WHERE run_id = ?1"),
-        params![expected_run_id],
-    )
-    .map_err(|e| format!("Discard unsubmitted migration proofs: {e}"))?;
-    tx.execute(
-        &format!(
-            "DELETE FROM {PENDING_TXS_TABLE}
-             WHERE run_id = ?1 AND status IN ('scheduled', 'needs_resign')"
-        ),
-        params![expected_run_id],
-    )
-    .map_err(|e| format!("Discard unsubmitted migration transactions: {e}"))?;
-
-    tx.execute(
-        &format!(
-            "UPDATE {PREPARED_NOTES_TABLE}
-             SET lock_state = 'unlocked'
-             WHERE run_id = ?1"
-        ),
-        params![expected_run_id],
-    )
-    .map_err(|e| format!("Release stopped migration note locks: {e}"))?;
-    tx.commit()
-        .map_err(|e| format!("Commit migration stop transition: {e}"))?;
-    drop(conn);
+        .map_err(|e| format!("Release stopped migration note locks: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("Commit migration stop transition: {e}"))
+    })?;
 
     // Keep stage inputs until generic wallet locks have been released: those
     // rows can be the only durable outpoint list for later split rounds.
@@ -4543,46 +4540,46 @@ pub(crate) fn abandon_run(
 }
 
 fn discard_unsubmitted_preparation_stages(db_path: &str, run_id: &str) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin stopped preparation cleanup: {e}"))?;
+    with_migration_write_conn(db_path, "migration.discard_stopped_preparation", |conn| {
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin stopped preparation cleanup: {e}"))?;
 
-    // Broadcasted/confirmed rows remain as durable audit state; the ordinary
-    // wallet scanner continues to discover their resulting notes.
-    tx.execute(
-        &format!(
-            "DELETE FROM {STAGE_INPUTS_TABLE}
-             WHERE run_id = ?1 AND stage_index IN (
-                 SELECT stage_index FROM {STAGES_TABLE}
-                 WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')
-             )"
-        ),
-        params![run_id],
-    )
-    .map_err(|e| format!("Discard stopped preparation inputs: {e}"))?;
-    tx.execute(
-        &format!(
-            "DELETE FROM {STAGE_OUTPUTS_TABLE}
-             WHERE run_id = ?1 AND stage_index IN (
-                 SELECT stage_index FROM {STAGES_TABLE}
-                 WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')
-             )"
-        ),
-        params![run_id],
-    )
-    .map_err(|e| format!("Discard stopped preparation outputs: {e}"))?;
-    tx.execute(
-        &format!(
-            "DELETE FROM {STAGES_TABLE}
-             WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')"
-        ),
-        params![run_id],
-    )
-    .map_err(|e| format!("Discard unsubmitted preparation transactions: {e}"))?;
-    tx.commit()
-        .map_err(|e| format!("Commit stopped preparation cleanup: {e}"))
+        // Broadcasted/confirmed rows remain as durable audit state; the ordinary
+        // wallet scanner continues to discover their resulting notes.
+        tx.execute(
+            &format!(
+                "DELETE FROM {STAGE_INPUTS_TABLE}
+                     WHERE run_id = ?1 AND stage_index IN (
+                         SELECT stage_index FROM {STAGES_TABLE}
+                         WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')
+                     )"
+            ),
+            params![run_id],
+        )
+        .map_err(|e| format!("Discard stopped preparation inputs: {e}"))?;
+        tx.execute(
+            &format!(
+                "DELETE FROM {STAGE_OUTPUTS_TABLE}
+                     WHERE run_id = ?1 AND stage_index IN (
+                         SELECT stage_index FROM {STAGES_TABLE}
+                         WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')
+                     )"
+            ),
+            params![run_id],
+        )
+        .map_err(|e| format!("Discard stopped preparation outputs: {e}"))?;
+        tx.execute(
+            &format!(
+                "DELETE FROM {STAGES_TABLE}
+                     WHERE run_id = ?1 AND status IN ('awaiting_inputs', 'pending')"
+            ),
+            params![run_id],
+        )
+        .map_err(|e| format!("Discard unsubmitted preparation transactions: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("Commit stopped preparation cleanup: {e}"))
+    })
 }
 
 pub(crate) fn reschedule_overdue_pending_txs(

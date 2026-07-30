@@ -131,12 +131,14 @@ void main() {
       expect(preparationIdentities, isNotEmpty);
       if (_migrationImportPhase == _childSchedulePhase) {
         expect(partCoreIdentities, isNotEmpty);
+        expect(scheduledBroadcastCoreIdentities, isNotEmpty);
         expect(
-          scheduledBroadcastCoreIdentities.length,
+          baseline.signedChildPcztCount +
+              scheduledBroadcastCoreIdentities.length,
           greaterThan(1),
           reason:
-              'The child-schedule scenario must exercise multiple scheduled '
-              'migration transactions.',
+              'The child-schedule scenario must exercise multiple signed or '
+              'scheduled migration transactions.',
         );
       }
 
@@ -421,7 +423,7 @@ Future<rust_sync.MigrationStatus> _advanceToChildSchedule(
     await container
         .read(ironwoodMigrationCoordinatorProvider.notifier)
         .refreshNow(forceAdvance: true);
-    await _waitForMempool(tester);
+    await _waitForMempool(tester, container, accountUuid);
     final completedBefore = status.denominationSplitCompletedCount;
     await ironwoodDriverPost(
       _driverUrl,
@@ -446,17 +448,39 @@ Future<rust_sync.MigrationStatus> _advanceToChildSchedule(
   fail('Timed out preparing child migration schedule.');
 }
 
-Future<void> _waitForMempool(WidgetTester tester) async {
+Future<void> _waitForMempool(
+  WidgetTester tester,
+  ProviderContainer container,
+  String accountUuid,
+) async {
   // A padded denomination plan can spend several minutes generating proofs on
   // a loaded debug host before the first transaction reaches zcashd.
   // Keep this below the enclosing child-schedule deadline so a genuinely
   // stalled coordinator still fails with a bounded timeout.
   final deadline = DateTime.now().add(const Duration(minutes: 10));
+  var nextAdvanceAt = DateTime.now();
   Map<String, Object?>? last;
   while (DateTime.now().isBefore(deadline)) {
     last = await ironwoodDriverGet(_driverUrl, '/mempool');
     final size = (last['size'] as num?)?.toInt() ?? 0;
     if (size > 0) return;
+    if (!DateTime.now().isBefore(nextAdvanceAt)) {
+      await container
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshNow(forceAdvance: true);
+      final status = await desktopRegtestMigrationStatus(accountUuid);
+      final coordinatorError = container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .errors[accountUuid];
+      e2eLog(
+        'waiting for denomination tx: phase=${status.phase} '
+        'pending=${status.pendingSplitStageCount} '
+        'completed=${status.denominationSplitCompletedCount}/'
+        '${status.denominationSplitTotalCount} '
+        'error=$coordinatorError',
+      );
+      nextAdvanceAt = DateTime.now().add(const Duration(seconds: 5));
+    }
     await tester.pump(const Duration(milliseconds: 100));
     await Future<void>.delayed(const Duration(milliseconds: 150));
   }

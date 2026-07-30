@@ -115,6 +115,8 @@ use super::{
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
 const SEND_PROPOSAL_LOCK_BLOCKS: u32 = 40;
+const ACCOUNT_GROWTH_CATCHUP_IMMEDIATE_MIGRATION_ERROR: &str =
+    "Wallet sync is catching up a newly imported account. Wait for sync to finish before starting an Immediate migration.";
 
 fn send_proposal_lock_expiry(min_target_height: BlockHeight) -> BlockHeight {
     min_target_height + SEND_PROPOSAL_LOCK_BLOCKS
@@ -165,6 +167,22 @@ fn send_expiry_height_for_live_tip(
 fn immediate_migration_lock_expiry(target_height: BlockHeight) -> Result<BlockHeight, String> {
     super::migration::zip318_canonical_migration_expiry_height(u32::from(target_height))
         .map(BlockHeight::from_u32)
+}
+
+fn ensure_immediate_migration_sync_ready(db_path: &str) -> Result<(), String> {
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        return Err(ACCOUNT_GROWTH_CATCHUP_IMMEDIATE_MIGRATION_ERROR.to_string());
+    }
+    Ok(())
+}
+
+fn ensure_immediate_migration_sync_ready_with_conn(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    if sync_engine::account_growth_catchup_pending_with_conn(conn)? {
+        return Err(ACCOUNT_GROWTH_CATCHUP_IMMEDIATE_MIGRATION_ERROR.to_string());
+    }
+    Ok(())
 }
 
 struct ImmediateMigrationInputLock {
@@ -1668,6 +1686,10 @@ fn build_orchard_migration_immediate_pczt(
         input_lock_owner,
         locked_outputs,
     ) = with_wallet_db_write_lock("send.immediate_migration.build", || {
+        let sync_conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        ensure_immediate_migration_sync_ready_with_conn(&sync_conn)?;
+        drop(sync_conn);
+
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
         let account = db

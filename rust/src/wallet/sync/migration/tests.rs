@@ -178,6 +178,12 @@ fn stopping_a_run_discards_only_unsubmitted_work() {
     .unwrap();
     drop(conn);
 
+    crate::wallet::sync_engine::invalidate_sync_completion(&db_path).unwrap();
+    assert!(
+        crate::wallet::sync_engine::account_growth_catchup_pending(&db_path).unwrap(),
+        "the stop path must remain available while a newly imported account catches up"
+    );
+
     abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-stop").unwrap();
     // Repeating an already-completed stop is safe for UI retries.
     abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-stop").unwrap();
@@ -215,6 +221,37 @@ fn stopping_a_run_discards_only_unsubmitted_work() {
         )
         .unwrap();
     assert_eq!(remaining_stage, "broadcasted");
+}
+
+#[test]
+fn stopping_a_run_waits_for_the_wallet_db_write_lease() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    create_outbox_test_run(&db_path, "run-stop-lock", &[10], &[None]);
+
+    let stop_db_path = db_path.clone();
+    assert_waits_for_wallet_db_write_lock("test.hold_for_migration_stop", move || {
+        abandon_run(
+            &stop_db_path,
+            "account-1",
+            WalletNetwork::Regtest,
+            "run-stop-lock",
+        )
+    });
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = 'run-stop-lock'"),
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_ABANDONED);
 }
 
 #[test]

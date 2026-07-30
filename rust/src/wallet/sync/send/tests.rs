@@ -136,6 +136,20 @@ fn immediate_migration_plan_ignores_zero_value_orchard_notes() {
 }
 
 #[test]
+fn immediate_migration_waits_for_account_growth_catchup() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let db_path = file.path().to_str().unwrap();
+
+    ensure_immediate_migration_sync_ready(db_path).unwrap();
+    sync_engine::invalidate_sync_completion(db_path).unwrap();
+
+    assert_eq!(
+        ensure_immediate_migration_sync_ready(db_path).unwrap_err(),
+        ACCOUNT_GROWTH_CATCHUP_IMMEDIATE_MIGRATION_ERROR
+    );
+}
+
+#[test]
 fn migration_anchor_uses_latest_checkpoint_before_an_empty_bucket_boundary() {
     let checkpoints = [5_318, 5_450, 5_460, 5_500];
 
