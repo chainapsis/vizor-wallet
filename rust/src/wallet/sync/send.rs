@@ -3972,6 +3972,7 @@ fn rebuild_expired_software_migration_parts(
             tx_kind: "migration".to_string(),
             funding_account_uuid: account_uuid.to_string(),
             selected_note: recovery.selected_note.clone(),
+            last_resubmit_tip: None,
         };
 
         replacements.push(super::migration::PendingMigrationTxReplacement {
@@ -4160,6 +4161,7 @@ fn finalize_presigned_migration_children(
                 tx_kind: child.metadata.tx_kind,
                 funding_account_uuid: child.metadata.funding_account_uuid,
                 selected_note: current_note.clone(),
+                last_resubmit_tip: None,
             },
         };
         let next_finalized_count = finalized_count
@@ -4791,7 +4793,14 @@ async fn broadcast_due_scheduled_migration_txs(
 
     // Blind rebroadcast of accepted-but-unstored parts on quiet-height
     // boundaries. Never counts toward accepted_txids / one-open gate.
-    rebroadcast_timed_broadcasted_migration_txs(&mut client, &resubmit).await;
+    rebroadcast_timed_broadcasted_migration_txs(
+        &mut client,
+        db_path,
+        run_id,
+        chain_tip_height,
+        &resubmit,
+    )
+    .await;
 
     if due.is_empty() {
         let status = super::migration::run_phase(db_path, run_id)?;
@@ -5238,8 +5247,12 @@ fn retry_store_broadcasted_migration_txs_missing_local(
 /// Blind-rebroadcast accepted-but-unstored migration parts on quiet-height
 /// boundaries. Returns txids for which `broadcast` returned Ok (including
 /// soft-accept). Does not change pending status or report acceptance for the
-/// one-open gate.
+/// one-open gate. Records `last_resubmit_tip` after each attempt so the same
+/// tip is not retried on later advances.
 fn rebroadcast_timed_broadcasted_migration_txs_with<F>(
+    db_path: &str,
+    run_id: &str,
+    tip: u32,
     candidates: &[super::migration::DuePendingMigrationTx],
     mut broadcast: F,
 ) -> Vec<String>
@@ -5248,7 +5261,19 @@ where
 {
     let mut succeeded = Vec::new();
     for pending in candidates {
-        match broadcast(&pending.txid_hex, &pending.raw_tx) {
+        let outcome = broadcast(&pending.txid_hex, &pending.raw_tx);
+        if let Err(error) = super::migration::mark_pending_timed_resubmit_attempted(
+            db_path,
+            run_id,
+            &pending.txid_hex,
+            tip,
+        ) {
+            log::warn!(
+                "migration: failed to record timed rebroadcast tip for {}: {error}",
+                pending.txid_hex
+            );
+        }
+        match outcome {
             Ok(()) => {
                 log::info!(
                     "migration: timed rebroadcast accepted for previously submitted tx {}",
@@ -5271,10 +5296,25 @@ async fn rebroadcast_timed_broadcasted_migration_txs(
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
         tonic::transport::Channel,
     >,
+    db_path: &str,
+    run_id: &str,
+    tip: u32,
     candidates: &[super::migration::DuePendingMigrationTx],
 ) {
     for pending in candidates {
-        match broadcast_raw_transaction(client, &pending.raw_tx).await {
+        let outcome = broadcast_raw_transaction(client, &pending.raw_tx).await;
+        if let Err(error) = super::migration::mark_pending_timed_resubmit_attempted(
+            db_path,
+            run_id,
+            &pending.txid_hex,
+            tip,
+        ) {
+            log::warn!(
+                "migration: failed to record timed rebroadcast tip for {}: {error}",
+                pending.txid_hex
+            );
+        }
+        match outcome {
             Ok(()) => {
                 log::info!(
                     "migration: timed rebroadcast accepted for previously submitted tx {}",

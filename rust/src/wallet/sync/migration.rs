@@ -133,6 +133,11 @@ pub(crate) struct PendingMigrationTxMetadata {
     pub tx_kind: String,
     pub funding_account_uuid: String,
     pub selected_note: PreparedOrchardNoteRef,
+    /// Last chain tip at which timed blind rebroadcast was attempted for an
+    /// accepted-but-unstored part. Prevents same-tip advance spam while tip is
+    /// stuck on a quiet boundary. Absent in older rows (serde default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_resubmit_tip: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -3917,7 +3922,8 @@ pub(crate) fn migration_broadcast_resubmit_on_quiet_boundary(
 
 /// Accepted (`broadcasted`) pending rows still missing local wallet identity
 /// that are due for a height-windowed blind rebroadcast. Never selected as due
-/// broadcasts — recovery only.
+/// broadcasts — recovery only. Skips parts already attempted at `chain_tip_height`
+/// so repeated advances at a stuck quiet-boundary tip do not re-SendTransaction.
 pub(crate) fn broadcasted_pending_txs_due_for_resubmit(
     db_path: &str,
     run_id: &str,
@@ -3930,7 +3936,7 @@ pub(crate) fn broadcasted_pending_txs_due_for_resubmit(
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT txid_hex, encrypted_raw_tx, scheduled_height
+            "SELECT txid_hex, encrypted_raw_tx, scheduled_height, metadata_json
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status = 'broadcasted'
              ORDER BY scheduled_height ASC, txid_hex ASC"
@@ -3942,18 +3948,24 @@ pub(crate) fn broadcasted_pending_txs_due_for_resubmit(
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, u32>(2)?,
+                row.get::<_, String>(3)?,
             ))
         })
         .map_err(|e| format!("Query broadcasted migration resubmit txs: {e}"))?;
 
     let mut due = Vec::new();
     for row in rows {
-        let (txid_hex, encrypted_raw_tx, scheduled_height) =
+        let (txid_hex, encrypted_raw_tx, scheduled_height, metadata_json) =
             row.map_err(|e| format!("Read broadcasted migration resubmit tx: {e}"))?;
         if local_denomination_chain_identity(&conn, &txid_hex)?.is_some() {
             continue;
         }
         if !migration_broadcast_resubmit_on_quiet_boundary(chain_tip_height, scheduled_height) {
+            continue;
+        }
+        let metadata = serde_json::from_str::<PendingMigrationTxMetadata>(&metadata_json)
+            .map_err(|e| format!("Decode migration resubmit metadata: {e}"))?;
+        if metadata.last_resubmit_tip == Some(chain_tip_height) {
             continue;
         }
         let raw_tx = secret_payload::decrypt_payload(
@@ -3967,6 +3979,49 @@ pub(crate) fn broadcasted_pending_txs_due_for_resubmit(
         });
     }
     Ok(due)
+}
+
+/// Record that timed blind rebroadcast was attempted at `tip` for this pending
+/// row (success or failure). Subsequent advances at the same tip skip rebroadcast.
+pub(crate) fn mark_pending_timed_resubmit_attempted(
+    db_path: &str,
+    run_id: &str,
+    txid_hex: &str,
+    tip: u32,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    let metadata_json: String = conn
+        .query_row(
+            &format!(
+                "SELECT metadata_json FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = ?1 AND txid_hex = ?2"
+            ),
+            params![run_id, txid_hex],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Read migration timed-resubmit metadata: {e}"))?;
+    let mut metadata = serde_json::from_str::<PendingMigrationTxMetadata>(&metadata_json)
+        .map_err(|e| format!("Decode migration timed-resubmit metadata: {e}"))?;
+    metadata.last_resubmit_tip = Some(tip);
+    let updated = serde_json::to_string(&metadata)
+        .map_err(|e| format!("Encode migration timed-resubmit metadata: {e}"))?;
+    let changed = conn
+        .execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET metadata_json = ?1
+                 WHERE run_id = ?2 AND txid_hex = ?3"
+            ),
+            params![updated, run_id, txid_hex],
+        )
+        .map_err(|e| format!("Mark migration timed-resubmit attempt: {e}"))?;
+    if changed == 0 {
+        return Err(format!(
+            "Migration timed-resubmit metadata update missed pending tx {txid_hex}"
+        ));
+    }
+    Ok(())
 }
 
 fn update_run_after_pending_broadcast(

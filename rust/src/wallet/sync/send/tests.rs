@@ -631,6 +631,7 @@ fn create_outbox_receipt_test_run(
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: MIGRATION_TEST_ACCOUNT.to_string(),
                 selected_note,
+                last_resubmit_tip: None,
             },
         }],
         MIGRATION_TEST_PASSWORD,
@@ -1744,6 +1745,7 @@ fn scheduled_storage_failure_after_acceptance_marks_broadcasted() {
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: MIGRATION_TEST_ACCOUNT.to_string(),
                 selected_note,
+                last_resubmit_tip: None,
             },
         }],
         MIGRATION_TEST_PASSWORD,
@@ -1914,6 +1916,7 @@ fn seed_broadcasted_unstored_migration_part(
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: MIGRATION_TEST_ACCOUNT.to_string(),
                 selected_note,
+                last_resubmit_tip: None,
             },
         }],
         MIGRATION_TEST_PASSWORD,
@@ -1945,10 +1948,16 @@ fn timed_resubmit_skips_mid_quiet_window() {
     assert!(candidates.is_empty());
 
     let mut broadcasts = 0usize;
-    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(&candidates, |_, _| {
-        broadcasts += 1;
-        Ok(())
-    });
+    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(
+        &db_path,
+        &run_id,
+        mid,
+        &candidates,
+        |_, _| {
+            broadcasts += 1;
+            Ok(())
+        },
+    );
     assert!(succeeded.is_empty());
     assert_eq!(broadcasts, 0);
 }
@@ -2003,14 +2012,31 @@ fn timed_resubmit_on_quiet_boundary_soft_accepts_without_due_or_gate() {
     assert_eq!(candidates[0].raw_tx, vec![5, 6, 7, 8]);
 
     let mut broadcasted_raw = Vec::new();
-    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(&candidates, |txid, raw| {
-        assert_eq!(txid, pending_txid);
-        broadcasted_raw = raw.to_vec();
-        // Soft-accept path: broadcast helper returns Ok.
-        Ok(())
-    });
+    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(
+        &db_path,
+        &run_id,
+        tip,
+        &candidates,
+        |txid, raw| {
+            assert_eq!(txid, pending_txid);
+            broadcasted_raw = raw.to_vec();
+            // Soft-accept path: broadcast helper returns Ok.
+            Ok(())
+        },
+    );
     assert_eq!(succeeded, vec![pending_txid.to_string()]);
     assert_eq!(broadcasted_raw, vec![5, 6, 7, 8]);
+
+    // Same tip must not select the part again (advance spam while tip is stuck).
+    let again = migration::broadcasted_pending_txs_due_for_resubmit(
+        &db_path,
+        &run_id,
+        tip,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    assert!(again.is_empty());
 
     // HOL: broadcasted head must not win due selection.
     let due = migration::due_pending_txs(
@@ -2063,9 +2089,13 @@ fn timed_resubmit_hard_reject_leaves_broadcasted_and_skips_gate() {
         MIGRATION_TEST_SALT,
     )
     .unwrap();
-    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(&candidates, |_, _| {
-        Err("Broadcast rejected: txn-mempool-conflict".to_string())
-    });
+    let succeeded = rebroadcast_timed_broadcasted_migration_txs_with(
+        &db_path,
+        &run_id,
+        tip,
+        &candidates,
+        |_, _| Err("Broadcast rejected: txn-mempool-conflict".to_string()),
+    );
     assert!(succeeded.is_empty());
     assert_eq!(
         migration::pending_totals_for_run(&db_path, &run_id)
@@ -2076,6 +2106,30 @@ fn timed_resubmit_hard_reject_leaves_broadcasted_and_skips_gate() {
     assert_eq!(
         migration::scheduled_pending_count(&db_path, &run_id).unwrap(),
         0
+    );
+    // Hard reject still records the tip so same-tip advances do not hammer LWD.
+    assert!(migration::broadcasted_pending_txs_due_for_resubmit(
+        &db_path,
+        &run_id,
+        tip,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap()
+    .is_empty());
+    // Next quiet boundary remains eligible.
+    let next_tip = tip + migration::MIGRATION_BROADCAST_RESUBMIT_QUIET_BLOCKS;
+    assert_eq!(
+        migration::broadcasted_pending_txs_due_for_resubmit(
+            &db_path,
+            &run_id,
+            next_tip,
+            MIGRATION_TEST_PASSWORD,
+            MIGRATION_TEST_SALT,
+        )
+        .unwrap()
+        .len(),
+        1
     );
 }
 

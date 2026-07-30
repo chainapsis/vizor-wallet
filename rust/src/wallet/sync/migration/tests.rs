@@ -137,6 +137,7 @@ fn create_outbox_test_run(
                     tx_kind: "migration".to_string(),
                     funding_account_uuid: "account-1".to_string(),
                     selected_note,
+                    last_resubmit_tip: None,
                 },
             }
         })
@@ -399,6 +400,7 @@ fn legacy_signed_schedule_backfill_preserves_identity_for_pending_recovery() {
         tx_kind: "migration".to_string(),
         funding_account_uuid: "account-1".to_string(),
         selected_note: selected_note.clone(),
+        last_resubmit_tip: None,
     })
     .unwrap();
     conn.execute(
@@ -1061,6 +1063,7 @@ fn pending_insert_rejects_expiry_from_a_different_schedule_bucket() {
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: "account-1".to_string(),
                 selected_note,
+                last_resubmit_tip: None,
             },
         }],
         TEST_PASSWORD,
@@ -1369,6 +1372,7 @@ fn incremental_child_promotion_uses_immutable_signed_schedule_origin() {
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: "account-1".to_string(),
                 selected_note,
+                last_resubmit_tip: None,
             },
         }],
         TEST_PASSWORD,
@@ -1883,6 +1887,7 @@ fn persisting_presigned_children_keeps_ready_phase_and_proof_height() {
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: "account-1".to_string(),
                 selected_note,
+                last_resubmit_tip: None,
             },
         }],
         TEST_PASSWORD,
@@ -3140,6 +3145,7 @@ fn approved_schedule_controls_storage_and_overdue_catch_up() {
                     tx_kind: "migration".to_string(),
                     funding_account_uuid: "account-1".to_string(),
                     selected_note,
+                    last_resubmit_tip: None,
                 },
             }
         })
@@ -3237,6 +3243,7 @@ fn regtest_fast_policy_survives_pending_transaction_materialization() {
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: "account-1".to_string(),
                 selected_note,
+                last_resubmit_tip: None,
             },
         }],
         TEST_PASSWORD,
@@ -3315,6 +3322,7 @@ fn approved_schedule_part_index_disambiguates_equal_values() {
                     tx_kind: "migration".to_string(),
                     funding_account_uuid: "account-1".to_string(),
                     selected_note,
+                    last_resubmit_tip: None,
                 },
             }
         })
@@ -3531,6 +3539,7 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: "account-1".to_string(),
                 selected_note,
+                last_resubmit_tip: None,
             },
         }
     };
@@ -3782,6 +3791,7 @@ fn legacy_equal_value_schedule_maps_incremental_parts_by_rank() {
                 note_version: 2,
                 nullifier_hex: None,
             },
+            last_resubmit_tip: None,
         },
     };
 
@@ -3817,6 +3827,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         tx_kind: "migration".to_string(),
         funding_account_uuid: "account-1".to_string(),
         selected_note: selected_note.clone(),
+        last_resubmit_tip: None,
     };
     conn.execute(
         &format!(
@@ -3927,6 +3938,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: "account-1".to_string(),
                 selected_note: selected_note.clone(),
+                last_resubmit_tip: None,
             },
         }],
         TEST_PASSWORD,
@@ -4018,6 +4030,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
                     tx_kind: "migration".to_string(),
                     funding_account_uuid: "account-1".to_string(),
                     selected_note: selected_note.clone(),
+                    last_resubmit_tip: None,
                 },
             },
         }],
@@ -4077,6 +4090,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
                 tx_kind: "migration".to_string(),
                 funding_account_uuid: "account-1".to_string(),
                 selected_note: selected_note.clone(),
+                last_resubmit_tip: None,
             },
         }],
         TEST_PASSWORD,
@@ -4154,6 +4168,7 @@ fn pending_policy_checks_detect_fee_drift_and_only_mined_input_spends() {
         tx_kind: "migration".to_string(),
         funding_account_uuid: "account-1".to_string(),
         selected_note: selected_note.clone(),
+        last_resubmit_tip: None,
     })
     .unwrap();
     conn.execute(

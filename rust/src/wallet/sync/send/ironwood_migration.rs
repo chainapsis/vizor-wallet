@@ -568,6 +568,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
                         tx_kind: "migration".to_string(),
                         funding_account_uuid: account_uuid.to_string(),
                         selected_note,
+                        last_resubmit_tip: None,
                     },
                 })
             })
@@ -1194,6 +1195,7 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
                             tx_kind: "migration".to_string(),
                             funding_account_uuid: account_uuid.to_string(),
                             selected_note: message.selected_note,
+                            last_resubmit_tip: None,
                         },
                     })
                 })
@@ -1258,6 +1260,7 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
                     tx_kind: "migration".to_string(),
                     funding_account_uuid: account_uuid.to_string(),
                     selected_note: message.selected_note,
+                    last_resubmit_tip: None,
                 },
             });
         }
