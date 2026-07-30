@@ -894,6 +894,8 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
   required int currentHeight,
 }) {
   final scheduledHeight = part.effectiveScheduledHeight ?? part.scheduledHeight;
+  final scheduledInFuture =
+      scheduledHeight != null && scheduledHeight > currentHeight;
   return switch (part.state) {
     rust_sync.MigrationPartState.completed => (
       'Completed',
@@ -930,9 +932,9 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
           ? 'Schedule pending'
           : scheduledHeight <= currentHeight
           ? 'Due now'
-          : 'Block ${formatGroupedInteger(scheduledHeight)}',
-      null,
-      0,
+          : formatGroupedInteger(scheduledHeight),
+      scheduledInFuture ? AppIcons.block : null,
+      scheduledInFuture ? 16 : 0,
       context.colors.text.secondary,
     ),
   };

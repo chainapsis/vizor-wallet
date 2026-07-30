@@ -5688,16 +5688,24 @@ void main() {
     );
     expect(find.text('Left to migrate'), findsNothing);
     expect(find.textContaining('1. 2 ZEC'), findsOneWidget);
-    expect(
-      tester
-          .getSize(
-            find.byKey(
-              const ValueKey('mobile_ironwood_migration_schedule_part_0'),
-            ),
-          )
-          .height,
-      72,
+    final firstScheduledRow = find.byKey(
+      const ValueKey('mobile_ironwood_migration_schedule_part_0'),
     );
+    expect(
+      find.descendant(of: firstScheduledRow, matching: find.text('3,000,020')),
+      findsOneWidget,
+    );
+    expect(find.text('Block 3,000,020'), findsNothing);
+    expect(
+      find.descendant(
+        of: firstScheduledRow,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == AppIcons.block,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.getSize(firstScheduledRow).height, 72);
     expect(find.text('Ironwood spendable'), findsOneWidget);
     expect(
       tester
