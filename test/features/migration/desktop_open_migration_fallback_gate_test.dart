@@ -7,6 +7,20 @@ import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  test('detects a balance change from first-pass reconciliation', () {
+    final before = _statusWithScheduledHeight(1_000);
+    final after = _statusWithScheduledHeight(
+      1_000,
+      broadcastStatus: 'broadcasted',
+      broadcastedTxCount: 1,
+    );
+
+    // The coordinator has no previous cached status on its first pass, but it
+    // can still compare the statuses immediately before and after recovery.
+    expect(migrationBalanceMayHaveChanged(null, after), isFalse);
+    expect(migrationBalanceMayHaveChanged(before, after), isTrue);
+  });
+
   test('throttles a failed reconciliation attempt', () async {
     var now = DateTime(2026, 7, 30);
     final throttle = MigrationReconciliationAttemptThrottle(

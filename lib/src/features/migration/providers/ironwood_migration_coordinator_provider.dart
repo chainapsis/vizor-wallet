@@ -245,6 +245,42 @@ class MigrationReconciliationAttemptThrottle {
   }
 }
 
+bool migrationBalanceMayHaveChanged(
+  rust_sync.MigrationStatus? previous,
+  rust_sync.MigrationStatus current,
+) {
+  // The first observation is normally paired with bootstrap/re-entry sync, so
+  // do not add an extra balance fetch merely because the coordinator mounted.
+  // Callers that perform reconciliation should compare its non-null before and
+  // after statuses separately so first-pass recovery is still detected.
+  if (previous == null) return false;
+
+  if (previous.pendingTxCount != current.pendingTxCount ||
+      previous.broadcastedTxCount != current.broadcastedTxCount ||
+      previous.confirmedTxCount != current.confirmedTxCount ||
+      previous.denominationConfirmationCount !=
+          current.denominationConfirmationCount ||
+      previous.denominationSplitCompletedCount !=
+          current.denominationSplitCompletedCount) {
+    return true;
+  }
+
+  final previousParts = {
+    for (final part in previous.parts) part.partIndex: part,
+  };
+  if (previousParts.length != current.parts.length) return true;
+  for (final part in current.parts) {
+    final before = previousParts[part.partIndex];
+    if (before == null ||
+        before.state != part.state ||
+        before.txidHex != part.txidHex ||
+        before.confirmationCount != part.confirmationCount) {
+      return true;
+    }
+  }
+  return false;
+}
+
 class IronwoodMigrationCoordinatorState {
   const IronwoodMigrationCoordinatorState({
     this.statuses = const {},
@@ -748,6 +784,7 @@ class IronwoodMigrationCoordinator
           status,
           accountUuid: account.uuid,
         )) {
+          final statusBeforeReconciliation = status;
           await _reconciliationThrottle.run(
             account.uuid,
             _reconciliationProgressKey(status),
@@ -760,6 +797,13 @@ class IronwoodMigrationCoordinator
           );
           if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
           nextStatuses[account.uuid] = status;
+          if (account.uuid == accountState.activeAccountUuid &&
+              migrationBalanceMayHaveChanged(
+                statusBeforeReconciliation,
+                status,
+              )) {
+            activeBalanceMayHaveChanged = true;
+          }
         }
 
         if (_shouldRecoverDueNativeOutbox(
@@ -815,7 +859,7 @@ class IronwoodMigrationCoordinator
           nextStatuses[account.uuid] = status;
         }
         if (account.uuid == accountState.activeAccountUuid &&
-            _migrationBalanceMayHaveChanged(previousStatus, status)) {
+            migrationBalanceMayHaveChanged(previousStatus, status)) {
           activeBalanceMayHaveChanged = true;
         }
       } catch (error) {
@@ -872,42 +916,6 @@ class IronwoodMigrationCoordinator
     }
     state = const IronwoodMigrationCoordinatorState();
     _invalidateMigrationProviders(null);
-  }
-
-  bool _migrationBalanceMayHaveChanged(
-    rust_sync.MigrationStatus? previous,
-    rust_sync.MigrationStatus current,
-  ) {
-    // The first observation is normally paired with bootstrap/re-entry sync,
-    // so do not add an extra balance fetch merely because the coordinator was
-    // mounted. Subsequent child transaction transitions need a fresh snapshot
-    // for the home balance card.
-    if (previous == null) return false;
-
-    if (previous.pendingTxCount != current.pendingTxCount ||
-        previous.broadcastedTxCount != current.broadcastedTxCount ||
-        previous.confirmedTxCount != current.confirmedTxCount ||
-        previous.denominationConfirmationCount !=
-            current.denominationConfirmationCount ||
-        previous.denominationSplitCompletedCount !=
-            current.denominationSplitCompletedCount) {
-      return true;
-    }
-
-    final previousParts = {
-      for (final part in previous.parts) part.partIndex: part,
-    };
-    if (previousParts.length != current.parts.length) return true;
-    for (final part in current.parts) {
-      final before = previousParts[part.partIndex];
-      if (before == null ||
-          before.state != part.state ||
-          before.txidHex != part.txidHex ||
-          before.confirmationCount != part.confirmationCount) {
-        return true;
-      }
-    }
-    return false;
   }
 
   bool _shouldRecoverDueNativeOutbox(
