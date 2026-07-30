@@ -394,7 +394,7 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
 3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O)
 4. `scan_cached_blocks` from memory (100 blocks per batch)
-5. Enhancement: fetch full tx data (`GetStatus`, `Enhancement`, `TransactionsInvolvingAddress`). Status-only (`GetStatus`) requests are deferred while the scan frontier sits far below the chain tip (recovery rescan / deep catch-up) and are resolved locally once scanning restores mined heights; pending backfill below a tip-current frontier (e.g. an imported account's history) does not defer them.
+5. Enhancement: fetch full tx data (`GetStatus`, `Enhancement`, `TransactionsInvolvingAddress`). While scan ranges remain, status-only (`GetStatus`) requests with durable evidence of prior compact-block mining are deferred and resolved locally once scanning restores their mined heights; normal pending transactions continue through status lookup and resubmission.
 6. Progress streamed to Dart via FRB `StreamSink` per batch
 
 Single DB connection reused across entire sync (opened once, passed to all operations).

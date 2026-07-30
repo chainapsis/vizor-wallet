@@ -45,7 +45,7 @@ use super::{lwd, SyncError, WalletDatabase};
 
 /// Services `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Status-only requests
-/// remain queued while `query_unmined_statuses` is false. Returns
+/// in `deferred_status_txids` remain queued for compact scanning. Returns
 /// `SyncError::Db` if `db.transaction_data_requests()` itself fails.
 /// Per-request failures are split by semantics: an explicit
 /// "txid not recognized" response is recorded via
@@ -57,7 +57,7 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
-    query_unmined_statuses: bool,
+    deferred_status_txids: &HashSet<Vec<u8>>,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
 
@@ -75,14 +75,18 @@ pub(super) async fn run_enhancement(
         // forever on the same inert queue.
         let actionable = requests
             .iter()
-            .any(|request| request_is_actionable(request, query_unmined_statuses));
+            .any(|request| request_is_actionable(request, deferred_status_txids));
         if !actionable {
             break;
         }
 
         for req in &requests {
             match req {
-                TransactionDataRequest::GetStatus(_) if !query_unmined_statuses => continue,
+                TransactionDataRequest::GetStatus(txid)
+                    if deferred_status_txids.contains(txid.as_ref().as_slice()) =>
+                {
+                    continue
+                }
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
@@ -254,13 +258,18 @@ pub(super) async fn run_enhancement(
 }
 
 /// Whether servicing `request` can make progress right now: full-data
-/// enhancements always can, status-only requests only when
-/// `query_unmined_statuses` permits them, and address-scoped requests only
-/// when they carry a bounded block range.
-fn request_is_actionable(request: &TransactionDataRequest, query_unmined_statuses: bool) -> bool {
+/// enhancements always can, status-only requests unless their transaction is
+/// deferred for compact scanning, and address-scoped requests only when they
+/// carry a bounded block range.
+fn request_is_actionable(
+    request: &TransactionDataRequest,
+    deferred_status_txids: &HashSet<Vec<u8>>,
+) -> bool {
     match request {
         TransactionDataRequest::Enhancement(_) => true,
-        TransactionDataRequest::GetStatus(_) => query_unmined_statuses,
+        TransactionDataRequest::GetStatus(txid) => {
+            !deferred_status_txids.contains(txid.as_ref().as_slice())
+        }
         TransactionDataRequest::TransactionsInvolvingAddress(req) => {
             req.block_range_end().is_some()
         }
@@ -600,17 +609,18 @@ mod tests {
 
     #[test]
     fn deferred_status_requests_do_not_block_full_data_enhancement() {
+        let deferred = HashSet::from([vec![1; 32]]);
         assert!(!request_is_actionable(
             &TransactionDataRequest::GetStatus(TxId::from_bytes([1; 32])),
-            false,
+            &deferred,
         ));
         assert!(request_is_actionable(
-            &TransactionDataRequest::GetStatus(TxId::from_bytes([1; 32])),
-            true,
+            &TransactionDataRequest::GetStatus(TxId::from_bytes([2; 32])),
+            &deferred,
         ));
         assert!(request_is_actionable(
-            &TransactionDataRequest::Enhancement(TxId::from_bytes([2; 32])),
-            false,
+            &TransactionDataRequest::Enhancement(TxId::from_bytes([1; 32])),
+            &deferred,
         ));
     }
 

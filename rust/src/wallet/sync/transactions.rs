@@ -265,6 +265,46 @@ pub fn get_transaction_data_requests(
         .collect())
 }
 
+/// Returns unmined transactions that the wallet previously discovered in a
+/// compact block. A shielded note only receives a commitment-tree position
+/// when it is scanned as mined; truncation retains that position even after it
+/// clears the transaction's mined height.
+pub(crate) fn get_unmined_txids_with_mined_output_evidence(
+    db_path: &str,
+) -> Result<HashSet<Vec<u8>>, String> {
+    let conn = open_readonly_conn(db_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT t.txid
+             FROM transactions t
+             WHERE t.mined_height IS NULL
+               AND (
+                 EXISTS (
+                   SELECT 1 FROM sapling_received_notes n
+                   WHERE n.transaction_id = t.id_tx
+                     AND n.commitment_tree_position IS NOT NULL
+                 )
+                 OR EXISTS (
+                   SELECT 1 FROM orchard_received_notes n
+                   WHERE n.transaction_id = t.id_tx
+                     AND n.commitment_tree_position IS NOT NULL
+                 )
+                 OR EXISTS (
+                   SELECT 1 FROM ironwood_received_notes n
+                   WHERE n.transaction_id = t.id_tx
+                     AND n.commitment_tree_position IS NOT NULL
+                 )
+               )",
+        )
+        .map_err(|e| format!("SQL error: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, Vec<u8>>(0))
+        .map_err(|e| format!("Query error: {e}"))?;
+
+    rows.collect::<Result<HashSet<_>, _>>()
+        .map_err(|e| format!("Row error: {e}"))
+}
+
 pub fn decrypt_and_store_transaction(
     db_path: &str,
     network: WalletNetwork,
@@ -1670,6 +1710,62 @@ pub(crate) fn get_resubmittable_txs(
         .map_err(|e| format!("Row error: {e}"))
 }
 
+/// Returns resubmittable transactions after filtering `excluded_txids` before
+/// loading raw transaction bytes.
+pub(crate) fn get_resubmittable_txs_excluding(
+    db_path: &str,
+    current_height: u32,
+    excluded_txids: &HashSet<Vec<u8>>,
+) -> Result<Vec<ResubmittableTx>, String> {
+    if excluded_txids.is_empty() {
+        return get_resubmittable_txs(db_path, current_height);
+    }
+
+    let conn = open_readonly_conn(db_path)?;
+    let candidate_metadata = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT txid, expiry_height \
+                 FROM v_transactions \
+                 WHERE mined_height IS NULL \
+                   AND (expiry_height = 0 OR expiry_height > ?1) \
+                   AND account_balance_delta < 0 \
+                   AND raw IS NOT NULL",
+            )
+            .map_err(|e| format!("SQL error: {e}"))?;
+        let rows = stmt
+            .query_map([current_height], |row| {
+                let txid_bytes: Vec<u8> = row.get(0)?;
+                let expiry_height = row
+                    .get::<_, Option<i64>>(1)?
+                    .map(|h| h.max(0) as u32)
+                    .unwrap_or(0);
+                Ok((txid_bytes, expiry_height))
+            })
+            .map_err(|e| format!("Query error: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Row error: {e}"))?
+    };
+
+    let mut raw_stmt = conn
+        .prepare("SELECT raw FROM transactions WHERE txid = ?1 AND raw IS NOT NULL")
+        .map_err(|e| format!("SQL error: {e}"))?;
+    candidate_metadata
+        .into_iter()
+        .filter(|(txid_bytes, _)| !excluded_txids.contains(txid_bytes))
+        .map(|(txid_bytes, expiry_height)| {
+            let raw_tx = raw_stmt
+                .query_row([&txid_bytes], |row| row.get::<_, Vec<u8>>(0))
+                .map_err(|e| format!("Raw transaction query error: {e}"))?;
+            Ok(ResubmittableTx {
+                txid_bytes,
+                raw_tx,
+                expiry_height,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     //! SQL-predicate regression tests for `get_resubmittable_txs`.
@@ -1722,12 +1818,42 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let conn = rusqlite::Connection::open(file.path()).unwrap();
         conn.execute_batch(
-            "CREATE TABLE v_transactions (
+            "CREATE TABLE transactions (
+                 txid BLOB PRIMARY KEY,
+                 raw BLOB
+             );
+             CREATE TABLE v_transactions (
                  txid BLOB NOT NULL,
                  raw BLOB,
                  mined_height INTEGER,
                  expiry_height INTEGER,
                  account_balance_delta INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
+        file
+    }
+
+    fn mined_output_evidence_db() -> NamedTempFile {
+        let file = NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                 id_tx INTEGER PRIMARY KEY,
+                 txid BLOB NOT NULL,
+                 mined_height INTEGER
+             );
+             CREATE TABLE sapling_received_notes (
+                 transaction_id INTEGER NOT NULL,
+                 commitment_tree_position INTEGER
+             );
+             CREATE TABLE orchard_received_notes (
+                 transaction_id INTEGER NOT NULL,
+                 commitment_tree_position INTEGER
+             );
+             CREATE TABLE ironwood_received_notes (
+                 transaction_id INTEGER NOT NULL,
+                 commitment_tree_position INTEGER
              );",
         )
         .unwrap();
@@ -1745,6 +1871,12 @@ mod tests {
     ) {
         let conn = rusqlite::Connection::open(db.path()).unwrap();
         conn.execute(
+            "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)
+             ON CONFLICT(txid) DO UPDATE SET raw = excluded.raw",
+            rusqlite::params![txid, raw],
+        )
+        .unwrap();
+        conn.execute(
             "INSERT INTO v_transactions (txid, raw, mined_height, expiry_height, account_balance_delta)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![txid, raw, mined_height, expiry_height, account_balance_delta],
@@ -1754,6 +1886,48 @@ mod tests {
 
     fn fake_txid(byte: u8) -> [u8; 32] {
         [byte; 32]
+    }
+
+    #[test]
+    fn mined_output_evidence_requires_an_unmined_tx_with_a_positioned_note() {
+        let db = mined_output_evidence_db();
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        for (id, mined_height) in [
+            (1, None),
+            (2, None),
+            (3, None),
+            (4, None),
+            (5, Some(1_000_000)),
+            (6, None),
+        ] {
+            conn.execute(
+                "INSERT INTO transactions (id_tx, txid, mined_height)
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![id, fake_txid(id as u8), mined_height],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO sapling_received_notes VALUES (1, 10), (4, NULL), (5, 20)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO orchard_received_notes VALUES (2, 30)", [])
+            .unwrap();
+        conn.execute("INSERT INTO ironwood_received_notes VALUES (3, 40)", [])
+            .unwrap();
+        drop(conn);
+
+        let got =
+            get_unmined_txids_with_mined_output_evidence(db.path().to_str().unwrap()).unwrap();
+        assert_eq!(
+            got,
+            HashSet::from([
+                fake_txid(1).to_vec(),
+                fake_txid(2).to_vec(),
+                fake_txid(3).to_vec(),
+            ])
+        );
     }
 
     fn tx_base_for_history() -> TxBase {
@@ -4517,6 +4691,47 @@ mod tests {
         assert_eq!(got[0].txid_bytes, txid.to_vec());
         assert_eq!(got[0].raw_tx, raw);
         assert_eq!(got[0].expiry_height, 1_000_100);
+    }
+
+    #[test]
+    fn resubmit_excludes_only_deferred_txids() {
+        let db = fresh_db();
+        let deferred_txid = fake_txid(0x15);
+        let pending_txid = fake_txid(0x16);
+        let raw = fake_raw();
+        insert_row(
+            &db,
+            &deferred_txid,
+            Some(&raw),
+            None,
+            Some(1_000_100),
+            -5_000,
+        );
+        insert_row(
+            &db,
+            &pending_txid,
+            Some(&raw),
+            None,
+            Some(1_000_100),
+            -5_000,
+        );
+        // The metadata query's stand-in view still reports raw bytes, but the
+        // backing lookup cannot return them. Exclusion must happen before the
+        // raw transaction query.
+        rusqlite::Connection::open(db.path())
+            .unwrap()
+            .execute(
+                "UPDATE transactions SET raw = NULL WHERE txid = ?1",
+                [&deferred_txid],
+            )
+            .unwrap();
+
+        let excluded = HashSet::from([deferred_txid.to_vec()]);
+        let got =
+            get_resubmittable_txs_excluding(db.path().to_str().unwrap(), 1_000_000, &excluded)
+                .unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].txid_bytes, pending_txid);
     }
 
     #[test]

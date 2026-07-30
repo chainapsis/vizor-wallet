@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
@@ -213,57 +213,16 @@ fn is_pending_scan_range(range: &ScanRange) -> bool {
     range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
 }
 
-/// Blocks below the chain tip within which the max scanned height must sit
-/// for the wallet's mined-height view to count as current. Mirrors
-/// zcash_client_sqlite's (non-public) `PRUNING_DEPTH` stable-region depth,
-/// the same boundary its `update_chain_tip` uses to distinguish a
-/// steady-state wallet from one performing a deep rescan.
-const MINED_STATUS_TIP_MARGIN: u64 = 100;
-
-/// Whether the wallet's local mined-height view is current enough to act on
-/// unmined-transaction statuses (servicing `GetStatus` data requests and
-/// selecting transactions for resubmission).
-///
-/// True when the scan queue is drained, or when the max scanned block sits
-/// within [`MINED_STATUS_TIP_MARGIN`] of the chain tip: pending work in that
-/// state is backfill below the scan frontier (an imported account's history,
-/// repair rescans), which cannot restore the mined height of a tip-recent
-/// transaction. A recovery truncation deletes block rows above the rewind
-/// point, pulling the max scanned height far below the tip until the rescan
-/// completes, so recovery keeps status lookups deferred.
-fn should_query_unmined_statuses(
-    has_pending_scan_ranges: bool,
-    max_scanned_height: Option<u64>,
-    chain_tip_height: u64,
-) -> bool {
-    if !has_pending_scan_ranges {
-        return true;
+fn deferred_status_txids(
+    db_path: &str,
+    ranges: &[ScanRange],
+) -> Result<HashSet<Vec<u8>>, SyncError> {
+    if ranges.iter().any(is_pending_scan_range) {
+        crate::wallet::sync::get_unmined_txids_with_mined_output_evidence(db_path)
+            .map_err(SyncError::db)
+    } else {
+        Ok(HashSet::new())
     }
-    max_scanned_height
-        .is_some_and(|max_scanned| max_scanned + MINED_STATUS_TIP_MARGIN >= chain_tip_height)
-}
-
-/// Reads the live inputs for [`should_query_unmined_statuses`] (pending scan
-/// ranges, max scanned block) from `db` and evaluates it against
-/// `chain_tip_height`.
-fn compute_query_unmined_statuses(
-    db: &WalletDatabase,
-    chain_tip_height: u64,
-) -> Result<bool, SyncError> {
-    let has_pending_scan_ranges = db
-        .suggest_scan_ranges()
-        .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
-        .iter()
-        .any(is_pending_scan_range);
-    let max_scanned_height = db
-        .block_max_scanned()
-        .map_err(|e| SyncError::db(format!("block_max_scanned: {e}")))?
-        .map(|meta| u32::from(meta.block_height()) as u64);
-    Ok(should_query_unmined_statuses(
-        has_pending_scan_ranges,
-        max_scanned_height,
-        chain_tip_height,
-    ))
 }
 
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
@@ -1455,8 +1414,8 @@ async fn run_sync_impl(
 
     refresh_utxos(&mut client, db_data_path, &mut db, network, tip_height).await?;
 
-    // 2.5. Resubmit any unmined, unexpired wallet txs now that we
-    // know the current tip. Matches the first of the three
+    // 2.5. Resubmit eligible unmined wallet txs now that we know the
+    // current tip. Matches the first of the three
     // resubmit call sites in zcash-android-wallet-sdk's
     // `processNewBlocks` (line 551). Best-effort: failures are
     // logged inside the helper and must not abort the sync.
@@ -1468,13 +1427,6 @@ async fn run_sync_impl(
     // slow connection, which is long enough for the user to hit
     // stop. Skip the whole pass in that case instead of sending
     // one more round of broadcasts after the UI asked us to quit.
-    //
-    // Recovery gate: a restart mid-recovery would re-select formerly
-    // mined transactions that truncation marked unmined, so this pass
-    // waits behind the same scan-frontier check as the post-batch
-    // resubmit (see `should_query_unmined_statuses`). Once the frontier
-    // catches back up, the post-batch pass covers resubmission for the
-    // rest of this run.
     if !allow_resubmit {
         log::info!("[{}] sync: startup resubmit disabled", elapsed());
     } else if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
@@ -1483,16 +1435,16 @@ async fn run_sync_impl(
             "[{}] sync: cancel/mode observed before startup resubmit, skipping",
             elapsed(),
         );
-    } else if !compute_query_unmined_statuses(&db, tip.height)? {
-        log::info!(
-            "[{}] sync: startup resubmit deferred, scan frontier below tip",
-            elapsed(),
-        );
     } else {
+        let startup_ranges = db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+        let startup_deferred_status_txids = deferred_status_txids(db_data_path, &startup_ranges)?;
         let _ = crate::wallet::sync::resubmit_pending_transactions(
             db_data_path,
             &mut client,
             tip.height as u32,
+            &startup_deferred_status_txids,
             || {
                 cancel.load(Ordering::Relaxed)
                     || desired_mode.load(Ordering::SeqCst) != running_mode
@@ -2109,12 +2061,14 @@ async fn run_sync_impl(
             return Ok(());
         }
 
-        // A recovery can temporarily mark many locally stored transactions as
-        // unmined. Let compact scanning restore their mined heights before
-        // querying lightwalletd for the statuses that remain unknown; backfill
-        // below a tip-current scan frontier does not defer status work (see
-        // `should_query_unmined_statuses`).
-        let query_unmined_statuses = compute_query_unmined_statuses(&db, current_tip_height)?;
+        // Truncation can temporarily clear a transaction's mined height while
+        // retaining note positions that prove compact scanning found it mined.
+        // Let scanning restore those statuses without blocking normal pending
+        // transaction lookups.
+        let post_scan_ranges = db
+            .suggest_scan_ranges()
+            .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
+        let deferred_status_txids = deferred_status_txids(db_data_path, &post_scan_ranges)?;
 
         // Enhancement
         run_enhancement(
@@ -2122,7 +2076,7 @@ async fn run_sync_impl(
             &mut db,
             db_data_path,
             network,
-            query_unmined_statuses,
+            &deferred_status_txids,
         )
         .await?;
 
@@ -2202,14 +2156,12 @@ async fn run_sync_impl(
                         }
                     }
                 }
-                // Status lookups are deferred while recovery scanning remains.
-                // Wait until mined status is reliable before selecting
-                // transactions for resubmission.
-                if allow_resubmit && query_unmined_statuses {
+                if allow_resubmit {
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
                         &mut client,
                         fresh_tip_height,
+                        &deferred_status_txids,
                         || {
                             cancel.load(Ordering::Relaxed)
                                 || desired_mode.load(Ordering::SeqCst) != running_mode
@@ -2569,48 +2521,6 @@ mod tests {
             ),
             None,
         );
-    }
-
-    #[test]
-    fn unmined_statuses_query_when_scan_queue_is_drained() {
-        assert!(should_query_unmined_statuses(false, None, 1_000_000));
-        assert!(should_query_unmined_statuses(
-            false,
-            Some(500_000),
-            1_000_000
-        ));
-    }
-
-    #[test]
-    fn unmined_statuses_defer_while_scan_frontier_is_far_below_tip() {
-        // Recovery: truncation pulled the max scanned height far below the tip.
-        assert!(!should_query_unmined_statuses(
-            true,
-            Some(777_800),
-            1_000_000
-        ));
-        // Fresh restore: nothing scanned yet.
-        assert!(!should_query_unmined_statuses(true, None, 1_000_000));
-    }
-
-    #[test]
-    fn unmined_statuses_query_during_backfill_with_tip_current_frontier() {
-        // Imported-account backfill: historic ranges pending, frontier at tip.
-        assert!(should_query_unmined_statuses(
-            true,
-            Some(1_000_000),
-            1_000_000
-        ));
-        assert!(should_query_unmined_statuses(
-            true,
-            Some(1_000_000 - MINED_STATUS_TIP_MARGIN),
-            1_000_000
-        ));
-        assert!(!should_query_unmined_statuses(
-            true,
-            Some(1_000_000 - MINED_STATUS_TIP_MARGIN - 1),
-            1_000_000
-        ));
     }
 
     #[test]
