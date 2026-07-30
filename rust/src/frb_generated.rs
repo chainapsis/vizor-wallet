@@ -7869,12 +7869,14 @@ impl SseDecode for crate::api::sync::MigrationOutboxBatch {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_runId = <String>::sse_decode(deserializer);
+        let mut var_transactionRelayUrl = <Option<String>>::sse_decode(deserializer);
         let mut var_timingMeanBlocks = <u32>::sse_decode(deserializer);
         let mut var_timingMaxBlocks = <u32>::sse_decode(deserializer);
         let mut var_nextProofHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_items = <Vec<crate::api::sync::MigrationOutboxItem>>::sse_decode(deserializer);
         return crate::api::sync::MigrationOutboxBatch {
             run_id: var_runId,
+            transaction_relay_url: var_transactionRelayUrl,
             timing_mean_blocks: var_timingMeanBlocks,
             timing_max_blocks: var_timingMaxBlocks,
             next_proof_height: var_nextProofHeight,
@@ -10457,6 +10459,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationOutboxBatch {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.run_id.into_into_dart().into_dart(),
+            self.transaction_relay_url.into_into_dart().into_dart(),
             self.timing_mean_blocks.into_into_dart().into_dart(),
             self.timing_max_blocks.into_into_dart().into_dart(),
             self.next_proof_height.into_into_dart().into_dart(),
@@ -13037,6 +13040,7 @@ impl SseEncode for crate::api::sync::MigrationOutboxBatch {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.run_id, serializer);
+        <Option<String>>::sse_encode(self.transaction_relay_url, serializer);
         <u32>::sse_encode(self.timing_mean_blocks, serializer);
         <u32>::sse_encode(self.timing_max_blocks, serializer);
         <Option<u32>>::sse_encode(self.next_proof_height, serializer);

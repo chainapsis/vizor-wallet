@@ -36,7 +36,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::convert::Infallible;
-use std::io::Cursor;
 use std::num::NonZeroUsize;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -85,7 +84,7 @@ use zcash_primitives::transaction::{
         zip317::{P2PKH_STANDARD_INPUT_SIZE, P2PKH_STANDARD_OUTPUT_SIZE},
         FeeRule,
     },
-    Transaction, TxId,
+    TxId,
 };
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
@@ -349,7 +348,7 @@ fn accepted_migration_processing_failure_result(
 ) -> MigrationBroadcastAdvance {
     let accepted_txid_list = accepted_txids.join(",");
     let message = format!(
-        "Migration transaction {accepted_txid_list} was accepted by lightwalletd, but local migration bookkeeping failed: {error}. Vizor will reconcile it on the next advance."
+        "Migration transaction {accepted_txid_list} was accepted by its submission endpoint, but local migration bookkeeping failed: {error}. Vizor will reconcile it on the next advance."
     );
     log::warn!("migration: {message}");
     MigrationBroadcastAdvance {
@@ -4358,38 +4357,13 @@ enum DenominationStageBroadcastReadiness {
 fn validate_separate_relay_denomination_stage(
     stage: &super::migration::PendingRawDenominationStage,
 ) -> Result<(), String> {
-    if stage.expiry_height == 0 {
-        return Err("Separate-relay denomination transaction has no expiry height".to_string());
-    }
-    let mut reader = Cursor::new(stage.raw_tx.as_slice());
-    let tx = Transaction::read(&mut reader, consensus::BranchId::Sapling)
-        .map_err(|e| format!("Parse separate-relay denomination transaction: {e}"))?;
-    if reader.position() != stage.raw_tx.len() as u64 {
-        return Err("Separate-relay denomination transaction has trailing bytes".to_string());
-    }
     let expected_txid = parse_txid_hex(&stage.expected_txid_hex)?;
-    if tx.txid() != expected_txid {
-        return Err(format!(
-            "Separate-relay denomination transaction does not match expected txid {}",
-            stage.expected_txid_hex
-        ));
-    }
-    if u32::from(tx.expiry_height()) != stage.expiry_height {
-        return Err(format!(
-            "Separate-relay denomination transaction {} does not match expiry height {}",
-            stage.expected_txid_hex, stage.expiry_height
-        ));
-    }
-    if tx.sapling_bundle().is_none()
-        && tx.orchard_bundle().is_none()
-        && tx.ironwood_bundle().is_none()
-    {
-        return Err(format!(
-            "Separate-relay denomination transaction {} is not shielded",
-            stage.expected_txid_hex
-        ));
-    }
-    Ok(())
+    super::broadcast::parse_separate_relay_transaction(
+        expected_txid,
+        &stage.raw_tx,
+        stage.expiry_height,
+    )
+    .map(|_| ())
 }
 
 fn denomination_stage_broadcast_readiness(
@@ -4434,10 +4408,10 @@ async fn broadcast_pending_denomination_stages(
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<Option<CreatedBroadcastResult>, String> {
-    let submission_policy = super::migration::denomination_submission_policy(db_path, run_id)?;
+    let submission_policy = super::migration::migration_submission_policy(db_path, run_id)?;
     let persisted_relay_url = match submission_policy {
-        super::migration::MigrationDenominationSubmissionPolicy::Lightwalletd => None,
-        super::migration::MigrationDenominationSubmissionPolicy::SeparateRelay(url) => Some(url),
+        super::migration::MigrationSubmissionPolicy::Lightwalletd => None,
+        super::migration::MigrationSubmissionPolicy::SeparateRelay(url) => Some(url),
     };
     let transaction_relay_url = persisted_relay_url.as_deref();
     let progress = super::get_sync_progress(db_path, network)?;
@@ -4500,9 +4474,9 @@ async fn broadcast_pending_denomination_stages(
             ),
         }));
     }
-    // A separate relay is deliberately scoped to denomination preparation.
-    // When configured, do not contact lightwalletd here, including for a fresh
-    // height. The preceding wallet sync already persisted the tip used below.
+    // When configured, do not contact lightwalletd from this preparation path,
+    // including for a fresh height. The preceding wallet sync already persisted
+    // the tip used below.
     let relay_client = match transaction_relay_url {
         Some(url) => match super::broadcast::TransactionRelayClient::new(url) {
             Ok(client) => Some(client),
@@ -4699,6 +4673,24 @@ async fn broadcast_pending_denomination_stages(
     }))
 }
 
+fn validate_separate_relay_migration_transaction(
+    pending: &super::migration::DuePendingMigrationTx,
+) -> Result<(), String> {
+    let expected_txid = parse_txid_hex(&pending.txid_hex)?;
+    let tx = super::broadcast::parse_separate_relay_transaction(
+        expected_txid,
+        &pending.raw_tx,
+        pending.expiry_height,
+    )?;
+    if tx.orchard_bundle().is_none() || tx.ironwood_bundle().is_none() {
+        return Err(format!(
+            "Separate-relay migration transaction {} does not cross from Orchard to Ironwood",
+            pending.txid_hex
+        ));
+    }
+    Ok(())
+}
+
 async fn broadcast_due_scheduled_migration_txs(
     db_path: &str,
     lightwalletd_url: &str,
@@ -4816,28 +4808,61 @@ async fn broadcast_due_scheduled_migration_txs(
         ));
     }
 
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
-        Err(e) => {
-            let message = format!("Migration broadcast could not start: {e}");
-            super::migration::mark_run_phase(
-                db_path,
-                run_id,
-                super::migration::PHASE_FAILED_RECOVERABLE,
-                Some(&message),
-            )?;
-            return Ok(MigrationBroadcastAdvance::without_acceptance(
-                IronwoodMigrationResult {
-                    txids: String::new(),
-                    status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
-                    broadcasted_count: 0,
-                    total_count: fallback_total_count,
-                    message: Some(message),
-                    fee_zatoshi: 0,
-                    migrated_zatoshi: fallback_migrated_zatoshi,
-                },
-            ));
+    let submission_policy = super::migration::migration_submission_policy(db_path, run_id)?;
+    let relay_client = match submission_policy {
+        super::migration::MigrationSubmissionPolicy::Lightwalletd => None,
+        super::migration::MigrationSubmissionPolicy::SeparateRelay(url) => {
+            match super::broadcast::TransactionRelayClient::new(&url) {
+                Ok(client) => Some(client),
+                Err(e) => {
+                    let message = format!("Migration relay could not start: {e}");
+                    super::migration::mark_run_phase(
+                        db_path,
+                        run_id,
+                        super::migration::PHASE_FAILED_RECOVERABLE,
+                        Some(&message),
+                    )?;
+                    return Ok(MigrationBroadcastAdvance::without_acceptance(
+                        IronwoodMigrationResult {
+                            txids: String::new(),
+                            status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
+                            broadcasted_count: 0,
+                            total_count: fallback_total_count,
+                            message: Some(message),
+                            fee_zatoshi: 0,
+                            migrated_zatoshi: fallback_migrated_zatoshi,
+                        },
+                    ));
+                }
+            }
         }
+    };
+    let mut lwd_client = if relay_client.is_none() {
+        match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+            Ok(client) => Some(client),
+            Err(e) => {
+                let message = format!("Migration broadcast could not start: {e}");
+                super::migration::mark_run_phase(
+                    db_path,
+                    run_id,
+                    super::migration::PHASE_FAILED_RECOVERABLE,
+                    Some(&message),
+                )?;
+                return Ok(MigrationBroadcastAdvance::without_acceptance(
+                    IronwoodMigrationResult {
+                        txids: String::new(),
+                        status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
+                        broadcasted_count: 0,
+                        total_count: fallback_total_count,
+                        message: Some(message),
+                        fee_zatoshi: 0,
+                        migrated_zatoshi: fallback_migrated_zatoshi,
+                    },
+                ));
+            }
+        }
+    } else {
+        None
     };
 
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
@@ -4852,7 +4877,25 @@ async fn broadcast_due_scheduled_migration_txs(
             )?;
             break;
         }
-        if let Err(e) = broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
+        let broadcast_result = if let Some(client) = relay_client.as_ref() {
+            match validate_separate_relay_migration_transaction(&pending) {
+                Ok(()) => {
+                    client
+                        .send_raw_transaction(&pending.raw_tx, &pending.txid_hex)
+                        .await
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            broadcast_raw_transaction(
+                lwd_client
+                    .as_mut()
+                    .expect("lightwalletd client exists for the lightwalletd route"),
+                &pending.raw_tx,
+            )
+            .await
+        };
+        if let Err(e) = broadcast_result {
             log::error!(
                 "migration: broadcast rejected for {}: {}",
                 pending.txid_hex,
@@ -5014,6 +5057,7 @@ async fn broadcast_due_scheduled_migration_txs(
 
 fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {
     error.starts_with("Broadcast rejected:")
+        || error.starts_with("Transaction relay rejected broadcast:")
 }
 
 fn decrypt_and_store_migration_tx(

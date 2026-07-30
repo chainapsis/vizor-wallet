@@ -324,12 +324,15 @@ void main() {
               expect(accountUuid, 'account-1');
               expect(password, isNotEmpty);
               expect(saltBase64, isNotEmpty);
-              return _outboxBatch();
+              return _outboxBatch(
+                transactionRelayUrl: 'https://relay.example/submit',
+              );
             },
         stageMigrationOutboxBatch: (batch) async {
           events.add('stage');
           expect(batch['batchId'], 'test:account-1:run-1');
           expect(batch['lightwalletdUrl'], 'https://lwd.example:443');
+          expect(batch['transactionRelayUrl'], 'https://relay.example/submit');
           return const {'txid-1': 'digest-1'};
         },
         armMigrationOutboxBatch:
@@ -4789,9 +4792,11 @@ rust_sync.IronwoodMigrationResult _migrationResult({
 rust_sync.MigrationOutboxBatch _outboxBatch({
   String runId = 'run-1',
   List<String>? txids,
+  String? transactionRelayUrl,
 }) {
   return rust_sync.MigrationOutboxBatch(
     runId: runId,
+    transactionRelayUrl: transactionRelayUrl,
     timingMeanBlocks: 144,
     timingMaxBlocks: 576,
     nextProofHeight: 576,

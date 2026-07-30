@@ -116,8 +116,8 @@ fn reconcile_mined_denomination_stages(
     pending_salt_base64: &str,
 ) -> Result<Vec<super::migration::DenominationStage>, String> {
     let uses_separate_relay = matches!(
-        super::migration::denomination_submission_policy(db_path, run_id)?,
-        super::migration::MigrationDenominationSubmissionPolicy::SeparateRelay(_)
+        super::migration::migration_submission_policy(db_path, run_id)?,
+        super::migration::MigrationSubmissionPolicy::SeparateRelay(_)
     );
     super::migration::reconcile_denomination_stage_chain_state(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;

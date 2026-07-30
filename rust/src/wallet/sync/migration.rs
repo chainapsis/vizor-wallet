@@ -218,10 +218,11 @@ pub(crate) struct SignedChildProofCandidate {
 pub(crate) struct DuePendingMigrationTx {
     pub txid_hex: String,
     pub raw_tx: Vec<u8>,
+    pub expiry_height: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum MigrationDenominationSubmissionPolicy {
+pub(crate) enum MigrationSubmissionPolicy {
     Lightwalletd,
     SeparateRelay(String),
 }
@@ -229,7 +230,7 @@ pub(crate) enum MigrationDenominationSubmissionPolicy {
 const LIGHTWALLETD_SUBMISSION_TARGET: &str = "lightwalletd";
 const SEPARATE_RELAY_SUBMISSION_PREFIX: &str = "relay:";
 
-fn denomination_submission_target(transaction_relay_url: Option<&str>) -> Result<String, String> {
+fn migration_submission_target(transaction_relay_url: Option<&str>) -> Result<String, String> {
     match transaction_relay_url {
         Some(url) => {
             let url = url.trim();
@@ -243,32 +244,28 @@ fn denomination_submission_target(transaction_relay_url: Option<&str>) -> Result
     }
 }
 
-fn parse_denomination_submission_target(
+fn parse_migration_submission_target(
     run_id: &str,
     target: &str,
-) -> Result<MigrationDenominationSubmissionPolicy, String> {
+) -> Result<MigrationSubmissionPolicy, String> {
     if target == LIGHTWALLETD_SUBMISSION_TARGET {
-        return Ok(MigrationDenominationSubmissionPolicy::Lightwalletd);
+        return Ok(MigrationSubmissionPolicy::Lightwalletd);
     }
     if let Some(url) = target.strip_prefix(SEPARATE_RELAY_SUBMISSION_PREFIX) {
         let url = super::broadcast::validate_transaction_relay_url(url)?;
-        return Ok(MigrationDenominationSubmissionPolicy::SeparateRelay(
-            url.to_string(),
-        ));
+        return Ok(MigrationSubmissionPolicy::SeparateRelay(url.to_string()));
     }
     Err(format!(
-        "Migration run {run_id} has an invalid denomination submission target"
+        "Migration run {run_id} has an invalid submission target"
     ))
 }
 
 fn validate_denomination_stages_for_submission_policy(
-    policy: &MigrationDenominationSubmissionPolicy,
+    policy: &MigrationSubmissionPolicy,
     stages: &[DenominationStageInsert],
 ) -> Result<(), String> {
-    if matches!(
-        policy,
-        MigrationDenominationSubmissionPolicy::SeparateRelay(_)
-    ) && stages.iter().any(|stage| stage.expiry_height == 0)
+    if matches!(policy, MigrationSubmissionPolicy::SeparateRelay(_))
+        && stages.iter().any(|stage| stage.expiry_height == 0)
     {
         return Err(
             "Separate-relay denomination transactions require a nonzero expiry height".to_string(),
@@ -278,10 +275,10 @@ fn validate_denomination_stages_for_submission_policy(
 }
 
 /// Returns the immutable submission target selected when the run was created.
-pub(crate) fn denomination_submission_policy(
+pub(crate) fn migration_submission_policy(
     db_path: &str,
     run_id: &str,
-) -> Result<MigrationDenominationSubmissionPolicy, String> {
+) -> Result<MigrationSubmissionPolicy, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let target = conn
@@ -294,100 +291,124 @@ pub(crate) fn denomination_submission_policy(
             |row| row.get::<_, String>(0),
         )
         .optional()
-        .map_err(|e| format!("Read denomination submission target: {e}"))?
+        .map_err(|e| format!("Read migration submission target: {e}"))?
         .ok_or_else(|| format!("Migration run {run_id} was not found"))?;
-    parse_denomination_submission_target(run_id, &target)
+    parse_migration_submission_target(run_id, &target)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SeparateRelayDenominationTransaction {
+pub(crate) struct SeparateRelayMigrationTransaction {
     /// `None` is the recoverable window after relay acceptance but before the
     /// migration worker stores the transaction in the wallet database.
     pub(crate) raw_tx: Option<Vec<u8>>,
     pub(crate) expiry_height: u32,
 }
 
-fn denomination_submission_record_with_conn(
+fn migration_submission_record_with_conn(
     conn: &rusqlite::Connection,
     txid_hex: &str,
-) -> Result<Option<(String, MigrationDenominationSubmissionPolicy, u32)>, String> {
+) -> Result<Option<(String, MigrationSubmissionPolicy, u32)>, String> {
     if !table_exists(conn, RUNS_TABLE)?
-        || !table_exists(conn, STAGES_TABLE)?
         || !table_column_exists(conn, RUNS_TABLE, "denomination_submission_target")?
     {
         return Ok(None);
     }
 
-    let record = conn
-        .query_row(
-            &format!(
-                "SELECT r.run_id, r.denomination_submission_target, s.expiry_height
-                 FROM {STAGES_TABLE} s
-                 JOIN {RUNS_TABLE} r ON r.run_id = s.run_id
-                 WHERE s.expected_txid_hex = ?1
-                 ORDER BY r.created_at_ms DESC
-                 LIMIT 1"
-            ),
-            params![txid_hex.to_ascii_lowercase()],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, u32>(2)?,
-                ))
-            },
-        )
-        .optional()
-        .map_err(|e| format!("Read denomination submission record: {e}"))?;
-    let Some((run_id, target, expiry_height)) = record else {
+    let txid_hex = txid_hex.to_ascii_lowercase();
+    let mut records = Vec::new();
+    if table_exists(conn, STAGES_TABLE)? {
+        let record = conn
+            .query_row(
+                &format!(
+                    "SELECT r.created_at_ms, r.run_id,
+                            r.denomination_submission_target, s.expiry_height
+                     FROM {STAGES_TABLE} s
+                     JOIN {RUNS_TABLE} r ON r.run_id = s.run_id
+                     WHERE s.expected_txid_hex = ?1
+                     ORDER BY r.created_at_ms DESC
+                     LIMIT 1"
+                ),
+                params![&txid_hex],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, u32>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Read preparation submission record: {e}"))?;
+        records.extend(record);
+    }
+    if table_exists(conn, PENDING_TXS_TABLE)? {
+        let record = conn
+            .query_row(
+                &format!(
+                    "SELECT r.created_at_ms, r.run_id,
+                            r.denomination_submission_target, p.expiry_height
+                     FROM {PENDING_TXS_TABLE} p
+                     JOIN {RUNS_TABLE} r ON r.run_id = p.run_id
+                     WHERE p.txid_hex = ?1
+                     ORDER BY r.created_at_ms DESC
+                     LIMIT 1"
+                ),
+                params![&txid_hex],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, u32>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Read scheduled migration submission record: {e}"))?;
+        records.extend(record);
+    }
+    let Some((_, run_id, target, expiry_height)) = records
+        .into_iter()
+        .max_by_key(|(created_at_ms, ..)| *created_at_ms)
+    else {
         return Ok(None);
     };
-    let policy = parse_denomination_submission_target(&run_id, &target)?;
+    let policy = parse_migration_submission_target(&run_id, &target)?;
     Ok(Some((run_id, policy, expiry_height)))
 }
 
-pub(crate) fn is_separate_relay_denomination_transaction(
+pub(crate) fn is_separate_relay_migration_transaction(
     conn: &rusqlite::Connection,
     txid_hex: &str,
 ) -> Result<bool, String> {
-    denomination_submission_record_with_conn(conn, txid_hex).map(|record| {
+    migration_submission_record_with_conn(conn, txid_hex).map(|record| {
         record.is_some_and(|(_, policy, _)| {
-            matches!(
-                policy,
-                MigrationDenominationSubmissionPolicy::SeparateRelay(_)
-            )
+            matches!(policy, MigrationSubmissionPolicy::SeparateRelay(_))
         })
     })
 }
 
-pub(crate) fn separate_relay_denomination_transaction(
+pub(crate) fn separate_relay_migration_transaction(
     db_path: &str,
     txid: zcash_primitives::transaction::TxId,
-) -> Result<Option<SeparateRelayDenominationTransaction>, String> {
+) -> Result<Option<SeparateRelayMigrationTransaction>, String> {
     let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))?;
     let Some((run_id, policy, expiry_height)) =
-        denomination_submission_record_with_conn(&conn, &txid.to_string())?
+        migration_submission_record_with_conn(&conn, &txid.to_string())?
     else {
         return Ok(None);
     };
-    if matches!(policy, MigrationDenominationSubmissionPolicy::Lightwalletd) {
+    if matches!(policy, MigrationSubmissionPolicy::Lightwalletd) {
         return Ok(None);
     }
     if expiry_height == 0 {
         return Err(format!(
-            "Separate-relay denomination transaction {txid} in run {run_id} has no expiry height"
+            "Separate-relay migration transaction {txid} in run {run_id} has no expiry height"
         ));
     }
-    let raw_tx = conn
-        .query_row(
-            "SELECT raw FROM transactions WHERE txid = ?1",
-            params![txid.as_ref()],
-            |row| row.get::<_, Option<Vec<u8>>>(0),
-        )
-        .optional()
-        .map_err(|e| format!("Read separate-relay denomination transaction {txid}: {e}"))?
-        .flatten();
-    Ok(Some(SeparateRelayDenominationTransaction {
+    let raw_tx = local_transaction_raw(&conn, &txid.to_string())?;
+    Ok(Some(SeparateRelayMigrationTransaction {
         raw_tx,
         expiry_height,
     }))
@@ -408,6 +429,7 @@ pub(crate) struct MigrationOutboxItem {
 #[derive(Debug)]
 pub(crate) struct MigrationOutboxBatch {
     pub run_id: String,
+    pub transaction_relay_url: Option<String>,
     pub timing_mean_blocks: u32,
     pub timing_max_blocks: u32,
     pub next_proof_height: Option<u32>,
@@ -1235,11 +1257,11 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
     let timing_policy = configured_timing_policy(network);
-    let denomination_submission_target = denomination_submission_target(transaction_relay_url)?;
-    let denomination_submission_policy =
-        parse_denomination_submission_target(&run_id, &denomination_submission_target)?;
+    let migration_submission_target = migration_submission_target(transaction_relay_url)?;
+    let migration_submission_policy =
+        parse_migration_submission_target(&run_id, &migration_submission_target)?;
     validate_denomination_stages_for_submission_policy(
-        &denomination_submission_policy,
+        &migration_submission_policy,
         &denomination_stages,
     )?;
     let initial_phase = if denomination_stages.is_empty() {
@@ -1282,7 +1304,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
             timing_policy.as_str(),
             schedule_json,
             preparation_timing_policy.as_str(),
-            denomination_submission_target,
+            migration_submission_target,
         ],
     )
     .map_err(|e| format!("Create staged migration run: {e}"))?;
@@ -1364,7 +1386,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
         .map_err(|e| format!("Encode Keystone migration targets: {e}"))?;
     let schedule_json = serde_json::to_string(approved_schedule)
         .map_err(|e| format!("Encode Keystone migration schedule: {e}"))?;
-    let denomination_submission_target = denomination_submission_target(transaction_relay_url)?;
+    let migration_submission_target = migration_submission_target(transaction_relay_url)?;
     tx.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
@@ -1384,7 +1406,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
             timing_policy.as_str(),
             schedule_json,
             preparation_timing_policy.as_str(),
-            denomination_submission_target,
+            migration_submission_target,
         ],
     )
     .map_err(|e| format!("Create private migration draft: {e}"))?;
@@ -1436,7 +1458,7 @@ pub(crate) fn finalize_private_migration_draft(
             |row| row.get::<_, String>(0),
         )
         .map_err(|e| format!("Read private migration draft submission target: {e}"))?;
-    let submission_policy = parse_denomination_submission_target(run_id, &target)?;
+    let submission_policy = parse_migration_submission_target(run_id, &target)?;
     validate_denomination_stages_for_submission_policy(&submission_policy, &denomination_stages)?;
     let initial_phase = if denomination_stages.is_empty() {
         PHASE_READY_TO_MIGRATE
@@ -3061,6 +3083,10 @@ pub(crate) fn export_scheduled_migration_outbox(
         return Ok(None);
     };
     let timing_policy = timing_policy_for_run_with_conn(&conn, &run.run_id, network)?;
+    let transaction_relay_url = match migration_submission_policy(db_path, &run.run_id)? {
+        MigrationSubmissionPolicy::Lightwalletd => None,
+        MigrationSubmissionPolicy::SeparateRelay(url) => Some(url),
+    };
     let (timing_mean_blocks, timing_max_blocks) =
         schedule_parameters_with_policy(network, timing_policy);
     let unmaterialized_count = unpromoted_signed_child_pczt_count_with_conn(&conn, &run.run_id)?;
@@ -3155,6 +3181,7 @@ pub(crate) fn export_scheduled_migration_outbox(
     }
     Ok(Some(MigrationOutboxBatch {
         run_id: run.run_id,
+        transaction_relay_url,
         timing_mean_blocks,
         timing_max_blocks,
         next_proof_height,
@@ -3302,6 +3329,7 @@ pub(crate) fn due_pending_txs(
         due.push(DuePendingMigrationTx {
             txid_hex,
             raw_tx: raw_tx.to_vec(),
+            expiry_height,
         });
     }
     Ok(due)

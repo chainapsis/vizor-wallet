@@ -55,9 +55,10 @@ fvm flutter build macos --release \
 change source. Open-source builds should use the public CoinGecko base URL
 above; production builds can point this define at a Vizor-operated proxy.
 
-Ironwood migration preparation can submit its locally complete denomination
-transactions through a separate JSON-RPC relay. Managed mainnet configurations
-use `https://zakura-broadcast.valargroup.dev` by default. Set the matching build
+Ironwood migrations can submit both their locally complete preparation
+transactions and their Phase 2 pool-crossing transactions through a separate
+JSON-RPC relay. Managed mainnet configurations use
+`https://zakura-broadcast.valargroup.dev` by default. Set the matching build
 define to override it or to enable relaying on another network:
 
 - `VIZOR_ZCASH_TRANSACTION_RELAY_URL_MAIN`
@@ -66,11 +67,11 @@ define to override it or to enable relaying on another network:
 - `VIZOR_ZCASH_TRANSACTION_RELAY_URL_IRONWOOD_MASQUERADE`
 
 An unset or empty testnet, regtest, or Ironwood Masquerade value keeps the
-existing lightwalletd path for new preparations. The relay is used only with a
+existing lightwalletd path for new migrations. The relay is used only with a
 built-in lightwalletd preset; a custom lightwalletd selection always keeps the
-existing submission flow. A preparation keeps the submission route it started
-with, so changing or removing the define does not reroute its later
-denomination stages. Test builds can opt into the testnet Zakura relay with
+existing submission flow. A migration keeps the submission route it started
+with, so changing or removing the define does not reroute its later preparation
+or Phase 2 transactions. Test builds can opt into the testnet Zakura relay with
 `VIZOR_ZCASH_TRANSACTION_RELAY_URL_TEST=https://zakura-broadcast.testnet.valargroup.dev`.
 Production relays should use HTTPS, expose only transaction submission, disable
 request-body logging, and avoid redirects.

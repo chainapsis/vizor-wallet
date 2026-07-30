@@ -726,6 +726,7 @@ pub struct MigrationOutboxItem {
 
 pub struct MigrationOutboxBatch {
     pub run_id: String,
+    pub transaction_relay_url: Option<String>,
     pub timing_mean_blocks: u32,
     pub timing_max_blocks: u32,
     pub next_proof_height: Option<u32>,
@@ -1531,6 +1532,7 @@ pub fn export_orchard_migration_outbox(
         .map(|batch| {
             batch.map(|batch| MigrationOutboxBatch {
                 run_id: batch.run_id,
+                transaction_relay_url: batch.transaction_relay_url,
                 timing_mean_blocks: batch.timing_mean_blocks,
                 timing_max_blocks: batch.timing_max_blocks,
                 next_proof_height: batch.next_proof_height,

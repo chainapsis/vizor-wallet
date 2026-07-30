@@ -674,6 +674,9 @@ fn migration_rebuilds_only_after_explicit_server_rejection() {
     assert!(migration_broadcast_failure_requires_rebuild(
         "Broadcast rejected: bad-txns-inputs-spent (code 18)"
     ));
+    assert!(migration_broadcast_failure_requires_rebuild(
+        "Transaction relay rejected broadcast: bad-txns-inputs-spent (code -26)"
+    ));
     assert!(!migration_broadcast_failure_requires_rebuild(
         "SendTransaction gRPC failed: connection unavailable"
     ));
@@ -1795,6 +1798,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     let pending = migration::DuePendingMigrationTx {
         txid_hex: pending_txid.to_string(),
         raw_tx: vec![5, 6, 7, 8],
+        expiry_height: 69_120,
     };
 
     let result = record_accepted_scheduled_migration_tx(

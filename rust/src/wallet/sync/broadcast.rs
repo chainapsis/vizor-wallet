@@ -1,13 +1,52 @@
-use std::time::Duration;
+use std::{io::Cursor, time::Duration};
 
 use reqwest::redirect::Policy;
 use serde::Deserialize;
 use serde_json::json;
 use url::{Host, Url};
 use zcash_client_backend::proto::service::SendResponse;
+use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_protocol::consensus::BranchId;
 
 const TRANSACTION_RELAY_TIMEOUT: Duration = Duration::from_secs(15);
 const TRANSACTION_RELAY_MAX_RESPONSE_BYTES: usize = 64 * 1024;
+
+pub(crate) fn parse_separate_relay_transaction(
+    txid: TxId,
+    raw_tx: &[u8],
+    expiry_height: u32,
+) -> Result<Transaction, String> {
+    if expiry_height == 0 {
+        return Err(format!(
+            "Separate-relay transaction {txid} has no expiry height"
+        ));
+    }
+    let mut reader = Cursor::new(raw_tx);
+    let tx = Transaction::read(&mut reader, BranchId::Sapling)
+        .map_err(|e| format!("Parse separate-relay transaction {txid}: {e}"))?;
+    if reader.position() != raw_tx.len() as u64 {
+        return Err(format!(
+            "Separate-relay transaction {txid} has trailing bytes"
+        ));
+    }
+    if tx.txid() != txid {
+        return Err(format!(
+            "Separate-relay transaction bytes do not match {txid}"
+        ));
+    }
+    if u32::from(tx.expiry_height()) != expiry_height {
+        return Err(format!(
+            "Separate-relay transaction {txid} does not match expiry height {expiry_height}"
+        ));
+    }
+    if tx.sapling_bundle().is_none()
+        && tx.orchard_bundle().is_none()
+        && tx.ironwood_bundle().is_none()
+    {
+        return Err(format!("Separate-relay transaction {txid} is not shielded"));
+    }
+    Ok(tx)
+}
 
 pub(super) struct TransactionRelayClient {
     client: reqwest::Client,
@@ -31,8 +70,7 @@ impl TransactionRelayClient {
         Ok(Self { client, endpoint })
     }
 
-    /// Submits only the locally created denomination transaction. Confirmation
-    /// and all later migration transactions remain on their existing paths.
+    /// Submits a locally created migration transaction and verifies its txid.
     pub(super) async fn send_raw_transaction(
         &self,
         raw_tx: &[u8],

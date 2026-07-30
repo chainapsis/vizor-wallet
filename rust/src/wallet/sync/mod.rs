@@ -31,6 +31,8 @@ mod proposal_locks;
 mod send;
 mod transactions;
 
+pub(crate) use broadcast::parse_separate_relay_transaction;
+
 // Re-export the split submodules at the `wallet::sync` path so every
 // `crate::wallet::sync::propose_send` / `::get_wallet_balance` /
 // `::extract_and_broadcast_pczt` etc. call path keeps resolving with
@@ -42,7 +44,7 @@ mod transactions;
 // exactly).
 pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
-    proof_retry_height, reconcile_wallet_locks_after_sync, separate_relay_denomination_transaction,
+    proof_retry_height, reconcile_wallet_locks_after_sync, separate_relay_migration_transaction,
     MigrationPartState, MigrationPreparationOutputKind, MigrationPreparationTransactionState,
     MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
 };

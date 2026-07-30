@@ -905,6 +905,52 @@ final class NativeLightwalletdClientTests: XCTestCase {
   }
 }
 
+final class NativeTransactionRelayClientTests: XCTestCase {
+  private let txid =
+    "838813428b78712263511ed5c6fb9a108c939038a440b74f72bee6caedf602fd"
+
+  func testRelayParserAcceptsMatchingTransactionId() throws {
+    let response = Data(
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\(txid)\"}".utf8
+    )
+
+    XCTAssertEqual(
+      try NativeTransactionRelayClient.parseSendTransactionResponse(
+        response,
+        expectedTxidHex: txid.uppercased()
+      ),
+      NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+    )
+  }
+
+  func testRelayParserPreservesRejection() throws {
+    let response = Data(
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-26,\"message\":\"rejected\"}}".utf8
+    )
+
+    XCTAssertEqual(
+      try NativeTransactionRelayClient.parseSendTransactionResponse(
+        response,
+        expectedTxidHex: txid
+      ),
+      NativeLightwalletdSendResponse(errorCode: -26, errorMessage: "rejected")
+    )
+  }
+
+  func testRelayParserRejectsMismatchedTransactionId() {
+    let response = Data(
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\(String(repeating: "0", count: 64))\"}".utf8
+    )
+
+    XCTAssertThrowsError(
+      try NativeTransactionRelayClient.parseSendTransactionResponse(
+        response,
+        expectedTxidHex: txid
+      )
+    )
+  }
+}
+
 private final class FreshInstallCleanerHarness {
   var hasSentinel = false
   var markedInstalled = false

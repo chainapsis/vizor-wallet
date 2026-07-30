@@ -1683,10 +1683,8 @@ pub(crate) fn get_resubmittable_txs(
                 .try_into()
                 .map_err(|_| "Resubmission transaction ID must be 32 bytes".to_string())?,
         );
-        if !super::migration::is_separate_relay_denomination_transaction(
-            &read_tx,
-            &txid.to_string(),
-        )? {
+        if !super::migration::is_separate_relay_migration_transaction(&read_tx, &txid.to_string())?
+        {
             resubmittable.push(candidate);
         }
     }
@@ -4543,12 +4541,29 @@ mod tests {
     }
 
     #[test]
-    fn resubmit_excludes_separate_relay_transactions() {
+    fn resubmit_excludes_separate_relay_migration_transactions() {
         let db = fresh_db();
-        let txid = fake_txid(0x08);
-        let txid_hex = TxId::from_bytes(txid).to_string();
+        let preparation_txid = fake_txid(0x08);
+        let preparation_txid_hex = TxId::from_bytes(preparation_txid).to_string();
+        let migration_txid = fake_txid(0x09);
+        let migration_txid_hex = TxId::from_bytes(migration_txid).to_string();
         let raw = fake_raw();
-        insert_row(&db, &txid, Some(&raw), None, Some(1_000_100), -5_000);
+        insert_row(
+            &db,
+            &preparation_txid,
+            Some(&raw),
+            None,
+            Some(1_000_100),
+            -5_000,
+        );
+        insert_row(
+            &db,
+            &migration_txid,
+            Some(&raw),
+            None,
+            Some(1_000_100),
+            -5_000,
+        );
 
         let conn = rusqlite::Connection::open(db.path()).unwrap();
         conn.execute_batch(
@@ -4560,6 +4575,11 @@ mod tests {
              CREATE TABLE vizor_migration_denomination_stages (
                 run_id TEXT NOT NULL,
                 expected_txid_hex TEXT NOT NULL,
+                expiry_height INTEGER NOT NULL
+             );
+             CREATE TABLE vizor_migration_pending_txs (
+                run_id TEXT NOT NULL,
+                txid_hex TEXT NOT NULL,
                 expiry_height INTEGER NOT NULL
              );",
         )
@@ -4575,7 +4595,14 @@ mod tests {
             "INSERT INTO vizor_migration_denomination_stages
                 (run_id, expected_txid_hex, expiry_height)
              VALUES ('run-1', ?1, 1000100)",
-            [txid_hex],
+            [preparation_txid_hex],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_pending_txs
+                (run_id, txid_hex, expiry_height)
+             VALUES ('run-1', ?1, 1000100)",
+            [migration_txid_hex],
         )
         .unwrap();
         drop(conn);

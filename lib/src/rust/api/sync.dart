@@ -1296,6 +1296,7 @@ class KeystoneSignedMigrationMessage {
 
 class MigrationOutboxBatch {
   final String runId;
+  final String? transactionRelayUrl;
   final int timingMeanBlocks;
   final int timingMaxBlocks;
   final int? nextProofHeight;
@@ -1303,6 +1304,7 @@ class MigrationOutboxBatch {
 
   const MigrationOutboxBatch({
     required this.runId,
+    this.transactionRelayUrl,
     required this.timingMeanBlocks,
     required this.timingMaxBlocks,
     this.nextProofHeight,
@@ -1312,6 +1314,7 @@ class MigrationOutboxBatch {
   @override
   int get hashCode =>
       runId.hashCode ^
+      transactionRelayUrl.hashCode ^
       timingMeanBlocks.hashCode ^
       timingMaxBlocks.hashCode ^
       nextProofHeight.hashCode ^
@@ -1323,6 +1326,7 @@ class MigrationOutboxBatch {
       other is MigrationOutboxBatch &&
           runtimeType == other.runtimeType &&
           runId == other.runId &&
+          transactionRelayUrl == other.transactionRelayUrl &&
           timingMeanBlocks == other.timingMeanBlocks &&
           timingMaxBlocks == other.timingMaxBlocks &&
           nextProofHeight == other.nextProofHeight &&

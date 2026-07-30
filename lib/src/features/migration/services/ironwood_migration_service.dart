@@ -2461,6 +2461,7 @@ class IronwoodMigrationService {
       'accountUuid': context.accountUuid,
       'runId': batch.runId,
       'lightwalletdUrl': lightwalletdUrl,
+      'transactionRelayUrl': batch.transactionRelayUrl,
       'timingMeanBlocks': batch.timingMeanBlocks,
       'timingMaxBlocks': batch.timingMaxBlocks,
       'createdAtMs': DateTime.now().millisecondsSinceEpoch,

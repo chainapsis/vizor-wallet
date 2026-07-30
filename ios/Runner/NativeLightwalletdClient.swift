@@ -34,40 +34,74 @@ struct NativeLightwalletdSendResponse: Equatable {
   let errorMessage: String
 }
 
-private final class NativeLightwalletdRequestResult: @unchecked Sendable {
+private final class NativeRequestResult<Value>: @unchecked Sendable {
   private let lock = NSLock()
-  private var storedResult: Result<UInt64, NativeLightwalletdError>?
+  private var storedResult: Result<Value, NativeLightwalletdError>?
 
-  func set(_ result: Result<UInt64, NativeLightwalletdError>) {
+  func set(_ result: Result<Value, NativeLightwalletdError>) {
     lock.lock()
     storedResult = result
     lock.unlock()
   }
 
-  var result: Result<UInt64, NativeLightwalletdError>? {
+  var result: Result<Value, NativeLightwalletdError>? {
     lock.lock()
     defer { lock.unlock() }
     return storedResult
   }
 }
 
-private final class NativeLightwalletdSendRequestResult: @unchecked Sendable {
-  private let lock = NSLock()
-  private var storedResult: Result<NativeLightwalletdSendResponse, NativeLightwalletdError>?
-
-  func set(
-    _ result: Result<NativeLightwalletdSendResponse, NativeLightwalletdError>
-  ) {
-    lock.lock()
-    storedResult = result
-    lock.unlock()
+private func performNativeRequest<Value>(
+  _ request: URLRequest,
+  cancellation: BackgroundMigrationCancellation,
+  delegate: URLSessionDelegate? = nil,
+  parseResponse: @escaping (HTTPURLResponse, Data) throws -> Value
+) -> Result<Value, NativeLightwalletdError> {
+  let semaphore = DispatchSemaphore(value: 0)
+  let result = NativeRequestResult<Value>()
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.timeoutIntervalForRequest = 15
+  configuration.timeoutIntervalForResource = 16
+  let session = URLSession(
+    configuration: configuration,
+    delegate: delegate,
+    delegateQueue: nil
+  )
+  let task = session.dataTask(with: request) { data, response, error in
+    defer { semaphore.signal() }
+    if let error {
+      result.set(.failure(.transport(String(describing: error))))
+      return
+    }
+    guard let http = response as? HTTPURLResponse, let data else {
+      result.set(.failure(.malformedResponse))
+      return
+    }
+    do {
+      result.set(.success(try parseResponse(http, data)))
+    } catch let error as NativeLightwalletdError {
+      result.set(.failure(error))
+    } catch {
+      result.set(.failure(.malformedResponse))
+    }
   }
+  task.resume()
 
-  var result: Result<NativeLightwalletdSendResponse, NativeLightwalletdError>? {
-    lock.lock()
-    defer { lock.unlock() }
-    return storedResult
+  let deadline = Date(timeIntervalSinceNow: 16)
+  while semaphore.wait(timeout: .now() + 0.25) == .timedOut {
+    if cancellation.isCancelled {
+      task.cancel()
+      session.invalidateAndCancel()
+      return .failure(.cancelled)
+    }
+    if Date() >= deadline {
+      task.cancel()
+      session.invalidateAndCancel()
+      return .failure(.timedOut)
+    }
   }
+  session.finishTasksAndInvalidate()
+  return result.result ?? .failure(.malformedResponse)
 }
 
 enum NativeLightwalletdClient {
@@ -90,61 +124,17 @@ enum NativeLightwalletdClient {
     request.setValue("trailers", forHTTPHeaderField: "TE")
     request.httpBody = Data(repeating: 0, count: 5)
 
-    let semaphore = DispatchSemaphore(value: 0)
-    let result = NativeLightwalletdRequestResult()
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.timeoutIntervalForRequest = 15
-    configuration.timeoutIntervalForResource = 16
-    let session = URLSession(configuration: configuration)
-    let task = session.dataTask(with: request) { data, response, error in
-      defer { semaphore.signal() }
-      if let error {
-        result.set(.failure(.transport(String(describing: error))))
-        return
-      }
-      guard let http = response as? HTTPURLResponse else {
-        result.set(.failure(.malformedResponse))
-        return
-      }
+    return performNativeRequest(request, cancellation: cancellation) { http, data in
       guard http.statusCode == 200 else {
-        result.set(.failure(.invalidHTTPStatus(http.statusCode)))
-        return
+        throw NativeLightwalletdError.invalidHTTPStatus(http.statusCode)
       }
       if let grpcStatus = http.value(forHTTPHeaderField: "grpc-status"),
         grpcStatus != "0"
       {
-        result.set(.failure(.grpcStatus(grpcStatus)))
-        return
+        throw NativeLightwalletdError.grpcStatus(grpcStatus)
       }
-      guard let data else {
-        result.set(.failure(.malformedResponse))
-        return
-      }
-      do {
-        result.set(.success(try parseLatestBlockResponse(data)))
-      } catch let error as NativeLightwalletdError {
-        result.set(.failure(error))
-      } catch {
-        result.set(.failure(.malformedResponse))
-      }
+      return try parseLatestBlockResponse(data)
     }
-    task.resume()
-
-    let deadline = Date(timeIntervalSinceNow: 16)
-    while semaphore.wait(timeout: .now() + 0.25) == .timedOut {
-      if cancellation.isCancelled {
-        task.cancel()
-        session.invalidateAndCancel()
-        return .failure(.cancelled)
-      }
-      if Date() >= deadline {
-        task.cancel()
-        session.invalidateAndCancel()
-        return .failure(.timedOut)
-      }
-    }
-    session.finishTasksAndInvalidate()
-    return result.result ?? .failure(.malformedResponse)
   }
 
   static func parseLatestBlockResponse(_ data: Data) throws -> UInt64 {
@@ -187,61 +177,17 @@ enum NativeLightwalletdClient {
     request.setValue("trailers", forHTTPHeaderField: "TE")
     request.httpBody = grpcFrame(payload: rawTransactionMessage(rawTransaction))
 
-    let semaphore = DispatchSemaphore(value: 0)
-    let result = NativeLightwalletdSendRequestResult()
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.timeoutIntervalForRequest = 15
-    configuration.timeoutIntervalForResource = 16
-    let session = URLSession(configuration: configuration)
-    let task = session.dataTask(with: request) { data, response, error in
-      defer { semaphore.signal() }
-      if let error {
-        result.set(.failure(.transport(String(describing: error))))
-        return
-      }
-      guard let http = response as? HTTPURLResponse else {
-        result.set(.failure(.malformedResponse))
-        return
-      }
+    return performNativeRequest(request, cancellation: cancellation) { http, data in
       guard http.statusCode == 200 else {
-        result.set(.failure(.invalidHTTPStatus(http.statusCode)))
-        return
+        throw NativeLightwalletdError.invalidHTTPStatus(http.statusCode)
       }
       if let grpcStatus = http.value(forHTTPHeaderField: "grpc-status"),
         grpcStatus != "0"
       {
-        result.set(.failure(.grpcStatus(grpcStatus)))
-        return
+        throw NativeLightwalletdError.grpcStatus(grpcStatus)
       }
-      guard let data else {
-        result.set(.failure(.malformedResponse))
-        return
-      }
-      do {
-        result.set(.success(try parseSendTransactionResponse(data)))
-      } catch let error as NativeLightwalletdError {
-        result.set(.failure(error))
-      } catch {
-        result.set(.failure(.malformedResponse))
-      }
+      return try parseSendTransactionResponse(data)
     }
-    task.resume()
-
-    let deadline = Date(timeIntervalSinceNow: 16)
-    while semaphore.wait(timeout: .now() + 0.25) == .timedOut {
-      if cancellation.isCancelled {
-        task.cancel()
-        session.invalidateAndCancel()
-        return .failure(.cancelled)
-      }
-      if Date() >= deadline {
-        task.cancel()
-        session.invalidateAndCancel()
-        return .failure(.timedOut)
-      }
-    }
-    session.finishTasksAndInvalidate()
-    return result.result ?? .failure(.malformedResponse)
   }
 
   static func parseSendTransactionResponse(
@@ -395,5 +341,148 @@ enum NativeLightwalletdClient {
     default:
       throw NativeLightwalletdError.malformedResponse
     }
+  }
+}
+
+private struct NativeTransactionRelayRequest: Encodable {
+  let jsonrpc = "2.0"
+  let id = 1
+  let method = "sendrawtransaction"
+  let params: [String]
+}
+
+private struct NativeTransactionRelayResponse: Decodable {
+  struct ErrorBody: Decodable {
+    let code: Int64
+    let message: String
+  }
+
+  let jsonrpc: String?
+  let id: Int?
+  let result: String?
+  let error: ErrorBody?
+}
+
+private final class NativeTransactionRelaySessionDelegate: NSObject,
+  URLSessionTaskDelegate
+{
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(nil)
+  }
+}
+
+enum NativeTransactionRelayClient {
+  private static let maximumResponseBytes = 64 * 1024
+
+  static func sendTransaction(
+    endpoint: String,
+    expectedTxidHex: String,
+    rawTransaction: Data,
+    cancellation: BackgroundMigrationCancellation
+  ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError> {
+    guard let url = relayURL(endpoint), isTxidHex(expectedTxidHex) else {
+      return .failure(.invalidEndpoint)
+    }
+    let payload: Data
+    do {
+      payload = try JSONEncoder().encode(
+        NativeTransactionRelayRequest(
+          params: [rawTransaction.map { String(format: "%02x", $0) }.joined()]
+        )
+      )
+    } catch {
+      return .failure(.malformedResponse)
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 15
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = payload
+
+    return performNativeRequest(
+      request,
+      cancellation: cancellation,
+      delegate: NativeTransactionRelaySessionDelegate(),
+      parseResponse: { http, data in
+        guard (200...299).contains(http.statusCode) else {
+          throw NativeLightwalletdError.invalidHTTPStatus(http.statusCode)
+        }
+        guard data.count <= maximumResponseBytes else {
+          throw NativeLightwalletdError.malformedResponse
+        }
+        return try parseSendTransactionResponse(
+          data,
+          expectedTxidHex: expectedTxidHex
+        )
+      }
+    )
+  }
+
+  static func parseSendTransactionResponse(
+    _ data: Data,
+    expectedTxidHex: String
+  ) throws -> NativeLightwalletdSendResponse {
+    guard isTxidHex(expectedTxidHex) else {
+      throw NativeLightwalletdError.malformedResponse
+    }
+    let response = try JSONDecoder().decode(
+      NativeTransactionRelayResponse.self,
+      from: data
+    )
+    guard response.jsonrpc == "2.0", response.id == 1 else {
+      throw NativeLightwalletdError.malformedResponse
+    }
+    switch (response.result, response.error) {
+    case (.some(let returnedTxid), .none):
+      guard isTxidHex(returnedTxid),
+        returnedTxid.caseInsensitiveCompare(expectedTxidHex) == .orderedSame
+      else {
+        throw NativeLightwalletdError.malformedResponse
+      }
+      return NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+    case (.none, .some(let error)):
+      guard let code = Int32(exactly: error.code) else {
+        throw NativeLightwalletdError.malformedResponse
+      }
+      return NativeLightwalletdSendResponse(
+        errorCode: code,
+        errorMessage: error.message
+      )
+    default:
+      throw NativeLightwalletdError.malformedResponse
+    }
+  }
+
+  private static func relayURL(_ endpoint: String) -> URL? {
+    guard let components = URLComponents(string: endpoint),
+      components.user == nil,
+      components.password == nil,
+      let host = components.host,
+      components.query == nil,
+      components.fragment == nil,
+      components.scheme == "https" || (components.scheme == "http" && isLoopback(host))
+    else {
+      return nil
+    }
+    return components.url
+  }
+
+  private static func isLoopback(_ host: String) -> Bool {
+    let host = host.lowercased()
+    return host == "localhost" || host == "127.0.0.1" || host == "::1"
+  }
+
+  private static func isTxidHex(_ value: String) -> Bool {
+    value.utf8.count == 64
+      && value.utf8.allSatisfy {
+        (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0)
+      }
   }
 }

@@ -26,10 +26,7 @@
 //! new requests (e.g. a newly-decrypted transaction may reveal additional
 //! parent transactions to enhance).
 
-use std::{
-    collections::{BTreeMap, HashSet},
-    io::Cursor,
-};
+use std::collections::{BTreeMap, HashSet};
 
 use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
@@ -40,13 +37,13 @@ use zcash_client_backend::{
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
 use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
-use crate::wallet::sync::separate_relay_denomination_transaction;
+use crate::wallet::sync::{parse_separate_relay_transaction, separate_relay_migration_transaction};
 
 use super::{lwd, SyncError, WalletDatabase};
 
@@ -95,7 +92,7 @@ pub(super) async fn run_enhancement(
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
-                    if let Some(local) = separate_relay_denomination_transaction(db_path, *txid)
+                    if let Some(local) = separate_relay_migration_transaction(db_path, *txid)
                         .map_err(SyncError::db)?
                     {
                         let tx = local
@@ -103,6 +100,7 @@ pub(super) async fn run_enhancement(
                             .as_deref()
                             .map(|raw_tx| {
                                 parse_separate_relay_transaction(*txid, raw_tx, local.expiry_height)
+                                    .map_err(SyncError::parse)
                             })
                             .transpose()?;
                         match req {
@@ -339,40 +337,6 @@ pub(super) async fn run_enhancement(
         }
     }
     Ok(())
-}
-
-fn parse_separate_relay_transaction(
-    txid: TxId,
-    raw_tx: &[u8],
-    expiry_height: u32,
-) -> Result<Transaction, SyncError> {
-    let mut reader = Cursor::new(raw_tx);
-    let tx = Transaction::read(&mut reader, BranchId::Sapling)
-        .map_err(|e| SyncError::parse(format!("parse separate-relay transaction {txid}: {e}")))?;
-    if reader.position() != raw_tx.len() as u64 {
-        return Err(SyncError::parse(format!(
-            "separate-relay transaction {txid} has trailing bytes"
-        )));
-    }
-    if tx.txid() != txid {
-        return Err(SyncError::parse(format!(
-            "separate-relay transaction marker does not match {txid}"
-        )));
-    }
-    if u32::from(tx.expiry_height()) != expiry_height {
-        return Err(SyncError::parse(format!(
-            "separate-relay transaction {txid} has inconsistent expiry height"
-        )));
-    }
-    if tx.sapling_bundle().is_none()
-        && tx.orchard_bundle().is_none()
-        && tx.ironwood_bundle().is_none()
-    {
-        return Err(SyncError::parse(format!(
-            "separate-relay transaction {txid} is not shielded"
-        )));
-    }
-    Ok(tx)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -703,12 +667,22 @@ mod tests {
         let expiry_height = 3_000_100;
         let (tx, _) = marked_status_test_tx(expiry_height);
         let txid = tx.txid();
+        let phase_two_expiry_height = expiry_height + 1;
+        let (phase_two_tx, _) = marked_status_test_tx(phase_two_expiry_height);
+        let phase_two_txid = phase_two_tx.txid();
         let conn = rusqlite::Connection::open(db_path).unwrap();
         conn.execute(
             "INSERT INTO transactions
              (txid, expiry_height, min_observed_height)
              VALUES (?1, ?2, 1)",
             rusqlite::params![txid.as_ref(), expiry_height],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO transactions
+             (txid, expiry_height, min_observed_height)
+             VALUES (?1, ?2, 1)",
+            rusqlite::params![phase_two_txid.as_ref(), phase_two_expiry_height],
         )
         .unwrap();
         conn.execute_batch(
@@ -720,6 +694,11 @@ mod tests {
              CREATE TABLE vizor_migration_denomination_stages (
                  run_id TEXT NOT NULL,
                  expected_txid_hex TEXT NOT NULL,
+                 expiry_height INTEGER NOT NULL
+             );
+             CREATE TABLE vizor_migration_pending_txs (
+                 run_id TEXT NOT NULL,
+                 txid_hex TEXT NOT NULL,
                  expiry_height INTEGER NOT NULL
              );
              INSERT INTO vizor_migration_runs
@@ -734,6 +713,13 @@ mod tests {
             rusqlite::params![txid.to_string(), expiry_height],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_pending_txs
+                 (run_id, txid_hex, expiry_height)
+             VALUES ('run-1', ?1, ?2)",
+            rusqlite::params![phase_two_txid.to_string(), phase_two_expiry_height],
+        )
+        .unwrap();
         drop(conn);
 
         let mut db = super::super::open_db(db_path, network).unwrap();
@@ -741,6 +727,12 @@ mod tests {
         assert!(
             requests.iter().any(
                 |request| matches!(request, TransactionDataRequest::GetStatus(id) if *id == txid)
+            ),
+            "unexpected requests: {requests:?}"
+        );
+        assert!(
+            requests.iter().any(
+                |request| matches!(request, TransactionDataRequest::GetStatus(id) if *id == phase_two_txid)
             ),
             "unexpected requests: {requests:?}"
         );
