@@ -4654,6 +4654,19 @@ async fn broadcast_due_scheduled_migration_txs(
         ));
     }
 
+    // Retry local store for already-accepted parts before expiry handling.
+    // Expiry flips `broadcasted` → `needs_resign`, which would drop not-yet-
+    // stored accepted rows out of this retry path. Reconcile confirmations
+    // after a successful store so a mined tx can become `confirmed` first.
+    retry_store_broadcasted_migration_txs_missing_local(
+        db_path,
+        network,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    super::migration::reconcile_run_pending_confirmations(db_path, run_id)?;
+
     let expired_count =
         super::migration::expired_unconfirmed_pending_count(db_path, run_id, chain_tip_height)?;
     if expired_count > 0 {
@@ -4691,15 +4704,6 @@ async fn broadcast_due_scheduled_migration_txs(
             ),
         ));
     }
-    // Retry local store for already-accepted parts before selecting the next due
-    // broadcast. These rows are `broadcasted`, so they must not win due selection.
-    retry_store_broadcasted_migration_txs_missing_local(
-        db_path,
-        network,
-        run_id,
-        pending_password,
-        pending_salt_base64,
-    )?;
     let due = super::migration::due_pending_txs(
         db_path,
         run_id,
