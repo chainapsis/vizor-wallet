@@ -26,8 +26,8 @@ use zcash_client_backend::{
     },
     proto::service::{
         self, compact_tx_streamer_client::CompactTxStreamerClient, BlockId, BlockRange, ChainSpec,
-        Empty, GetSubtreeRootsArg, RawTransaction, SendResponse, TransparentAddressBlockFilter,
-        TreeState, TxFilter,
+        Empty, GetAddressUtxosArg, GetAddressUtxosReply, GetSubtreeRootsArg, RawTransaction,
+        SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
     },
 };
 use zcash_protocol::consensus::{BlockHeight, NetworkUpgrade, Parameters};
@@ -98,6 +98,20 @@ where
     }
 }
 
+type AddressUtxoStream = tonic::Streaming<GetAddressUtxosReply>;
+
+async fn await_address_utxo_stream<F>(
+    timeout: Duration,
+    future: F,
+) -> Result<AddressUtxoStream, SyncError>
+where
+    F: Future<Output = Result<Response<AddressUtxoStream>, Status>>,
+{
+    await_tonic_stream("get_address_utxos_stream", timeout, future)
+        .await
+        .map_err(|e| status_to_network_error("get_address_utxos_stream", e))
+}
+
 // Server-streaming calls intentionally use plain `Request::new` at
 // their call sites. A `grpc-timeout` header would bound the whole
 // stream lifetime; here we only bound stream start and per-message idle
@@ -108,10 +122,8 @@ where
 ///
 /// Ensures the process-wide rustls `CryptoProvider` is installed
 /// before any TLS work. This is normally done by `init_app()` on
-/// the Flutter/FRB path, but the iOS background-sync C FFI
-/// entrypoint (`zcash_run_full_sync_for_migration_preparation`) can reach this
-/// function on
-/// a cold background wake *before* `init_app()` ever ran. Without
+/// the Flutter/FRB path, but Android background preparation JNI can reach this
+/// function on a cold background wake *before* `init_app()` ever ran. Without
 /// the `Once` guard here, rustls 0.23+ panics with "no
 /// process-level CryptoProvider installed" on the first handshake.
 pub(crate) async fn open_lwd_channel(
@@ -261,20 +273,50 @@ pub(crate) async fn get_taddress_txids(
     .map_err(|e| status_to_network_error("get_taddress_txids", e))
 }
 
+/// Open a transparent UTXO stream with a bounded wait for response headers.
+/// Callers should read individual messages with [`next_stream_message`] so a
+/// stalled lightwalletd stream cannot pin the sync loop indefinitely.
+pub(super) async fn get_address_utxos_stream(
+    client: &mut CompactTxStreamerClient<Channel>,
+    addresses: Vec<String>,
+    start_height: BlockHeight,
+) -> Result<AddressUtxoStream, SyncError> {
+    await_address_utxo_stream(
+        LIGHTWALLETD_STREAM_START_TIMEOUT,
+        client.get_address_utxos_stream(Request::new(GetAddressUtxosArg {
+            addresses,
+            start_height: u32::from(start_height) as u64,
+            max_entries: 0,
+        })),
+    )
+    .await
+}
+
+async fn await_stream_message<T, F>(
+    label: &str,
+    timeout: Duration,
+    future: F,
+) -> Result<Option<T>, SyncError>
+where
+    F: Future<Output = Result<Option<T>, Status>>,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(Ok(message)) => Ok(message),
+        Ok(Err(status)) => Err(status_to_network_error(label, status)),
+        Err(_) => Err(SyncError::net(format!(
+            "{label}: timed out after {}s waiting for next message",
+            timeout.as_secs()
+        ))),
+    }
+}
+
 /// Read the next server-streaming message with a bounded idle wait.
 /// `Ok(None)` remains the server's normal EOF signal.
 pub(crate) async fn next_stream_message<T>(
     stream: &mut tonic::Streaming<T>,
     label: &str,
 ) -> Result<Option<T>, SyncError> {
-    match tokio::time::timeout(LIGHTWALLETD_STREAM_IDLE_TIMEOUT, stream.message()).await {
-        Ok(Ok(message)) => Ok(message),
-        Ok(Err(status)) => Err(status_to_network_error(label, status)),
-        Err(_) => Err(SyncError::net(format!(
-            "{label}: timed out after {}s waiting for next message",
-            LIGHTWALLETD_STREAM_IDLE_TIMEOUT.as_secs()
-        ))),
-    }
+    await_stream_message(label, LIGHTWALLETD_STREAM_IDLE_TIMEOUT, stream.message()).await
 }
 
 /// Pulls the latest shielded subtree roots from lightwalletd
@@ -529,6 +571,47 @@ pub(super) async fn download_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stalled_address_utxo_stream_start_is_bounded() {
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            await_address_utxo_stream(
+                Duration::from_millis(5),
+                std::future::pending::<Result<Response<AddressUtxoStream>, Status>>(),
+            ),
+        )
+        .await
+        .expect("test guard: address UTXO stream start hung");
+
+        assert!(matches!(
+            result,
+            Err(SyncError::Network(message))
+                if message.contains("get_address_utxos_stream")
+                    && message.contains("timed out")
+        ));
+    }
+
+    #[tokio::test]
+    async fn stalled_stream_message_is_bounded() {
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            await_stream_message::<service::GetAddressUtxosReply, _>(
+                "get_address_utxos_stream",
+                Duration::from_millis(5),
+                std::future::pending(),
+            ),
+        )
+        .await
+        .expect("test guard: address UTXO stream message hung");
+
+        assert!(matches!(
+            result,
+            Err(SyncError::Network(message))
+                if message.contains("get_address_utxos_stream")
+                    && message.contains("timed out")
+        ));
+    }
 
     #[test]
     fn explicit_ironwood_pool_requests_follow_nu6_3_activation() {

@@ -3,7 +3,9 @@ part of 'mobile_ironwood_migration_flow_screen.dart';
 void _noopMigrationPreviewAction() {}
 
 const _keystonePreparationSignatureMessage =
-    'Sign the preparation transaction on Keystone.';
+    'Preparation needs another Keystone signature.';
+
+enum _MigrationBackdropGlow { positive, neutral }
 
 class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
   const _MobileIronwoodMigrationPreviewSurface({
@@ -21,6 +23,10 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
         const _MigrationNotificationPromptPreview(),
       MobileIronwoodMigrationPreviewSurface.notificationsConfirmation =>
         const _MigrationNotificationPromptPreview(showConfirmation: true),
+      MobileIronwoodMigrationPreviewSurface.migrationStartLoading =>
+        const _MobileMigrationStartPreview(),
+      MobileIronwoodMigrationPreviewSurface.migrationStartKeystoneReady =>
+        const _MobileMigrationStartPreview(ready: true),
       MobileIronwoodMigrationPreviewSurface.preparationActive =>
         const _MigrationPreparationPreview(
           state: _MigrationPreparationState.active,
@@ -109,6 +115,8 @@ class _MigrationPreviewPage extends StatelessWidget {
     this.navForegroundColor,
     this.onBack,
     this.scrollableContent = false,
+    this.showBackButton = true,
+    this.backdropGlow,
   });
 
   final String navTitle;
@@ -119,62 +127,104 @@ class _MigrationPreviewPage extends StatelessWidget {
   final Color? navForegroundColor;
   final VoidCallback? onBack;
   final bool scrollableContent;
+  final bool showBackButton;
+  final _MigrationBackdropGlow? backdropGlow;
 
   @override
   Widget build(BuildContext context) {
+    final glow = backdropGlow;
     return Scaffold(
       backgroundColor: backgroundColor ?? context.colors.background.window,
-      body: DecoratedBox(
-        decoration: const BoxDecoration(),
-        child: SafeArea(
-          child: Column(
-            children: [
-              MobileTopNav.back(
-                title: navTitle,
-                titleStyle: AppTypography.headlineSmall.copyWith(
-                  color: navForegroundColor ?? context.colors.text.accent,
-                ),
-                foregroundColor: navForegroundColor,
-                onBack: onBack ?? () {},
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.sm,
-                    0,
-                    AppSpacing.sm,
-                    AppSpacing.s,
-                  ),
-                  child: Column(
-                    children: [
-                      SizedBox(height: contentGap),
-                      Expanded(
-                        child: scrollableContent
-                            ? LayoutBuilder(
-                                builder: (context, constraints) {
-                                  return SingleChildScrollView(
-                                    child: ConstrainedBox(
-                                      constraints: BoxConstraints(
-                                        minHeight: constraints.maxHeight,
-                                      ),
-                                      child: IntrinsicHeight(child: child),
-                                    ),
-                                  );
-                                },
-                              )
-                            : child,
-                      ),
-                      if (bottom != null) ...[
-                        const SizedBox(height: AppSpacing.sm),
-                        bottom!,
-                      ],
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (glow != null)
+            IgnorePointer(
+              child: DecoratedBox(
+                key: const ValueKey('mobile_ironwood_migration_backdrop_glow'),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0.54, 0.88, 1],
+                    colors: [
+                      const Color(0x00000000),
+                      switch (glow) {
+                        // Figma nodes 7008:16312 and 7020:18141 use this
+                        // currently unexposed green/200 primitive.
+                        _MigrationBackdropGlow.positive => const Color(
+                          0xFF00A460,
+                        ).withValues(alpha: 0.27),
+                        // Figma node 7020:39486 uses gray/454545 at 50%.
+                        _MigrationBackdropGlow.neutral => const Color(
+                          0xFF454545,
+                        ).withValues(alpha: 0.34),
+                      },
+                      switch (glow) {
+                        _MigrationBackdropGlow.positive => const Color(
+                          0xFF00A460,
+                        ).withValues(alpha: 0.4),
+                        _MigrationBackdropGlow.neutral => const Color(
+                          0xFF454545,
+                        ).withValues(alpha: 0.5),
+                      },
                     ],
                   ),
                 ),
               ),
-            ],
+            ),
+          SafeArea(
+            child: Column(
+              children: [
+                MobileTopNav.back(
+                  title: navTitle,
+                  titleStyle: AppTypography.headlineSmall.copyWith(
+                    color: navForegroundColor ?? context.colors.text.accent,
+                  ),
+                  foregroundColor: navForegroundColor,
+                  onBack: showBackButton
+                      ? onBack ?? _noopMigrationPreviewAction
+                      : null,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.sm,
+                      0,
+                      AppSpacing.sm,
+                      AppSpacing.s,
+                    ),
+                    child: Column(
+                      children: [
+                        SizedBox(height: contentGap),
+                        Expanded(
+                          child: scrollableContent
+                              ? LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    return SingleChildScrollView(
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          minHeight: constraints.maxHeight,
+                                        ),
+                                        child: IntrinsicHeight(child: child),
+                                      ),
+                                    );
+                                  },
+                                )
+                              : child,
+                        ),
+                        if (bottom != null) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          bottom!,
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -229,7 +279,10 @@ class _MobileMigrationNotificationPermissionScreenState
 
   Future<void> _allowNotifications() async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _continueError = null;
+    });
     try {
       final service = ref.read(ironwoodMigrationServiceProvider);
       final current = await service.notificationAuthorizationStatus();
@@ -247,6 +300,14 @@ class _MobileMigrationNotificationPermissionScreenState
       if (status == IronwoodMigrationNotificationAuthorizationStatus.denied) {
         if (wasDenied) {
           await service.openNotificationSystemSettings();
+        } else {
+          // The system dialog was just dismissed, and the same button now
+          // routes to Settings instead. Say so rather than looking inert.
+          setState(() {
+            _continueError =
+                'Notifications are still off. Allow them from Settings, or '
+                'continue without notifications.';
+          });
         }
       }
     } catch (_) {
@@ -289,67 +350,21 @@ class _MobileMigrationNotificationPermissionScreenState
   }
 
   Future<void> _continueAfterNotificationGate() async {
-    final plan = widget.privatePlan;
-    if (mounted) {
-      setState(() {
-        _busy = true;
-        _continueError = null;
-      });
-    }
-    var draftSaved = false;
-    try {
-      if (plan == null) {
-        throw StateError('Migration plan is unavailable.');
-      }
-      final accountState = await ref.read(accountProvider.future);
-      if (!mounted) return;
-      final accountUuid = accountState.activeAccountUuid;
-      if (accountUuid == null) {
-        throw StateError('No active account is selected.');
-      }
-      await ref
-          .read(ironwoodMigrationServiceProvider)
-          .savePrivateMigrationDraft(
-            accountUuid: accountUuid,
-            approvedSchedule: plan.scheduledTransfers,
-          );
-      draftSaved = true;
-      if (!mounted) return;
-      await _refreshPrivateMigrationDraftPresentation(ref);
-      if (!mounted) return;
-      final destination = await _continuePrivateMigrationAfterNotificationGate(
-        ref,
-        plan,
-      );
-      if (!mounted) return;
-      _openPrivateMigrationDestination(context, destination, plan);
-    } catch (error) {
-      debugPrint('Failed to activate direct-note migration: $error');
-      if (!mounted) return;
-      if (draftSaved || await _hasDurablePrivateMigrationRun(ref)) {
-        if (!mounted) return;
-        context.go(
-          '/migration/private/status',
-          extra: MobileIronwoodMigrationStatusEntry(approvedPlan: plan),
-        );
-        return;
-      }
-      setState(() {
-        _continueError = "Couldn't start the migration. Try again.";
-      });
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    if (!mounted) return;
+    context.go('/migration/private/start', extra: widget.privatePlan);
   }
 
   @override
   Widget build(BuildContext context) {
-    return _MigrationNotificationPromptPreview(
-      busy: _busy,
-      errorMessage: _continueError,
-      onBack: () => context.go('/migration/options'),
-      onAllow: () => unawaited(_allowNotifications()),
-      onNotNow: () => unawaited(_confirmNotNow()),
+    return _MobileIronwoodMigrationBackScope(
+      onFallback: () => context.go('/migration/options'),
+      child: _MigrationNotificationPromptPreview(
+        busy: _busy,
+        errorMessage: _continueError,
+        onBack: () => context.go('/migration/options'),
+        onAllow: () => unawaited(_allowNotifications()),
+        onNotNow: () => unawaited(_confirmNotNow()),
+      ),
     );
   }
 }
@@ -583,22 +598,61 @@ class _MigrationNotificationIllustration extends StatelessWidget {
   }
 }
 
-enum _MigrationPreparationState { active, paused, syncing }
+/// Preparation preview states.
+///
+/// `advancing` and `backgroundTracking` are both visually "working" states —
+/// they animate the ring exactly like `active` — but they answer a different
+/// question: whether leaving the app right now stalls the migration. An
+/// advance needs the foreground permit and must keep Vizor open; an armed
+/// background tracking task does not.
+enum _MigrationPreparationState {
+  active,
+  advancing,
+  backgroundTracking,
+  paused,
+  syncing;
+
+  bool get animatesRing =>
+      this == active || this == advancing || this == backgroundTracking;
+}
+
+const _migrationPreparationAdvancingMessage =
+    'Preparing the next transactions. Keep Vizor open.';
+// Rendered inside the 200px-wide preparation ring — keep it two short
+// sentences or it fills the dial.
+const _migrationPreparationBackgroundTrackingMessage =
+    'Confirming in the background. You can close Vizor.';
+const _migrationPreparationNotificationsDisabledMessage =
+    'Allow notifications to continue in the background, or keep Vizor open.';
+// Deliberately distinct from the message above: this device has no background
+// preparation lane at all, so telling the user to allow notifications would
+// promise something granting them cannot deliver.
+const _migrationPreparationBackgroundUnsupportedMessage =
+    'This device can\u2019t confirm in the background. Keep Vizor open.';
 
 class _MigrationPreparationPreview extends StatelessWidget {
   const _MigrationPreparationPreview({
     required this.state,
     this.isKeystone = false,
     this.pausedMessage,
+    this.deviceLimitMessage,
     this.onBack,
     this.onContinue,
+    this.onViewSchedule,
   });
 
   final _MigrationPreparationState state;
   final bool isKeystone;
   final String? pausedMessage;
+
+  /// Set when this device cannot track preparation while Vizor is closed.
+  ///
+  /// Outranks [pausedMessage] and the waiting default because it is the only
+  /// message naming a limit the user cannot resolve from settings.
+  final String? deviceLimitMessage;
   final VoidCallback? onBack;
   final VoidCallback? onContinue;
+  final VoidCallback? onViewSchedule;
 
   @override
   Widget build(BuildContext context) {
@@ -622,13 +676,22 @@ class _MigrationPreparationPreview extends StatelessWidget {
                   isKeystone ? AppIcons.qr : AppIcons.play,
                   size: 20,
                 ),
-                child: const Text('Continue preparation'),
+                child: Text(
+                  isKeystone
+                      ? 'Continue with Keystone'
+                      : 'Continue preparation',
+                ),
               ),
             )
           : null,
       child: Column(
         children: [
-          _MigrationPreparationDial(state: state, pausedMessage: pausedMessage),
+          _MigrationPreparationDial(
+            state: state,
+            pausedMessage: pausedMessage,
+            deviceLimitMessage: deviceLimitMessage,
+            onViewSchedule: onViewSchedule,
+          ),
           const SizedBox(height: AppSpacing.base),
           Opacity(
             opacity: paused ? 0.4 : 1,
@@ -641,10 +704,17 @@ class _MigrationPreparationPreview extends StatelessWidget {
 }
 
 class _MigrationPreparationDial extends StatelessWidget {
-  const _MigrationPreparationDial({required this.state, this.pausedMessage});
+  const _MigrationPreparationDial({
+    required this.state,
+    this.pausedMessage,
+    this.deviceLimitMessage,
+    this.onViewSchedule,
+  });
 
   final _MigrationPreparationState state;
   final String? pausedMessage;
+  final String? deviceLimitMessage;
+  final VoidCallback? onViewSchedule;
 
   @override
   Widget build(BuildContext context) {
@@ -657,11 +727,11 @@ class _MigrationPreparationDial extends StatelessWidget {
         children: [
           _AnimatedMigrationPreparationRing(
             key: const ValueKey('mobile_ironwood_preparation_ring'),
-            animate: state == _MigrationPreparationState.active,
+            animate: state.animatesRing,
             color: context.colors.border.subtle,
           ),
           SizedBox(
-            width: 200,
+            width: 220,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -682,15 +752,35 @@ class _MigrationPreparationDial extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   paused
-                      ? pausedMessage ??
+                      ? deviceLimitMessage ??
+                            pausedMessage ??
                             'Preparation was paused because you left.'
                       : syncing
                       ? 'Syncing your wallet…'
-                      : 'Preparation will\ntake 10–20 min',
+                      : switch (state) {
+                          _MigrationPreparationState.advancing =>
+                            _migrationPreparationAdvancingMessage,
+                          _MigrationPreparationState.backgroundTracking =>
+                            _migrationPreparationBackgroundTrackingMessage,
+                          // A waiting device that cannot track in the
+                          // background must say so here too: the neutral
+                          // duration copy would let the user close Vizor and
+                          // silently stall the run.
+                          _ =>
+                            deviceLimitMessage ??
+                                'Preparation will\ntake 10–20 min',
+                        },
                   textAlign: TextAlign.center,
                   style: AppTypography.bodyMediumStrong.copyWith(
                     color: context.colors.text.accent,
                   ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _MigrationViewScheduleButton(
+                  key: const ValueKey(
+                    'mobile_ironwood_view_preparation_schedule_button',
+                  ),
+                  onTap: onViewSchedule,
                 ),
               ],
             ),
@@ -1068,6 +1158,9 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.migratedAmountText,
     this.totalAmountText,
     this.availableAmountText,
+    this.leftToMigrateText,
+    this.completionEstimateText,
+    this.nextActionPresentation,
     this.nextActionText,
     this.statusValueOverride,
     this.actionMessage,
@@ -1075,6 +1168,7 @@ class _MigrationProgressPreview extends StatelessWidget {
     this.actionBatchLabel,
     this.actionBatchValue,
     this.onAction,
+    this.onViewSchedule,
     this.actionRunning = false,
     this.onBack,
     this.onPreparationCompleteDone,
@@ -1093,6 +1187,9 @@ class _MigrationProgressPreview extends StatelessWidget {
   final String? migratedAmountText;
   final String? totalAmountText;
   final String? availableAmountText;
+  final String? leftToMigrateText;
+  final String? completionEstimateText;
+  final MigrationNextActionPresentation? nextActionPresentation;
   final String? nextActionText;
   final String? statusValueOverride;
   final String? actionMessage;
@@ -1100,6 +1197,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   final String? actionBatchLabel;
   final String? actionBatchValue;
   final VoidCallback? onAction;
+  final VoidCallback? onViewSchedule;
   final bool actionRunning;
   final VoidCallback? onBack;
   final VoidCallback? onPreparationCompleteDone;
@@ -1136,15 +1234,30 @@ class _MigrationProgressPreview extends StatelessWidget {
       segments: math.max(1, totalParts),
       valuesZatoshi: segmentValuesZatoshi,
     );
+    final resolvedNextActionPresentation =
+        nextActionPresentation ??
+        MigrationNextActionPresentation(
+          label: 'Next migration',
+          amountZatoshi: BigInt.from(2_000_000_000_000),
+          detail: 'at',
+          scheduledHeight: 3_428_143,
+        );
+    final backdropGlow = switch (state) {
+      _MigrationProgressState.syncing => _MigrationBackdropGlow.neutral,
+      _MigrationProgressState.needsInput => null,
+      _ => _MigrationBackdropGlow.positive,
+    };
     final body = _MigrationPreviewPage(
-      navTitle: 'Migration in progress…',
+      navTitle: 'Ironwood Migration',
       onBack: onBack,
       contentGap: AppSpacing.md,
       scrollableContent: state != _MigrationProgressState.syncing,
+      backdropGlow: backdropGlow,
       child: state == _MigrationProgressState.syncing
           ? _MigrationSyncingContent(
               compact: compact,
               segmentWeights: resolvedSegmentWeights,
+              onViewSchedule: onViewSchedule,
             )
           : Column(
               children: [
@@ -1167,12 +1280,17 @@ class _MigrationProgressPreview extends StatelessWidget {
                   dimension: compact ? 192 : 256,
                   migratedAmountText: migratedAmountText,
                   totalAmountText: totalAmountText,
+                  nextActionPresentation: resolvedNextActionPresentation,
+                  onViewSchedule: onViewSchedule,
                 ),
                 SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
                 _MigrationProgressSummary(
                   completedParts: resolvedCompletedParts,
                   state: state,
                   availableAmountText: availableAmountText,
+                  leftToMigrateText: leftToMigrateText ?? '142.23 ZEC',
+                  completionEstimateText:
+                      completionEstimateText ?? 'in ~4.5 hours',
                   statusValueOverride: statusValueOverride,
                 ),
                 const Spacer(),
@@ -1215,6 +1333,8 @@ class _MigrationBatchDial extends StatelessWidget {
     this.dimension = 256,
     this.migratedAmountText,
     this.totalAmountText,
+    this.nextActionPresentation,
+    this.onViewSchedule,
   });
 
   final _MigrationProgressState state;
@@ -1228,9 +1348,12 @@ class _MigrationBatchDial extends StatelessWidget {
   final double dimension;
   final String? migratedAmountText;
   final String? totalAmountText;
+  final MigrationNextActionPresentation? nextActionPresentation;
+  final VoidCallback? onViewSchedule;
 
   @override
   Widget build(BuildContext context) {
+    final presentation = nextActionPresentation;
     final migrated = migratedAmountText?.replaceFirst(RegExp(r'\s+ZEC$'), '');
     final total = totalAmountText ?? '100 ZEC';
     final combinedAmount = migrated == null ? '0/100 ZEC' : '$migrated/$total';
@@ -1260,15 +1383,24 @@ class _MigrationBatchDial extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Migrated:',
+                presentation?.label ?? 'Next migration',
                 style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.secondary,
+                  color: context.colors.text.accent,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
               SizedBox(
                 width: dimension * 0.68,
-                child: splitAmount
+                child: presentation != null
+                    ? FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${_migrationDisplayZec(presentation.amountZatoshi)} ZEC',
+                          maxLines: 1,
+                          style: amountStyle,
+                        ),
+                      )
+                    : splitAmount
                     ? Column(
                         children: [
                           FittedBox(
@@ -1299,11 +1431,27 @@ class _MigrationBatchDial extends StatelessWidget {
                       ),
               ),
               const SizedBox(height: AppSpacing.xs),
-              Text(
-                '$completedBatches/$totalBatches Batch',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: context.colors.text.accent,
+              if (presentation != null)
+                SizedBox(
+                  width: dimension * 0.78,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: _MigrationNextActionDetail(
+                      presentation: presentation,
+                    ),
+                  ),
+                )
+              else
+                Text(
+                  '$completedBatches/$totalBatches Batch',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: context.colors.text.accent,
+                  ),
                 ),
+              const SizedBox(height: AppSpacing.xxs),
+              _MigrationViewScheduleButton(
+                key: const ValueKey('mobile_ironwood_view_schedule_button'),
+                onTap: onViewSchedule,
               ),
             ],
           ),
@@ -1313,14 +1461,95 @@ class _MigrationBatchDial extends StatelessWidget {
   }
 }
 
+class _MigrationNextActionDetail extends StatelessWidget {
+  const _MigrationNextActionDetail({required this.presentation});
+
+  final MigrationNextActionPresentation presentation;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AppTypography.bodyMedium.copyWith(
+      color: context.colors.text.accent,
+    );
+    final scheduledHeight = presentation.scheduledHeight;
+    if (scheduledHeight == null) {
+      return Text(
+        presentation.detail,
+        maxLines: 1,
+        textAlign: TextAlign.center,
+        style: style,
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(presentation.detail, style: style),
+        const SizedBox(width: AppSpacing.xxs),
+        AppIcon(AppIcons.block, size: 16, color: context.colors.icon.success),
+        const SizedBox(width: AppSpacing.xxs),
+        Text(formatGroupedInteger(scheduledHeight), style: style),
+      ],
+    );
+  }
+}
+
+class _MigrationViewScheduleButton extends StatelessWidget {
+  const _MigrationViewScheduleButton({required this.onTap, super.key});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 156,
+      height: 28,
+      child: AppButton(
+        onPressed: onTap ?? () {},
+        variant: AppButtonVariant.ghost,
+        size: AppButtonSize.small,
+        contentPadding: EdgeInsets.zero,
+        child: SizedBox(
+          width: 130,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Semantics(
+              label: 'View schedule',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'View schedule',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: context.colors.text.accent,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  AppIcon(
+                    AppIcons.chevronForward,
+                    size: 16,
+                    color: context.colors.icon.regular,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MigrationSyncingContent extends StatelessWidget {
   const _MigrationSyncingContent({
     required this.compact,
     required this.segmentWeights,
+    this.onViewSchedule,
   });
 
   final bool compact;
   final List<double> segmentWeights;
+  final VoidCallback? onViewSchedule;
 
   @override
   Widget build(BuildContext context) {
@@ -1347,15 +1576,20 @@ class _MigrationSyncingContent extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Migrated:',
+                    'Next migration',
                     style: AppTypography.bodyMedium.copyWith(
                       color: context.colors.text.secondary,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  const _MigrationSkeletonBar(width: 90, height: 16),
+                  const _MigrationSkeletonBar(width: 90, height: 18),
                   const SizedBox(height: AppSpacing.xs),
-                  const _MigrationSkeletonBar(width: 90, height: 16),
+                  const _MigrationSkeletonBar(width: 110, height: 16),
+                  const SizedBox(height: AppSpacing.xxs),
+                  _MigrationViewScheduleButton(
+                    key: const ValueKey('mobile_ironwood_view_schedule_button'),
+                    onTap: onViewSchedule,
+                  ),
                 ],
               ),
             ],
@@ -1364,14 +1598,12 @@ class _MigrationSyncingContent extends StatelessWidget {
         SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
         const _MigrationSummaryRows(
           first: _MigrationSkeletonValueRow(
-            icon: AppIcons.shieldKeyhole,
-            label: 'Available in Ironwood',
+            label: 'Left to migrate',
             valueWidth: 90,
-            emphasized: true,
+            accented: true,
           ),
           second: _MigrationSkeletonValueRow(
-            icon: AppIcons.wrench,
-            label: 'Status',
+            label: 'Est. completion',
             valueWidth: 184,
           ),
         ),
@@ -1405,28 +1637,25 @@ class _MigrationSyncingContent extends StatelessWidget {
 
 class _MigrationSkeletonValueRow extends StatelessWidget {
   const _MigrationSkeletonValueRow({
-    required this.icon,
     required this.label,
     required this.valueWidth,
-    this.emphasized = false,
+    this.accented = false,
   });
 
-  final String icon;
   final String label;
   final double valueWidth;
-  final bool emphasized;
+  final bool accented;
 
   @override
   Widget build(BuildContext context) {
     final labelStyle = AppTypography.labelLarge.copyWith(
-      color: emphasized
+      color: accented
           ? context.colors.text.accent
           : context.colors.text.primary,
-      fontWeight: emphasized ? FontWeight.w500 : FontWeight.w400,
+      fontWeight: FontWeight.w400,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        const fixedWidth = 20 + AppSpacing.xs;
         const minimumBarWidth = 48.0;
         final labelPainter = TextPainter(
           text: TextSpan(text: label, style: labelStyle),
@@ -1435,25 +1664,17 @@ class _MigrationSkeletonValueRow extends StatelessWidget {
         )..layout();
         final maxLabelWidth = math.max(
           0.0,
-          constraints.maxWidth - fixedWidth - minimumBarWidth,
+          constraints.maxWidth - minimumBarWidth,
         );
         final labelWidth = math.min(labelPainter.width, maxLabelWidth);
         final barWidth = math.min(
           valueWidth,
-          math.max(0.0, constraints.maxWidth - fixedWidth - labelWidth),
+          math.max(0.0, constraints.maxWidth - labelWidth),
         );
         return SizedBox(
           height: 20,
           child: Row(
             children: [
-              AppIcon(
-                icon,
-                size: 20,
-                color: emphasized
-                    ? context.colors.text.accent
-                    : context.colors.text.primary,
-              ),
-              const SizedBox(width: AppSpacing.xs),
               SizedBox(
                 width: labelWidth,
                 child: Text(
@@ -1518,32 +1739,44 @@ class _MigrationSkeletonBarState extends State<_MigrationSkeletonBar>
   Widget build(BuildContext context) {
     final base = context.colors.background.ground;
     final highlight = context.colors.border.subtle;
+    final highlightWidth = widget.width * 0.45;
     return SizedBox(
       width: widget.width,
       height: widget.height,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadii.full),
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final shift = (_controller.value * 2 - 1) * widget.width;
-            return ShaderMask(
-              blendMode: BlendMode.srcIn,
-              shaderCallback: (bounds) =>
-                  LinearGradient(
-                    colors: [base, highlight, base],
-                    stops: const [0.15, 0.5, 0.85],
-                  ).createShader(
-                    Rect.fromLTWH(
-                      bounds.left + shift,
-                      bounds.top,
-                      bounds.width,
-                      bounds.height,
+        child: DecoratedBox(
+          decoration: BoxDecoration(color: base),
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              final left =
+                  -highlightWidth +
+                  _controller.value * (widget.width + highlightWidth);
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned(
+                    left: left,
+                    top: 0,
+                    bottom: 0,
+                    width: highlightWidth,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            highlight.withValues(alpha: 0),
+                            highlight,
+                            highlight.withValues(alpha: 0),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-              child: const ColoredBox(color: Color(0xFFFFFFFF)),
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1555,29 +1788,34 @@ class _MigrationProgressSummary extends StatelessWidget {
     required this.completedParts,
     required this.state,
     this.availableAmountText,
+    this.leftToMigrateText,
+    this.completionEstimateText,
     this.statusValueOverride,
   });
 
   final int completedParts;
   final _MigrationProgressState state;
   final String? availableAmountText;
+  final String? leftToMigrateText;
+  final String? completionEstimateText;
   final String? statusValueOverride;
 
   @override
   Widget build(BuildContext context) {
     return _MigrationSummaryRows(
       first: _MigrationValueRow(
-        icon: AppIcons.shieldKeyhole,
-        label: 'Available in Ironwood',
+        label: 'Left to migrate',
         value:
-            availableAmountText ?? (completedParts == 0 ? '0 ZEC' : '40 ZEC'),
-        emphasized: true,
+            leftToMigrateText ??
+            availableAmountText ??
+            (completedParts == 0 ? '100 ZEC' : '60 ZEC'),
+        accented: true,
       ),
       second: _MigrationValueRow(
-        icon: AppIcons.wrench,
-        label: 'Status',
+        label: 'Est. completion',
         value:
             statusValueOverride ??
+            completionEstimateText ??
             switch (state) {
               _MigrationProgressState.syncing => 'Syncing',
               _MigrationProgressState.broadcasting =>
@@ -1632,8 +1870,9 @@ class _MigrationProgressStatus extends StatelessWidget {
       _MigrationProgressState.waitingNotificationsOn => (
         AppIcons.notificationBell,
         '~2 hrs 15 mins',
-        'Next migration step expected in this time.\n'
-            'Notifications are on. You can leave Vizor and check back later.',
+        'Preparation is complete, but we are waiting\n'
+            'for the next available signing window.\n'
+            'We’ll let you know when it’s time to take action.',
       ),
       _MigrationProgressState.waitingNotificationsOff => (
         AppIcons.warningCircle,
@@ -1650,7 +1889,8 @@ class _MigrationProgressStatus extends StatelessWidget {
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
         'All is well. Broadcasting notes…',
-        '~2 hrs 15 mins.\n'
+        'Next migration step expected in\n'
+            '~2 hrs 15 mins.\n'
             'Notifications are on. You can leave Vizor and check back later.',
       ),
       _MigrationProgressState.confirming => (
@@ -1712,9 +1952,7 @@ class _MigrationProgressStatus extends StatelessWidget {
             )
           else if (broadcasting)
             Text(
-              'Next migration step expected in\n'
-              '${_migrationTimingFromBody(bodyOverride) ?? '~2 hrs 15 mins'}.\n'
-              'Notifications are on. You can leave Vizor and check back later.',
+              bodyOverride ?? body,
               textAlign: TextAlign.center,
               style: AppTypography.bodyMediumStrong.copyWith(
                 color: context.colors.text.accent,
@@ -2384,16 +2622,18 @@ class _MigrationIconTextRow extends StatelessWidget {
 
 class _MigrationValueRow extends StatelessWidget {
   const _MigrationValueRow({
-    required this.icon,
     required this.label,
     required this.value,
     this.emphasized = false,
+    this.accented = false,
+    this.icon,
   });
 
-  final String icon;
+  final String? icon;
   final String label;
   final String value;
   final bool emphasized;
+  final bool accented;
 
   @override
   Widget build(BuildContext context) {
@@ -2408,7 +2648,7 @@ class _MigrationValueRow extends StatelessWidget {
                           fontWeight: FontWeight.w400,
                         ))
                   .copyWith(
-                    color: emphasized
+                    color: emphasized || accented
                         ? context.colors.text.accent
                         : context.colors.text.primary,
                   );
@@ -2417,7 +2657,7 @@ class _MigrationValueRow extends StatelessWidget {
             maxLines: 1,
             textDirection: Directionality.of(context),
           )..layout();
-          const fixedWidth = 20 + AppSpacing.xs;
+          final fixedWidth = icon == null ? 0.0 : 20 + AppSpacing.xs;
           const minimumValueWidth = 80.0;
           final labelWidth = math.min(
             labelPainter.width,
@@ -2441,14 +2681,16 @@ class _MigrationValueRow extends StatelessWidget {
           );
           return Row(
             children: [
-              AppIcon(
-                icon,
-                size: 20,
-                color: emphasized
-                    ? context.colors.text.accent
-                    : context.colors.text.primary,
-              ),
-              const SizedBox(width: AppSpacing.xs),
+              if (icon != null) ...[
+                AppIcon(
+                  icon!,
+                  size: 20,
+                  color: emphasized || accented
+                      ? context.colors.text.accent
+                      : context.colors.text.primary,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
               SizedBox(width: labelWidth, child: labelText),
               Expanded(child: valueText),
             ],
@@ -2491,11 +2733,11 @@ class _AnimatedMigrationAttentionRingState
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 900),
       value: 0,
     );
     _opacity = Tween<double>(
-      begin: 0.40,
+      begin: 0.68,
       end: 1,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
@@ -2546,6 +2788,7 @@ class _AnimatedMigrationAttentionRingState
           awaitingSegments: widget.awaitingSegments,
           highlightedSegments: widget.highlightedSegments,
           highlightColor: context.colors.text.accent,
+          highlightOutlineColor: context.colors.background.window,
           highlightOpacity: _reducedMotion ? 1 : _opacity.value,
         ),
       ),
@@ -2565,6 +2808,7 @@ class _MigrationRingPainter extends CustomPainter {
     this.awaitingSegments = const {},
     this.highlightedSegments = const {},
     this.highlightColor,
+    this.highlightOutlineColor,
     this.highlightOpacity = 1,
   });
 
@@ -2579,8 +2823,12 @@ class _MigrationRingPainter extends CustomPainter {
   final Set<int> awaitingSegments;
   final Set<int> highlightedSegments;
   final Color? highlightColor;
+  final Color? highlightOutlineColor;
   final double highlightOpacity;
   final double visibleSegmentGap = 4;
+  final double highlightedSegmentOffset = 3.5;
+  final double highlightedOuterOutlineWidth = 18;
+  final double highlightedOutlineWidth = 16;
 
   int get segments => segmentWeights.length;
 
@@ -2589,9 +2837,17 @@ class _MigrationRingPainter extends CustomPainter {
     final center = size.center(Offset.zero);
     final radius = math.min(size.width, size.height) / 2 - 7;
     final rect = Rect.fromCircle(center: center, radius: radius);
+    final highlightedRect = Rect.fromCircle(
+      center: center,
+      radius: radius + highlightedSegmentOffset,
+    );
     const strokeWidth = 12.0;
     final segmentPitch = math.pi * 2 / segments;
     final roundCapGap = (strokeWidth + math.max(0, visibleSegmentGap)) / radius;
+    // A round cap grows the segment by half a stroke at each end, so a dense
+    // ring cannot afford one without swallowing the gap. Those rings keep the
+    // tighter butt-cap gap and get their corners rounded by path instead, so
+    // the segments stay soft without eating into the separation.
     final useRoundCaps = segments == 1 || roundCapGap <= segmentPitch * 0.8;
     final gap = segments == 1
         ? 0.0
@@ -2606,20 +2862,115 @@ class _MigrationRingPainter extends CustomPainter {
     for (var index = 0; index < segments; index++) {
       final segmentSweep = segmentWeights[index] * sweepBudget;
       final start = cursor + gap / 2;
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = useRoundCaps ? StrokeCap.round : StrokeCap.butt
-        ..strokeWidth = strokeWidth;
-      paint.color = completedSegments.contains(index)
-          ? activeColor
-          : awaitingSegments.contains(index)
-          ? activeColor.withValues(alpha: _awaitingSegmentOpacity)
-          : highlightedSegments.contains(index)
-          ? (highlightColor ?? activeColor).withValues(alpha: highlightOpacity)
-          : trackColor;
-      canvas.drawArc(rect, start, segmentSweep, false, paint);
+      final highlighted = highlightedSegments.contains(index);
+      final segmentRect = highlighted ? highlightedRect : rect;
+      final segmentRadius = highlighted
+          ? radius + highlightedSegmentOffset
+          : radius;
+      if (highlighted && highlightOutlineColor != null) {
+        if (highlightColor != null) {
+          _paintSegment(
+            canvas: canvas,
+            center: center,
+            rect: highlightedRect,
+            radius: radius + highlightedSegmentOffset,
+            strokeWidth: highlightedOuterOutlineWidth,
+            startAngle: start,
+            sweepAngle: segmentSweep,
+            roundCaps: useRoundCaps,
+            color: highlightColor!.withValues(alpha: 0.88),
+          );
+        }
+        _paintSegment(
+          canvas: canvas,
+          center: center,
+          rect: highlightedRect,
+          radius: radius + highlightedSegmentOffset,
+          strokeWidth: highlightedOutlineWidth,
+          startAngle: start,
+          sweepAngle: segmentSweep,
+          roundCaps: useRoundCaps,
+          color: highlightOutlineColor!,
+        );
+      }
+      _paintSegment(
+        canvas: canvas,
+        center: center,
+        rect: segmentRect,
+        radius: segmentRadius,
+        strokeWidth: strokeWidth,
+        startAngle: start,
+        sweepAngle: segmentSweep,
+        roundCaps: useRoundCaps,
+        color: completedSegments.contains(index)
+            ? activeColor
+            : awaitingSegments.contains(index)
+            ? activeColor.withValues(alpha: _awaitingSegmentOpacity)
+            : highlighted
+            ? (highlightColor ?? activeColor).withValues(
+                alpha: highlightOpacity,
+              )
+            : trackColor,
+      );
       cursor += segmentSweep + gap;
     }
+  }
+
+  void _paintSegment({
+    required Canvas canvas,
+    required Offset center,
+    required Rect rect,
+    required double radius,
+    required double strokeWidth,
+    required double startAngle,
+    required double sweepAngle,
+    required bool roundCaps,
+    required Color color,
+  }) {
+    if (roundCaps) {
+      canvas.drawArc(
+        rect,
+        startAngle,
+        sweepAngle,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = strokeWidth
+          ..color = color,
+      );
+      return;
+    }
+    final path = _roundedSegmentPath(
+      center: center,
+      radius: radius,
+      strokeWidth: strokeWidth,
+      startAngle: startAngle,
+      sweepAngle: sweepAngle,
+    );
+    if (path == null) {
+      // Degenerate geometry (a hairline sweep) has no corner to round; drawing
+      // the plain arc still keeps the segment on screen.
+      canvas.drawArc(
+        rect,
+        startAngle,
+        sweepAngle,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.butt
+          ..strokeWidth = strokeWidth
+          ..color = color,
+      );
+      return;
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..isAntiAlias = true
+        ..color = color,
+    );
   }
 
   @override
@@ -2631,9 +2982,87 @@ class _MigrationRingPainter extends CustomPainter {
         awaitingSegments != oldDelegate.awaitingSegments ||
         highlightedSegments != oldDelegate.highlightedSegments ||
         highlightColor != oldDelegate.highlightColor ||
+        highlightOutlineColor != oldDelegate.highlightOutlineColor ||
         highlightOpacity != oldDelegate.highlightOpacity ||
-        visibleSegmentGap != oldDelegate.visibleSegmentGap;
+        visibleSegmentGap != oldDelegate.visibleSegmentGap ||
+        highlightedSegmentOffset != oldDelegate.highlightedSegmentOffset ||
+        highlightedOuterOutlineWidth !=
+            oldDelegate.highlightedOuterOutlineWidth ||
+        highlightedOutlineWidth != oldDelegate.highlightedOutlineWidth;
   }
+}
+
+/// Builds one ring segment as a filled annular wedge with rounded corners.
+///
+/// A stroked arc can only be capped `round` (which extends past the arc ends by
+/// half a stroke, closing the gap on a dense ring) or `butt` (which leaves hard
+/// square corners). This keeps the exact footprint of the `butt` arc — the band
+/// between `radius ± strokeWidth / 2` across `sweepAngle` — and rounds the four
+/// corners inward, so the visible gap can only grow, never shrink.
+///
+/// The corner radius is the largest that fits both the stroke and the inner
+/// arc, so a sparse-but-dense ring reads as a near-stadium while a very tight
+/// ring degrades to a gently softened rectangle. Returns null when the wedge is
+/// too degenerate to round.
+Path? _roundedSegmentPath({
+  required Offset center,
+  required double radius,
+  required double strokeWidth,
+  required double startAngle,
+  required double sweepAngle,
+}) {
+  if (!sweepAngle.isFinite || sweepAngle <= 0 || strokeWidth <= 0) return null;
+  final halfStroke = strokeWidth / 2;
+  final outerRadius = radius + halfStroke;
+  final innerRadius = radius - halfStroke;
+  if (innerRadius <= 0) return null;
+
+  // `0.45` rather than `0.5` keeps a sliver of inner edge, so the two inner
+  // corner arcs never meet and invert the path.
+  final cornerRadius = math.min(halfStroke, sweepAngle * innerRadius * 0.45);
+  if (cornerRadius <= 0.01) return null;
+
+  final outerCornerAngle = cornerRadius / outerRadius;
+  final innerCornerAngle = cornerRadius / innerRadius;
+  final outerSweep = sweepAngle - outerCornerAngle * 2;
+  final innerSweep = sweepAngle - innerCornerAngle * 2;
+  if (outerSweep <= 0 || innerSweep <= 0) return null;
+
+  final endAngle = startAngle + sweepAngle;
+  final corner = Radius.circular(cornerRadius);
+  Offset polar(double angle, double distance) =>
+      center + Offset(math.cos(angle) * distance, math.sin(angle) * distance);
+
+  final outerStart = polar(startAngle + outerCornerAngle, outerRadius);
+  final outerEndCorner = polar(endAngle, outerRadius - cornerRadius);
+  final innerEndCorner = polar(endAngle, innerRadius + cornerRadius);
+  final innerEnd = polar(endAngle - innerCornerAngle, innerRadius);
+  final innerStartCorner = polar(startAngle, innerRadius + cornerRadius);
+  final outerStartCorner = polar(startAngle, outerRadius - cornerRadius);
+
+  // Traced clockwise: outer arc, trailing radial edge, inner arc back, leading
+  // radial edge, with a quarter-turn corner arc at each of the four joins.
+  final path = Path()..moveTo(outerStart.dx, outerStart.dy);
+  path.arcTo(
+    Rect.fromCircle(center: center, radius: outerRadius),
+    startAngle + outerCornerAngle,
+    outerSweep,
+    false,
+  );
+  path.arcToPoint(outerEndCorner, radius: corner);
+  path.lineTo(innerEndCorner.dx, innerEndCorner.dy);
+  path.arcToPoint(innerEnd, radius: corner);
+  path.arcTo(
+    Rect.fromCircle(center: center, radius: innerRadius),
+    endAngle - innerCornerAngle,
+    -innerSweep,
+    false,
+  );
+  path.arcToPoint(innerStartCorner, radius: corner);
+  path.lineTo(outerStartCorner.dx, outerStartCorner.dy);
+  path.arcToPoint(outerStart, radius: corner);
+  path.close();
+  return path;
 }
 
 List<double> _normalizedMigrationRingWeights({

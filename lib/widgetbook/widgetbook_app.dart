@@ -63,8 +63,8 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookTheme(name: 'Dark', data: AppThemeData.dark),
             WidgetbookTheme(name: 'Light', data: AppThemeData.light),
           ],
-          themeBuilder:
-              (context, theme, child) => AppTheme(data: theme, child: child),
+          themeBuilder: (context, theme, child) =>
+              AppTheme(data: theme, child: child),
           initialTheme: const WidgetbookTheme(
             name: 'Dark',
             data: AppThemeData.dark,
@@ -393,6 +393,15 @@ class WidgetbookApp extends StatelessWidget {
                           buildMobileIronwoodMigrationNotificationsConfirmationUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Start - Loading',
+                      builder: buildMobileIronwoodMigrationStartLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Start - Keystone ready',
+                      builder:
+                          buildMobileIronwoodMigrationStartKeystoneReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Preparation - Active',
                       builder:
                           buildMobileIronwoodMigrationPreparationActiveUseCase,
@@ -413,8 +422,22 @@ class WidgetbookApp extends StatelessWidget {
                           buildMobileIronwoodMigrationPreparationSyncingUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Preparation schedule',
+                      builder:
+                          buildMobileIronwoodMigrationPreparationScheduleUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Migration - Syncing',
                       builder: buildMobileIronwoodMigrationSyncingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration schedule',
+                      builder: buildMobileIronwoodMigrationScheduleUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Migration schedule - pending assignment',
+                      builder:
+                          buildMobileIronwoodMigrationSchedulePendingUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Migration - Preparation done',
@@ -460,6 +483,25 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Keystone - QR scan help',
                       builder: buildMobileIronwoodMigrationKeystoneHelpUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Request loading',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Request QR (multi-round)',
+                      builder: buildMobileIronwoodMigrationKeystoneReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Request QR (single round)',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneReadySingleRoundUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Signature scanner (multi-round)',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneScannerUseCase,
                     ),
                   ],
                 ),
@@ -665,6 +707,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Recipient new address',
                       builder: buildPayRecipientNewAddressUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Recipient quote error',
+                      builder: buildPayRecipientQuoteErrorUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Review quote',

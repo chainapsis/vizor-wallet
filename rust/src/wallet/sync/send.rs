@@ -173,6 +173,7 @@ struct ImmediateMigrationInputLock {
     owner: LockOwner,
     outputs: Vec<OutputRef>,
     active: bool,
+    retain_on_drop: bool,
 }
 
 impl ImmediateMigrationInputLock {
@@ -188,13 +189,23 @@ impl ImmediateMigrationInputLock {
             owner,
             outputs,
             active: true,
+            retain_on_drop: false,
         }
+    }
+
+    fn mark_broadcast_started(&mut self) -> Result<(), String> {
+        super::proposal_locks::mark_retain_until_expiry(&self.db_path, self.owner)?;
+        self.retain_on_drop = true;
+        Ok(())
     }
 
     fn release(&mut self) -> Result<(), String> {
         if !self.active {
             return Ok(());
         }
+        // A definite rejection or successful local store makes it safe to
+        // retry release from Drop if this explicit attempt fails.
+        self.retain_on_drop = false;
         with_wallet_db_write_lock("send.immediate_migration.unlock", || {
             let mut db = open_wallet_db(&self.db_path, self.network)?;
             for output in &self.outputs {
@@ -203,17 +214,34 @@ impl ImmediateMigrationInputLock {
             }
             Ok::<(), String>(())
         })?;
+        super::proposal_locks::remove(&self.db_path, self.owner)?;
         self.active = false;
         Ok(())
     }
 
     fn retain_until_expiry(&mut self) {
+        if !self.retain_on_drop {
+            // Best effort: the transaction may already be on the network, so
+            // an ambiguity outcome must not surface as a new failure.
+            if let Err(error) =
+                super::proposal_locks::mark_retain_until_expiry(&self.db_path, self.owner)
+            {
+                log::warn!(
+                    "Immediate migration failed to retain its input lock for the \
+                     ambiguous broadcast window: {error}"
+                );
+            }
+        }
+        self.retain_on_drop = true;
         self.active = false;
     }
 }
 
 impl Drop for ImmediateMigrationInputLock {
     fn drop(&mut self) {
+        if self.retain_on_drop {
+            return;
+        }
         if let Err(error) = self.release() {
             log::warn!(
                 "Immediate migration failed to release reserved inputs; \
@@ -654,6 +682,42 @@ fn pending_migration_policy_rebuild_message(
         )));
     }
     Ok(None)
+}
+
+/// Persist accepted-but-unstored migration txs, reconcile confirmations, then
+/// evaluate fee/input policy rebuild. Store must run before retirement so a
+/// lightwalletd-accepted tx is recorded locally before the run goes terminal
+/// and note locks are released. If store retry still leaves gaps, return Err so
+/// callers cannot fall through to rebuild/expiry.
+fn retry_store_then_pending_migration_policy_rebuild_message(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    chain_tip_height: u32,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<Option<String>, String> {
+    let _stored = retry_store_broadcasted_migration_txs_missing_local(
+        db_path,
+        network,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    super::migration::reconcile_run_pending_confirmations(db_path, run_id)?;
+    let still_missing = super::migration::broadcasted_pending_txs_missing_local_identity(
+        db_path,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?
+    .len();
+    if still_missing > 0 {
+        return Err(format!(
+            "{still_missing} accepted migration transaction(s) are still missing from local wallet storage. Vizor will retry until local state is recorded."
+        ));
+    }
+    pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)
 }
 
 pub fn propose_send(
@@ -1362,12 +1426,16 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                     let chain_tip_height =
                         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
                             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-                    if let Some(message) = pending_migration_policy_rebuild_message(
-                        db_path,
-                        network,
-                        &run.run_id,
-                        chain_tip_height,
-                    )? {
+                    if let Some(message) =
+                        retry_store_then_pending_migration_policy_rebuild_message(
+                            db_path,
+                            network,
+                            &run.run_id,
+                            chain_tip_height,
+                            pending_password.as_slice(),
+                            pending_salt_base64,
+                        )?
+                    {
                         drop(seed);
                         super::migration::retire_run_for_rebuild(
                             db_path,
@@ -1726,12 +1794,29 @@ fn build_orchard_migration_immediate_pczt(
             0,
         )?;
         let input_lock_owner = LockOwner::random(&mut OsRng);
-        db.lock_outputs(
-            &locked_outputs,
+        let lock_expiry_height = immediate_migration_lock_expiry(BlockHeight::from(target_height))?;
+        // Persist the owner and output references before taking the DB locks,
+        // exactly like ephemeral send-proposal locks. A Keystone Immediate
+        // migration holds this lock across a QR signing session; if the
+        // process dies before completion, the next process must release these
+        // inputs instead of leaving them locked until the ZIP 318 canonical
+        // expiry (weeks away).
+        super::proposal_locks::persist(
+            db_path,
             input_lock_owner,
-            immediate_migration_lock_expiry(BlockHeight::from(target_height))?,
-        )
-        .map_err(|e| format!("Lock Immediate migration inputs: {e:?}"))?;
+            &locked_outputs,
+            lock_expiry_height,
+        )?;
+        if let Err(error) = db.lock_outputs(&locked_outputs, input_lock_owner, lock_expiry_height) {
+            let cleanup = super::proposal_locks::remove(db_path, input_lock_owner);
+            return Err(match cleanup {
+                Ok(()) => format!("Lock Immediate migration inputs: {error:?}"),
+                Err(cleanup_error) => format!(
+                    "Lock Immediate migration inputs: {error:?}; \
+                     also failed to remove recovery rows: {cleanup_error}"
+                ),
+            });
+        }
         Ok::<_, String>((
             built.bytes,
             built.orchard_spend_action_indices,
@@ -1787,6 +1872,10 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
+    // From this point a cancelled future or terminated process cannot prove
+    // that lightwalletd rejected the transaction. Persist the conservative
+    // restart policy before starting SendTransaction.
+    input_lock.mark_broadcast_started()?;
     let response = match crate::wallet::sync_engine::send_transaction_with_status(
         &mut client,
         &extracted.raw_tx,
@@ -1835,7 +1924,13 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
         }
     };
     if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
-        return Err(error);
+        return match input_lock.release() {
+            Ok(()) => Err(error),
+            Err(release_error) => Err(format!(
+                "{error}; additionally failed to release Immediate migration inputs: \
+                 {release_error}"
+            )),
+        };
     }
     let storage_error = decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx).err();
     if storage_error.is_some() {
@@ -1934,6 +2029,151 @@ pub(crate) async fn retire_unbroadcast_orchard_migration(
     )
 }
 
+async fn reconcile_scheduled_migration_txs_before_abandon(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+    native_attempted_txids: &[String],
+) -> Result<(), String> {
+    let candidates = super::migration::scheduled_migration_stop_candidates(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+    )?;
+    let native_attempted_txids = native_attempted_txids
+        .iter()
+        .map(|txid| txid.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    let has_known_or_legacy_attempt = candidates.iter().any(|candidate| {
+        native_attempted_txids.contains(&candidate.txid_hex.to_ascii_lowercase())
+            || candidate.attempt_state
+                != super::migration::MigrationBroadcastAttemptState::NotAttempted
+    });
+    // The caller has quiesced native work, while ActiveIronwoodMigration
+    // excludes foreground work. A durable "never attempted" marker therefore
+    // makes an item safe to discard without any network dependency.
+    if !has_known_or_legacy_attempt {
+        return Ok(());
+    }
+
+    let mut client = sync_engine::open_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| format!("Open migration stop reconciliation endpoint: {e}"))?;
+    let chain_tip = sync_engine::get_latest_block(&mut client)
+        .await
+        .map_err(|e| format!("Read migration stop reconciliation chain tip: {e}"))?;
+    let chain_tip_height = u32::try_from(chain_tip.height)
+        .map_err(|_| "Migration stop reconciliation chain tip exceeds u32")?;
+
+    let attempted_candidates = candidates
+        .into_iter()
+        .filter(|candidate| {
+            migration_stop_candidate_requires_reconciliation(
+                candidate,
+                native_attempted_txids.contains(&candidate.txid_hex.to_ascii_lowercase()),
+                chain_tip_height,
+            )
+        })
+        .collect::<Vec<_>>();
+    for candidate in attempted_candidates {
+        let txid = parse_txid_hex(&candidate.txid_hex)?;
+        match sync_engine::get_transaction(&mut client, txid.as_ref().to_vec()).await {
+            Ok(raw_tx) => {
+                decrypt_and_store_migration_tx(db_path, network, &raw_tx.data)?;
+                match candidate.kind {
+                    super::migration::MigrationStopCandidateKind::MigrationTransaction => {
+                        super::migration::mark_pending_broadcasted(
+                            db_path,
+                            expected_run_id,
+                            &candidate.txid_hex,
+                        )?;
+                    }
+                    super::migration::MigrationStopCandidateKind::DenominationStage => {
+                        let conn =
+                            open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+                        super::migration::mark_denomination_stage_broadcasted(
+                            &conn,
+                            expected_run_id,
+                            &candidate.txid_hex,
+                        )?;
+                    }
+                }
+            }
+            Err(status) if status.code() == Code::NotFound => {
+                // Before expiry an attempted submission may have been accepted
+                // moments ago but not indexed yet. At or after expiry, the
+                // same endpoint's chain tip proves an absent transaction can
+                // no longer be mined, so stop may safely discard it. Zero is
+                // the legacy no-expiry sentinel and never provides that proof.
+                if migration_stop_candidate_is_expired(candidate.expiry_height, chain_tip_height) {
+                    continue;
+                }
+                if candidate.expiry_height == 0 {
+                    return Err(format!(
+                        "Migration cannot stop until non-expiring transaction {} is reconciled",
+                        candidate.txid_hex
+                    ));
+                }
+                return Err(format!(
+                    "Migration cannot stop until transaction {} is reconciled or expires at block {}",
+                    candidate.txid_hex, candidate.expiry_height
+                ));
+            }
+            Err(status) => {
+                return Err(format!(
+                    "Could not reconcile migration transaction {} before stopping: {status}",
+                    candidate.txid_hex
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn migration_stop_candidate_is_expired(expiry_height: u32, chain_tip_height: u32) -> bool {
+    expiry_height > 0 && chain_tip_height >= expiry_height
+}
+
+fn migration_stop_candidate_requires_reconciliation(
+    candidate: &super::migration::MigrationStopCandidate,
+    native_attempted: bool,
+    chain_tip_height: u32,
+) -> bool {
+    native_attempted
+        || match candidate.attempt_state {
+            super::migration::MigrationBroadcastAttemptState::NotAttempted => false,
+            super::migration::MigrationBroadcastAttemptState::Attempted => true,
+            super::migration::MigrationBroadcastAttemptState::UnknownLegacy => {
+                candidate.broadcast_height <= chain_tip_height
+            }
+        }
+}
+
+pub(crate) async fn abandon_orchard_migration(
+    db_path: &str,
+    lightwalletd_url: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+    native_attempted_txids: &[String],
+) -> Result<(), String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    reconcile_scheduled_migration_txs_before_abandon(
+        db_path,
+        lightwalletd_url,
+        network,
+        account_uuid,
+        expected_run_id,
+        native_attempted_txids,
+    )
+    .await?;
+    super::migration::abandon_run(db_path, account_uuid, network, expected_run_id)?;
+    discard_keystone_migration_requests_for_run(account_uuid, network, expected_run_id)
+}
+
 async fn prepare_orchard_migration_outbox(
     db_path: &str,
     lightwalletd_url: &str,
@@ -1974,9 +2214,14 @@ async fn prepare_orchard_migration_outbox(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-    if let Some(message) =
-        pending_migration_policy_rebuild_message(db_path, network, &run.run_id, chain_tip_height)?
-    {
+    if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
+        db_path,
+        network,
+        &run.run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )? {
         super::migration::retire_run_for_rebuild(db_path, network, &run.run_id, &message)?;
         let totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
         return Ok(migration_result_from_pending_totals(
@@ -2110,6 +2355,57 @@ pub(crate) fn orchard_migration_proof_readiness_at_scanned_height(
         )
     })
     .map(Some)
+}
+
+pub(crate) fn orchard_migration_proof_readiness_read_only(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    expected_run_id: &str,
+) -> Result<bool, String> {
+    let Some(snapshot) = super::migration::migration_proof_snapshot_read_only(
+        db_path,
+        account_uuid,
+        network,
+        expected_run_id,
+    )?
+    else {
+        return Ok(false);
+    };
+    let Some(next_proof_height) = snapshot.next_proof_height else {
+        return Ok(false);
+    };
+    let candidates =
+        super::migration::signed_child_proof_candidates_for_run(db_path, expected_run_id)?;
+    if candidates.is_empty() {
+        return Ok(false);
+    }
+    let scanned_height = migration_scanned_height_read_only(db_path, network)?;
+    if next_proof_height > scanned_height {
+        return Ok(false);
+    }
+    any_migration_proof_candidate_ready(&candidates, |candidate| {
+        orchard_witness_is_available_for_prepared_note(
+            db_path,
+            network,
+            account_uuid,
+            &candidate.selected_note,
+            candidate.anchor_boundary_height,
+            snapshot.timing_policy,
+        )
+    })
+}
+
+fn migration_scanned_height_read_only(
+    db_path: &str,
+    network: WalletNetwork,
+) -> Result<u32, String> {
+    let db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
+    Ok(db
+        .get_wallet_summary(ConfirmationsPolicy::default())
+        .map_err(|e| format!("{e}"))?
+        .map(|summary| u32::from(summary.fully_scanned_height()))
+        .unwrap_or(0))
 }
 
 fn any_migration_proof_candidate_ready<T>(
@@ -2271,6 +2567,8 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     // Reconcile chain changes before deciding whether an already-scheduled
     // child is still valid. Independent due children should not miss their
     // broadcast height while another denomination branch is still advancing.
+    // `due_scheduled_pending_count` / `due_pending_txs` also reconcile pending
+    // confirmations so a mined-but-still-scheduled head cannot block later parts.
     super::migration::reconcile_denomination_stage_chain_state(db_path, &run.run_id)?;
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
@@ -4617,7 +4915,19 @@ async fn broadcast_pending_denomination_stages(
         if policy.is_cancelled() {
             break;
         }
+        super::migration::mark_denomination_broadcast_attempted(
+            db_path,
+            run_id,
+            &stage.expected_txid_hex,
+        )?;
         if let Err(e) = broadcast_raw_transaction(&mut client, &stage.raw_tx).await {
+            if migration_broadcast_failure_requires_rebuild(&e) {
+                super::migration::clear_denomination_broadcast_attempted(
+                    db_path,
+                    run_id,
+                    &stage.expected_txid_hex,
+                )?;
+            }
             return Ok(Some(CreatedBroadcastResult {
                 txids,
                 status: if broadcasted_count == 0 {
@@ -4738,9 +5048,19 @@ async fn broadcast_due_scheduled_migration_txs(
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
             .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
-    if let Some(message) =
-        pending_migration_policy_rebuild_message(db_path, network, run_id, chain_tip_height)?
-    {
+    // Store accepted-but-unstored rows before fee-policy retirement and before
+    // expiry handling. Policy rebuild would otherwise go terminal and release
+    // locks without recording network-accepted state; expiry flips
+    // `broadcasted` → `needs_resign` and would drop rows out of store-retry.
+    // Unresolved store gaps return Err so callers cannot fall through.
+    if let Some(message) = retry_store_then_pending_migration_policy_rebuild_message(
+        db_path,
+        network,
+        run_id,
+        chain_tip_height,
+        pending_password,
+        pending_salt_base64,
+    )? {
         super::migration::retire_run_for_rebuild(db_path, network, run_id, &message)?;
         return Ok(MigrationBroadcastAdvance::without_acceptance(
             migration_result_from_pending_totals(
@@ -4864,6 +5184,7 @@ async fn broadcast_due_scheduled_migration_txs(
             )?;
             break;
         }
+        super::migration::mark_pending_broadcast_attempted(db_path, run_id, &pending.txid_hex)?;
         if let Err(e) = broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
             log::error!(
                 "migration: broadcast rejected for {}: {}",
@@ -5215,33 +5536,81 @@ where
         let message =
             migration_storage_retry_message("Migration transaction", &pending.txid_hex, &e);
         log::warn!("migration: {message}");
-        super::migration::mark_run_phase(
-            db_path,
-            run_id,
-            super::migration::PHASE_BROADCAST_SCHEDULED,
-            Some(&message),
-        )?;
+        // Network accepted: promote out of `scheduled` so due selection cannot
+        // HOL-block later parts as "Due now". Local store is retried separately
+        // from the encrypted pending raw (see retry_store_broadcasted…).
+        super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)?;
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, Some(&message))?;
         let totals = super::migration::pending_totals_for_run(db_path, run_id)?;
-        let mut result = migration_result_from_pending_totals(
+        let result = migration_result_from_pending_totals(
             totals,
-            super::migration::PHASE_BROADCAST_SCHEDULED,
+            &phase,
             Some(message),
             fallback_total_count,
             fallback_migrated_zatoshi,
         );
-        // The operation result reports network acceptance even though the
-        // durable pending row remains scheduled for local storage recovery.
-        // Callers can therefore enforce one accepted transfer per wallet-open
-        // epoch without parsing the human-readable recovery message.
-        result.broadcasted_count = result
-            .broadcasted_count
-            .checked_add(1)
-            .ok_or("Accepted migration transaction count overflow")?;
+        // Callers can still enforce one accepted transfer per wallet-open epoch
+        // from the accepted txid / broadcasted_count without parsing the message.
         return Ok(Some(result));
     }
 
     super::migration::mark_pending_broadcasted(db_path, run_id, &pending.txid_hex)?;
     Ok(None)
+}
+
+/// Retry local wallet storage for network-accepted (`broadcasted`) rows that
+/// still lack `transactions.raw`. Returns how many rows were newly stored.
+///
+/// On any successful store, clears the run's durable storage-retry
+/// `last_error` so `MigrationStatus.message` changes even though the row
+/// remains `broadcasted`. The coordinator uses that message diff to refresh
+/// home balances after an otherwise status-stable store. Remaining failures
+/// re-stamp `last_error` afterward.
+fn retry_store_broadcasted_migration_txs_missing_local(
+    db_path: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    pending_password: &[u8],
+    pending_salt_base64: &str,
+) -> Result<u32, String> {
+    let missing = super::migration::broadcasted_pending_txs_missing_local_identity(
+        db_path,
+        run_id,
+        pending_password,
+        pending_salt_base64,
+    )?;
+    let mut stored = 0u32;
+    let mut last_failure: Option<String> = None;
+    for pending in missing {
+        match decrypt_and_store_migration_tx(db_path, network, &pending.raw_tx) {
+            Ok(()) => {
+                stored = stored.saturating_add(1);
+                log::info!(
+                    "migration: recorded previously accepted tx {} after local store retry",
+                    pending.txid_hex
+                );
+            }
+            Err(error) => {
+                let message = migration_storage_retry_message(
+                    "Migration transaction",
+                    &pending.txid_hex,
+                    &error,
+                );
+                log::warn!("migration: {message}");
+                last_failure = Some(message);
+            }
+        }
+    }
+    if stored > 0 {
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, None)?;
+    }
+    if let Some(message) = last_failure.as_deref() {
+        let phase = super::migration::run_phase(db_path, run_id)?;
+        super::migration::mark_run_phase(db_path, run_id, &phase, Some(message))?;
+    }
+    Ok(stored)
 }
 
 fn migration_result_from_pending_totals(
@@ -5503,6 +5872,9 @@ pub(crate) struct ResubmitStats {
 /// The caller owns the gRPC client. In the sync loop the same
 /// client that downloaded the compact blocks is threaded straight
 /// through, so auto-resubmit reuses the same connection.
+/// `excluded_txids` are filtered before their raw bytes are loaded.
+/// Recovery uses this to avoid rebroadcasting transactions that
+/// compact scanning can restore as mined.
 ///
 /// Logging uses `log::info!` for the "broadcasting N txs" entry
 /// and `log::warn!` for per-tx failures / retries so an operator
@@ -5512,6 +5884,7 @@ pub(crate) async fn resubmit_pending_transactions<ShouldExit>(
     db_path: &str,
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
     current_height: u32,
+    excluded_txids: &HashSet<Vec<u8>>,
     should_exit: ShouldExit,
 ) -> ResubmitStats
 where
@@ -5522,7 +5895,11 @@ where
         return ResubmitStats::default();
     }
 
-    let candidates = match super::transactions::get_resubmittable_txs(db_path, current_height) {
+    let candidates = match super::transactions::get_resubmittable_txs_excluding(
+        db_path,
+        current_height,
+        excluded_txids,
+    ) {
         Ok(c) => c,
         Err(e) => {
             log::warn!(

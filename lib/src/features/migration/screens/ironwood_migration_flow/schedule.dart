@@ -1,55 +1,236 @@
 part of '../ironwood_migration_flow_screen.dart';
 
-class IronwoodMigrationPreparationScheduleScreen extends ConsumerWidget {
+enum IronwoodMigrationSchedulePreviewOverlay {
+  manage,
+  immediateConfirmation,
+  stopConfirmation,
+}
+
+class IronwoodMigrationPreparationScheduleScreen extends StatelessWidget {
   const IronwoodMigrationPreparationScheduleScreen({
     this.previewStatus,
+    this.previewOverlay,
+    this.previewImmediatePlan,
+    this.previewCanStop = false,
     super.key,
   });
 
   final rust_sync.MigrationStatus? previewStatus;
+  final IronwoodMigrationSchedulePreviewOverlay? previewOverlay;
+  final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
+  final bool previewCanStop;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final preview = previewStatus;
-    if (preview != null) {
-      return _frame(context, preview, ref.watch(syncProvider).asData?.value);
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationScheduleRoute(
+      preparation: true,
+      previewStatus: previewStatus,
+      previewOverlay: previewOverlay,
+      previewImmediatePlan: previewImmediatePlan,
+      previewCanStop: previewCanStop,
+    );
+  }
+}
+
+class IronwoodMigrationScheduleScreen extends StatelessWidget {
+  const IronwoodMigrationScheduleScreen({
+    this.previewStatus,
+    this.previewOverlay,
+    this.previewImmediatePlan,
+    this.previewCanStop = false,
+    super.key,
+  });
+
+  final rust_sync.MigrationStatus? previewStatus;
+  final IronwoodMigrationSchedulePreviewOverlay? previewOverlay;
+  final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
+  final bool previewCanStop;
+
+  @override
+  Widget build(BuildContext context) {
+    return _IronwoodMigrationScheduleRoute(
+      preparation: false,
+      previewStatus: previewStatus,
+      previewOverlay: previewOverlay,
+      previewImmediatePlan: previewImmediatePlan,
+      previewCanStop: previewCanStop,
+    );
+  }
+}
+
+enum _MigrationManageStage { closed, choose, confirmImmediate, confirmStop }
+
+enum _MigrationManageChoice { immediate, stop }
+
+class _IronwoodMigrationScheduleRoute extends ConsumerStatefulWidget {
+  const _IronwoodMigrationScheduleRoute({
+    required this.preparation,
+    this.previewStatus,
+    this.previewOverlay,
+    this.previewImmediatePlan,
+    this.previewCanStop = false,
+  });
+
+  final bool preparation;
+  final rust_sync.MigrationStatus? previewStatus;
+  final IronwoodMigrationSchedulePreviewOverlay? previewOverlay;
+  final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
+  final bool previewCanStop;
+
+  @override
+  ConsumerState<_IronwoodMigrationScheduleRoute> createState() =>
+      _IronwoodMigrationScheduleRouteState();
+}
+
+class _IronwoodMigrationScheduleRouteState
+    extends ConsumerState<_IronwoodMigrationScheduleRoute> {
+  _MigrationManageStage _manageStage = _MigrationManageStage.closed;
+  _MigrationManageChoice _manageChoice = _MigrationManageChoice.immediate;
+  String? _managedRunId;
+  String? _manageError;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final overlay = widget.previewOverlay;
+    final runId = widget.previewStatus?.activeRunId;
+    if (overlay == null || runId == null) return;
+    _managedRunId = runId;
+    switch (overlay) {
+      case IronwoodMigrationSchedulePreviewOverlay.manage:
+        _manageStage = _MigrationManageStage.choose;
+      case IronwoodMigrationSchedulePreviewOverlay.immediateConfirmation:
+        _manageStage = _MigrationManageStage.confirmImmediate;
+      case IronwoodMigrationSchedulePreviewOverlay.stopConfirmation:
+        _manageStage = _MigrationManageStage.confirmStop;
+        _manageChoice = _MigrationManageChoice.stop;
+    }
+  }
+
+  void _openManage({
+    required rust_sync.MigrationStatus status,
+    required bool canFinishImmediately,
+  }) {
+    final runId = status.activeRunId;
+    if (runId == null) return;
+    setState(() {
+      _manageStage = _MigrationManageStage.choose;
+      _manageChoice = canFinishImmediately
+          ? _MigrationManageChoice.immediate
+          : _MigrationManageChoice.stop;
+      _managedRunId = runId;
+      _manageError = null;
+    });
+  }
+
+  void _dismissManage() {
+    if (_submitting) return;
+    setState(() {
+      _manageStage = _MigrationManageStage.closed;
+      _managedRunId = null;
+      _manageError = null;
+    });
+  }
+
+  Future<void> _continueManage({
+    required rust_sync.MigrationStatus status,
+  }) async {
+    if (_managedRunId == null ||
+        status.activeRunId != _managedRunId ||
+        _submitting) {
+      return;
+    }
+    if (!status.canAbandon && !widget.previewCanStop) {
+      setState(() {
+        _manageError = 'This migration can no longer be cancelled.';
+      });
+      return;
+    }
+    setState(() {
+      _manageStage = _manageChoice == _MigrationManageChoice.stop
+          ? _MigrationManageStage.confirmStop
+          : _MigrationManageStage.confirmImmediate;
+      _manageError = null;
+    });
+  }
+
+  Future<void> _confirmManage({
+    required rust_sync.MigrationStatus status,
+    required IronwoodMigrationStatusRequest request,
+  }) async {
+    final runId = _managedRunId;
+    if (runId == null || status.activeRunId != runId || _submitting) return;
+
+    if (!status.canAbandon && !widget.previewCanStop) {
+      setState(() {
+        _manageError = 'This migration can no longer be cancelled.';
+      });
+      return;
     }
 
-    final request = ref.watch(ironwoodMigrationInputsProvider).statusRequest;
-    if (request == null) {
-      return _frame(
-        context,
-        null,
-        ref.watch(syncProvider).asData?.value,
-        statusUnavailable: true,
+    final finishImmediately =
+        _manageStage == _MigrationManageStage.confirmImmediate;
+    setState(() {
+      _submitting = true;
+      _manageError = null;
+    });
+    try {
+      final coordinator = ref.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
       );
+      await coordinator.stop(accountUuid: request.accountUuid, runId: runId);
+      if (!mounted) return;
+      if (finishImmediately) {
+        ref.invalidate(ironwoodMigrationImmediatePlanProvider);
+        context.go('/migration/immediate/review');
+        return;
+      }
+      context.go('/home');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _manageError = _migrationManageErrorMessage(error);
+        _submitting = false;
+      });
+      log('Migration schedule management failed: $error');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = widget.previewStatus;
+    final syncState = ref.watch(syncProvider).asData?.value;
+    final request = ref.watch(ironwoodMigrationInputsProvider).statusRequest;
+    if (preview != null) {
+      return _frame(context, preview, syncState, request: request);
+    }
+    if (request == null) {
+      return _frame(context, null, syncState, statusUnavailable: true);
     }
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
     return ref
         .watch(ironwoodMigrationStatusProvider(request))
         .when(
           skipLoadingOnReload: true,
-          loading: () => _frame(context, null, null),
+          loading: () => _frame(context, null, syncState, request: request),
           error: (_, _) {
             final cachedStatus = coordinator.statuses[request.accountUuid];
             return cachedStatus == null
                 ? _frame(
                     context,
                     null,
-                    null,
+                    syncState,
+                    request: request,
                     statusUnavailable: true,
                     onRetry: () => ref.invalidate(
                       ironwoodMigrationStatusProvider(request),
                     ),
                   )
-                : _frame(
-                    context,
-                    cachedStatus,
-                    ref.watch(syncProvider).asData?.value,
-                  );
+                : _frame(context, cachedStatus, syncState, request: request);
           },
           data: (status) =>
-              _frame(context, status, ref.watch(syncProvider).asData?.value),
+              _frame(context, status, syncState, request: request),
         );
   }
 
@@ -57,106 +238,466 @@ class IronwoodMigrationPreparationScheduleScreen extends ConsumerWidget {
     BuildContext context,
     rust_sync.MigrationStatus? status,
     SyncState? syncState, {
+    IronwoodMigrationStatusRequest? request,
     bool statusUnavailable = false,
     VoidCallback? onRetry,
   }) {
+    final canStop =
+        request != null &&
+        (status?.canAbandon == true ||
+            (widget.previewStatus != null && widget.previewCanStop));
+    final canFinishImmediately = canStop;
+    final canManage =
+        status != null &&
+        status.activeRunId != null &&
+        (canFinishImmediately || canStop);
+    final managedRunIsCurrent =
+        status != null &&
+        _managedRunId != null &&
+        status.activeRunId == _managedRunId;
+    final showOverlay =
+        request != null &&
+        managedRunIsCurrent &&
+        _manageStage != _MigrationManageStage.closed;
+
     return _IronwoodMigrationFrame(
       toolbar: AppPaneToolbar(
         leading: AppBackLink(
-          key: const ValueKey(
-            'ironwood_migration_preparation_schedule_back_button',
+          key: ValueKey(
+            widget.preparation
+                ? 'ironwood_migration_preparation_schedule_back_button'
+                : 'ironwood_migration_schedule_back_button',
           ),
           label: 'Ironwood Migration',
           onTap: () => context.go('/migration/private/status'),
         ),
       ),
       disableSidebarActions: true,
+      overlay: showOverlay
+          ? AppPaneModalOverlay(
+              onDismiss: _dismissManage,
+              child: _MigrationManageModal(
+                stage: _manageStage,
+                choice: _manageChoice,
+                canFinishImmediately: canFinishImmediately,
+                canStop: canStop,
+                submitting: _submitting,
+                error: _manageError,
+                onChoiceChanged: (choice) {
+                  setState(() {
+                    _manageChoice = choice;
+                    _manageError = null;
+                  });
+                },
+                onCancel: _dismissManage,
+                onContinue: () => unawaited(_continueManage(status: status)),
+                onConfirm: () =>
+                    unawaited(_confirmManage(status: status, request: request)),
+              ),
+            )
+          : null,
       child: statusUnavailable
           ? _MigrationScheduleErrorContent(onRetry: onRetry)
           : status == null
           ? const Center(child: CircularProgressIndicator())
-          : _MigrationPreparationScheduleContent(
+          : widget.preparation
+          ? _MigrationPreparationScheduleContent(
               status: status,
               currentHeight: _currentMigrationHeight(syncState),
+              onManage: canManage
+                  ? () => _openManage(
+                      status: status,
+                      canFinishImmediately: canFinishImmediately,
+                    )
+                  : null,
+            )
+          : _MigrationScheduleContent(
+              status: status,
+              currentHeight: _currentMigrationHeight(syncState),
+              onManage: canManage
+                  ? () => _openManage(
+                      status: status,
+                      canFinishImmediately: canFinishImmediately,
+                    )
+                  : null,
             ),
     );
   }
 }
 
-class IronwoodMigrationScheduleScreen extends ConsumerWidget {
-  const IronwoodMigrationScheduleScreen({this.previewStatus, super.key});
+String _migrationManageErrorMessage(Object error) {
+  final message = error.toString();
+  if (message.contains('No remaining Orchard balance')) {
+    return 'There is no remaining Orchard balance to migrate.';
+  }
+  return 'The migration could not be updated. Please try again.';
+}
 
-  final rust_sync.MigrationStatus? previewStatus;
+class _MigrationManageButton extends StatelessWidget {
+  const _MigrationManageButton({required this.onPressed});
+
+  final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final preview = previewStatus;
-    if (preview != null) {
-      return _frame(context, preview, ref.watch(syncProvider).asData?.value);
-    }
+  Widget build(BuildContext context) {
+    return Center(
+      child: AppButton(
+        key: const ValueKey('ironwood_migration_schedule_manage_button'),
+        variant: AppButtonVariant.ghost,
+        size: AppButtonSize.mediumLarge,
+        height: 36,
+        expand: false,
+        leading: const AppIcon(AppIcons.wrench, size: 16),
+        onPressed: onPressed,
+        child: const Text('Manage'),
+      ),
+    );
+  }
+}
 
-    final request = ref.watch(ironwoodMigrationInputsProvider).statusRequest;
-    if (request == null) {
-      return _frame(
-        context,
-        null,
-        ref.watch(syncProvider).asData?.value,
-        statusUnavailable: true,
-      );
-    }
-    final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
-    return ref
-        .watch(ironwoodMigrationStatusProvider(request))
-        .when(
-          skipLoadingOnReload: true,
-          loading: () => _frame(context, null, null),
-          error: (_, _) {
-            final cachedStatus = coordinator.statuses[request.accountUuid];
-            return cachedStatus == null
-                ? _frame(
-                    context,
-                    null,
-                    null,
-                    statusUnavailable: true,
-                    onRetry: () => ref.invalidate(
-                      ironwoodMigrationStatusProvider(request),
-                    ),
-                  )
-                : _frame(
-                    context,
-                    cachedStatus,
-                    ref.watch(syncProvider).asData?.value,
-                  );
-          },
-          data: (status) =>
-              _frame(context, status, ref.watch(syncProvider).asData?.value),
-        );
+class _MigrationManageModal extends StatelessWidget {
+  const _MigrationManageModal({
+    required this.stage,
+    required this.choice,
+    required this.canFinishImmediately,
+    required this.canStop,
+    required this.submitting,
+    required this.error,
+    required this.onChoiceChanged,
+    required this.onCancel,
+    required this.onContinue,
+    required this.onConfirm,
+  });
+
+  final _MigrationManageStage stage;
+  final _MigrationManageChoice choice;
+  final bool canFinishImmediately;
+  final bool canStop;
+  final bool submitting;
+  final String? error;
+  final ValueChanged<_MigrationManageChoice> onChoiceChanged;
+  final VoidCallback onCancel;
+  final VoidCallback onContinue;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppModalCard(
+      key: const ValueKey('ironwood_migration_manage_modal'),
+      child: switch (stage) {
+        _MigrationManageStage.choose => _buildChoice(context),
+        _MigrationManageStage.confirmImmediate => _buildImmediate(context),
+        _MigrationManageStage.confirmStop => _buildStop(context),
+        _MigrationManageStage.closed => const SizedBox.shrink(),
+      },
+    );
   }
 
-  Widget _frame(
-    BuildContext context,
-    rust_sync.MigrationStatus? status,
-    SyncState? syncState, {
-    bool statusUnavailable = false,
-    VoidCallback? onRetry,
-  }) {
-    return _IronwoodMigrationFrame(
-      toolbar: AppPaneToolbar(
-        leading: AppBackLink(
-          key: const ValueKey('ironwood_migration_schedule_back_button'),
-          label: 'Ironwood Migration',
-          onTap: () => context.go('/migration/private/status'),
+  Widget _buildChoice(BuildContext context) {
+    final colors = context.colors;
+    final choiceIsAvailable = switch (choice) {
+      _MigrationManageChoice.immediate => canFinishImmediately,
+      _MigrationManageChoice.stop => canStop,
+    };
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Manage Migration',
+          style: AppTypography.bodyLarge.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _MigrationManageChoiceRow(
+          key: const ValueKey('ironwood_migration_manage_immediate_option'),
+          label: 'Switch to Immediate',
+          selected: choice == _MigrationManageChoice.immediate,
+          enabled: canFinishImmediately,
+          onTap: () => onChoiceChanged(_MigrationManageChoice.immediate),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        _MigrationManageChoiceRow(
+          key: const ValueKey('ironwood_migration_manage_stop_option'),
+          label: 'Stop Migration',
+          selected: choice == _MigrationManageChoice.stop,
+          enabled: canStop,
+          onTap: () => onChoiceChanged(_MigrationManageChoice.stop),
+        ),
+        if (error != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _MigrationManageError(message: error!),
+        ],
+        const SizedBox(height: AppSpacing.md),
+        AppModalActions(
+          onCancel: submitting ? null : onCancel,
+          actionLabel: submitting ? 'Loading...' : 'Continue',
+          onAction: submitting || !choiceIsAvailable ? null : onContinue,
+          cancelKey: const ValueKey('ironwood_migration_manage_cancel_button'),
+          actionKey: const ValueKey(
+            'ironwood_migration_manage_continue_button',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImmediate(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Switch to Immediate',
+          style: AppTypography.bodyLarge.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Process the remaining migration immediately.',
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        const _MigrationManageBullet(
+          text:
+              'Remaining split notes will be processed as an immediate '
+              'migration, slightly increasing traceability',
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        const _MigrationManageBullet(
+          text: 'Transactions already broadcast will not be reverted',
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        const _MigrationManageBullet(
+          text: 'There’s no way to revert an immediate migration',
+        ),
+        if (error != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _MigrationManageError(message: error!),
+        ],
+        const SizedBox(height: AppSpacing.md),
+        AppModalActions(
+          onCancel: submitting ? null : onCancel,
+          actionLabel: submitting ? 'Stopping...' : 'Confirm',
+          onAction: submitting || !canFinishImmediately ? null : onConfirm,
+          actionLeading: const AppIcon(AppIcons.migrationFast, size: 16),
+          cancelKey: const ValueKey(
+            'ironwood_migration_immediate_confirm_cancel_button',
+          ),
+          actionKey: const ValueKey(
+            'ironwood_confirm_finish_migration_immediately_button',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStop(BuildContext context) {
+    final colors = context.colors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Are you sure you want to stop?',
+          style: AppTypography.bodyLarge.copyWith(
+            color: colors.text.accent,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'This cancels the remaining scheduled migration transactions. '
+          'You can re-start the migration from the home page.',
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+        if (error != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _MigrationManageError(message: error!),
+        ],
+        const SizedBox(height: AppSpacing.md),
+        AppModalActions(
+          onCancel: submitting ? null : onCancel,
+          actionLabel: submitting ? 'Cancelling...' : 'Confirm',
+          onAction: submitting || !canStop ? null : onConfirm,
+          actionVariant: AppButtonVariant.destructive,
+          cancelKey: const ValueKey(
+            'ironwood_migration_stop_confirm_cancel_button',
+          ),
+          actionKey: const ValueKey('ironwood_confirm_stop_migration_button'),
+        ),
+      ],
+    );
+  }
+}
+
+class _MigrationManageChoiceRow extends StatefulWidget {
+  const _MigrationManageChoiceRow({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  State<_MigrationManageChoiceRow> createState() =>
+      _MigrationManageChoiceRowState();
+}
+
+class _MigrationManageChoiceRowState extends State<_MigrationManageChoiceRow> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      enabled: widget.enabled,
+      label: widget.label,
+      child: Focus(
+        canRequestFocus: widget.enabled,
+        onFocusChange: (focused) {
+          if (_focused != focused) setState(() => _focused = focused);
+        },
+        onKeyEvent: (_, event) {
+          if (!widget.enabled || event is! KeyDownEvent) {
+            return KeyEventResult.ignored;
+          }
+          if (event.logicalKey == LogicalKeyboardKey.enter ||
+              event.logicalKey == LogicalKeyboardKey.space) {
+            widget.onTap();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.enabled ? widget.onTap : null,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: BorderRadius.circular(AppRadii.medium),
+              border: widget.selected || _focused
+                  ? Border.all(color: colors.border.strong, width: 2)
+                  : null,
+            ),
+            child: SizedBox(
+              height: 48,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.label,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: widget.enabled
+                              ? colors.text.accent
+                              : colors.text.disabled,
+                        ),
+                      ),
+                    ),
+                    _MigrationManageRadio(
+                      selected: widget.selected,
+                      enabled: widget.enabled,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
-      disableSidebarActions: true,
-      child: statusUnavailable
-          ? _MigrationScheduleErrorContent(onRetry: onRetry)
-          : status == null
-          ? const Center(child: CircularProgressIndicator())
-          : _MigrationScheduleContent(
-              status: status,
-              currentHeight: _currentMigrationHeight(syncState),
+    );
+  }
+}
+
+class _MigrationManageRadio extends StatelessWidget {
+  const _MigrationManageRadio({required this.selected, required this.enabled});
+
+  final bool selected;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Container(
+      width: 16,
+      height: 16,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: selected && enabled
+            ? colors.background.inverse
+            : colors.background.neutralSubtleOpacity,
+        borderRadius: BorderRadius.circular(AppRadii.full),
+      ),
+      child: selected && enabled
+          ? AppIcon(AppIcons.check, size: 12, color: colors.icon.inverse)
+          : null,
+    );
+  }
+}
+
+class _MigrationManageBullet extends StatelessWidget {
+  const _MigrationManageBullet({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '•',
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTypography.bodyMedium.copyWith(
+              color: colors.text.secondary,
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MigrationManageError extends StatelessWidget {
+  const _MigrationManageError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      message,
+      key: const ValueKey('ironwood_migration_manage_error'),
+      style: AppTypography.bodySmall.copyWith(
+        color: context.colors.text.destructive,
+      ),
     );
   }
 }
@@ -165,15 +706,17 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
   const _MigrationPreparationScheduleContent({
     required this.status,
     required this.currentHeight,
+    this.onManage,
   });
 
   final rust_sync.MigrationStatus status;
   final int currentHeight;
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final transactions = _orderedPreparationTransactions(status);
+    final transactions = orderedMigrationPreparationTransactions(status);
     final rounds = _preparationRounds(transactions);
     final currentRound = _currentPreparationRound(rounds);
     final projectionIsRecalculating = transactions.any(
@@ -236,7 +779,12 @@ class _MigrationPreparationScheduleContent extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          if (onManage != null) ...[
+            const SizedBox(height: 8),
+            _MigrationManageButton(onPressed: onManage!),
+            const SizedBox(height: 8),
+          ] else
+            const SizedBox(height: 20),
           Expanded(
             child: transactions.isEmpty
                 ? Center(
@@ -682,16 +1230,17 @@ class _MigrationScheduleContent extends StatelessWidget {
   const _MigrationScheduleContent({
     required this.status,
     required this.currentHeight,
+    this.onManage,
   });
 
   final rust_sync.MigrationStatus status;
   final int currentHeight;
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final parts = [..._displayMigrationParts(status)]
-      ..sort(_compareMigrationPartsByExpectedProcessingOrder);
+    final parts = orderedMigrationParts(_displayMigrationParts(status));
     final total = _sumTargetValues(status);
     final completed = parts
         .where((part) => part.state == rust_sync.MigrationPartState.completed)
@@ -743,7 +1292,12 @@ class _MigrationScheduleContent extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          if (onManage != null) ...[
+            const SizedBox(height: 8),
+            _MigrationManageButton(onPressed: onManage!),
+            const SizedBox(height: 8),
+          ] else
+            const SizedBox(height: 20),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),

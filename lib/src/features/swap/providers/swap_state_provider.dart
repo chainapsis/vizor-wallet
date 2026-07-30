@@ -1973,7 +1973,11 @@ class SwapNotifier extends Notifier<SwapState> {
     if (error is SwapZecStagingAddressUnavailableException) {
       return error.toString();
     }
-    return swapFailureMessage(SwapFailureOperation.quote, error);
+    return swapFailureMessage(
+      SwapFailureOperation.quote,
+      error,
+      surface: state.payMode ? SwapFailureSurface.pay : SwapFailureSurface.swap,
+    );
   }
 
   Future<SwapIntentSnapshot> _submitProviderDepositTransaction(

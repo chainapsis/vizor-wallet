@@ -95,6 +95,7 @@ abstract final class AppIcons {
   static const skip = 'skip';
   static const skull = 'skull';
   static const swapArrows = 'swap_arrows';
+  static const subArrow = 'sub_arrow';
   static const sync = 'sync';
   static const theme = 'theme';
   static const time = 'time';

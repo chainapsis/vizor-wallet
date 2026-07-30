@@ -27,10 +27,9 @@ class MobileIronwoodMigrationAnnouncementSheet extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final availableHeight =
-            constraints.maxHeight.isFinite
-                ? constraints.maxHeight.clamp(0.0, height)
-                : height;
+        final availableHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight.clamp(0.0, height)
+            : height;
         return SizedBox(
           key: const ValueKey('mobile_ironwood_announcement_sheet'),
           height: availableHeight,

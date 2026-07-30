@@ -102,7 +102,6 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
         privateEnabled: privateMigrationEnabled,
-        immediateEnabled: true,
       ),
       MobileIronwoodMigrationStep.notifications =>
         _MobileMigrationNotificationPermissionScreen(
@@ -196,10 +195,13 @@ class _MobileIronwoodMigrationCompleteScreenState
     if (completedStatus == null || data == null) {
       return const _MobileMigrationLoadingScreen();
     }
-    return _MigrationCompleteSurface(
-      status: completedStatus,
-      fallbackAmountText: data.amountText,
-      onDone: () => context.go('/home'),
+    return _MobileIronwoodMigrationBackScope(
+      onFallback: () => context.go('/home'),
+      child: _MigrationCompleteSurface(
+        status: completedStatus,
+        fallbackAmountText: data.amountText,
+        onDone: () => context.go('/home'),
+      ),
     );
   }
 }
@@ -265,6 +267,14 @@ bool _hasRenderableMobileMigrationStatus(rust_sync.MigrationStatus status) {
       status.targetValuesZatoshi.isNotEmpty;
 }
 
+/// Whether the redesigned mobile status screen has a presentation for [phase].
+///
+/// A `false` here redirects the user home, so the list stays deliberately
+/// over-inclusive: `awaiting_denomination_signature` and `paused` are
+/// unreachable phases (see `ironwood_migration_phases.dart` for the Rust
+/// evidence), but keeping them listed means a hypothetical Rust change that
+/// starts writing one lands on a rendered screen instead of a dead end. Their
+/// phase-specific presentation branches are dead code; this gate is not.
 bool _hasMobileMigrationStatusDesign(String phase) {
   return phase == kIronwoodMigrationAwaitingPreparationPhase ||
       phase == kIronwoodMigrationAwaitingDenominationSignaturePhase ||

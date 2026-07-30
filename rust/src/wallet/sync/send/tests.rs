@@ -2,7 +2,7 @@ use super::super::migration;
 use super::*;
 
 use incrementalmerkletree::Position;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use shardtree::store::ShardStore;
 use transparent::bundle::{OutPoint, TxOut};
 use zcash_client_backend::{data_api::WalletWrite, wallet::WalletTransparentOutput};
@@ -12,6 +12,14 @@ use zcash_protocol::consensus::BlockHeight;
 const MIGRATION_TEST_ACCOUNT: &str = "account-1";
 const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
+
+#[test]
+fn migration_stop_preserves_zero_as_the_no_expiry_sentinel() {
+    assert!(!migration_stop_candidate_is_expired(0, u32::MAX));
+    assert!(!migration_stop_candidate_is_expired(200, 199));
+    assert!(migration_stop_candidate_is_expired(200, 200));
+    assert!(migration_stop_candidate_is_expired(200, 201));
+}
 
 #[test]
 fn send_proposal_expires_at_its_lock_boundary() {
@@ -58,6 +66,41 @@ fn immediate_migration_lock_matches_zip318_transaction_expiry() {
                 > target_height + SEND_PROPOSAL_LOCK_BLOCKS
         );
     }
+}
+
+#[test]
+fn immediate_migration_marks_restart_retention_before_broadcast() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let owner = LockOwner::new([7; 32]);
+    let output = OutputRef::new(TxId::from_bytes([9; 32]), PoolType::ORCHARD, 0);
+    super::super::proposal_locks::persist(
+        db_path,
+        owner,
+        std::slice::from_ref(&output),
+        BlockHeight::from_u32(100),
+    )
+    .unwrap();
+
+    {
+        let mut input_lock =
+            ImmediateMigrationInputLock::new(db_path, WalletNetwork::Regtest, owner, vec![output]);
+        input_lock.mark_broadcast_started().unwrap();
+        assert!(input_lock.retain_on_drop);
+    }
+
+    let conn = Connection::open(db_path).unwrap();
+    let retained: bool = conn
+        .query_row(
+            "SELECT retain_until_expiry
+             FROM vizor_send_proposal_locks
+             WHERE owner = ?1",
+            params![owner.as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(retained);
 }
 
 #[test]
@@ -487,6 +530,64 @@ fn deleting_account_discards_only_its_keystone_migration_requests() {
 }
 
 #[test]
+fn stopping_stale_run_discards_only_its_keystone_migration_requests() {
+    const ACCOUNT: &str = "keystone-stop-account";
+    const OLD_RUN: &str = "keystone-old-run";
+    const NEW_RUN: &str = "keystone-new-run";
+    let plan = migration::plan_denominations(1_000_000, 10_000, 15_000, 1).unwrap();
+
+    for (request_id, run_id) in [
+        ("old-denomination-request", OLD_RUN),
+        ("new-denomination-request", NEW_RUN),
+    ] {
+        keystone_denomination_requests().lock().unwrap().insert(
+            request_id.to_string(),
+            StoredDenominationPczt {
+                account_uuid: ACCOUNT.to_string(),
+                network: WalletNetwork::Test,
+                preparation_timing_policy: migration::PreparationTimingPolicy::Zip318Spaced,
+                state: KeystoneMigrationRequestState::ProofReady,
+                proof_error: None,
+                draft_run_id: Some(run_id.to_string()),
+                split_stages: vec![],
+                direct_prepared_refs: vec![],
+                total_migratable_zatoshi: plan.total_migratable_zatoshi,
+                plan: plan.clone(),
+            },
+        );
+    }
+    for (request_id, run_id) in [
+        ("old-batch-request", OLD_RUN),
+        ("new-batch-request", NEW_RUN),
+    ] {
+        keystone_migration_requests().lock().unwrap().insert(
+            request_id.to_string(),
+            StoredMigrationPcztBatch {
+                account_uuid: ACCOUNT.to_string(),
+                network: WalletNetwork::Test,
+                run_id: run_id.to_string(),
+                fallback_total_count: 0,
+                fallback_migrated_zatoshi: 0,
+                recovery_old_txids: vec![],
+                state: KeystoneMigrationRequestState::ProofReady,
+                proof_error: None,
+                messages: vec![],
+            },
+        );
+    }
+
+    discard_keystone_migration_requests_for_run(ACCOUNT, WalletNetwork::Test, OLD_RUN).unwrap();
+
+    for request_id in ["old-denomination-request", "old-batch-request"] {
+        assert!(keystone_migration_proof_status(request_id).is_err());
+    }
+    for request_id in ["new-denomination-request", "new-batch-request"] {
+        assert!(keystone_migration_proof_status(request_id).is_ok());
+        discard_keystone_migration_request(request_id).unwrap();
+    }
+}
+
+#[test]
 fn foreground_migration_policy_keeps_existing_batch_behavior() {
     assert_eq!(MigrationBroadcastPolicy::FOREGROUND.limit(500), 500);
     assert_eq!(MigrationBroadcastPolicy::FOREGROUND.proof_limit(500), 500);
@@ -517,8 +618,8 @@ fn private_plan_timing_accounts_for_spaced_preparation_transactions() {
     )
     .unwrap();
 
-    assert_eq!(immediate, (0, Some(1010)));
-    assert_eq!(spaced, (144, Some(1154)));
+    assert_eq!(immediate, (144, Some(1154)));
+    assert_eq!(spaced, (288, Some(1298)));
 }
 
 #[test]
@@ -544,8 +645,8 @@ fn private_plan_timing_uses_direct_note_mined_height_without_split_layers() {
     )
     .unwrap();
 
-    assert_eq!(waiting, (0, Some(1010)));
-    assert_eq!(already_ready, (0, Some(722)));
+    assert_eq!(waiting, (144, Some(1154)));
+    assert_eq!(already_ready, (0, Some(866)));
 }
 
 #[test]
@@ -826,6 +927,63 @@ fn migration_rebuilds_only_after_explicit_server_rejection() {
     ));
     assert!(!migration_broadcast_failure_requires_rebuild(
         "SendTransaction gRPC failed: connection unavailable"
+    ));
+}
+
+#[test]
+fn stop_skips_network_for_transactions_that_were_never_attempted() {
+    let (_temp_dir, db_path, run_id, _) = create_outbox_receipt_test_run(69_120);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    runtime
+        .block_on(reconcile_scheduled_migration_txs_before_abandon(
+            &db_path,
+            "not-a-lightwalletd-url",
+            WalletNetwork::Test,
+            MIGRATION_TEST_ACCOUNT,
+            &run_id,
+            &[],
+        ))
+        .unwrap();
+}
+
+#[test]
+fn native_attempt_state_requires_network_reconciliation() {
+    let (_temp_dir, db_path, run_id, pending_txid) = create_outbox_receipt_test_run(69_120);
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    let error = runtime
+        .block_on(reconcile_scheduled_migration_txs_before_abandon(
+            &db_path,
+            "not-a-lightwalletd-url",
+            WalletNetwork::Test,
+            MIGRATION_TEST_ACCOUNT,
+            &run_id,
+            &[pending_txid],
+        ))
+        .unwrap_err();
+
+    assert!(error.starts_with("Open migration stop reconciliation endpoint:"));
+}
+
+#[test]
+fn legacy_attempt_state_reconciles_only_after_its_broadcast_height() {
+    let candidate = migration::MigrationStopCandidate {
+        kind: migration::MigrationStopCandidateKind::MigrationTransaction,
+        txid_hex: "10".repeat(32),
+        broadcast_height: 200,
+        expiry_height: 69_120,
+        attempt_state: migration::MigrationBroadcastAttemptState::UnknownLegacy,
+    };
+
+    assert!(!migration_stop_candidate_requires_reconciliation(
+        &candidate, false, 199,
+    ));
+    assert!(migration_stop_candidate_requires_reconciliation(
+        &candidate, false, 200,
+    ));
+    assert!(migration_stop_candidate_requires_reconciliation(
+        &candidate, true, 199,
     ));
 }
 
@@ -1850,7 +2008,7 @@ fn immediate_preparation_policy_does_not_bypass_expiry() {
 }
 
 #[test]
-fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
+fn scheduled_storage_failure_after_acceptance_marks_broadcasted() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -1919,7 +2077,10 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     .unwrap();
 
     assert_eq!(result.txids, pending_txid);
-    assert_eq!(result.status, migration::PHASE_BROADCAST_SCHEDULED);
+    assert_eq!(
+        result.status,
+        migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS
+    );
     assert_eq!(result.broadcasted_count, 1);
     assert_eq!(result.total_count, 1);
     assert_eq!(result.fee_zatoshi, 10_000);
@@ -1927,21 +2088,25 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     let message = result.message.as_deref().unwrap();
     assert!(message.contains("accepted by lightwalletd"));
     assert!(message.contains("Vizor will retry"));
+    // Critical: leave due selection so later parts are not HOL-blocked.
     assert_eq!(
         migration::scheduled_pending_count(&db_path, &run_id).unwrap(),
-        1
+        0
     );
     assert_eq!(
         migration::pending_totals_for_run(&db_path, &run_id)
             .unwrap()
             .broadcasted_count,
-        0
+        1
     );
     let active =
         migration::active_migration_run(&db_path, MIGRATION_TEST_ACCOUNT, WalletNetwork::Test)
             .unwrap()
             .unwrap();
-    assert_eq!(active.phase, migration::PHASE_BROADCAST_SCHEDULED);
+    assert_eq!(
+        active.phase,
+        migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS
+    );
     assert_eq!(active.last_error.as_deref(), Some(message));
 
     let result = record_accepted_scheduled_migration_tx(

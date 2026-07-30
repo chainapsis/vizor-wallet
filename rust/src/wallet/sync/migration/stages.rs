@@ -196,6 +196,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
             target_height INTEGER NOT NULL,
             scheduled_height INTEGER NOT NULL DEFAULT 0,
             broadcast_not_before_height INTEGER,
+            broadcast_attempted INTEGER NOT NULL DEFAULT 0,
             expiry_height INTEGER NOT NULL,
             fee_zatoshi INTEGER NOT NULL,
             confirmed_mined_height INTEGER,
@@ -272,6 +273,26 @@ pub(super) fn ensure_schema(conn: &Connection) -> Result<(), String> {
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     add_column_if_missing(conn, STAGES_TABLE, "broadcast_not_before_height", "INTEGER")?;
+    let had_broadcast_attempted = table_column_exists(conn, STAGES_TABLE, "broadcast_attempted")?;
+    add_column_if_missing(
+        conn,
+        STAGES_TABLE,
+        "broadcast_attempted",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    if !had_broadcast_attempted {
+        // Preserve legacy uncertainty without claiming that every future
+        // preparation transaction was already submitted.
+        conn.execute(
+            &format!(
+                "UPDATE {STAGES_TABLE}
+                 SET broadcast_attempted = 2
+                 WHERE status = 'pending'"
+            ),
+            [],
+        )
+        .map_err(|e| format!("Backfill denomination broadcast attempts: {e}"))?;
+    }
     add_column_if_missing(conn, STAGE_OUTPUTS_TABLE, "part_index", "INTEGER")?;
 
     Ok(())
@@ -283,16 +304,7 @@ fn add_column_if_missing(
     column: &str,
     definition: &str,
 ) -> Result<(), String> {
-    let exists = conn
-        .query_row(
-            "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
-            params![table, column],
-            |_| Ok(()),
-        )
-        .optional()
-        .map(|row| row.is_some())
-        .map_err(|e| format!("Check migration denomination column {table}.{column}: {e}"))?;
-    if !exists {
+    if !table_column_exists(conn, table, column)? {
         conn.execute(
             &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
             [],
@@ -300,6 +312,17 @@ fn add_column_if_missing(
         .map_err(|e| format!("Add migration denomination column {table}.{column}: {e}"))?;
     }
     Ok(())
+}
+
+fn table_column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2",
+        params![table, column],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(|e| format!("Check migration denomination column {table}.{column}: {e}"))
 }
 
 fn migrate_confirmed_stage_without_raw_constraint(conn: &Connection) -> Result<(), String> {

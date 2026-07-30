@@ -51,6 +51,7 @@ class KeystoneQrScannerCard extends StatefulWidget {
     this.cameraHeight,
     this.fullBleedMobile = false,
     this.showScanOverlay = true,
+    this.showScanProgress = true,
     this.onControlsReady,
     super.key,
   });
@@ -75,6 +76,11 @@ class KeystoneQrScannerCard extends StatefulWidget {
 
   /// Set to false when the parent owns the viewfinder treatment.
   final bool showScanOverlay;
+
+  /// Set to false when the parent renders its own multi-part scan progress
+  /// indicator from [onProgress]. Default keeps the built-in bar, so every
+  /// other call site renders unchanged.
+  final bool showScanProgress;
 
   /// Exposes torch and center-focus actions without leaking the scanner
   /// controller. A full-screen parent can wire these into its own chrome.
@@ -536,6 +542,7 @@ class _KeystoneQrScannerCardState extends State<KeystoneQrScannerCard>
                                       if (canScan && widget.showScanOverlay)
                                         const _ScanOverlay(),
                                       if (canScan &&
+                                          widget.showScanProgress &&
                                           _scanProgress > 0 &&
                                           _scanProgress < 100 &&
                                           !widget.decoding)

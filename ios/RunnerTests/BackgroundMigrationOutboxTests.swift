@@ -689,6 +689,71 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testStopInspectionReportsOnlyTransactionsWithAStartedAttempt() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100, 101]
+    )
+    try stageAndArm(batch, in: harness.store)
+    _ = try harness.store.update { snapshot in
+      try snapshot.beginSubmission(
+        itemId: batch.items[0].itemId,
+        attemptId: "attempt",
+        at: now
+      )
+    }
+
+    let attempted = try BackgroundMigrationOutboxChannel.listAttemptedTxids(
+      arguments: [
+        "network": batch.network,
+        "accountUuid": batch.accountUuid,
+        "runId": batch.runId,
+      ],
+      store: harness.store
+    )
+
+    XCTAssertEqual(attempted, [batch.items[0].txidHex])
+  }
+
+  func testCancellationBeforeSubmissionDoesNotCreateAnAttempt() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    try stageAndArm(batch, in: harness.store)
+    _ = try harness.store.update { snapshot in
+      try snapshot.beginSubmission(
+        itemId: batch.items[0].itemId,
+        attemptId: "attempt",
+        at: now
+      )
+      try snapshot.recordCancelledBeforeSubmission(
+        itemId: batch.items[0].itemId,
+        error: "cancelled before transport"
+      )
+    }
+
+    let attempted = try BackgroundMigrationOutboxChannel.listAttemptedTxids(
+      arguments: [
+        "network": batch.network,
+        "accountUuid": batch.accountUuid,
+        "runId": batch.runId,
+      ],
+      store: harness.store
+    )
+    let item = try XCTUnwrap(harness.store.read().batches.first?.items.first)
+
+    XCTAssertTrue(attempted.isEmpty)
+    XCTAssertEqual(item.status, .armed)
+    XCTAssertEqual(item.attemptCount, 0)
+  }
+
   func testRunnerReportsBroadcastCompleteAfterLastAcceptedEquivalentItem() throws {
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }

@@ -19,6 +19,19 @@ const _scannerCaptionTop = 628.0;
 const _scannerCaptionHeight = 75.0;
 const _scannerActionTop = 762.0;
 const _scannerActionSize = 40.0;
+// The multi-part scan progress row sits directly under the viewfinder. Its
+// band is reserved unconditionally so the caption never shifts when progress
+// starts arriving mid-scan.
+const _scannerProgressGap = 8.0;
+const _scannerProgressHeight = 18.0;
+const _scannerProgressReserve =
+    _scannerProgressGap + _scannerProgressHeight + _scannerProgressGap;
+const _scannerProgressBarHeight = 8.0;
+// `Round N of M` badge metrics. The scanner reserves header space from these,
+// so they must match what [_SigningRoundBadge] renders.
+const _signingRoundBadgeGap = AppSpacing.xxs;
+const _signingRoundBadgeVerticalPadding = 4.0;
+const _signingRoundBadgeHorizontalPadding = 10.0;
 
 /// The user-facing signing round represented by this view.
 enum MobileIronwoodKeystoneSigningRound { denominationSplit, migrationBatch }
@@ -36,6 +49,8 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
     required this.state,
     required this.round,
     this.signingRoundLabel,
+    this.signingMessageCountLabel,
+    this.scanProgress,
     this.qrCode,
     this.camera,
     this.onNext,
@@ -50,7 +65,18 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
 
   final MobileIronwoodKeystoneSigningViewState state;
   final MobileIronwoodKeystoneSigningRound round;
+
+  /// `Round N of M`, rendered as an emphasised badge in both the request and
+  /// the scanner state. Null when the request fits in a single round.
   final String? signingRoundLabel;
+
+  /// How many transactions the current request signs, e.g.
+  /// `Signs 26 of 51 transactions`. Shown in the request state only.
+  final String? signingMessageCountLabel;
+
+  /// Multi-part UR scan progress in `0..1`, or null when there is nothing to
+  /// report yet. Shown in [scanner] only.
+  final double? scanProgress;
 
   /// The already-rendered request QR. It is shown only in [ready].
   final Widget? qrCode;
@@ -77,6 +103,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
             qrCode: null,
             round: round,
             signingRoundLabel: signingRoundLabel,
+            signingMessageCountLabel: signingMessageCountLabel,
             onNext: onNext,
             onCancel: onCancel,
             onShowScanHelp: onShowScanHelp,
@@ -88,6 +115,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
             qrCode: qrCode,
             round: round,
             signingRoundLabel: signingRoundLabel,
+            signingMessageCountLabel: signingMessageCountLabel,
             onNext: onNext,
             onCancel: onCancel,
             onShowScanHelp: onShowScanHelp,
@@ -97,6 +125,7 @@ class MobileIronwoodKeystoneSigningView extends StatelessWidget {
           camera: camera,
           round: round,
           signingRoundLabel: signingRoundLabel,
+          scanProgress: scanProgress,
           onToggleFlashlight: onToggleFlashlight,
           onShowRequestQr: onShowRequestQr,
           onCancel: onCancel,
@@ -114,6 +143,7 @@ class _StepOneContent extends StatelessWidget {
     required this.qrCode,
     required this.round,
     required this.signingRoundLabel,
+    required this.signingMessageCountLabel,
     required this.onNext,
     required this.onCancel,
     required this.onShowScanHelp,
@@ -123,6 +153,7 @@ class _StepOneContent extends StatelessWidget {
   final Widget? qrCode;
   final MobileIronwoodKeystoneSigningRound round;
   final String? signingRoundLabel;
+  final String? signingMessageCountLabel;
   final VoidCallback? onNext;
   final VoidCallback? onCancel;
   final VoidCallback? onShowScanHelp;
@@ -183,14 +214,19 @@ class _StepOneContent extends StatelessWidget {
                       ),
                     ),
                     if (signingRoundLabel != null) ...[
+                      const SizedBox(height: _signingRoundBadgeGap),
+                      _SigningRoundBadge(label: signingRoundLabel!),
+                    ],
+                    if (signingMessageCountLabel != null) ...[
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
-                        signingRoundLabel!,
+                        signingMessageCountLabel!,
                         key: const ValueKey(
-                          'mobile_ironwood_keystone_signing_round',
+                          'mobile_ironwood_keystone_signing_message_count',
                         ),
-                        style: AppTypography.bodyMediumStrong.copyWith(
-                          color: colors.text.accent,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: colors.text.secondary,
                         ),
                       ),
                     ],
@@ -347,55 +383,123 @@ class _KeystoneScanPrompt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = AppTypography.bodyMedium.copyWith(color: color);
-    return Row(
+    return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Flexible(
-          fit: FlexFit.loose,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Wrap(
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 6,
-                runSpacing: 2,
-                children: [
-                  Text('Tap', style: style),
-                  const _KeystoneScanPromptIcon(),
-                  Text('on your Keystone,', style: style),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
+        Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          runSpacing: 2,
+          children: [
+            Text('Tap', style: style),
+            const _KeystoneScanPromptIcon(),
+            Text('on your Keystone,', style: style),
+          ],
+        ),
+        const SizedBox(height: 2),
+        // The help affordance trails the last word of the sentence rather
+        // than the whole two-line block, so it reads as part of the prompt.
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Flexible(
+              fit: FlexFit.loose,
+              child: Text(
                 'then scan this QR code',
                 textAlign: TextAlign.center,
                 style: style,
               ),
+            ),
+            if (onShowHelp != null) ...[
+              const SizedBox(width: 6),
+              _KeystoneScanHelpButton(color: color, onShowHelp: onShowHelp!),
             ],
-          ),
+          ],
         ),
-        if (onShowHelp != null) ...[
-          const SizedBox(width: 6),
-          Semantics(
-            button: true,
-            label: 'Keystone QR scanning help',
-            excludeSemantics: true,
-            child: GestureDetector(
-              key: const ValueKey('mobile_ironwood_keystone_scan_help'),
-              behavior: HitTestBehavior.opaque,
-              onTap: onShowHelp,
-              child: SizedBox.square(
-                dimension: 28,
-                child: Center(
-                  child: AppIcon(AppIcons.help, size: 20, color: color),
-                ),
+      ],
+    );
+  }
+}
+
+class _KeystoneScanHelpButton extends StatelessWidget {
+  const _KeystoneScanHelpButton({
+    required this.color,
+    required this.onShowHelp,
+  });
+
+  static const _visualSize = 28.0;
+  static const _tapSize = 44.0;
+
+  final Color color;
+  final VoidCallback onShowHelp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Keystone QR scanning help',
+      excludeSemantics: true,
+      child: SizedBox.square(
+        key: const ValueKey('mobile_ironwood_keystone_scan_help'),
+        dimension: _visualSize,
+        // The icon only occupies 28px of layout so it stays on the sentence
+        // line, while the tap target overflows to the 44pt minimum.
+        child: OverflowBox(
+          maxWidth: _tapSize,
+          maxHeight: _tapSize,
+          child: GestureDetector(
+            key: const ValueKey(
+              'mobile_ironwood_keystone_scan_help_tap_target',
+            ),
+            behavior: HitTestBehavior.opaque,
+            onTap: onShowHelp,
+            child: SizedBox.square(
+              dimension: _tapSize,
+              child: Center(
+                child: AppIcon(AppIcons.help, size: 20, color: color),
               ),
             ),
           ),
-        ],
-      ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The `Round N of M` emphasis badge.
+///
+/// Follows the existing Ironwood flow badge pattern (`_DarkBadge` in
+/// `ironwood_migration_flow/shared_widgets.dart`): an inverted fill with
+/// inverse label text, so it stays legible on the window background and on
+/// the camera scrim (where this view forces the dark palette).
+class _SigningRoundBadge extends StatelessWidget {
+  const _SigningRoundBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return DecoratedBox(
+      key: const ValueKey('mobile_ironwood_keystone_signing_round'),
+      decoration: ShapeDecoration(
+        color: colors.background.inverse,
+        shape: const StadiumBorder(),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: _signingRoundBadgeHorizontalPadding,
+          vertical: _signingRoundBadgeVerticalPadding,
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.labelSmall.copyWith(color: colors.text.inverse),
+        ),
+      ),
     );
   }
 }
@@ -451,6 +555,7 @@ class _ScannerContent extends StatelessWidget {
     required this.camera,
     required this.round,
     required this.signingRoundLabel,
+    required this.scanProgress,
     required this.onToggleFlashlight,
     required this.onShowRequestQr,
     required this.onCancel,
@@ -461,6 +566,7 @@ class _ScannerContent extends StatelessWidget {
   final Widget? camera;
   final MobileIronwoodKeystoneSigningRound round;
   final String? signingRoundLabel;
+  final double? scanProgress;
   final VoidCallback? onToggleFlashlight;
   final VoidCallback? onShowRequestQr;
   final VoidCallback? onCancel;
@@ -492,11 +598,12 @@ class _ScannerContent extends StatelessWidget {
             );
             final signingRoundReserve = signingRoundLabel == null
                 ? 0.0
-                : AppSpacing.xxs +
+                : _signingRoundBadgeGap +
+                      _signingRoundBadgeVerticalPadding * 2 +
                       _measuredTextHeight(
                         context,
                         text: signingRoundLabel!,
-                        style: AppTypography.bodyMediumStrong,
+                        style: AppTypography.labelSmall,
                         maxWidth: constraints.maxWidth,
                       );
             final headerReserve =
@@ -508,7 +615,7 @@ class _ScannerContent extends StatelessWidget {
                 titleHeight +
                 signingRoundReserve;
             const chromeReserve =
-                12 +
+                _scannerProgressReserve +
                 _scannerCaptionHeight +
                 AppSpacing.s +
                 _scannerActionSize +
@@ -532,7 +639,7 @@ class _ScannerContent extends StatelessWidget {
               maxActionTop -
                   AppSpacing.s -
                   _scannerCaptionHeight -
-                  12 -
+                  _scannerProgressReserve -
                   targetSize,
             );
             final desiredTargetTop = _scaledTop(
@@ -587,16 +694,8 @@ class _ScannerContent extends StatelessWidget {
                         ),
                       ),
                       if (signingRoundLabel != null) ...[
-                        const SizedBox(height: AppSpacing.xxs),
-                        Text(
-                          signingRoundLabel!,
-                          key: const ValueKey(
-                            'mobile_ironwood_keystone_signing_round',
-                          ),
-                          style: AppTypography.bodyMediumStrong.copyWith(
-                            color: const Color(0xFFFFFFFF),
-                          ),
-                        ),
+                        const SizedBox(height: _signingRoundBadgeGap),
+                        _SigningRoundBadge(label: signingRoundLabel!),
                       ],
                     ],
                   ),
@@ -614,6 +713,14 @@ class _ScannerContent extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (scanProgress != null)
+                  Positioned(
+                    top: targetRect.bottom + _scannerProgressGap,
+                    left: targetRect.left,
+                    width: targetRect.width,
+                    height: _scannerProgressHeight,
+                    child: _ScanProgressRow(progress: scanProgress!),
+                  ),
                 Positioned(
                   top: _captionTop(
                     constraints,
@@ -718,7 +825,7 @@ class _ScannerContent extends StatelessWidget {
     required Rect targetRect,
     required double maxActionTop,
   }) {
-    final minTop = targetRect.bottom + 12;
+    final minTop = targetRect.bottom + _scannerProgressReserve;
     final maxTop = math.max(
       minTop,
       maxActionTop - AppSpacing.s - _scannerCaptionHeight,
@@ -751,6 +858,64 @@ class _ScannerContent extends StatelessWidget {
         )
         .clamp(0.0, maxActionTop)
         .toDouble();
+  }
+}
+
+/// Multi-part UR scan progress, sized to the viewfinder width and paired with
+/// a numeric readout.
+///
+/// The signed Keystone response arrives as an animated multi-part QR, so the
+/// user needs to see that frames are accumulating. The decoder only reports a
+/// percentage (`UrDecodeResult.progress`), never a part count, so the numeric
+/// readout is a percentage.
+class _ScanProgressRow extends StatelessWidget {
+  const _ScanProgressRow({required this.progress});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = progress.clamp(0.0, 1.0);
+    const track = Color(0x59FFFFFF);
+    const fill = Color(0xFFFFFFFF);
+    return Semantics(
+      label: 'Scan progress',
+      value: '${(normalized * 100).round()}%',
+      child: Row(
+        key: const ValueKey('mobile_ironwood_keystone_signing_scan_progress'),
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.full),
+              child: SizedBox(
+                height: _scannerProgressBarHeight,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const DecoratedBox(decoration: BoxDecoration(color: track)),
+                    FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: normalized,
+                      child: const DecoratedBox(
+                        decoration: BoxDecoration(color: fill),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '${(normalized * 100).round()}%',
+            key: const ValueKey(
+              'mobile_ironwood_keystone_signing_scan_progress_value',
+            ),
+            style: AppTypography.labelSmall.copyWith(color: fill),
+          ),
+        ],
+      ),
+    );
   }
 }
 

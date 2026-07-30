@@ -975,6 +975,44 @@ Widget buildIronwoodMigrationPreparationScheduleUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationManageScheduleUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/schedule',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewMigrationScheduleStatus(),
+    schedulePreviewOverlay: IronwoodMigrationSchedulePreviewOverlay.manage,
+    schedulePreviewCanStop: true,
+  );
+}
+
+Widget buildIronwoodMigrationImmediateConfirmationUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/schedule',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewMigrationScheduleStatus(),
+    schedulePreviewOverlay:
+        IronwoodMigrationSchedulePreviewOverlay.immediateConfirmation,
+    schedulePreviewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+    schedulePreviewCanStop: true,
+  );
+}
+
+Widget buildIronwoodMigrationStopConfirmationUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/schedule',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewMigrationScheduleStatus(),
+    schedulePreviewOverlay:
+        IronwoodMigrationSchedulePreviewOverlay.stopConfirmation,
+    schedulePreviewCanStop: true,
+  );
+}
+
 Widget buildIronwoodMigrationCompleteUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/private/status',
@@ -1062,6 +1100,20 @@ Widget buildMobileIronwoodMigrationNotificationsConfirmationUseCase(
 ) {
   return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
     MobileIronwoodMigrationPreviewSurface.notificationsConfirmation,
+  );
+}
+
+Widget buildMobileIronwoodMigrationStartLoadingUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationStartLoading,
+  );
+}
+
+Widget buildMobileIronwoodMigrationStartKeystoneReadyUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
+    MobileIronwoodMigrationPreviewSurface.migrationStartKeystoneReady,
   );
 }
 
@@ -1161,6 +1213,60 @@ Widget buildMobileIronwoodMigrationBroadcastingUseCase(BuildContext context) {
   );
 }
 
+Widget buildMobileIronwoodMigrationScheduleUseCase(BuildContext context) {
+  return _buildMobileIronwoodMigrationScheduleUseCase(preparation: false);
+}
+
+Widget buildMobileIronwoodMigrationSchedulePendingUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationScheduleUseCase(
+    preparation: false,
+    status: _previewMigrationSchedulePendingStatus(),
+  );
+}
+
+Widget buildMobileIronwoodMigrationPreparationScheduleUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationScheduleUseCase(preparation: true);
+}
+
+Widget _buildMobileIronwoodMigrationScheduleUseCase({
+  required bool preparation,
+  rust_sync.MigrationStatus? status,
+}) {
+  final accountState = _ironwoodMigrationAccountState();
+  final resolvedStatus =
+      status ??
+      (preparation
+          ? _previewPrivateMigrationStatus()
+          : _previewMigrationScheduleStatus());
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_homeBootstrap(accountState)),
+      accountProvider.overrideWith(() => _PreviewAccountNotifier(accountState)),
+      syncProvider.overrideWith(
+        () => _PreviewSyncNotifier(
+          accountState.activeAccountUuid,
+          initialState: SyncState(
+            accountUuid: accountState.activeAccountUuid,
+            hasAccountScopedData: true,
+            scannedHeight: 3_000_000,
+            chainTipHeight: 3_000_000,
+          ),
+        ),
+      ),
+    ],
+    child: _MobilePreviewFrame(
+      child: _MobileMigrationScheduleHarness(
+        preparation: preparation,
+        status: resolvedStatus,
+      ),
+    ),
+  );
+}
+
 Widget buildMobileIronwoodMigrationCompleteUseCase(BuildContext context) {
   return _buildMobileIronwoodMigrationPreviewSurfaceUseCase(
     MobileIronwoodMigrationPreviewSurface.migrationComplete,
@@ -1201,6 +1307,17 @@ Widget buildMobileIronwoodMigrationKeystoneReadyUseCase(BuildContext context) {
   );
 }
 
+/// A request that fits one Keystone round: no round badge, only the
+/// transaction count.
+Widget buildMobileIronwoodMigrationKeystoneReadySingleRoundUseCase(
+  BuildContext context,
+) {
+  return _buildMobileIronwoodMigrationKeystoneSigningUseCase(
+    MobileIronwoodKeystoneSigningViewState.ready,
+    multiRound: false,
+  );
+}
+
 Widget buildMobileIronwoodMigrationKeystoneScannerUseCase(
   BuildContext context,
 ) {
@@ -1210,8 +1327,12 @@ Widget buildMobileIronwoodMigrationKeystoneScannerUseCase(
 }
 
 Widget _buildMobileIronwoodMigrationKeystoneSigningUseCase(
-  MobileIronwoodKeystoneSigningViewState state,
-) {
+  MobileIronwoodKeystoneSigningViewState state, {
+  bool multiRound = true,
+}) {
+  // Production only knows the round split and message count once the request
+  // is encoded, so the loading state carries neither.
+  final loading = state == MobileIronwoodKeystoneSigningViewState.loading;
   return SizedBox(
     width: 393,
     height: 852,
@@ -1223,7 +1344,19 @@ Widget _buildMobileIronwoodMigrationKeystoneSigningUseCase(
       child: MobileIronwoodKeystoneSigningView(
         state: state,
         round: MobileIronwoodKeystoneSigningRound.denominationSplit,
-        signingRoundLabel: 'Round 1 of 2',
+        // A multi-round request: the badge and the per-round transaction count
+        // are the states that need previewing.
+        signingRoundLabel: loading || !multiRound ? null : 'Round 1 of 2',
+        signingMessageCountLabel: loading
+            ? null
+            : multiRound
+            ? 'Signs 26 of 51 transactions'
+            : 'Signs 51 transactions',
+        // Mid-scan so the viewfinder-width progress bar and its numeric
+        // readout are visible in the scanner preview.
+        scanProgress: state == MobileIronwoodKeystoneSigningViewState.scanner
+            ? 0.42
+            : null,
         qrCode: const _KeystoneMigrationQrPreview(),
         camera: const _KeystoneMigrationCameraPreview(),
         onNext: () {},
@@ -1460,6 +1593,9 @@ Widget _buildIronwoodMigrationUseCase({
   bool isHardware = false,
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
   bool previewImmediateKeystoneScanner = false,
+  IronwoodMigrationSchedulePreviewOverlay? schedulePreviewOverlay,
+  rust_sync.OrchardMigrationImmediatePlan? schedulePreviewImmediatePlan,
+  bool schedulePreviewCanStop = false,
 }) {
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
   return ProviderScope(
@@ -1504,6 +1640,9 @@ Widget _buildIronwoodMigrationUseCase({
       reviewPreviewStage: reviewPreviewStage,
       previewImmediatePlan: previewImmediatePlan,
       previewImmediateKeystoneScanner: previewImmediateKeystoneScanner,
+      schedulePreviewOverlay: schedulePreviewOverlay,
+      schedulePreviewImmediatePlan: schedulePreviewImmediatePlan,
+      schedulePreviewCanStop: schedulePreviewCanStop,
     ),
   );
 }
@@ -2185,6 +2324,9 @@ class _IronwoodMigrationHarness extends StatefulWidget {
     this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.previewImmediatePlan,
     this.previewImmediateKeystoneScanner = false,
+    this.schedulePreviewOverlay,
+    this.schedulePreviewImmediatePlan,
+    this.schedulePreviewCanStop = false,
   });
 
   final String initialLocation;
@@ -2194,6 +2336,9 @@ class _IronwoodMigrationHarness extends StatefulWidget {
   final IronwoodMigrationReviewPreviewStage reviewPreviewStage;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final bool previewImmediateKeystoneScanner;
+  final IronwoodMigrationSchedulePreviewOverlay? schedulePreviewOverlay;
+  final rust_sync.OrchardMigrationImmediatePlan? schedulePreviewImmediatePlan;
+  final bool schedulePreviewCanStop;
 
   @override
   State<_IronwoodMigrationHarness> createState() =>
@@ -2292,6 +2437,9 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
           builder: (_, _) => IronwoodMigrationScheduleScreen(
             previewStatus:
                 widget.previewStatus ?? _previewPrivateMigrationStatus(),
+            previewOverlay: widget.schedulePreviewOverlay,
+            previewImmediatePlan: widget.schedulePreviewImmediatePlan,
+            previewCanStop: widget.schedulePreviewCanStop,
           ),
         ),
         GoRoute(
@@ -2299,6 +2447,9 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
           builder: (_, _) => IronwoodMigrationPreparationScheduleScreen(
             previewStatus:
                 widget.previewStatus ?? _previewPrivateMigrationStatus(),
+            previewOverlay: widget.schedulePreviewOverlay,
+            previewImmediatePlan: widget.schedulePreviewImmediatePlan,
+            previewCanStop: widget.schedulePreviewCanStop,
           ),
         ),
         GoRoute(
@@ -2724,6 +2875,69 @@ class _PreviewBiometricUnlockNotifier extends BiometricUnlockNotifier {
 
   @override
   Future<String?> readPasscode({required String reason}) async => null;
+}
+
+/// The schedule screens reach for `GoRouter` to resolve their back
+/// destination, so they need a router even in a static preview. Without one the
+/// whole screen renders as an error box instead of the schedule.
+class _MobileMigrationScheduleHarness extends StatefulWidget {
+  const _MobileMigrationScheduleHarness({
+    required this.preparation,
+    required this.status,
+  });
+
+  final bool preparation;
+  final rust_sync.MigrationStatus status;
+
+  @override
+  State<_MobileMigrationScheduleHarness> createState() =>
+      _MobileMigrationScheduleHarnessState();
+}
+
+class _MobileMigrationScheduleHarnessState
+    extends State<_MobileMigrationScheduleHarness> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: widget.preparation
+          ? '/migration/private/preparation-schedule'
+          : '/migration/private/schedule',
+      routes: [
+        GoRoute(
+          path: '/migration/private/schedule',
+          builder: (_, _) => MobileIronwoodMigrationScheduleScreen(
+            previewStatus: widget.status,
+          ),
+        ),
+        GoRoute(
+          path: '/migration/private/preparation-schedule',
+          builder: (_, _) => MobileIronwoodMigrationPreparationScheduleScreen(
+            previewStatus: widget.status,
+          ),
+        ),
+        // Stub destination so back / Return in the preview resolve instead of
+        // throwing if a reviewer taps them.
+        GoRoute(
+          path: '/migration/private/status',
+          builder: (_, _) => const _PreviewRoutePlaceholder(
+            label: '/migration/private/status',
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Router.withConfig(config: _router);
 }
 
 class _PreviewRoutePlaceholder extends StatelessWidget {
@@ -3606,6 +3820,64 @@ rust_sync.MigrationStatus _previewMigrationScheduleStatus() {
     scheduleMeanDelayBlocks: 108,
     scheduleMaxDelayBlocks: 432,
     estimatedCompletionHeight: 3_000_216,
+    scheduledBroadcasts: const [],
+    parts: parts,
+  );
+}
+
+/// A run early enough that Rust has only committed a height to the parts it has
+/// already signed and promoted. The rest arrive as `preparing` with no height,
+/// which is what the schedule surface has to project a cadence for.
+rust_sync.MigrationStatus _previewMigrationSchedulePendingStatus() {
+  const assignedHeights = <int?>[
+    2_999_930,
+    2_999_948,
+    2_999_966,
+    3_000_120,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ];
+  final parts = [
+    for (var index = 0; index < _migrationSchedulePreviewValues.length; index++)
+      _previewMigrationPart(
+        index,
+        _migrationSchedulePreviewValues[index],
+        index < 2
+            ? rust_sync.MigrationPartState.completed
+            : index == 2
+            ? rust_sync.MigrationPartState.confirming
+            : index == 3
+            ? rust_sync.MigrationPartState.scheduled
+            : rust_sync.MigrationPartState.preparing,
+        scheduleOrder: index,
+        scheduledHeight: assignedHeights[index],
+        confirmationCount: index == 2 ? 1 : null,
+      ),
+  ];
+  return rust_sync.MigrationStatus(
+    phase: kIronwoodMigrationWaitingConfirmationsPhase,
+    activeRunId: 'migration-schedule-pending-preview-run',
+    targetValuesZatoshi: frb.Uint64List.fromList(
+      _migrationSchedulePreviewValues,
+    ),
+    preparedNoteCount: parts.length,
+    denominationConfirmationCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 1,
+    pendingTxCount: 4,
+    broadcastedTxCount: 3,
+    confirmedTxCount: 2,
+    totalCount: parts.length,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 8,
+    scheduleMeanDelayBlocks: 108,
+    scheduleMaxDelayBlocks: 432,
     scheduledBroadcasts: const [],
     parts: parts,
   );

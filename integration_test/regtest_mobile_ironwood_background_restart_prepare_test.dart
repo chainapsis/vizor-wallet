@@ -48,12 +48,8 @@ void main() {
 
       await postDriver('/activate', const {});
       await _waitForIronwoodSync(tester, container);
-      await openMobilePrivateMigrationReview(tester);
-      await tapAppButton(
-        tester,
-        const ValueKey('mobile_ironwood_authorize_start_button'),
-        timeout: const Duration(minutes: 5),
-      );
+      await openMobilePrivateMigrationOptions(tester);
+      await startMobilePrivateMigration(tester);
 
       final accountUuid = await accountUuidAtOrder(0);
       final started = await waitForMobileRegtestMigrationStatus(

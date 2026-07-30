@@ -38,10 +38,14 @@ class _MobileMigrationRedesignedStatusState
     extends ConsumerState<_MobileMigrationRedesignedStatus> {
   static const _syncSurfaceRevealDelay = Duration(milliseconds: 800);
   static const _syncSurfaceMinimumDuration = Duration(milliseconds: 500);
+  static const _advancingLabelRevealDelay = Duration(milliseconds: 800);
+  static const _advancingLabelMinimumDuration = Duration(seconds: 2);
 
   AppLifecycleListener? _lifecycleListener;
   Timer? _syncSurfaceRevealTimer;
   Timer? _syncSurfaceMinimumTimer;
+  Timer? _advancingLabelRevealTimer;
+  Timer? _advancingLabelMinimumTimer;
   bool _syncSurfaceMinimumElapsed = false;
   bool _wasBackgrounded = false;
   bool _surfaceRefreshInProgress = false;
@@ -53,13 +57,29 @@ class _MobileMigrationRedesignedStatusState
   // coordinator refresh and route-status reload from the same epoch can make
   // it current again.
   bool _hasCompletedSurfaceRefresh = false;
+  int _surfaceRefreshFailures = 0;
+  Timer? _surfaceRefreshRetryTimer;
   int _statusFreshnessEpoch = 0;
   int _refreshedStatusEpoch = -1;
-  bool _notificationsAuthorized = false;
+  // Null until the first authorization lookup resolves, so copy can stay quiet
+  // about notifications instead of claiming they are off.
+  bool? _notificationsAuthorized;
+  // Null until the first capability lookup resolves. Only an explicit `false`
+  // may claim this device cannot track preparation in the background; unknown
+  // keeps the existing copy instead of guessing during the first frames.
+  bool? _supportsBackgroundPreparationTracking;
   IronwoodMigrationPreparationRuntimeState _preparationRuntimeState =
       IronwoodMigrationPreparationRuntimeState.idle;
   bool _showPreparationComplete = false;
   bool _actionRunning = false;
+  // Raw coordinator advance signal and its debounced, display-only shadow. Only
+  // the preparation dial copy reads the debounced one; everything that must
+  // react immediately (back gating, button labels) keeps reading the raw
+  // membership.
+  bool _coordinatorAdvancing = false;
+  bool _showAdvancingLabel = false;
+  int _advancingLabelEpoch = 0;
+  bool _advancingLabelMinimumElapsed = false;
   bool _softwarePreparationResumeAttempted = false;
   String? _softwarePreparationResumeError;
   String? _recordedAttentionFingerprint;
@@ -75,6 +95,12 @@ class _MobileMigrationRedesignedStatusState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _handleSyncActivity(ref.read(syncProvider).value?.isSyncing ?? false);
+      _handleCoordinatorAdvancing(
+        _isCoordinatorAdvancing(
+          ref.read(ironwoodMigrationCoordinatorProvider),
+          ref.read(accountProvider).value?.activeAccountUuid,
+        ),
+      );
       unawaited(_initializeCurrentSession());
     });
   }
@@ -150,6 +176,9 @@ class _MobileMigrationRedesignedStatusState
     _lifecycleListener?.dispose();
     _syncSurfaceRevealTimer?.cancel();
     _syncSurfaceMinimumTimer?.cancel();
+    _advancingLabelRevealTimer?.cancel();
+    _advancingLabelMinimumTimer?.cancel();
+    _surfaceRefreshRetryTimer?.cancel();
     super.dispose();
   }
 
@@ -190,6 +219,14 @@ class _MobileMigrationRedesignedStatusState
           setState(() => _notificationsAuthorized = false);
         }
       }
+      try {
+        await _refreshBackgroundPreparationSupport();
+      } catch (_) {
+        // A failed capability probe must never promise a background lane.
+        if (mounted) {
+          setState(() => _supportsBackgroundPreparationTracking = false);
+        }
+      }
       await _reconcilePreparationRuntimeState();
       if (!mounted) return;
       if (!_walletSyncActive &&
@@ -205,14 +242,63 @@ class _MobileMigrationRedesignedStatusState
       if (!(ref.read(syncProvider).value?.isSyncing ?? false)) {
         await _showPreparationCompleteIfNeeded();
       }
-    } catch (_) {
-      // The status surface remains usable when runtime inspection fails.
+      if (accountUuid != null &&
+          _shouldAutomaticallyResumePreparation(accountUuid)) {
+        await _continuePreparation(accountUuid);
+      }
+      _surfaceRefreshFailures = 0;
+    } catch (error) {
+      // One transient failure must not park this screen on the sync skeleton —
+      // that would hide the required-action card the user was called in for.
+      debugPrint('[zcash] migration surface refresh failed: $error');
+      _surfaceRefreshFailures += 1;
+      if (mounted && _surfaceRefreshFailures == 1) {
+        _surfaceRefreshRetryTimer?.cancel();
+        _surfaceRefreshRetryTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted) unawaited(_initializeCurrentSessionSurface());
+        });
+      } else if (mounted && !_hasCompletedSurfaceRefresh) {
+        // Repeated failures degrade to the last known status; the five-second
+        // coordinator poll keeps trying to freshen it.
+        setState(() => _hasCompletedSurfaceRefresh = true);
+      }
     } finally {
       _surfaceRefreshInProgress = false;
       if (_surfaceRefreshRequested && mounted) {
         unawaited(_initializeCurrentSessionSurface());
       }
     }
+  }
+
+  /// Whether this reentry should restart the software preparation advance on
+  /// its own. Backgrounding drops the foreground permit, and iOS before 26
+  /// reports no runtime state at all, so without this every return to the app
+  /// blames the user for leaving and waits for a manual continue.
+  bool _shouldAutomaticallyResumePreparation(String accountUuid) {
+    if (widget.isHardware || _actionRunning) return false;
+    if (widget.status.phase !=
+        kIronwoodMigrationWaitingDenomConfirmationsPhase) {
+      return false;
+    }
+    // `widget.isHardware` is false while the account list is still loading, so
+    // the account record decides. A Keystone run needs the device, never this.
+    final accountState = ref.read(accountProvider).value;
+    final account = accountState?.activeAccountUuid == accountUuid
+        ? accountState?.activeAccount
+        : null;
+    if (account == null || account.isHardware) return false;
+    // Work the native task or an in-flight advance already owns must never be
+    // restarted from here.
+    if (_preparationRuntimeState !=
+            IronwoodMigrationPreparationRuntimeState.idle &&
+        _preparationRuntimeState !=
+            IronwoodMigrationPreparationRuntimeState.disabled) {
+      return false;
+    }
+    final coordinator = ref.read(ironwoodMigrationCoordinatorProvider);
+    return coordinator.errors[accountUuid] == null &&
+        !coordinator.foregroundProgressPermits.contains(accountUuid) &&
+        !coordinator.advancingAccounts.contains(accountUuid);
   }
 
   void _handleSyncActivity(bool isSyncing) {
@@ -263,6 +349,67 @@ class _MobileMigrationRedesignedStatusState
     });
   }
 
+  bool _isCoordinatorAdvancing(
+    IronwoodMigrationCoordinatorState coordinator,
+    String? accountUuid,
+  ) =>
+      accountUuid != null &&
+      coordinator.advancingAccounts.contains(accountUuid);
+
+  /// Debounces the coordinator's advance signal for the preparation dial copy.
+  ///
+  /// While confirmations are pending the coordinator probes for an advance every
+  /// few seconds, and each no-op probe still enters and leaves
+  /// `advancingAccounts`. Bound directly to the dial, those sub-second flashes
+  /// swap "Keep Vizor open." in and out on every poll. The label therefore only
+  /// follows a signal that stays on long enough to be worth reading, and only
+  /// lets go once it has been on screen long enough not to flicker at the end.
+  ///
+  /// This is display-only: back gating, button labels, and the sync-surface
+  /// condition keep reading the raw membership so they stay immediate.
+  void _handleCoordinatorAdvancing(bool advancing) {
+    if (_coordinatorAdvancing == advancing) return;
+    _coordinatorAdvancing = advancing;
+    if (!advancing) {
+      _advancingLabelRevealTimer?.cancel();
+      _advancingLabelRevealTimer = null;
+      if (!_showAdvancingLabel || !mounted) return;
+      if (_advancingLabelMinimumElapsed) _hideAdvancingLabel();
+      return;
+    }
+    // A signal that returns while the label is still up keeps the minimum timer
+    // it was revealed with; cancelling it here would leave the label with no
+    // path back once the signal drops again.
+    if (_showAdvancingLabel || _advancingLabelRevealTimer != null) return;
+    final epoch = ++_advancingLabelEpoch;
+    _advancingLabelRevealTimer = Timer(_advancingLabelRevealDelay, () {
+      _advancingLabelRevealTimer = null;
+      if (!mounted || epoch != _advancingLabelEpoch || !_coordinatorAdvancing) {
+        return;
+      }
+      setState(() {
+        _showAdvancingLabel = true;
+        _advancingLabelMinimumElapsed = false;
+      });
+      _advancingLabelMinimumTimer?.cancel();
+      _advancingLabelMinimumTimer = Timer(_advancingLabelMinimumDuration, () {
+        _advancingLabelMinimumTimer = null;
+        _advancingLabelMinimumElapsed = true;
+        if (!mounted || _coordinatorAdvancing) return;
+        _hideAdvancingLabel();
+      });
+    });
+  }
+
+  void _hideAdvancingLabel() {
+    if (!mounted || !_showAdvancingLabel) return;
+    _advancingLabelEpoch++;
+    setState(() {
+      _showAdvancingLabel = false;
+      _advancingLabelMinimumElapsed = false;
+    });
+  }
+
   bool get _awaitingFreshMigrationStatus =>
       !_hasCompletedSurfaceRefresh ||
       _refreshedStatusEpoch != _statusFreshnessEpoch;
@@ -282,6 +429,14 @@ class _MobileMigrationRedesignedStatusState
     );
   }
 
+  Future<void> _refreshBackgroundPreparationSupport() async {
+    final supported = await ref
+        .read(ironwoodMigrationServiceProvider)
+        .backgroundPreparationTrackingSupported();
+    if (!mounted) return;
+    setState(() => _supportsBackgroundPreparationTracking = supported);
+  }
+
   Future<void> _reconcilePreparationRuntimeState() async {
     if (widget.status.phase !=
         kIronwoodMigrationWaitingDenomConfirmationsPhase) {
@@ -296,10 +451,12 @@ class _MobileMigrationRedesignedStatusState
 
     final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
     final runId = widget.status.activeRunId;
-    if (accountUuid == null || runId == null || !_notificationsAuthorized) {
+    if (accountUuid == null ||
+        runId == null ||
+        _notificationsAuthorized != true) {
       if (mounted) {
         setState(
-          () => _preparationRuntimeState = !_notificationsAuthorized
+          () => _preparationRuntimeState = _notificationsAuthorized != true
               ? IronwoodMigrationPreparationRuntimeState.disabled
               : IronwoodMigrationPreparationRuntimeState.idle,
         );
@@ -325,6 +482,25 @@ class _MobileMigrationRedesignedStatusState
       return;
     }
 
+    // Claim the foreground handoff before advancing. The advance path re-arms
+    // background confirmation tracking after it updates the durable run. If
+    // this token remains until after the advance, native startPreparation()
+    // sees no trackable scope and reports success without submitting a task.
+    try {
+      await service.acknowledgePreparationContinuation(
+        accountUuid: accountUuid,
+        runId: runId,
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _preparationRuntimeState =
+              IronwoodMigrationPreparationRuntimeState.idle,
+        );
+      }
+      return;
+    }
+
     try {
       await ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
@@ -338,26 +514,6 @@ class _MobileMigrationRedesignedStatusState
       }
       return;
     }
-    if (!mounted) return;
-    final retryError = ref
-        .read(ironwoodMigrationCoordinatorProvider)
-        .errors[accountUuid];
-    if (retryError != null) {
-      setState(
-        () => _preparationRuntimeState =
-            IronwoodMigrationPreparationRuntimeState.idle,
-      );
-      return;
-    }
-    try {
-      await service.acknowledgePreparationContinuation(
-        accountUuid: accountUuid,
-        runId: runId,
-      );
-    } catch (_) {
-      // The foreground permit already owns this session. A later entry can
-      // safely retry acknowledgement if the native handoff token remains.
-    }
     if (mounted) {
       setState(
         () => _preparationRuntimeState =
@@ -366,13 +522,26 @@ class _MobileMigrationRedesignedStatusState
     }
   }
 
+  /// Phases whose surface actually hosts the modal. Setting the flag anywhere
+  /// else only suppresses the sync surface while nothing replaces it.
+  static const _preparationCompletePhases = {
+    kIronwoodMigrationReadyToMigratePhase,
+    kIronwoodMigrationBroadcastScheduledPhase,
+    kIronwoodMigrationBroadcastingPhase,
+    kIronwoodMigrationWaitingConfirmationsPhase,
+  };
+
   Future<void> _showPreparationCompleteIfNeeded() async {
     if (ref.read(syncProvider).value?.isSyncing ?? false) return;
     final status = widget.status;
     final runId = status.activeRunId;
-    if (runId == null ||
-        status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
-        status.phase == kIronwoodMigrationCompletePhase) {
+    if (runId == null || !_preparationCompletePhases.contains(status.phase)) {
+      return;
+    }
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid != null &&
+        ref.read(ironwoodMigrationCoordinatorProvider).errors[accountUuid] !=
+            null) {
       return;
     }
     final prefs = await SharedPreferences.getInstance();
@@ -380,6 +549,9 @@ class _MobileMigrationRedesignedStatusState
     if (prefs.getBool(key) ?? false) return;
     if (!mounted) return;
     setState(() => _showPreparationComplete = true);
+    // Recorded as the modal becomes visible, not on Done: a system back that
+    // pops this route would otherwise bring the modal back on every reentry.
+    await prefs.setBool(key, true);
   }
 
   Future<void> _dismissPreparationComplete() async {
@@ -398,6 +570,18 @@ class _MobileMigrationRedesignedStatusState
 
   @override
   Widget build(BuildContext context) {
+    // This screen returns from a dozen different branches, so the back
+    // handling is wrapped once out here instead of at every return.
+    return _MobileIronwoodMigrationBackScope(
+      // Leaving is always allowed, including mid-action: the coordinator owns
+      // the work and keeps running it off-screen, so there is no reason to
+      // hold the user on this surface.
+      onFallback: () => context.go('/home'),
+      child: _buildStatusSurface(context),
+    );
+  }
+
+  Widget _buildStatusSurface(BuildContext context) {
     ref.listen(syncProvider, (previous, next) {
       final wasSyncing = previous?.value?.isSyncing ?? false;
       final isSyncing = next.value?.isSyncing ?? false;
@@ -405,6 +589,24 @@ class _MobileMigrationRedesignedStatusState
       if (wasSyncing && !isSyncing) {
         unawaited(_initializeCurrentSessionSurface());
       }
+    });
+    ref.listen(ironwoodMigrationCoordinatorProvider, (previous, next) {
+      _handleCoordinatorAdvancing(
+        _isCoordinatorAdvancing(
+          next,
+          ref.read(accountProvider).value?.activeAccountUuid,
+        ),
+      );
+    });
+    // The debounced signal is account-scoped, so a switch has to re-evaluate it
+    // too; otherwise the previous account's advance copy outlives its run.
+    ref.listen(accountProvider, (previous, next) {
+      _handleCoordinatorAdvancing(
+        _isCoordinatorAdvancing(
+          ref.read(ironwoodMigrationCoordinatorProvider),
+          next.value?.activeAccountUuid,
+        ),
+      );
     });
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
@@ -431,25 +633,46 @@ class _MobileMigrationRedesignedStatusState
         _actionRunning ||
         (accountUuid != null &&
             coordinator.advancingAccounts.contains(accountUuid));
+    void viewMigrationSchedule() {
+      context.push('/migration/private/schedule');
+    }
+
+    void viewPreparationSchedule() {
+      context.push('/migration/private/preparation-schedule');
+    }
+
+    final leftToMigrateText = _leftToMigrateText(widget.status);
+    final completionEstimateText = _completionEstimateText(widget.status);
     _recordVisibleAttention(accountUuid);
 
     if (widget.status.phase == kIronwoodMigrationAwaitingPreparationPhase ||
         widget.status.phase ==
             kIronwoodMigrationAwaitingDenominationSignaturePhase) {
+      // Rust never writes `awaiting_denomination_signature`, so a hardware
+      // draft that still needs a split signature is durably stored as
+      // `awaiting_preparation`. Both phases mean the same thing for a Keystone
+      // account: only the device can move preparation forward.
+      final awaitingKeystoneSignature =
+          widget.isHardware &&
+          (widget.status.phase ==
+                  kIronwoodMigrationAwaitingDenominationSignaturePhase ||
+              widget.status.phase ==
+                  kIronwoodMigrationAwaitingPreparationPhase);
       final softwareResumeFailed =
           !widget.isHardware && _softwarePreparationResumeError != null;
       return _MigrationPreparationPreview(
-        state: widget.isHardware || softwareResumeFailed
+        state: awaitingKeystoneSignature || softwareResumeFailed
             ? _MigrationPreparationState.paused
             : _MigrationPreparationState.active,
-        isKeystone: widget.isHardware,
-        pausedMessage: widget.isHardware
+        isKeystone: awaitingKeystoneSignature,
+        pausedMessage: awaitingKeystoneSignature
             ? _keystonePreparationSignatureMessage
             : _softwarePreparationResumeError,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewPreparationSchedule,
         onContinue: accountUuid == null
             ? null
-            : widget.isHardware
+            : awaitingKeystoneSignature
             ? () =>
                   context.push('/migration/private/keystone/denominations/sign')
             : softwareResumeFailed
@@ -469,17 +692,21 @@ class _MobileMigrationRedesignedStatusState
         return _MigrationPreparationPreview(
           state: _MigrationPreparationState.syncing,
           onBack: () => context.go('/home'),
+          onViewSchedule: viewPreparationSchedule,
         );
       }
       return _MigrationProgressPreview(
         state: _MigrationProgressState.syncing,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
+        leftToMigrateText: leftToMigrateText,
+        completionEstimateText: completionEstimateText,
       );
     }
 
@@ -488,8 +715,12 @@ class _MobileMigrationRedesignedStatusState
             kIronwoodMigrationWaitingDenomConfirmationsPhase) {
       return _MigrationPreparationPreview(
         state: _MigrationPreparationState.paused,
-        isKeystone: widget.isHardware,
+        // A recorded failure, not backgrounding, is why this run stopped.
+        pausedMessage: _mobilePrivateMigrationStartErrorMessage(
+          coordinatorError,
+        ),
         onBack: () => context.go('/home'),
+        onViewSchedule: viewPreparationSchedule,
         onContinue: accountUuid == null || _actionRunning
             ? null
             : () => unawaited(_continuePreparation(accountUuid)),
@@ -498,9 +729,23 @@ class _MobileMigrationRedesignedStatusState
 
     if (coordinatorError != null) {
       final batchProgress = _batchProgress(widget.status);
+      // An expired schedule surfaces here as a recovery error, but the only
+      // way forward for a Keystone run is another signature — retrying the
+      // outbox can never produce one.
+      final needsKeystoneResign =
+          !needsHardwareCredentialAttention &&
+          widget.isHardware &&
+          _requiresKeystoneSignature(widget.status);
+      final keystoneResignLabel =
+          widget.status.parts.any(
+            (part) => part.state == rust_sync.MigrationPartState.needsInput,
+          )
+          ? 'Re-sign migration transactions'
+          : 'Sign migration transactions';
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
@@ -511,18 +756,29 @@ class _MobileMigrationRedesignedStatusState
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
+        leftToMigrateText: leftToMigrateText,
+        completionEstimateText: completionEstimateText,
+        nextActionPresentation: _nextMigrationPresentation(
+          widget.status,
+          requiresInput: true,
+        ),
         statusValueOverride: needsHardwareCredentialAttention
             ? 'Keystone account required'
             : null,
         actionMessage: needsHardwareCredentialAttention
             ? 'Reconnect or re-import your Keystone account to continue this '
                   'migration.'
+            : needsKeystoneResign
+            ? 'Sign the rebuilt migration transactions with Keystone to '
+                  'continue.'
             : needsSoftwareCredentialRecovery
             ? 'Your migration credentials need to be restored before '
                   'continuing.'
             : "Couldn't continue this migration. Try again.",
         actionLabel: needsHardwareCredentialAttention
             ? 'Back to home'
+            : needsKeystoneResign
+            ? keystoneResignLabel
             : needsSoftwareCredentialRecovery
             ? recoveryInProgress
                   ? 'Recovering...'
@@ -534,6 +790,8 @@ class _MobileMigrationRedesignedStatusState
             ? null
             : needsHardwareCredentialAttention
             ? () => context.go('/home')
+            : needsKeystoneResign
+            ? () => unawaited(_performRequiredAction(accountUuid))
             : needsSoftwareCredentialRecovery
             ? () => unawaited(_confirmRecovery(accountUuid))
             : () => unawaited(_retryAfterError(accountUuid)),
@@ -549,6 +807,7 @@ class _MobileMigrationRedesignedStatusState
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewMigrationSchedule,
         completedParts: _completedParts(widget.status),
         totalParts: _totalParts(widget.status),
         segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
@@ -559,6 +818,12 @@ class _MobileMigrationRedesignedStatusState
         migratedAmountText: _migratedAmountText(widget.status),
         totalAmountText: _totalAmountText(widget.status),
         availableAmountText: _availableAmountText(accountUuid),
+        leftToMigrateText: leftToMigrateText,
+        completionEstimateText: completionEstimateText,
+        nextActionPresentation: _nextMigrationPresentation(
+          widget.status,
+          requiresInput: true,
+        ),
         actionMessage: widget.status.message,
         actionLabel: _actionRunning
             ? paused
@@ -581,12 +846,56 @@ class _MobileMigrationRedesignedStatusState
           _preparationRuntimeState !=
               IronwoodMigrationPreparationRuntimeState
                   .foregroundContinuationPending;
+      // This device has no background preparation lane at all, so neither the
+      // notification prompt nor the "you left" copy names the real cause.
+      final backgroundTrackingUnsupported =
+          _supportsBackgroundPreparationTracking == false;
+      // Whether leaving now stalls the run. An advance holds the foreground
+      // permit, so backgrounding drops it and nothing moves until the next
+      // reentry. An armed background task keeps observing without the app.
+      // Requiring the capability here is a structural guard, not the live
+      // signal: iOS before 26 can never report scheduled/running because it has
+      // no continued-processing task, so the "you can close Vizor" promise
+      // becomes unreachable on a device that cannot keep it.
+      final backgroundTrackingArmed =
+          !backgroundTrackingUnsupported &&
+          (_preparationRuntimeState ==
+                  IronwoodMigrationPreparationRuntimeState.scheduled ||
+              _preparationRuntimeState ==
+                  IronwoodMigrationPreparationRuntimeState.running);
+      // Notifications are only the blocker where the lane exists. Without one,
+      // asking the user to allow notifications promises something granting them
+      // cannot deliver.
+      final notificationsDisabled =
+          !backgroundTrackingUnsupported &&
+          _preparationRuntimeState ==
+              IronwoodMigrationPreparationRuntimeState.disabled;
+      // Display-only debounce: a user-triggered action shows its progress at
+      // once, while the coordinator's own advance probes have to persist before
+      // they may relabel the dial. Reading `actionInProgress` here instead would
+      // thrash this copy on every confirmation poll.
+      final showsAdvancingCopy = _actionRunning || _showAdvancingLabel;
+      final preparationState = showsAdvancingCopy
+          ? _MigrationPreparationState.advancing
+          : backgroundTrackingArmed
+          ? _MigrationPreparationState.backgroundTracking
+          : needsManualResume
+          ? _MigrationPreparationState.paused
+          : _MigrationPreparationState.active;
       return _MigrationPreparationPreview(
-        state: needsManualResume
-            ? _MigrationPreparationState.paused
-            : _MigrationPreparationState.active,
-        isKeystone: widget.isHardware,
+        state: preparationState,
+        // Without notifications the task cannot be armed at all, so the
+        // generic "you left" pause copy would misname the cause.
+        pausedMessage:
+            notificationsDisabled &&
+                preparationState == _MigrationPreparationState.paused
+            ? _migrationPreparationNotificationsDisabledMessage
+            : null,
+        deviceLimitMessage: backgroundTrackingUnsupported
+            ? _migrationPreparationBackgroundUnsupportedMessage
+            : null,
         onBack: () => context.go('/home'),
+        onViewSchedule: viewPreparationSchedule,
         onContinue: !needsManualResume || accountUuid == null
             ? null
             : () => unawaited(_continuePreparation(accountUuid)),
@@ -623,7 +932,8 @@ class _MobileMigrationRedesignedStatusState
       state: state,
       showPreparationCompleteModal: _showPreparationComplete,
       onPreparationCompleteDone: () => unawaited(_dismissPreparationComplete()),
-      onBack: actionInProgress ? null : () => context.go('/home'),
+      onBack: () => context.go('/home'),
+      onViewSchedule: viewMigrationSchedule,
       completedParts: _completedParts(widget.status),
       totalParts: _totalParts(widget.status),
       segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
@@ -635,6 +945,12 @@ class _MobileMigrationRedesignedStatusState
       migratedAmountText: _migratedAmountText(widget.status),
       totalAmountText: _totalAmountText(widget.status),
       availableAmountText: _availableAmountText(accountUuid),
+      leftToMigrateText: leftToMigrateText,
+      completionEstimateText: completionEstimateText,
+      nextActionPresentation: _nextMigrationPresentation(
+        widget.status,
+        requiresInput: state == _MigrationProgressState.needsInput,
+      ),
       nextActionText: nextActionText,
       actionLabel: _requiredActionLabel(
         widget.status,
@@ -676,7 +992,7 @@ class _MobileMigrationRedesignedStatusState
     }
     final confirming =
         status.phase == kIronwoodMigrationWaitingConfirmationsPhase ||
-        status.broadcastedTxCount > status.confirmedTxCount;
+        status.broadcastedTxCount > 0;
     if (confirming) return _MigrationProgressState.confirming;
     final broadcasting = status.phase == kIronwoodMigrationBroadcastingPhase;
     if (broadcasting) return _MigrationProgressState.broadcasting;
@@ -686,7 +1002,7 @@ class _MobileMigrationRedesignedStatusState
     )) {
       return _MigrationProgressState.readyToSubmit;
     }
-    return _notificationsAuthorized
+    return _notificationsAuthorized == true
         ? _MigrationProgressState.waitingNotificationsOn
         : _MigrationProgressState.waitingNotificationsOff;
   }
@@ -705,30 +1021,48 @@ class _MobileMigrationRedesignedStatusState
         status.signedChildPcztCount <= 0) {
       return true;
     }
-    final currentHeight = _currentHeight();
     if (_hasDueProofBatch(status)) return !hasChildProofBatchPermit;
     if (_hasLateScheduledBroadcast(status)) return true;
-    if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
-      final nextHeight = status.nextActionHeight;
-      return status.proofReady == true &&
-          nextHeight != null &&
-          currentHeight > 0 &&
-          nextHeight <= currentHeight &&
-          !hasChildProofBatchPermit;
+    if (_hasDueReadyToMigrateProofAction(status)) {
+      return !hasChildProofBatchPermit;
     }
     return false;
   }
 
-  bool _hasLateScheduledBroadcast(rust_sync.MigrationStatus status) {
+  /// The `ready_to_migrate` due branch of [_requiresUserAction]: proofs are
+  /// already built and the scheduled block has passed, so only the one-shot
+  /// child-proof permit stands between the run and its next batch.
+  bool _hasDueReadyToMigrateProofAction(rust_sync.MigrationStatus status) {
+    if (status.phase != kIronwoodMigrationReadyToMigratePhase) return false;
+    final nextHeight = status.nextActionHeight;
+    final currentHeight = _currentHeight();
+    return status.proofReady == true &&
+        nextHeight != null &&
+        currentHeight > 0 &&
+        nextHeight <= currentHeight;
+  }
+
+  bool _hasLateScheduledBroadcast(rust_sync.MigrationStatus status) =>
+      _earliestLateScheduledBroadcastHeight(status) != null;
+
+  /// The lowest scheduled block whose broadcast is past its late grace window,
+  /// or null when none is late.
+  int? _earliestLateScheduledBroadcastHeight(rust_sync.MigrationStatus status) {
     final currentHeight = _currentBroadcastHeight();
-    return currentHeight > 0 &&
-        status.scheduledBroadcasts.any(
-          (broadcast) =>
-              broadcast.status.toLowerCase() == 'scheduled' &&
-              broadcast.scheduledHeight > 0 &&
-              currentHeight >=
-                  broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks,
-        );
+    if (currentHeight <= 0) return null;
+    int? earliest;
+    for (final broadcast in status.scheduledBroadcasts) {
+      if (broadcast.status.toLowerCase() != 'scheduled' ||
+          broadcast.scheduledHeight <= 0 ||
+          currentHeight <
+              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks) {
+        continue;
+      }
+      if (earliest == null || broadcast.scheduledHeight < earliest) {
+        earliest = broadcast.scheduledHeight;
+      }
+    }
+    return earliest;
   }
 
   bool _hasDueProofBatch(rust_sync.MigrationStatus status) {
@@ -756,16 +1090,25 @@ class _MobileMigrationRedesignedStatusState
           'is available and approve the next migration batch.';
     }
     if (state == _MigrationProgressState.broadcasting) {
-      if (_notificationsAuthorized) {
-        return '$timing until the next migration step. Notifications are on; '
-            'you can leave Vizor and check back later.';
-      }
-      return '$timing until the next migration step. Open Vizor again to '
-          'continue because notifications are disabled.';
+      // The broadcasting status view renders this verbatim, so the timing and
+      // notification lines are composed once, here.
+      final expectation =
+          timing == 'Timing is updating' || timing == 'ready now'
+          ? 'Next migration step is on the way.'
+          : 'Next migration step expected in\n$timing.';
+      return switch (_notificationsAuthorized) {
+        true =>
+          '$expectation\nNotifications are on. You can leave Vizor and check '
+              'back later.',
+        false =>
+          '$expectation\nNotifications are disabled. Open Vizor again to '
+              'continue.',
+        null => expectation,
+      };
     }
     if (state == _MigrationProgressState.readyToSubmit) {
       return 'The scheduled transaction is ready for automatic submission. '
-          'Keep Vizor open while Vizor continues trying.';
+          'Keep Vizor open.';
     }
     if (state == _MigrationProgressState.confirming) {
       return 'Confirmations are still arriving. You can leave Vizor and '
@@ -822,6 +1165,7 @@ class _MobileMigrationRedesignedStatusState
     }
   }
 
+  /// Runs the required action for [accountUuid]. Only a tap reaches here.
   Future<void> _performRequiredAction(String accountUuid) async {
     if (_actionRunning) return;
     if (widget.isHardware && _requiresKeystoneSignature(widget.status)) {
@@ -863,10 +1207,10 @@ class _MobileMigrationRedesignedStatusState
   }) {
     if (actionInProgress) {
       return hasLateScheduledBroadcast
-          ? 'Retrying broadcast...'
+          ? 'Submitting scheduled transaction...'
           : 'Preparing batch #$batchNumber...';
     }
-    if (hasLateScheduledBroadcast) return 'Retry broadcast';
+    if (hasLateScheduledBroadcast) return 'Submit scheduled transaction';
     if (!widget.isHardware) return 'Prepare batch #$batchNumber';
     if (_requiresKeystoneSignature(status)) {
       final isResigning = status.parts.any(
@@ -893,6 +1237,34 @@ class _MobileMigrationRedesignedStatusState
     return mobileIronwoodSafelyObservedHeight(
       scannedHeight: sync.scannedHeight,
       chainTipHeight: sync.chainTipHeight,
+    );
+  }
+
+  MigrationNextActionPresentation _nextMigrationPresentation(
+    rust_sync.MigrationStatus status, {
+    required bool requiresInput,
+  }) {
+    return migrationNextActionPresentation(
+      status: status,
+      currentHeight: _currentHeight(),
+      requiresInput: requiresInput,
+      waitingForAnchor:
+          status.phase == kIronwoodMigrationReadyToMigratePhase &&
+          status.proofReady == false,
+    );
+  }
+
+  String _leftToMigrateText(rust_sync.MigrationStatus status) {
+    final total = migrationTargetTotal(status);
+    final completed = migrationCompletedValue(status);
+    final remaining = total > completed ? total - completed : BigInt.zero;
+    return '${_compactZec(remaining)} ZEC';
+  }
+
+  String _completionEstimateText(rust_sync.MigrationStatus status) {
+    return migrationApproximateCompletionTimingLabel(
+      status,
+      currentHeight: _currentHeight(),
     );
   }
 
@@ -927,6 +1299,10 @@ class _MobileMigrationRedesignedStatusState
   }
 
   int _completedParts(rust_sync.MigrationStatus status) {
+    if (status.phase == kIronwoodMigrationReadyToMigratePhase &&
+        !migrationHasTransferProgress(status)) {
+      return 0;
+    }
     if (status.parts.isNotEmpty) {
       return status.parts
           .where((part) => part.state == rust_sync.MigrationPartState.completed)
@@ -971,6 +1347,10 @@ class _MobileMigrationRedesignedStatusState
   }
 
   Set<int> _completedRingSegments(rust_sync.MigrationStatus status) {
+    if (status.phase == kIronwoodMigrationReadyToMigratePhase &&
+        !migrationHasTransferProgress(status)) {
+      return const {};
+    }
     if (status.parts.isEmpty) {
       return {
         for (
@@ -1235,18 +1615,7 @@ class _MobileMigrationRedesignedStatusState
   }
 
   String _migratedAmountText(rust_sync.MigrationStatus status) {
-    final completed = status.parts.isNotEmpty
-        ? status.parts
-              .where(
-                (part) => part.state == rust_sync.MigrationPartState.completed,
-              )
-              .fold<BigInt>(
-                BigInt.zero,
-                (total, part) => total + part.valueZatoshi,
-              )
-        : status.targetValuesZatoshi
-              .take(status.confirmedTxCount)
-              .fold<BigInt>(BigInt.zero, (total, value) => total + value);
+    final completed = migrationCompletedValue(status);
     return '${ZecAmount.fromZatoshi(completed).compactBalance.amountText} ZEC';
   }
 

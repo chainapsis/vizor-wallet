@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/config/network_config.dart';
+import '../../../../core/formatting/number_format.dart';
 import '../../../../core/formatting/sync_status_label.dart';
 import '../../../../core/formatting/zec_amount.dart';
 import '../../../../core/layout/mobile/app_mobile_sheet.dart';
@@ -31,11 +32,16 @@ import '../../models/mobile_ironwood_migration_status_entry.dart';
 import '../../providers/ironwood_migration_announcement_provider.dart';
 import '../../providers/ironwood_migration_coordinator_provider.dart';
 import '../../services/ironwood_migration_service.dart';
+import '../../widgets/ironwood_migration_analyzing_progress_bar.dart';
+import '../../widgets/ironwood_migration_shimmer_text.dart';
 import '../../widgets/mobile/mobile_ironwood_migration_attention.dart';
 import '../ironwood_migration_flow_screen.dart';
 
 part 'mobile_ironwood_migration_models.dart';
+part 'mobile_ironwood_migration_back_scope.dart';
 part 'mobile_ironwood_migration_routes.dart';
+part 'mobile_ironwood_migration_start.dart';
+part 'mobile_ironwood_migration_schedule.dart';
 part 'mobile_ironwood_migration_intro_options.dart';
 part 'mobile_ironwood_migration_review.dart';
 part 'mobile_ironwood_migration_live_states.dart';

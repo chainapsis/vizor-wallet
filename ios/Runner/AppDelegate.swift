@@ -86,6 +86,24 @@ import UIKit
         } else {
           result(false)
         }
+      case "supportsPreparationTracking":
+        // Denomination-preparation confirmation tracking is a
+        // BGContinuedProcessingTask, an iOS 26 API, while the Runner target
+        // deploys to iOS 15. On an older build there is no task to submit and
+        // no runtime state to report, so `getPreparationRuntimeState` answers
+        // `idle` — indistinguishable from "supported but nothing armed yet".
+        // Dart therefore asks for the capability separately instead of
+        // inferring it from an idle state.
+        //
+        // This reports the availability of the code path, not a guarantee that
+        // a submission will succeed. A submission can still be refused at
+        // runtime; that shows up as `startPreparation` returning false, which
+        // already leaves the run in its foreground-only presentation.
+        if #available(iOS 26.0, *) {
+          result(true)
+        } else {
+          result(false)
+        }
       case "getPreparationRuntimeState":
         guard
           let arguments = call.arguments as? [String: Any],
@@ -111,6 +129,10 @@ import UIKit
             DispatchQueue.main.async { result(state.rawValue) }
           }
         } else {
+          // No continued-processing task exists below iOS 26, so there is
+          // genuinely nothing running. Dart must not read this `idle` as
+          // "background tracking is possible but not armed" — see
+          // `supportsPreparationTracking`.
           result(BackgroundMigrationPreparationRuntimeState.idle.rawValue)
         }
       case "ackPreparationForegroundContinuation":
@@ -206,6 +228,16 @@ import UIKit
       case "listOutboxReceipts":
         do {
           result(try BackgroundMigrationOutboxChannel.listReceipts())
+        } catch {
+          result(self.backgroundMigrationFlutterError(error))
+        }
+      case "listOutboxAttemptedTxids":
+        do {
+          result(
+            try BackgroundMigrationOutboxChannel.listAttemptedTxids(
+              arguments: call.arguments
+            )
+          )
         } catch {
           result(self.backgroundMigrationFlutterError(error))
         }

@@ -145,6 +145,192 @@ fn create_outbox_test_run(
     txids
 }
 
+#[test]
+fn stopping_a_run_discards_only_unsubmitted_work() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let txids = create_outbox_test_run(&db_path, "run-stop", &[10, 20], &[None, None]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE} SET status = 'broadcasted'
+             WHERE run_id = 'run-stop' AND txid_hex = ?1"
+        ),
+        params![txids[0]],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {STAGES_TABLE}
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height,
+              scheduled_height, expiry_height, fee_zatoshi, status)
+             VALUES
+             ('run-stop', 0, 'pczt', 'sigs', 'raw', ?1, 100, 100, 200, 10, 'pending'),
+             ('run-stop', 1, 'pczt', 'sigs', 'raw', ?2, 100, 100, 200, 10, 'broadcasted')"
+        ),
+        params!["aa".repeat(32), "bb".repeat(32)],
+    )
+    .unwrap();
+    drop(conn);
+
+    abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-stop").unwrap();
+    // Repeating an already-completed stop is safe for UI retries.
+    abandon_run(&db_path, "account-1", WalletNetwork::Regtest, "run-stop").unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let phase = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = 'run-stop'"),
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    assert_eq!(phase, PHASE_ABANDONED);
+    let remaining_pending = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM {PENDING_TXS_TABLE} WHERE run_id = 'run-stop'"),
+            [],
+            |row| row.get::<_, u32>(0),
+        )
+        .unwrap();
+    assert_eq!(remaining_pending, 1);
+    let remaining_status = conn
+        .query_row(
+            &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE run_id = 'run-stop'"),
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    assert_eq!(remaining_status, "broadcasted");
+    let remaining_stage = conn
+        .query_row(
+            &format!("SELECT status FROM {STAGES_TABLE} WHERE run_id = 'run-stop'"),
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    assert_eq!(remaining_stage, "broadcasted");
+}
+
+#[test]
+fn stop_candidates_track_attempts_for_children_and_denomination_stages() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let child_txids = create_outbox_test_run(&db_path, "run-attempts", &[10], &[None]);
+    let stage_txid = "aa".repeat(32);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {STAGES_TABLE}
+             (run_id, stage_index, encrypted_base_pczt, encrypted_compact_sigs,
+              encrypted_raw_tx, expected_txid_hex, target_height,
+              scheduled_height, expiry_height, fee_zatoshi, status)
+             VALUES ('run-attempts', 0, 'pczt', 'sigs', 'raw', ?1,
+                     100, 100, 200, 10, 'pending')"
+        ),
+        params![stage_txid],
+    )
+    .unwrap();
+    drop(conn);
+
+    let initial = scheduled_migration_stop_candidates(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-attempts",
+    )
+    .unwrap();
+    assert_eq!(initial.len(), 2);
+    assert!(initial
+        .iter()
+        .all(|candidate| candidate.attempt_state == MigrationBroadcastAttemptState::NotAttempted));
+
+    mark_pending_broadcast_attempted(&db_path, "run-attempts", &child_txids[0]).unwrap();
+    mark_denomination_broadcast_attempted(&db_path, "run-attempts", &stage_txid).unwrap();
+
+    let attempted = scheduled_migration_stop_candidates(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-attempts",
+    )
+    .unwrap();
+    assert_eq!(attempted.len(), 2);
+    assert!(attempted
+        .iter()
+        .all(|candidate| candidate.attempt_state == MigrationBroadcastAttemptState::Attempted));
+    assert!(attempted.iter().any(|candidate| {
+        candidate.kind == MigrationStopCandidateKind::MigrationTransaction
+            && candidate.txid_hex == child_txids[0]
+    }));
+    assert!(attempted.iter().any(|candidate| {
+        candidate.kind == MigrationStopCandidateKind::DenominationStage
+            && candidate.txid_hex == stage_txid
+    }));
+}
+
+#[test]
+fn stop_candidates_include_broadcasted_rows_missing_local_raw() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .into_owned();
+    let txids = create_outbox_test_run(&db_path, "run-unstored", &[10, 20], &[None, None]);
+    let unstored_txid = &txids[0];
+    let stored_txid = &txids[1];
+
+    mark_pending_broadcasted(&db_path, "run-unstored", unstored_txid).unwrap();
+    mark_pending_broadcasted(&db_path, "run-unstored", stored_txid).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             raw BLOB
+         );",
+    )
+    .unwrap();
+    let mut stored_blob = hex::decode(stored_txid).unwrap();
+    stored_blob.reverse();
+    conn.execute(
+        "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)",
+        params![stored_blob, vec![1_u8, 2, 3]],
+    )
+    .unwrap();
+    drop(conn);
+
+    let candidates = scheduled_migration_stop_candidates(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-unstored",
+    )
+    .unwrap();
+    assert_eq!(
+        candidates.len(),
+        1,
+        "only broadcasted-without-local-raw rows remain stop-reconcilable"
+    );
+    assert_eq!(candidates[0].kind, MigrationStopCandidateKind::MigrationTransaction);
+    assert_eq!(candidates[0].txid_hex, *unstored_txid);
+    assert_eq!(
+        candidates[0].attempt_state,
+        MigrationBroadcastAttemptState::Attempted,
+        "accepted-but-unstored rows must force stop reconciliation"
+    );
+}
+
 fn pending_test_stage(expected_txid_hex: &str, raw_tx: Vec<u8>) -> DenominationStageInsert {
     DenominationStageInsert {
         stage_index: 0,
@@ -715,6 +901,126 @@ fn insert_test_stage(
             panic!("pending test stages cannot move backward to awaiting inputs");
         }
     }
+}
+
+#[test]
+fn observable_denomination_transaction_ids_only_include_broadcast_stages_from_the_active_run() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json)
+             VALUES ('run-1', 'account-1', 'test', 'db', ?1, 1, 1, '[]')"
+        ),
+        params![PHASE_WAITING_DENOM_CONFIRMATIONS],
+    )
+    .unwrap();
+    let pending_txid = "11".repeat(32);
+    let broadcasted_txid = "22".repeat(32);
+    let confirmed_txid = "33".repeat(32);
+    let tx = conn.unchecked_transaction().unwrap();
+    insert_denomination_stages_with_tx(
+        &tx,
+        "run-1",
+        vec![
+            pending_test_stage_for_part(0, &pending_txid, 100_000_000, Some(0)),
+            pending_test_stage_for_part(1, &broadcasted_txid, 200_000_000, Some(1)),
+            pending_test_stage_for_part(2, &confirmed_txid, 300_000_000, Some(2)),
+        ],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    mark_denomination_stage_broadcasted(&conn, "run-1", &broadcasted_txid).unwrap();
+    mark_denomination_stage_confirmed_at(&conn, "run-1", &confirmed_txid, 20, &[0xabu8; 32])
+        .unwrap();
+    drop(conn);
+
+    assert_eq!(
+        observable_denomination_transaction_ids(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            "run-1",
+        )
+        .unwrap(),
+        vec![broadcasted_txid, confirmed_txid],
+    );
+    assert!(observable_denomination_transaction_ids(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        "other-run",
+    )
+    .unwrap()
+    .is_empty());
+}
+
+#[test]
+fn observable_denomination_transaction_ids_do_not_upgrade_legacy_schema() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute_batch(&format!(
+        "CREATE TABLE {RUNS_TABLE} (
+           run_id TEXT NOT NULL,
+           account_uuid TEXT NOT NULL,
+           network TEXT NOT NULL,
+           phase TEXT NOT NULL,
+           target_values_json TEXT NOT NULL,
+           last_error TEXT,
+           created_at_ms INTEGER NOT NULL
+         );
+         CREATE TABLE {STAGES_TABLE} (
+           run_id TEXT NOT NULL,
+           stage_index INTEGER NOT NULL,
+           expected_txid_hex TEXT NOT NULL,
+           status TEXT NOT NULL
+         );
+         INSERT INTO {RUNS_TABLE}
+           (run_id, account_uuid, network, phase, target_values_json,
+            last_error, created_at_ms)
+         VALUES
+           ('run-1', 'account-1', 'test', '{PHASE_WAITING_DENOM_CONFIRMATIONS}',
+            '[]', NULL, 1);
+         INSERT INTO {STAGES_TABLE}
+           (run_id, stage_index, expected_txid_hex, status)
+         VALUES
+           ('run-1', 0, '{}', 'broadcasted');",
+        "11".repeat(32),
+    ))
+    .unwrap();
+    drop(conn);
+
+    assert_eq!(
+        observable_denomination_transaction_ids(
+            db_path.to_str().unwrap(),
+            "account-1",
+            WalletNetwork::Test,
+            "run-1",
+        )
+        .unwrap(),
+        vec!["11".repeat(32)],
+    );
+
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    let columns = conn
+        .prepare(&format!("PRAGMA table_info({STAGES_TABLE})"))
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(
+        columns,
+        vec!["run_id", "stage_index", "expected_txid_hex", "status"]
+    );
 }
 
 fn insert_preparation_policy_test_run(
@@ -1314,6 +1620,142 @@ fn overdue_broadcast_crossing_expiry_bucket_requires_resigning_before_send() {
 }
 
 #[test]
+fn noncanonical_broadcast_height_promotes_locally_mined_scheduled_part_instead_of_resign() {
+    // Outbox export calls mark_due_parts_with_noncanonical_broadcast_height_for_resign
+    // before due selection. A mined-but-still-`scheduled` part whose tip crossed a
+    // ZIP 318 expiry window must become `confirmed`, not `needs_resign`.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "noncanonical-mined",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'noncanonical-mined'"
+        ),
+        [],
+    )
+    .unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 34_559);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    drop(conn);
+
+    let tip = 34_560u32;
+    assert_eq!(
+        mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+            &db_path,
+            "noncanonical-mined",
+            tip,
+        )
+        .unwrap(),
+        1,
+        "unmined noncanonical part must still require resign"
+    );
+    assert_eq!(
+        pending_parts_needing_resign(&db_path, "noncanonical-mined")
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "needs_resign");
+}
+
+#[test]
+fn noncanonical_recovery_observes_identity_committed_under_contended_write_lock() {
+    // Prototype coverage for atomic reconcile+resign: a sync-like writer that
+    // commits chain identity while holding the DB write lock must be visible to
+    // recovery once that lock is released. IMMEDIATE serialization is what
+    // closes the old separate-connection TOCTOU window.
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    use std::time::Duration;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "noncanonical-lock",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'noncanonical-lock'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let tip = 34_560u32;
+    let barrier = Arc::new(Barrier::new(2));
+    let holder = {
+        let db_path = db_path.clone();
+        let txid = txids[0].clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+            conn.execute_batch("BEGIN IMMEDIATE")
+                .expect("sync-like writer must take the write lock");
+            barrier.wait();
+            // Keep the lock long enough for recovery's IMMEDIATE begin to block.
+            thread::sleep(Duration::from_millis(50));
+            insert_test_mined_txid(&conn, &txid, 34_559);
+            conn.execute_batch("COMMIT")
+                .expect("sync-like writer must commit mined identity");
+        })
+    };
+    let recovery = {
+        let db_path = db_path.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+                &db_path,
+                "noncanonical-lock",
+                tip,
+            )
+        })
+    };
+
+    holder.join().expect("sync-like writer thread");
+    let affected = recovery
+        .join()
+        .expect("recovery thread")
+        .expect("noncanonical recovery under lock contention");
+    assert_eq!(
+        affected, 1,
+        "unmined sibling must still require resign after contended promote"
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "needs_resign");
+}
+
+#[test]
 fn incremental_child_promotion_uses_immutable_signed_schedule_origin() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
@@ -1511,7 +1953,7 @@ fn planner_accepts_only_zip318_one_two_five_denominations() {
 }
 
 #[test]
-fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries() {
+fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
     assert_eq!(ZIP318_ANCHOR_AGE_CAP, 4);
 
     assert_eq!(
@@ -1529,15 +1971,15 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
 
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000),
-        vec![5616, 5472, 5328, 5184, 5040]
+        vec![5472, 5328, 5184, 5040]
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5600, 5000),
-        vec![5616]
+        Vec::<u32>::new()
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5900, 5600, 5000),
-        vec![5760, 5616]
+        vec![5616]
     );
 
     assert!(zip318_anchor_boundary_is_candidate(
@@ -1547,7 +1989,7 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
         5000,
         5000
     ));
-    assert!(zip318_anchor_boundary_is_candidate(
+    assert!(!zip318_anchor_boundary_is_candidate(
         WalletNetwork::Test,
         5616,
         5700,
@@ -1557,12 +1999,12 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
     assert_eq!(
         zip318_anchor_candidate_boundaries_with_policy(
             WalletNetwork::Test,
-            MigrationTimingPolicy::Standard,
+            MigrationTimingPolicy::Standard90MinutesLatestAnchor,
             5700,
             5000,
             5000,
         ),
-        vec![5472, 5328, 5184, 5040]
+        vec![5616, 5472, 5328, 5184, 5040]
     );
     assert!(!zip318_anchor_boundary_is_candidate(
         WalletNetwork::Test,
@@ -1582,8 +2024,11 @@ fn anchor_bucket_candidates_include_latest_but_exclude_pre_activation_boundaries
     let latest_boundary = ZIP318_ANCHOR_BUCKET_MODULUS * (ZIP318_ANCHOR_AGE_CAP.saturating_add(2));
     let capped_candidates =
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, latest_boundary, 1, 0);
-    assert_eq!(capped_candidates.len(), ZIP318_ANCHOR_AGE_CAP as usize + 1);
-    assert_eq!(capped_candidates.first(), Some(&latest_boundary));
+    assert_eq!(capped_candidates.len(), ZIP318_ANCHOR_AGE_CAP as usize);
+    assert_eq!(
+        capped_candidates.first(),
+        Some(&(latest_boundary - ZIP318_ANCHOR_BUCKET_MODULUS))
+    );
     assert_eq!(
         capped_candidates.last(),
         Some(&(latest_boundary - ZIP318_ANCHOR_BUCKET_MODULUS * ZIP318_ANCHOR_AGE_CAP))
@@ -1650,11 +2095,11 @@ fn proof_retry_waits_until_the_next_boundary_is_trusted() {
 fn proof_readiness_ages_the_boundary_containing_the_prepared_note() {
     assert_eq!(
         estimated_proof_ready_height(WalletNetwork::Main, 142).unwrap(),
-        146
+        290
     );
     assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Main, 142).unwrap(),
-        2
+        146
     );
     assert_eq!(
         proof_readiness_delay_blocks(WalletNetwork::Regtest, 10).unwrap(),
@@ -1701,7 +2146,7 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
     }
     assert_eq!(
         zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5600, 5000),
-        Some(5616)
+        None
     );
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Regtest, 503, 501, 500)[0],
@@ -2759,7 +3204,7 @@ fn mainnet_run_reads_its_persisted_timing_policy() {
 }
 
 #[test]
-fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
+fn new_mainnet_draft_persists_ninety_minute_policy() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -2781,7 +3226,7 @@ fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
 
     assert_eq!(
         timing_policy_for_run(&db_path, &run_id, WalletNetwork::Main).unwrap(),
-        MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+        MigrationTimingPolicy::Standard90Minutes,
     );
 }
 
@@ -2959,7 +3404,7 @@ fn fast_testnet_adoption_preserves_signed_preparation_schedule() {
 }
 
 #[test]
-fn configured_latest_anchor_policy_does_not_retime_existing_runs() {
+fn configured_timing_policy_does_not_retime_existing_runs() {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     ensure_schema(&conn).unwrap();
     for (account_uuid, run_id, timing_policy, retry_height) in [
@@ -4123,6 +4568,164 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
             .len(),
         1
     );
+}
+
+#[test]
+fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let txid_hex = "aa".repeat(32);
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: None,
+    };
+    let metadata = PendingMigrationTxMetadata {
+        tx_kind: "migration".to_string(),
+        funding_account_uuid: "account-1".to_string(),
+        selected_note: selected_note.clone(),
+    };
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('store-retry-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]', '[]')"
+        ),
+        params![db_path, PHASE_WAITING_MIGRATION_CONFIRMATIONS],
+    )
+    .unwrap();
+    drop(conn);
+
+    let scheduled_height = 95;
+    let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+    insert_pending_txs(
+        &db_path,
+        "store-retry-run",
+        vec![PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: txid_hex.clone(),
+            raw_tx: vec![9, 8, 7, 6],
+            target_height: scheduled_height,
+            anchor_boundary_height: None,
+            expiry_height,
+            scheduled_height,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note,
+            metadata,
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+    mark_pending_broadcasted(&db_path, "store-retry-run", &txid_hex).unwrap();
+
+    // Past expiry, but no local transactions.raw yet: do not resign.
+    assert!(
+        !pending_row_is_expired_for_resign(
+            &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
+            "broadcasted",
+            expiry_height,
+            expiry_height,
+            &txid_hex,
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        expired_unconfirmed_pending_count(&db_path, "store-retry-run", expiry_height).unwrap(),
+        0
+    );
+    assert_eq!(
+        mark_expired_pending_parts_for_resign(&db_path, "store-retry-run", expiry_height)
+            .unwrap(),
+        0
+    );
+    let status: String = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
+        .unwrap()
+        .query_row(
+            &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+            params![txid_hex],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "broadcasted");
+    assert_eq!(
+        broadcasted_pending_txs_missing_local_identity(
+            &db_path,
+            "store-retry-run",
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap()
+        .len(),
+        1,
+        "not-yet-stored broadcasted rows must stay eligible for store retry"
+    );
+
+    // Once local raw is present, the same past-expiry broadcasted row resigns.
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             raw BLOB
+         );",
+    )
+    .unwrap();
+    let mut txid_blob = hex::decode(&txid_hex).unwrap();
+    txid_blob.reverse();
+    conn.execute(
+        "INSERT INTO transactions (txid, raw) VALUES (?1, ?2)",
+        params![txid_blob, vec![9_u8, 8, 7, 6]],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(
+        pending_row_is_expired_for_resign(
+            &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
+            "broadcasted",
+            expiry_height,
+            expiry_height,
+            &txid_hex,
+        )
+        .unwrap()
+    );
+    assert!(
+        broadcasted_pending_txs_missing_local_identity(
+            &db_path,
+            "store-retry-run",
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap()
+        .is_empty(),
+        "local raw present means store retry is done even while still broadcasted"
+    );
+    assert_eq!(
+        expired_unconfirmed_pending_count(&db_path, "store-retry-run", expiry_height).unwrap(),
+        1
+    );
+    assert_eq!(
+        mark_expired_pending_parts_for_resign(&db_path, "store-retry-run", expiry_height)
+            .unwrap(),
+        1
+    );
+    let status: String = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
+        .unwrap()
+        .query_row(
+            &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+            params![txid_hex],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "needs_resign");
 }
 
 #[test]
@@ -5298,6 +5901,46 @@ fn confirmation_reconciliation_requeues_child_reorged_before_trusted_depth() {
         )
         .unwrap();
     assert_eq!(lock_state, "locked");
+
+    // A post-sync reconciliation that started from a stale active-run
+    // snapshot must not mutate or reactivate a run after stop wins.
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+        params![PHASE_ABANDONED, run_id],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET status = 'confirmed', scheduled_at_ms = 1
+             WHERE run_id = ?1"
+        ),
+        params![run_id],
+    )
+    .unwrap();
+
+    reconcile_run_confirmations(&conn, run_id).unwrap();
+
+    let terminal_phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let (terminal_pending_status, terminal_scheduled_at_ms): (String, i64) = conn
+        .query_row(
+            &format!(
+                "SELECT status, scheduled_at_ms
+                 FROM {PENDING_TXS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(terminal_phase, PHASE_ABANDONED);
+    assert_eq!(terminal_pending_status, "confirmed");
+    assert_eq!(terminal_scheduled_at_ms, 1);
 }
 
 #[test]
@@ -6507,6 +7150,59 @@ fn status_reconciliation_preserves_reincluded_parent_and_resets_offchain_depende
         statuses,
         vec!["awaiting_inputs", "awaiting_inputs", "confirmed"]
     );
+
+    // A stale post-sync snapshot must not apply the same reorg recovery after
+    // the user has stopped the run.
+    conn.execute(
+        "UPDATE vizor_migration_denomination_stages
+         SET status = 'confirmed', confirmed_mined_height = 20,
+             confirmed_block_hash = zeroblob(32)
+         WHERE run_id = ?1 AND stage_index = 0",
+        params![run_id],
+    )
+    .unwrap();
+    conn.execute(
+        &format!("UPDATE {RUNS_TABLE} SET phase = ?1 WHERE run_id = ?2"),
+        params![PHASE_ABANDONED, run_id],
+    )
+    .unwrap();
+    let statuses_before_stop_reconciliation = conn
+        .prepare(
+            "SELECT status FROM vizor_migration_denomination_stages
+             WHERE run_id = ?1 ORDER BY stage_index",
+        )
+        .unwrap()
+        .query_map(params![run_id], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    drop(conn);
+
+    reconcile_denomination_stage_chain_state(db_path, run_id).unwrap();
+
+    let conn = rusqlite::Connection::open(db_path).unwrap();
+    let phase: String = conn
+        .query_row(
+            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            params![run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let statuses_after_stop_reconciliation = conn
+        .prepare(
+            "SELECT status FROM vizor_migration_denomination_stages
+             WHERE run_id = ?1 ORDER BY stage_index",
+        )
+        .unwrap()
+        .query_map(params![run_id], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(phase, PHASE_ABANDONED);
+    assert_eq!(
+        statuses_after_stop_reconciliation,
+        statuses_before_stop_reconciliation
+    );
 }
 
 #[test]
@@ -7532,4 +8228,197 @@ fn invalid_outbox_schedule_rolls_back_accepted_transition() {
         )
         .unwrap();
     assert_eq!(status, "scheduled");
+}
+
+fn insert_test_mined_txid(conn: &rusqlite::Connection, txid_hex: &str, mined_height: u32) {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS transactions (
+             txid BLOB PRIMARY KEY,
+             mined_height INTEGER
+         )",
+        [],
+    )
+    .unwrap();
+    let mut txid_blob = hex::decode(txid_hex).unwrap();
+    txid_blob.reverse();
+    conn.execute(
+        "INSERT OR REPLACE INTO transactions (txid, mined_height) VALUES (?1, ?2)",
+        params![txid_blob, mined_height],
+    )
+    .unwrap();
+}
+
+fn pending_status(conn: &rusqlite::Connection, txid_hex: &str) -> String {
+    conn.query_row(
+        &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+        params![txid_hex],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn expiry_recovery_promotes_locally_mined_scheduled_part_instead_of_resign() {
+    // Resume/export call mark_expired_pending_parts_for_resign before due
+    // selection. A mined-but-still-`scheduled` part past expiry must become
+    // `confirmed`, not `needs_resign`.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "expiry-mined",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    // Force past-expiry bookkeeping while leaving status as `scheduled`.
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET expiry_height = 100
+             WHERE run_id = 'expiry-mined' AND txid_hex = ?1"
+        ),
+        params![txids[0]],
+    )
+    .unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    drop(conn);
+
+    let tip = 100u32;
+    assert_eq!(
+        expired_unconfirmed_pending_count(&db_path, "expiry-mined", tip).unwrap(),
+        0,
+        "count must reconcile mined rows before treating them as expired"
+    );
+    assert_eq!(
+        mark_expired_pending_parts_for_resign(&db_path, "expiry-mined", tip).unwrap(),
+        0,
+        "expiry recovery must not flip a locally mined part to needs_resign"
+    );
+    assert!(pending_parts_needing_resign(&db_path, "expiry-mined")
+        .unwrap()
+        .is_empty());
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+}
+
+#[test]
+fn due_pending_skips_locally_mined_scheduled_part() {
+    // A part that is already mined locally must not remain the due candidate.
+    // Selection reconciles pending confirmations first so later due parts can
+    // advance instead of head-of-line blocking on a stale `scheduled` row.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-b",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    // create_outbox_test_run schedules at 101, 102, 103.
+    let tip = 103u32;
+
+    let before = due_pending_txs(&db_path, "race-b", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].txid_hex, txids[0]);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    assert!(local_denomination_chain_identity(&conn, &txids[0])
+        .unwrap()
+        .is_some());
+    drop(conn);
+
+    let next = due_pending_txs(&db_path, "race-b", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(
+        next[0].txid_hex, txids[1],
+        "locally mined part 0 must be skipped so part 1 becomes due"
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(
+        pending_status(&conn, &txids[0]),
+        "confirmed",
+        "due selection must promote the mined head so bookkeeping matches chain state"
+    );
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+}
+
+#[test]
+fn reconcile_promotes_pending_when_local_txid_is_mined() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-c",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    let tip = 103u32;
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+
+    reconcile_run_confirmations(&conn, "race-c").unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+    drop(conn);
+
+    let next = due_pending_txs(&db_path, "race-c", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(
+        next[0].txid_hex, txids[1],
+        "after reconcile, part 1 must become the due candidate"
+    );
+}
+
+#[test]
+fn due_pending_unblocks_later_parts_after_stale_head_is_mined() {
+    // Combined HOL symptom: mined-but-unreconciled part 0 must not block part 1
+    // once due selection runs.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-hol",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    let tip = 103u32;
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    drop(conn);
+
+    let unblocked =
+        due_pending_txs(&db_path, "race-hol", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(unblocked[0].txid_hex, txids[1]);
+
+    assert_eq!(
+        due_scheduled_pending_count(&db_path, "race-hol", tip).unwrap(),
+        2,
+        "after promoting part 0, two later scheduled parts remain due at tip"
+    );
 }

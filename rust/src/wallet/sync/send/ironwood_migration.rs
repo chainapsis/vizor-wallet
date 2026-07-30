@@ -804,6 +804,11 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
         .input_lock
         .take()
         .ok_or("Keystone Immediate migration input lock is missing")?;
+    // A QR signing task can be cancelled or the process can terminate while
+    // SendTransaction is in flight. Retain the durable recovery row before
+    // starting the RPC so restart recovery cannot release a possibly-spent
+    // input.
+    input_lock.mark_broadcast_started()?;
     let response = match crate::wallet::sync_engine::send_transaction_with_status(
         &mut client,
         &extracted.raw_tx,
@@ -842,7 +847,13 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
         }
     };
     if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
-        return Err(error);
+        return match input_lock.release() {
+            Ok(()) => Err(error),
+            Err(release_error) => Err(format!(
+                "{error}; additionally failed to release Keystone Immediate migration inputs: \
+                 {release_error}"
+            )),
+        };
     }
     let storage_error = decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx).err();
     if storage_error.is_some() {

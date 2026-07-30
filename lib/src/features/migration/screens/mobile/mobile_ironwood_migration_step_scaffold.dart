@@ -94,7 +94,9 @@ class _MobileMigrationReviewScaffold extends StatelessWidget {
     required this.bottom,
   });
 
-  final VoidCallback onBack;
+  /// Null hides the top-nav chevron, which is how this screen holds the user
+  /// in place while a broadcast is in flight.
+  final VoidCallback? onBack;
   final Widget child;
   final Widget bottom;
   @override

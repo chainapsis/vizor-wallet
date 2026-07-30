@@ -159,6 +159,7 @@ class IronwoodMigrationCoordinatorState {
     this.statuses = const {},
     this.errors = const {},
     this.advancingAccounts = const {},
+    this.stoppingAccounts = const {},
     this.foregroundProgressPermits = const {},
     this.childProofBatchPermits = const {},
   });
@@ -166,6 +167,7 @@ class IronwoodMigrationCoordinatorState {
   final Map<String, rust_sync.MigrationStatus> statuses;
   final Map<String, String> errors;
   final Set<String> advancingAccounts;
+  final Set<String> stoppingAccounts;
 
   /// Accounts whose migration may continue in the current foreground session.
   ///
@@ -182,6 +184,7 @@ class IronwoodMigrationCoordinatorState {
     Map<String, rust_sync.MigrationStatus>? statuses,
     Map<String, String>? errors,
     Set<String>? advancingAccounts,
+    Set<String>? stoppingAccounts,
     Set<String>? foregroundProgressPermits,
     Set<String>? childProofBatchPermits,
   }) {
@@ -189,6 +192,7 @@ class IronwoodMigrationCoordinatorState {
       statuses: statuses ?? this.statuses,
       errors: errors ?? this.errors,
       advancingAccounts: advancingAccounts ?? this.advancingAccounts,
+      stoppingAccounts: stoppingAccounts ?? this.stoppingAccounts,
       foregroundProgressPermits:
           foregroundProgressPermits ?? this.foregroundProgressPermits,
       childProofBatchPermits:
@@ -212,6 +216,10 @@ class IronwoodMigrationCoordinator
   _outboxRecoveryWindows = {};
   final Map<String, String> _lastAdvanceProgressKeys = {};
   final Map<String, Future<void>> _advanceOperations = {};
+  final Map<({String accountUuid, String runId}), Future<void>>
+  _stopOperations = {};
+  final Map<String, Future<void>> _stopOperationTails = {};
+  final Set<String> _stoppingAccounts = {};
 
   @override
   IronwoodMigrationCoordinatorState build() {
@@ -537,6 +545,105 @@ class IronwoodMigrationCoordinator
     }
   }
 
+  Future<void> stop({required String accountUuid, required String runId}) {
+    final key = (accountUuid: accountUuid, runId: runId);
+    final existing = _stopOperations[key];
+    if (existing != null) return existing;
+
+    final previous = _stopOperationTails[accountUuid];
+    if (previous == null) {
+      _stoppingAccounts.add(accountUuid);
+      state = state.copyWith(
+        advancingAccounts: {...state.advancingAccounts, accountUuid},
+        stoppingAccounts: {...state.stoppingAccounts, accountUuid},
+        foregroundProgressPermits: {...state.foregroundProgressPermits}
+          ..remove(accountUuid),
+        childProofBatchPermits: {...state.childProofBatchPermits}
+          ..remove(accountUuid),
+      );
+    }
+    final operation = _runStopAfter(
+      previous,
+      accountUuid: accountUuid,
+      runId: runId,
+    );
+    late final Future<void> tracked;
+    tracked = operation.whenComplete(() {
+      if (identical(_stopOperations[key], tracked)) {
+        _stopOperations.remove(key);
+      }
+      if (identical(_stopOperationTails[accountUuid], tracked)) {
+        _stopOperationTails.remove(accountUuid);
+        _stoppingAccounts.remove(accountUuid);
+        if (ref.mounted) {
+          state = state.copyWith(
+            advancingAccounts: {...state.advancingAccounts}
+              ..remove(accountUuid),
+            stoppingAccounts: {...state.stoppingAccounts}..remove(accountUuid),
+          );
+        }
+      }
+    });
+    _stopOperations[key] = tracked;
+    _stopOperationTails[accountUuid] = tracked;
+    return tracked;
+  }
+
+  Future<void> _runStopAfter(
+    Future<void>? previous, {
+    required String accountUuid,
+    required String runId,
+  }) async {
+    if (previous != null) {
+      try {
+        await previous;
+      } catch (_) {
+        // A stop for another run must still execute after the account lease is
+        // released, even when the preceding stale cleanup failed.
+      }
+    }
+    await _runStop(accountUuid: accountUuid, runId: runId);
+  }
+
+  Future<void> _runStop({
+    required String accountUuid,
+    required String runId,
+  }) async {
+    try {
+      final inFlight = _advanceOperations[accountUuid];
+      if (inFlight != null) {
+        try {
+          await inFlight;
+        } catch (_) {
+          // Stop takes over after any already-started foreground attempt exits.
+        }
+      }
+      await ref
+          .read(ironwoodMigrationServiceProvider)
+          .stop(accountUuid: accountUuid, expectedRunId: runId);
+      if (!ref.mounted) return;
+      state = state.copyWith(
+        errors: Map<String, String>.from(state.errors)..remove(accountUuid),
+      );
+      try {
+        await ref.read(syncProvider.notifier).refreshAfterSend();
+      } catch (error) {
+        // The durable stop has already committed. A balance refresh failure
+        // must not invite the user to repeat the destructive action.
+        log('Ironwood migration post-stop balance refresh failed: $error');
+      }
+      if (!ref.mounted) return;
+      await refreshNow();
+    } catch (error) {
+      if (ref.mounted) {
+        state = state.copyWith(
+          errors: {...state.errors, accountUuid: error.toString()},
+        );
+      }
+      rethrow;
+    }
+  }
+
   Future<void> refreshNow({bool forceAdvance = false}) async {
     if (!ref.mounted) return;
     if (!canRunAppProcessWork(isInForeground: _foreground)) return;
@@ -663,7 +770,18 @@ class IronwoodMigrationCoordinator
             currentHeight: _safelyObservedProofHeight(),
           );
           if (stillDue) {
-            _validateDueOutboxRecovery(recovery, accountUuid: account.uuid);
+            try {
+              _validateDueOutboxRecovery(recovery, accountUuid: account.uuid);
+            } on StateError {
+              // Surfacing a terminal outcome without a backoff window would
+              // let the five-second poll re-run the same recovery and re-raise
+              // this error every cycle, pinning the screen on it.
+              _outboxRecoveryWindows[account.uuid] = (
+                progressKey: _outboxRecoveryProgressKey(status),
+                retryAt: DateTime.now().add(_outboxRecoveryDelay(recovery)),
+              );
+              rethrow;
+            }
           }
           if (!stillDue ||
               _outboxRecoveryCanWait(recovery, accountUuid: account.uuid)) {
@@ -768,7 +886,11 @@ class IronwoodMigrationCoordinator
         previous.denominationConfirmationCount !=
             current.denominationConfirmationCount ||
         previous.denominationSplitCompletedCount !=
-            current.denominationSplitCompletedCount) {
+            current.denominationSplitCompletedCount ||
+        // Successful store-from-raw for an already-broadcasted unmined row
+        // clears the durable storage-retry last_error without changing counts
+        // or part state. Treat that message transition as a balance change.
+        previous.message != current.message) {
       return true;
     }
 
@@ -793,6 +915,7 @@ class IronwoodMigrationCoordinator
     required bool usesNativeOutbox,
     required String accountUuid,
   }) {
+    if (_stoppingAccounts.contains(accountUuid)) return false;
     final due =
         kAppFormFactor == AppFormFactor.mobile &&
         usesNativeOutbox &&
@@ -913,6 +1036,7 @@ class IronwoodMigrationCoordinator
     required bool force,
     required String accountUuid,
   }) {
+    if (_stoppingAccounts.contains(accountUuid)) return false;
     if (status.activeRunId == null) return false;
     if (kAppFormFactor == AppFormFactor.desktop &&
         !_desktopOpenFallbackGate.allows(status)) {
@@ -933,12 +1057,25 @@ class IronwoodMigrationCoordinator
             hasChildProofBatchPermit &&
             (!isHardware || canPrepareNextProof)) ||
         (kAppFormFactor == AppFormFactor.mobile &&
-            status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
-            ((usesNativeOutbox &&
-                    status.signedChildPcztCount == 0 &&
-                    _hasScheduledBroadcast(status)) ||
-                (!usesNativeOutbox && _hasDueScheduledBroadcast(status)) ||
-                (hasChildProofBatchPermit && canPrepareNextProof))) ||
+            ((status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+                    ((usesNativeOutbox &&
+                            status.signedChildPcztCount == 0 &&
+                            _hasScheduledBroadcast(status)) ||
+                        (!usesNativeOutbox &&
+                            (_hasDueScheduledBroadcast(status) ||
+                                // Accepted parts can stay broadcasted while
+                                // later parts are still scheduled (and may
+                                // have been rescheduled into the future).
+                                // Keep calling advance so store-from-raw
+                                // retries without waiting for the next due
+                                // height.
+                                _hasBroadcastedPendingRetry(status))) ||
+                        (hasChildProofBatchPermit && canPrepareNextProof))) ||
+                // Keep calling into broadcast_due_scheduled after the last
+                // part flips phase so accepted-but-unstored txs and expiry
+                // resign can still retry (store-from-raw / needs_resign).
+                status.phase ==
+                    kIronwoodMigrationWaitingConfirmationsPhase)) ||
         (kAppFormFactor == AppFormFactor.desktop &&
             {
               kIronwoodMigrationBroadcastScheduledPhase,
@@ -972,6 +1109,16 @@ class IronwoodMigrationCoordinator
           broadcast.status.toLowerCase() == 'scheduled' &&
           broadcast.scheduledHeight > 0 &&
           broadcast.scheduledHeight <= currentHeight,
+    );
+  }
+
+  /// True when at least one part is network-accepted (`broadcasted`) and may
+  /// still need local store-from-raw retry. Used on non-outbox mobile so
+  /// advance keeps running while later parts remain scheduled in the future.
+  bool _hasBroadcastedPendingRetry(rust_sync.MigrationStatus status) {
+    if (status.broadcastedTxCount > 0) return true;
+    return status.scheduledBroadcasts.any(
+      (broadcast) => broadcast.status.toLowerCase() == 'broadcasted',
     );
   }
 

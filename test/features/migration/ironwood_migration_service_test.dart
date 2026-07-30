@@ -106,6 +106,88 @@ void main() {
   );
 
   test(
+    'Android reports no background preparation tracking capability',
+    () async {
+      var capabilityCalls = 0;
+      final service = _preparationTrackingSupportService(
+        isIOS: false,
+        isAndroid: true,
+        supportsBackgroundPreparationTracking: () async {
+          capabilityCalls++;
+          return true;
+        },
+      );
+
+      expect(await service.backgroundPreparationTrackingSupported(), isFalse);
+      // There is no Android preparation worker and no Android
+      // `background_migration` channel, so the platform gate must answer before
+      // any native probe runs.
+      expect(capabilityCalls, 0);
+    },
+  );
+
+  test(
+    'background preparation tracking mirrors the native capability',
+    () async {
+      final unsupported = _preparationTrackingSupportService(
+        supportsBackgroundPreparationTracking: () async => false,
+      );
+      final supported = _preparationTrackingSupportService(
+        supportsBackgroundPreparationTracking: () async => true,
+      );
+
+      expect(
+        await unsupported.backgroundPreparationTrackingSupported(),
+        isFalse,
+      );
+      expect(await supported.backgroundPreparationTrackingSupported(), isTrue);
+    },
+  );
+
+  test(
+    'background preparation tracking capability failure fails closed',
+    () async {
+      final throwing = _preparationTrackingSupportService(
+        supportsBackgroundPreparationTracking: () async =>
+            throw PlatformException(code: 'channel_error'),
+      );
+
+      // Over-promising a background lane strands the run; under-promising only
+      // asks the user to keep Vizor open.
+      expect(await throwing.backgroundPreparationTrackingSupported(), isFalse);
+    },
+  );
+
+  test(
+    'an injected preparation runtime source is treated as capable',
+    () async {
+      // Mirrors the `supportsBackgroundMigration` convention: only the default
+      // native runtime-state source is OS-version gated, so a caller that
+      // supplies its own source is not described by that gate.
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isIOS: () => true,
+        isAndroid: () => false,
+        getPreparationRuntimeState:
+            ({required network, required accountUuid, required runId}) async =>
+                IronwoodMigrationPreparationRuntimeState.scheduled,
+      );
+
+      expect(await service.backgroundPreparationTrackingSupported(), isTrue);
+    },
+  );
+
+  test(
     'status resolves wallet db path before calling Rust status API',
     () async {
       String? seenDbPath;
@@ -135,6 +217,500 @@ void main() {
       expect(seenAccountUuid, 'account-1');
     },
   );
+
+  test('stop drains native work before abandoning the durable run', () async {
+    final events = <String>[];
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(activeRunId: 'run-1'),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      isMobile: () => true,
+      isIOS: () => true,
+      quiesceBackgroundMigration: () async => events.add('quiesce'),
+      resumeBackgroundMigration: () async => events.add('resume'),
+      listMigrationOutboxReceipts: () async {
+        events.add('receipts');
+        return const [];
+      },
+      listMigrationOutboxAttemptedTxids:
+          ({required network, required accountUuid, required runId}) async {
+            expect(network, 'test');
+            expect(accountUuid, 'account-1');
+            expect(runId, 'run-1');
+            return const ['attempted-txid'];
+          },
+      revokeMigrationAccount: ({required network, required accountUuid}) async {
+        events.add('revoke');
+      },
+      stopMigrationRun:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+            required nativeAttemptedTxids,
+          }) async {
+            expect(dbPath, '/tmp/wallet.db');
+            expect(lightwalletdUrl, 'https://lwd.example:443');
+            expect(network, 'test');
+            expect(accountUuid, 'account-1');
+            expect(expectedRunId, 'run-1');
+            expect(nativeAttemptedTxids, ['attempted-txid']);
+            events.add('stop');
+          },
+    );
+
+    await service.stop(accountUuid: 'account-1', expectedRunId: 'run-1');
+
+    expect(events, ['quiesce', 'receipts', 'stop', 'revoke', 'resume']);
+  });
+
+  test(
+    'Android stop bypasses unavailable native migration lifecycle',
+    () async {
+      final events = <String>[];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(activeRunId: 'run-1'),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => false,
+        isAndroid: () => true,
+        quiesceBackgroundMigration: () async {
+          throw StateError('Android native lifecycle must not be called');
+        },
+        resumeBackgroundMigration: () async {
+          throw StateError('Android native lifecycle must not be called');
+        },
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              throw StateError('Android native lifecycle must not be called');
+            },
+        stopMigrationRun:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+            }) async {
+              events.add('stop');
+            },
+      );
+
+      await service.stop(accountUuid: 'account-1', expectedRunId: 'run-1');
+
+      expect(events, ['stop']);
+    },
+  );
+
+  test('a stale stop never revokes a newer run', () async {
+    final events = <String>[];
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(activeRunId: 'run-2'),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      isMobile: () => true,
+      isIOS: () => true,
+      quiesceBackgroundMigration: () async => events.add('quiesce'),
+      resumeBackgroundMigration: () async => events.add('resume'),
+      listMigrationOutboxReceipts: () async {
+        events.add('receipts');
+        return const [];
+      },
+      listMigrationOutboxAttemptedTxids: _noAttemptedOutboxTxids,
+      revokeMigrationAccount: ({required network, required accountUuid}) async {
+        events.add('revoke');
+      },
+      stopMigrationRun:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+            required nativeAttemptedTxids,
+          }) async {
+            expect(expectedRunId, 'run-1');
+            events.add('stop');
+          },
+    );
+
+    await service.stop(accountUuid: 'account-1', expectedRunId: 'run-1');
+
+    expect(events, ['quiesce', 'receipts', 'stop', 'resume']);
+  });
+
+  test('a failed durable stop leaves native state untouched', () async {
+    final events = <String>[];
+    final credentialStore = IronwoodMigrationBackgroundCredentialStore.testing(
+      storage: const FlutterSecureStorage(),
+      randomBytes: (length) =>
+          Uint8List.fromList(List<int>.generate(length, (index) => index)),
+    );
+    await credentialStore.prepare(
+      network: 'test',
+      accountUuid: 'account-1',
+      dbPath: '/tmp/wallet.db',
+      lightwalletdUrl: 'https://example.com',
+    );
+    await credentialStore.bindExpectedRunId(
+      network: 'test',
+      accountUuid: 'account-1',
+      expectedRunId: 'run-1',
+    );
+
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(activeRunId: 'run-1'),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      backgroundCredentialStore: credentialStore,
+      getEndpoint: _testEndpoint,
+      isMobile: () => true,
+      isIOS: () => true,
+      quiesceBackgroundMigration: () async => events.add('quiesce'),
+      resumeBackgroundMigration: () async => events.add('resume'),
+      listMigrationOutboxReceipts: () async {
+        events.add('receipts');
+        return const [];
+      },
+      listMigrationOutboxAttemptedTxids: _noAttemptedOutboxTxids,
+      revokeMigrationAccount: ({required network, required accountUuid}) async {
+        events.add('revoke');
+      },
+      stopMigrationRun:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+            required nativeAttemptedTxids,
+          }) async {
+            events.add('stop');
+            throw StateError('database is busy');
+          },
+    );
+
+    await expectLater(
+      service.stop(accountUuid: 'account-1', expectedRunId: 'run-1'),
+      throwsA(isA<StateError>()),
+    );
+
+    final untouched = await credentialStore.read(
+      network: 'test',
+      accountUuid: 'account-1',
+    );
+    expect(untouched?.expectedRunId, 'run-1');
+    expect(events, ['quiesce', 'receipts', 'stop', 'resume']);
+  });
+
+  test(
+    'a lost revoke response leaves abandoned native work quiesced',
+    () async {
+      final events = <String>[];
+      final credentialStore =
+          IronwoodMigrationBackgroundCredentialStore.testing(
+            storage: const FlutterSecureStorage(),
+            randomBytes: (length) => Uint8List.fromList(
+              List<int>.generate(length, (index) => index),
+            ),
+          );
+      await credentialStore.prepare(
+        network: 'test',
+        accountUuid: 'account-1',
+        dbPath: '/tmp/wallet.db',
+        lightwalletdUrl: 'https://example.com',
+      );
+      await credentialStore.bindExpectedRunId(
+        network: 'test',
+        accountUuid: 'account-1',
+        expectedRunId: 'run-1',
+      );
+
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(activeRunId: 'run-1'),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: credentialStore,
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        quiesceBackgroundMigration: () async => events.add('quiesce'),
+        resumeBackgroundMigration: () async => events.add('resume'),
+        listMigrationOutboxReceipts: () async => const [],
+        listMigrationOutboxAttemptedTxids: _noAttemptedOutboxTxids,
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              events.add('revoke');
+              await credentialStore.delete(
+                network: network,
+                accountUuid: accountUuid,
+              );
+              throw StateError('native reply was lost');
+            },
+        stopMigrationRun:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+            }) async {
+              events.add('stop');
+            },
+      );
+
+      await expectLater(
+        service.stop(accountUuid: 'account-1', expectedRunId: 'run-1'),
+        throwsA(isA<StateError>()),
+      );
+
+      final revoked = await credentialStore.read(
+        network: 'test',
+        accountUuid: 'account-1',
+      );
+      expect(revoked, isNull);
+      expect(events, ['quiesce', 'stop', 'revoke']);
+    },
+  );
+
+  test(
+    'a failed durable stop without a manifest never revokes outbox',
+    () async {
+      final events = <String>[];
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(activeRunId: 'run-1'),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        quiesceBackgroundMigration: () async => events.add('quiesce'),
+        resumeBackgroundMigration: () async => events.add('resume'),
+        listMigrationOutboxReceipts: () async => const [],
+        listMigrationOutboxAttemptedTxids: _noAttemptedOutboxTxids,
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              events.add('revoke');
+            },
+        stopMigrationRun:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+            }) async {
+              events.add('stop');
+              throw StateError('network reconciliation is pending');
+            },
+      );
+
+      await expectLater(
+        service.stop(accountUuid: 'account-1', expectedRunId: 'run-1'),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(events, ['quiesce', 'stop', 'resume']);
+    },
+  );
+
+  test(
+    'a lost durable stop response still revokes terminal native work',
+    () async {
+      final events = <String>[];
+      var statusReads = 0;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async {
+              statusReads++;
+              return _migrationStatus(
+                activeRunId: statusReads == 1 ? 'run-1' : null,
+              );
+            },
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        isMobile: () => true,
+        isIOS: () => true,
+        quiesceBackgroundMigration: () async => events.add('quiesce'),
+        resumeBackgroundMigration: () async => events.add('resume'),
+        listMigrationOutboxReceipts: () async => const [],
+        listMigrationOutboxAttemptedTxids: _noAttemptedOutboxTxids,
+        revokeMigrationAccount:
+            ({required network, required accountUuid}) async {
+              events.add('revoke');
+            },
+        stopMigrationRun:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required expectedRunId,
+              required nativeAttemptedTxids,
+            }) async {
+              events.add('stop');
+              throw StateError('FFI reply was lost');
+            },
+      );
+
+      await service.stop(accountUuid: 'account-1', expectedRunId: 'run-1');
+
+      expect(events, ['quiesce', 'stop', 'revoke', 'resume']);
+    },
+  );
+
+  test('terminal cleanup never resumes when native revoke fails', () async {
+    final events = <String>[];
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(activeRunId: null),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      isMobile: () => true,
+      isIOS: () => true,
+      quiesceBackgroundMigration: () async => events.add('quiesce'),
+      resumeBackgroundMigration: () async => events.add('resume'),
+      listMigrationOutboxReceipts: () async {
+        events.add('receipts');
+        return const [];
+      },
+      listMigrationOutboxAttemptedTxids: _noAttemptedOutboxTxids,
+      revokeMigrationAccount: ({required network, required accountUuid}) async {
+        events.add('revoke');
+        throw StateError('native storage is busy');
+      },
+      stopMigrationRun:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+            required nativeAttemptedTxids,
+          }) async {
+            events.add('stop');
+          },
+    );
+
+    await expectLater(
+      service.stop(accountUuid: 'account-1', expectedRunId: 'run-1'),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(events, ['quiesce', 'revoke']);
+  });
+
+  test('terminal cleanup revokes before fallible Rust cleanup', () async {
+    final events = <String>[];
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(activeRunId: null),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      isMobile: () => true,
+      isIOS: () => true,
+      quiesceBackgroundMigration: () async => events.add('quiesce'),
+      resumeBackgroundMigration: () async => events.add('resume'),
+      listMigrationOutboxReceipts: () async {
+        events.add('receipts');
+        return const [];
+      },
+      listMigrationOutboxAttemptedTxids: _noAttemptedOutboxTxids,
+      revokeMigrationAccount: ({required network, required accountUuid}) async {
+        events.add('revoke');
+      },
+      stopMigrationRun:
+          ({
+            required dbPath,
+            required lightwalletdUrl,
+            required network,
+            required accountUuid,
+            required expectedRunId,
+            required nativeAttemptedTxids,
+          }) async {
+            events.add('stop');
+            throw StateError('wallet lock cleanup is busy');
+          },
+    );
+
+    await expectLater(
+      service.stop(accountUuid: 'account-1', expectedRunId: 'run-1'),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(events, ['quiesce', 'revoke', 'stop', 'resume']);
+  });
 
   test(
     'foreground due-outbox recovery runs only native outbox reconciliation',
@@ -4648,6 +5224,31 @@ RpcEndpointConfig _testEndpoint() => const RpcEndpointConfig(
   lightwalletdUrl: 'https://lwd.example:443',
 );
 
+IronwoodMigrationService _preparationTrackingSupportService({
+  bool isIOS = true,
+  bool isAndroid = false,
+  required IronwoodMigrationPreparationTrackingSupportCheck
+  supportsBackgroundPreparationTracking,
+}) {
+  return IronwoodMigrationService(
+    getWalletDbPath: () async => '/tmp/wallet.db',
+    getStatus:
+        ({required dbPath, required network, required accountUuid}) async =>
+            _migrationStatus(),
+    getPrivatePlan:
+        ({required dbPath, required network, required accountUuid}) async =>
+            null,
+    secureStore: AppSecureStore.testing(storage: const FlutterSecureStorage()),
+    getEndpoint: _testEndpoint,
+    isMacOS: () => false,
+    isMobile: () => true,
+    isIOS: () => isIOS,
+    isAndroid: () => isAndroid,
+    supportsBackgroundPreparationTracking:
+        supportsBackgroundPreparationTracking,
+  );
+}
+
 IronwoodMigrationService _notificationAuthorizationService({
   required bool isIOS,
   bool isAndroid = false,
@@ -4812,6 +5413,12 @@ Map<Object?, Object?> _outboxReceipt({
     'scheduleUpdates': <Object?>[],
   };
 }
+
+Future<List<String>> _noAttemptedOutboxTxids({
+  required String network,
+  required String accountUuid,
+  required String runId,
+}) async => const [];
 
 rust_sync.KeystoneMigrationSigningRequest _keystoneSigningRequest() {
   return rust_sync.KeystoneMigrationSigningRequest(

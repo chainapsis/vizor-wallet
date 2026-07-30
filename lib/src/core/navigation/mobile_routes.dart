@@ -11,6 +11,8 @@ import '../../features/migration/screens/mobile/mobile_ironwood_migration_flow_s
 import '../../features/migration/models/mobile_ironwood_migration_status_entry.dart';
 import '../../features/migration/screens/ironwood_migration_flow_screen.dart'
     show
+        MobileIronwoodMigrationKeystoneCombinedSignEntry,
+        MobileIronwoodMigrationKeystoneCombinedSignScreen,
         MobileIronwoodMigrationKeystoneImmediateSignScreen,
         MobileIronwoodMigrationKeystoneBatchSignScreen,
         MobileIronwoodMigrationKeystoneDenominationSignEntry,
@@ -322,6 +324,19 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
         ),
       ),
     ),
+    GoRoute(
+      path: '/migration/private/start',
+      redirect: _redirectUnsupportedPrivateMigration,
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileIronwoodMigrationStartScreen(
+          approvedPlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => null,
+          },
+        ),
+      ),
+    ),
     // Completion has its own destination so home does not have to route
     // through the status screen, whose entry refresh renders a progress
     // surface before the finished phase resolves.
@@ -345,6 +360,41 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
           key: state.pageKey,
           child: MobileIronwoodMigrationPrivateStatusScreen(
             approvedPlan: entry?.approvedPlan,
+          ),
+        );
+      },
+    ),
+    GoRoute(
+      path: '/migration/private/schedule',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationScheduleScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/private/preparation-schedule',
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: const MobileIronwoodMigrationPreparationScheduleScreen(),
+      ),
+    ),
+    GoRoute(
+      path: '/migration/private/keystone/sign',
+      pageBuilder: (context, state) {
+        final entry = switch (state.extra) {
+          MobileIronwoodMigrationKeystoneCombinedSignEntry value => value,
+          _ => null,
+        };
+        final approvedSchedule = switch (state.extra) {
+          List<rust_sync.MigrationScheduledTransfer> schedule => schedule,
+          _ => entry?.approvedSchedule ?? const [],
+        };
+        return CupertinoPage(
+          key: state.pageKey,
+          child: MobileIronwoodMigrationKeystoneCombinedSignScreen(
+            approvedSchedule: approvedSchedule,
+            initialRequest: entry?.request,
+            initialAccountUuid: entry?.accountUuid,
           ),
         );
       },

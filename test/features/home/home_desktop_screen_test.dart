@@ -610,11 +610,13 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('sidebar_orchard_home_row')),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(find.text('Ironwood'), findsOneWidget);
-      expect(find.text('102.21 ZEC'), findsOneWidget);
-      expect(find.text('40.11 ZEC'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('sidebar_migration_progress_button')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     },
   );
 

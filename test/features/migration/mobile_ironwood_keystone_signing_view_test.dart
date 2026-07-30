@@ -11,6 +11,9 @@ Widget _app({
   required MobileIronwoodKeystoneSigningViewState state,
   Widget? qrCode,
   Widget? camera,
+  String? signingRoundLabel,
+  String? signingMessageCountLabel,
+  double? scanProgress,
   VoidCallback? onNext,
   VoidCallback? onCancel,
   VoidCallback? onToggleFlashlight,
@@ -23,6 +26,9 @@ Widget _app({
       child: MobileIronwoodKeystoneSigningView(
         state: state,
         round: MobileIronwoodKeystoneSigningRound.denominationSplit,
+        signingRoundLabel: signingRoundLabel,
+        signingMessageCountLabel: signingMessageCountLabel,
+        scanProgress: scanProgress,
         qrCode: qrCode,
         camera: camera,
         onNext: onNext,
@@ -116,6 +122,8 @@ void main() {
       _app(
         state: MobileIronwoodKeystoneSigningViewState.ready,
         qrCode: const ColoredBox(color: Colors.black),
+        signingRoundLabel: 'Round 1 of 2',
+        signingMessageCountLabel: 'Signs 26 of 51 transactions',
         onNext: () => nexts++,
         onCancel: () => cancels++,
         onShowScanHelp: () => helpRequests++,
@@ -123,15 +131,42 @@ void main() {
     );
 
     expect(find.text('Scan with Keystone'), findsOneWidget);
+    // The round indicator is an emphasised badge, and the request states how
+    // many transactions this round signs.
+    final roundBadge = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_round'),
+    );
+    expect(roundBadge, findsOneWidget);
+    expect(
+      find.descendant(of: roundBadge, matching: find.text('Round 1 of 2')),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<DecoratedBox>(roundBadge).decoration,
+      isA<ShapeDecoration>()
+          .having((d) => d.shape, 'shape', isA<StadiumBorder>())
+          .having((d) => d.color, 'color', AppColors.dark.background.inverse),
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_ironwood_keystone_signing_message_count'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Signs 26 of 51 transactions'), findsOneWidget);
+    expect(
+      tester.getRect(roundBadge).bottom,
+      lessThanOrEqualTo(
+        tester.getRect(find.text('Signs 26 of 51 transactions')).top,
+      ),
+    );
     expect(find.text('Tap'), findsOneWidget);
     expect(find.text('on your Keystone,'), findsOneWidget);
     expect(find.text('then scan this QR code'), findsOneWidget);
     expect(find.text('Having issues scanning?'), findsNothing);
     expect(
       find.descendant(
-        of: find.byKey(
-          const ValueKey('mobile_ironwood_keystone_scan_help'),
-        ),
+        of: find.byKey(const ValueKey('mobile_ironwood_keystone_scan_help')),
         matching: find.byWidgetPredicate(
           (widget) => widget is AppIcon && widget.name == AppIcons.help,
         ),
@@ -142,14 +177,27 @@ void main() {
       find.byKey(const ValueKey('mobile_ironwood_keystone_scan_help')),
     );
     final firstLineRect = tester.getRect(find.text('on your Keystone,'));
-    final secondLineRect = tester.getRect(
-      find.text('then scan this QR code'),
-    );
-    expect(helpRect.left, greaterThan(firstLineRect.right));
+    final secondLineRect = tester.getRect(find.text('then scan this QR code'));
+    // The help affordance trails the end of the sentence: to the right of the
+    // last line, and vertically on that line rather than centred across both.
     expect(helpRect.left, greaterThan(secondLineRect.right));
+    expect(helpRect.center.dy, greaterThan(firstLineRect.bottom));
     expect(
       helpRect.center.dy,
-      inInclusiveRange(firstLineRect.top, secondLineRect.bottom),
+      inInclusiveRange(secondLineRect.top, secondLineRect.bottom),
+    );
+    // The visual icon stays 28px so it fits the text line, but the tap target
+    // keeps the 44pt minimum.
+    expect(helpRect.size, const Size.square(28));
+    expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey('mobile_ironwood_keystone_scan_help_tap_target'),
+            ),
+          )
+          .shortestSide,
+      greaterThanOrEqualTo(44),
     );
     expect(
       find.byWidgetPredicate(
@@ -231,6 +279,78 @@ void main() {
       find.byKey(const ValueKey('mobile_ironwood_keystone_signing_qr_action')),
     );
     expect(qrReturns, 1);
+  });
+
+  testWidgets('scanner keeps the round badge and hides idle progress', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        state: MobileIronwoodKeystoneSigningViewState.scanner,
+        camera: const ColoredBox(color: Colors.black),
+        signingRoundLabel: 'Round 1 of 2',
+        onShowRequestQr: () {},
+      ),
+    );
+
+    final roundBadge = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_round'),
+    );
+    expect(roundBadge, findsOneWidget);
+    expect(
+      find.descendant(of: roundBadge, matching: find.text('Round 1 of 2')),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<DecoratedBox>(roundBadge).decoration,
+      isA<ShapeDecoration>(),
+    );
+    expect(
+      find.byKey(
+        const ValueKey('mobile_ironwood_keystone_signing_scan_progress'),
+      ),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('scanner shows viewfinder-width progress with a percentage', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        state: MobileIronwoodKeystoneSigningViewState.scanner,
+        camera: const ColoredBox(color: Colors.black),
+        signingRoundLabel: 'Round 1 of 2',
+        scanProgress: 0.42,
+        onShowRequestQr: () {},
+      ),
+    );
+
+    final progress = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_scan_progress'),
+    );
+    expect(progress, findsOneWidget);
+    expect(find.text('42%'), findsOneWidget);
+
+    final target = find.byKey(
+      const ValueKey('mobile_ironwood_keystone_signing_scan_target'),
+    );
+    final targetRect = tester.getRect(target);
+    final progressRect = tester.getRect(progress);
+    // Bar spans the viewfinder width and sits between it and the caption.
+    expect(progressRect.left, targetRect.left);
+    expect(progressRect.width, targetRect.width);
+    expect(progressRect.top, greaterThanOrEqualTo(targetRect.bottom));
+    final captionRect = tester.getRect(
+      find.text('Scan the QR code on your\nKeystone to confirm'),
+    );
+    expect(progressRect.bottom, lessThanOrEqualTo(captionRect.top));
+    // The bar is far wider than the shared scanner card's 128px default.
+    expect(progressRect.width, greaterThan(128));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('all states remain usable at 320 by 568', (tester) async {
