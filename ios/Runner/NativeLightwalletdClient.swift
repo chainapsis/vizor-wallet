@@ -51,14 +51,138 @@ private final class NativeRequestResult<Value>: @unchecked Sendable {
   }
 }
 
+struct NativeBoundedResponseBuffer {
+  private(set) var data = Data()
+  let maximumBytes: Int?
+
+  mutating func append(_ chunk: Data) -> Bool {
+    if let maximumBytes {
+      guard data.count <= maximumBytes,
+        chunk.count <= maximumBytes - data.count
+      else {
+        return false
+      }
+    }
+    data.append(chunk)
+    return true
+  }
+}
+
+private final class NativeRequestSessionDelegate: NSObject,
+  URLSessionDataDelegate
+{
+  private let result: NativeRequestResult<(HTTPURLResponse, Data)>
+  private let semaphore: DispatchSemaphore
+  private let maximumResponseBytes: Int?
+  private let rejectRedirects: Bool
+  private var response: HTTPURLResponse?
+  private var responseData: NativeBoundedResponseBuffer
+  private var didFinish = false
+
+  init(
+    result: NativeRequestResult<(HTTPURLResponse, Data)>,
+    semaphore: DispatchSemaphore,
+    maximumResponseBytes: Int?,
+    rejectRedirects: Bool
+  ) {
+    self.result = result
+    self.semaphore = semaphore
+    self.maximumResponseBytes = maximumResponseBytes
+    self.rejectRedirects = rejectRedirects
+    responseData = NativeBoundedResponseBuffer(
+      maximumBytes: maximumResponseBytes
+    )
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(rejectRedirects ? nil : request)
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    dataTask: URLSessionDataTask,
+    didReceive response: URLResponse,
+    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+  ) {
+    guard let http = response as? HTTPURLResponse else {
+      completionHandler(.cancel)
+      finish(.failure(.malformedResponse))
+      return
+    }
+    if let maximumResponseBytes,
+      response.expectedContentLength > Int64(maximumResponseBytes)
+    {
+      completionHandler(.cancel)
+      finish(.failure(.malformedResponse))
+      return
+    }
+    self.response = http
+    completionHandler(.allow)
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    dataTask: URLSessionDataTask,
+    didReceive data: Data
+  ) {
+    guard responseData.append(data) else {
+      dataTask.cancel()
+      finish(.failure(.malformedResponse))
+      return
+    }
+  }
+
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    didCompleteWithError error: Error?
+  ) {
+    guard !didFinish else { return }
+    if let error {
+      finish(.failure(.transport(String(describing: error))))
+      return
+    }
+    guard let response else {
+      finish(.failure(.malformedResponse))
+      return
+    }
+    finish(.success((response, responseData.data)))
+  }
+
+  private func finish(
+    _ requestResult: Result<
+      (HTTPURLResponse, Data),
+      NativeLightwalletdError
+    >
+  ) {
+    guard !didFinish else { return }
+    didFinish = true
+    result.set(requestResult)
+    semaphore.signal()
+  }
+}
+
 private func performNativeRequest<Value>(
   _ request: URLRequest,
   cancellation: BackgroundMigrationCancellation,
-  delegate: URLSessionDelegate? = nil,
+  maximumResponseBytes: Int? = nil,
+  rejectRedirects: Bool = false,
   parseResponse: @escaping (HTTPURLResponse, Data) throws -> Value
 ) -> Result<Value, NativeLightwalletdError> {
   let semaphore = DispatchSemaphore(value: 0)
-  let result = NativeRequestResult<Value>()
+  let result = NativeRequestResult<(HTTPURLResponse, Data)>()
+  let delegate = NativeRequestSessionDelegate(
+    result: result,
+    semaphore: semaphore,
+    maximumResponseBytes: maximumResponseBytes,
+    rejectRedirects: rejectRedirects
+  )
   let configuration = URLSessionConfiguration.ephemeral
   configuration.timeoutIntervalForRequest = 15
   configuration.timeoutIntervalForResource = 16
@@ -67,24 +191,7 @@ private func performNativeRequest<Value>(
     delegate: delegate,
     delegateQueue: nil
   )
-  let task = session.dataTask(with: request) { data, response, error in
-    defer { semaphore.signal() }
-    if let error {
-      result.set(.failure(.transport(String(describing: error))))
-      return
-    }
-    guard let http = response as? HTTPURLResponse, let data else {
-      result.set(.failure(.malformedResponse))
-      return
-    }
-    do {
-      result.set(.success(try parseResponse(http, data)))
-    } catch let error as NativeLightwalletdError {
-      result.set(.failure(error))
-    } catch {
-      result.set(.failure(.malformedResponse))
-    }
-  }
+  let task = session.dataTask(with: request)
   task.resume()
 
   let deadline = Date(timeIntervalSinceNow: 16)
@@ -101,7 +208,20 @@ private func performNativeRequest<Value>(
     }
   }
   session.finishTasksAndInvalidate()
-  return result.result ?? .failure(.malformedResponse)
+  switch result.result {
+  case .success(let (http, data)):
+    do {
+      return .success(try parseResponse(http, data))
+    } catch let error as NativeLightwalletdError {
+      return .failure(error)
+    } catch {
+      return .failure(.malformedResponse)
+    }
+  case .failure(let error):
+    return .failure(error)
+  case nil:
+    return .failure(.malformedResponse)
+  }
 }
 
 enum NativeLightwalletdClient {
@@ -363,20 +483,6 @@ private struct NativeTransactionRelayResponse: Decodable {
   let error: ErrorBody?
 }
 
-private final class NativeTransactionRelaySessionDelegate: NSObject,
-  URLSessionTaskDelegate
-{
-  func urlSession(
-    _ session: URLSession,
-    task: URLSessionTask,
-    willPerformHTTPRedirection response: HTTPURLResponse,
-    newRequest request: URLRequest,
-    completionHandler: @escaping (URLRequest?) -> Void
-  ) {
-    completionHandler(nil)
-  }
-}
-
 enum NativeTransactionRelayClient {
   private static let maximumResponseBytes = 64 * 1024
 
@@ -409,13 +515,11 @@ enum NativeTransactionRelayClient {
     return performNativeRequest(
       request,
       cancellation: cancellation,
-      delegate: NativeTransactionRelaySessionDelegate(),
+      maximumResponseBytes: maximumResponseBytes,
+      rejectRedirects: true,
       parseResponse: { http, data in
         guard (200...299).contains(http.statusCode) else {
           throw NativeLightwalletdError.invalidHTTPStatus(http.statusCode)
-        }
-        guard data.count <= maximumResponseBytes else {
-          throw NativeLightwalletdError.malformedResponse
         }
         return try parseSendTransactionResponse(
           data,

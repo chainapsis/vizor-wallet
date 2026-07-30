@@ -168,6 +168,9 @@ pub(super) fn validate_transaction_relay_url(endpoint: &str) -> Result<Url, Stri
     if !url.username().is_empty() || url.password().is_some() {
         return Err("Transaction relay URL must not contain credentials".to_string());
     }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err("Transaction relay URL must not contain a query or fragment".to_string());
+    }
 
     match url.scheme() {
         "https" => {}
@@ -482,6 +485,8 @@ mod tests {
             "ftp://example.com",
             "https://user@example.com",
             "https://user:secret@example.com",
+            "https://example.com/submit?token=secret",
+            "https://example.com/submit#fragment",
         ] {
             assert!(TransactionRelayClient::new(url).is_err(), "{url}");
         }

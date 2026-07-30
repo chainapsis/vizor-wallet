@@ -909,6 +909,16 @@ final class NativeTransactionRelayClientTests: XCTestCase {
   private let txid =
     "838813428b78712263511ed5c6fb9a108c939038a440b74f72bee6caedf602fd"
 
+  func testRelayResponseBufferRejectsBeforeAppendingPastLimit() {
+    var buffer = NativeBoundedResponseBuffer(maximumBytes: 4)
+
+    XCTAssertTrue(buffer.append(Data([0x01, 0x02])))
+    XCTAssertFalse(buffer.append(Data([0x03, 0x04, 0x05])))
+    XCTAssertEqual(buffer.data, Data([0x01, 0x02]))
+    XCTAssertTrue(buffer.append(Data([0x03, 0x04])))
+    XCTAssertEqual(buffer.data, Data([0x01, 0x02, 0x03, 0x04]))
+  }
+
   func testRelayParserAcceptsMatchingTransactionId() throws {
     let response = Data(
       "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\(txid)\"}".utf8
