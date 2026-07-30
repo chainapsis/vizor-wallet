@@ -770,7 +770,18 @@ class IronwoodMigrationCoordinator
             currentHeight: _safelyObservedProofHeight(),
           );
           if (stillDue) {
-            _validateDueOutboxRecovery(recovery, accountUuid: account.uuid);
+            try {
+              _validateDueOutboxRecovery(recovery, accountUuid: account.uuid);
+            } on StateError {
+              // Surfacing a terminal outcome without a backoff window would
+              // let the five-second poll re-run the same recovery and re-raise
+              // this error every cycle, pinning the screen on it.
+              _outboxRecoveryWindows[account.uuid] = (
+                progressKey: _outboxRecoveryProgressKey(status),
+                retryAt: DateTime.now().add(_outboxRecoveryDelay(recovery)),
+              );
+              rethrow;
+            }
           }
           if (!stillDue ||
               _outboxRecoveryCanWait(recovery, accountUuid: account.uuid)) {

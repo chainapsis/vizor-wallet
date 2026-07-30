@@ -401,6 +401,15 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-ironwood-migration-schedule-pending',
+    description:
+        'Mobile Ironwood migration schedule with parts Rust has not assigned '
+        'a height to yet',
+    builder: buildMobileIronwoodMigrationSchedulePendingUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-ironwood-migration-preparation-schedule',
     description: 'Mobile Ironwood preparation transaction schedule',
     builder: buildMobileIronwoodMigrationPreparationScheduleUseCase,

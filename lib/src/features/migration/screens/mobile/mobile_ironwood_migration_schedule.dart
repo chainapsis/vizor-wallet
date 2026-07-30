@@ -163,9 +163,25 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final parts = orderedMigrationParts(status.parts);
+    // Rust only assigns heights as parts are signed and promoted, so a freshly
+    // started run has none. Project the rest from the approved cadence instead
+    // of showing an undifferentiated column of "Preparing".
+    final projectedHeights = projectedMigrationPartHeights(
+      status: status,
+      currentHeight: currentHeight,
+    );
     final total = migrationTargetTotal(status);
     final completed = migrationCompletedValue(status);
-    final estimatedCompletionHeight = status.estimatedCompletionHeight;
+    // Rust withholds an exact completion height until every part is accounted
+    // for — the same moment the rows above have nothing to show either. Once
+    // the rows carry projected heights, the footer must follow them rather than
+    // contradict them with "Schedule pending".
+    final projectedCompletionHeight = projectedHeights.isEmpty
+        ? null
+        : projectedHeights.values.reduce(math.max) +
+              status.denominationConfirmationTarget;
+    final estimatedCompletionHeight =
+        status.estimatedCompletionHeight ?? projectedCompletionHeight;
     final duration = estimatedCompletionHeight == null
         ? 'Schedule pending'
         : currentHeight <= 0
@@ -213,6 +229,7 @@ class _MobileMigrationScheduleContent extends StatelessWidget {
                         part: part,
                         total: total,
                         currentHeight: currentHeight,
+                        projectedHeight: projectedHeights[part.partIndex],
                       );
                     },
                   ),
@@ -238,6 +255,7 @@ class _MobileMigrationPartScheduleRow extends StatelessWidget {
     required this.part,
     required this.total,
     required this.currentHeight,
+    this.projectedHeight,
     super.key,
   });
 
@@ -246,12 +264,16 @@ class _MobileMigrationPartScheduleRow extends StatelessWidget {
   final BigInt total;
   final int currentHeight;
 
+  /// Derived expected height for a part Rust has not assigned one to yet.
+  final int? projectedHeight;
+
   @override
   Widget build(BuildContext context) {
     final (label, icon, iconSize, color) = _migrationPartScheduleState(
       context,
       part,
       currentHeight: currentHeight,
+      projectedHeight: projectedHeight,
     );
     return SizedBox(
       height: 72,
@@ -897,10 +919,20 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
   BuildContext context,
   rust_sync.MigrationPartStatus part, {
   required int currentHeight,
+  int? projectedHeight,
 }) {
   final scheduledHeight = part.effectiveScheduledHeight ?? part.scheduledHeight;
   final scheduledInFuture =
       scheduledHeight != null && scheduledHeight > currentHeight;
+  // A part Rust has not promoted into the pending-transaction table yet only
+  // ever carries an estimate: either the timing projection Rust attaches to a
+  // signed child, or the cadence projection derived on this screen. Both read
+  // with a `~` so they never look like a committed assignment.
+  final estimatedHeight = scheduledHeight ?? projectedHeight;
+  final estimatedLabel = estimatedHeight == null
+      ? null
+      : '~${formatGroupedInteger(estimatedHeight)}';
+  final showEstimateIcon = scheduledHeight == null && estimatedLabel != null;
   return switch (part.state) {
     rust_sync.MigrationPartState.completed => (
       'Completed',
@@ -927,19 +959,19 @@ String _mobileSchedulePercentage(BigInt value, BigInt total) {
       const Color(0xFFB83AD9),
     ),
     rust_sync.MigrationPartState.preparing => (
-      'Preparing',
+      estimatedLabel ?? 'Preparing',
       AppIcons.block,
       16,
       context.colors.text.secondary,
     ),
     rust_sync.MigrationPartState.scheduled => (
       scheduledHeight == null
-          ? 'Schedule pending'
+          ? (estimatedLabel ?? 'Schedule pending')
           : scheduledHeight <= currentHeight
           ? 'Due now'
           : formatGroupedInteger(scheduledHeight),
-      scheduledInFuture ? AppIcons.block : null,
-      scheduledInFuture ? 16 : 0,
+      scheduledInFuture || showEstimateIcon ? AppIcons.block : null,
+      scheduledInFuture || showEstimateIcon ? 16 : 0,
       context.colors.text.secondary,
     ),
   };

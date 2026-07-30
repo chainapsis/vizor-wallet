@@ -38,10 +38,14 @@ class _MobileMigrationRedesignedStatusState
     extends ConsumerState<_MobileMigrationRedesignedStatus> {
   static const _syncSurfaceRevealDelay = Duration(milliseconds: 800);
   static const _syncSurfaceMinimumDuration = Duration(milliseconds: 500);
+  static const _advancingLabelRevealDelay = Duration(milliseconds: 800);
+  static const _advancingLabelMinimumDuration = Duration(seconds: 2);
 
   AppLifecycleListener? _lifecycleListener;
   Timer? _syncSurfaceRevealTimer;
   Timer? _syncSurfaceMinimumTimer;
+  Timer? _advancingLabelRevealTimer;
+  Timer? _advancingLabelMinimumTimer;
   bool _syncSurfaceMinimumElapsed = false;
   bool _wasBackgrounded = false;
   bool _surfaceRefreshInProgress = false;
@@ -53,6 +57,8 @@ class _MobileMigrationRedesignedStatusState
   // coordinator refresh and route-status reload from the same epoch can make
   // it current again.
   bool _hasCompletedSurfaceRefresh = false;
+  int _surfaceRefreshFailures = 0;
+  Timer? _surfaceRefreshRetryTimer;
   int _statusFreshnessEpoch = 0;
   int _refreshedStatusEpoch = -1;
   // Null until the first authorization lookup resolves, so copy can stay quiet
@@ -62,9 +68,26 @@ class _MobileMigrationRedesignedStatusState
       IronwoodMigrationPreparationRuntimeState.idle;
   bool _showPreparationComplete = false;
   bool _actionRunning = false;
+  // Raw coordinator advance signal and its debounced, display-only shadow. Only
+  // the preparation dial copy reads the debounced one; everything that must
+  // react immediately (back gating, button labels) keeps reading the raw
+  // membership.
+  bool _coordinatorAdvancing = false;
+  bool _showAdvancingLabel = false;
+  int _advancingLabelEpoch = 0;
+  bool _advancingLabelMinimumElapsed = false;
   bool _softwarePreparationResumeAttempted = false;
   String? _softwarePreparationResumeError;
   String? _recordedAttentionFingerprint;
+  // One automatic attempt per due target per cooldown. A failure records a
+  // coordinator error that gates the next evaluation, but the native outbox can
+  // also answer "waiting" without changing the status at all — a lifetime
+  // fingerprint would never retry that target again, so each attempt expires
+  // after the cooldown instead.
+  static const _automaticActionRetryCooldown = Duration(seconds: 60);
+  final Set<String> _attemptedAutomaticActionFingerprints = <String>{};
+  final Map<String, Timer> _automaticActionRetryTimers = <String, Timer>{};
+  bool _automaticActionEvaluationScheduled = false;
 
   @override
   void initState() {
@@ -77,6 +100,12 @@ class _MobileMigrationRedesignedStatusState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _handleSyncActivity(ref.read(syncProvider).value?.isSyncing ?? false);
+      _handleCoordinatorAdvancing(
+        _isCoordinatorAdvancing(
+          ref.read(ironwoodMigrationCoordinatorProvider),
+          ref.read(accountProvider).value?.activeAccountUuid,
+        ),
+      );
       unawaited(_initializeCurrentSession());
     });
   }
@@ -99,6 +128,13 @@ class _MobileMigrationRedesignedStatusState
       _softwarePreparationResumeAttempted = false;
       _softwarePreparationResumeError = null;
     }
+    if (oldWidget.status.activeRunId != widget.status.activeRunId) {
+      for (final timer in _automaticActionRetryTimers.values) {
+        timer.cancel();
+      }
+      _automaticActionRetryTimers.clear();
+      _attemptedAutomaticActionFingerprints.clear();
+    }
     final completedPreparation =
         oldWidget.status.phase ==
             kIronwoodMigrationWaitingDenomConfirmationsPhase &&
@@ -110,6 +146,12 @@ class _MobileMigrationRedesignedStatusState
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_resumeSoftwarePreparation());
       });
+    }
+    // A window that opens while the user is watching arrives as a new status,
+    // not as a reentry, so this is the trigger that matters most on device.
+    if (_dueActionInputSignature(oldWidget.status) !=
+        _dueActionInputSignature(widget.status)) {
+      _scheduleAutomaticDueActionEvaluation();
     }
   }
 
@@ -152,6 +194,12 @@ class _MobileMigrationRedesignedStatusState
     _lifecycleListener?.dispose();
     _syncSurfaceRevealTimer?.cancel();
     _syncSurfaceMinimumTimer?.cancel();
+    _advancingLabelRevealTimer?.cancel();
+    _advancingLabelMinimumTimer?.cancel();
+    _surfaceRefreshRetryTimer?.cancel();
+    for (final timer in _automaticActionRetryTimers.values) {
+      timer.cancel();
+    }
     super.dispose();
   }
 
@@ -211,8 +259,23 @@ class _MobileMigrationRedesignedStatusState
           _shouldAutomaticallyResumePreparation(accountUuid)) {
         await _continuePreparation(accountUuid);
       }
-    } catch (_) {
-      // The status surface remains usable when runtime inspection fails.
+      if (mounted) await _startAutomaticDueActionIfNeeded();
+      _surfaceRefreshFailures = 0;
+    } catch (error) {
+      // One transient failure must not park this screen on the sync skeleton —
+      // that would also block the automatic due action for good.
+      debugPrint('[zcash] migration surface refresh failed: $error');
+      _surfaceRefreshFailures += 1;
+      if (mounted && _surfaceRefreshFailures == 1) {
+        _surfaceRefreshRetryTimer?.cancel();
+        _surfaceRefreshRetryTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted) unawaited(_initializeCurrentSessionSurface());
+        });
+      } else if (mounted && !_hasCompletedSurfaceRefresh) {
+        // Repeated failures degrade to the last known status; the five-second
+        // coordinator poll keeps trying to freshen it.
+        setState(() => _hasCompletedSurfaceRefresh = true);
+      }
     } finally {
       _surfaceRefreshInProgress = false;
       if (_surfaceRefreshRequested && mounted) {
@@ -250,6 +313,137 @@ class _MobileMigrationRedesignedStatusState
     return coordinator.errors[accountUuid] == null &&
         !coordinator.foregroundProgressPermits.contains(accountUuid) &&
         !coordinator.advancingAccounts.contains(accountUuid);
+  }
+
+  /// Phases whose surface actually renders the required-action card.
+  ///
+  /// Every other phase is answered by an earlier branch of the build — the
+  /// preparation dial, the durable resume/retry card, or the completion
+  /// surface — and none of those actions may be taken for the user.
+  static const _automaticDueActionPhases = {
+    kIronwoodMigrationReadyToMigratePhase,
+    kIronwoodMigrationBroadcastScheduledPhase,
+    kIronwoodMigrationBroadcastingPhase,
+    kIronwoodMigrationWaitingConfirmationsPhase,
+  };
+
+  /// Everything a due-action decision reads, collapsed into one comparable
+  /// string so a rebuild can tell whether it is worth re-evaluating.
+  static String _dueActionInputSignature(rust_sync.MigrationStatus status) => [
+    status.phase,
+    status.activeRunId,
+    status.nextActionHeight,
+    status.proofReady,
+    status.signedChildPcztCount,
+    for (final part in status.parts) '${part.partIndex}:${part.state.name}',
+    for (final broadcast in status.scheduledBroadcasts)
+      '${broadcast.scheduledHeight}:${broadcast.status}',
+  ].join('|');
+
+  /// Re-evaluates the automatic due action after the current frame.
+  ///
+  /// Called from the rebuild paths — a new status and a sync height that moves
+  /// the run past its scheduled block — where the decision depends on state
+  /// this frame is still writing.
+  void _scheduleAutomaticDueActionEvaluation() {
+    if (_automaticActionEvaluationScheduled) return;
+    _automaticActionEvaluationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _automaticActionEvaluationScheduled = false;
+      if (!mounted) return;
+      unawaited(_startAutomaticDueActionIfNeeded());
+    });
+  }
+
+  /// Starts the due child-proof batch (or late re-broadcast) without waiting
+  /// for a tap, for a user who is looking at this screen right now.
+  ///
+  /// Child proof generation sits behind the one-shot `childProofBatchPermits`
+  /// gate, so mobile waits for an explicit "Prepare batch #n" while desktop
+  /// starts as soon as the window is due. On device that wait pushed whole
+  /// batches past their scheduled height into a late re-broadcast. Being on
+  /// this surface is the approval; the notification-driven path outside the app
+  /// keeps its explicit action.
+  Future<void> _startAutomaticDueActionIfNeeded() async {
+    final accountUuid = ref.read(accountProvider).value?.activeAccountUuid;
+    if (accountUuid == null) return;
+    if (!_shouldStartAutomaticDueAction(accountUuid)) return;
+    final fingerprint = _automaticDueActionFingerprint(accountUuid);
+    if (fingerprint == null ||
+        _attemptedAutomaticActionFingerprints.contains(fingerprint)) {
+      return;
+    }
+    _attemptedAutomaticActionFingerprints.add(fingerprint);
+    _automaticActionRetryTimers[fingerprint]?.cancel();
+    _automaticActionRetryTimers[fingerprint] = Timer(
+      _automaticActionRetryCooldown,
+      () {
+        _automaticActionRetryTimers.remove(fingerprint);
+        if (!mounted) return;
+        _attemptedAutomaticActionFingerprints.remove(fingerprint);
+        unawaited(_startAutomaticDueActionIfNeeded());
+      },
+    );
+    await _performRequiredAction(accountUuid, automatic: true);
+  }
+
+  /// Whether this run belongs to a hardware account, decided conservatively.
+  ///
+  /// `widget.isHardware` is derived from the account list and reads false while
+  /// that list is still loading, so an unattended decision consults the account
+  /// record too and treats an unreadable record as hardware. Nothing may start
+  /// a Keystone signing step because of a load-order race.
+  bool _isHardwareAccountRun(String accountUuid) {
+    if (widget.isHardware) return true;
+    final accountState = ref.read(accountProvider).value;
+    if (accountState?.activeAccountUuid != accountUuid) return true;
+    return accountState?.activeAccount?.isHardware ?? true;
+  }
+
+  bool _shouldStartAutomaticDueAction(String accountUuid) {
+    if (_actionRunning) return false;
+    // Keystone QR signing is a physical act at the device. Even when the rest
+    // of the gate is open, that step stays behind an explicit tap.
+    if (_isHardwareAccountRun(accountUuid) &&
+        _requiresKeystoneSignature(widget.status)) {
+      return false;
+    }
+    if (!_automaticDueActionPhases.contains(widget.status.phase)) return false;
+    // A stale status is not evidence that anything is due, and while the sync
+    // surface is up there is no action card for this to stand in for.
+    if (_shouldShowSyncSurface) return false;
+    if (ref.read(accountProvider).value?.activeAccountUuid != accountUuid) {
+      return false;
+    }
+    final coordinator = ref.read(ironwoodMigrationCoordinatorProvider);
+    if (coordinator.errors[accountUuid] != null) return false;
+    if (coordinator.advancingAccounts.contains(accountUuid)) return false;
+    // A granted permit means the gate this exists to open is already open, so
+    // the surface is no longer asking the user for anything.
+    return !coordinator.childProofBatchPermits.contains(accountUuid);
+  }
+
+  /// Identifies the due work an automatic attempt would take on, or null when
+  /// nothing is due.
+  ///
+  /// The reasons and their order are read from the same predicates
+  /// `_requiresUserAction` uses, so this can never fire on a state whose card
+  /// would not have offered the action.
+  String? _automaticDueActionFingerprint(String accountUuid) {
+    final status = widget.status;
+    final runId = status.activeRunId;
+    if (runId == null) return null;
+    if (_hasDueProofBatch(status)) {
+      return '$accountUuid|$runId|proof-batch|${status.nextActionHeight}';
+    }
+    final lateScheduledHeight = _earliestLateScheduledBroadcastHeight(status);
+    if (lateScheduledHeight != null) {
+      return '$accountUuid|$runId|late-broadcast|$lateScheduledHeight';
+    }
+    if (_hasDueReadyToMigrateProofAction(status)) {
+      return '$accountUuid|$runId|ready-to-migrate|${status.nextActionHeight}';
+    }
+    return null;
   }
 
   void _handleSyncActivity(bool isSyncing) {
@@ -297,6 +491,67 @@ class _MobileMigrationRedesignedStatusState
     setState(() {
       _showSyncSurface = false;
       _syncSurfaceMinimumElapsed = false;
+    });
+  }
+
+  bool _isCoordinatorAdvancing(
+    IronwoodMigrationCoordinatorState coordinator,
+    String? accountUuid,
+  ) =>
+      accountUuid != null &&
+      coordinator.advancingAccounts.contains(accountUuid);
+
+  /// Debounces the coordinator's advance signal for the preparation dial copy.
+  ///
+  /// While confirmations are pending the coordinator probes for an advance every
+  /// few seconds, and each no-op probe still enters and leaves
+  /// `advancingAccounts`. Bound directly to the dial, those sub-second flashes
+  /// swap "Keep Vizor open." in and out on every poll. The label therefore only
+  /// follows a signal that stays on long enough to be worth reading, and only
+  /// lets go once it has been on screen long enough not to flicker at the end.
+  ///
+  /// This is display-only: back gating, button labels, and the sync-surface
+  /// condition keep reading the raw membership so they stay immediate.
+  void _handleCoordinatorAdvancing(bool advancing) {
+    if (_coordinatorAdvancing == advancing) return;
+    _coordinatorAdvancing = advancing;
+    if (!advancing) {
+      _advancingLabelRevealTimer?.cancel();
+      _advancingLabelRevealTimer = null;
+      if (!_showAdvancingLabel || !mounted) return;
+      if (_advancingLabelMinimumElapsed) _hideAdvancingLabel();
+      return;
+    }
+    // A signal that returns while the label is still up keeps the minimum timer
+    // it was revealed with; cancelling it here would leave the label with no
+    // path back once the signal drops again.
+    if (_showAdvancingLabel || _advancingLabelRevealTimer != null) return;
+    final epoch = ++_advancingLabelEpoch;
+    _advancingLabelRevealTimer = Timer(_advancingLabelRevealDelay, () {
+      _advancingLabelRevealTimer = null;
+      if (!mounted || epoch != _advancingLabelEpoch || !_coordinatorAdvancing) {
+        return;
+      }
+      setState(() {
+        _showAdvancingLabel = true;
+        _advancingLabelMinimumElapsed = false;
+      });
+      _advancingLabelMinimumTimer?.cancel();
+      _advancingLabelMinimumTimer = Timer(_advancingLabelMinimumDuration, () {
+        _advancingLabelMinimumTimer = null;
+        _advancingLabelMinimumElapsed = true;
+        if (!mounted || _coordinatorAdvancing) return;
+        _hideAdvancingLabel();
+      });
+    });
+  }
+
+  void _hideAdvancingLabel() {
+    if (!mounted || !_showAdvancingLabel) return;
+    _advancingLabelEpoch++;
+    setState(() {
+      _showAdvancingLabel = false;
+      _advancingLabelMinimumElapsed = false;
     });
   }
 
@@ -478,6 +733,31 @@ class _MobileMigrationRedesignedStatusState
       if (wasSyncing && !isSyncing) {
         unawaited(_initializeCurrentSessionSurface());
       }
+      // The status can stay identical while the chain moves past its scheduled
+      // block, so height progress is its own trigger.
+      if (!isSyncing &&
+          (previous?.value?.scannedHeight != next.value?.scannedHeight ||
+              previous?.value?.chainTipHeight != next.value?.chainTipHeight)) {
+        _scheduleAutomaticDueActionEvaluation();
+      }
+    });
+    ref.listen(ironwoodMigrationCoordinatorProvider, (previous, next) {
+      _handleCoordinatorAdvancing(
+        _isCoordinatorAdvancing(
+          next,
+          ref.read(accountProvider).value?.activeAccountUuid,
+        ),
+      );
+    });
+    // The debounced signal is account-scoped, so a switch has to re-evaluate it
+    // too; otherwise the previous account's advance copy outlives its run.
+    ref.listen(accountProvider, (previous, next) {
+      _handleCoordinatorAdvancing(
+        _isCoordinatorAdvancing(
+          ref.read(ironwoodMigrationCoordinatorProvider),
+          next.value?.activeAccountUuid,
+        ),
+      );
     });
     final accountUuid = ref.watch(accountProvider).value?.activeAccountUuid;
     final coordinator = ref.watch(ironwoodMigrationCoordinatorProvider);
@@ -600,6 +880,19 @@ class _MobileMigrationRedesignedStatusState
 
     if (coordinatorError != null) {
       final batchProgress = _batchProgress(widget.status);
+      // An expired schedule surfaces here as a recovery error, but the only
+      // way forward for a Keystone run is another signature — retrying the
+      // outbox can never produce one.
+      final needsKeystoneResign =
+          !needsHardwareCredentialAttention &&
+          widget.isHardware &&
+          _requiresKeystoneSignature(widget.status);
+      final keystoneResignLabel =
+          widget.status.parts.any(
+            (part) => part.state == rust_sync.MigrationPartState.needsInput,
+          )
+          ? 'Re-sign migration transactions'
+          : 'Sign migration transactions';
       return _MigrationProgressPreview(
         state: _MigrationProgressState.needsInput,
         onBack: () => context.go('/home'),
@@ -626,12 +919,17 @@ class _MobileMigrationRedesignedStatusState
         actionMessage: needsHardwareCredentialAttention
             ? 'Reconnect or re-import your Keystone account to continue this '
                   'migration.'
+            : needsKeystoneResign
+            ? 'Sign the rebuilt migration transactions with Keystone to '
+                  'continue.'
             : needsSoftwareCredentialRecovery
             ? 'Your migration credentials need to be restored before '
                   'continuing.'
             : "Couldn't continue this migration. Try again.",
         actionLabel: needsHardwareCredentialAttention
             ? 'Back to home'
+            : needsKeystoneResign
+            ? keystoneResignLabel
             : needsSoftwareCredentialRecovery
             ? recoveryInProgress
                   ? 'Recovering...'
@@ -643,6 +941,8 @@ class _MobileMigrationRedesignedStatusState
             ? null
             : needsHardwareCredentialAttention
             ? () => context.go('/home')
+            : needsKeystoneResign
+            ? () => unawaited(_performRequiredAction(accountUuid))
             : needsSoftwareCredentialRecovery
             ? () => unawaited(_confirmRecovery(accountUuid))
             : () => unawaited(_retryAfterError(accountUuid)),
@@ -708,7 +1008,12 @@ class _MobileMigrationRedesignedStatusState
       final notificationsDisabled =
           _preparationRuntimeState ==
           IronwoodMigrationPreparationRuntimeState.disabled;
-      final preparationState = actionInProgress
+      // Display-only debounce: a user-triggered action shows its progress at
+      // once, while the coordinator's own advance probes have to persist before
+      // they may relabel the dial. Reading `actionInProgress` here instead would
+      // thrash this copy on every confirmation poll.
+      final showsAdvancingCopy = _actionRunning || _showAdvancingLabel;
+      final preparationState = showsAdvancingCopy
           ? _MigrationPreparationState.advancing
           : backgroundTrackingArmed
           ? _MigrationPreparationState.backgroundTracking
@@ -822,7 +1127,7 @@ class _MobileMigrationRedesignedStatusState
     }
     final confirming =
         status.phase == kIronwoodMigrationWaitingConfirmationsPhase ||
-        status.broadcastedTxCount > status.confirmedTxCount;
+        status.broadcastedTxCount > 0;
     if (confirming) return _MigrationProgressState.confirming;
     final broadcasting = status.phase == kIronwoodMigrationBroadcastingPhase;
     if (broadcasting) return _MigrationProgressState.broadcasting;
@@ -851,30 +1156,49 @@ class _MobileMigrationRedesignedStatusState
         status.signedChildPcztCount <= 0) {
       return true;
     }
-    final currentHeight = _currentHeight();
     if (_hasDueProofBatch(status)) return !hasChildProofBatchPermit;
     if (_hasLateScheduledBroadcast(status)) return true;
-    if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
-      final nextHeight = status.nextActionHeight;
-      return status.proofReady == true &&
-          nextHeight != null &&
-          currentHeight > 0 &&
-          nextHeight <= currentHeight &&
-          !hasChildProofBatchPermit;
+    if (_hasDueReadyToMigrateProofAction(status)) {
+      return !hasChildProofBatchPermit;
     }
     return false;
   }
 
-  bool _hasLateScheduledBroadcast(rust_sync.MigrationStatus status) {
+  /// The `ready_to_migrate` due branch of [_requiresUserAction]: proofs are
+  /// already built and the scheduled block has passed, so only the one-shot
+  /// child-proof permit stands between the run and its next batch.
+  bool _hasDueReadyToMigrateProofAction(rust_sync.MigrationStatus status) {
+    if (status.phase != kIronwoodMigrationReadyToMigratePhase) return false;
+    final nextHeight = status.nextActionHeight;
+    final currentHeight = _currentHeight();
+    return status.proofReady == true &&
+        nextHeight != null &&
+        currentHeight > 0 &&
+        nextHeight <= currentHeight;
+  }
+
+  bool _hasLateScheduledBroadcast(rust_sync.MigrationStatus status) =>
+      _earliestLateScheduledBroadcastHeight(status) != null;
+
+  /// The lowest scheduled block whose broadcast is past its late grace window,
+  /// or null when none is late. Doubles as the late-broadcast target identity
+  /// for the automatic path's single-attempt guard.
+  int? _earliestLateScheduledBroadcastHeight(rust_sync.MigrationStatus status) {
     final currentHeight = _currentBroadcastHeight();
-    return currentHeight > 0 &&
-        status.scheduledBroadcasts.any(
-          (broadcast) =>
-              broadcast.status.toLowerCase() == 'scheduled' &&
-              broadcast.scheduledHeight > 0 &&
-              currentHeight >=
-                  broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks,
-        );
+    if (currentHeight <= 0) return null;
+    int? earliest;
+    for (final broadcast in status.scheduledBroadcasts) {
+      if (broadcast.status.toLowerCase() != 'scheduled' ||
+          broadcast.scheduledHeight <= 0 ||
+          currentHeight <
+              broadcast.scheduledHeight + kIronwoodMigrationLateGraceBlocks) {
+        continue;
+      }
+      if (earliest == null || broadcast.scheduledHeight < earliest) {
+        earliest = broadcast.scheduledHeight;
+      }
+    }
+    return earliest;
   }
 
   bool _hasDueProofBatch(rust_sync.MigrationStatus status) {
@@ -977,8 +1301,21 @@ class _MobileMigrationRedesignedStatusState
     }
   }
 
-  Future<void> _performRequiredAction(String accountUuid) async {
+  /// Runs the required action for [accountUuid].
+  ///
+  /// [automatic] marks the unattended foreground path. It changes nothing about
+  /// the work itself; it only forbids navigating on the user's behalf, so a
+  /// Keystone QR screen can never be pushed by anything but a tap.
+  Future<void> _performRequiredAction(
+    String accountUuid, {
+    bool automatic = false,
+  }) async {
     if (_actionRunning) return;
+    if (automatic &&
+        _isHardwareAccountRun(accountUuid) &&
+        _requiresKeystoneSignature(widget.status)) {
+      return;
+    }
     if (widget.isHardware && _requiresKeystoneSignature(widget.status)) {
       context.push('/migration/private/keystone/batch/sign');
       return;

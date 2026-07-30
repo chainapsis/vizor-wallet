@@ -2822,6 +2822,10 @@ class _MigrationRingPainter extends CustomPainter {
     const strokeWidth = 12.0;
     final segmentPitch = math.pi * 2 / segments;
     final roundCapGap = (strokeWidth + math.max(0, visibleSegmentGap)) / radius;
+    // A round cap grows the segment by half a stroke at each end, so a dense
+    // ring cannot afford one without swallowing the gap. Those rings keep the
+    // tighter butt-cap gap and get their corners rounded by path instead, so
+    // the segments stay soft without eating into the separation.
     final useRoundCaps = segments == 1 || roundCapGap <= segmentPitch * 0.8;
     final gap = segments == 1
         ? 0.0
@@ -2836,53 +2840,115 @@ class _MigrationRingPainter extends CustomPainter {
     for (var index = 0; index < segments; index++) {
       final segmentSweep = segmentWeights[index] * sweepBudget;
       final start = cursor + gap / 2;
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = useRoundCaps ? StrokeCap.round : StrokeCap.butt
-        ..strokeWidth = strokeWidth;
       final highlighted = highlightedSegments.contains(index);
+      final segmentRect = highlighted ? highlightedRect : rect;
+      final segmentRadius = highlighted
+          ? radius + highlightedSegmentOffset
+          : radius;
       if (highlighted && highlightOutlineColor != null) {
         if (highlightColor != null) {
-          canvas.drawArc(
-            highlightedRect,
-            start,
-            segmentSweep,
-            false,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeCap = paint.strokeCap
-              ..strokeWidth = highlightedOuterOutlineWidth
-              ..color = highlightColor!.withValues(alpha: 0.88),
+          _paintSegment(
+            canvas: canvas,
+            center: center,
+            rect: highlightedRect,
+            radius: radius + highlightedSegmentOffset,
+            strokeWidth: highlightedOuterOutlineWidth,
+            startAngle: start,
+            sweepAngle: segmentSweep,
+            roundCaps: useRoundCaps,
+            color: highlightColor!.withValues(alpha: 0.88),
           );
         }
-        canvas.drawArc(
-          highlightedRect,
-          start,
-          segmentSweep,
-          false,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeCap = paint.strokeCap
-            ..strokeWidth = highlightedOutlineWidth
-            ..color = highlightOutlineColor!,
+        _paintSegment(
+          canvas: canvas,
+          center: center,
+          rect: highlightedRect,
+          radius: radius + highlightedSegmentOffset,
+          strokeWidth: highlightedOutlineWidth,
+          startAngle: start,
+          sweepAngle: segmentSweep,
+          roundCaps: useRoundCaps,
+          color: highlightOutlineColor!,
         );
       }
-      paint.color = completedSegments.contains(index)
-          ? activeColor
-          : awaitingSegments.contains(index)
-          ? activeColor.withValues(alpha: _awaitingSegmentOpacity)
-          : highlighted
-          ? (highlightColor ?? activeColor).withValues(alpha: highlightOpacity)
-          : trackColor;
-      canvas.drawArc(
-        highlighted ? highlightedRect : rect,
-        start,
-        segmentSweep,
-        false,
-        paint,
+      _paintSegment(
+        canvas: canvas,
+        center: center,
+        rect: segmentRect,
+        radius: segmentRadius,
+        strokeWidth: strokeWidth,
+        startAngle: start,
+        sweepAngle: segmentSweep,
+        roundCaps: useRoundCaps,
+        color: completedSegments.contains(index)
+            ? activeColor
+            : awaitingSegments.contains(index)
+            ? activeColor.withValues(alpha: _awaitingSegmentOpacity)
+            : highlighted
+            ? (highlightColor ?? activeColor).withValues(
+                alpha: highlightOpacity,
+              )
+            : trackColor,
       );
       cursor += segmentSweep + gap;
     }
+  }
+
+  void _paintSegment({
+    required Canvas canvas,
+    required Offset center,
+    required Rect rect,
+    required double radius,
+    required double strokeWidth,
+    required double startAngle,
+    required double sweepAngle,
+    required bool roundCaps,
+    required Color color,
+  }) {
+    if (roundCaps) {
+      canvas.drawArc(
+        rect,
+        startAngle,
+        sweepAngle,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = strokeWidth
+          ..color = color,
+      );
+      return;
+    }
+    final path = _roundedSegmentPath(
+      center: center,
+      radius: radius,
+      strokeWidth: strokeWidth,
+      startAngle: startAngle,
+      sweepAngle: sweepAngle,
+    );
+    if (path == null) {
+      // Degenerate geometry (a hairline sweep) has no corner to round; drawing
+      // the plain arc still keeps the segment on screen.
+      canvas.drawArc(
+        rect,
+        startAngle,
+        sweepAngle,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.butt
+          ..strokeWidth = strokeWidth
+          ..color = color,
+      );
+      return;
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..isAntiAlias = true
+        ..color = color,
+    );
   }
 
   @override
@@ -2902,6 +2968,79 @@ class _MigrationRingPainter extends CustomPainter {
             oldDelegate.highlightedOuterOutlineWidth ||
         highlightedOutlineWidth != oldDelegate.highlightedOutlineWidth;
   }
+}
+
+/// Builds one ring segment as a filled annular wedge with rounded corners.
+///
+/// A stroked arc can only be capped `round` (which extends past the arc ends by
+/// half a stroke, closing the gap on a dense ring) or `butt` (which leaves hard
+/// square corners). This keeps the exact footprint of the `butt` arc — the band
+/// between `radius ± strokeWidth / 2` across `sweepAngle` — and rounds the four
+/// corners inward, so the visible gap can only grow, never shrink.
+///
+/// The corner radius is the largest that fits both the stroke and the inner
+/// arc, so a sparse-but-dense ring reads as a near-stadium while a very tight
+/// ring degrades to a gently softened rectangle. Returns null when the wedge is
+/// too degenerate to round.
+Path? _roundedSegmentPath({
+  required Offset center,
+  required double radius,
+  required double strokeWidth,
+  required double startAngle,
+  required double sweepAngle,
+}) {
+  if (!sweepAngle.isFinite || sweepAngle <= 0 || strokeWidth <= 0) return null;
+  final halfStroke = strokeWidth / 2;
+  final outerRadius = radius + halfStroke;
+  final innerRadius = radius - halfStroke;
+  if (innerRadius <= 0) return null;
+
+  // `0.45` rather than `0.5` keeps a sliver of inner edge, so the two inner
+  // corner arcs never meet and invert the path.
+  final cornerRadius = math.min(halfStroke, sweepAngle * innerRadius * 0.45);
+  if (cornerRadius <= 0.01) return null;
+
+  final outerCornerAngle = cornerRadius / outerRadius;
+  final innerCornerAngle = cornerRadius / innerRadius;
+  final outerSweep = sweepAngle - outerCornerAngle * 2;
+  final innerSweep = sweepAngle - innerCornerAngle * 2;
+  if (outerSweep <= 0 || innerSweep <= 0) return null;
+
+  final endAngle = startAngle + sweepAngle;
+  final corner = Radius.circular(cornerRadius);
+  Offset polar(double angle, double distance) =>
+      center + Offset(math.cos(angle) * distance, math.sin(angle) * distance);
+
+  final outerStart = polar(startAngle + outerCornerAngle, outerRadius);
+  final outerEndCorner = polar(endAngle, outerRadius - cornerRadius);
+  final innerEndCorner = polar(endAngle, innerRadius + cornerRadius);
+  final innerEnd = polar(endAngle - innerCornerAngle, innerRadius);
+  final innerStartCorner = polar(startAngle, innerRadius + cornerRadius);
+  final outerStartCorner = polar(startAngle, outerRadius - cornerRadius);
+
+  // Traced clockwise: outer arc, trailing radial edge, inner arc back, leading
+  // radial edge, with a quarter-turn corner arc at each of the four joins.
+  final path = Path()..moveTo(outerStart.dx, outerStart.dy);
+  path.arcTo(
+    Rect.fromCircle(center: center, radius: outerRadius),
+    startAngle + outerCornerAngle,
+    outerSweep,
+    false,
+  );
+  path.arcToPoint(outerEndCorner, radius: corner);
+  path.lineTo(innerEndCorner.dx, innerEndCorner.dy);
+  path.arcToPoint(innerEnd, radius: corner);
+  path.arcTo(
+    Rect.fromCircle(center: center, radius: innerRadius),
+    endAngle - innerCornerAngle,
+    -innerSweep,
+    false,
+  );
+  path.arcToPoint(innerStartCorner, radius: corner);
+  path.lineTo(outerStartCorner.dx, outerStartCorner.dy);
+  path.arcToPoint(outerStart, radius: corner);
+  path.close();
+  return path;
 }
 
 List<double> _normalizedMigrationRingWeights({

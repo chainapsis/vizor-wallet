@@ -109,6 +109,89 @@ List<rust_sync.MigrationPreparationTransactionStatus>
   return transactions;
 }
 
+/// Projects the block height at which each not-yet-assigned migration part is
+/// expected to run.
+///
+/// Rust assigns `scheduled_height` incrementally: a part only carries a height
+/// once its child PCZT has been signed (the status builder copies the timing
+/// projection onto `Preparing` parts) or once the row has been promoted into
+/// the pending-transaction table as `scheduled`. Immediately after a run
+/// starts, neither has happened for any part, so every row arrives with a null
+/// height and the schedule surface has nothing chronological to show.
+///
+/// The projection continues the approved cadence from the last height Rust did
+/// assign — or from [currentHeight] when nothing is assigned yet — one
+/// [rust_sync.MigrationStatus.scheduleMeanDelayBlocks] step per remaining part.
+/// That matches how Rust builds the real schedule: each gap is an exponential
+/// draw whose mean is `scheduleMeanDelayBlocks`, so the mean is the correct
+/// expectation for an unseen gap. When
+/// [rust_sync.MigrationStatus.estimatedCompletionHeight] is known the stride is
+/// compressed so the final part lands no later than the last broadcast that
+/// estimate implies (the estimate itself includes
+/// [rust_sync.MigrationStatus.denominationConfirmationTarget] confirmation
+/// blocks past that broadcast).
+///
+/// Returns an empty map when there is not enough information to project, so
+/// callers keep their existing "pending" copy instead of inventing a height.
+/// Keys are `partIndex`. Values are strictly increasing in the order produced
+/// by [orderedMigrationParts], which is the order the schedule surface renders.
+Map<int, int> projectedMigrationPartHeights({
+  required rust_sync.MigrationStatus status,
+  required int currentHeight,
+}) {
+  final meanDelayBlocks = status.scheduleMeanDelayBlocks;
+  if (meanDelayBlocks <= 0) return const <int, int>{};
+
+  int? lastAssignedHeight;
+  final unassigned = <rust_sync.MigrationPartStatus>[];
+  for (final part in orderedMigrationParts(status.parts)) {
+    final assigned = part.effectiveScheduledHeight ?? part.scheduledHeight;
+    if (assigned == null) {
+      unassigned.add(part);
+      continue;
+    }
+    if (lastAssignedHeight == null || assigned > lastAssignedHeight) {
+      lastAssignedHeight = assigned;
+    }
+  }
+  if (unassigned.isEmpty) return const <int, int>{};
+
+  // Projecting forward from a height the chain already passed would describe a
+  // past the user can see is wrong, so the anchor never trails the tip.
+  final anchorHeight = lastAssignedHeight == null
+      ? currentHeight
+      : (currentHeight > lastAssignedHeight
+          ? currentHeight
+          : lastAssignedHeight);
+  if (anchorHeight <= 0) return const <int, int>{};
+
+  var strideBlocks = meanDelayBlocks.toDouble();
+  final estimatedCompletionHeight = status.estimatedCompletionHeight;
+  if (estimatedCompletionHeight != null) {
+    final lastBroadcastHeight =
+        estimatedCompletionHeight - status.denominationConfirmationTarget;
+    if (lastBroadcastHeight > anchorHeight) {
+      final cappedStride =
+          (lastBroadcastHeight - anchorHeight) / unassigned.length;
+      if (cappedStride > 0 && cappedStride < strideBlocks) {
+        strideBlocks = cappedStride;
+      }
+    }
+  }
+
+  final projected = <int, int>{};
+  var previousHeight = anchorHeight;
+  for (var index = 0; index < unassigned.length; index++) {
+    final stepped = anchorHeight + (strideBlocks * (index + 1)).round();
+    // The rows are read top to bottom as a chronology; a compressed stride
+    // must never make two of them tie or go backwards.
+    final height = stepped > previousHeight ? stepped : previousHeight + 1;
+    projected[unassigned[index].partIndex] = height;
+    previousHeight = height;
+  }
+  return projected;
+}
+
 MigrationNextActionPresentation migrationNextActionPresentation({
   required rust_sync.MigrationStatus status,
   required int currentHeight,

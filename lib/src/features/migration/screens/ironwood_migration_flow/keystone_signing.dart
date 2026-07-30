@@ -463,6 +463,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   List<rust_sync.KeystoneSignedMigrationMessage>? _pendingSignedMessages;
   KeystoneQrScannerControls? _scannerControls;
   bool _decoding = false;
+  // Multi-part UR scan progress (0-100) for the mobile scanner chrome. The
+  // scanner card reports it; the mobile view renders it under the viewfinder.
+  int _scanProgress = 0;
   bool _requestCompleted = false;
   bool _showImmediateScanHelp = true;
   Future<void>? _completionOperation;
@@ -554,6 +557,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _pendingSignedMessages = null;
       _scannerControls = null;
       _decoding = false;
+      _scanProgress = 0;
     });
 
     String? requestIdToDiscard = preparedRequest?.requestId;
@@ -666,6 +670,26 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   String? get _signingRoundLabel => _signingRounds.length <= 1
       ? null
       : 'Round ${_signingRoundIndex + 1} of ${_signingRounds.length}';
+
+  /// How many transactions the QR currently on screen signs.
+  ///
+  /// `_signingRounds` is the exact partition of `request.messages` that the
+  /// QR encoder consumes (`_keystoneSigningRounds`, capped by
+  /// `signingBatchLimit` and the Keystone byte budget), so the current round's
+  /// length is the real message count for this QR and the flattened total is
+  /// the request's message count.
+  String? get _signingMessageCountLabel {
+    final round = _currentSigningRound;
+    if (round == null || round.isEmpty) return null;
+    final total = _request?.messages.length ?? round.length;
+    if (round.length >= total) {
+      return 'Signs ${_transactionCountText(total)}';
+    }
+    return 'Signs ${round.length} of ${_transactionCountText(total)}';
+  }
+
+  String _transactionCountText(int count) =>
+      count == 1 ? '1 transaction' : '$count transactions';
 
   Future<void> _handleScanComplete(ScanResult result) async {
     if (_decoding ||
@@ -1249,6 +1273,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       state: MobileIronwoodKeystoneSigningViewState.ready,
       round: round,
       signingRoundLabel: _signingRoundLabel,
+      signingMessageCountLabel: _signingMessageCountLabel,
       qrCode: KeystonePcztQrStage(
         key: const ValueKey('mobile_ironwood_keystone_qr'),
         phase: KeystonePcztQrStagePhase.ready,
@@ -1265,6 +1290,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 _stage = _KeystoneDenominationSignStage.scanning;
                 _error = null;
                 _decoding = false;
+                _scanProgress = 0;
               });
             },
       onCancel: () => unawaited(_returnToReview()),
@@ -1304,10 +1330,13 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           expectedUrType: _keystoneMigrationSignBatchResultUrType,
           decoding: _decoding || waitingForProofs,
           error: null,
-          onProgress: (_) {
-            if (_pendingSignedMessages != null) return;
-            if (_error == null || !mounted) return;
-            setState(() => _error = null);
+          onProgress: (progress) {
+            if (_pendingSignedMessages != null || !mounted) return;
+            if (_error == null && _scanProgress == progress) return;
+            setState(() {
+              _error = null;
+              _scanProgress = progress;
+            });
           },
           onDecodeError: _handleDecodeError,
           onComplete: (result) => unawaited(_handleScanComplete(result)),
@@ -1320,6 +1349,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           cameraHeight: constraints.maxHeight,
           fullBleedMobile: true,
           showScanOverlay: false,
+          // The mobile view renders a viewfinder-width progress bar with a
+          // percentage instead of the card's small bottom bar.
+          showScanProgress: false,
           onControlsReady: _handleScannerControlsReady,
         ),
       ),
@@ -1331,6 +1363,9 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               ? 'Signature captured. Waiting for local proofs.'
               : 'Scan the new signed QR shown on Keystone.'),
       signingRoundLabel: _signingRoundLabel,
+      scanProgress: completing || waitingForProofs || _scanProgress <= 0
+          ? null
+          : _scanProgress / 100,
       scannerMessageIsError: _error != null,
       onToggleFlashlight:
           completing || waitingForProofs || scannerControls == null
@@ -1355,6 +1390,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _error = null;
       _decoding = false;
       _scannerControls = null;
+      _scanProgress = 0;
     });
   }
 

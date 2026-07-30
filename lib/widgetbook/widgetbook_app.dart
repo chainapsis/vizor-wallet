@@ -435,6 +435,11 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileIronwoodMigrationScheduleUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Migration schedule - pending assignment',
+                      builder:
+                          buildMobileIronwoodMigrationSchedulePendingUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Migration - Preparation done',
                       builder:
                           buildMobileIronwoodMigrationPreparationCompleteUseCase,
@@ -478,6 +483,25 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Keystone - QR scan help',
                       builder: buildMobileIronwoodMigrationKeystoneHelpUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Request loading',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneLoadingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Request QR (multi-round)',
+                      builder: buildMobileIronwoodMigrationKeystoneReadyUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Request QR (single round)',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneReadySingleRoundUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone - Signature scanner (multi-round)',
+                      builder:
+                          buildMobileIronwoodMigrationKeystoneScannerUseCase,
                     ),
                   ],
                 ),
