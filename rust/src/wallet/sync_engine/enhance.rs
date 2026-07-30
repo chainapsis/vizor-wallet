@@ -34,7 +34,7 @@ use zcash_client_backend::{
     },
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
-use zcash_primitives::transaction::{Transaction, TxId};
+use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
@@ -44,9 +44,8 @@ use crate::wallet::network::WalletNetwork;
 use super::{lwd, SyncError, WalletDatabase};
 
 /// Services `db.transaction_data_requests()` against lightwalletd until
-/// the queue is empty or no request is actionable. Status-only requests
-/// in `deferred_status_txids` remain queued for compact scanning. Returns
-/// `SyncError::Db` if `db.transaction_data_requests()` itself fails.
+/// the queue is empty or no request is actionable. Returns `SyncError::Db`
+/// if `db.transaction_data_requests()` itself fails.
 /// Per-request failures are split by semantics: an explicit
 /// "txid not recognized" response is recorded via
 /// `set_transaction_status` so it doesn't get retried forever, while
@@ -57,7 +56,6 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
-    deferred_status_txids: &HashSet<Vec<u8>>,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
 
@@ -73,9 +71,7 @@ pub(super) async fn run_enhancement(
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests
-            .iter()
-            .any(|request| request_is_actionable(request, deferred_status_txids));
+        let actionable = requests.iter().any(request_is_actionable);
         if !actionable {
             break;
         }
@@ -83,57 +79,10 @@ pub(super) async fn run_enhancement(
         for req in &requests {
             match req {
                 TransactionDataRequest::GetStatus(txid)
-                    if deferred_status_txids.contains(txid.as_ref().as_slice()) =>
-                {
-                    continue
-                }
-                TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
                     if failed_txids.contains(&txid_str) {
                         continue;
-                    }
-
-                    if matches!(req, TransactionDataRequest::GetStatus(_)) {
-                        match scanned_mined_height(db, *txid) {
-                            Ok(Some(mined_height)) => {
-                                let can_resolve_locally = match db.get_transaction(*txid) {
-                                    Ok(Some(tx)) => {
-                                        if let Err(e) =
-                                            fill_missing_transparent_fee(client, db_path, &tx).await
-                                        {
-                                            log::warn!(
-                                                "sync: transparent fee enhancement failed for {txid_str}: {e}"
-                                            );
-                                        }
-                                        true
-                                    }
-                                    Ok(None) => true,
-                                    Err(e) => {
-                                        log::error!(
-                                            "sync: could not read stored transaction for local status resolution: {e}"
-                                        );
-                                        false
-                                    }
-                                };
-                                if can_resolve_locally {
-                                    match resolve_status_from_scanned_height(
-                                        db,
-                                        *txid,
-                                        mined_height,
-                                    ) {
-                                        Ok(()) => continue,
-                                        Err(e) => log::error!(
-                                            "sync: could not resolve transaction status locally: {e}"
-                                        ),
-                                    }
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(e) => log::error!(
-                                "sync: could not read locally restored transaction status: {e}"
-                            ),
-                        }
                     }
 
                     match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
@@ -289,44 +238,15 @@ pub(super) async fn run_enhancement(
     Ok(())
 }
 
-/// Whether servicing `request` can make progress right now: full-data
-/// enhancements always can, status-only requests unless their transaction is
-/// deferred for compact scanning, and address-scoped requests only when they
-/// carry a bounded block range.
-fn request_is_actionable(
-    request: &TransactionDataRequest,
-    deferred_status_txids: &HashSet<Vec<u8>>,
-) -> bool {
+/// Whether servicing `request` can make progress right now. Transaction
+/// requests always can; address-scoped requests need a bounded block range.
+fn request_is_actionable(request: &TransactionDataRequest) -> bool {
     match request {
-        TransactionDataRequest::Enhancement(_) => true,
-        TransactionDataRequest::GetStatus(txid) => {
-            !deferred_status_txids.contains(txid.as_ref().as_slice())
-        }
+        TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
         TransactionDataRequest::TransactionsInvolvingAddress(req) => {
             req.block_range_end().is_some()
         }
     }
-}
-
-fn scanned_mined_height(db: &WalletDatabase, txid: TxId) -> Result<Option<BlockHeight>, SyncError> {
-    db.get_tx_height(txid)
-        .map_err(|e| SyncError::db(format!("get transaction height: {e}")))
-}
-
-/// Re-asserts a compact-scan-restored mined status after any missing fee has
-/// been backfilled, which also dequeues the `GetStatus` request.
-fn resolve_status_from_scanned_height(
-    db: &mut WalletDatabase,
-    txid: TxId,
-    mined_height: BlockHeight,
-) -> Result<(), SyncError> {
-    with_wallet_db_write_lock(
-        "sync_engine.enhance.set_known_mined_transaction_status",
-        || {
-            db.set_transaction_status(txid, TransactionStatus::Mined(mined_height))
-                .map_err(|e| SyncError::db(format!("set known mined transaction status: {e}")))
-        },
-    )
 }
 
 async fn fill_missing_transparent_fee(
@@ -514,69 +434,6 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 mod tests {
     use super::*;
 
-    /// Builds a real migrated wallet DB containing one transaction with a
-    /// known mined height plus an explicit status-type retrieval-queue entry
-    /// for it, mirroring the post-recovery state `resolve_status_from_scanned_height`
-    /// services.
-    fn status_recovery_test_db(
-        mined_height: BlockHeight,
-        fee: Option<i64>,
-    ) -> (tempfile::NamedTempFile, WalletDatabase, Transaction) {
-        let (tx, raw) = transparent_fee_test_tx_and_bytes();
-        let txid = tx.txid();
-        let file = tempfile::NamedTempFile::new().unwrap();
-        let db_path = file.path().to_str().unwrap();
-        let mut db = crate::wallet::db::open_wallet_db_with_timeout(
-            db_path,
-            WalletNetwork::Regtest,
-            SYNC_DB_BUSY_TIMEOUT,
-        )
-        .unwrap();
-        zcash_client_sqlite::wallet::init::init_wallet_db(&mut db, None).unwrap();
-        db.update_chain_tip(mined_height + 10).unwrap();
-        drop(db);
-
-        let conn = rusqlite::Connection::open(db_path).unwrap();
-        conn.execute(
-            "INSERT INTO transactions
-                (txid, mined_height, raw, fee, min_observed_height)
-             VALUES (?1, ?2, ?3, ?4, ?2)",
-            rusqlite::params![txid.as_ref(), u32::from(mined_height), raw, fee],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO accounts
-                (uuid, account_kind, uivk, birthday_height, has_spend_key)
-             VALUES (randomblob(16), 1, 'test-uivk', 1, 0)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO sapling_received_notes
-                (transaction_id, output_index, account_id, diversifier, value,
-                 rcm, is_change, commitment_tree_position, recipient_key_scope)
-             SELECT id_tx, 0, 1, X'00', 1, X'00', 1, 1, 1
-             FROM transactions WHERE txid = ?1",
-            rusqlite::params![txid.as_ref()],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tx_retrieval_queue (txid, query_type)
-             VALUES (?1, 0)",
-            rusqlite::params![txid.as_ref()],
-        )
-        .unwrap();
-        drop(conn);
-
-        let db = crate::wallet::db::open_wallet_db_with_timeout(
-            db_path,
-            WalletNetwork::Regtest,
-            SYNC_DB_BUSY_TIMEOUT,
-        )
-        .unwrap();
-        (file, db, tx)
-    }
-
     fn transparent_fee_test_tx_and_bytes() -> (Transaction, Vec<u8>) {
         let tx_bytes = hex::decode(
             "0400008085202f8901aee37187e843da597683c26c01457f5fd3b1a038996ef74dc8d60d483aaf395a000000006b483045022100874c70db77ea9e93f75cc83a9e141e17c8eb97588e29fe4e307631fdde4f162a02203493df62d648cd86a1189eaf9bcafc652bc14c5df02519d9e45e25b32aaffb5b012102106a2dcaaac2ae3b24358a03f4264e05db420c5b090399bc23885fa02fef7716ffffffff02764e1900000000001976a914fb451987556f7a19b726966ee6cff917e0bb3bfb88ac560ca400000000001976a9141634f5ff0b8f6603a17570436d6c12a91f4b1fed88ac00000000000000000000000000000000000000",
@@ -655,62 +512,6 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
-    }
-
-    #[test]
-    fn deferred_status_requests_do_not_block_full_data_enhancement() {
-        let deferred = HashSet::from([vec![1; 32]]);
-        assert!(!request_is_actionable(
-            &TransactionDataRequest::GetStatus(TxId::from_bytes([1; 32])),
-            &deferred,
-        ));
-        assert!(request_is_actionable(
-            &TransactionDataRequest::GetStatus(TxId::from_bytes([2; 32])),
-            &deferred,
-        ));
-        assert!(request_is_actionable(
-            &TransactionDataRequest::Enhancement(TxId::from_bytes([1; 32])),
-            &deferred,
-        ));
-    }
-
-    #[test]
-    fn scanned_height_resolves_status_without_transaction_download() {
-        let mined_height = BlockHeight::from_u32(500);
-        let (_file, mut db, tx) = status_recovery_test_db(mined_height, Some(0));
-        let txid = tx.txid();
-
-        assert!(db
-            .transaction_data_requests()
-            .unwrap()
-            .contains(&TransactionDataRequest::GetStatus(txid)));
-        assert_eq!(scanned_mined_height(&db, txid).unwrap(), Some(mined_height));
-        resolve_status_from_scanned_height(&mut db, txid, mined_height).unwrap();
-        assert!(!db
-            .transaction_data_requests()
-            .unwrap()
-            .contains(&TransactionDataRequest::GetStatus(txid)));
-        assert_eq!(db.get_tx_height(txid).unwrap(), Some(mined_height));
-    }
-
-    #[test]
-    fn scanned_status_loads_missing_fee_input_before_dequeue() {
-        let mined_height = BlockHeight::from_u32(500);
-        let (file, mut db, tx) = status_recovery_test_db(mined_height, None);
-        let txid = tx.txid();
-
-        assert_eq!(db.get_transaction(txid).unwrap().unwrap().txid(), txid);
-        assert!(should_fill_missing_transparent_fee(file.path().to_str().unwrap(), &tx).unwrap());
-        assert!(db
-            .transaction_data_requests()
-            .unwrap()
-            .contains(&TransactionDataRequest::GetStatus(txid)));
-
-        resolve_status_from_scanned_height(&mut db, txid, mined_height).unwrap();
-        assert!(!db
-            .transaction_data_requests()
-            .unwrap()
-            .contains(&TransactionDataRequest::GetStatus(txid)));
     }
 
     #[test]

@@ -394,7 +394,7 @@ The entire sync loop runs in Rust (`rust/src/wallet/sync_engine.rs`). A single c
 2. Download subtree roots (sapling + orchard, incremental with start_index optimization)
 3. Download compact blocks into memory (in-memory `MemoryBlockSource`, no file I/O)
 4. `scan_cached_blocks` from memory (100 blocks per batch)
-5. Enhancement: fetch full tx data (`GetStatus`, `Enhancement`, `TransactionsInvolvingAddress`). A status-only (`GetStatus`) request with durable evidence of prior compact-block mining is deferred only while a pending scan range could still restore it. Compact scanning then resolves it locally; normal pending transactions continue through status lookup and resubmission.
+5. Enhancement: fetch full tx data (`GetStatus`, `Enhancement`, `TransactionsInvolvingAddress`). librustzcash persistently requests `GetStatus` only when compact-block scanning cannot observe the transaction's mined state. During recovery, Vizor separately excludes previously mined transactions from resubmission while a pending scan range can still restore their mined heights.
 6. Progress streamed to Dart via FRB `StreamSink` per batch
 
 Single DB connection reused across entire sync (opened once, passed to all operations).

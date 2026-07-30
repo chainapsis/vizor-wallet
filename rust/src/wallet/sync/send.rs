@@ -63,8 +63,8 @@ use zcash_client_backend::{
             ConfirmationsPolicy, TargetHeight,
         },
         Account as _, AccountMeta, Balance, CoinbaseFilter, InputSource, MaxSpendMode, NoteFilter,
-        NoteRetention, ReceivedNotes, TargetValue, TransparentKeyOrigin, WalletCommitmentTrees,
-        WalletRead, WalletWrite,
+        NoteRetention, OutputLockStore, ReceivedNotes, TargetValue, TransparentKeyOrigin,
+        WalletCommitmentTrees, WalletRead,
     },
     fees::{
         zip317::{MultiOutputChangeStrategy, Zip317FeeRule},
@@ -754,7 +754,6 @@ pub fn propose_send(
             &migration_locks,
             &spend_policy,
             proposed_tx_version,
-            false,
         )?;
         let (proposal, stored_tx_version) = propose_with_note_version_downgrade(
             pass1_proposal,
@@ -770,7 +769,6 @@ pub fn propose_send(
                     &migration_locks,
                     &spend_policy,
                     tx_version,
-                    false,
                 )
             },
         );
@@ -847,8 +845,6 @@ pub fn propose_send(
                 proposal_id: id,
                 proposal,
                 proposed_tx_version: stored_tx_version,
-                // Regular sends stay padded; only migration children opt in.
-                unpadded_orchard_pool_bundles: false,
                 network,
                 account_id,
                 send_flow_id: send_flow_id.to_string(),
@@ -892,7 +888,6 @@ pub fn estimate_fee(
         &migration_locks,
         &spend_policy,
         proposed_tx_version,
-        false,
     )?;
     // Same two-pass rule as `propose_send`, so the displayed estimate equals
     // the stored proposal's fee.
@@ -908,7 +903,6 @@ pub fn estimate_fee(
                 &migration_locks,
                 &spend_policy,
                 tx_version,
-                false,
             )
         });
 
@@ -3258,9 +3252,7 @@ fn build_shielding_proposal(
         .map_err(|e| format!("Failed to get transparent balances: {e}"))?;
     let (from_addrs, selected_value) = select_shielding_sources(balances, shielding_threshold)?;
 
-    // Regular shielding transactions stay padded (`DEFAULT`); only migration
-    // children opt in to unpadded Orchard-pool bundles.
-    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None, None, false);
+    let (change_strategy, input_selector) = zip317_helper::<WalletDatabase>(None);
     let proposal = propose_shielding::<_, _, _, _, Infallible>(
         db,
         &network,
@@ -3311,7 +3303,6 @@ fn propose_send_with_reserved_notes(
     migration_locks: &BTreeSet<(String, u32)>,
     spend_policy: &SpendPolicy,
     proposed_tx_version: Option<TxVersion>,
-    unpadded_orchard_pool_bundles: bool,
 ) -> Result<Proposal<WalletFeeRule, ReceivedNoteId>, String> {
     let confirmations_policy = ConfirmationsPolicy::default();
     let (target_height, anchor_height) = db
@@ -3323,11 +3314,8 @@ fn propose_send_with_reserved_notes(
         reserved,
         migration_locks,
     };
-    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(
-        None,
-        proposed_tx_version,
-        unpadded_orchard_pool_bundles,
-    );
+    let zip318 = db.pool_migration_params();
+    let (change_strategy, input_selector) = zip317_helper::<ReservedInputSource<'_>>(None);
 
     input_selector
         .propose_transaction(
@@ -3335,6 +3323,7 @@ fn propose_send_with_reserved_notes(
             &reserved_db,
             target_height,
             anchor_height,
+            &zip318,
             confirmations_policy,
             account_id,
             request,
@@ -3525,6 +3514,14 @@ impl InputSource for ReservedInputSource<'_> {
     type Error = <WalletDatabase as InputSource>::Error;
     type AccountId = <WalletDatabase as InputSource>::AccountId;
     type NoteRef = <WalletDatabase as InputSource>::NoteRef;
+
+    fn anchor_computable(
+        &self,
+        protocol: ShieldedPool,
+        height: BlockHeight,
+    ) -> Result<bool, Self::Error> {
+        self.inner.anchor_computable(protocol, height)
+    }
 
     fn get_spendable_note(
         &self,
@@ -5998,8 +5995,6 @@ where
 /// place so the two entry points can't drift.
 fn zip317_helper<DbT: InputSource>(
     change_memo: Option<MemoBytes>,
-    proposed_tx_version: Option<TxVersion>,
-    unpadded_orchard_pool_bundles: bool,
 ) -> (
     MultiOutputChangeStrategy<WalletFeeRule, DbT>,
     GreedyInputSelector<DbT>,
@@ -6014,18 +6009,6 @@ fn zip317_helper<DbT: InputSource>(
             Zatoshis::const_from_u64(1000_0000),
         ),
     );
-    // Migration children only: count exactly the requested actions so the
-    // proposal's fee matches the unpadded bundle the PCZT builder produces.
-    let change_strategy = if unpadded_orchard_pool_bundles {
-        change_strategy.with_unpadded_orchard_pool_bundles()
-    } else {
-        change_strategy
-    };
-    // No V5 legacy-change override is needed anymore: change-pool selection
-    // follows the input pools (an Orchard-input V5 send yields Orchard change)
-    // and enforces the Ironwood turnstile.
-    let _ = proposed_tx_version;
-
     (change_strategy, GreedyInputSelector::new())
 }
 

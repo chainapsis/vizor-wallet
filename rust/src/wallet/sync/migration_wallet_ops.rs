@@ -18,7 +18,7 @@ use zcash_client_backend::{
             input_selection::{LockFilter, LockedInputPolicy, NonEmptyBTreeSet},
             ConfirmationsPolicy,
         },
-        InputSource, WalletRead, WalletWrite,
+        InputSource, OutputLockStore, WalletRead,
     },
     wallet::{LockOwner, OutputRef, ReceivedNote},
 };

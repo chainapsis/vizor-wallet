@@ -373,7 +373,7 @@ fn is_pending_scan_range(range: &ScanRange) -> bool {
     range.priority() != ScanPriority::Ignored && range.priority() != ScanPriority::Scanned
 }
 
-fn deferred_status_txids(
+fn recovery_resubmit_exclusions(
     db_path: &str,
     ranges: &[ScanRange],
 ) -> Result<HashSet<Vec<u8>>, SyncError> {
@@ -1651,12 +1651,13 @@ async fn run_sync_impl(
         let startup_ranges = db
             .suggest_scan_ranges()
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
-        let startup_deferred_status_txids = deferred_status_txids(db_data_path, &startup_ranges)?;
+        let startup_resubmit_exclusions =
+            recovery_resubmit_exclusions(db_data_path, &startup_ranges)?;
         let _ = crate::wallet::sync::resubmit_pending_transactions(
             db_data_path,
             &mut client,
             tip.height as u32,
-            &startup_deferred_status_txids,
+            &startup_resubmit_exclusions,
             || {
                 cancel.load(Ordering::Relaxed)
                     || desired_mode.load(Ordering::SeqCst) != running_mode
@@ -2351,22 +2352,15 @@ async fn run_sync_impl(
 
         // Truncation can temporarily clear a transaction's mined height while
         // retaining note positions that prove compact scanning found it mined.
-        // Let scanning restore those statuses without blocking normal pending
-        // transaction lookups.
+        // Exclude those transactions from recovery resubmission while scanning
+        // can still restore their mined heights.
         let post_scan_ranges = db
             .suggest_scan_ranges()
             .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?;
-        let deferred_status_txids = deferred_status_txids(db_data_path, &post_scan_ranges)?;
+        let resubmit_exclusions = recovery_resubmit_exclusions(db_data_path, &post_scan_ranges)?;
 
         // Enhancement
-        run_enhancement(
-            &mut client,
-            &mut db,
-            db_data_path,
-            network,
-            &deferred_status_txids,
-        )
-        .await?;
+        run_enhancement(&mut client, &mut db, db_data_path, network).await?;
 
         // Post-batch auto-resubmit. Matches zcash-android-wallet-sdk's
         // lines 593/701 call sites (end of verify batch / end of
@@ -2449,7 +2443,7 @@ async fn run_sync_impl(
                         db_data_path,
                         &mut client,
                         fresh_tip_height,
-                        &deferred_status_txids,
+                        &resubmit_exclusions,
                         || {
                             cancel.load(Ordering::Relaxed)
                                 || desired_mode.load(Ordering::SeqCst) != running_mode
