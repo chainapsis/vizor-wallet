@@ -3114,23 +3114,16 @@ mod tests {
         assert_eq!(got.block_height, 333_100);
     }
 
-    /// Read `TxBase` rows straight out of a synthetic `v_transactions`
-    /// table, the way `read_history_bases` did before it inlined the
-    /// view's aggregates as `HISTORY_BASES_CTE`.
+    /// Read `TxBase` from a synthetic `v_transactions` table.
     ///
-    /// The fixtures below populate `v_transactions` with hand-written
-    /// aggregates so a case can be stated directly ("this tx spent
-    /// 1_265_000 and received 1_150_000"). The real schema cannot
-    /// express that in isolation — it derives those sums from notes, so
-    /// a spend always drags in the funding receive as another history
-    /// row, and `account_balance_delta` is forced to
-    /// `total_received - total_spent`. Rebuilding these fixtures on the
-    /// real schema would therefore change what each case asserts.
-    ///
-    /// So the seam is drawn here: this oracle supplies `TxBase` values,
-    /// `assemble_history` (the code under test) does the classifying,
-    /// and `HISTORY_BASES_CTE`'s agreement with the upstream view is
-    /// pinned separately against a librustzcash-built database.
+    /// This is needed because the synthetic `v_transactions` table
+    /// doesn't have the note-derived aggregates that the real
+    /// `HISTORY_BASES_CTE` does. 
+    /// 
+    /// This helper allows us to test `read_history_bases` against the
+    /// synthetic `v_transactions` table.
+    /// 
+    /// The equivalency test checks that the two paths return the same rows.
     fn read_history_bases_via_v_transactions(
         conn: &rusqlite::Connection,
         account_uuid: &[u8],
