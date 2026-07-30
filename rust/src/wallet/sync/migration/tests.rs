@@ -7553,6 +7553,58 @@ fn pending_status(conn: &rusqlite::Connection, txid_hex: &str) -> String {
 }
 
 #[test]
+fn expiry_recovery_promotes_locally_mined_scheduled_part_instead_of_resign() {
+    // Resume/export call mark_expired_pending_parts_for_resign before due
+    // selection. A mined-but-still-`scheduled` part past expiry must become
+    // `confirmed`, not `needs_resign`.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "expiry-mined",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    // Force past-expiry bookkeeping while leaving status as `scheduled`.
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET expiry_height = 100
+             WHERE run_id = 'expiry-mined' AND txid_hex = ?1"
+        ),
+        params![txids[0]],
+    )
+    .unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    drop(conn);
+
+    let tip = 100u32;
+    assert_eq!(
+        expired_unconfirmed_pending_count(&db_path, "expiry-mined", tip).unwrap(),
+        0,
+        "count must reconcile mined rows before treating them as expired"
+    );
+    assert_eq!(
+        mark_expired_pending_parts_for_resign(&db_path, "expiry-mined", tip).unwrap(),
+        0,
+        "expiry recovery must not flip a locally mined part to needs_resign"
+    );
+    assert!(pending_parts_needing_resign(&db_path, "expiry-mined")
+        .unwrap()
+        .is_empty());
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+}
+
+#[test]
 fn due_pending_skips_locally_mined_scheduled_part() {
     // A part that is already mined locally must not remain the due candidate.
     // Selection reconciles pending confirmations first so later due parts can
