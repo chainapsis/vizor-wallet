@@ -501,6 +501,17 @@ fn only_normal_advance_rebroadcasts_a_missing_needs_resign_transaction() {
 }
 
 #[test]
+fn migration_recovery_height_preserves_lightwalletd_sentinels() {
+    assert_eq!(migration_recovery_mined_height(0).unwrap(), None);
+    assert_eq!(migration_recovery_mined_height(u64::MAX).unwrap(), None);
+    assert_eq!(
+        migration_recovery_mined_height(1_234_567).unwrap(),
+        Some(1_234_567),
+    );
+    assert!(migration_recovery_mined_height(u32::MAX as u64 + 1).is_err());
+}
+
+#[test]
 fn one_due_result_preserves_acceptance_when_local_bookkeeping_fails() {
     let totals_before = migration::PendingMigrationTotals {
         txids: vec!["older-pending".to_string()],

@@ -35,13 +35,13 @@ use zcash_client_backend::{
     proto::service::compact_tx_streamer_client::CompactTxStreamerClient,
 };
 use zcash_primitives::transaction::Transaction;
-use zcash_protocol::consensus::{BlockHeight, BranchId};
+use zcash_protocol::consensus::BranchId;
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
 use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
 use crate::wallet::network::WalletNetwork;
 
-use super::{lwd, SyncError, WalletDatabase};
+use super::{lwd, mined_height_from_raw_height, SyncError, WalletDatabase};
 
 /// Drains `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Returns
@@ -404,16 +404,6 @@ fn classify_get_transaction_error(status: &Status) -> GetTransactionErrorAction 
     match status.code() {
         Code::NotFound => GetTransactionErrorAction::MarkTxidNotRecognized,
         _ => GetTransactionErrorAction::RetryAsNetwork,
-    }
-}
-
-fn mined_height_from_raw_height(raw_height: u64) -> Result<Option<BlockHeight>, SyncError> {
-    match raw_height {
-        0 | u64::MAX => Ok(None),
-        h if h <= u32::MAX as u64 => Ok(Some(BlockHeight::from_u32(h as u32))),
-        h => Err(SyncError::parse(format!(
-            "raw transaction height out of range: {h}"
-        ))),
     }
 }
 

@@ -360,6 +360,12 @@ fn should_rebroadcast_missing_migration_tx(
     rebroadcast_needs_resign_if_missing && pending_status == "needs_resign"
 }
 
+fn migration_recovery_mined_height(raw_height: u64) -> Result<Option<u64>, String> {
+    crate::wallet::sync_engine::mined_height_from_raw_height(raw_height)
+        .map(|height| height.map(|height| u64::from(u32::from(height))))
+        .map_err(|e| format!("Read recovered migration transaction height: {e}"))
+}
+
 fn accepted_migration_processing_failure_result(
     totals_before: &super::migration::PendingMigrationTotals,
     accepted_txids: Vec<String>,
@@ -5118,11 +5124,7 @@ async fn reconcile_due_scheduled_migration_tx(
                         pending.txid_hex
                     ));
                 }
-                let mined_height = if remote.height == 0 {
-                    None
-                } else {
-                    Some(remote.height)
-                };
+                let mined_height = migration_recovery_mined_height(remote.height)?;
                 (
                     Some(remote.data),
                     mined_height,

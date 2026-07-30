@@ -60,6 +60,18 @@ pub(crate) use lwd::{
     send_transaction, send_transaction_with_status,
 };
 
+pub(crate) fn mined_height_from_raw_height(
+    raw_height: u64,
+) -> Result<Option<BlockHeight>, SyncError> {
+    match raw_height {
+        0 | u64::MAX => Ok(None),
+        h if h <= u32::MAX as u64 => Ok(Some(BlockHeight::from_u32(h as u32))),
+        h => Err(SyncError::parse(format!(
+            "raw transaction height out of range: {h}"
+        ))),
+    }
+}
+
 /// Progress event sent to caller (Dart or Swift).
 #[derive(Clone, Debug)]
 pub struct SyncProgressEvent {
