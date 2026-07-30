@@ -886,7 +886,11 @@ class IronwoodMigrationCoordinator
         previous.denominationConfirmationCount !=
             current.denominationConfirmationCount ||
         previous.denominationSplitCompletedCount !=
-            current.denominationSplitCompletedCount) {
+            current.denominationSplitCompletedCount ||
+        // Successful store-from-raw for an already-broadcasted unmined row
+        // clears the durable storage-retry last_error without changing counts
+        // or part state. Treat that message transition as a balance change.
+        previous.message != current.message) {
       return true;
     }
 
@@ -1053,12 +1057,25 @@ class IronwoodMigrationCoordinator
             hasChildProofBatchPermit &&
             (!isHardware || canPrepareNextProof)) ||
         (kAppFormFactor == AppFormFactor.mobile &&
-            status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
-            ((usesNativeOutbox &&
-                    status.signedChildPcztCount == 0 &&
-                    _hasScheduledBroadcast(status)) ||
-                (!usesNativeOutbox && _hasDueScheduledBroadcast(status)) ||
-                (hasChildProofBatchPermit && canPrepareNextProof))) ||
+            ((status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
+                    ((usesNativeOutbox &&
+                            status.signedChildPcztCount == 0 &&
+                            _hasScheduledBroadcast(status)) ||
+                        (!usesNativeOutbox &&
+                            (_hasDueScheduledBroadcast(status) ||
+                                // Accepted parts can stay broadcasted while
+                                // later parts are still scheduled (and may
+                                // have been rescheduled into the future).
+                                // Keep calling advance so store-from-raw
+                                // retries without waiting for the next due
+                                // height.
+                                _hasBroadcastedPendingRetry(status))) ||
+                        (hasChildProofBatchPermit && canPrepareNextProof))) ||
+                // Keep calling into broadcast_due_scheduled after the last
+                // part flips phase so accepted-but-unstored txs and expiry
+                // resign can still retry (store-from-raw / needs_resign).
+                status.phase ==
+                    kIronwoodMigrationWaitingConfirmationsPhase)) ||
         (kAppFormFactor == AppFormFactor.desktop &&
             {
               kIronwoodMigrationBroadcastScheduledPhase,
@@ -1092,6 +1109,16 @@ class IronwoodMigrationCoordinator
           broadcast.status.toLowerCase() == 'scheduled' &&
           broadcast.scheduledHeight > 0 &&
           broadcast.scheduledHeight <= currentHeight,
+    );
+  }
+
+  /// True when at least one part is network-accepted (`broadcasted`) and may
+  /// still need local store-from-raw retry. Used on non-outbox mobile so
+  /// advance keeps running while later parts remain scheduled in the future.
+  bool _hasBroadcastedPendingRetry(rust_sync.MigrationStatus status) {
+    if (status.broadcastedTxCount > 0) return true;
+    return status.scheduledBroadcasts.any(
+      (broadcast) => broadcast.status.toLowerCase() == 'broadcasted',
     );
   }
 

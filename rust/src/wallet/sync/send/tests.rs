@@ -1857,7 +1857,7 @@ fn immediate_preparation_policy_does_not_bypass_expiry() {
 }
 
 #[test]
-fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
+fn scheduled_storage_failure_after_acceptance_marks_broadcasted() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -1926,7 +1926,10 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     .unwrap();
 
     assert_eq!(result.txids, pending_txid);
-    assert_eq!(result.status, migration::PHASE_BROADCAST_SCHEDULED);
+    assert_eq!(
+        result.status,
+        migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS
+    );
     assert_eq!(result.broadcasted_count, 1);
     assert_eq!(result.total_count, 1);
     assert_eq!(result.fee_zatoshi, 10_000);
@@ -1934,21 +1937,25 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     let message = result.message.as_deref().unwrap();
     assert!(message.contains("accepted by lightwalletd"));
     assert!(message.contains("Vizor will retry"));
+    // Critical: leave due selection so later parts are not HOL-blocked.
     assert_eq!(
         migration::scheduled_pending_count(&db_path, &run_id).unwrap(),
-        1
+        0
     );
     assert_eq!(
         migration::pending_totals_for_run(&db_path, &run_id)
             .unwrap()
             .broadcasted_count,
-        0
+        1
     );
     let active =
         migration::active_migration_run(&db_path, MIGRATION_TEST_ACCOUNT, WalletNetwork::Test)
             .unwrap()
             .unwrap();
-    assert_eq!(active.phase, migration::PHASE_BROADCAST_SCHEDULED);
+    assert_eq!(
+        active.phase,
+        migration::PHASE_WAITING_MIGRATION_CONFIRMATIONS
+    );
     assert_eq!(active.last_error.as_deref(), Some(message));
 
     let result = record_accepted_scheduled_migration_tx(
