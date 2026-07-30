@@ -222,6 +222,7 @@ fn migrate(db_path: &str, account_uuid: &str) -> sync_api::IronwoodMigrationResu
     sync_api::migrate_orchard_to_ironwood(
         db_path.to_string(),
         lightwalletd_url(),
+        None,
         NETWORK.to_string(),
         account_uuid.to_string(),
         MNEMONIC.as_bytes().to_vec(),

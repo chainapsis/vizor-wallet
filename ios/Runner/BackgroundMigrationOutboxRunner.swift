@@ -12,6 +12,40 @@ struct BackgroundMigrationOutboxRunnerDependencies {
       Data,
       BackgroundMigrationCancellation
     ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError>
+  var sendTransactionRelay:
+    (
+      String,
+      String,
+      Data,
+      BackgroundMigrationCancellation
+    ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError>
+
+  init(
+    latestBlockHeight:
+      @escaping (
+        String,
+        BackgroundMigrationCancellation
+      ) -> Result<UInt64, NativeLightwalletdError>,
+    sendTransaction:
+      @escaping (
+        String,
+        Data,
+        BackgroundMigrationCancellation
+      ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError>,
+    sendTransactionRelay:
+      @escaping (
+        String,
+        String,
+        Data,
+        BackgroundMigrationCancellation
+      ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError> = {
+        _, _, _, _ in .failure(.invalidEndpoint)
+      }
+  ) {
+    self.latestBlockHeight = latestBlockHeight
+    self.sendTransaction = sendTransaction
+    self.sendTransactionRelay = sendTransactionRelay
+  }
 
   static let live = BackgroundMigrationOutboxRunnerDependencies(
     latestBlockHeight: { endpoint, cancellation in
@@ -23,6 +57,14 @@ struct BackgroundMigrationOutboxRunnerDependencies {
     sendTransaction: { endpoint, rawTransaction, cancellation in
       NativeLightwalletdClient.sendTransaction(
         endpoint: endpoint,
+        rawTransaction: rawTransaction,
+        cancellation: cancellation
+      )
+    },
+    sendTransactionRelay: { endpoint, txidHex, rawTransaction, cancellation in
+      NativeTransactionRelayClient.sendTransaction(
+        endpoint: endpoint,
+        expectedTxidHex: txidHex,
         rawTransaction: rawTransaction,
         cancellation: cancellation
       )
@@ -230,11 +272,22 @@ enum BackgroundMigrationOutboxRunner {
       )
     }
 
-    switch dependencies.sendTransaction(
-      selection.lightwalletdUrl,
-      selection.item.rawTransaction,
-      cancellation
-    ) {
+    let submissionResult: Result<NativeLightwalletdSendResponse, NativeLightwalletdError>
+    if let relayUrl = selection.transactionRelayUrl {
+      submissionResult = dependencies.sendTransactionRelay(
+        relayUrl,
+        selection.item.txidHex,
+        selection.item.rawTransaction,
+        cancellation
+      )
+    } else {
+      submissionResult = dependencies.sendTransaction(
+        selection.lightwalletdUrl,
+        selection.item.rawTransaction,
+        cancellation
+      )
+    }
+    switch submissionResult {
     case .failure(let error):
       recordUncertain(
         store: store,

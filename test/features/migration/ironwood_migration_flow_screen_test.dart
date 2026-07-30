@@ -868,6 +868,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            String? transactionRelayUrl,
             required network,
             required accountUuid,
             required approvedSchedule,
@@ -3477,6 +3478,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            String? transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -6032,6 +6034,7 @@ IronwoodMigrationService _migrationServiceForStart({
         ({
           required dbPath,
           required lightwalletdUrl,
+          String? transactionRelayUrl,
           required network,
           required accountUuid,
           required approvedSchedule,
@@ -6175,6 +6178,7 @@ IronwoodMigrationService _keystonePrivateReviewService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          String? transactionRelayUrl,
           required network,
           required accountUuid,
           required approvedSchedule,

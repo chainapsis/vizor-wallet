@@ -9,6 +9,32 @@ const kIronwoodMasqueradeRpcEndpointPresetId = 'ironwood-masquerade';
 const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
+const kVizorZcashTransactionRelayUrlMainEnvKey =
+    'VIZOR_ZCASH_TRANSACTION_RELAY_URL_MAIN';
+const kVizorZcashTransactionRelayUrlTestEnvKey =
+    'VIZOR_ZCASH_TRANSACTION_RELAY_URL_TEST';
+const kVizorZcashTransactionRelayUrlRegtestEnvKey =
+    'VIZOR_ZCASH_TRANSACTION_RELAY_URL_REGTEST';
+const kVizorZcashTransactionRelayUrlIronwoodMasqueradeEnvKey =
+    'VIZOR_ZCASH_TRANSACTION_RELAY_URL_IRONWOOD_MASQUERADE';
+
+const kVizorZcashTransactionRelayUrlMain = String.fromEnvironment(
+  kVizorZcashTransactionRelayUrlMainEnvKey,
+);
+const kVizorZcashTransactionRelayUrlTest = String.fromEnvironment(
+  kVizorZcashTransactionRelayUrlTestEnvKey,
+);
+const kVizorZcashTransactionRelayUrlRegtest = String.fromEnvironment(
+  kVizorZcashTransactionRelayUrlRegtestEnvKey,
+);
+const kVizorZcashTransactionRelayUrlIronwoodMasquerade = String.fromEnvironment(
+  kVizorZcashTransactionRelayUrlIronwoodMasqueradeEnvKey,
+);
+
+// TODO: Replace this temporary managed endpoint when relay inventory changes.
+const kZakuraMainnetTransactionRelayUrl =
+    'https://zakura-broadcast.valargroup.dev';
+
 class RpcEndpointConfig {
   const RpcEndpointConfig({
     required this.networkName,
@@ -212,7 +238,55 @@ RpcEndpointConfig defaultRpcEndpointConfig(String networkName) {
 }
 
 bool isCustomRpcEndpointConfig(RpcEndpointConfig config) {
-  return config.presetId == kCustomRpcEndpointPresetId;
+  return config.effectivePresetId == kCustomRpcEndpointPresetId;
+}
+
+/// Returns the transaction relay for a managed endpoint.
+///
+/// Custom endpoint intent always keeps transaction submission on the selected
+/// lightwalletd, even when its URL happens to match a built-in preset. Mainnet
+/// falls back to the Zakura broadcast endpoint when no build URL is supplied.
+String? transactionRelayUrlForPrimaryEndpoint(
+  RpcEndpointConfig primary, {
+  String mainUrl = kVizorZcashTransactionRelayUrlMain,
+  String testUrl = kVizorZcashTransactionRelayUrlTest,
+  String regtestUrl = kVizorZcashTransactionRelayUrlRegtest,
+  String ironwoodMasqueradeUrl =
+      kVizorZcashTransactionRelayUrlIronwoodMasquerade,
+  bool ironwoodMasquerade = kZcashIronwoodMasquerade,
+}) {
+  final RpcEndpointPreset? preset;
+  if (ironwoodMasquerade) {
+    preset = primary.presetId?.trim() == kIronwoodMasqueradeRpcEndpointPresetId
+        ? kIronwoodMasqueradeRpcEndpointPreset
+        : null;
+  } else {
+    if (isCustomRpcEndpointConfig(primary)) return null;
+    preset = explicitRpcEndpointPresetFor(primary);
+  }
+  if (preset == null) return null;
+  try {
+    if (primary.normalizedLightwalletdUrl !=
+        normalizeRpcEndpointUrl(preset.url, allowDefaultPort: true)) {
+      return null;
+    }
+  } on FormatException {
+    return null;
+  }
+
+  final configured = ironwoodMasquerade
+      ? ironwoodMasqueradeUrl
+      : switch (primary.network) {
+          ZcashNetwork.mainnet => mainUrl,
+          ZcashNetwork.testnet => testUrl,
+          ZcashNetwork.regtest => regtestUrl,
+        };
+  final trimmed = configured.trim();
+  if (trimmed.isNotEmpty) return trimmed;
+  if (!ironwoodMasquerade && primary.network == ZcashNetwork.mainnet) {
+    return kZakuraMainnetTransactionRelayUrl;
+  }
+  return null;
 }
 
 bool isRpcEndpointAllowedForBuild(String lightwalletdUrl) {

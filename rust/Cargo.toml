@@ -47,6 +47,7 @@ rand = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 futures = "0.3"
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots-no-provider"] }
 time = "0.3"
 # rustls is in the graph transitively via tonic; make it a direct dep
 # so we can explicitly install the ring CryptoProvider in `init_app`.

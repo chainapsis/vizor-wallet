@@ -2572,6 +2572,76 @@ private final class MigrationPreparationNotificationCenterHarness:
   }
 }
 
+final class NativeTransactionRelayClientTests: XCTestCase {
+  private let txid =
+    "838813428b78712263511ed5c6fb9a108c939038a440b74f72bee6caedf602fd"
+
+  func testRelayURLAcceptsIPv4LoopbackRange() {
+    for host in ["127.0.0.1", "127.0.0.2", "127.255.255.255"] {
+      XCTAssertNotNil(
+        NativeTransactionRelayClient.relayURL("http://\(host):18232")
+      )
+    }
+    XCTAssertNil(
+      NativeTransactionRelayClient.relayURL("http://126.255.255.255:18232")
+    )
+    XCTAssertNil(
+      NativeTransactionRelayClient.relayURL("http://128.0.0.0:18232")
+    )
+  }
+
+  func testRelayResponseBufferRejectsBeforeAppendingPastLimit() {
+    var buffer = NativeBoundedResponseBuffer(maximumBytes: 4)
+
+    XCTAssertTrue(buffer.append(Data([0x01, 0x02])))
+    XCTAssertFalse(buffer.append(Data([0x03, 0x04, 0x05])))
+    XCTAssertEqual(buffer.data, Data([0x01, 0x02]))
+    XCTAssertTrue(buffer.append(Data([0x03, 0x04])))
+    XCTAssertEqual(buffer.data, Data([0x01, 0x02, 0x03, 0x04]))
+  }
+
+  func testRelayParserAcceptsMatchingTransactionId() throws {
+    let response = Data(
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\(txid)\"}".utf8
+    )
+
+    XCTAssertEqual(
+      try NativeTransactionRelayClient.parseSendTransactionResponse(
+        response,
+        expectedTxidHex: txid.uppercased()
+      ),
+      NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+    )
+  }
+
+  func testRelayParserPreservesRejection() throws {
+    let response = Data(
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-26,\"message\":\"rejected\"}}".utf8
+    )
+
+    XCTAssertEqual(
+      try NativeTransactionRelayClient.parseSendTransactionResponse(
+        response,
+        expectedTxidHex: txid
+      ),
+      NativeLightwalletdSendResponse(errorCode: -26, errorMessage: "rejected")
+    )
+  }
+
+  func testRelayParserRejectsMismatchedTransactionId() {
+    let response = Data(
+      "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"\(String(repeating: "0", count: 64))\"}".utf8
+    )
+
+    XCTAssertThrowsError(
+      try NativeTransactionRelayClient.parseSendTransactionResponse(
+        response,
+        expectedTxidHex: txid
+      )
+    )
+  }
+}
+
 private final class FreshInstallCleanerHarness {
   var hasSentinel = false
   var markedInstalled = false

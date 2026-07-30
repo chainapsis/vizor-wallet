@@ -243,6 +243,7 @@ enum BackgroundMigrationOutboxChannel {
       accountUuid: try string(arguments, "accountUuid"),
       runId: try string(arguments, "runId"),
       lightwalletdUrl: try string(arguments, "lightwalletdUrl"),
+      transactionRelayUrl: try optionalString(arguments, "transactionRelayUrl"),
       timingMeanBlocks: try uint64(arguments, "timingMeanBlocks"),
       timingMaxBlocks: try uint64(arguments, "timingMaxBlocks"),
       createdAt: Date(
@@ -265,6 +266,17 @@ enum BackgroundMigrationOutboxChannel {
 
   private static func string(_ values: [String: Any], _ key: String) throws -> String {
     guard let value = values[key] as? String, !value.isEmpty else {
+      throw BackgroundMigrationOutboxChannelError.invalidArguments(key)
+    }
+    return value
+  }
+
+  private static func optionalString(
+    _ values: [String: Any],
+    _ key: String
+  ) throws -> String? {
+    guard let rawValue = values[key], !(rawValue is NSNull) else { return nil }
+    guard let value = rawValue as? String, !value.isEmpty else {
       throw BackgroundMigrationOutboxChannelError.invalidArguments(key)
     }
     return value

@@ -742,6 +742,7 @@ pub struct MigrationOutboxItem {
 
 pub struct MigrationOutboxBatch {
     pub run_id: String,
+    pub transaction_relay_url: Option<String>,
     pub timing_mean_blocks: u32,
     pub timing_max_blocks: u32,
     pub next_proof_height: Option<u32>,
@@ -1100,6 +1101,7 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
 pub fn migrate_orchard_to_ironwood(
     db_path: String,
     lightwalletd_url: String,
+    transaction_relay_url: Option<String>,
     network: String,
     account_uuid: String,
     mnemonic_bytes: Vec<u8>,
@@ -1119,6 +1121,7 @@ pub fn migrate_orchard_to_ironwood(
         let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood(
             &db_path,
             &lightwalletd_url,
+            transaction_relay_url.as_deref(),
             network,
             &account_uuid,
             seed,
@@ -1567,6 +1570,7 @@ pub fn export_orchard_migration_outbox(
         .map(|batch| {
             batch.map(|batch| MigrationOutboxBatch {
                 run_id: batch.run_id,
+                transaction_relay_url: batch.transaction_relay_url,
                 timing_mean_blocks: batch.timing_mean_blocks,
                 timing_max_blocks: batch.timing_max_blocks,
                 next_proof_height: batch.next_proof_height,
@@ -1734,6 +1738,7 @@ pub fn create_or_resume_private_migration_draft(
     account_uuid: String,
     approved_schedule: Vec<MigrationScheduledTransfer>,
     space_preparation_broadcasts: bool,
+    transaction_relay_url: Option<String>,
 ) -> Result<String, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1745,6 +1750,7 @@ pub fn create_or_resume_private_migration_draft(
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),
+            transaction_relay_url.as_deref(),
         )
     })
 }
@@ -1804,6 +1810,7 @@ fn to_wallet_signed_messages(
 pub async fn complete_orchard_migration_denominations_pczt(
     db_path: String,
     lightwalletd_url: String,
+    transaction_relay_url: Option<String>,
     network: String,
     account_uuid: String,
     request_id: String,
@@ -1818,6 +1825,7 @@ pub async fn complete_orchard_migration_denominations_pczt(
     let r = wallet_sync::complete_orchard_migration_denominations_pczt(
         &db_path,
         &lightwalletd_url,
+        transaction_relay_url.as_deref(),
         network,
         &account_uuid,
         &request_id,
@@ -1878,6 +1886,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
 pub async fn complete_orchard_migration_single_qr_pczt(
     db_path: String,
     lightwalletd_url: String,
+    transaction_relay_url: Option<String>,
     network: String,
     account_uuid: String,
     request_id: String,
@@ -1891,6 +1900,7 @@ pub async fn complete_orchard_migration_single_qr_pczt(
     let r = wallet_sync::complete_orchard_migration_single_qr_pczt(
         &db_path,
         &lightwalletd_url,
+        transaction_relay_url.as_deref(),
         network,
         &account_uuid,
         &request_id,
@@ -1994,6 +2004,7 @@ pub fn complete_orchard_migration_batch_pczt(
 pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
     db_path: String,
     lightwalletd_url: String,
+    transaction_relay_url: Option<String>,
     network: String,
     account_uuid: String,
     password: String,
@@ -2014,6 +2025,7 @@ pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
         let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood(
             &db_path,
             &lightwalletd_url,
+            transaction_relay_url.as_deref(),
             network,
             &account_uuid,
             seed,

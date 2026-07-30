@@ -900,12 +900,15 @@ void main() {
               expect(accountUuid, 'account-1');
               expect(password, isNotEmpty);
               expect(saltBase64, isNotEmpty);
-              return _outboxBatch();
+              return _outboxBatch(
+                transactionRelayUrl: 'https://relay.example/submit',
+              );
             },
         stageMigrationOutboxBatch: (batch) async {
           events.add('stage');
           expect(batch['batchId'], 'test:account-1:run-1');
           expect(batch['lightwalletdUrl'], 'https://lwd.example:443');
+          expect(batch['transactionRelayUrl'], 'https://relay.example/submit');
           return const {'txid-1': 'digest-1'};
         },
         armMigrationOutboxBatch:
@@ -1851,6 +1854,7 @@ void main() {
       final returnedMnemonicBytes = <Uint8List>[];
       final seenSalts = <String>[];
       final seenMnemonicPayloads = <List<int>>[];
+      final seenRelayUrls = <String?>[];
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -1867,6 +1871,7 @@ void main() {
           networkName: 'test',
           lightwalletdUrl: 'https://lwd.example:443',
         ),
+        getTransactionRelayUrl: () => 'https://relay.example/submit',
         getSessionPassword: () => 'test-password',
         getMnemonicBytesForAccount: (_) async {
           final bytes = Uint8List.fromList([1, 2, 3, 4]);
@@ -1878,6 +1883,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -1887,6 +1893,7 @@ void main() {
             }) {
               seenSalts.add(saltBase64);
               seenMnemonicPayloads.add(List<int>.from(mnemonicBytes));
+              seenRelayUrls.add(transactionRelayUrl);
               return Future.value(_migrationResult());
             },
       );
@@ -1905,6 +1912,10 @@ void main() {
       expect(seenMnemonicPayloads, [
         [1, 2, 3, 4],
         [1, 2, 3, 4],
+      ]);
+      expect(seenRelayUrls, [
+        'https://relay.example/submit',
+        'https://relay.example/submit',
       ]);
       expect(returnedMnemonicBytes, hasLength(2));
       for (final bytes in returnedMnemonicBytes) {
@@ -1975,6 +1986,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2062,6 +2074,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,
@@ -2138,6 +2151,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2630,6 +2644,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -2703,6 +2718,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2717,6 +2733,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2819,6 +2836,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            transactionRelayUrl,
             required network,
             required accountUuid,
             required password,
@@ -2872,6 +2890,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required password,
@@ -2979,6 +2998,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,
@@ -3145,6 +3165,7 @@ void main() {
         activeRunId: 'draft-run-1',
       );
       var createCount = 0;
+      String? seenRelayUrl;
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus:
@@ -3158,6 +3179,7 @@ void main() {
         ),
         backgroundCredentialStore: store,
         getEndpoint: _testEndpoint,
+        getTransactionRelayUrl: () => 'https://relay.example/submit',
         isMobile: () => true,
         isIOS: () => true,
         listMigrationOutboxReceipts: () async => const [],
@@ -3167,8 +3189,10 @@ void main() {
               required network,
               required accountUuid,
               required approvedSchedule,
+              String? transactionRelayUrl,
             }) async {
               createCount += 1;
+              seenRelayUrl = transactionRelayUrl;
               return 'draft-run-1';
             },
       );
@@ -3180,6 +3204,7 @@ void main() {
 
       expect(runId, 'draft-run-1');
       expect(createCount, 1);
+      expect(seenRelayUrl, 'https://relay.example/submit');
       final manifest = await store.read(
         network: 'test',
         accountUuid: 'account-1',
@@ -3218,6 +3243,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,
@@ -3651,6 +3677,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3762,6 +3789,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3856,6 +3884,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3919,6 +3948,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -3985,6 +4015,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -4090,6 +4121,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -4331,6 +4363,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -4624,6 +4657,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              transactionRelayUrl,
               required network,
               required accountUuid,
               required requestId,
@@ -4747,6 +4781,7 @@ void main() {
               ({
                 required dbPath,
                 required lightwalletdUrl,
+                transactionRelayUrl,
                 required network,
                 required accountUuid,
                 required mnemonicBytes,
@@ -5307,6 +5342,7 @@ IronwoodMigrationService _notificationAuthorizationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          transactionRelayUrl,
           required network,
           required accountUuid,
           required approvedSchedule,
@@ -5357,9 +5393,11 @@ rust_sync.IronwoodMigrationResult _migrationResult({
 rust_sync.MigrationOutboxBatch _outboxBatch({
   String runId = 'run-1',
   List<String>? txids,
+  String? transactionRelayUrl,
 }) {
   return rust_sync.MigrationOutboxBatch(
     runId: runId,
+    transactionRelayUrl: transactionRelayUrl,
     timingMeanBlocks: 144,
     timingMaxBlocks: 576,
     nextProofHeight: 576,
