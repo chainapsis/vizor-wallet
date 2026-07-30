@@ -609,6 +609,7 @@ fn create_outbox_receipt_test_run(
         )],
         None,
         migration::PreparationTimingPolicy::Immediate,
+        None,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )
@@ -672,6 +673,9 @@ fn shield_result_preserves_pending_broadcast_status() {
 fn migration_rebuilds_only_after_explicit_server_rejection() {
     assert!(migration_broadcast_failure_requires_rebuild(
         "Broadcast rejected: bad-txns-inputs-spent (code 18)"
+    ));
+    assert!(migration_broadcast_failure_requires_rebuild(
+        "Transaction relay rejected broadcast: bad-txns-inputs-spent (code -26)"
     ));
     assert!(!migration_broadcast_failure_requires_rebuild(
         "SendTransaction gRPC failed: connection unavailable"
@@ -1454,6 +1458,7 @@ fn create_denomination_expiry_test_run(
         vec![stage],
         None,
         migration::PreparationTimingPolicy::Immediate,
+        None,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )
@@ -1463,6 +1468,45 @@ fn create_denomination_expiry_test_run(
         migration::mark_denomination_stage_broadcasted(&conn, &run_id, &stage_txid).unwrap();
     }
     (temp_dir, db_path, run_id)
+}
+
+#[test]
+fn observed_separate_relay_stage_restores_missing_wallet_raw() {
+    let (_temp_dir, db_path, run_id) =
+        create_denomination_expiry_test_run(migration::DenominationStageStatus::Pending);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE transactions (
+             txid BLOB PRIMARY KEY,
+             mined_height INTEGER,
+             raw BLOB
+         );",
+    )
+    .unwrap();
+    let stages = migration::denomination_stages_for_run(
+        &conn,
+        &run_id,
+        MIGRATION_TEST_PASSWORD,
+        MIGRATION_TEST_SALT,
+    )
+    .unwrap();
+    let stage = &stages[0];
+    conn.execute(
+        "INSERT INTO transactions (txid, mined_height, raw) VALUES (?1, 105, NULL)",
+        params![hex::decode(&stage.expected_txid_hex).unwrap()],
+    )
+    .unwrap();
+
+    let mut stored = Vec::new();
+    let restored =
+        restore_observed_separate_relay_transactions(&conn, &stages, |raw_tx, mined_height| {
+            stored.push((raw_tx.to_vec(), mined_height));
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(restored, 1);
+    assert_eq!(stored, vec![(vec![1, 2, 3, 4], 105)]);
 }
 
 #[test]
@@ -1722,6 +1766,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
         )],
         None,
         migration::PreparationTimingPolicy::Immediate,
+        None,
         MIGRATION_TEST_PASSWORD,
         MIGRATION_TEST_SALT,
     )
@@ -1753,6 +1798,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     let pending = migration::DuePendingMigrationTx {
         txid_hex: pending_txid.to_string(),
         raw_tx: vec![5, 6, 7, 8],
+        expiry_height: 69_120,
     };
 
     let result = record_accepted_scheduled_migration_tx(
@@ -1774,7 +1820,7 @@ fn scheduled_storage_failure_after_acceptance_leaves_tx_scheduled() {
     assert_eq!(result.fee_zatoshi, 10_000);
     assert_eq!(result.migrated_zatoshi, 100_000);
     let message = result.message.as_deref().unwrap();
-    assert!(message.contains("accepted by lightwalletd"));
+    assert!(message.contains("accepted for broadcast"));
     assert!(message.contains("Vizor will retry"));
     assert_eq!(
         migration::scheduled_pending_count(&db_path, &run_id).unwrap(),

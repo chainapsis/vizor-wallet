@@ -301,6 +301,28 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     }
   }
 
+  func testRestagingCannotChangeTheSavedRelay() throws {
+    let original = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100],
+      transactionRelayUrl: "https://relay-one.example/submit"
+    )
+    let replacement = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100],
+      transactionRelayUrl: "https://relay-two.example/submit"
+    )
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+
+    try snapshot.stage(original)
+
+    XCTAssertThrowsError(try snapshot.stage(replacement)) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .conflictingBatch)
+    }
+  }
+
   func testWatchOnlyBatchIsValidButEmptyBatchWithoutWatchIsRejected() throws {
     var snapshot = BackgroundMigrationOutboxSnapshot()
     let watchOnly = makeBatch(
@@ -687,6 +709,55 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       (receipt["rawTransaction"] as? FlutterStandardTypedData)?.data,
       batch.items[0].rawTransaction
     )
+  }
+
+  func testRunnerUsesSavedRelayForTransactionSubmission() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let relayUrl = "https://relay.example/submit"
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100],
+      transactionRelayUrl: relayUrl
+    )
+    try stageAndArm(batch, in: harness.store)
+    var tipEndpoints: [String] = []
+    var lightwalletdSendCount = 0
+    var relaySubmissions: [(String, String, Data)] = []
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { endpoint, _ in
+        tipEndpoints.append(endpoint)
+        return .success(200)
+      },
+      sendTransaction: { _, _, _ in
+        lightwalletdSendCount += 1
+        return .failure(.invalidEndpoint)
+      },
+      sendTransactionRelay: { endpoint, txidHex, payload, _ in
+        relaySubmissions.append((endpoint, txidHex, payload))
+        return .success(
+          NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
+        )
+      }
+    )
+
+    let outcome = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+
+    XCTAssertEqual(tipEndpoints, [batch.lightwalletdUrl])
+    XCTAssertEqual(lightwalletdSendCount, 0)
+    XCTAssertEqual(relaySubmissions.count, 1)
+    XCTAssertEqual(relaySubmissions[0].0, relayUrl)
+    XCTAssertEqual(relaySubmissions[0].1, batch.items[0].txidHex)
+    XCTAssertEqual(relaySubmissions[0].2, batch.items[0].rawTransaction)
+    guard case .accepted = outcome.transport else {
+      return XCTFail("Expected an accepted relay submission, got \(outcome)")
+    }
   }
 
   func testRunnerReportsBroadcastCompleteAfterLastAcceptedEquivalentItem() throws {
@@ -1536,7 +1607,8 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     batchId: String,
     account: String,
     heights: [UInt64] = [100, 101, 102],
-    nextProofHeight: UInt64? = nil
+    nextProofHeight: UInt64? = nil,
+    transactionRelayUrl: String? = nil
   ) -> BackgroundMigrationOutboxBatch {
     BackgroundMigrationOutboxBatch(
       batchId: batchId,
@@ -1544,6 +1616,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       accountUuid: account,
       runId: "run-\(account)",
       lightwalletdUrl: "https://testnet.zec.rocks:443",
+      transactionRelayUrl: transactionRelayUrl,
       timingMeanBlocks: 144,
       timingMaxBlocks: 576,
       createdAt: now,

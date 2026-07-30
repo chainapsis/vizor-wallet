@@ -584,6 +584,7 @@ fn migration_status_does_not_recover_latest_duplicate_broadcast_terminal_failure
             &[100_000],
             &[],
             PreparationTimingPolicy::Immediate,
+            None,
         )
         .unwrap_err(),
         "Migration recovery must complete before creating another run"
@@ -930,6 +931,22 @@ fn delete_account_migration_rows_rolls_back_with_account_transaction() {
         assert_eq!(count_for_run(&conn, table, "deleted-run").unwrap(), 1);
         assert_eq!(count_for_run(&conn, table, "kept-run").unwrap(), 1);
     }
+}
+
+#[test]
+fn invalid_denomination_submission_target_fails_closed() {
+    assert!(parse_migration_submission_target("run-1", "relay:").is_err());
+    assert!(parse_migration_submission_target("run-1", "invalid").is_err());
+}
+
+#[test]
+fn separate_relay_requires_expiring_denomination_transactions() {
+    let mut stage = pending_test_stage(&"11".repeat(32), vec![1, 2, 3]);
+    let relay =
+        MigrationSubmissionPolicy::SeparateRelay("https://relay.example/submit".to_string());
+    assert!(validate_denomination_stages_for_submission_policy(&relay, &[stage.clone()]).is_err());
+    stage.expiry_height = 1;
+    validate_denomination_stages_for_submission_policy(&relay, &[stage]).unwrap();
 }
 
 #[test]
@@ -2776,6 +2793,7 @@ fn new_mainnet_draft_persists_ninety_minute_latest_anchor_policy() {
         &[100],
         &schedule,
         PreparationTimingPolicy::Zip318Spaced,
+        None,
     )
     .unwrap();
 
@@ -4373,6 +4391,7 @@ fn migration_status_keeps_completed_run_complete_with_residual_orchard() {
         vec![pending_test_stage(&"11".repeat(32), vec![1, 2, 3, 4])],
         None,
         PreparationTimingPolicy::Immediate,
+        None,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
@@ -4516,6 +4535,7 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         &target_values,
         &approved_schedule,
         PreparationTimingPolicy::Immediate,
+        Some("https://relay.one/submit"),
     )
     .unwrap();
     let resumed_run_id = create_or_resume_private_migration_draft(
@@ -4525,16 +4545,20 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         &target_values,
         &approved_schedule,
         PreparationTimingPolicy::Immediate,
+        None,
     )
     .unwrap();
     assert_eq!(resumed_run_id, run_id);
 
     let conn = rusqlite::Connection::open(&db_path).unwrap();
-    let (phase, schedule_json): (String, String) = conn
+    let (phase, schedule_json, submission_target): (String, String, String) = conn
         .query_row(
-            &format!("SELECT phase, schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
+            &format!(
+                "SELECT phase, schedule_json, denomination_submission_target
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
             params![run_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
     assert_eq!(phase, PHASE_AWAITING_PREPARATION);
@@ -4542,6 +4566,7 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json).unwrap(),
         approved_schedule
     );
+    assert_eq!(submission_target, "relay:https://relay.one/submit");
     drop(conn);
 
     let draft_status = migration_status_with_projection_height(
@@ -4575,6 +4600,8 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         note_version: 2,
         nullifier_hex: None,
     }];
+    let mut denomination_stage = pending_test_stage(&expected_txid, vec![1, 2, 3]);
+    denomination_stage.expiry_height = 3_000_100;
     finalize_private_migration_draft(
         &db_path,
         &run_id,
@@ -4583,7 +4610,7 @@ fn private_migration_draft_persists_plan_and_finalizes_in_place() {
         &plan,
         &prepared_notes,
         Vec::new(),
-        vec![pending_test_stage(&expected_txid, vec![1, 2, 3])],
+        vec![denomination_stage],
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
@@ -4624,6 +4651,7 @@ fn private_migration_draft_with_direct_notes_skips_denomination_waiting() {
         &target_values,
         &approved_schedule,
         PreparationTimingPolicy::Immediate,
+        None,
     )
     .unwrap();
     let plan = DenominationPlan {
@@ -4710,6 +4738,7 @@ fn create_staged_run_persists_pending_split_atomically() {
         vec![pending_test_stage(&expected_txid, raw_tx.clone())],
         Some(&approved_schedule),
         PreparationTimingPolicy::Immediate,
+        None,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
@@ -4787,6 +4816,7 @@ fn create_run_with_direct_funding_notes_starts_ready_without_split_stages() {
         Vec::new(),
         Some(&approved_schedule),
         PreparationTimingPolicy::Zip318Spaced,
+        None,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
     )
@@ -4849,6 +4879,7 @@ fn create_staged_run_rolls_back_on_encrypt_failure() {
         vec![pending_test_stage(&expected_txid, vec![1, 2, 3, 4])],
         Some(&approved_schedule),
         PreparationTimingPolicy::Immediate,
+        None,
         TEST_PASSWORD,
         "not base64",
     )
@@ -7287,6 +7318,15 @@ fn migration_outbox_export_decrypts_only_scheduled_children() {
     );
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET denomination_submission_target = 'relay:https://relay.example/submit'
+             WHERE run_id = 'outbox-export'"
+        ),
+        [],
+    )
+    .unwrap();
+    conn.execute(
         &format!("UPDATE {PENDING_TXS_TABLE} SET status = 'broadcasted' WHERE txid_hex = ?1"),
         params![txids[1]],
     )
@@ -7304,6 +7344,10 @@ fn migration_outbox_export_decrypts_only_scheduled_children() {
     .unwrap();
 
     assert_eq!(batch.run_id, "outbox-export");
+    assert_eq!(
+        batch.transaction_relay_url.as_deref(),
+        Some("https://relay.example/submit")
+    );
     assert!(batch.timing_mean_blocks > 0);
     assert!(batch.timing_max_blocks >= batch.timing_mean_blocks);
     assert_eq!(batch.next_proof_height, None);

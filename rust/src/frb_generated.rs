@@ -591,6 +591,7 @@ fn wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_request_id = <String>::sse_decode(&mut deserializer);
@@ -610,6 +611,7 @@ fn wire__crate__api__sync__complete_orchard_migration_denominations_pczt_impl(
                             crate::api::sync::complete_orchard_migration_denominations_pczt(
                                 api_db_path,
                                 api_lightwalletd_url,
+                                api_transaction_relay_url,
                                 api_network,
                                 api_account_uuid,
                                 api_request_id,
@@ -704,6 +706,7 @@ fn wire__crate__api__sync__complete_orchard_migration_single_qr_pczt_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_request_id = <String>::sse_decode(&mut deserializer);
@@ -721,6 +724,7 @@ fn wire__crate__api__sync__complete_orchard_migration_single_qr_pczt_impl(
                             crate::api::sync::complete_orchard_migration_single_qr_pczt(
                                 api_db_path,
                                 api_lightwalletd_url,
+                                api_transaction_relay_url,
                                 api_network,
                                 api_account_uuid,
                                 api_request_id,
@@ -928,6 +932,7 @@ fn wire__crate__api__sync__create_or_resume_private_migration_draft_impl(
             let api_approved_schedule =
                 <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(&mut deserializer);
             let api_space_preparation_broadcasts = <bool>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -937,6 +942,7 @@ fn wire__crate__api__sync__create_or_resume_private_migration_draft_impl(
                         api_account_uuid,
                         api_approved_schedule,
                         api_space_preparation_broadcasts,
+                        api_transaction_relay_url,
                     )?;
                     Ok(output_ok)
                 })())
@@ -4018,6 +4024,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_mnemonic_bytes = <Vec<u8>>::sse_decode(&mut deserializer);
@@ -4032,6 +4039,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_impl(
                     let output_ok = crate::api::sync::migrate_orchard_to_ironwood(
                         api_db_path,
                         api_lightwalletd_url,
+                        api_transaction_relay_url,
                         api_network,
                         api_account_uuid,
                         api_mnemonic_bytes,
@@ -4121,6 +4129,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
+            let api_transaction_relay_url = <Option<String>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
@@ -4135,6 +4144,7 @@ fn wire__crate__api__sync__migrate_orchard_to_ironwood_with_macos_stored_mnemoni
                         crate::api::sync::migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
                             api_db_path,
                             api_lightwalletd_url,
+                            api_transaction_relay_url,
                             api_network,
                             api_account_uuid,
                             api_password,
@@ -7859,12 +7869,14 @@ impl SseDecode for crate::api::sync::MigrationOutboxBatch {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_runId = <String>::sse_decode(deserializer);
+        let mut var_transactionRelayUrl = <Option<String>>::sse_decode(deserializer);
         let mut var_timingMeanBlocks = <u32>::sse_decode(deserializer);
         let mut var_timingMaxBlocks = <u32>::sse_decode(deserializer);
         let mut var_nextProofHeight = <Option<u32>>::sse_decode(deserializer);
         let mut var_items = <Vec<crate::api::sync::MigrationOutboxItem>>::sse_decode(deserializer);
         return crate::api::sync::MigrationOutboxBatch {
             run_id: var_runId,
+            transaction_relay_url: var_transactionRelayUrl,
             timing_mean_blocks: var_timingMeanBlocks,
             timing_max_blocks: var_timingMaxBlocks,
             next_proof_height: var_nextProofHeight,
@@ -10447,6 +10459,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::MigrationOutboxBatch {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.run_id.into_into_dart().into_dart(),
+            self.transaction_relay_url.into_into_dart().into_dart(),
             self.timing_mean_blocks.into_into_dart().into_dart(),
             self.timing_max_blocks.into_into_dart().into_dart(),
             self.next_proof_height.into_into_dart().into_dart(),
@@ -13027,6 +13040,7 @@ impl SseEncode for crate::api::sync::MigrationOutboxBatch {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.run_id, serializer);
+        <Option<String>>::sse_encode(self.transaction_relay_url, serializer);
         <u32>::sse_encode(self.timing_mean_blocks, serializer);
         <u32>::sse_encode(self.timing_max_blocks, serializer);
         <Option<u32>>::sse_encode(self.next_proof_height, serializer);

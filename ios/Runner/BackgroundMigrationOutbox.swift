@@ -84,6 +84,7 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   let accountUuid: String
   let runId: String
   var lightwalletdUrl: String
+  let transactionRelayUrl: String?
   let timingMeanBlocks: UInt64
   let timingMaxBlocks: UInt64
   let createdAt: Date
@@ -146,6 +147,7 @@ struct BackgroundMigrationOutboxSelection: Equatable {
   let accountUuid: String
   let scopeKey: String
   let lightwalletdUrl: String
+  let transactionRelayUrl: String?
   let item: BackgroundMigrationOutboxItem
 }
 
@@ -214,6 +216,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       !batch.accountUuid.isEmpty,
       !batch.runId.isEmpty,
       !batch.lightwalletdUrl.isEmpty,
+      batch.transactionRelayUrl?.isEmpty != true,
       batch.timingMeanBlocks > 0,
       batch.timingMaxBlocks > 0,
       batch.timingMeanBlocks <= batch.timingMaxBlocks,
@@ -241,6 +244,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       guard existing.network == batch.network,
         existing.accountUuid == batch.accountUuid,
         existing.runId == batch.runId,
+        existing.transactionRelayUrl == batch.transactionRelayUrl,
         existing.timingMeanBlocks == batch.timingMeanBlocks,
         existing.timingMaxBlocks == batch.timingMaxBlocks
       else {
@@ -820,6 +824,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       accountUuid: batch.accountUuid,
       scopeKey: batch.scopeKey,
       lightwalletdUrl: batch.lightwalletdUrl,
+      transactionRelayUrl: batch.transactionRelayUrl,
       item: item
     )
   }

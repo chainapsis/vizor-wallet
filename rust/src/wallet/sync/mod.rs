@@ -31,6 +31,7 @@ mod proposal_locks;
 mod send;
 mod transactions;
 
+pub(crate) use broadcast::parse_separate_relay_transaction;
 #[cfg(test)]
 pub(crate) use transactions::mark_transaction_created_locally;
 
@@ -45,9 +46,9 @@ pub(crate) use transactions::mark_transaction_created_locally;
 // exactly).
 pub(crate) use migration::{
     configure_fast_testnet_migration, delete_account_migration_rows_with_tx, migration_status,
-    proof_retry_height, reconcile_wallet_locks_after_sync, MigrationPartState,
-    MigrationPreparationOutputKind, MigrationPreparationTransactionState, MigrationScheduleEntry,
-    MigrationStatus, PreparationTimingPolicy,
+    proof_retry_height, reconcile_wallet_locks_after_sync, separate_relay_migration_transaction,
+    MigrationPartState, MigrationPreparationOutputKind, MigrationPreparationTransactionState,
+    MigrationScheduleEntry, MigrationStatus, PreparationTimingPolicy,
 };
 pub(crate) use pczt::extract_compact_sigs_from_pczt;
 pub use pczt::{

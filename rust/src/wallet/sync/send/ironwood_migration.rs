@@ -4,6 +4,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
     account_uuid: &str,
     approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    transaction_relay_url: Option<&str>,
 ) -> Result<String, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let plan = get_orchard_migration_private_plan(
@@ -20,6 +21,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
         &plan.target_values_zatoshi,
         &approved_schedule,
         preparation_timing_policy,
+        transaction_relay_url,
     )
 }
 
@@ -149,6 +151,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
 pub(crate) async fn complete_orchard_migration_denominations_pczt(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     request_id: &str,
@@ -254,6 +257,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
                 denomination_stages,
                 Some(&approved_schedule),
                 stored.preparation_timing_policy,
+                transaction_relay_url,
                 pending_password,
                 pending_salt_base64,
             )
@@ -449,6 +453,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
 pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     db_path: &str,
     lightwalletd_url: &str,
+    transaction_relay_url: Option<&str>,
     network: WalletNetwork,
     account_uuid: &str,
     request_id: &str,
@@ -582,6 +587,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
             denomination_stages,
             Some(&stored.approved_schedule),
             stored.preparation_timing_policy,
+            transaction_relay_url,
             pending_password,
             pending_salt_base64,
         )

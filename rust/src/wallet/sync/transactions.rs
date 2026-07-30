@@ -1656,16 +1656,19 @@ pub(crate) fn get_resubmittable_txs(
     current_height: u32,
 ) -> Result<Vec<ResubmittableTx>, String> {
     let conn = open_readonly_conn(db_path)?;
+    let read_tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("Begin resubmission snapshot: {e}"))?;
 
-    let mut stmt = conn
-        .prepare(
-            "SELECT DISTINCT txid, raw, expiry_height \
-             FROM v_transactions \
-             WHERE mined_height IS NULL \
-               AND (expiry_height = 0 OR expiry_height > ?1) \
-               AND account_balance_delta < 0 \
-               AND raw IS NOT NULL",
-        )
+    const QUERY: &str = "SELECT DISTINCT txid, raw, expiry_height \
+         FROM v_transactions \
+         WHERE mined_height IS NULL \
+           AND (expiry_height = 0 OR expiry_height > ?1) \
+           AND account_balance_delta < 0 \
+           AND raw IS NOT NULL";
+
+    let mut stmt = read_tx
+        .prepare(QUERY)
         .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
@@ -1686,8 +1689,26 @@ pub(crate) fn get_resubmittable_txs(
         })
         .map_err(|e| format!("Query error: {e}"))?;
 
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Row error: {e}"))
+    let candidates = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {e}"))?;
+    drop(stmt);
+
+    let mut resubmittable = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let txid = TxId::from_bytes(
+            candidate
+                .txid_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| "Resubmission transaction ID must be 32 bytes".to_string())?,
+        );
+        if !super::migration::is_separate_relay_migration_transaction(&read_tx, &txid.to_string())?
+        {
+            resubmittable.push(candidate);
+        }
+    }
+    Ok(resubmittable)
 }
 
 #[cfg(test)]
@@ -4537,6 +4558,77 @@ mod tests {
         assert_eq!(got[0].txid_bytes, txid.to_vec());
         assert_eq!(got[0].raw_tx, raw);
         assert_eq!(got[0].expiry_height, 1_000_100);
+    }
+
+    #[test]
+    fn resubmit_excludes_separate_relay_migration_transactions() {
+        let db = fresh_db();
+        let preparation_txid = fake_txid(0x08);
+        let preparation_txid_hex = TxId::from_bytes(preparation_txid).to_string();
+        let migration_txid = fake_txid(0x09);
+        let migration_txid_hex = TxId::from_bytes(migration_txid).to_string();
+        let raw = fake_raw();
+        insert_row(
+            &db,
+            &preparation_txid,
+            Some(&raw),
+            None,
+            Some(1_000_100),
+            -5_000,
+        );
+        insert_row(
+            &db,
+            &migration_txid,
+            Some(&raw),
+            None,
+            Some(1_000_100),
+            -5_000,
+        );
+
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE vizor_migration_runs (
+                run_id TEXT PRIMARY KEY,
+                created_at_ms INTEGER NOT NULL,
+                denomination_submission_target TEXT NOT NULL
+             );
+             CREATE TABLE vizor_migration_denomination_stages (
+                run_id TEXT NOT NULL,
+                expected_txid_hex TEXT NOT NULL,
+                expiry_height INTEGER NOT NULL
+             );
+             CREATE TABLE vizor_migration_pending_txs (
+                run_id TEXT NOT NULL,
+                txid_hex TEXT NOT NULL,
+                expiry_height INTEGER NOT NULL
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_runs
+                (run_id, created_at_ms, denomination_submission_target)
+             VALUES ('run-1', 1, 'relay:https://relay.example/submit')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stages
+                (run_id, expected_txid_hex, expiry_height)
+             VALUES ('run-1', ?1, 1000100)",
+            [preparation_txid_hex],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_pending_txs
+                (run_id, txid_hex, expiry_height)
+             VALUES ('run-1', ?1, 1000100)",
+            [migration_txid_hex],
+        )
+        .unwrap();
+        drop(conn);
+
+        let got = get_resubmittable_txs(db.path().to_str().unwrap(), 1_000_000).unwrap();
+        assert!(got.is_empty());
     }
 
     #[test]

@@ -514,6 +514,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             schedule_json TEXT NOT NULL DEFAULT '[]',
             timing_policy TEXT NOT NULL DEFAULT 'standard',
             preparation_timing_policy TEXT NOT NULL DEFAULT 'immediate',
+            denomination_submission_target TEXT NOT NULL DEFAULT 'lightwalletd',
             proof_retry_height INTEGER,
             signed_schedule_origin_height INTEGER,
             last_error TEXT
@@ -604,6 +605,12 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         RUNS_TABLE,
         "preparation_timing_policy",
         "TEXT NOT NULL DEFAULT 'immediate'",
+    )?;
+    add_column_if_missing(
+        conn,
+        RUNS_TABLE,
+        "denomination_submission_target",
+        "TEXT NOT NULL DEFAULT 'lightwalletd'",
     )?;
     add_column_if_missing(conn, RUNS_TABLE, "proof_retry_height", "INTEGER")?;
     add_column_if_missing(

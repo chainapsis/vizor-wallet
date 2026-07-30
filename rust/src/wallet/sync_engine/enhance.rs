@@ -18,10 +18,12 @@
 //! against lightwalletd via `GetTransaction` and
 //! `TransactionsInvolvingAddress`. Locally created, locally complete,
 //! expiring transactions whose wallet-owned shielded activity can be found by
-//! compact-block scanning are serviced from local state instead. The loop
-//! retries up to three times because servicing one request can legally
-//! populate new requests (e.g. a newly-decrypted transaction may reveal
-//! additional parent transactions to enhance).
+//! compact-block scanning are serviced from local state instead. A relay
+//! migration transaction accepted just before local storage is restored by the
+//! migration worker rather than queried from lightwalletd. The loop retries up
+//! to three times because servicing one request can legally populate new
+//! requests (e.g. a newly-decrypted transaction may reveal additional parent
+//! transactions to enhance).
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -44,6 +46,7 @@ use crate::wallet::db::{
     SYNC_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::network::WalletNetwork;
+use crate::wallet::sync::{parse_separate_relay_transaction, separate_relay_migration_transaction};
 
 use super::{lwd, SyncError, WalletDatabase};
 
@@ -96,7 +99,29 @@ pub(super) async fn run_enhancement(
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
-                    if let Some(local) = locally_created_transaction(db_path, *txid)? {
+                    let local = if let Some(local) = locally_created_transaction(db_path, *txid)? {
+                        Some(local)
+                    } else if let Some(relay) = separate_relay_migration_transaction(db_path, *txid)
+                        .map_err(SyncError::db)?
+                    {
+                        let Some(raw_tx) = relay.raw_tx else {
+                            // The migration worker retains an encrypted copy and restores wallet
+                            // storage on its next credentialed advance.
+                            continue;
+                        };
+                        Some(LocallyCreatedTransaction {
+                            tx: parse_separate_relay_transaction(
+                                *txid,
+                                &raw_tx,
+                                relay.expiry_height,
+                            )
+                            .map_err(SyncError::parse)?,
+                            expiry_height: relay.expiry_height,
+                        })
+                    } else {
+                        None
+                    };
+                    if let Some(local) = local {
                         match req {
                             TransactionDataRequest::Enhancement(_) => {
                                 let mined_height = db.get_tx_height(*txid).map_err(|e| {
@@ -826,6 +851,91 @@ mod tests {
         assert!(requests.iter().any(
             |request| matches!(request, TransactionDataRequest::GetStatus(id) if *id == txid)
         ));
+
+        let channel = Channel::from_static("http://127.0.0.1:9").connect_lazy();
+        let mut client = CompactTxStreamerClient::new(channel);
+        run_enhancement(&mut client, &mut db, db_path, network)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn separate_relay_missing_raw_does_not_contact_lightwalletd() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let network = WalletNetwork::Test;
+        let mnemonic = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+        crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            network,
+            &seed,
+            Some(1),
+            "enhancement-test",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path, network, 3_000_000).unwrap();
+
+        let expiry_height = 3_000_100;
+        let (preparation_tx, _) = local_status_test_tx(expiry_height);
+        let (phase_two_tx, _) = local_status_test_tx(expiry_height + 1);
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        for (txid, expiry_height) in [
+            (preparation_tx.txid(), expiry_height),
+            (phase_two_tx.txid(), expiry_height + 1),
+        ] {
+            conn.execute(
+                "INSERT INTO transactions (txid, expiry_height, min_observed_height)
+                 VALUES (?1, ?2, 1)",
+                rusqlite::params![txid.as_ref(), expiry_height],
+            )
+            .unwrap();
+        }
+        conn.execute_batch(
+            "CREATE TABLE vizor_migration_runs (
+                 run_id TEXT PRIMARY KEY,
+                 created_at_ms INTEGER NOT NULL,
+                 denomination_submission_target TEXT NOT NULL
+             );
+             CREATE TABLE vizor_migration_denomination_stages (
+                 run_id TEXT NOT NULL,
+                 expected_txid_hex TEXT NOT NULL,
+                 expiry_height INTEGER NOT NULL
+             );
+             CREATE TABLE vizor_migration_pending_txs (
+                 run_id TEXT NOT NULL,
+                 txid_hex TEXT NOT NULL,
+                 expiry_height INTEGER NOT NULL
+             );
+             INSERT INTO vizor_migration_runs
+                 (run_id, created_at_ms, denomination_submission_target)
+             VALUES ('run-1', 1, 'relay:https://relay.example/submit');",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_denomination_stages
+                 (run_id, expected_txid_hex, expiry_height)
+             VALUES ('run-1', ?1, ?2)",
+            rusqlite::params![preparation_tx.txid().to_string(), expiry_height],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vizor_migration_pending_txs
+                 (run_id, txid_hex, expiry_height)
+             VALUES ('run-1', ?1, ?2)",
+            rusqlite::params![phase_two_tx.txid().to_string(), expiry_height + 1],
+        )
+        .unwrap();
+        drop(conn);
+
+        let mut db = super::super::open_db(db_path, network).unwrap();
+        let requests = db.transaction_data_requests().unwrap();
+        for txid in [preparation_tx.txid(), phase_two_tx.txid()] {
+            assert!(requests.iter().any(
+                |request| matches!(request, TransactionDataRequest::GetStatus(id) if *id == txid)
+            ));
+        }
 
         let channel = Channel::from_static("http://127.0.0.1:9").connect_lazy();
         let mut client = CompactTxStreamerClient::new(channel);
