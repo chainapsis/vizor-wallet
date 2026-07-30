@@ -952,6 +952,7 @@ pub async fn extract_and_broadcast_pczt(
     let tx = extracted.tx;
 
     let store_locally = || -> Result<(), String> {
+        let mut used_fallback = false;
         with_wallet_db_write_lock("pczt.extract_and_broadcast_pczt.store", || {
             let mut db = open_wallet_db(db_path, network)?;
 
@@ -970,7 +971,7 @@ pub async fn extract_and_broadcast_pczt(
                 sapling_vk_pair,
                 Some(&orchard_vk),
             ) {
-                Ok(_) => return Ok(()),
+                Ok(_) => return Ok::<(), String>(()),
                 Err(primary_err) => {
                     log::warn!(
                         "keystone: PCZT-aware storage failed \
@@ -990,11 +991,16 @@ pub async fn extract_and_broadcast_pczt(
                     decrypt_and_store_transaction(&network, &mut db, &tx, None).map_err(
                         |fallback_err| format!("Primary: {primary_err}. Fallback: {fallback_err}"),
                     )?;
+                    used_fallback = true;
                 }
             }
 
-            Ok(())
-        })
+            Ok::<(), String>(())
+        })?;
+        if used_fallback {
+            super::transactions::mark_transaction_created_locally(db_path, &txid)?;
+        }
+        Ok(())
     };
 
     // Step 2: broadcast. Definite rejection leaves the DB untouched,

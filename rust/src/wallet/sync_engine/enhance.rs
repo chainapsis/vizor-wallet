@@ -14,17 +14,18 @@
 //!     backfill its activity).
 //!
 //! Librustzcash signals these gaps by populating
-//! `db.transaction_data_requests()`. This module drains the queue
-//! against lightwalletd via three gRPC calls (`GetTransaction`,
-//! `TransactionsInvolvingAddress`) and writes the results back into
-//! `db` using `decrypt_and_store_transaction` and
-//! `set_transaction_status`. The loop retries up to three times
-//! because servicing one request can legally populate new requests
-//! (e.g. a newly-decrypted transaction may reveal additional parent
-//! transactions to enhance).
+//! `db.transaction_data_requests()`. This module normally drains the queue
+//! against lightwalletd via `GetTransaction` and
+//! `TransactionsInvolvingAddress`. Locally created, locally complete,
+//! expiring transactions whose wallet-owned shielded activity can be found by
+//! compact-block scanning are serviced from local state instead. The loop
+//! retries up to three times because servicing one request can legally
+//! populate new requests (e.g. a newly-decrypted transaction may reveal
+//! additional parent transactions to enhance).
 
 use std::collections::{BTreeMap, HashSet};
 
+use rusqlite::OptionalExtension;
 use tonic::{transport::Channel, Code, Status};
 use transparent::bundle::OutPoint;
 use zcash_client_backend::{
@@ -38,10 +39,17 @@ use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{BalanceError, Zatoshis};
 
-use crate::wallet::db::{with_wallet_db_write_lock, SYNC_DB_BUSY_TIMEOUT};
+use crate::wallet::db::{
+    open_readonly_conn_with_timeout, with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
+    SYNC_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::network::WalletNetwork;
 
 use super::{lwd, SyncError, WalletDatabase};
+
+const SAPLING_POOL_CODE: i64 = 2;
+const ORCHARD_POOL_CODE: i64 = 3;
+const IRONWOOD_POOL_CODE: i64 = 4;
 
 /// Drains `db.transaction_data_requests()` against lightwalletd until
 /// the queue is empty or no request is actionable. Returns
@@ -81,17 +89,89 @@ pub(super) async fn run_enhancement(
             break;
         }
 
+        let mut serviced_any = false;
+
         for req in &requests {
             match req {
                 TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
+                    if let Some(local) = locally_created_transaction(db_path, *txid)? {
+                        match req {
+                            TransactionDataRequest::Enhancement(_) => {
+                                let mined_height = db.get_tx_height(*txid).map_err(|e| {
+                                    SyncError::db(format!(
+                                        "get_tx_height for locally created transaction {txid}: {e}"
+                                    ))
+                                })?;
+                                with_wallet_db_write_lock(
+                                    "sync_engine.enhance.locally_created_transaction",
+                                    || {
+                                        decrypt_and_store_transaction(
+                                            &network,
+                                            db,
+                                            &local.tx,
+                                            mined_height,
+                                        )
+                                    },
+                                )
+                                .map_err(|e| {
+                                    SyncError::db(format!(
+                                        "store locally created transaction {txid}: {e}"
+                                    ))
+                                })?;
+                                serviced_any = true;
+                            }
+                            TransactionDataRequest::GetStatus(_) => {
+                                let mined_height = db.get_tx_height(*txid).map_err(|e| {
+                                    SyncError::db(format!(
+                                        "get_tx_height for locally created transaction {txid}: {e}"
+                                    ))
+                                })?;
+                                let fully_scanned_height = if mined_height.is_none() {
+                                    super::wallet_summary_heights(db)?.map(|(scanned, _)| scanned)
+                                } else {
+                                    None
+                                };
+                                let status = match local_transaction_status(
+                                    mined_height,
+                                    fully_scanned_height,
+                                    local.expiry_height,
+                                ) {
+                                    LocalTransactionStatus::Mined(height) => {
+                                        Some(TransactionStatus::Mined(height))
+                                    }
+                                    LocalTransactionStatus::Expired => {
+                                        Some(TransactionStatus::NotInMainChain)
+                                    }
+                                    LocalTransactionStatus::Pending => None,
+                                };
+                                if let Some(status) = status {
+                                    with_wallet_db_write_lock(
+                                        "sync_engine.enhance.local_transaction_status",
+                                        || db.set_transaction_status(*txid, status),
+                                    )
+                                    .map_err(|e| {
+                                        SyncError::db(format!(
+                                            "set locally created transaction status for {txid}: {e}"
+                                        ))
+                                    })?;
+                                    serviced_any = true;
+                                }
+                            }
+                            TransactionDataRequest::TransactionsInvolvingAddress(_) => {
+                                unreachable!()
+                            }
+                        }
+                        continue;
+                    }
                     if failed_txids.contains(&txid_str) {
                         continue;
                     }
 
                     match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
                         Ok(raw) => {
+                            serviced_any = true;
                             let mined_height = mined_height_from_raw_height(raw.height)?;
                             if !raw.data.is_empty() {
                                 match Transaction::read(&raw.data[..], BranchId::Sapling) {
@@ -136,6 +216,7 @@ pub(super) async fn run_enhancement(
                         }
                         Err(e) => match classify_get_transaction_error(&e) {
                             GetTransactionErrorAction::MarkTxidNotRecognized => {
+                                serviced_any = true;
                                 log::warn!(
                                     "sync: get_transaction did not recognize {txid_str}: {e}"
                                 );
@@ -176,6 +257,7 @@ pub(super) async fn run_enhancement(
                         .await
                     {
                         Ok(mut stream) => {
+                            serviced_any = true;
                             let mut fee_client = client.clone();
                             loop {
                                 match lwd::next_stream_message(
@@ -239,8 +321,85 @@ pub(super) async fn run_enhancement(
                 }
             }
         }
+        if !serviced_any {
+            break;
+        }
     }
     Ok(())
+}
+
+struct LocallyCreatedTransaction {
+    tx: Transaction,
+    expiry_height: u32,
+}
+
+fn locally_created_transaction(
+    db_path: &str,
+    txid: zcash_primitives::transaction::TxId,
+) -> Result<Option<LocallyCreatedTransaction>, SyncError> {
+    let conn = open_readonly_conn_with_timeout(db_path, Some(READ_DB_BUSY_TIMEOUT))
+        .map_err(SyncError::db)?;
+    let local_row = conn
+        .query_row(
+            "SELECT t.raw, t.expiry_height
+             FROM transactions t
+             WHERE t.txid = ?1
+               AND (t.target_height IS NOT NULL OR t.created IS NOT NULL)
+               AND t.raw IS NOT NULL
+               AND t.expiry_height > 0
+               AND (
+                   EXISTS (
+                       SELECT 1 FROM v_received_outputs ro
+                       WHERE ro.transaction_id = t.id_tx AND ro.pool IN (?2, ?3, ?4)
+                   )
+                   OR EXISTS (
+                       SELECT 1 FROM v_received_output_spends ros
+                       WHERE ros.transaction_id = t.id_tx AND ros.pool IN (?2, ?3, ?4)
+                   )
+               )",
+            rusqlite::params![
+                txid.as_ref(),
+                SAPLING_POOL_CODE,
+                ORCHARD_POOL_CODE,
+                IRONWOOD_POOL_CODE
+            ],
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, u32>(1)?)),
+        )
+        .optional()
+        .map_err(|e| SyncError::db(format!("read locally created transaction {txid}: {e}")))?;
+    let Some((raw_tx, expiry_height)) = local_row else {
+        return Ok(None);
+    };
+
+    let tx = Transaction::read(&raw_tx[..], BranchId::Sapling)
+        .map_err(|e| SyncError::parse(format!("parse locally created transaction {txid}: {e}")))?;
+    if tx.txid() != txid || u32::from(tx.expiry_height()) != expiry_height {
+        return Err(SyncError::parse(format!(
+            "locally created transaction metadata does not match {txid}"
+        )));
+    }
+    Ok(Some(LocallyCreatedTransaction { tx, expiry_height }))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LocalTransactionStatus {
+    Mined(BlockHeight),
+    Expired,
+    Pending,
+}
+
+fn local_transaction_status(
+    mined_height: Option<BlockHeight>,
+    fully_scanned_height: Option<u64>,
+    expiry_height: u32,
+) -> LocalTransactionStatus {
+    if let Some(height) = mined_height {
+        LocalTransactionStatus::Mined(height)
+    } else if fully_scanned_height.is_some_and(|height| height >= u64::from(expiry_height)) {
+        LocalTransactionStatus::Expired
+    } else {
+        LocalTransactionStatus::Pending
+    }
 }
 
 async fn fill_missing_transparent_fee(
@@ -436,6 +595,69 @@ mod tests {
         Transaction::read(&tx_bytes[..], BranchId::Sapling).unwrap()
     }
 
+    fn local_status_test_tx(expiry_height: u32) -> (Transaction, Vec<u8>) {
+        let value_commitment = sapling_crypto::value::ValueCommitment::derive(
+            sapling_crypto::value::NoteValue::from_raw(1),
+            sapling_crypto::value::ValueCommitTrapdoor::random(rand_core::OsRng),
+        );
+        let mut raw = Vec::with_capacity(1_100);
+        raw.extend_from_slice(&0x8000_0004u32.to_le_bytes());
+        raw.extend_from_slice(&0x892f_2085u32.to_le_bytes());
+        raw.extend_from_slice(&[0, 0]);
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.extend_from_slice(&expiry_height.to_le_bytes());
+        raw.extend_from_slice(&0i64.to_le_bytes());
+        raw.push(0);
+        raw.push(1);
+        raw.extend_from_slice(&value_commitment.to_bytes());
+        raw.extend_from_slice(&[0; 64]);
+        raw.resize(raw.len() + 580 + 80 + 192, 0);
+        raw.push(0);
+        raw.resize(raw.len() + 64, 0);
+
+        let tx = Transaction::read(&raw[..], BranchId::Sapling).unwrap();
+        (tx, raw)
+    }
+
+    fn insert_local_lookup_test_tx(
+        conn: &rusqlite::Connection,
+        expiry_height: u32,
+        target_height: Option<u32>,
+        created: Option<&str>,
+        received_pool: Option<u32>,
+        spent_pool: Option<u32>,
+    ) -> zcash_primitives::transaction::TxId {
+        let (tx, raw) = local_status_test_tx(expiry_height);
+        conn.execute(
+            "INSERT INTO transactions (txid, created, target_height, raw, expiry_height)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                tx.txid().as_ref(),
+                created,
+                target_height,
+                raw,
+                expiry_height
+            ],
+        )
+        .unwrap();
+        let transaction_id = conn.last_insert_rowid();
+        if let Some(pool) = received_pool {
+            conn.execute(
+                "INSERT INTO v_received_outputs (transaction_id, pool) VALUES (?1, ?2)",
+                rusqlite::params![transaction_id, pool],
+            )
+            .unwrap();
+        }
+        if let Some(pool) = spent_pool {
+            conn.execute(
+                "INSERT INTO v_received_output_spends (transaction_id, pool) VALUES (?1, ?2)",
+                rusqlite::params![transaction_id, pool],
+            )
+            .unwrap();
+        }
+        tx.txid()
+    }
+
     fn transparent_fee_test_db(
         tx: &Transaction,
         account_balance_delta: i64,
@@ -501,6 +723,115 @@ mod tests {
                 GetTransactionErrorAction::RetryAsNetwork,
             );
         }
+    }
+
+    #[test]
+    fn local_lookup_requires_origin_expiry_and_compact_block_relevance() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE transactions (
+                 id_tx INTEGER PRIMARY KEY,
+                 txid BLOB NOT NULL UNIQUE,
+                 created TEXT,
+                 target_height INTEGER,
+                 raw BLOB,
+                 expiry_height INTEGER
+             );
+             CREATE TABLE v_received_outputs (transaction_id INTEGER, pool INTEGER);
+             CREATE TABLE v_received_output_spends (transaction_id INTEGER, pool INTEGER);",
+        )
+        .unwrap();
+
+        let target_marked = insert_local_lookup_test_tx(&conn, 100, Some(90), None, Some(2), None);
+        let created_marked = insert_local_lookup_test_tx(
+            &conn,
+            101,
+            None,
+            Some("2026-07-29 00:00:00"),
+            None,
+            Some(4),
+        );
+        let recovered = insert_local_lookup_test_tx(&conn, 102, None, None, Some(2), None);
+        let external_shielded = insert_local_lookup_test_tx(&conn, 103, Some(90), None, None, None);
+        let transparent_only =
+            insert_local_lookup_test_tx(&conn, 104, Some(90), None, Some(0), None);
+        let zero_expiry = insert_local_lookup_test_tx(&conn, 0, Some(90), None, Some(3), None);
+        drop(conn);
+
+        for txid in [target_marked, created_marked] {
+            assert!(
+                locally_created_transaction(file.path().to_str().unwrap(), txid)
+                    .unwrap()
+                    .is_some()
+            );
+        }
+        for txid in [recovered, external_shielded, transparent_only, zero_expiry] {
+            assert!(
+                locally_created_transaction(file.path().to_str().unwrap(), txid)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn locally_created_status_does_not_contact_lightwalletd() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let network = WalletNetwork::Test;
+        let mnemonic = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&mnemonic).unwrap();
+        crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            network,
+            &seed,
+            Some(1),
+            "enhancement-test",
+        )
+        .unwrap();
+        crate::wallet::sync::update_chain_tip(db_path, network, 3_000_000).unwrap();
+
+        let expiry_height = 3_000_100;
+        let (tx, raw) = local_status_test_tx(expiry_height);
+        let txid = tx.txid();
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT INTO transactions
+             (txid, raw, expiry_height, target_height, min_observed_height)
+             VALUES (?1, ?2, ?3, 3000000, 1)",
+            rusqlite::params![txid.as_ref(), raw, expiry_height],
+        )
+        .unwrap();
+        let transaction_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO sapling_received_notes
+             (transaction_id, output_index, account_id, diversifier, value, rcm, is_change)
+             SELECT ?1, 0, id, zeroblob(11), 1, zeroblob(32), 1
+             FROM accounts LIMIT 1",
+            [transaction_id],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE transactions SET target_height = NULL WHERE txid = ?1",
+            [txid.as_ref()],
+        )
+        .unwrap();
+        drop(conn);
+        crate::wallet::sync::mark_transaction_created_locally(db_path, &txid).unwrap();
+
+        let mut db = super::super::open_db(db_path, network).unwrap();
+        let requests = db.transaction_data_requests().unwrap();
+        assert!(requests.iter().any(
+            |request| matches!(request, TransactionDataRequest::GetStatus(id) if *id == txid)
+        ));
+
+        let channel = Channel::from_static("http://127.0.0.1:9").connect_lazy();
+        let mut client = CompactTxStreamerClient::new(channel);
+        run_enhancement(&mut client, &mut db, db_path, network)
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -578,5 +909,30 @@ mod tests {
             mined_height_from_raw_height(u32::MAX as u64 + 1),
             Err(SyncError::Parse(_)),
         ));
+    }
+
+    #[test]
+    fn local_status_uses_scanned_mined_height() {
+        let height = BlockHeight::from_u32(1_000_010);
+        assert_eq!(
+            local_transaction_status(Some(height), Some(1_000_100), 1_000_050),
+            LocalTransactionStatus::Mined(height)
+        );
+    }
+
+    #[test]
+    fn local_status_expires_only_after_full_scan() {
+        assert_eq!(
+            local_transaction_status(None, Some(1_000_049), 1_000_050),
+            LocalTransactionStatus::Pending
+        );
+        assert_eq!(
+            local_transaction_status(None, None, 1_000_050),
+            LocalTransactionStatus::Pending
+        );
+        assert_eq!(
+            local_transaction_status(None, Some(1_000_050), 1_000_050),
+            LocalTransactionStatus::Expired
+        );
     }
 }

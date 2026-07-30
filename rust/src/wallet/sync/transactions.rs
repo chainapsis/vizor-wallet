@@ -21,13 +21,15 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::OptionalExtension;
 use transparent::address::TransparentAddress;
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::transaction::{Transaction, TxId};
 use zcash_protocol::{
     consensus::{BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
 };
 
-use crate::wallet::db::with_wallet_db_write_lock;
+use crate::wallet::db::{
+    open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock, WALLET_DB_BUSY_TIMEOUT,
+};
 use crate::wallet::keys::parse_account_uuid;
 use crate::wallet::network::WalletNetwork;
 
@@ -283,6 +285,24 @@ pub fn decrypt_and_store_transaction(
         let mut db = open_wallet_db(db_path, network)?;
         decrypt_and_store_transaction(&network, &mut db, &tx, height)
             .map_err(|e| format!("Failed to decrypt/store transaction: {e}"))
+    })
+}
+
+/// Preserves the local-origin marker after a chain-style storage fallback.
+pub(crate) fn mark_transaction_created_locally(db_path: &str, txid: &TxId) -> Result<(), String> {
+    with_wallet_db_write_lock("transactions.mark_transaction_created_locally", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        let updated = conn
+            .execute(
+                "UPDATE transactions
+                 SET created = COALESCE(created, CURRENT_TIMESTAMP)
+                 WHERE txid = ?1",
+                rusqlite::params![txid.as_ref()],
+            )
+            .map_err(|e| format!("Mark transaction as locally created: {e}"))?;
+        (updated == 1)
+            .then_some(())
+            .ok_or_else(|| format!("Cannot mark unknown transaction {txid} as locally created"))
     })
 }
 

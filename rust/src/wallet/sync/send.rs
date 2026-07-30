@@ -4932,7 +4932,13 @@ fn decrypt_and_store_migration_tx(
     network: WalletNetwork,
     raw_tx: &[u8],
 ) -> Result<(), String> {
-    super::transactions::decrypt_and_store_transaction(db_path, network, raw_tx, None)
+    let tx = zcash_primitives::transaction::Transaction::read(
+        raw_tx,
+        zcash_protocol::consensus::BranchId::Sapling,
+    )
+    .map_err(|e| format!("Read locally created migration transaction: {e}"))?;
+    super::transactions::decrypt_and_store_transaction(db_path, network, raw_tx, None)?;
+    super::transactions::mark_transaction_created_locally(db_path, &tx.txid())
 }
 
 #[allow(clippy::too_many_arguments)]

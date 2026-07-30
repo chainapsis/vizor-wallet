@@ -31,6 +31,9 @@ mod proposal_locks;
 mod send;
 mod transactions;
 
+#[cfg(test)]
+pub(crate) use transactions::mark_transaction_created_locally;
+
 // Re-export the split submodules at the `wallet::sync` path so every
 // `crate::wallet::sync::propose_send` / `::get_wallet_balance` /
 // `::extract_and_broadcast_pczt` etc. call path keeps resolving with
