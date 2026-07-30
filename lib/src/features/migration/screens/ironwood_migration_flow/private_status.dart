@@ -16,25 +16,6 @@ class _IronwoodMigrationPrivateStatusContent extends ConsumerStatefulWidget {
 
 class _IronwoodMigrationPrivateStatusContentState
     extends ConsumerState<_IronwoodMigrationPrivateStatusContent> {
-  Future<void> _confirmStop() async {
-    final accountUuid = widget.accountUuid;
-    final runId = widget.status.activeRunId;
-    if (accountUuid == null || runId == null) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => const _DesktopMigrationStopDialog(),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await ref
-          .read(ironwoodMigrationCoordinatorProvider.notifier)
-          .stop(accountUuid: accountUuid, runId: runId);
-      if (mounted) context.go('/home');
-    } catch (e) {
-      log('Migration stop failed: $e');
-    }
-  }
-
   Future<void> _handleAction(_StatusAction action) async {
     final accountUuid = widget.accountUuid;
     if (accountUuid == null) return;
@@ -77,9 +58,6 @@ class _IronwoodMigrationPrivateStatusContentState
     final isAdvancing =
         widget.accountUuid != null &&
         coordinator.advancingAccounts.contains(widget.accountUuid);
-    final isStopping =
-        widget.accountUuid != null &&
-        coordinator.stoppingAccounts.contains(widget.accountUuid);
     final actionLabel = isAdvancing
         ? action.busyLabel
         : switch (action) {
@@ -110,234 +88,151 @@ class _IronwoodMigrationPrivateStatusContentState
           kIronwoodMigrationWaitingConfirmationsPhase,
           kIronwoodMigrationCompletePhase,
         }.contains(status.phase)) {
-      return _withStopAction(
-        _MigrationStatusContent(
-          status: status,
-          currentHeight: _currentMigrationHeight(syncState),
-          action: action,
-          isAdvancing: isAdvancing,
-          onAction: actionCallback,
-        ),
-        isStopping: isStopping,
+      return _MigrationStatusContent(
+        status: status,
+        currentHeight: _currentMigrationHeight(syncState),
+        action: action,
+        isAdvancing: isAdvancing,
+        onAction: actionCallback,
       );
     }
 
-    return _withStopAction(
-      SizedBox(
-        key: ValueKey('ironwood_migration_status_${status.phase}'),
-        width: 420,
-        height: 656,
-        child: Stack(
-          children: [
-            Positioned(
-              left: 29,
-              top: 48,
-              width: 362,
-              child: Column(
-                children: [
-                  Text(
-                    presentation.title,
+    return SizedBox(
+      key: ValueKey('ironwood_migration_status_${status.phase}'),
+      width: 420,
+      height: 656,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 29,
+            top: 48,
+            width: 362,
+            child: Column(
+              children: [
+                Text(
+                  presentation.title,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineLarge.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: 318,
+                  child: Text(
+                    presentation.body,
                     textAlign: TextAlign.center,
-                    style: AppTypography.headlineLarge.copyWith(
+                    style: AppTypography.bodyMediumStrong.copyWith(
                       color: colors.text.accent,
                     ),
                   ),
-                  const SizedBox(height: 22),
-                  SizedBox(
-                    width: 318,
-                    child: Text(
-                      presentation.body,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyMediumStrong.copyWith(
-                        color: colors.text.accent,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 12,
-              top: 210,
-              width: 396,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.background.ground,
-                  borderRadius: BorderRadius.circular(28),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
-                  child: Column(
-                    children: [
-                      if (progress != null) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            minHeight: 8,
-                            backgroundColor: colors.background.raised,
-                            color: GreenPrimitives.p500Light,
-                          ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 210,
+            width: 396,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.background.ground,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+                child: Column(
+                  children: [
+                    if (progress != null) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 8,
+                          backgroundColor: colors.background.raised,
+                          color: GreenPrimitives.p500Light,
                         ),
-                        const SizedBox(height: 20),
-                      ],
-                      _ReviewMetricRow(
-                        icon: AppIcons.swapArrows,
-                        label: 'Split progress',
-                        value:
-                            '${status.denominationSplitCompletedCount}/'
-                            '${status.denominationSplitTotalCount}',
                       ),
-                      const SizedBox(height: 16),
-                      _ReviewMetricRow(
-                        icon: AppIcons.time,
-                        label: 'Pending broadcasts',
-                        value: '${status.pendingTxCount}',
-                      ),
-                      const SizedBox(height: 16),
-                      _ReviewMetricRow(
-                        icon: AppIcons.plane,
-                        label: 'Broadcasted',
-                        value: '${status.broadcastedTxCount}',
-                      ),
-                      const SizedBox(height: 16),
-                      _ReviewMetricRow(
-                        icon: AppIcons.checkCircle,
-                        label: 'Confirmed',
-                        value:
-                            '${status.confirmedTxCount}/${status.totalCount}',
-                      ),
-                      if (status.message != null) ...[
-                        const SizedBox(height: 18),
-                        Divider(
-                          height: 1,
-                          thickness: 1,
-                          color: colors.border.subtle,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          status.message!,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: colors.text.secondary,
-                          ),
-                        ),
-                      ],
+                      const SizedBox(height: 20),
                     ],
-                  ),
+                    _ReviewMetricRow(
+                      icon: AppIcons.swapArrows,
+                      label: 'Split progress',
+                      value:
+                          '${status.denominationSplitCompletedCount}/'
+                          '${status.denominationSplitTotalCount}',
+                    ),
+                    const SizedBox(height: 16),
+                    _ReviewMetricRow(
+                      icon: AppIcons.time,
+                      label: 'Pending broadcasts',
+                      value: '${status.pendingTxCount}',
+                    ),
+                    const SizedBox(height: 16),
+                    _ReviewMetricRow(
+                      icon: AppIcons.plane,
+                      label: 'Broadcasted',
+                      value: '${status.broadcastedTxCount}',
+                    ),
+                    const SizedBox(height: 16),
+                    _ReviewMetricRow(
+                      icon: AppIcons.checkCircle,
+                      label: 'Confirmed',
+                      value: '${status.confirmedTxCount}/${status.totalCount}',
+                    ),
+                    if (status.message != null) ...[
+                      const SizedBox(height: 18),
+                      Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: colors.border.subtle,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        status.message!,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.bodyMedium.copyWith(
+                          color: colors.text.secondary,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
-            Positioned(
-              left: 51,
-              top: 515,
-              width: 318,
+          ),
+          Positioned(
+            left: 51,
+            top: 515,
+            width: 318,
+            child: Text(
+              footerText,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 95,
+            top: 596,
+            width: 230,
+            child: AppButton(
+              key: const ValueKey('ironwood_migration_status_action_button'),
+              onPressed: isAdvancing ? null : actionCallback,
+              height: 44,
+              minWidth: 230,
+              expand: true,
+              constrainContent: true,
+              trailing: const AppIcon(AppIcons.chevronForward, size: 20),
               child: Text(
-                footerText,
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
+                actionLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            Positioned(
-              left: 95,
-              top: 596,
-              width: 230,
-              child: AppButton(
-                key: const ValueKey('ironwood_migration_status_action_button'),
-                onPressed: isAdvancing ? null : actionCallback,
-                height: 44,
-                minWidth: 230,
-                expand: true,
-                constrainContent: true,
-                trailing: const AppIcon(AppIcons.chevronForward, size: 20),
-                child: Text(
-                  actionLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      isStopping: isStopping,
-    );
-  }
-
-  Widget _withStopAction(Widget child, {required bool isStopping}) {
-    if (widget.status.activeRunId == null || !widget.status.canAbandon) {
-      return child;
-    }
-    return Stack(
-      children: [
-        child,
-        Positioned(
-          top: 8,
-          right: 8,
-          child: AppButton(
-            key: const ValueKey('ironwood_stop_migration_button'),
-            height: 32,
-            expand: false,
-            variant: AppButtonVariant.ghost,
-            onPressed: isStopping ? null : () => unawaited(_confirmStop()),
-            child: Text(isStopping ? 'Stopping...' : 'Stop migration'),
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _DesktopMigrationStopDialog extends StatelessWidget {
-  const _DesktopMigrationStopDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Dialog(
-      backgroundColor: colors.background.ground,
-      child: SizedBox(
-        width: 380,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Stop migration?',
-                style: AppTypography.bodyLarge.copyWith(
-                  color: colors.text.accent,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Vizor will discard work that has not been submitted. '
-                'Transactions already sent to the network cannot be cancelled '
-                'and will remain in your wallet history.',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppButton(
-                key: const ValueKey('ironwood_confirm_stop_migration_button'),
-                variant: AppButtonVariant.destructive,
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Stop migration'),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              AppButton(
-                variant: AppButtonVariant.ghost,
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Keep migrating'),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }

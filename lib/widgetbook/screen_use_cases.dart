@@ -975,6 +975,44 @@ Widget buildIronwoodMigrationPreparationScheduleUseCase(BuildContext context) {
   );
 }
 
+Widget buildIronwoodMigrationManageScheduleUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/schedule',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewMigrationScheduleStatus(),
+    schedulePreviewOverlay: IronwoodMigrationSchedulePreviewOverlay.manage,
+    schedulePreviewCanStop: true,
+  );
+}
+
+Widget buildIronwoodMigrationImmediateConfirmationUseCase(
+  BuildContext context,
+) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/schedule',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewMigrationScheduleStatus(),
+    schedulePreviewOverlay:
+        IronwoodMigrationSchedulePreviewOverlay.immediateConfirmation,
+    schedulePreviewImmediatePlan: _previewMobileImmediateMigrationPlan(),
+    schedulePreviewCanStop: true,
+  );
+}
+
+Widget buildIronwoodMigrationStopConfirmationUseCase(BuildContext context) {
+  return _buildIronwoodMigrationUseCase(
+    initialLocation: '/migration/private/schedule',
+    step: IronwoodMigrationFlowStep.review,
+    data: _ironwoodMigrationFlowData(zatoshi: BigInt.from(10_000_000_000)),
+    previewStatus: _previewMigrationScheduleStatus(),
+    schedulePreviewOverlay:
+        IronwoodMigrationSchedulePreviewOverlay.stopConfirmation,
+    schedulePreviewCanStop: true,
+  );
+}
+
 Widget buildIronwoodMigrationCompleteUseCase(BuildContext context) {
   return _buildIronwoodMigrationUseCase(
     initialLocation: '/migration/private/status',
@@ -1460,6 +1498,9 @@ Widget _buildIronwoodMigrationUseCase({
   bool isHardware = false,
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
   bool previewImmediateKeystoneScanner = false,
+  IronwoodMigrationSchedulePreviewOverlay? schedulePreviewOverlay,
+  rust_sync.OrchardMigrationImmediatePlan? schedulePreviewImmediatePlan,
+  bool schedulePreviewCanStop = false,
 }) {
   final accountState = _ironwoodMigrationAccountState(isHardware: isHardware);
   return ProviderScope(
@@ -1504,6 +1545,9 @@ Widget _buildIronwoodMigrationUseCase({
       reviewPreviewStage: reviewPreviewStage,
       previewImmediatePlan: previewImmediatePlan,
       previewImmediateKeystoneScanner: previewImmediateKeystoneScanner,
+      schedulePreviewOverlay: schedulePreviewOverlay,
+      schedulePreviewImmediatePlan: schedulePreviewImmediatePlan,
+      schedulePreviewCanStop: schedulePreviewCanStop,
     ),
   );
 }
@@ -2185,6 +2229,9 @@ class _IronwoodMigrationHarness extends StatefulWidget {
     this.reviewPreviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.previewImmediatePlan,
     this.previewImmediateKeystoneScanner = false,
+    this.schedulePreviewOverlay,
+    this.schedulePreviewImmediatePlan,
+    this.schedulePreviewCanStop = false,
   });
 
   final String initialLocation;
@@ -2194,6 +2241,9 @@ class _IronwoodMigrationHarness extends StatefulWidget {
   final IronwoodMigrationReviewPreviewStage reviewPreviewStage;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final bool previewImmediateKeystoneScanner;
+  final IronwoodMigrationSchedulePreviewOverlay? schedulePreviewOverlay;
+  final rust_sync.OrchardMigrationImmediatePlan? schedulePreviewImmediatePlan;
+  final bool schedulePreviewCanStop;
 
   @override
   State<_IronwoodMigrationHarness> createState() =>
@@ -2292,6 +2342,9 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
           builder: (_, _) => IronwoodMigrationScheduleScreen(
             previewStatus:
                 widget.previewStatus ?? _previewPrivateMigrationStatus(),
+            previewOverlay: widget.schedulePreviewOverlay,
+            previewImmediatePlan: widget.schedulePreviewImmediatePlan,
+            previewCanStop: widget.schedulePreviewCanStop,
           ),
         ),
         GoRoute(
@@ -2299,6 +2352,9 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
           builder: (_, _) => IronwoodMigrationPreparationScheduleScreen(
             previewStatus:
                 widget.previewStatus ?? _previewPrivateMigrationStatus(),
+            previewOverlay: widget.schedulePreviewOverlay,
+            previewImmediatePlan: widget.schedulePreviewImmediatePlan,
+            previewCanStop: widget.schedulePreviewCanStop,
           ),
         ),
         GoRoute(

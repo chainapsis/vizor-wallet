@@ -2816,6 +2816,256 @@ void main() {
     expect(find.text('Transaction 3'), findsOneWidget);
   });
 
+  testWidgets('migration schedule stops before opening the Immediate review', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final status = _migrationStatus(
+      phase: kIronwoodMigrationReadyToMigratePhase,
+      activeRunId: 'run-1',
+      canAbandon: true,
+      targetValuesZatoshi: const [10_000_000],
+      totalCount: 1,
+      parts: [
+        _migrationPart(0, 10_000_000, rust_sync.MigrationPartState.scheduled),
+      ],
+    );
+    var stopCount = 0;
+    var stopped = false;
+    var planRequestCount = 0;
+    await tester.pumpWidget(
+      _migrationEntryHarness(
+        ctaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'test',
+          accountUuid: 'account-1',
+          status: status,
+        ),
+        initialLocation: '/migration/private/schedule',
+        realImmediateReviewRoute: true,
+        migrationService: _immediatePlanService(() async {
+          expect(stopped, isTrue);
+          planRequestCount += 1;
+          return _immediatePlan();
+        }),
+        onStop: ({required accountUuid, required runId}) async {
+          expect(accountUuid, 'account-1');
+          expect(runId, 'run-1');
+          stopCount += 1;
+          stopped = true;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_schedule_manage_button')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_schedule_manage_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Manage migration'), findsOneWidget);
+    expect(find.text('Migrate immediately'), findsOneWidget);
+    expect(find.text('Cancel migration'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('ironwood_migration_manage_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Migrate immediately'), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey('ironwood_confirm_finish_migration_immediately_button'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'You will review the current amount and fee before authorising',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey('ironwood_confirm_finish_migration_immediately_button'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(stopCount, 1);
+    expect(planRequestCount, 1);
+    expect(
+      find.byKey(const ValueKey('ironwood_migration_immediate_review_screen')),
+      findsOneWidget,
+    );
+    expect(find.text('0.0999 ZEC'), findsOneWidget);
+  });
+
+  testWidgets(
+    'preparation schedule gives a final confirmation before cancellation',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+        activeRunId: 'run-1',
+        canAbandon: true,
+        denominationSplitTotalCount: 1,
+        preparationTransactions: [
+          _preparationTransaction(
+            0,
+            500_000_000,
+            rust_sync.MigrationPreparationTransactionState.scheduled,
+            scheduledHeight: 1_010,
+          ),
+        ],
+      );
+      var stopCount = 0;
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          initialLocation: '/migration/private/preparation-schedule',
+          onStop: ({required accountUuid, required runId}) async {
+            expect(accountUuid, 'account-1');
+            expect(runId, 'run-1');
+            stopCount += 1;
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('ironwood_migration_schedule_manage_button')),
+      );
+      await tester.pumpAndSettle();
+      final stopOption = find.byKey(
+        const ValueKey('ironwood_migration_manage_stop_option'),
+      );
+      final stopGesture = find.descendant(
+        of: stopOption,
+        matching: find.byType(GestureDetector),
+      );
+      Focus.of(tester.element(stopGesture)).requestFocus();
+      await tester.pump();
+      expect(Focus.of(tester.element(stopGesture)).hasFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('ironwood_migration_manage_continue_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Are you sure you want to cancel?'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Transactions already sent to the network cannot be cancelled',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('ironwood_confirm_stop_migration_button')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('ironwood_confirm_stop_migration_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(stopCount, 1);
+      expect(find.text('home-route'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'failed stop keeps the Immediate conversion in the schedule modal',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1440, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final status = _migrationStatus(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        activeRunId: 'run-1',
+        canAbandon: true,
+        targetValuesZatoshi: const [10_000_000],
+        totalCount: 1,
+        parts: [
+          _migrationPart(0, 10_000_000, rust_sync.MigrationPartState.scheduled),
+        ],
+      );
+      var planRequestCount = 0;
+      await tester.pumpWidget(
+        _migrationEntryHarness(
+          ctaState: IronwoodHomeMigrationCtaState.resume(
+            network: 'test',
+            accountUuid: 'account-1',
+            status: status,
+          ),
+          initialLocation: '/migration/private/schedule',
+          realImmediateReviewRoute: true,
+          migrationService: _immediatePlanService(() async {
+            planRequestCount += 1;
+            return _immediatePlan();
+          }),
+          onStop: ({required accountUuid, required runId}) async {
+            throw StateError('stop failed');
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('ironwood_migration_schedule_manage_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('ironwood_migration_manage_continue_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'ironwood_confirm_finish_migration_immediately_button',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(planRequestCount, 0);
+      expect(
+        find.byKey(const ValueKey('ironwood_migration_manage_modal')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('The migration could not be updated. Please try again.'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('ironwood_migration_immediate_review_screen'),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('preparation ETA starts unscheduled delays at current height', (
     tester,
   ) async {
@@ -3939,11 +4189,17 @@ class _ScreenTestMigrationCoordinator extends IronwoodMigrationCoordinator {
     this.service, {
     this.advancing = false,
     this.status,
+    this.onStop,
   });
 
   final IronwoodMigrationService? service;
   final bool advancing;
   final rust_sync.MigrationStatus? status;
+  final Future<void> Function({
+    required String accountUuid,
+    required String runId,
+  })?
+  onStop;
 
   @override
   IronwoodMigrationCoordinatorState build() =>
@@ -3969,6 +4225,19 @@ class _ScreenTestMigrationCoordinator extends IronwoodMigrationCoordinator {
     rust_sync.MigrationStatus? status,
   }) async {
     await service?.continueSoftwarePrivateMigration(accountUuid: accountUuid);
+  }
+
+  @override
+  Future<void> stop({
+    required String accountUuid,
+    required String runId,
+  }) async {
+    final callback = onStop;
+    if (callback != null) {
+      await callback(accountUuid: accountUuid, runId: runId);
+      return;
+    }
+    await super.stop(accountUuid: accountUuid, runId: runId);
   }
 }
 
@@ -4291,6 +4560,7 @@ Widget _migrationEntryHarness({
   Future<IronwoodHomeMigrationCtaState>? routeCtaFuture,
   Object? routeError,
   bool realStatusRoute = false,
+  bool realImmediateReviewRoute = false,
   rust_sync.MigrationStatus? routeStatus,
   OrchardMigrationStatusGetter? statusGetter,
   IronwoodMigrationService? migrationService,
@@ -4299,6 +4569,8 @@ Widget _migrationEntryHarness({
   rust_sync.MigrationStatus? coordinatorStatus,
   SyncState? syncState,
   bool disableAnimations = false,
+  Future<void> Function({required String accountUuid, required String runId})?
+  onStop,
 }) {
   final network = ctaState.network ?? 'test';
   final accountUuid = ctaState.accountUuid ?? 'account-1';
@@ -4335,6 +4607,14 @@ Widget _migrationEntryHarness({
       GoRoute(
         path: '/migration/private/keystone/batch/sign',
         builder: (_, _) => const Text('keystone-batch-sign-route'),
+      ),
+      GoRoute(
+        path: '/migration/immediate/review',
+        builder: (_, _) => realImmediateReviewRoute
+            ? const IronwoodMigrationFlowScreen(
+                step: IronwoodMigrationFlowStep.immediateReview,
+              )
+            : const Text('immediate-review-route'),
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
     ],
@@ -4399,6 +4679,7 @@ Widget _migrationEntryHarness({
           migrationService,
           advancing: coordinatorAdvancing,
           status: coordinatorStatus,
+          onStop: onStop,
         ),
       ),
       if (migrationService != null)
@@ -4654,6 +4935,7 @@ rust_sync.MigrationStatus _migrationStatus({
   int? estimatedCompletionHeight,
   int? preparationMeanDelayBlocks,
   bool? proofReady,
+  bool canAbandon = false,
   List<int>? currentSigningPartIndices,
   List<rust_sync.MigrationScheduledBroadcast> scheduledBroadcasts = const [],
   List<rust_sync.MigrationPreparationTransactionStatus>
@@ -4676,7 +4958,7 @@ rust_sync.MigrationStatus _migrationStatus({
     totalCount: totalCount,
     signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: pendingSplitStageCount,
-    canAbandon: false,
+    canAbandon: canAbandon,
     signingBatchLimit: 35,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
