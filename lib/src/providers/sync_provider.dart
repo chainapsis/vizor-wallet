@@ -492,6 +492,38 @@ class SyncState {
     return withoutAccountScopedData(accountUuid: accountUuid);
   }
 
+  /// This state's account-scoped data, carrying [current]'s wallet-wide
+  /// sync fields.
+  ///
+  /// The inverse of [withoutAccountScopedData]: that keeps the sync
+  /// fields and drops the account data, this keeps the account data and
+  /// takes fresh sync fields. Used when restoring a previously-seen
+  /// account on switch — the balances are that account's last known
+  /// values, but sync progress must stay wallet-current or the progress
+  /// indicator would jump backwards to whatever it was when the account
+  /// was last active.
+  ///
+  /// Keep the field list here in step with [withoutAccountScopedData].
+  SyncState withGlobalSyncFieldsFrom(SyncState current) {
+    return copyWith(
+      isSyncing: current.isSyncing,
+      isBackgroundMode: current.isBackgroundMode,
+      isSyncComplete: current.isSyncComplete,
+      percentage: current.percentage,
+      displayPercentage: current.displayPercentage,
+      displayTargetPercentage: current.displayTargetPercentage,
+      displayTargetBlocks: current.displayTargetBlocks,
+      scannedHeight: current.scannedHeight,
+      chainTipHeight: current.chainTipHeight,
+      failure: current.failure,
+      error: current.error,
+      lastSyncStartedAt: current.lastSyncStartedAt,
+      lastSyncCompletedAt: current.lastSyncCompletedAt,
+      lastSyncFailedAt: current.lastSyncFailedAt,
+      phase: current.phase,
+    );
+  }
+
   SyncState withoutAccountScopedData({String? accountUuid}) {
     return SyncState(
       accountUuid: accountUuid,
@@ -601,6 +633,76 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   // Coalesce balance/history refreshes through `_requestBalanceRefresh`.
   // Mid-flight requests queue one trailing pass so callers don't adopt a
   // stale in-flight result.
+  /// Last known account-scoped state per account, used only when
+  /// switching accounts.
+  ///
+  /// ## Why
+  ///
+  /// Switching used to clear account-scoped state and leave the screen
+  /// empty until the refresh landed. Tracing the switch showed the new
+  /// screen painting in ~20ms and then sitting blank for 370-970ms —
+  /// 95% of the switch was an empty screen, with no dropped frames.
+  /// Restoring the target account's last known values makes that first
+  /// frame carry data instead.
+  ///
+  /// ## Refresh sequence on switch
+  ///
+  /// 1. `accountProvider` publishes the new active account.
+  /// 2. `_clearAccountScopedStateFor` stores the outgoing account's
+  ///    state here, then emits either the incoming account's stored
+  ///    state (if present) or, as before, blank account-scoped state.
+  ///    The first painted frame reflects this — ~20ms after the tap.
+  /// 3. The switch's `refreshAfterSend` — which ran before this cache
+  ///    existed and is unchanged — reads balance and history and emits
+  ///    authoritative values, typically 0.9-1.6s later.
+  ///
+  /// Step 3 is not triggered by this cache and fetches nothing extra;
+  /// the cache only changes what is displayed while it is in flight.
+  ///
+  /// ## Lifetime and clearing
+  ///
+  /// In memory, per `SyncNotifier` instance, never persisted. Written
+  /// only when switching away from an account, and only when that
+  /// account's data was complete (`hasAccountScopedData`). Read only
+  /// when switching to an account. Cleared wholesale by
+  /// `clearSensitiveStateForLock`, so lock, sign-out, and the password
+  /// recovery flows drop it along with the rest of the sensitive state.
+  ///
+  /// Not cleared on account deletion, import, or network change. A
+  /// stale entry for a removed account is unreachable — entries are
+  /// keyed by uuid and only read for the account being switched to, and
+  /// a removed account cannot be switched to — but pruning it would be
+  /// tidier.
+  ///
+  /// ## What bounds staleness
+  ///
+  /// * Restored values are overwritten by the refresh already in flight
+  ///   for that switch, typically within a second.
+  /// * Only wallet-wide sync fields are taken from the live state via
+  ///   `withGlobalSyncFieldsFrom`, so sync progress cannot regress to
+  ///   whatever it was when the account was last active.
+  /// * `displaySpendableFreshness` is forced to `lastCompletedSync`, so
+  ///   consumers that distinguish authoritative balances (the mobile
+  ///   send screen's max-amount quoting) treat it as a snapshot.
+  /// * Entries are keyed by uuid and only read for the incoming
+  ///   account, so one account's figures cannot appear under another.
+  /// * Spending is unaffected: `propose_send` re-derives inputs from the
+  ///   wallet DB, so a stale display cannot produce an invalid spend.
+  ///
+  /// ## Where staleness can still be observed
+  ///
+  /// This bounds staleness; it does not eliminate it. If the refresh in
+  /// step 3 fails, or reports the balance unavailable — a normal
+  /// non-error return while a summary is not yet computable — the
+  /// commit path keeps the previous values rather than blanking, so the
+  /// restored figures remain until a later refresh succeeds. Polling,
+  /// sync completion, and resume usually make that within ~10s.
+  ///
+  /// Only the mobile send screen currently reads
+  /// `displaySpendableFreshness`; desktop surfaces render a restored
+  /// balance identically to a fresh one. Wiring desktop to that flag is
+  /// the natural follow-up.
+  final Map<String, SyncState> _lastKnownByAccount = {};
   bool _balanceRefreshInFlight = false;
   bool _balanceRefreshQueued = false;
   bool _balanceRefreshQueuedReleaseSnapshot = false;
@@ -747,11 +849,45 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     return prev;
   }
 
+  /// Re-point account-scoped state at [accountUuid] during a switch.
+  ///
+  /// Bumping `_balanceReadVersion` first is what makes restoring safe:
+  /// any refresh still in flight for the outgoing account is discarded
+  /// on commit, so it cannot land on top of the incoming account's
+  /// restored values. See `_lastKnownByAccount` for the full sequence.
   void _clearAccountScopedStateFor(String? accountUuid) {
     ++_balanceReadVersion;
     _authoritativeBalanceRecovery = null;
     final prev = state.value;
     if (prev == null) return;
+
+    // Remember the account being left so switching back can paint
+    // immediately instead of blanking. Only complete states are stored,
+    // so a half-loaded account is never restored later.
+    final previousAccountUuid = prev.accountUuid;
+    if (previousAccountUuid != null && prev.hasAccountScopedData) {
+      _lastKnownByAccount[previousAccountUuid] = prev;
+    }
+
+    final restored = accountUuid == null
+        ? null
+        : _lastKnownByAccount[accountUuid];
+    if (restored != null) {
+      // Paint this account's last known values immediately, carrying the
+      // live sync fields so progress cannot regress, and flagged as a
+      // snapshot rather than authoritative. The switch's own refresh
+      // replaces them shortly.
+      state = AsyncData(
+        restored
+            .withGlobalSyncFieldsFrom(prev)
+            .copyWith(
+              displaySpendableFreshness:
+                  SpendableBalanceFreshness.lastCompletedSync,
+            ),
+      );
+      return;
+    }
+
     state = AsyncData(prev.withoutAccountScopedData(accountUuid: accountUuid));
   }
 
@@ -1442,6 +1578,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // running pass's `finally` so a new pass cannot start alongside it.
     _balanceRefreshQueued = false;
     _balanceRefreshQueuedReleaseSnapshot = false;
+    _lastKnownByAccount.clear();
     state = AsyncData(SyncState());
 
     // Sign-out should cancel the current Rust run immediately so unlock
@@ -2330,12 +2467,28 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     BigInt? shieldTransparentAmount;
     var hasAuthoritativeBalance = false;
     var didFetchRecentTxs = false;
+
+    // Balance and history are independent reads; issuing both before
+    // awaiting either removes one round trip from every refresh.
+    // `onError` is attached here rather than only in the `catch` blocks
+    // below: if the first await throws, the second future would
+    // otherwise complete with an unobserved error.
+    final balanceRead = rust_sync
+        .getBalance(dbPath: dbPath, network: network, accountUuid: accountUuid)
+        .then<Object>((value) => value, onError: (Object error) => error);
+    final historyRead = rust_sync
+        .getTransactionHistory(
+          dbPath: dbPath,
+          network: network,
+          limit: 10,
+          accountUuid: accountUuid,
+        )
+        .then<Object>((value) => value, onError: (Object error) => error);
+
     try {
-      final balance = await rust_sync.getBalance(
-        dbPath: dbPath,
-        network: network,
-        accountUuid: accountUuid,
-      );
+      final balanceResult = await balanceRead;
+      if (balanceResult is! rust_sync.WalletBalance) throw balanceResult;
+      final balance = balanceResult;
       if (balance.availability ==
           rust_sync.WalletBalanceAvailability.available) {
         transparent = balance.transparent;
@@ -2364,12 +2517,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     var recentTxs =
         scopedPrev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     try {
-      recentTxs = await rust_sync.getTransactionHistory(
-        dbPath: dbPath,
-        network: network,
-        limit: 10,
-        accountUuid: accountUuid,
-      );
+      final historyResult = await historyRead;
+      if (historyResult is! List<rust_sync.TransactionInfo>) throw historyResult;
+      recentTxs = historyResult;
       didFetchRecentTxs = true;
     } catch (e) {
       _logRefreshReadError(
