@@ -5071,7 +5071,8 @@ fn decrypt_and_store_migration_tx(
     )
     .map_err(|e| format!("Read locally created migration transaction: {e}"))?;
     super::transactions::decrypt_and_store_transaction(db_path, network, raw_tx, None)?;
-    super::transactions::mark_transaction_created_locally(db_path, &tx.txid())
+    super::transactions::mark_transaction_created_locally_best_effort(db_path, &tx.txid());
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5541,6 +5542,9 @@ pub(crate) struct ResubmitStats {
 /// The caller owns the gRPC client. In the sync loop the same
 /// client that downloaded the compact blocks is threaded straight
 /// through, so auto-resubmit reuses the same connection.
+/// `excluded_txids` are filtered before their raw bytes are loaded.
+/// Recovery uses this to avoid rebroadcasting transactions that
+/// compact scanning can restore as mined.
 ///
 /// Logging uses `log::info!` for the "broadcasting N txs" entry
 /// and `log::warn!` for per-tx failures / retries so an operator
@@ -5550,6 +5554,7 @@ pub(crate) async fn resubmit_pending_transactions<ShouldExit>(
     db_path: &str,
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
     current_height: u32,
+    excluded_txids: &HashSet<Vec<u8>>,
     should_exit: ShouldExit,
 ) -> ResubmitStats
 where
@@ -5560,7 +5565,11 @@ where
         return ResubmitStats::default();
     }
 
-    let candidates = match super::transactions::get_resubmittable_txs(db_path, current_height) {
+    let candidates = match super::transactions::get_resubmittable_txs_excluding(
+        db_path,
+        current_height,
+        excluded_txids,
+    ) {
         Ok(c) => c,
         Err(e) => {
             log::warn!(
