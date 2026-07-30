@@ -1567,6 +1567,142 @@ fn overdue_broadcast_crossing_expiry_bucket_requires_resigning_before_send() {
 }
 
 #[test]
+fn noncanonical_broadcast_height_promotes_locally_mined_scheduled_part_instead_of_resign() {
+    // Outbox export calls mark_due_parts_with_noncanonical_broadcast_height_for_resign
+    // before due selection. A mined-but-still-`scheduled` part whose tip crossed a
+    // ZIP 318 expiry window must become `confirmed`, not `needs_resign`.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "noncanonical-mined",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'noncanonical-mined'"
+        ),
+        [],
+    )
+    .unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 34_559);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    drop(conn);
+
+    let tip = 34_560u32;
+    assert_eq!(
+        mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+            &db_path,
+            "noncanonical-mined",
+            tip,
+        )
+        .unwrap(),
+        1,
+        "unmined noncanonical part must still require resign"
+    );
+    assert_eq!(
+        pending_parts_needing_resign(&db_path, "noncanonical-mined")
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "needs_resign");
+}
+
+#[test]
+fn noncanonical_recovery_observes_identity_committed_under_contended_write_lock() {
+    // Prototype coverage for atomic reconcile+resign: a sync-like writer that
+    // commits chain identity while holding the DB write lock must be visible to
+    // recovery once that lock is released. IMMEDIATE serialization is what
+    // closes the old separate-connection TOCTOU window.
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    use std::time::Duration;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "noncanonical-lock",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET schedule_start_height = 34558, scheduled_height = 34559,
+                 expiry_height = 69120
+             WHERE run_id = 'noncanonical-lock'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let tip = 34_560u32;
+    let barrier = Arc::new(Barrier::new(2));
+    let holder = {
+        let db_path = db_path.clone();
+        let txid = txids[0].clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+            conn.execute_batch("BEGIN IMMEDIATE")
+                .expect("sync-like writer must take the write lock");
+            barrier.wait();
+            // Keep the lock long enough for recovery's IMMEDIATE begin to block.
+            thread::sleep(Duration::from_millis(50));
+            insert_test_mined_txid(&conn, &txid, 34_559);
+            conn.execute_batch("COMMIT")
+                .expect("sync-like writer must commit mined identity");
+        })
+    };
+    let recovery = {
+        let db_path = db_path.clone();
+        let barrier = Arc::clone(&barrier);
+        thread::spawn(move || {
+            barrier.wait();
+            mark_due_parts_with_noncanonical_broadcast_height_for_resign(
+                &db_path,
+                "noncanonical-lock",
+                tip,
+            )
+        })
+    };
+
+    holder.join().expect("sync-like writer thread");
+    let affected = recovery
+        .join()
+        .expect("recovery thread")
+        .expect("noncanonical recovery under lock contention");
+    assert_eq!(
+        affected, 1,
+        "unmined sibling must still require resign after contended promote"
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "needs_resign");
+}
+
+#[test]
 fn incremental_child_promotion_uses_immutable_signed_schedule_origin() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir
@@ -7872,4 +8008,197 @@ fn invalid_outbox_schedule_rolls_back_accepted_transition() {
         )
         .unwrap();
     assert_eq!(status, "scheduled");
+}
+
+fn insert_test_mined_txid(conn: &rusqlite::Connection, txid_hex: &str, mined_height: u32) {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS transactions (
+             txid BLOB PRIMARY KEY,
+             mined_height INTEGER
+         )",
+        [],
+    )
+    .unwrap();
+    let mut txid_blob = hex::decode(txid_hex).unwrap();
+    txid_blob.reverse();
+    conn.execute(
+        "INSERT OR REPLACE INTO transactions (txid, mined_height) VALUES (?1, ?2)",
+        params![txid_blob, mined_height],
+    )
+    .unwrap();
+}
+
+fn pending_status(conn: &rusqlite::Connection, txid_hex: &str) -> String {
+    conn.query_row(
+        &format!("SELECT status FROM {PENDING_TXS_TABLE} WHERE txid_hex = ?1"),
+        params![txid_hex],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn expiry_recovery_promotes_locally_mined_scheduled_part_instead_of_resign() {
+    // Resume/export call mark_expired_pending_parts_for_resign before due
+    // selection. A mined-but-still-`scheduled` part past expiry must become
+    // `confirmed`, not `needs_resign`.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "expiry-mined",
+        &[100, 200],
+        &[Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    // Force past-expiry bookkeeping while leaving status as `scheduled`.
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET expiry_height = 100
+             WHERE run_id = 'expiry-mined' AND txid_hex = ?1"
+        ),
+        params![txids[0]],
+    )
+    .unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    drop(conn);
+
+    let tip = 100u32;
+    assert_eq!(
+        expired_unconfirmed_pending_count(&db_path, "expiry-mined", tip).unwrap(),
+        0,
+        "count must reconcile mined rows before treating them as expired"
+    );
+    assert_eq!(
+        mark_expired_pending_parts_for_resign(&db_path, "expiry-mined", tip).unwrap(),
+        0,
+        "expiry recovery must not flip a locally mined part to needs_resign"
+    );
+    assert!(pending_parts_needing_resign(&db_path, "expiry-mined")
+        .unwrap()
+        .is_empty());
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+}
+
+#[test]
+fn due_pending_skips_locally_mined_scheduled_part() {
+    // A part that is already mined locally must not remain the due candidate.
+    // Selection reconciles pending confirmations first so later due parts can
+    // advance instead of head-of-line blocking on a stale `scheduled` row.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-b",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    // create_outbox_test_run schedules at 101, 102, 103.
+    let tip = 103u32;
+
+    let before = due_pending_txs(&db_path, "race-b", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].txid_hex, txids[0]);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+    assert!(local_denomination_chain_identity(&conn, &txids[0])
+        .unwrap()
+        .is_some());
+    drop(conn);
+
+    let next = due_pending_txs(&db_path, "race-b", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(
+        next[0].txid_hex, txids[1],
+        "locally mined part 0 must be skipped so part 1 becomes due"
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(
+        pending_status(&conn, &txids[0]),
+        "confirmed",
+        "due selection must promote the mined head so bookkeeping matches chain state"
+    );
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+}
+
+#[test]
+fn reconcile_promotes_pending_when_local_txid_is_mined() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-c",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    let tip = 103u32;
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    assert_eq!(pending_status(&conn, &txids[0]), "scheduled");
+
+    reconcile_run_confirmations(&conn, "race-c").unwrap();
+    assert_eq!(pending_status(&conn, &txids[0]), "confirmed");
+    assert_eq!(pending_status(&conn, &txids[1]), "scheduled");
+    drop(conn);
+
+    let next = due_pending_txs(&db_path, "race-c", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(
+        next[0].txid_hex, txids[1],
+        "after reconcile, part 1 must become the due candidate"
+    );
+}
+
+#[test]
+fn due_pending_unblocks_later_parts_after_stale_head_is_mined() {
+    // Combined HOL symptom: mined-but-unreconciled part 0 must not block part 1
+    // once due selection runs.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txids = create_outbox_test_run(
+        &db_path,
+        "race-hol",
+        &[100, 200, 300],
+        &[Some(90), Some(90), Some(90)],
+    );
+    let tip = 103u32;
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_test_mined_txid(&conn, &txids[0], 101);
+    drop(conn);
+
+    let unblocked =
+        due_pending_txs(&db_path, "race-hol", tip, TEST_PASSWORD, TEST_SALT_BASE64).unwrap();
+    assert_eq!(unblocked[0].txid_hex, txids[1]);
+
+    assert_eq!(
+        due_scheduled_pending_count(&db_path, "race-hol", tip).unwrap(),
+        2,
+        "after promoting part 0, two later scheduled parts remain due at tip"
+    );
 }

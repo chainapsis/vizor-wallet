@@ -2522,6 +2522,8 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     // Reconcile chain changes before deciding whether an already-scheduled
     // child is still valid. Independent due children should not miss their
     // broadcast height while another denomination branch is still advancing.
+    // `due_scheduled_pending_count` / `due_pending_txs` also reconcile pending
+    // confirmations so a mined-but-still-scheduled head cannot block later parts.
     super::migration::reconcile_denomination_stage_chain_state(db_path, &run.run_id)?;
     let chain_tip_height =
         u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)

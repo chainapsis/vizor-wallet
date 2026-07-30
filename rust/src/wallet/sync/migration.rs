@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::OsRng, seq::SliceRandom, CryptoRng, Rng, RngCore};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
 use zeroize::Zeroizing;
@@ -3298,6 +3298,21 @@ pub(crate) fn unbroadcast_migration_recovery_candidates(
     Ok(candidates)
 }
 
+/// Promotes pending migration rows to `confirmed` when the wallet already has
+/// local chain identity for their txids (and demotes orphaned `confirmed` rows
+/// after a reorg). Call before due selection. Expiry and noncanonical
+/// broadcast-height recovery call [`reconcile_run_confirmations`] inside their
+/// own IMMEDIATE write transaction instead of this helper, so identity checks
+/// and `needs_resign` updates stay atomic against concurrent sync writers.
+pub(crate) fn reconcile_run_pending_confirmations(
+    db_path: &str,
+    run_id: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    reconcile_run_confirmations(&conn, run_id)
+}
+
 pub(crate) fn scheduled_migration_stop_candidates(
     db_path: &str,
     account_uuid: &str,
@@ -3494,6 +3509,9 @@ pub(crate) fn due_pending_txs(
     salt_base64: &str,
 ) -> Result<Vec<DuePendingMigrationTx>, String> {
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    // Reconcile before selecting so locally mined parts are no longer
+    // `scheduled` and cannot win the earliest-due LIMIT 1 forever.
+    reconcile_run_pending_confirmations(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
@@ -3501,8 +3519,7 @@ pub(crate) fn due_pending_txs(
             "SELECT txid_hex, encrypted_raw_tx, scheduled_height, expiry_height
              FROM {PENDING_TXS_TABLE}
              WHERE run_id = ?1 AND status = 'scheduled' AND scheduled_height <= ?2
-             ORDER BY scheduled_height ASC, txid_hex ASC
-             LIMIT 1"
+             ORDER BY scheduled_height ASC, txid_hex ASC"
         ))
         .map_err(|e| format!("Prepare due migration tx query: {e}"))?;
     let rows = stmt
@@ -3520,6 +3537,11 @@ pub(crate) fn due_pending_txs(
     for row in rows {
         let (txid_hex, encrypted_raw_tx, scheduled_height, expiry_height) =
             row.map_err(|e| format!("Read due migration tx: {e}"))?;
+        // Defense in depth: never return a part that is already mined locally,
+        // even if status reconciliation raced or was skipped by a caller.
+        if local_denomination_chain_identity(&conn, &txid_hex)?.is_some() {
+            continue;
+        }
         if expiry_height != zip318_canonical_migration_expiry_height(scheduled_height)? {
             return Err(format!(
                 "Due migration transaction {txid_hex} expiry is not canonical for scheduled height {scheduled_height}"
@@ -3534,6 +3556,7 @@ pub(crate) fn due_pending_txs(
             txid_hex,
             raw_tx: raw_tx.to_vec(),
         });
+        break;
     }
     Ok(due)
 }
@@ -3543,12 +3566,19 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    // Outbox export and broadcast advance call this before due selection.
+    // Reconcile and the needs_resign flip share one IMMEDIATE transaction so a
+    // mined-but-still-`scheduled` part whose tip crossed a ZIP 318 expiry
+    // window is promoted to `confirmed` instead of `needs_resign`, and
+    // foreground sync cannot commit that chain identity between the check and
+    // the status update.
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let canonical_expiry = zip318_canonical_migration_expiry_height(chain_tip_height)?;
     let tx = conn
-        .unchecked_transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| format!("Begin migration broadcast-height validation: {e}"))?;
+    reconcile_run_confirmations(&tx, run_id)?;
     let affected = tx
         .execute(
             &format!(
@@ -3597,6 +3627,9 @@ pub(crate) fn due_scheduled_pending_count(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
+    // Match due selection: promote locally mined scheduled rows first so the
+    // broadcast gate does not treat a stale head as still due.
+    reconcile_run_pending_confirmations(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     conn.query_row(
@@ -3646,6 +3679,10 @@ pub(crate) fn expired_unconfirmed_pending_count(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
+    // Resume/export paths check this before due selection. Promote locally mined
+    // rows first so a past-expiry but already-confirmed part is not treated as
+    // needing resign.
+    reconcile_run_pending_confirmations(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     conn.query_row(
@@ -3668,11 +3705,17 @@ pub(crate) fn mark_expired_pending_parts_for_resign(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    // Resume (`migrate_orchard_to_ironwood`) and outbox export call this before
+    // `due_pending_txs`. Reconcile and the needs_resign flip share one IMMEDIATE
+    // transaction so a mined-but-still-`scheduled` part past its expiry height
+    // is promoted to `confirmed` instead of `needs_resign`, and foreground sync
+    // cannot commit that chain identity between the check and the status update.
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let tx = conn
-        .unchecked_transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| format!("Begin expired migration recovery: {e}"))?;
+    reconcile_run_confirmations(&tx, run_id)?;
     let updated = tx
         .execute(
             &format!(
