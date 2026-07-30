@@ -48,6 +48,14 @@ class IronwoodMigrationOperationRegistry {
   final Map<String, Object> _revocations = {};
   final Set<String> _committedRevocations = {};
 
+  /// Whether operations for this account are currently revoked.
+  ///
+  /// `run` throws `IronwoodMigrationAccountRevokedException` for revoked
+  /// accounts. A batched read cannot use that per-account guard, so it
+  /// checks this first and reports the same outcome per entry.
+  bool isRevoked({required String network, required String accountUuid}) =>
+      _revocations.containsKey(_key(network, accountUuid));
+
   Future<T> run<T>({
     required String network,
     required String accountUuid,

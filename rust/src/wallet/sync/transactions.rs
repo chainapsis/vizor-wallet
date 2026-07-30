@@ -53,6 +53,7 @@ pub(crate) enum WalletBalanceAvailability {
     AccountUnavailable,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WalletBalance {
     pub availability: WalletBalanceAvailability,
     pub transparent: u64,
@@ -101,61 +102,100 @@ pub fn get_wallet_balance(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<WalletBalance, String> {
-    let target_id = parse_account_uuid(account_uuid)?;
-    let db = open_wallet_db_for_read(db_path, network)?;
-    match db
-        .get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| format!("{e}"))?
-    {
-        Some(s) => match s.account_balances().get(&target_id) {
-            Some(b) => {
-                let transparent_change =
-                    u64::from(b.unshielded_balance().change_pending_confirmation());
-                let sapling_change = u64::from(b.sapling_balance().change_pending_confirmation());
-                let orchard_change = u64::from(b.orchard_balance().change_pending_confirmation());
-                let ironwood_change = u64::from(b.ironwood_balance().change_pending_confirmation());
-                let transparent_pending =
-                    u64::from(b.unshielded_balance().value_pending_spendability());
-                let sapling_pending = u64::from(b.sapling_balance().value_pending_spendability());
-                let orchard_pending = u64::from(b.orchard_balance().value_pending_spendability());
-                let ironwood_pending = u64::from(b.ironwood_balance().value_pending_spendability());
+    let mut balances = get_wallet_balances(db_path, network, std::slice::from_ref(&account_uuid))?;
+    Ok(balances
+        .pop()
+        .expect("get_wallet_balances returns one entry per requested account"))
+}
 
-                Ok(WalletBalance {
-                    availability: WalletBalanceAvailability::Available,
-                    transparent: u64::from(b.unshielded_balance().spendable_value()),
-                    sapling: u64::from(b.sapling_balance().spendable_value()),
-                    orchard: u64::from(b.orchard_balance().spendable_value()),
-                    ironwood: u64::from(b.ironwood_balance().spendable_value()),
-                    transparent_locked: u64::from(b.unshielded_balance().locked_value()),
-                    sapling_locked: u64::from(b.sapling_balance().locked_value()),
-                    orchard_locked: u64::from(b.orchard_balance().locked_value()),
-                    ironwood_locked: u64::from(b.ironwood_balance().locked_value()),
-                    transparent_pending: transparent_change + transparent_pending,
-                    sapling_pending: sapling_change + sapling_pending,
-                    orchard_pending: orchard_change + orchard_pending,
-                    ironwood_pending: ironwood_change + ironwood_pending,
-                    change_pending_confirmation: transparent_change
-                        + sapling_change
-                        + orchard_change
-                        + ironwood_change,
-                    value_pending_spendability: transparent_pending
-                        + sapling_pending
-                        + orchard_pending
-                        + ironwood_pending,
-                    uneconomic_value: u64::from(b.unshielded_balance().uneconomic_value())
-                        + u64::from(b.sapling_balance().uneconomic_value())
-                        + u64::from(b.orchard_balance().uneconomic_value())
-                        + u64::from(b.ironwood_balance().uneconomic_value()),
-                })
-            }
-            None => Ok(WalletBalance::unavailable(
-                WalletBalanceAvailability::AccountUnavailable,
-            )),
-        },
-        None => Ok(WalletBalance::unavailable(
-            WalletBalanceAvailability::SummaryUnavailable,
-        )),
-    }
+/// Balances for several accounts from a single `get_wallet_summary`.
+///
+/// `get_wallet_summary` computes every account's balance regardless of
+/// which one the caller wants, so asking it once per account is
+/// quadratic in account count. Callers that need more than one account
+/// — the Ironwood migration coordinator sweeps all of them every poll —
+/// must use this instead of looping over `get_wallet_balance`.
+///
+/// Returns one entry per requested uuid, in the order given. An account
+/// missing from the summary yields `AccountUnavailable` rather than an
+/// error, matching the single-account behaviour, so one unknown account
+/// cannot fail the whole batch.
+pub fn get_wallet_balances(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuids: &[&str],
+) -> Result<Vec<WalletBalance>, String> {
+    let target_ids = account_uuids
+        .iter()
+        .map(|uuid| parse_account_uuid(uuid))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let summary = db
+        .get_wallet_summary(ConfirmationsPolicy::default())
+        .map_err(|e| format!("{e}"))?;
+
+    let Some(summary) = summary else {
+        return Ok(target_ids
+            .iter()
+            .map(|_| WalletBalance::unavailable(WalletBalanceAvailability::SummaryUnavailable))
+            .collect());
+    };
+
+    Ok(target_ids
+        .iter()
+        .map(
+            |target_id| match summary.account_balances().get(target_id) {
+                Some(b) => {
+                    let transparent_change =
+                        u64::from(b.unshielded_balance().change_pending_confirmation());
+                    let sapling_change =
+                        u64::from(b.sapling_balance().change_pending_confirmation());
+                    let orchard_change =
+                        u64::from(b.orchard_balance().change_pending_confirmation());
+                    let ironwood_change =
+                        u64::from(b.ironwood_balance().change_pending_confirmation());
+                    let transparent_pending =
+                        u64::from(b.unshielded_balance().value_pending_spendability());
+                    let sapling_pending =
+                        u64::from(b.sapling_balance().value_pending_spendability());
+                    let orchard_pending =
+                        u64::from(b.orchard_balance().value_pending_spendability());
+                    let ironwood_pending =
+                        u64::from(b.ironwood_balance().value_pending_spendability());
+
+                    WalletBalance {
+                        availability: WalletBalanceAvailability::Available,
+                        transparent: u64::from(b.unshielded_balance().spendable_value()),
+                        sapling: u64::from(b.sapling_balance().spendable_value()),
+                        orchard: u64::from(b.orchard_balance().spendable_value()),
+                        ironwood: u64::from(b.ironwood_balance().spendable_value()),
+                        transparent_locked: u64::from(b.unshielded_balance().locked_value()),
+                        sapling_locked: u64::from(b.sapling_balance().locked_value()),
+                        orchard_locked: u64::from(b.orchard_balance().locked_value()),
+                        ironwood_locked: u64::from(b.ironwood_balance().locked_value()),
+                        transparent_pending: transparent_change + transparent_pending,
+                        sapling_pending: sapling_change + sapling_pending,
+                        orchard_pending: orchard_change + orchard_pending,
+                        ironwood_pending: ironwood_change + ironwood_pending,
+                        change_pending_confirmation: transparent_change
+                            + sapling_change
+                            + orchard_change
+                            + ironwood_change,
+                        value_pending_spendability: transparent_pending
+                            + sapling_pending
+                            + orchard_pending
+                            + ironwood_pending,
+                        uneconomic_value: u64::from(b.unshielded_balance().uneconomic_value())
+                            + u64::from(b.sapling_balance().uneconomic_value())
+                            + u64::from(b.orchard_balance().uneconomic_value())
+                            + u64::from(b.ironwood_balance().uneconomic_value()),
+                    }
+                }
+                None => WalletBalance::unavailable(WalletBalanceAvailability::AccountUnavailable),
+            },
+        )
+        .collect())
 }
 
 // ======================== Diversified Address ========================
@@ -3215,6 +3255,71 @@ mod tests {
             &uuid_bytes,
             limit,
         ))
+    }
+
+    /// Pin the batched balance read to the single-account one.
+    ///
+    /// `get_wallet_balances` exists so a caller wanting several accounts
+    /// pays for one `get_wallet_summary` instead of one per account. It
+    /// must return exactly what looping over `get_wallet_balance` would,
+    /// including order and the unavailable-account fallbacks.
+    ///
+    /// Needs a real wallet DB, same as the history equivalence check:
+    ///
+    /// ```text
+    /// VIZOR_HISTORY_EQUIV_DB=/path/to/zcash_wallet.db \
+    ///   cargo test --lib wallet_balances_batch_matches_single -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "requires a librustzcash-built wallet DB via VIZOR_HISTORY_EQUIV_DB"]
+    fn wallet_balances_batch_matches_single() {
+        let db_path = std::env::var("VIZOR_HISTORY_EQUIV_DB")
+            .expect("set VIZOR_HISTORY_EQUIV_DB to a librustzcash-built wallet DB");
+        let conn = open_readonly_conn(&db_path).unwrap();
+        let uuids: Vec<String> = conn
+            .prepare("SELECT uuid FROM accounts ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .unwrap()
+            .map(|raw| uuid::Uuid::from_slice(&raw.unwrap()).unwrap().to_string())
+            .collect();
+        assert!(!uuids.is_empty(), "{db_path} has no accounts");
+        drop(conn);
+
+        let network = WalletNetwork::Main;
+        let refs: Vec<&str> = uuids.iter().map(String::as_str).collect();
+        let batched = get_wallet_balances(&db_path, network, &refs).unwrap();
+        assert_eq!(
+            batched.len(),
+            uuids.len(),
+            "batch must return one entry per requested account"
+        );
+
+        for (uuid, batch_entry) in uuids.iter().zip(batched.iter()) {
+            let single = get_wallet_balance(&db_path, network, uuid).unwrap();
+            assert_eq!(
+                batch_entry, &single,
+                "account {uuid}: batched balance diverged from get_wallet_balance"
+            );
+        }
+
+        // An account absent from the summary must degrade per entry, not
+        // fail the batch, so one stale uuid cannot blank a whole sweep.
+        let missing = uuid::Uuid::nil().to_string();
+        let mut with_missing: Vec<&str> = refs.clone();
+        with_missing.push(&missing);
+        let mixed = get_wallet_balances(&db_path, network, &with_missing).unwrap();
+        assert_eq!(mixed.len(), with_missing.len());
+        assert_eq!(
+            mixed.last().unwrap().availability,
+            WalletBalanceAvailability::AccountUnavailable
+        );
+        assert_eq!(
+            &mixed[..refs.len()],
+            &batched[..],
+            "a missing account must not disturb the others"
+        );
+        println!("compared {} accounts", uuids.len());
     }
 
     /// Pin `HISTORY_BASES_CTE` to the upstream `v_transactions` view.
