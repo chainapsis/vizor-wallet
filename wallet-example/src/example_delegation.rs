@@ -141,11 +141,13 @@ pub fn prove_and_submit_delegation_bundle(
         .context("assemble signed delegation submission")
 }
 
-/// Builds the redacted Keystone signing request for one delegation bundle.
+/// Builds TX1, the redacted Keystone signing transaction for one bundle.
 ///
-/// The returned request includes signer-facing redacted PCZT bytes, display
-/// metadata, bundle weights, and the local setup needed to verify and submit the
-/// later signed PCZT.
+/// TX1 is a consensus-shaped Zcash PCZT used to obtain a ZIP-244 SpendAuth
+/// signature. It is not the vote-chain delegation submission and must never be
+/// broadcast to the Zcash network. The returned request includes signer-facing
+/// redacted PCZT bytes, display metadata, bundle weights, and the local setup
+/// needed to verify and submit the later signed PCZT.
 ///
 /// # Errors
 ///

@@ -77,6 +77,11 @@ stage-oriented API:
   on-chain confirmations. `open_proposals` contains only proposals with no
   terminal decision yet.
 
+The Zcash-format transaction signed during delegation is specified separately
+in [Delegation signing transaction (TX1)](docs/delegation-signing-transaction.md).
+It distinguishes the non-broadcast PCZT signing artifact from the vote-chain
+delegation submission and includes software-wallet and Keystone examples.
+
 ## Migrating 0.11 to 0.12
 
 - Replace `VotingDb::build_vote_commitment` + `vote_commitment::sign_cast_vote`
