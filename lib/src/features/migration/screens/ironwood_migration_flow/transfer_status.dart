@@ -180,6 +180,37 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final usesLargeText = MediaQuery.textScalerOf(context).scale(1) > 1;
+    final copy = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Your\n${_formatZecAmountCompact(totalZatoshi)} ZEC\n'
+          'are on Ironwood!',
+          textAlign: TextAlign.center,
+          style: AppTypography.headlineLarge.copyWith(
+            color: colors.text.accent,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Migration completed successfully and you can\n'
+          'spend your funds as usual.',
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyMedium.copyWith(
+            color: colors.text.secondary,
+          ),
+        ),
+      ],
+    );
+    final action = AppButton(
+      key: const ValueKey('ironwood_migration_status_action_button'),
+      onPressed: onDone,
+      height: 36,
+      minWidth: 96,
+      expand: true,
+      child: const Text('Done'),
+    );
     return SizedBox(
       key: const ValueKey('ironwood_migration_complete_content'),
       width: 420,
@@ -244,49 +275,40 @@ class _MigrationCompleteStatusContent extends StatelessWidget {
               ],
             ),
           ),
-          Positioned(
-            left: 65,
-            top: 343.5,
-            width: 290,
-            height: 153,
-            child: SizedBox(
-              key: const ValueKey('ironwood_migration_complete_copy'),
+          if (!usesLargeText) ...[
+            Positioned(
+              left: 65,
+              top: 343.5,
+              width: 290,
+              height: 153,
+              child: SizedBox(
+                key: const ValueKey('ironwood_migration_complete_copy'),
+                child: copy,
+              ),
+            ),
+            Positioned(left: 162, top: 544.5, width: 96, child: action),
+          ] else
+            Positioned(
+              left: 12,
+              top: 296,
+              width: 396,
+              bottom: 8,
               child: Column(
                 children: [
-                  Text(
-                    'Your\n${_formatZecAmountCompact(totalZatoshi)} ZEC\n'
-                    'are on Ironwood!',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.headlineLarge.copyWith(
-                      color: colors.text.accent,
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: SizedBox(
+                        key: const ValueKey('ironwood_migration_complete_copy'),
+                        width: 396,
+                        child: copy,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Migration completed successfully and you can\n'
-                    'spend your funds as usual.',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: colors.text.secondary,
-                    ),
-                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(width: 96, child: action),
                 ],
               ),
             ),
-          ),
-          Positioned(
-            left: 162,
-            top: 544.5,
-            width: 96,
-            child: AppButton(
-              key: const ValueKey('ironwood_migration_status_action_button'),
-              onPressed: onDone,
-              height: 36,
-              minWidth: 96,
-              expand: true,
-              child: const Text('Done'),
-            ),
-          ),
         ],
       ),
     );

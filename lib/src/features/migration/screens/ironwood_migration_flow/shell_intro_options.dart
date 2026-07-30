@@ -462,32 +462,57 @@ class _IronwoodMigrationHowItWorksContentState
                                       horizontal: _pageInset,
                                     ),
                                     child: Semantics(
-                                      container: index == _page,
+                                      container: true,
+                                      button: index != _page,
+                                      selected: index == _page,
                                       label: index == _page
                                           ? 'Migration step ${index + 1} of '
                                                 '${_steps.length}. '
                                                 '${step.title}. ${step.body}'
-                                          : null,
+                                          : 'Show migration step '
+                                                '${index + 1} of '
+                                                '${_steps.length}',
+                                      onTap: index == _page
+                                          ? null
+                                          : () => _animateToPage(index),
                                       child: ExcludeSemantics(
-                                        child: MouseRegion(
-                                          cursor: index == _page
-                                              ? MouseCursor.defer
-                                              : SystemMouseCursors.click,
-                                          child: GestureDetector(
-                                            behavior: HitTestBehavior.opaque,
-                                            onTap: index == _page
-                                                ? null
-                                                : () => _animateToPage(index),
-                                            child:
-                                                _IronwoodMigrationHowStepCard(
-                                                  key: ValueKey(
-                                                    'ironwood_migration_how_'
-                                                    'card_$index',
+                                        child: _IronwoodMigrationCarouselAction(
+                                          actionKey: ValueKey(
+                                            'ironwood_migration_how_'
+                                            'card_action_$index',
+                                          ),
+                                          onActivate: index == _page
+                                              ? null
+                                              : () => _animateToPage(index),
+                                          borderRadius: BorderRadius.circular(
+                                            AppRadii.large,
+                                          ),
+                                          child: MouseRegion(
+                                            key: ValueKey(
+                                              'ironwood_migration_how_'
+                                              'card_cursor_$index',
+                                            ),
+                                            cursor: _pointerDown
+                                                ? MouseCursor.defer
+                                                : index == _page
+                                                ? MouseCursor.defer
+                                                : SystemMouseCursors.click,
+                                            child: GestureDetector(
+                                              behavior: HitTestBehavior.opaque,
+                                              onTap: index == _page
+                                                  ? null
+                                                  : () => _animateToPage(index),
+                                              child:
+                                                  _IronwoodMigrationHowStepCard(
+                                                    key: ValueKey(
+                                                      'ironwood_migration_how_'
+                                                      'card_$index',
+                                                    ),
+                                                    index: index,
+                                                    title: step.title,
+                                                    body: step.body,
                                                   ),
-                                                  index: index,
-                                                  title: step.title,
-                                                  body: step.body,
-                                                ),
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -507,9 +532,9 @@ class _IronwoodMigrationHowItWorksContentState
           ),
           Positioned(
             left: 306,
-            top: 494,
+            top: 482,
             width: 88,
-            height: 8,
+            height: 32,
             child: Row(
               children: [
                 for (var index = 0; index < _steps.length; index++) ...[
@@ -518,23 +543,44 @@ class _IronwoodMigrationHowItWorksContentState
                     selected: index == _page,
                     label:
                         'Show migration step ${index + 1} of ${_steps.length}',
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => _animateToPage(index),
-                        child: AnimatedContainer(
-                          key: ValueKey(
-                            'ironwood_migration_how_indicator_$index',
-                          ),
-                          duration: const Duration(milliseconds: 220),
-                          width: index == _page ? 40 : 20,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: index == _page
-                                ? colors.background.inverse
-                                : colors.background.overlay,
-                            borderRadius: BorderRadius.circular(AppRadii.full),
+                    onTap: () => _animateToPage(index),
+                    child: _IronwoodMigrationCarouselAction(
+                      actionKey: ValueKey(
+                        'ironwood_migration_how_indicator_action_$index',
+                      ),
+                      onActivate: () => _animateToPage(index),
+                      borderRadius: BorderRadius.circular(AppRadii.full),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _animateToPage(index),
+                          child: AnimatedContainer(
+                            key: ValueKey(
+                              'ironwood_migration_how_'
+                              'indicator_hit_target_$index',
+                            ),
+                            duration: const Duration(milliseconds: 220),
+                            width: index == _page ? 40 : 20,
+                            height: 32,
+                            child: Center(
+                              child: AnimatedContainer(
+                                key: ValueKey(
+                                  'ironwood_migration_how_indicator_$index',
+                                ),
+                                duration: const Duration(milliseconds: 220),
+                                width: index == _page ? 40 : 20,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: index == _page
+                                      ? colors.background.inverse
+                                      : colors.background.overlay,
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.full,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -566,6 +612,65 @@ class _IronwoodMigrationHowItWorksContentState
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _IronwoodMigrationCarouselAction extends StatelessWidget {
+  const _IronwoodMigrationCarouselAction({
+    required this.actionKey,
+    required this.onActivate,
+    required this.borderRadius,
+    required this.child,
+  });
+
+  final Key actionKey;
+  final VoidCallback? onActivate;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      canRequestFocus: onActivate != null,
+      onKeyEvent: (_, event) {
+        if (onActivate == null || event is! KeyDownEvent) {
+          return KeyEventResult.ignored;
+        }
+        final key = event.logicalKey;
+        if (key != LogicalKeyboardKey.enter &&
+            key != LogicalKeyboardKey.numpadEnter &&
+            key != LogicalKeyboardKey.space) {
+          return KeyEventResult.ignored;
+        }
+        onActivate!();
+        return KeyEventResult.handled;
+      },
+      child: Builder(
+        builder: (context) {
+          final focused = Focus.of(context).hasFocus;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              KeyedSubtree(key: actionKey, child: child),
+              if (focused)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: context.colors.state.focusRing,
+                          width: 2,
+                        ),
+                        borderRadius: borderRadius,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

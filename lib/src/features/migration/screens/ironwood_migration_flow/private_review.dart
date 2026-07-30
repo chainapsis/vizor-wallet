@@ -152,11 +152,11 @@ class _IronwoodMigrationPrivateReviewContentState
         ? ref.watch(ironwoodMigrationPrivatePlanProvider)
         : AsyncValue<rust_sync.OrchardMigrationPrivatePlan?>.data(previewPlan);
     final plan = planAsync.asData?.value;
-    if (planAsync.isLoading) return const _MigrationAnalyzingContent();
     return FutureBuilder<void>(
       future: _minimumAnalyzingDelay,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
+        if (planAsync.isLoading ||
+            snapshot.connectionState != ConnectionState.done) {
           return const _MigrationAnalyzingContent();
         }
         if (planAsync.hasError || plan == null) {
@@ -425,7 +425,6 @@ class _MigrationAnalyzingDonut extends StatelessWidget {
         builder: (context, child) => Semantics(
           label: 'Preparing private migration plan',
           value: '${(progress.value * 100).round()}%',
-          liveRegion: true,
           child: CustomPaint(
             painter: _MigrationAnalyzingDonutPainter(
               progress: progress.value,
