@@ -491,7 +491,7 @@ class _MigrationAnalyzingDonutPainter extends CustomPainter {
 abstract final class _MigrationAnalyzingMotion {
   static const period = Duration(seconds: 2);
   static const preparationPeriod = Duration(milliseconds: 9500);
-  static const completionPeriod = Duration(milliseconds: 850);
+  static const completionPeriod = Duration(milliseconds: 250);
   static const reducedMotionProgress = 0.28;
   static const messageAdvanceProgress = 0.96;
   static const cycleResetProgress = 0.2;

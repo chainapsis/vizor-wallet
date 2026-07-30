@@ -632,7 +632,7 @@ void main() {
     );
     expect(find.text('Ironwood Migration'), findsNothing);
 
-    await tester.pump(const Duration(milliseconds: 849));
+    await tester.pump(const Duration(milliseconds: 249));
     expect(
       find.byKey(const ValueKey('ironwood_migration_analyzing_screen')),
       findsOneWidget,
@@ -738,7 +738,7 @@ void main() {
       expect(percent(donutValue()), greaterThanOrEqualTo(progressBeforePlan));
 
       await tester.pump(const Duration(milliseconds: 3670));
-      await tester.pump(const Duration(milliseconds: 849));
+      await tester.pump(const Duration(milliseconds: 249));
       await tester.pump(const Duration(milliseconds: 1));
       await tester.pump(const Duration(milliseconds: 16));
       await tester.pump();
