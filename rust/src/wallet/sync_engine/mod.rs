@@ -243,6 +243,29 @@ fn should_query_unmined_statuses(
         .is_some_and(|max_scanned| max_scanned + MINED_STATUS_TIP_MARGIN >= chain_tip_height)
 }
 
+/// Reads the live inputs for [`should_query_unmined_statuses`] (pending scan
+/// ranges, max scanned block) from `db` and evaluates it against
+/// `chain_tip_height`.
+fn compute_query_unmined_statuses(
+    db: &WalletDatabase,
+    chain_tip_height: u64,
+) -> Result<bool, SyncError> {
+    let has_pending_scan_ranges = db
+        .suggest_scan_ranges()
+        .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
+        .iter()
+        .any(is_pending_scan_range);
+    let max_scanned_height = db
+        .block_max_scanned()
+        .map_err(|e| SyncError::db(format!("block_max_scanned: {e}")))?
+        .map(|meta| u32::from(meta.block_height()) as u64);
+    Ok(should_query_unmined_statuses(
+        has_pending_scan_ranges,
+        max_scanned_height,
+        chain_tip_height,
+    ))
+}
+
 fn pending_scan_blocks(ranges: &[ScanRange]) -> u64 {
     ranges
         .iter()
@@ -1445,12 +1468,24 @@ async fn run_sync_impl(
     // slow connection, which is long enough for the user to hit
     // stop. Skip the whole pass in that case instead of sending
     // one more round of broadcasts after the UI asked us to quit.
+    //
+    // Recovery gate: a restart mid-recovery would re-select formerly
+    // mined transactions that truncation marked unmined, so this pass
+    // waits behind the same scan-frontier check as the post-batch
+    // resubmit (see `should_query_unmined_statuses`). Once the frontier
+    // catches back up, the post-batch pass covers resubmission for the
+    // rest of this run.
     if !allow_resubmit {
         log::info!("[{}] sync: startup resubmit disabled", elapsed());
     } else if cancel.load(Ordering::Relaxed) || desired_mode.load(Ordering::SeqCst) != running_mode
     {
         log::info!(
             "[{}] sync: cancel/mode observed before startup resubmit, skipping",
+            elapsed(),
+        );
+    } else if !compute_query_unmined_statuses(&db, tip.height)? {
+        log::info!(
+            "[{}] sync: startup resubmit deferred, scan frontier below tip",
             elapsed(),
         );
     } else {
@@ -2079,22 +2114,7 @@ async fn run_sync_impl(
         // querying lightwalletd for the statuses that remain unknown; backfill
         // below a tip-current scan frontier does not defer status work (see
         // `should_query_unmined_statuses`).
-        let query_unmined_statuses = {
-            let has_pending_scan_ranges = db
-                .suggest_scan_ranges()
-                .map_err(|e| SyncError::db(format!("suggest_scan_ranges: {e}")))?
-                .iter()
-                .any(is_pending_scan_range);
-            let max_scanned_height = db
-                .block_max_scanned()
-                .map_err(|e| SyncError::db(format!("block_max_scanned: {e}")))?
-                .map(|meta| u32::from(meta.block_height()) as u64);
-            should_query_unmined_statuses(
-                has_pending_scan_ranges,
-                max_scanned_height,
-                current_tip_height,
-            )
-        };
+        let query_unmined_statuses = compute_query_unmined_statuses(&db, current_tip_height)?;
 
         // Enhancement
         run_enhancement(
