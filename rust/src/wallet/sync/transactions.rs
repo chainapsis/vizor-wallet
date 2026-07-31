@@ -131,7 +131,7 @@ pub fn get_wallet_balances(
         .collect::<Result<Vec<_>, _>>()?;
 
     let summary =
-        crate::wallet::wallet_summary_cache::get_wallet_snapshot_cached(db_path, network)?;
+        crate::wallet::wallet_snapshot_cache::get_wallet_snapshot_cached(db_path, network)?;
 
     let Some(summary) = summary else {
         return Ok(target_ids
