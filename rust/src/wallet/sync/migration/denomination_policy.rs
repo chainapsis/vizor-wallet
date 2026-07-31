@@ -112,11 +112,11 @@ pub(crate) fn anchor_bucket_modulus(
     timing_policy: MigrationTimingPolicy,
 ) -> u32 {
     match network {
-        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => {
+        WalletNetwork::Regtest if timing_policy.is_fast_testnet() => {
             FAST_TESTNET_ANCHOR_BUCKET_MODULUS
         }
         WalletNetwork::Regtest => REGTEST_ANCHOR_BUCKET_MODULUS,
-        WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => {
+        WalletNetwork::Test if timing_policy.is_fast_testnet() => {
             FAST_TESTNET_ANCHOR_BUCKET_MODULUS
         }
         WalletNetwork::Main | WalletNetwork::Test => ZIP318_ANCHOR_BUCKET_MODULUS,
@@ -125,17 +125,12 @@ pub(crate) fn anchor_bucket_modulus(
 
 fn anchor_bucket_min_age(network: WalletNetwork, timing_policy: MigrationTimingPolicy) -> u32 {
     match network {
-        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => 1,
+        WalletNetwork::Regtest if timing_policy.is_fast_testnet() => 1,
         // Empty regtest blocks do not add commitment-tree checkpoints. Allow
         // the checkpoint containing the denomination note so E2E can advance.
         WalletNetwork::Regtest => 0,
-        WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => 1,
-        WalletNetwork::Main | WalletNetwork::Test
-            if matches!(
-                timing_policy,
-                MigrationTimingPolicy::Standard90MinutesLatestAnchor
-            ) =>
-        {
+        WalletNetwork::Test if timing_policy.is_fast_testnet() => 1,
+        WalletNetwork::Main | WalletNetwork::Test if timing_policy.uses_latest_anchor() => {
             0
         }
         WalletNetwork::Main | WalletNetwork::Test => 1,

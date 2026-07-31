@@ -693,16 +693,16 @@ fn adopt_timing_policy_for_active_run(
     desired_policy: MigrationTimingPolicy,
 ) -> Result<(), String> {
     if !matches!(network, WalletNetwork::Test | WalletNetwork::Regtest)
-        || desired_policy != MigrationTimingPolicy::FastTestnet
+        || !desired_policy.is_fast_testnet()
     {
         return Ok(());
     }
     let Some(run) = active_run(conn, account_uuid, network)? else {
         return Ok(());
     };
-    if timing_policy_for_run_with_conn(conn, &run.run_id, network)?
-        == MigrationTimingPolicy::FastTestnet
-    {
+    let desired_policy = desired_policy
+        .with_dense_schedule(run.target_values_zatoshi.len() > DENSE_MIGRATION_PART_THRESHOLD);
+    if timing_policy_for_run_with_conn(conn, &run.run_id, network)? == desired_policy {
         return Ok(());
     }
     let pending_tx_count = count_for_run(conn, PENDING_TXS_TABLE, &run.run_id)?;
@@ -716,7 +716,7 @@ fn adopt_timing_policy_for_active_run(
     let schedule = planned_transfer_schedule_with_policy(
         run.target_values_zatoshi.iter().copied(),
         network,
-        MigrationTimingPolicy::FastTestnet,
+        desired_policy,
         &mut OsRng,
     );
     let schedule_json = serde_json::to_string(&schedule)
@@ -726,14 +726,9 @@ fn adopt_timing_policy_for_active_run(
         &format!(
             "UPDATE {RUNS_TABLE}
              SET timing_policy = ?1, schedule_json = ?2, updated_at_ms = ?3
-             WHERE run_id = ?4 AND timing_policy != 'fast_testnet'"
+             WHERE run_id = ?4 AND timing_policy != ?1"
         ),
-        params![
-            MigrationTimingPolicy::FastTestnet.as_str(),
-            schedule_json,
-            now,
-            run.run_id,
-        ],
+        params![desired_policy.as_str(), schedule_json, now, run.run_id,],
     )
     .map_err(|e| format!("Adopt fast Testnet migration timing: {e}"))?;
     Ok(())
@@ -1259,7 +1254,10 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let now = now_ms()?;
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
-    let timing_policy = configured_timing_policy(network);
+    let timing_policy = configured_timing_policy(network)
+        .with_dense_schedule(plan.migration_outputs.len() > DENSE_MIGRATION_PART_THRESHOLD);
+    let preparation_timing_policy =
+        preparation_timing_policy.with_transaction_count(denomination_stages.len());
     let initial_phase = if denomination_stages.is_empty() {
         PHASE_READY_TO_MIGRATE
     } else {
@@ -1367,7 +1365,8 @@ pub(crate) fn create_or_resume_private_migration_draft(
         return Err("Migration recovery must complete before creating another run".to_string());
     }
 
-    let timing_policy = configured_timing_policy(network);
+    let timing_policy = configured_timing_policy(network)
+        .with_dense_schedule(target_values_zatoshi.len() > DENSE_MIGRATION_PART_THRESHOLD);
     validate_schedule_with_policy(
         approved_schedule,
         target_values_zatoshi,
@@ -1440,6 +1439,8 @@ pub(crate) fn finalize_private_migration_draft(
     if run.target_values_zatoshi != plan.migration_outputs {
         return Err("Prepared transactions do not match the saved migration plan".to_string());
     }
+    let preparation_timing_policy = preparation_timing_policy_for_run_with_conn(&conn, run_id)?
+        .with_transaction_count(denomination_stages.len());
     let initial_phase = if denomination_stages.is_empty() {
         PHASE_READY_TO_MIGRATE
     } else {
@@ -1461,12 +1462,14 @@ pub(crate) fn finalize_private_migration_draft(
     tx.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3 AND phase IN (?4, ?5)"
+             SET phase = ?1, updated_at_ms = ?2, last_error = NULL,
+                 preparation_timing_policy = ?3
+             WHERE run_id = ?4 AND phase IN (?5, ?6)"
         ),
         params![
             initial_phase,
             now_ms()?,
+            preparation_timing_policy.as_str(),
             run_id,
             PHASE_AWAITING_PREPARATION,
             PHASE_AWAITING_DENOMINATION_SIGNATURE,
@@ -2966,8 +2969,7 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
         }
     }
     let recovery_network = if recovered_pending_txids.is_empty()
-        || preparation_timing_policy_for_run_with_conn(&conn, run_id)?
-            == PreparationTimingPolicy::Immediate
+        || preparation_timing_policy_for_run_with_conn(&conn, run_id)?.is_immediate()
     {
         None
     } else {
@@ -3123,11 +3125,8 @@ pub(crate) fn export_scheduled_migration_outbox(
         return Ok(None);
     };
     let timing_policy = timing_policy_for_run_with_conn(&conn, &run.run_id, network)?;
-    let (timing_mean_blocks, timing_max_blocks) = schedule_parameters_with_policy_for_part_count(
-        network,
-        timing_policy,
-        run.target_values_zatoshi.len(),
-    );
+    let (timing_mean_blocks, timing_max_blocks) =
+        schedule_parameters_with_policy(network, timing_policy);
     let unmaterialized_count = unpromoted_signed_child_pczt_count_with_conn(&conn, &run.run_id)?;
     let next_proof_height = if unmaterialized_count == 0 {
         None
@@ -4371,9 +4370,8 @@ fn reschedule_overdue_pending_txs_with_options(
 
     txids.shuffle(&mut OsRng);
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
-    let planned_part_count = planned_part_count_with_conn(&conn, run_id)? as usize;
     let (mean_delay_blocks, max_delay_blocks) =
-        schedule_parameters_with_policy_for_part_count(network, timing_policy, planned_part_count);
+        schedule_parameters_with_policy(network, timing_policy);
     let offsets = random_schedule_block_offsets_with_rng(
         txids.len(),
         mean_delay_blocks,
@@ -5468,22 +5466,15 @@ fn status_for_run(
         message: run.last_error,
         can_abandon,
         signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
-        schedule_mean_delay_blocks: schedule_parameters_with_policy_for_part_count(
-            network,
-            timing_policy,
-            total_count as usize,
-        )
-        .0,
+        schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
-        preparation_mean_delay_blocks: if preparation_timing_policy
-            == PreparationTimingPolicy::Immediate
-        {
+        preparation_mean_delay_blocks: if preparation_timing_policy.is_immediate() {
             0
         } else {
-            preparation_schedule_parameters_for_transaction_count(
+            preparation_schedule_parameters_for_policy(
                 network,
                 timing_policy,
-                denomination_split_progress.total_count as usize,
+                preparation_timing_policy,
             )
             .0
         },
