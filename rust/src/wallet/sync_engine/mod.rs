@@ -1656,6 +1656,7 @@ async fn run_sync_impl(
         let _ = crate::wallet::sync::resubmit_pending_transactions(
             db_data_path,
             &mut client,
+            lightwalletd_url,
             tip.height as u32,
             &startup_resubmit_exclusions,
             || {
@@ -2442,6 +2443,7 @@ async fn run_sync_impl(
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
                         &mut client,
+                        lightwalletd_url,
                         fresh_tip_height,
                         &resubmit_exclusions,
                         || {

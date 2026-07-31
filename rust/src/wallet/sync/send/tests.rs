@@ -14,13 +14,14 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
-fn resolves_alternate_lightwalletd_without_reusing_sync_host() {
-    let resolved = ResolvedMigrationSubmission::from_policy(
-        &migration::MigrationSubmissionPolicy::LightwalletdUrl(
+fn auto_resubmit_resolves_alternate_lightwalletd_without_reusing_sync_host() {
+    let resolved = resolve_resubmission_submission(
+        Some(&migration::MigrationSubmissionPolicy::LightwalletdUrl(
             "https://submit.example.com:443".to_string(),
-        ),
+        )),
         "https://sync.example.com:443",
     )
+    .unwrap()
     .unwrap();
     assert!(matches!(
         resolved,
@@ -30,10 +31,10 @@ fn resolves_alternate_lightwalletd_without_reusing_sync_host() {
         }
     ));
 
-    let error = ResolvedMigrationSubmission::from_policy(
-        &migration::MigrationSubmissionPolicy::LightwalletdUrl(
+    let error = resolve_resubmission_submission(
+        Some(&migration::MigrationSubmissionPolicy::LightwalletdUrl(
             "https://SYNC.example.com:9067".to_string(),
-        ),
+        )),
         "https://sync.example.com:443",
     )
     .expect_err("same-host submission must fail");

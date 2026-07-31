@@ -1875,7 +1875,7 @@ void main() {
           networkName: 'test',
           lightwalletdUrl: 'https://lwd.example:443',
         ),
-        getTransactionSubmissionTarget: (_) =>
+        getTransactionSubmissionTarget: (_) async =>
             'relay:https://relay.example/submit',
         getSessionPassword: () => 'test-password',
         getMnemonicBytesForAccount: (_) async {
@@ -2878,6 +2878,112 @@ void main() {
     },
   );
 
+  test(
+    'iOS outbox collision switches sync hosts before native staging',
+    () async {
+      const collidingEndpoint = RpcEndpointConfig(
+        networkName: 'test',
+        lightwalletdUrl: 'https://submission.example:443',
+      );
+      const distinctEndpoint = RpcEndpointConfig(
+        networkName: 'test',
+        lightwalletdUrl: 'https://sync.example:443',
+      );
+      var currentEndpoint = collidingEndpoint;
+      var switchCount = 0;
+      var stageCount = 0;
+      final preparationEndpoints = <String>[];
+      final stagedSyncEndpoints = <Object?>[];
+      final store = await _boundBackgroundCredentialStore();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(
+                  phase: 'broadcast_scheduled',
+                  activeRunId: 'run-1',
+                  parts: [_migrationPart(txidHex: 'txid-1')],
+                  scheduledBroadcasts: [_scheduledBroadcast(txidHex: 'txid-1')],
+                ),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        backgroundCredentialStore: store,
+        getEndpoint: () => currentEndpoint,
+        switchToDistinctSyncEndpoint:
+            ({required attemptedEndpoint, required reason}) async {
+              expect(attemptedEndpoint, same(collidingEndpoint));
+              expect(
+                reason.toString().toLowerCase(),
+                contains(
+                  'transaction submission lightwalletd must not use the sync host',
+                ),
+              );
+              switchCount++;
+              currentEndpoint = distinctEndpoint;
+              return true;
+            },
+        isMobile: () => true,
+        isIOS: () => true,
+        isAndroid: () => false,
+        isHardwareAccount: (_) => false,
+        listMigrationOutboxReceipts: () async => const [],
+        prepareMigrationOutbox:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async {
+              preparationEndpoints.add(lightwalletdUrl);
+              return _migrationResult(status: 'broadcast_scheduled');
+            },
+        exportMigrationOutbox:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required password,
+              required saltBase64,
+            }) async => _outboxBatch(
+              transactionSubmissionTarget:
+                  'lightwalletd:https://SUBMISSION.example:9067',
+            ),
+        stageMigrationOutboxBatch: (batch) async {
+          stageCount++;
+          stagedSyncEndpoints.add(batch['lightwalletdUrl']);
+          return const {'txid-1': 'digest-1'};
+        },
+        armMigrationOutboxBatch:
+            ({required batchId, required expectedDigests}) async => true,
+        runMigrationOutboxOnceNow: () async {
+          return const IronwoodMigrationOutboxRunResult(
+            outcome: IronwoodMigrationOutboxRunOutcome.noWork,
+            observedHeight: 100,
+          );
+        },
+      );
+
+      final result = await service.continueSoftwarePrivateMigration(
+        accountUuid: 'account-1',
+      );
+
+      expect(result.status, 'broadcast_scheduled');
+      expect(switchCount, 1);
+      expect(stageCount, 1);
+      expect(preparationEndpoints, [
+        collidingEndpoint.normalizedLightwalletdUrl,
+        distinctEndpoint.normalizedLightwalletdUrl,
+      ]);
+      expect(stagedSyncEndpoints, [distinctEndpoint.normalizedLightwalletdUrl]);
+    },
+  );
+
   test('software continuation re-enters the macOS signing path', () async {
     List<rust_sync.MigrationScheduledTransfer>? seenSchedule;
     String? seenSalt;
@@ -3246,6 +3352,7 @@ void main() {
         activeRunId: 'draft-run-1',
       );
       var createCount = 0;
+      var submissionTargetSelections = 0;
       String? seenSubmissionTarget;
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
@@ -3260,8 +3367,10 @@ void main() {
         ),
         backgroundCredentialStore: store,
         getEndpoint: _testEndpoint,
-        getTransactionSubmissionTarget: (_) =>
-            'relay:https://relay.example/submit',
+        getTransactionSubmissionTarget: (_) async {
+          submissionTargetSelections++;
+          throw StateError('existing drafts must keep their saved target');
+        },
         isMobile: () => true,
         isIOS: () => true,
         listMigrationOutboxReceipts: () async => const [],
@@ -3286,7 +3395,8 @@ void main() {
 
       expect(runId, 'draft-run-1');
       expect(createCount, 1);
-      expect(seenSubmissionTarget, 'relay:https://relay.example/submit');
+      expect(submissionTargetSelections, 0);
+      expect(seenSubmissionTarget, isNull);
       final manifest = await store.read(
         network: 'test',
         accountUuid: 'account-1',

@@ -6068,8 +6068,18 @@ pub(crate) struct ResubmitStats {
     pub failed: usize,
 }
 
+fn resolve_resubmission_submission(
+    policy: Option<&super::migration::MigrationSubmissionPolicy>,
+    sync_lightwalletd_url: &str,
+) -> Result<Option<ResolvedMigrationSubmission>, String> {
+    policy
+        .map(|policy| ResolvedMigrationSubmission::from_policy(policy, sync_lightwalletd_url))
+        .transpose()
+}
+
 async fn resubmit_transaction(
     lightwalletd_client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
+    sync_lightwalletd_url: &str,
     alternate_lightwalletd_clients: &mut HashMap<
         String,
         zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<
@@ -6080,45 +6090,55 @@ async fn resubmit_transaction(
     tx: &super::transactions::ResubmittableTx,
     txid_hex: &str,
 ) -> Result<(), String> {
-    match &tx.migration_submission_policy {
-        Some(super::migration::MigrationSubmissionPolicy::LightwalletdUrl(url)) => {
-            if !alternate_lightwalletd_clients.contains_key(url) {
+    let submission = resolve_resubmission_submission(
+        tx.migration_submission_policy.as_ref(),
+        sync_lightwalletd_url,
+    )?;
+    match submission {
+        Some(ResolvedMigrationSubmission::Lightwalletd {
+            url,
+            is_separate: true,
+        }) => {
+            if !alternate_lightwalletd_clients.contains_key(&url) {
                 alternate_lightwalletd_clients.insert(
                     url.clone(),
-                    crate::wallet::sync_engine::open_lwd_channel(url)
+                    crate::wallet::sync_engine::open_lwd_channel(&url)
                         .await
-                        .map_err(|e| format!("Connect to migration submission lightwalletd: {e}"))?,
+                        .map_err(|e| {
+                            format!("Connect to migration submission lightwalletd: {e}")
+                        })?,
                 );
             }
             broadcast_raw_transaction(
                 alternate_lightwalletd_clients
-                    .get_mut(url)
+                    .get_mut(&url)
                     .expect("alternate lightwalletd client was inserted"),
                 &tx.raw_tx,
             )
             .await
         }
-        Some(super::migration::MigrationSubmissionPolicy::SeparateRelay(url)) => {
+        Some(ResolvedMigrationSubmission::Relay(url)) => {
             super::broadcast::parse_separate_submission_transaction(
                 parse_txid_hex(txid_hex)?,
                 &tx.raw_tx,
                 tx.expiry_height,
             )?;
-            if !relay_clients.contains_key(url) {
+            if !relay_clients.contains_key(&url) {
                 relay_clients.insert(
                     url.clone(),
-                    super::broadcast::TransactionRelayClient::new(url)?,
+                    super::broadcast::TransactionRelayClient::new(&url)?,
                 );
             }
             relay_clients
-                .get(url)
+                .get(&url)
                 .expect("relay client was inserted")
                 .send_raw_transaction(&tx.raw_tx, txid_hex)
                 .await
         }
-        Some(super::migration::MigrationSubmissionPolicy::Lightwalletd) | None => {
-            broadcast_raw_transaction(lightwalletd_client, &tx.raw_tx).await
-        }
+        Some(ResolvedMigrationSubmission::Lightwalletd {
+            is_separate: false, ..
+        })
+        | None => broadcast_raw_transaction(lightwalletd_client, &tx.raw_tx).await,
     }
 }
 
@@ -6164,8 +6184,9 @@ async fn resubmit_transaction(
 /// response and the stats bump.
 ///
 /// The caller owns the gRPC client. Ordinary transactions reuse the same
-/// connection that downloaded compact blocks. Migration transactions retain
-/// the immutable submission route selected when their run was created.
+/// connection that downloaded compact blocks and supplies its URL so an
+/// immutable migration route cannot resolve to that same host. Migration
+/// transactions retain the submission route selected when their run was created.
 /// `excluded_txids` are filtered before their raw bytes are loaded.
 /// Recovery uses this to avoid rebroadcasting transactions that
 /// compact scanning can restore as mined.
@@ -6177,6 +6198,7 @@ async fn resubmit_transaction(
 pub(crate) async fn resubmit_pending_transactions<ShouldExit>(
     db_path: &str,
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
+    sync_lightwalletd_url: &str,
     current_height: u32,
     excluded_txids: &HashSet<Vec<u8>>,
     should_exit: ShouldExit,
@@ -6244,6 +6266,7 @@ where
         .to_string();
         match resubmit_transaction(
             client,
+            sync_lightwalletd_url,
             &mut alternate_lightwalletd_clients,
             &mut relay_clients,
             tx,
@@ -6277,6 +6300,7 @@ where
                 }
                 match resubmit_transaction(
                     client,
+                    sync_lightwalletd_url,
                     &mut alternate_lightwalletd_clients,
                     &mut relay_clients,
                     tx,

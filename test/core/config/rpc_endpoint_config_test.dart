@@ -374,17 +374,72 @@ void main() {
       );
     });
 
-    test('selector chooses one candidate from the immutable pool', () {
-      final primary = defaultRpcEndpointConfig('main');
-      final targets = transactionSubmissionTargetsForSyncEndpoint(primary);
-      final expectedRandom = Random(7);
-      final expected = targets[expectedRandom.nextInt(targets.length)];
+    test(
+      'selector chooses one healthy candidate from the immutable pool',
+      () async {
+        final primary = defaultRpcEndpointConfig('main');
+        final targets = transactionSubmissionTargetsForSyncEndpoint(primary);
+        final checked = <String>[];
 
-      expect(
-        transactionSubmissionTargetForSyncEndpoint(primary, random: Random(7)),
-        expected,
+        final selected = await transactionSubmissionTargetForSyncEndpoint(
+          primary,
+          random: Random(7),
+          isLightwalletdHealthy: (endpoint) async {
+            checked.add(endpoint.normalizedLightwalletdUrl);
+            return true;
+          },
+        );
+
+        expect(targets, contains(selected));
+        if (selected!.startsWith('lightwalletd:')) {
+          expect(checked, contains(selected.substring('lightwalletd:'.length)));
+        }
+      },
+    );
+
+    test('selector skips unhealthy alternate lightwalletd endpoints', () async {
+      const primary = RpcEndpointConfig(
+        networkName: 'regtest',
+        lightwalletdUrl: 'http://127.0.0.2:9067',
+        presetId: kCustomRpcEndpointPresetId,
       );
+      final checked = <String>[];
+
+      final selected = await transactionSubmissionTargetForSyncEndpoint(
+        primary,
+        regtestUrl: '   ',
+        random: Random(3),
+        isLightwalletdHealthy: (endpoint) async {
+          checked.add(endpoint.normalizedLightwalletdUrl);
+          return endpoint.hostPort == '127.0.0.1:19068';
+        },
+      );
+
+      expect(selected, 'lightwalletd:http://127.0.0.1:19068');
+      expect(checked, contains('http://127.0.0.1:19068'));
     });
+
+    test(
+      'selector fails before run creation when every target is unhealthy',
+      () async {
+        final primary = defaultRpcEndpointConfig('test');
+
+        await expectLater(
+          transactionSubmissionTargetForSyncEndpoint(
+            primary,
+            testUrl: '   ',
+            isLightwalletdHealthy: (_) async => false,
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains('No healthy migration transaction submission endpoint'),
+            ),
+          ),
+        );
+      },
+    );
   });
 
   group('fallbackRpcEndpointCandidatesFor', () {

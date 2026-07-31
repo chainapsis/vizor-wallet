@@ -55,8 +55,8 @@ fvm flutter build macos --release \
 change source. Open-source builds should use the public CoinGecko base URL
 above; production builds can point this define at a Vizor-operated proxy.
 
-Ironwood migrations choose a separate transaction-submission target for both
-their locally complete preparation transactions and their Phase 2
+Private Ironwood migration runs choose a separate transaction-submission target
+for both their locally complete preparation transactions and their Phase 2
 pool-crossing transactions. The candidate pool contains a configured JSON-RPC
 relay plus managed lightwalletd endpoints on the same network whose host is
 different from the sync host. Mainnet includes

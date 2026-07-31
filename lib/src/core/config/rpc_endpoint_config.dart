@@ -33,7 +33,7 @@ const kVizorZcashTransactionRelayUrlIronwoodMasquerade = String.fromEnvironment(
   kVizorZcashTransactionRelayUrlIronwoodMasqueradeEnvKey,
 );
 
-// TODO: Replace this temporary managed endpoint when relay inventory changes.
+// Managed mainnet relay used when no build-time override is configured.
 const kZakuraMainnetTransactionRelayUrl =
     'https://zakura-broadcast.valargroup.dev';
 
@@ -311,8 +311,14 @@ List<String> transactionSubmissionTargetsForSyncEndpoint(
 }
 
 /// Selects one immutable migration submission target for a new run.
-String? transactionSubmissionTargetForSyncEndpoint(
+///
+/// Relay candidates can be selected immediately. An alternate lightwalletd is
+/// returned only after [isLightwalletdHealthy] confirms that it serves the
+/// wallet's network and has a reachable chain tip.
+Future<String?> transactionSubmissionTargetForSyncEndpoint(
   RpcEndpointConfig syncEndpoint, {
+  required Future<bool> Function(RpcEndpointConfig endpoint)
+  isLightwalletdHealthy,
   String mainUrl = kVizorZcashTransactionRelayUrlMain,
   String testUrl = kVizorZcashTransactionRelayUrlTest,
   String regtestUrl = kVizorZcashTransactionRelayUrlRegtest,
@@ -320,17 +326,36 @@ String? transactionSubmissionTargetForSyncEndpoint(
       kVizorZcashTransactionRelayUrlIronwoodMasquerade,
   bool ironwoodMasquerade = kZcashIronwoodMasquerade,
   Random? random,
-}) {
-  final targets = transactionSubmissionTargetsForSyncEndpoint(
+}) async {
+  final candidates = transactionSubmissionTargetsForSyncEndpoint(
     syncEndpoint,
     mainUrl: mainUrl,
     testUrl: testUrl,
     regtestUrl: regtestUrl,
     ironwoodMasqueradeUrl: ironwoodMasqueradeUrl,
     ironwoodMasquerade: ironwoodMasquerade,
+  ).toList();
+  if (candidates.isEmpty) return null;
+  candidates.shuffle(random ?? Random.secure());
+
+  for (final candidate in candidates) {
+    if (candidate.startsWith(_migrationRelaySubmissionPrefix)) {
+      return candidate;
+    }
+    if (!candidate.startsWith(_migrationLightwalletdSubmissionPrefix)) {
+      continue;
+    }
+    final endpoint = RpcEndpointConfig(
+      networkName: syncEndpoint.networkName,
+      lightwalletdUrl: candidate.substring(
+        _migrationLightwalletdSubmissionPrefix.length,
+      ),
+    );
+    if (await isLightwalletdHealthy(endpoint)) return candidate;
+  }
+  throw StateError(
+    'No healthy migration transaction submission endpoint is available.',
   );
-  if (targets.isEmpty) return null;
-  return targets[(random ?? Random.secure()).nextInt(targets.length)];
 }
 
 bool isRpcEndpointAllowedForBuild(String lightwalletdUrl) {
