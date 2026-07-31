@@ -801,7 +801,7 @@ class IronwoodMigrationCoordinator
             accountUuid: account.uuid,
           );
           if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
-          status = await service.status(
+          status = await service.readOnlyStatus(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );
