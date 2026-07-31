@@ -15,6 +15,7 @@ pub(crate) const FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 12;
 pub(crate) const FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS: u32 = 48;
 pub(crate) const FAST_TESTNET_ANCHOR_BUCKET_MODULUS: u32 = 12;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
+pub(crate) const DENSE_MIGRATION_PART_THRESHOLD: usize = 10;
 // Mirrors the per-child ZIP-317 migration fee estimate used by send planning:
 // 3 logical actions (a 2-action padded Orchard bundle and a 1-action
 // unpadded Ironwood bundle).
@@ -73,6 +74,32 @@ pub(crate) fn configured_timing_policy(network: WalletNetwork) -> MigrationTimin
 
 pub(crate) fn schedule_parameters(network: WalletNetwork) -> (u32, u32) {
     schedule_parameters_with_policy(network, configured_timing_policy(network))
+}
+
+pub(crate) fn schedule_parameters_for_part_count(
+    network: WalletNetwork,
+    part_count: usize,
+) -> (u32, u32) {
+    schedule_parameters_with_policy_for_part_count(
+        network,
+        configured_timing_policy(network),
+        part_count,
+    )
+}
+
+fn schedule_parameters_with_policy_for_part_count(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    part_count: usize,
+) -> (u32, u32) {
+    let (mean_delay_blocks, max_delay_blocks) =
+        schedule_parameters_with_policy(network, timing_policy);
+    let effective_mean = if part_count > DENSE_MIGRATION_PART_THRESHOLD {
+        (mean_delay_blocks / 2).max(1)
+    } else {
+        mean_delay_blocks
+    };
+    (effective_mean, max_delay_blocks)
 }
 
 fn schedule_parameters_with_policy(
