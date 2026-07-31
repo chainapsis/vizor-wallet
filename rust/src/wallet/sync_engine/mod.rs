@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
@@ -74,6 +74,39 @@ pub struct SyncProgressEvent {
     /// - `"enhance"` — fetching full transaction data
     /// - `""` — completion event or unspecified
     pub phase: String,
+}
+
+/// Keeps retry attempts inside one `run_sync_inner` call on a single logical
+/// progress scale.
+///
+/// `run_sync_impl` recalculates its work denominator from the DB at the start
+/// of every attempt. That is correct for resuming from the persisted scan
+/// frontier, but the attempt-local percentage would otherwise jump backward to
+/// zero. A fresh `RetryProgressMapper` is created for every logical sync call,
+/// so a genuinely new session (including account-growth catch-up) still starts
+/// from its own zero-based progress.
+#[derive(Debug, Default)]
+struct RetryProgressMapper {
+    retry_floor: f64,
+    last_emitted_percentage: f64,
+}
+
+impl RetryProgressMapper {
+    fn begin_retry(&mut self) {
+        self.retry_floor = self.last_emitted_percentage.clamp(0.0, 1.0);
+    }
+
+    fn map_percentage(&self, attempt_percentage: f64) -> f64 {
+        let attempt_percentage = attempt_percentage.clamp(0.0, 1.0);
+        self.retry_floor + ((1.0 - self.retry_floor) * attempt_percentage)
+    }
+
+    fn map_event(&mut self, mut event: SyncProgressEvent) -> SyncProgressEvent {
+        event.percentage = self.map_percentage(event.percentage);
+        event.display_target_percentage = self.map_percentage(event.display_target_percentage);
+        self.last_emitted_percentage = event.percentage;
+        event
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
@@ -1556,6 +1589,7 @@ pub async fn run_sync_inner(
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_err = String::new();
+    let retry_progress = Mutex::new(RetryProgressMapper::default());
     *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
 
     for attempt in 0..=MAX_RETRIES {
@@ -1582,8 +1616,19 @@ pub async fn run_sync_inner(
                     return Ok(());
                 }
             }
+            retry_progress
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .begin_retry();
         }
 
+        let mapped_progress_fn = |event| {
+            let mapped = retry_progress
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .map_event(event);
+            progress_fn(mapped);
+        };
         match run_sync_impl(
             db_data_path,
             lightwalletd_url,
@@ -1592,7 +1637,7 @@ pub async fn run_sync_inner(
             running_mode,
             desired_mode,
             allow_resubmit,
-            &progress_fn,
+            &mapped_progress_fn,
         )
         .await
         {
@@ -2904,6 +2949,20 @@ mod tests {
         );
     }
 
+    fn progress_event(percentage: f64, display_target_percentage: f64) -> SyncProgressEvent {
+        SyncProgressEvent {
+            scanned_height: 0,
+            chain_tip_height: 0,
+            percentage,
+            display_target_percentage,
+            display_target_blocks: 0,
+            is_syncing: true,
+            is_complete: false,
+            has_new_tx: false,
+            phase: "scan".into(),
+        }
+    }
+
     #[test]
     fn work_progress_matches_remaining_block_ratio() {
         let mode = ProgressDisplayMode::Work;
@@ -2912,6 +2971,48 @@ mod tests {
         assert_pct(
             mode.target_percentage_after_blocks(1_000, 300, 0, 0, 100),
             0.8,
+        );
+    }
+
+    #[test]
+    fn retry_progress_resumes_from_previous_attempt_floor() {
+        let mut mapper = RetryProgressMapper::default();
+        let first_attempt = mapper.map_event(progress_event(225.0 / 1_200.0, 250.0 / 1_200.0));
+        assert_pct(first_attempt.percentage, 225.0 / 1_200.0);
+
+        mapper.begin_retry();
+        let retry_start = mapper.map_event(progress_event(0.0, 25.0 / 975.0));
+        assert_pct(retry_start.percentage, 225.0 / 1_200.0);
+        assert_pct(retry_start.display_target_percentage, 250.0 / 1_200.0);
+
+        let retry_batch_complete = mapper.map_event(progress_event(25.0 / 975.0, 50.0 / 975.0));
+        assert_pct(retry_batch_complete.percentage, 250.0 / 1_200.0);
+        assert_pct(
+            retry_batch_complete.display_target_percentage,
+            275.0 / 1_200.0,
+        );
+    }
+
+    #[test]
+    fn new_logical_sync_does_not_inherit_previous_retry_floor() {
+        let mut previous_sync = RetryProgressMapper::default();
+        previous_sync.map_event(progress_event(0.5, 0.6));
+
+        let mut new_sync = RetryProgressMapper::default();
+        let event = new_sync.map_event(progress_event(0.0, 0.1));
+
+        assert_pct(event.percentage, 0.0);
+        assert_pct(event.display_target_percentage, 0.1);
+    }
+
+    #[test]
+    fn first_attempt_preserves_existing_phase_progress_semantics() {
+        let mut mapper = RetryProgressMapper::default();
+
+        assert_pct(mapper.map_event(progress_event(0.99, 1.0)).percentage, 0.99);
+        assert_pct(
+            mapper.map_event(progress_event(0.95, 0.975)).percentage,
+            0.95,
         );
     }
 
