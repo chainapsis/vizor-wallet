@@ -17,7 +17,7 @@ import '../models/mobile_ironwood_migration_attention_state.dart';
 import '../services/ironwood_migration_service.dart';
 import 'ironwood_migration_announcement_provider.dart';
 
-const _migrationStatusPollInterval = Duration(seconds: 5);
+const _migrationStatusPollInterval = Duration(seconds: 15);
 const _migrationAdvanceInterval = Duration(
   seconds: String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
       ? 1
@@ -665,6 +665,20 @@ class IronwoodMigrationCoordinator
     return tracked;
   }
 
+  /// Runs a periodic status refresh without queuing another sweep when one is
+  /// already active.
+  ///
+  /// Event-driven refreshes use [refreshNow] because account, lifecycle, and
+  /// explicit user changes that arrive during a sweep must be observed by one
+  /// follow-up pass. A timer tick carries no new state of its own, so setting
+  /// [_refreshPending] for it would let a slow sweep run back-to-back forever.
+  Future<void> refreshForPolling() {
+    if (!ref.mounted) return Future.value();
+    final existing = _refreshOperation;
+    if (existing != null) return existing;
+    return refreshNow();
+  }
+
   Future<void> _drainRefreshes() async {
     while (ref.mounted && _refreshPending) {
       final forceAdvance = _forceAdvancePending;
@@ -1116,8 +1130,7 @@ class IronwoodMigrationCoordinator
                 // Keep calling into broadcast_due_scheduled after the last
                 // part flips phase so accepted-but-unstored txs and expiry
                 // resign can still retry (store-from-raw / needs_resign).
-                status.phase ==
-                    kIronwoodMigrationWaitingConfirmationsPhase)) ||
+                status.phase == kIronwoodMigrationWaitingConfirmationsPhase)) ||
         (kAppFormFactor == AppFormFactor.desktop &&
             {
               kIronwoodMigrationBroadcastScheduledPhase,
@@ -1352,11 +1365,7 @@ class _IronwoodMigrationCoordinatorHostState
     unawaited(
       ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
     );
-    _pollTimer = Timer.periodic(_migrationStatusPollInterval, (_) {
-      unawaited(
-        ref.read(ironwoodMigrationCoordinatorProvider.notifier).refreshNow(),
-      );
-    });
+    _scheduleNextPoll();
     _lifecycleListener = AppLifecycleListener(
       onResume: () => ref
           .read(ironwoodMigrationCoordinatorProvider.notifier)
@@ -1377,6 +1386,22 @@ class _IronwoodMigrationCoordinatorHostState
     super.dispose();
   }
 
+  void _scheduleNextPoll() {
+    _pollTimer = Timer(_migrationStatusPollInterval, () {
+      unawaited(_pollOnce());
+    });
+  }
+
+  Future<void> _pollOnce() async {
+    try {
+      await ref
+          .read(ironwoodMigrationCoordinatorProvider.notifier)
+          .refreshForPolling();
+    } finally {
+      if (mounted) _scheduleNextPoll();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Narrowed to the completion timestamp on purpose. `SyncState` has no
@@ -1387,7 +1412,7 @@ class _IronwoodMigrationCoordinatorHostState
     // back-to-back for the entire sync, and it is not cheap — a full
     // `get_wallet_summary`, a migration-status read on its own connection, and
     // a Keychain read, per account, while the scanner was writing to the same
-    // SQLite. The 5s `_pollTimer` above already covers periodic refresh, so
+    // SQLite. The 15s `_pollTimer` above already covers periodic refresh, so
     // the unconditional `refreshNow()` here was redundant as well as hot.
     ref.listen(
       syncProvider.select((sync) => sync.asData?.value.lastSyncCompletedAt),

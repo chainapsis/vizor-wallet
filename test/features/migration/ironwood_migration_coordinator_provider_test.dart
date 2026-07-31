@@ -1620,6 +1620,113 @@ void main() {
     },
   );
 
+  test(
+    'polling joins an active refresh without queuing another sweep',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('complete', activeRunId: null),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final firstStatusStarted = Completer<void>();
+      final releaseFirstStatus = Completer<void>();
+      var statusCallCount = 0;
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        loadStatus: (accountUuid) async {
+          statusCallCount += 1;
+          if (statusCallCount == 1) {
+            firstStatusStarted.complete();
+            await releaseFirstStatus.future;
+          }
+          return statuses[accountUuid]!;
+        },
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      final firstRefresh = coordinator.refreshNow();
+      await firstStatusStarted.future;
+      final pollingRefresh = coordinator.refreshForPolling();
+
+      releaseFirstStatus.complete();
+      await firstRefresh;
+      await pollingRefresh;
+
+      expect(statusCallCount, 2);
+    },
+  );
+
+  testWidgets('polling waits 15 seconds after a slow sweep completes', (
+    tester,
+  ) async {
+    final statuses = {
+      _softwareUuid: _status('complete', activeRunId: null),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    Completer<void>? blockedStatus;
+    Completer<void>? blockedStatusStarted;
+    var statusCallCount = 0;
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      loadStatus: (accountUuid) async {
+        statusCallCount += 1;
+        final blocker = blockedStatus;
+        if (blocker != null && !blocker.isCompleted) {
+          blockedStatusStarted?.complete();
+          await blocker.future;
+        }
+        return statuses[accountUuid]!;
+      },
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const IronwoodMigrationCoordinatorHost(child: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    final initialStatusCallCount = statusCallCount;
+
+    blockedStatus = Completer<void>();
+    blockedStatusStarted = Completer<void>();
+    await tester.pump(const Duration(seconds: 15));
+    await blockedStatusStarted.future;
+    expect(statusCallCount, initialStatusCallCount + 1);
+
+    await tester.pump(const Duration(seconds: 30));
+    expect(
+      statusCallCount,
+      initialStatusCallCount + 1,
+      reason: 'a slow poll must not accumulate periodic timer ticks',
+    );
+
+    blockedStatus.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(statusCallCount, initialStatusCallCount + statuses.length);
+
+    await tester.pump(const Duration(seconds: 14));
+    expect(statusCallCount, initialStatusCallCount + statuses.length);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(statusCallCount, initialStatusCallCount + statuses.length * 2);
+  });
+
   test('refreshes confirmation progress without broadcasting', () async {
     final statuses = {
       _softwareUuid: _status('waiting_migration_confirmations'),
