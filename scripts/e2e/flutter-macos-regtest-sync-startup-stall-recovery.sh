@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FLUTTER_DEVICE="${FLUTTER_DEVICE:-macos}"
 RESET_REGTEST="${RESET_REGTEST:-1}"
+export ZCASH_E2E_SYNC_BATCH_SIZE="${ZCASH_E2E_SYNC_BATCH_SIZE:-25}"
+export ZCASH_E2E_SYNC_BATCH_DELAY_MS="${ZCASH_E2E_SYNC_BATCH_DELAY_MS:-300}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then

@@ -274,7 +274,12 @@ Future<rust_sync.MigrationStatus> waitForDesktopRegtestMigrationStatus(
   }
   final statusDetail = lastStatus == null
       ? ''
-      : ' Last phase: ${lastStatus.phase}, run: ${lastStatus.activeRunId}.';
+      : ' Last phase: ${lastStatus.phase}, run: ${lastStatus.activeRunId}, '
+            'message: ${lastStatus.message}, '
+            'denomination stages: '
+            '${lastStatus.denominationSplitCompletedCount}/'
+            '${lastStatus.denominationSplitTotalCount}, '
+            'pending stages: ${lastStatus.pendingSplitStageCount}.';
   final errorDetail = lastError == null ? '' : ' Last error: $lastError';
   fail('Timed out waiting for $description.$statusDetail$errorDetail');
 }

@@ -69,6 +69,23 @@ fn cancelled_migration_result(run: &super::migration::ActiveRun) -> IronwoodMigr
     }
 }
 
+fn account_growth_catchup_waiting_result(
+    run: &super::migration::ActiveRun,
+) -> IronwoodMigrationResult {
+    IronwoodMigrationResult {
+        txids: String::new(),
+        status: run.phase.clone(),
+        broadcasted_count: 0,
+        total_count: run.target_values_zatoshi.len() as u32,
+        message: Some(
+            "Waiting for the imported account's historical sync before continuing migration."
+                .to_string(),
+        ),
+        fee_zatoshi: 0,
+        migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+    }
+}
+
 enum StagedDenominationAdvance {
     Waiting(IronwoodMigrationResult),
     Ready,
@@ -82,17 +99,16 @@ fn reconcile_mined_denomination_stages(
 ) -> Result<Vec<super::migration::DenominationStage>, String> {
     super::migration::reconcile_denomination_stage_chain_state(db_path, run_id)?;
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    let stages = super::migration::denomination_stages_for_run(
+    let mut stages = super::migration::denomination_stages_for_run(
         &conn,
         run_id,
         pending_password,
         pending_salt_base64,
     )?;
-    let mut recovered_included_stage = false;
-    for stage in stages
-        .iter()
-        .filter(|stage| stage.status == super::migration::DenominationStageStatus::AwaitingInputs)
-    {
+    let mut recoveries = Vec::new();
+    for stage in stages.iter().filter(|stage| {
+        stage.status == super::migration::DenominationStageStatus::AwaitingInputs
+    }) {
         let Some(identity) =
             super::migration::local_denomination_chain_identity(&conn, &stage.expected_txid_hex)?
         else {
@@ -105,34 +121,92 @@ fn reconcile_mined_denomination_stages(
                     stage.expected_txid_hex
                 )
             })?;
-        super::migration::promote_awaiting_denomination_stage(
-            &conn,
-            run_id,
+        let prepared_raw_tx = super::migration::prepare_denomination_raw_tx(
+            raw_tx.clone(),
+            pending_password,
+            pending_salt_base64,
+        )?;
+        recoveries.push((
             stage.stage_index,
-            &stage.expected_txid_hex,
+            stage.expected_txid_hex.clone(),
             raw_tx,
-            pending_password,
-            pending_salt_base64,
-        )?;
-        super::migration::replace_denomination_stage_confirmation_identity(
-            &conn,
-            run_id,
-            &stage.expected_txid_hex,
-            identity.mined_height,
-            &identity.block_hash,
-        )?;
-        recovered_included_stage = true;
+            prepared_raw_tx,
+            identity,
+        ));
     }
-    if recovered_included_stage {
-        super::migration::denomination_stages_for_run(
-            &conn,
-            run_id,
-            pending_password,
-            pending_salt_base64,
-        )
-    } else {
-        Ok(stages)
+    drop(conn);
+
+    if recoveries.is_empty() {
+        return Ok(stages);
     }
+
+    let recovered = super::migration::with_migration_write_conn(
+        db_path,
+        "send.migration.recover_mined_denomination_stages",
+        |conn| {
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| format!("Begin mined denomination stage recovery: {e}"))?;
+            let mut applied = Vec::with_capacity(recoveries.len());
+            for (stage_index, expected_txid_hex, raw_tx, prepared_raw_tx, identity) in
+                recoveries
+            {
+                let current_identity =
+                    super::migration::local_denomination_chain_identity(&tx, &expected_txid_hex)?
+                        .ok_or_else(|| {
+                            format!(
+                                "Mined denomination stage {expected_txid_hex} changed before recovery"
+                            )
+                        })?;
+                if current_identity != identity {
+                    return Err(format!(
+                        "Mined denomination stage {expected_txid_hex} changed before recovery"
+                    ));
+                }
+                let current_raw_tx =
+                    super::migration::local_transaction_raw(&tx, &expected_txid_hex)?
+                        .ok_or_else(|| {
+                            format!(
+                                "Mined denomination stage {expected_txid_hex} lost its wallet transaction bytes"
+                            )
+                        })?;
+                if current_raw_tx != raw_tx {
+                    return Err(format!(
+                        "Mined denomination stage {expected_txid_hex} transaction bytes changed before recovery"
+                    ));
+                }
+                super::migration::promote_awaiting_denomination_stage(
+                    &tx,
+                    run_id,
+                    stage_index,
+                    &expected_txid_hex,
+                    prepared_raw_tx,
+                )?;
+                super::migration::replace_denomination_stage_confirmation_identity(
+                    &tx,
+                    run_id,
+                    &expected_txid_hex,
+                    identity.mined_height,
+                    &identity.block_hash,
+                )?;
+                applied.push((stage_index, raw_tx, identity));
+            }
+            tx.commit()
+                .map_err(|e| format!("Commit mined denomination stage recovery: {e}"))?;
+            Ok(applied)
+        },
+    )?;
+    for (stage_index, raw_tx, identity) in recovered {
+        let stage = stages
+            .iter_mut()
+            .find(|stage| stage.stage_index == stage_index)
+            .ok_or("Recovered denomination stage disappeared from its snapshot")?;
+        stage.raw_tx = Some(raw_tx);
+        stage.status = super::migration::DenominationStageStatus::Pending;
+        stage.confirmed_mined_height = Some(identity.mined_height);
+        stage.confirmed_block_hash = Some(identity.block_hash.to_vec());
+    }
+    Ok(stages)
 }
 
 async fn advance_staged_denomination_run(
@@ -145,6 +219,11 @@ async fn advance_staged_denomination_run(
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<StagedDenominationAdvance, String> {
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        return Ok(StagedDenominationAdvance::Waiting(
+            account_growth_catchup_waiting_result(run),
+        ));
+    }
     let stages = reconcile_mined_denomination_stages(
         db_path,
         &run.run_id,
@@ -312,13 +391,20 @@ fn prepare_software_migration_run(
     migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<Option<PreparedSoftwareMigrationRun>, String> {
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
-    let Some(mut split) = create_padded_orchard_denomination_pczts(
-        db_path,
-        network,
-        account_uuid,
-        preparation_timing_policy,
-        migration_timing_policy,
-    )?
+    // Hold the process-global writer gate only while taking the wallet input
+    // and witness snapshot. Signing, proof generation, and child PCZT
+    // construction below are CPU work and must not block sync or account
+    // mutations that need the same gate.
+    let Some(mut split) =
+        with_wallet_db_write_lock("send.migration.snapshot_denominations", || {
+            create_padded_orchard_denomination_pczts(
+                db_path,
+                network,
+                account_uuid,
+                preparation_timing_policy,
+                migration_timing_policy,
+            )
+        })?
     else {
         return Ok(None);
     };

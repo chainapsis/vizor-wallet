@@ -36,6 +36,9 @@ class RegtestLightwalletdProxy
   int? _slowHeight;
   int _sendTransactionFailuresRemaining = 0;
   int _failedSendTransactionCount = 0;
+  final Set<int> _blockRangeFailureCalls = <int>{};
+  int _blockRangeCallCount = 0;
+  int _failedBlockRangeCount = 0;
   bool _stallNextAddressUtxosAfterHeaders = false;
   Completer<void>? _addressUtxosStallRelease;
   int _addressUtxosStreamCallCount = 0;
@@ -43,6 +46,8 @@ class RegtestLightwalletdProxy
 
   String get url => 'http://127.0.0.1:$listenPort';
   int get failedSendTransactionCount => _failedSendTransactionCount;
+  int get blockRangeCallCount => _blockRangeCallCount;
+  int get failedBlockRangeCount => _failedBlockRangeCount;
   int get addressUtxosStreamCallCount => _addressUtxosStreamCallCount;
 
   Future<void> start() async {
@@ -83,6 +88,22 @@ class RegtestLightwalletdProxy
     }
     _sendTransactionFailuresRemaining = count;
     _log('primary proxy will fail next $count SendTransaction call(s)');
+  }
+
+  void failBlockRangeCalls(Iterable<int> callNumbers) {
+    final calls = callNumbers.toSet();
+    if (calls.any((call) => call <= _blockRangeCallCount)) {
+      throw ArgumentError.value(
+        callNumbers,
+        'callNumbers',
+        'must contain only future GetBlockRange call numbers',
+      );
+    }
+    _blockRangeFailureCalls.addAll(calls);
+    _log(
+      'primary proxy will fail GetBlockRange call(s) '
+      '${calls.toList()..sort()}',
+    );
   }
 
   void stallNextAddressUtxosStreamAfterHeaders() {
@@ -166,6 +187,17 @@ class RegtestLightwalletdProxy
     service.BlockRange request,
   ) {
     _throwIfDown();
+    _blockRangeCallCount += 1;
+    if (_blockRangeFailureCalls.remove(_blockRangeCallCount)) {
+      _failedBlockRangeCount += 1;
+      _log(
+        'primary proxy forced GetBlockRange failure '
+        '(call=$_blockRangeCallCount, failed=$_failedBlockRangeCount)',
+      );
+      return Stream.error(
+        grpc.GrpcError.unavailable('forced GetBlockRange failure'),
+      );
+    }
     return _client.getBlockRange(request);
   }
 

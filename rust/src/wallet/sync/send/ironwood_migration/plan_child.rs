@@ -239,6 +239,7 @@ pub(crate) fn get_orchard_migration_immediate_plan(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<Option<OrchardMigrationImmediatePlan>, String> {
+    ensure_immediate_migration_sync_ready(db_path)?;
     let db = open_wallet_db_for_read(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let (target_height, anchor_height) = db

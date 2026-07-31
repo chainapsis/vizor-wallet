@@ -115,6 +115,30 @@ pub(crate) struct DenominationStageInsert {
     pub outputs: Vec<DenominationStageOutputRef>,
 }
 
+/// A denomination stage whose CPU-heavy secret material has already been
+/// encrypted. Its fields stay private so production callers must construct it
+/// through [`prepare_denomination_stage_inserts`] before entering the wallet DB
+/// writer critical section.
+pub(crate) struct PreparedDenominationStageInsert {
+    stage_index: u32,
+    encrypted_base_pczt: String,
+    encrypted_compact_sigs: String,
+    encrypted_raw_tx: Option<String>,
+    expected_txid_hex: String,
+    target_height: u32,
+    scheduled_height: u32,
+    expiry_height: u32,
+    fee_zatoshi: u64,
+    status: DenominationStageStatus,
+    inputs: Vec<DenominationStageInputRef>,
+    outputs: Vec<DenominationStageOutputRef>,
+}
+
+/// An extracted raw transaction encrypted before the DB writer lock is taken.
+pub(crate) struct PreparedDenominationRawTx {
+    encrypted_raw_tx: String,
+}
+
 /// A decrypted denomination stage, including the material retained for reorg
 /// recovery and its normalized input and output references.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -420,27 +444,67 @@ fn migrate_confirmed_stage_without_raw_constraint(conn: &Connection) -> Result<(
     Ok(())
 }
 
-/// Inserts every stage under a savepoint in the caller's transaction.
-///
-/// A failure rolls back only this batch, allowing the caller to handle the
-/// error without accidentally committing a partial stage graph.
-pub(crate) fn insert_denomination_stages_with_tx(
-    tx: &Transaction<'_>,
+/// Validates and encrypts denomination stages before the caller enters the
+/// wallet DB writer critical section.
+pub(crate) fn prepare_denomination_stage_inserts(
     run_id: &str,
     stages: Vec<DenominationStageInsert>,
     password: &[u8],
     salt_base64: &str,
-) -> Result<(), String> {
+) -> Result<Vec<PreparedDenominationStageInsert>, String> {
     validate_stage_batch(run_id, &stages)?;
     let salt =
         secret_payload::decode_base64(salt_base64.as_bytes(), "migration denomination stage salt")?;
 
+    stages
+        .into_iter()
+        .map(|stage| {
+            let encrypted_base_pczt =
+                secret_payload::encrypt_payload(Zeroizing::new(stage.base_pczt), password, &salt)?;
+            let sigs_blob = keystone::encode_compact_action_sigs(&stage.sigs)?;
+            let encrypted_compact_sigs =
+                secret_payload::encrypt_payload(Zeroizing::new(sigs_blob), password, &salt)?;
+            let encrypted_raw_tx = stage
+                .raw_tx
+                .map(|raw_tx| {
+                    secret_payload::encrypt_payload(Zeroizing::new(raw_tx), password, &salt)
+                })
+                .transpose()?;
+
+            Ok(PreparedDenominationStageInsert {
+                stage_index: stage.stage_index,
+                encrypted_base_pczt,
+                encrypted_compact_sigs,
+                encrypted_raw_tx,
+                expected_txid_hex: stage.expected_txid_hex,
+                target_height: stage.target_height,
+                scheduled_height: stage.scheduled_height,
+                expiry_height: stage.expiry_height,
+                fee_zatoshi: stage.fee_zatoshi,
+                status: stage.status,
+                inputs: stage.inputs,
+                outputs: stage.outputs,
+            })
+        })
+        .collect()
+}
+
+/// Inserts every pre-encrypted stage under a savepoint in the caller's
+/// transaction.
+///
+/// A failure rolls back only this batch, allowing the caller to handle the
+/// error without accidentally committing a partial stage graph.
+pub(crate) fn insert_prepared_denomination_stages_with_tx(
+    tx: &Transaction<'_>,
+    run_id: &str,
+    stages: Vec<PreparedDenominationStageInsert>,
+) -> Result<(), String> {
     tx.execute_batch(&format!("SAVEPOINT {INSERT_SAVEPOINT}"))
         .map_err(|e| format!("Begin migration denomination stage savepoint: {e}"))?;
 
     let insert_result = (|| {
         for stage in stages {
-            insert_stage(tx, run_id, stage, password, salt.as_slice())?;
+            insert_prepared_stage(tx, run_id, stage)?;
         }
         Ok(())
     })();
@@ -464,23 +528,23 @@ pub(crate) fn insert_denomination_stages_with_tx(
     }
 }
 
-fn insert_stage(
+#[cfg(test)]
+pub(crate) fn insert_denomination_stages_with_tx(
     tx: &Transaction<'_>,
     run_id: &str,
-    stage: DenominationStageInsert,
+    stages: Vec<DenominationStageInsert>,
     password: &[u8],
-    salt: &[u8],
+    salt_base64: &str,
 ) -> Result<(), String> {
-    let encrypted_base_pczt =
-        secret_payload::encrypt_payload(Zeroizing::new(stage.base_pczt), password, salt)?;
-    let sigs_blob = keystone::encode_compact_action_sigs(&stage.sigs)?;
-    let encrypted_compact_sigs =
-        secret_payload::encrypt_payload(Zeroizing::new(sigs_blob), password, salt)?;
-    let encrypted_raw_tx = stage
-        .raw_tx
-        .map(|raw_tx| secret_payload::encrypt_payload(Zeroizing::new(raw_tx), password, salt))
-        .transpose()?;
+    let stages = prepare_denomination_stage_inserts(run_id, stages, password, salt_base64)?;
+    insert_prepared_denomination_stages_with_tx(tx, run_id, stages)
+}
 
+fn insert_prepared_stage(
+    tx: &Transaction<'_>,
+    run_id: &str,
+    stage: PreparedDenominationStageInsert,
+) -> Result<(), String> {
     tx.execute(
         &format!(
             "INSERT INTO {STAGES_TABLE}
@@ -492,9 +556,9 @@ fn insert_stage(
         params![
             run_id,
             stage.stage_index,
-            encrypted_base_pczt,
-            encrypted_compact_sigs,
-            encrypted_raw_tx,
+            stage.encrypted_base_pczt,
+            stage.encrypted_compact_sigs,
+            stage.encrypted_raw_tx,
             stage.expected_txid_hex.to_ascii_lowercase(),
             stage.target_height,
             stage.expiry_height,
@@ -552,6 +616,23 @@ fn insert_stage(
     }
 
     Ok(())
+}
+
+/// Encrypts one extracted denomination transaction before the DB writer lock is
+/// taken.
+pub(crate) fn prepare_denomination_raw_tx(
+    raw_tx: Vec<u8>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<PreparedDenominationRawTx, String> {
+    if raw_tx.is_empty() {
+        return Err("Migration denomination stage raw transaction is empty".to_string());
+    }
+    let salt =
+        secret_payload::decode_base64(salt_base64.as_bytes(), "migration denomination stage salt")?;
+    let encrypted_raw_tx =
+        secret_payload::encrypt_payload(Zeroizing::new(raw_tx), password, salt.as_slice())?;
+    Ok(PreparedDenominationRawTx { encrypted_raw_tx })
 }
 
 /// Reads and decrypts every denomination stage for a run in stage order.
@@ -842,19 +923,10 @@ pub(crate) fn promote_awaiting_denomination_stage(
     run_id: &str,
     stage_index: u32,
     expected_txid_hex: &str,
-    raw_tx: Vec<u8>,
-    password: &[u8],
-    salt_base64: &str,
+    prepared_raw_tx: PreparedDenominationRawTx,
 ) -> Result<(), String> {
     ensure_schema(conn)?;
     validate_txid_hex(expected_txid_hex, "expected transaction ID")?;
-    if raw_tx.is_empty() {
-        return Err("Migration denomination stage raw transaction is empty".to_string());
-    }
-    let salt =
-        secret_payload::decode_base64(salt_base64.as_bytes(), "migration denomination stage salt")?;
-    let encrypted_raw_tx =
-        secret_payload::encrypt_payload(Zeroizing::new(raw_tx), password, salt.as_slice())?;
     let updated = conn
         .execute(
             &format!(
@@ -865,7 +937,7 @@ pub(crate) fn promote_awaiting_denomination_stage(
                    AND encrypted_raw_tx IS NULL"
             ),
             params![
-                encrypted_raw_tx,
+                prepared_raw_tx.encrypted_raw_tx,
                 run_id,
                 stage_index,
                 expected_txid_hex.to_ascii_lowercase(),
@@ -879,6 +951,26 @@ pub(crate) fn promote_awaiting_denomination_stage(
             "Migration denomination stage {stage_index} is missing, has a different txid, or is not awaiting inputs"
         ))
     }
+}
+
+#[cfg(test)]
+fn promote_awaiting_denomination_stage_for_test(
+    conn: &Connection,
+    run_id: &str,
+    stage_index: u32,
+    expected_txid_hex: &str,
+    raw_tx: Vec<u8>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<(), String> {
+    let prepared_raw_tx = prepare_denomination_raw_tx(raw_tx, password, salt_base64)?;
+    promote_awaiting_denomination_stage(
+        conn,
+        run_id,
+        stage_index,
+        expected_txid_hex,
+        prepared_raw_tx,
+    )
 }
 
 /// Marks a pending stage as broadcasted. Repeating the update after a crash is
@@ -1555,6 +1647,46 @@ mod tests {
     }
 
     #[test]
+    fn stage_encryption_preparation_does_not_wait_for_wallet_db_writer_lock() {
+        let (lock_held_tx, lock_held_rx) = std::sync::mpsc::channel();
+        let (release_lock_tx, release_lock_rx) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            crate::wallet::db::with_wallet_db_write_lock(
+                "test.hold_while_preparing_denomination_stage",
+                || {
+                    lock_held_tx.send(()).unwrap();
+                    release_lock_rx.recv().unwrap();
+                },
+            );
+        });
+        lock_held_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            result_tx
+                .send(prepare_denomination_stage_inserts(
+                    "run-1",
+                    vec![awaiting_stage(0, 0x10)],
+                    PASSWORD,
+                    SALT_BASE64,
+                ))
+                .unwrap();
+        });
+
+        let prepared = result_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("denomination stage encryption waited for the wallet DB writer lock")
+            .unwrap();
+        assert_eq!(prepared.len(), 1);
+
+        release_lock_tx.send(()).unwrap();
+        holder.join().unwrap();
+        worker.join().unwrap();
+    }
+
+    #[test]
     fn schema_upgrade_allows_confirmed_stage_without_raw_transaction() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(&format!(
@@ -1802,7 +1934,7 @@ mod tests {
                 .is_empty()
         );
 
-        promote_awaiting_denomination_stage(
+        promote_awaiting_denomination_stage_for_test(
             &conn,
             "run-1",
             0,
@@ -1872,7 +2004,7 @@ mod tests {
         assert_eq!(stored[0].confirmed_mined_height, Some(100));
         assert_eq!(stored[0].confirmed_block_hash, Some(vec![0xabu8; 32]));
 
-        let error = promote_awaiting_denomination_stage(
+        let error = promote_awaiting_denomination_stage_for_test(
             &conn,
             "run-1",
             0,

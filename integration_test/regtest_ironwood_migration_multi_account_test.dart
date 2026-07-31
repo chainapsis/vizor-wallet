@@ -109,20 +109,31 @@ void main() {
       expect(migrationPlan, isNotNull);
       await openPrivateMigrationReview(tester);
       await startPrivateMigrationFromReview(tester);
+      final started = await waitForDesktopRegtestMigrationStatus(
+        tester,
+        firstAccount.uuid,
+        (status) =>
+            status.phase == 'waiting_denom_confirmations' &&
+            status.pendingSplitStageCount > 0,
+        description: 'first-account durable denomination stage',
+        timeout: const Duration(minutes: 5),
+      );
+      e2eLog(
+        'first-account migration durable phase=${started.phase} '
+        'run=${started.activeRunId} '
+        'stages=${started.denominationSplitCompletedCount}/'
+        '${started.denominationSplitTotalCount} '
+        'pending=${started.pendingSplitStageCount}',
+      );
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
+          find.byKey(const ValueKey('ironwood_migration_active_status')),
         ),
         description: 'first-account denomination status',
         timeout: const Duration(minutes: 5),
       );
 
-      final started = await desktopRegtestMigrationStatus(firstAccount.uuid);
       expect(started.activeRunId, isNotNull);
 
       await switchDesktopRegtestAccount(tester, secondAccount.uuid);
@@ -153,19 +164,57 @@ void main() {
       await pumpUntil(
         tester,
         () => tester.any(
-          find.byKey(
-            const ValueKey(
-              'ironwood_migration_status_waiting_denom_confirmations',
-            ),
-          ),
+          find.byKey(const ValueKey('ironwood_migration_active_status')),
         ),
         description: 'first-account migration restored after account switch',
       );
 
+      final preparationTransactions = started.preparationTransactions;
+      expect(preparationTransactions, isNotNull);
+      expect(preparationTransactions, isNotEmpty);
+      final preparationBroadcastHeights = preparationTransactions!
+          .map((transaction) => transaction.scheduledHeight)
+          .whereType<int>()
+          .toList();
+      expect(preparationBroadcastHeights, isNotEmpty);
+      final preparationBroadcastHeight = preparationBroadcastHeights.reduce(
+        (left, right) => left < right ? left : right,
+      );
+      final chainBeforePreparation = await ironwoodDriverGet(
+        _driverUrl,
+        '/status',
+      );
+      final chainHeightBeforePreparation =
+          (chainBeforePreparation['zcashdHeight'] as num).toInt();
+      if (preparationBroadcastHeight > chainHeightBeforePreparation) {
+        await ironwoodDriverPost(
+          _driverUrl,
+          '/mine',
+          payload: {
+            'blocks': preparationBroadcastHeight - chainHeightBeforePreparation,
+          },
+        );
+      }
+      await pumpUntil(
+        tester,
+        () {
+          final sync = container.read(syncProvider).value;
+          return sync?.isSyncing == false &&
+              sync?.isSyncComplete == true &&
+              (sync?.scannedHeight ?? 0) >= preparationBroadcastHeight;
+        },
+        description: 'denomination broadcast height sync',
+        timeout: const Duration(minutes: 5),
+      );
+      await _waitForMempool(tester, (size) => size == 1);
       await ironwoodDriverPost(
         _driverUrl,
         '/mine',
-        payload: const {'blocks': 10},
+        payload: {
+          'blocks': started.denominationConfirmationTarget > 0
+              ? started.denominationConfirmationTarget
+              : 10,
+        },
       );
       await prepareDesktopRegtestMigrationSchedule(tester, firstAccount.uuid);
       await advanceDesktopRegtestMigrationSchedule(
@@ -424,7 +473,7 @@ Future<Map<String, Object?>> _waitForMempool(
     await tester.pump(const Duration(milliseconds: 100));
     await Future<void>.delayed(const Duration(milliseconds: 200));
   }
-  fail('Timed out waiting for post-migration send mempool state. Last: $last');
+  fail('Timed out waiting for regtest mempool state. Last: $last');
 }
 
 String _reverseTxidBytes(String txid) {

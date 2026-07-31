@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use nonempty::NonEmpty;
 use rusqlite::{params, OptionalExtension};
@@ -76,6 +76,39 @@ pub struct SyncProgressEvent {
     pub phase: String,
 }
 
+/// Keeps retry attempts inside one `run_sync_inner` call on a single logical
+/// progress scale.
+///
+/// `run_sync_impl` recalculates its work denominator from the DB at the start
+/// of every attempt. That is correct for resuming from the persisted scan
+/// frontier, but the attempt-local percentage would otherwise jump backward to
+/// zero. A fresh `RetryProgressMapper` is created for every logical sync call,
+/// so a genuinely new session (including account-growth catch-up) still starts
+/// from its own zero-based progress.
+#[derive(Debug, Default)]
+struct RetryProgressMapper {
+    retry_floor: f64,
+    last_emitted_percentage: f64,
+}
+
+impl RetryProgressMapper {
+    fn begin_retry(&mut self) {
+        self.retry_floor = self.last_emitted_percentage.clamp(0.0, 1.0);
+    }
+
+    fn map_percentage(&self, attempt_percentage: f64) -> f64 {
+        let attempt_percentage = attempt_percentage.clamp(0.0, 1.0);
+        self.retry_floor + ((1.0 - self.retry_floor) * attempt_percentage)
+    }
+
+    fn map_event(&mut self, mut event: SyncProgressEvent) -> SyncProgressEvent {
+        event.percentage = self.map_percentage(event.percentage);
+        event.display_target_percentage = self.map_percentage(event.display_target_percentage);
+        self.last_emitted_percentage = event.percentage;
+        event
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 const BATCH_SIZE_FOREGROUND: u32 = 2000;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
@@ -105,6 +138,8 @@ const SYNC_COMPLETION_POLICY_VERSION: u32 = 1;
 const SYNC_COMPLETION_POLICY_VERSION_KEY: &str = "sync_completion_policy_version";
 const LAST_COMPLETED_SYNC_HEIGHT_KEY: &str = "last_completed_sync_height";
 const SYNC_IN_PROGRESS_KEY: &str = "sync_in_progress";
+const ACCOUNT_GROWTH_CATCHUP_PENDING_KEY: &str = "account_growth_catchup_pending";
+const ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY: &str = "account_growth_catchup_anchor_height";
 const WITNESS_CHECK_POLICY_VERSION_KEY: &str = "witness_check_policy_version";
 const WITNESS_CHECK_LAST_CLEAN_HEIGHT_KEY: &str = "witness_check_last_clean_height";
 // Witness repair is finalization work after the main scan drains. Cap its
@@ -728,6 +763,105 @@ pub(crate) fn completed_sync_height_for_status(
     }
 }
 
+/// Invalidates a previously completed sync snapshot before an account import.
+///
+/// Adding an account can enqueue historical scan ranges without moving the
+/// chain tip or the wallet's fully-scanned height. Keeping the old completion
+/// marker would therefore let bootstrap and same-tip polling report the
+/// expanded wallet as complete before those new ranges have been scanned.
+///
+/// The caller must hold the process-global wallet DB write lock so this update
+/// remains ordered with the account import it protects.
+pub(crate) fn invalidate_sync_completion(db_data_path: &str) -> Result<(), String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
+    ensure_sync_meta_table(&conn)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("begin sync invalidation transaction: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![
+            SYNC_COMPLETION_POLICY_VERSION_KEY,
+            SYNC_COMPLETION_POLICY_VERSION.to_string()
+        ],
+    )
+    .map_err(|e| format!("write sync invalidation policy version: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value)
+         SELECT ?1, value
+         FROM ext_vizor_sync_meta
+         WHERE key = ?2
+         ON CONFLICT(key) DO NOTHING",
+        params![
+            ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY,
+            LAST_COMPLETED_SYNC_HEIGHT_KEY
+        ],
+    )
+    .map_err(|e| format!("preserve account-growth catch-up anchor height: {e}"))?;
+    tx.execute(
+        "DELETE FROM ext_vizor_sync_meta WHERE key = ?1",
+        params![LAST_COMPLETED_SYNC_HEIGHT_KEY],
+    )
+    .map_err(|e| format!("clear completed sync height: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '0')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![SYNC_IN_PROGRESS_KEY],
+    )
+    .map_err(|e| format!("clear sync in-progress marker after invalidation: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '1')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![ACCOUNT_GROWTH_CATCHUP_PENDING_KEY],
+    )
+    .map_err(|e| format!("mark account-growth catch-up pending: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("commit sync invalidation transaction: {e}"))
+}
+
+/// Whether an account import has expanded the wallet's viewing-key set and the
+/// resulting historical scan has not completed yet.
+///
+/// This is deliberately narrower than `sync_in_progress`: ordinary tip
+/// catch-up should not pause scheduled migration work, while account growth
+/// temporarily makes the wallet-global scanned height non-authoritative for
+/// already-running migration transactions.
+pub(crate) fn account_growth_catchup_pending(db_data_path: &str) -> Result<bool, String> {
+    let conn = open_readonly_conn_with_timeout(db_data_path, Some(SYNC_DB_BUSY_TIMEOUT))?;
+    account_growth_catchup_pending_with_conn(&conn)
+}
+
+pub(crate) fn account_growth_catchup_pending_with_conn(
+    conn: &rusqlite::Connection,
+) -> Result<bool, String> {
+    if !sync_meta_table_exists(conn)? {
+        return Ok(false);
+    }
+    Ok(parse_sync_meta_u32(
+        ACCOUNT_GROWTH_CATCHUP_PENDING_KEY,
+        read_sync_meta_value(conn, ACCOUNT_GROWTH_CATCHUP_PENDING_KEY)?,
+    )
+    .is_some_and(|value| value != 0))
+}
+
+/// The last fully-authoritative scan height from before the wallet's account
+/// set expanded. Status projection can use this watermark while the new
+/// account is catching up, instead of interpreting the deliberately
+/// incomplete live scan as a reorg or a loss of confirmations.
+pub(crate) fn account_growth_catchup_anchor_height_with_conn(
+    conn: &rusqlite::Connection,
+) -> Result<Option<u32>, String> {
+    if !account_growth_catchup_pending_with_conn(conn)? {
+        return Ok(None);
+    }
+    Ok(parse_sync_meta_u64(
+        ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY,
+        read_sync_meta_value(conn, ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY)?,
+    )
+    .and_then(|height| u32::try_from(height).ok()))
+}
+
 fn mark_sync_started(db_data_path: &str) -> Result<(), String> {
     let mut conn = open_wallet_raw_conn_with_timeout(db_data_path, SYNC_DB_BUSY_TIMEOUT)?;
     ensure_sync_meta_table(&conn)?;
@@ -783,6 +917,17 @@ fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<
         params![SYNC_IN_PROGRESS_KEY],
     )
     .map_err(|e| format!("clear sync in-progress marker: {e}"))?;
+    tx.execute(
+        "INSERT INTO ext_vizor_sync_meta(key, value) VALUES (?1, '0')
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![ACCOUNT_GROWTH_CATCHUP_PENDING_KEY],
+    )
+    .map_err(|e| format!("clear account-growth catch-up marker: {e}"))?;
+    tx.execute(
+        "DELETE FROM ext_vizor_sync_meta WHERE key = ?1",
+        params![ACCOUNT_GROWTH_CATCHUP_ANCHOR_HEIGHT_KEY],
+    )
+    .map_err(|e| format!("clear account-growth catch-up anchor height: {e}"))?;
     tx.commit()
         .map_err(|e| format!("commit completed sync transaction: {e}"))
 }
@@ -1444,6 +1589,7 @@ pub async fn run_sync_inner(
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_err = String::new();
+    let retry_progress = Mutex::new(RetryProgressMapper::default());
     *SYNC_START.lock().unwrap() = Some(std::time::Instant::now());
 
     for attempt in 0..=MAX_RETRIES {
@@ -1470,8 +1616,19 @@ pub async fn run_sync_inner(
                     return Ok(());
                 }
             }
+            retry_progress
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .begin_retry();
         }
 
+        let mapped_progress_fn = |event| {
+            let mapped = retry_progress
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .map_event(event);
+            progress_fn(mapped);
+        };
         match run_sync_impl(
             db_data_path,
             lightwalletd_url,
@@ -1480,7 +1637,7 @@ pub async fn run_sync_inner(
             running_mode,
             desired_mode,
             allow_resubmit,
-            &progress_fn,
+            &mapped_progress_fn,
         )
         .await
         {
@@ -2792,6 +2949,20 @@ mod tests {
         );
     }
 
+    fn progress_event(percentage: f64, display_target_percentage: f64) -> SyncProgressEvent {
+        SyncProgressEvent {
+            scanned_height: 0,
+            chain_tip_height: 0,
+            percentage,
+            display_target_percentage,
+            display_target_blocks: 0,
+            is_syncing: true,
+            is_complete: false,
+            has_new_tx: false,
+            phase: "scan".into(),
+        }
+    }
+
     #[test]
     fn work_progress_matches_remaining_block_ratio() {
         let mode = ProgressDisplayMode::Work;
@@ -2800,6 +2971,48 @@ mod tests {
         assert_pct(
             mode.target_percentage_after_blocks(1_000, 300, 0, 0, 100),
             0.8,
+        );
+    }
+
+    #[test]
+    fn retry_progress_resumes_from_previous_attempt_floor() {
+        let mut mapper = RetryProgressMapper::default();
+        let first_attempt = mapper.map_event(progress_event(225.0 / 1_200.0, 250.0 / 1_200.0));
+        assert_pct(first_attempt.percentage, 225.0 / 1_200.0);
+
+        mapper.begin_retry();
+        let retry_start = mapper.map_event(progress_event(0.0, 25.0 / 975.0));
+        assert_pct(retry_start.percentage, 225.0 / 1_200.0);
+        assert_pct(retry_start.display_target_percentage, 250.0 / 1_200.0);
+
+        let retry_batch_complete = mapper.map_event(progress_event(25.0 / 975.0, 50.0 / 975.0));
+        assert_pct(retry_batch_complete.percentage, 250.0 / 1_200.0);
+        assert_pct(
+            retry_batch_complete.display_target_percentage,
+            275.0 / 1_200.0,
+        );
+    }
+
+    #[test]
+    fn new_logical_sync_does_not_inherit_previous_retry_floor() {
+        let mut previous_sync = RetryProgressMapper::default();
+        previous_sync.map_event(progress_event(0.5, 0.6));
+
+        let mut new_sync = RetryProgressMapper::default();
+        let event = new_sync.map_event(progress_event(0.0, 0.1));
+
+        assert_pct(event.percentage, 0.0);
+        assert_pct(event.display_target_percentage, 0.1);
+    }
+
+    #[test]
+    fn first_attempt_preserves_existing_phase_progress_semantics() {
+        let mut mapper = RetryProgressMapper::default();
+
+        assert_pct(mapper.map_event(progress_event(0.99, 1.0)).percentage, 0.99);
+        assert_pct(
+            mapper.map_event(progress_event(0.95, 0.975)).percentage,
+            0.95,
         );
     }
 
@@ -3045,6 +3258,42 @@ mod tests {
                 Some(3_364_777),
                 Some(false)
             ),
+        );
+    }
+
+    #[test]
+    fn account_growth_catchup_marker_survives_sync_start_until_completion() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let db_path = file.path().to_str().unwrap();
+
+        assert!(!account_growth_catchup_pending(db_path).unwrap());
+        mark_sync_completed(db_path, 100).unwrap();
+        assert!(!account_growth_catchup_pending(db_path).unwrap());
+
+        invalidate_sync_completion(db_path).unwrap();
+        assert!(account_growth_catchup_pending(db_path).unwrap());
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        assert_eq!(
+            account_growth_catchup_anchor_height_with_conn(&conn).unwrap(),
+            Some(100)
+        );
+        drop(conn);
+
+        mark_sync_started(db_path).unwrap();
+        assert!(account_growth_catchup_pending(db_path).unwrap());
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        assert_eq!(
+            account_growth_catchup_anchor_height_with_conn(&conn).unwrap(),
+            Some(100)
+        );
+        drop(conn);
+
+        mark_sync_completed(db_path, 101).unwrap();
+        assert!(!account_growth_catchup_pending(db_path).unwrap());
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        assert_eq!(
+            account_growth_catchup_anchor_height_with_conn(&conn).unwrap(),
+            None
         );
     }
 

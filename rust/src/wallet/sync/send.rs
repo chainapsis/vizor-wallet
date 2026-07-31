@@ -115,6 +115,8 @@ use super::{
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
 const SEND_PROPOSAL_LOCK_BLOCKS: u32 = 40;
+const ACCOUNT_GROWTH_CATCHUP_IMMEDIATE_MIGRATION_ERROR: &str =
+    "Wallet sync is catching up a newly imported account. Wait for sync to finish before starting an Immediate migration.";
 
 fn send_proposal_lock_expiry(min_target_height: BlockHeight) -> BlockHeight {
     min_target_height + SEND_PROPOSAL_LOCK_BLOCKS
@@ -165,6 +167,22 @@ fn send_expiry_height_for_live_tip(
 fn immediate_migration_lock_expiry(target_height: BlockHeight) -> Result<BlockHeight, String> {
     super::migration::zip318_canonical_migration_expiry_height(u32::from(target_height))
         .map(BlockHeight::from_u32)
+}
+
+fn ensure_immediate_migration_sync_ready(db_path: &str) -> Result<(), String> {
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        return Err(ACCOUNT_GROWTH_CATCHUP_IMMEDIATE_MIGRATION_ERROR.to_string());
+    }
+    Ok(())
+}
+
+fn ensure_immediate_migration_sync_ready_with_conn(
+    conn: &rusqlite::Connection,
+) -> Result<(), String> {
+    if sync_engine::account_growth_catchup_pending_with_conn(conn)? {
+        return Err(ACCOUNT_GROWTH_CATCHUP_IMMEDIATE_MIGRATION_ERROR.to_string());
+    }
+    Ok(())
 }
 
 struct ImmediateMigrationInputLock {
@@ -1394,6 +1412,13 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     let migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
 
     let active_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
+    if let Some(run) = active_run.as_ref() {
+        if sync_engine::account_growth_catchup_pending(db_path)? {
+            drop(seed);
+            drop(migration_guard);
+            return Ok(account_growth_catchup_waiting_result(run));
+        }
+    }
     if active_run.is_none()
         && super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?
     {
@@ -1531,17 +1556,15 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::configured_timing_policy(network),
         ),
     };
-    let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
-        prepare_software_migration_run(
-            db_path,
-            network,
-            account_uuid,
-            seed,
-            &signing_schedule,
-            preparation_policy_for_build,
-            migration_policy_for_build,
-        )
-    })?;
+    let prepared = prepare_software_migration_run(
+        db_path,
+        network,
+        account_uuid,
+        seed,
+        &signing_schedule,
+        preparation_policy_for_build,
+        migration_policy_for_build,
+    )?;
 
     let Some(prepared) = prepared else {
         return Err(
@@ -1663,6 +1686,10 @@ fn build_orchard_migration_immediate_pczt(
         input_lock_owner,
         locked_outputs,
     ) = with_wallet_db_write_lock("send.immediate_migration.build", || {
+        let sync_conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        ensure_immediate_migration_sync_ready_with_conn(&sync_conn)?;
+        drop(sync_conn);
+
         let mut db = open_wallet_db(db_path, network)?;
         let account_id = parse_account_uuid(account_uuid)?;
         let account = db
@@ -2295,6 +2322,13 @@ pub(crate) fn orchard_migration_proof_readiness(
     {
         return Ok(None);
     }
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        // The wallet-global scanned height temporarily describes the newly
+        // imported account's historical catch-up, not a loss of the existing
+        // migration account's proof window. Report "unknown" instead of
+        // flipping a previously-ready proof back to false.
+        return Ok(None);
+    }
     let run_id = status
         .active_run_id
         .as_deref()
@@ -2443,6 +2477,9 @@ pub(crate) async fn advance_orchard_migration_preparation_for_run(
     if run.run_id != expected_run_id {
         return Err("Ironwood migration preparation run changed".to_string());
     }
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        return Ok(account_growth_catchup_waiting_result(&run));
+    }
 
     if run.phase != super::migration::PHASE_WAITING_DENOM_CONFIRMATIONS {
         return Ok(IronwoodMigrationResult {
@@ -2561,6 +2598,11 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     if policy.is_cancelled() {
         return Ok(MigrationBroadcastAdvance::without_acceptance(
             cancelled_migration_result(&run),
+        ));
+    }
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        return Ok(MigrationBroadcastAdvance::without_acceptance(
+            account_growth_catchup_waiting_result(&run),
         ));
     }
 
@@ -4676,16 +4718,24 @@ fn finalize_ready_denomination_stages(
                 stage.stage_index
             ));
         }
-
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        super::migration::promote_awaiting_denomination_stage(
-            &conn,
-            run_id,
-            stage.stage_index,
-            &stage.expected_txid_hex,
+        let prepared_raw_tx = super::migration::prepare_denomination_raw_tx(
             extracted.raw_tx,
             pending_password,
             pending_salt_base64,
+        )?;
+
+        super::migration::with_migration_write_conn(
+            db_path,
+            "send.migration.promote_denomination_stage",
+            |conn| {
+                super::migration::promote_awaiting_denomination_stage(
+                    conn,
+                    run_id,
+                    stage.stage_index,
+                    &stage.expected_txid_hex,
+                    prepared_raw_tx,
+                )
+            },
         )?;
         promoted_count = promoted_count
             .checked_add(1)
@@ -4961,28 +5011,34 @@ async fn broadcast_pending_denomination_stages(
             }));
         }
 
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        let tx = conn
-            .unchecked_transaction()
-            .map_err(|e| format!("Begin migration denomination broadcast transition: {e}"))?;
-        super::migration::mark_denomination_stage_broadcasted(
-            &tx,
-            run_id,
-            &stage.expected_txid_hex,
+        super::migration::with_migration_write_conn(
+            db_path,
+            "send.migration.mark_denomination_broadcasted",
+            |conn| {
+                let tx = conn.unchecked_transaction().map_err(|e| {
+                    format!("Begin migration denomination broadcast transition: {e}")
+                })?;
+                super::migration::mark_denomination_stage_broadcasted(
+                    &tx,
+                    run_id,
+                    &stage.expected_txid_hex,
+                )?;
+                if preparation_timing_policy
+                    == super::migration::PreparationTimingPolicy::Zip318Spaced
+                    && stage_was_overdue
+                {
+                    super::migration::rerandomize_remaining_preparation_broadcast_heights(
+                        &tx,
+                        run_id,
+                        network,
+                        chain_tip_height,
+                        &mut OsRng,
+                    )?;
+                }
+                tx.commit()
+                    .map_err(|e| format!("Commit migration denomination broadcast transition: {e}"))
+            },
         )?;
-        if preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
-            && stage_was_overdue
-        {
-            super::migration::rerandomize_remaining_preparation_broadcast_heights(
-                &tx,
-                run_id,
-                network,
-                chain_tip_height,
-                &mut OsRng,
-            )?;
-        }
-        tx.commit()
-            .map_err(|e| format!("Commit migration denomination broadcast transition: {e}"))?;
         broadcasted_count = broadcasted_count
             .checked_add(1)
             .ok_or("Broadcasted denomination stage count overflow")?;
