@@ -9,6 +9,29 @@ private func isNativeLocalHost(_ host: String) -> Bool {
   return IPv4Address(host)?.rawValue.first == 127
 }
 
+/// Shared submission-endpoint checks: parseable with a host, no credentials,
+/// no query or fragment, and HTTPS except for local hosts. `requireOriginOnly`
+/// additionally rejects any path, which lightwalletd targets require; the
+/// JSON-RPC relay may live under a path.
+private func nativeSubmissionEndpointComponents(
+  _ endpoint: String,
+  requireOriginOnly: Bool
+) -> URLComponents? {
+  guard let components = URLComponents(string: endpoint),
+    components.user == nil,
+    components.password == nil,
+    let host = components.host,
+    components.query == nil,
+    components.fragment == nil,
+    !requireOriginOnly || components.path.isEmpty || components.path == "/",
+    components.scheme == "https"
+      || (components.scheme == "http" && isNativeLocalHost(host))
+  else {
+    return nil
+  }
+  return components
+}
+
 final class BackgroundMigrationCancellation: @unchecked Sendable {
   private let condition = NSCondition()
   private var cancelled = false
@@ -573,15 +596,12 @@ enum NativeLightwalletdClient {
     endpoint: String,
     syncEndpoint: String
   ) -> URL? {
-    guard let components = URLComponents(string: endpoint),
-      components.user == nil,
-      components.password == nil,
+    guard
+      let components = nativeSubmissionEndpointComponents(
+        endpoint,
+        requireOriginOnly: true
+      ),
       let submissionHost = components.host,
-      components.query == nil,
-      components.fragment == nil,
-      components.path.isEmpty || components.path == "/",
-      components.scheme == "https"
-        || (components.scheme == "http" && isNativeLocalHost(submissionHost)),
       let syncHost = URLComponents(string: syncEndpoint)?.host,
       submissionHost.caseInsensitiveCompare(syncHost) != .orderedSame
     else {
@@ -756,17 +776,7 @@ enum NativeTransactionRelayClient {
   }
 
   static func relayURL(_ endpoint: String) -> URL? {
-    guard let components = URLComponents(string: endpoint),
-      components.user == nil,
-      components.password == nil,
-      let host = components.host,
-      components.query == nil,
-      components.fragment == nil,
-      components.scheme == "https" || (components.scheme == "http" && isNativeLocalHost(host))
-    else {
-      return nil
-    }
-    return components.url
+    nativeSubmissionEndpointComponents(endpoint, requireOriginOnly: false)?.url
   }
 
   private static func isTxidHex(_ value: String) -> Bool {

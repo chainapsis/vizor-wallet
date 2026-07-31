@@ -239,18 +239,19 @@ const LIGHTWALLETD_SUBMISSION_TARGET: &str = "lightwalletd";
 const LIGHTWALLETD_SUBMISSION_PREFIX: &str = "lightwalletd:";
 const SEPARATE_RELAY_SUBMISSION_PREFIX: &str = "relay:";
 
-fn migration_submission_target(
+/// Parses the requested submission target for a new run, defaulting to the
+/// sync lightwalletd when none is supplied.
+fn migration_submission_policy_for_new_run(
     transaction_submission_target: Option<&str>,
-) -> Result<String, String> {
+) -> Result<MigrationSubmissionPolicy, String> {
     let Some(target) = transaction_submission_target else {
-        return Ok(LIGHTWALLETD_SUBMISSION_TARGET.to_string());
+        return Ok(MigrationSubmissionPolicy::Lightwalletd);
     };
     let target = target.trim();
     if target.is_empty() {
         return Err("Migration transaction submission target is empty".to_string());
     }
-    let policy = parse_migration_submission_target("new", target)?;
-    Ok(encode_migration_submission_policy(&policy))
+    parse_migration_submission_target("new", target)
 }
 
 fn parse_migration_submission_target(
@@ -1440,9 +1441,10 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
     let target_values_json = serde_json::to_string(&plan.migration_outputs)
         .map_err(|e| format!("Encode migration targets: {e}"))?;
     let timing_policy = configured_timing_policy(network);
-    let migration_submission_target = migration_submission_target(transaction_submission_target)?;
     let migration_submission_policy =
-        parse_migration_submission_target(&run_id, &migration_submission_target)?;
+        migration_submission_policy_for_new_run(transaction_submission_target)?;
+    let migration_submission_target =
+        encode_migration_submission_policy(&migration_submission_policy);
     validate_denomination_stages_for_submission_policy(
         &migration_submission_policy,
         &denomination_stages,
@@ -1569,7 +1571,9 @@ pub(crate) fn create_or_resume_private_migration_draft(
         .map_err(|e| format!("Encode Keystone migration targets: {e}"))?;
     let schedule_json = serde_json::to_string(approved_schedule)
         .map_err(|e| format!("Encode Keystone migration schedule: {e}"))?;
-    let migration_submission_target = migration_submission_target(transaction_submission_target)?;
+    let migration_submission_target = encode_migration_submission_policy(
+        &migration_submission_policy_for_new_run(transaction_submission_target)?,
+    );
     tx.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}

@@ -163,56 +163,47 @@ impl JsonRpcResponse {
     }
 }
 
-pub(super) fn validate_transaction_relay_url(endpoint: &str) -> Result<Url, String> {
-    let url = Url::parse(endpoint).map_err(|e| format!("Invalid transaction relay URL: {e}"))?;
+/// Shared submission-endpoint checks: parseable with a host, no credentials,
+/// no query or fragment, and HTTPS except for local hosts. `origin_only`
+/// additionally rejects any path, which lightwalletd targets require; the
+/// JSON-RPC relay may live under a path.
+fn validate_submission_endpoint_url(
+    endpoint: &str,
+    label: &str,
+    origin_only: bool,
+) -> Result<Url, String> {
+    let url = Url::parse(endpoint).map_err(|e| format!("Invalid {label} URL: {e}"))?;
+    if url.host().is_none() {
+        return Err(format!("{label} URL has no host"));
+    }
     if !url.username().is_empty() || url.password().is_some() {
-        return Err("Transaction relay URL must not contain credentials".to_string());
+        return Err(format!("{label} URL must not contain credentials"));
     }
     if url.query().is_some() || url.fragment().is_some() {
-        return Err("Transaction relay URL must not contain a query or fragment".to_string());
+        return Err(format!("{label} URL must not contain a query or fragment"));
     }
-
+    if origin_only && url.path() != "/" {
+        return Err(format!("{label} URL must contain only an origin"));
+    }
     match url.scheme() {
         "https" => {}
         "http" if url_host_is_local(&url) => {}
         "http" => {
-            return Err("Transaction relay URL requires HTTPS except for loopback".to_string());
+            return Err(format!("{label} URL requires HTTPS except for local hosts"));
         }
-        _ => return Err("Transaction relay URL must use HTTPS".to_string()),
+        _ => return Err(format!("{label} URL must use HTTPS")),
     }
     Ok(url)
 }
 
+/// Validates the JSON-RPC relay endpoint; see `validate_submission_endpoint_url`.
+pub(super) fn validate_transaction_relay_url(endpoint: &str) -> Result<Url, String> {
+    validate_submission_endpoint_url(endpoint, "Transaction relay", false)
+}
+
+/// Validates an alternate lightwalletd submission endpoint (origin only).
 pub(super) fn validate_lightwalletd_submission_url(endpoint: &str) -> Result<Url, String> {
-    let url = Url::parse(endpoint)
-        .map_err(|e| format!("Invalid transaction submission lightwalletd URL: {e}"))?;
-    if url.host().is_none() {
-        return Err("Transaction submission lightwalletd URL has no host".to_string());
-    }
-    if !url.username().is_empty() || url.password().is_some() {
-        return Err(
-            "Transaction submission lightwalletd URL must not contain credentials".to_string(),
-        );
-    }
-    if url.query().is_some() || url.fragment().is_some() || url.path() != "/" {
-        return Err(
-            "Transaction submission lightwalletd URL must contain only an origin".to_string(),
-        );
-    }
-    match url.scheme() {
-        "https" => {}
-        "http" if url_host_is_local(&url) => {}
-        "http" => {
-            return Err(
-                "Transaction submission lightwalletd URL requires HTTPS except for local hosts"
-                    .to_string(),
-            );
-        }
-        _ => {
-            return Err("Transaction submission lightwalletd URL must use HTTPS".to_string());
-        }
-    }
-    Ok(url)
+    validate_submission_endpoint_url(endpoint, "Transaction submission lightwalletd", true)
 }
 
 pub(super) fn validate_distinct_lightwalletd_submission_url(
