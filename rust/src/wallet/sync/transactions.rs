@@ -19,9 +19,10 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
+    rc::Rc,
 };
 
-use rusqlite::OptionalExtension;
+use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
 use zcash_primitives::transaction::Transaction;
@@ -52,6 +53,7 @@ pub(crate) enum WalletBalanceAvailability {
     AccountUnavailable,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WalletBalance {
     pub availability: WalletBalanceAvailability,
     pub transparent: u64,
@@ -100,61 +102,100 @@ pub fn get_wallet_balance(
     network: WalletNetwork,
     account_uuid: &str,
 ) -> Result<WalletBalance, String> {
-    let target_id = parse_account_uuid(account_uuid)?;
-    let db = open_wallet_db_for_read(db_path, network)?;
-    match db
-        .get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| format!("{e}"))?
-    {
-        Some(s) => match s.account_balances().get(&target_id) {
-            Some(b) => {
-                let transparent_change =
-                    u64::from(b.unshielded_balance().change_pending_confirmation());
-                let sapling_change = u64::from(b.sapling_balance().change_pending_confirmation());
-                let orchard_change = u64::from(b.orchard_balance().change_pending_confirmation());
-                let ironwood_change = u64::from(b.ironwood_balance().change_pending_confirmation());
-                let transparent_pending =
-                    u64::from(b.unshielded_balance().value_pending_spendability());
-                let sapling_pending = u64::from(b.sapling_balance().value_pending_spendability());
-                let orchard_pending = u64::from(b.orchard_balance().value_pending_spendability());
-                let ironwood_pending = u64::from(b.ironwood_balance().value_pending_spendability());
+    let mut balances = get_wallet_balances(db_path, network, std::slice::from_ref(&account_uuid))?;
+    Ok(balances
+        .pop()
+        .expect("get_wallet_balances returns one entry per requested account"))
+}
 
-                Ok(WalletBalance {
-                    availability: WalletBalanceAvailability::Available,
-                    transparent: u64::from(b.unshielded_balance().spendable_value()),
-                    sapling: u64::from(b.sapling_balance().spendable_value()),
-                    orchard: u64::from(b.orchard_balance().spendable_value()),
-                    ironwood: u64::from(b.ironwood_balance().spendable_value()),
-                    transparent_locked: u64::from(b.unshielded_balance().locked_value()),
-                    sapling_locked: u64::from(b.sapling_balance().locked_value()),
-                    orchard_locked: u64::from(b.orchard_balance().locked_value()),
-                    ironwood_locked: u64::from(b.ironwood_balance().locked_value()),
-                    transparent_pending: transparent_change + transparent_pending,
-                    sapling_pending: sapling_change + sapling_pending,
-                    orchard_pending: orchard_change + orchard_pending,
-                    ironwood_pending: ironwood_change + ironwood_pending,
-                    change_pending_confirmation: transparent_change
-                        + sapling_change
-                        + orchard_change
-                        + ironwood_change,
-                    value_pending_spendability: transparent_pending
-                        + sapling_pending
-                        + orchard_pending
-                        + ironwood_pending,
-                    uneconomic_value: u64::from(b.unshielded_balance().uneconomic_value())
-                        + u64::from(b.sapling_balance().uneconomic_value())
-                        + u64::from(b.orchard_balance().uneconomic_value())
-                        + u64::from(b.ironwood_balance().uneconomic_value()),
-                })
-            }
-            None => Ok(WalletBalance::unavailable(
-                WalletBalanceAvailability::AccountUnavailable,
-            )),
-        },
-        None => Ok(WalletBalance::unavailable(
-            WalletBalanceAvailability::SummaryUnavailable,
-        )),
-    }
+/// Balances for several accounts from a single `get_wallet_summary`.
+///
+/// `get_wallet_summary` computes every account's balance regardless of
+/// which one the caller wants, so asking it once per account is
+/// quadratic in account count. Callers that need more than one account
+/// — the Ironwood migration coordinator sweeps all of them every poll —
+/// must use this instead of looping over `get_wallet_balance`.
+///
+/// Returns one entry per requested uuid, in the order given. An account
+/// missing from the summary yields `AccountUnavailable` rather than an
+/// error, matching the single-account behaviour, so one unknown account
+/// cannot fail the whole batch.
+pub fn get_wallet_balances(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuids: &[&str],
+) -> Result<Vec<WalletBalance>, String> {
+    let target_ids = account_uuids
+        .iter()
+        .map(|uuid| parse_account_uuid(uuid))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let db = open_wallet_db_for_read(db_path, network)?;
+    let summary = db
+        .get_wallet_summary(ConfirmationsPolicy::default())
+        .map_err(|e| format!("{e}"))?;
+
+    let Some(summary) = summary else {
+        return Ok(target_ids
+            .iter()
+            .map(|_| WalletBalance::unavailable(WalletBalanceAvailability::SummaryUnavailable))
+            .collect());
+    };
+
+    Ok(target_ids
+        .iter()
+        .map(
+            |target_id| match summary.account_balances().get(target_id) {
+                Some(b) => {
+                    let transparent_change =
+                        u64::from(b.unshielded_balance().change_pending_confirmation());
+                    let sapling_change =
+                        u64::from(b.sapling_balance().change_pending_confirmation());
+                    let orchard_change =
+                        u64::from(b.orchard_balance().change_pending_confirmation());
+                    let ironwood_change =
+                        u64::from(b.ironwood_balance().change_pending_confirmation());
+                    let transparent_pending =
+                        u64::from(b.unshielded_balance().value_pending_spendability());
+                    let sapling_pending =
+                        u64::from(b.sapling_balance().value_pending_spendability());
+                    let orchard_pending =
+                        u64::from(b.orchard_balance().value_pending_spendability());
+                    let ironwood_pending =
+                        u64::from(b.ironwood_balance().value_pending_spendability());
+
+                    WalletBalance {
+                        availability: WalletBalanceAvailability::Available,
+                        transparent: u64::from(b.unshielded_balance().spendable_value()),
+                        sapling: u64::from(b.sapling_balance().spendable_value()),
+                        orchard: u64::from(b.orchard_balance().spendable_value()),
+                        ironwood: u64::from(b.ironwood_balance().spendable_value()),
+                        transparent_locked: u64::from(b.unshielded_balance().locked_value()),
+                        sapling_locked: u64::from(b.sapling_balance().locked_value()),
+                        orchard_locked: u64::from(b.orchard_balance().locked_value()),
+                        ironwood_locked: u64::from(b.ironwood_balance().locked_value()),
+                        transparent_pending: transparent_change + transparent_pending,
+                        sapling_pending: sapling_change + sapling_pending,
+                        orchard_pending: orchard_change + orchard_pending,
+                        ironwood_pending: ironwood_change + ironwood_pending,
+                        change_pending_confirmation: transparent_change
+                            + sapling_change
+                            + orchard_change
+                            + ironwood_change,
+                        value_pending_spendability: transparent_pending
+                            + sapling_pending
+                            + orchard_pending
+                            + ironwood_pending,
+                        uneconomic_value: u64::from(b.unshielded_balance().uneconomic_value())
+                            + u64::from(b.sapling_balance().uneconomic_value())
+                            + u64::from(b.orchard_balance().uneconomic_value())
+                            + u64::from(b.ironwood_balance().uneconomic_value()),
+                    }
+                }
+                None => WalletBalance::unavailable(WalletBalanceAvailability::AccountUnavailable),
+            },
+        )
+        .collect())
 }
 
 // ======================== Diversified Address ========================
@@ -418,7 +459,7 @@ pub(crate) struct ExportBirthdayAnchor {
     pub block_height: u64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct TxBase {
     txid: Vec<u8>,
     transaction_id: i64,
@@ -437,6 +478,7 @@ struct TxBase {
     spent_orchard_note: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct TxOutput {
     txid: Vec<u8>,
     output_pool: i64,
@@ -564,7 +606,42 @@ pub fn get_transaction_history(
         return Ok(Vec::new());
     }
 
-    let outputs_by_txid = read_history_outputs(&read_tx, &uuid_bytes)?;
+    // Bind the txids already in `bases` instead of re-querying
+    // `v_transactions` for DISTINCT txid. That view selects
+    // `transactions.raw`, so a second pass would re-materialize every
+    // raw blob even though this path never reads them.
+    let outputs_by_txid = read_history_outputs(
+        &read_tx,
+        &uuid_bytes,
+        bases.iter().map(|base| base.txid.as_slice()),
+    )?;
+    drop(read_tx);
+
+    Ok(assemble_history(
+        &bases,
+        &outputs_by_txid,
+        &uuid_bytes,
+        limit,
+    ))
+}
+
+/// Turn raw history rows into the display list.
+///
+/// This is the whole classification pipeline — summarize, suppress
+/// funding steps, classify, filter, sort, truncate — with no database
+/// access, so it can be exercised directly from `TxBase` / `TxOutput`
+/// values instead of through SQL fixtures. `read_history_bases` and
+/// `read_history_outputs` own the SQL side; their agreement with
+/// librustzcash's own schema is pinned by the regtest equivalence
+/// check rather than by synthetic in-memory tables, which cannot
+/// express states the real schema forbids (a spend, for instance,
+/// always implies a funding receive that is itself a history row).
+fn assemble_history(
+    bases: &[TxBase],
+    outputs_by_txid: &HashMap<Vec<u8>, Vec<TxOutput>>,
+    uuid_bytes: &[u8],
+    limit: Option<u32>,
+) -> Vec<TransactionInfo> {
     let summaries: HashMap<Vec<u8>, ActivitySummary> = bases
         .iter()
         .map(|base| {
@@ -574,16 +651,16 @@ pub fn get_transaction_history(
                 .unwrap_or(&[]);
             (
                 base.txid.clone(),
-                summarize_activity_outputs(base, outputs, uuid_bytes.as_slice()),
+                summarize_activity_outputs(base, outputs, uuid_bytes),
             )
         })
         .collect();
-    let external_send_keys = build_external_send_keys(&bases, &summaries);
+    let external_send_keys = build_external_send_keys(bases, &summaries);
     let suppressed_funding_step_fees =
-        build_suppressed_funding_step_fees(&bases, &summaries, &external_send_keys);
+        build_suppressed_funding_step_fees(bases, &summaries, &external_send_keys);
 
     let mut visible = Vec::new();
-    for base in &bases {
+    for base in bases {
         let summary = summaries.get(&base.txid).cloned().unwrap_or_default();
         if suppressed_funding_step_fees
             .suppressed_funding_txids
@@ -623,7 +700,7 @@ pub fn get_transaction_history(
         visible.truncate(limit as usize);
     }
 
-    Ok(visible.into_iter().map(|tx| tx.info).collect())
+    visible.into_iter().map(|tx| tx.info).collect()
 }
 
 pub fn get_previous_transaction_count_for_address(
@@ -990,13 +1067,106 @@ fn read_history_base_by_txid(
     Ok(row)
 }
 
+/// Account-scoped stand-in for `v_transactions`, without `transactions.raw`.
+///
+/// The upstream view aggregates `raw`, so SQLite materializes every blob
+/// and cannot push an outer account filter into the view. This copy drops
+/// `raw`, filters by `?1` early, and keeps the `notes` / `sent_note_counts`
+/// CTEs verbatim so row identity matches.
+///
+/// Source: `zcash_client_sqlite` 0.22.0-rc.4 `VIEW_TRANSACTIONS`
+/// <https://github.com/zcash/librustzcash/blob/65a3add2f1d9b9ea455a71a9c33f9219dbc9e614/zcash_client_sqlite/src/wallet/db.rs#L1320-L1438>
+///
+/// `history_bases_match_v_transactions` is the tripwire if the view changes.
+const HISTORY_BASES_CTE: &str = r#"
+        WITH vt AS (
+            WITH
+            notes AS (
+                SELECT ro.account_id              AS account_id,
+                       ro.transaction_id          AS transaction_id,
+                       ro.pool                    AS pool,
+                       id_within_pool_table,
+                       ro.value                   AS value,
+                       ro.value                   AS received_value,
+                       0                          AS spent_value,
+                       0                          AS spent_note_count,
+                       CASE WHEN ro.is_change THEN 1 ELSE 0 END AS change_note_count,
+                       CASE WHEN ro.is_change THEN 0 ELSE 1 END AS received_count,
+                       CASE
+                         WHEN (ro.memo IS NULL OR ro.memo = X'F6') THEN 0
+                         ELSE 1
+                       END AS memo_present,
+                       CASE WHEN ro.pool = 0 THEN 1 ELSE 0 END AS does_not_match_shielding
+                FROM v_received_outputs ro
+                UNION
+                SELECT ro.account_id              AS account_id,
+                       ros.transaction_id         AS transaction_id,
+                       ro.pool                    AS pool,
+                       id_within_pool_table,
+                       -ro.value                  AS value,
+                       0                          AS received_value,
+                       ro.value                   AS spent_value,
+                       1                          AS spent_note_count,
+                       0                          AS change_note_count,
+                       0                          AS received_count,
+                       0                          AS memo_present,
+                       CASE WHEN ro.pool != 0 THEN 1 ELSE 0 END AS does_not_match_shielding
+                FROM v_received_outputs ro
+                JOIN v_received_output_spends ros
+                     ON ros.pool = ro.pool
+                     AND ros.received_output_id = ro.id_within_pool_table
+            ),
+            sent_note_counts AS (
+                SELECT sent_notes.from_account_id     AS account_id,
+                       sent_notes.transaction_id      AS transaction_id,
+                       COUNT(DISTINCT sent_notes.id)  AS sent_notes
+                FROM sent_notes
+                LEFT JOIN v_received_outputs ro ON sent_notes.id = ro.sent_note_id
+                WHERE COALESCE(ro.is_change, 0) = 0
+                GROUP BY account_id, sent_notes.transaction_id
+            ),
+            blocks_max_height AS (
+                SELECT MAX(blocks.height) AS max_height FROM blocks
+            )
+            SELECT transactions.txid          AS txid,
+                   transactions.mined_height  AS mined_height,
+                   transactions.tx_index      AS tx_index,
+                   transactions.expiry_height AS expiry_height,
+                   transactions.fee           AS fee_paid,
+                   blocks.time                AS block_time,
+                   SUM(notes.value)           AS account_balance_delta,
+                   SUM(notes.spent_value)     AS total_spent,
+                   SUM(notes.received_value)  AS total_received,
+                   (
+                        transactions.mined_height IS NULL
+                        AND transactions.expiry_height BETWEEN 1 AND blocks_max_height.max_height
+                   ) AS expired_unmined,
+                   (
+                        SUM(notes.does_not_match_shielding) = 0
+                        AND SUM(notes.spent_note_count) > 0
+                        AND (SUM(notes.received_count) + SUM(notes.change_note_count)) > 0
+                        AND MAX(COALESCE(sent_note_counts.sent_notes, 0)) = 0
+                   ) AS is_shielding
+            FROM notes
+            JOIN accounts ON accounts.id = notes.account_id
+            JOIN transactions ON transactions.id_tx = notes.transaction_id
+            LEFT JOIN blocks_max_height
+            LEFT JOIN blocks ON blocks.height = transactions.mined_height
+            LEFT JOIN sent_note_counts
+                 ON sent_note_counts.account_id = notes.account_id
+                 AND sent_note_counts.transaction_id = notes.transaction_id
+            WHERE accounts.uuid = ?1
+            GROUP BY notes.account_id, notes.transaction_id
+        )
+"#;
+
 fn read_history_bases(
     conn: &rusqlite::Connection,
     account_uuid: &[u8],
 ) -> Result<Vec<TxBase>, String> {
     let mut stmt = conn
-        .prepare(
-            r#"
+        .prepare(&format!(
+            r#"{HISTORY_BASES_CTE}
         SELECT
             vt.txid,
             COALESCE(tx.id_tx, -1) AS transaction_id,
@@ -1022,11 +1192,10 @@ fn read_history_bases(
                 WHERE spent_tx.txid = vt.txid
                   AND spent_note.note_version = ?2
             ) AS spent_orchard_note
-        FROM v_transactions vt
+        FROM vt
         LEFT JOIN transactions tx ON tx.txid = vt.txid
-        WHERE vt.account_uuid = ?1
-        "#,
-        )
+        "#
+        ))
         .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
@@ -1058,10 +1227,23 @@ fn read_history_bases(
         .map_err(|e| format!("Row error: {e}"))
 }
 
-fn read_history_outputs(
+fn read_history_outputs<'a>(
     conn: &rusqlite::Connection,
     account_uuid: &[u8],
+    txids: impl IntoIterator<Item = &'a [u8]>,
 ) -> Result<HashMap<Vec<u8>, Vec<TxOutput>>, String> {
+    let mut seen = HashSet::<&[u8]>::new();
+    let txid_array: Array = Rc::new(
+        txids
+            .into_iter()
+            .filter(|txid| seen.insert(*txid))
+            .map(|txid| Value::Blob(txid.to_vec()))
+            .collect(),
+    );
+    if txid_array.is_empty() {
+        return Ok(HashMap::new());
+    }
+
     let mut stmt = conn
         .prepare(
             r#"
@@ -1107,11 +1289,7 @@ fn read_history_outputs(
                 LIMIT 1
             ) AS note_version
         FROM v_tx_outputs txo
-        JOIN (
-            SELECT DISTINCT txid
-            FROM v_transactions
-            WHERE account_uuid = ?1
-        ) active_tx ON active_tx.txid = txo.txid
+        JOIN rarray(?2) AS active_tx ON active_tx.value = txo.txid
         WHERE txo.from_account_uuid = ?1
            OR txo.to_account_uuid = ?1
         "#,
@@ -1119,7 +1297,7 @@ fn read_history_outputs(
         .map_err(|e| format!("SQL error: {e}"))?;
 
     let rows = stmt
-        .query_map(rusqlite::params![account_uuid], |row| {
+        .query_map(rusqlite::params![account_uuid, txid_array], |row| {
             Ok(TxOutput {
                 txid: row.get(0)?,
                 output_pool: row.get(1)?,
@@ -2964,6 +3142,602 @@ mod tests {
         assert_eq!(got.block_height, 333_100);
     }
 
+    /// Read `TxBase` from a synthetic `v_transactions` table.
+    ///
+    /// This is needed because the synthetic `v_transactions` table
+    /// doesn't have the note-derived aggregates that the real
+    /// `HISTORY_BASES_CTE` does. 
+    /// 
+    /// This helper allows us to test `read_history_bases` against the
+    /// synthetic `v_transactions` table.
+    /// 
+    /// The equivalency test checks that the two paths return the same rows.
+    fn read_history_bases_via_v_transactions(
+        conn: &rusqlite::Connection,
+        account_uuid: &[u8],
+    ) -> Result<Vec<TxBase>, String> {
+        let mut stmt = conn
+            .prepare(
+                r#"
+            SELECT
+                vt.txid,
+                COALESCE(tx.id_tx, -1) AS transaction_id,
+                vt.mined_height,
+                vt.expired_unmined,
+                vt.account_balance_delta,
+                COALESCE(vt.fee_paid, 0) AS fee_paid,
+                COALESCE(vt.block_time, 0) AS block_time,
+                COALESCE(vt.total_spent, 0) AS total_spent,
+                COALESCE(vt.total_received, 0) AS total_received,
+                COALESCE(vt.is_shielding, 0) AS is_shielding,
+                vt.expiry_height,
+                COALESCE(vt.tx_index, -1) AS tx_index,
+                tx.created,
+                CAST(COALESCE(strftime('%s', tx.created), 0) AS INTEGER) AS created_time,
+                EXISTS (
+                    SELECT 1
+                    FROM transactions spent_tx
+                    JOIN orchard_received_note_spends spent
+                        ON spent.transaction_id = spent_tx.id_tx
+                    JOIN orchard_received_notes spent_note
+                        ON spent_note.id = spent.orchard_received_note_id
+                    WHERE spent_tx.txid = vt.txid
+                      AND spent_note.note_version = ?2
+                ) AS spent_orchard_note
+            FROM v_transactions vt
+            LEFT JOIN transactions tx ON tx.txid = vt.txid
+            WHERE vt.account_uuid = ?1
+            "#,
+            )
+            .map_err(|e| format!("SQL error: {e}"))?;
+
+        let rows = stmt
+            .query_map(
+                rusqlite::params![account_uuid, ORCHARD_NOTE_VERSION],
+                |row| {
+                    Ok(TxBase {
+                        txid: row.get(0)?,
+                        transaction_id: row.get(1)?,
+                        mined_height: row.get(2)?,
+                        expired_unmined: row.get(3)?,
+                        account_balance_delta: row.get(4)?,
+                        fee: row.get::<_, i64>(5)?.unsigned_abs(),
+                        block_time: row.get::<_, i64>(6)?.unsigned_abs(),
+                        total_spent: row.get::<_, i64>(7)?.unsigned_abs(),
+                        total_received: row.get::<_, i64>(8)?.unsigned_abs(),
+                        is_shielding: row.get(9)?,
+                        expiry_height: row.get(10)?,
+                        tx_index: row.get(11)?,
+                        created: row.get(12)?,
+                        created_time: row.get::<_, i64>(13)?.unsigned_abs(),
+                        spent_orchard_note: row.get(14)?,
+                    })
+                },
+            )
+            .map_err(|e| format!("Query error: {e}"))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Row error: {e}"))
+    }
+
+    /// `get_transaction_history` with its bases read from the synthetic
+    /// `v_transactions` fixture instead of `HISTORY_BASES_CTE`.
+    ///
+    /// Everything else is production code: the real
+    /// `read_history_outputs` and the real `assemble_history`.
+    fn history_from_fixture(
+        db_path: &str,
+        _network: WalletNetwork,
+        limit: Option<u32>,
+        account_uuid: &str,
+    ) -> Result<Vec<TransactionInfo>, String> {
+        let uuid = uuid::Uuid::parse_str(account_uuid).map_err(|e| format!("Invalid UUID: {e}"))?;
+        let uuid_bytes = uuid.as_bytes().to_vec();
+
+        let conn = open_readonly_conn(db_path)?;
+        let read_tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("SQL error: {e}"))?;
+        let bases = read_history_bases_via_v_transactions(&read_tx, &uuid_bytes)?;
+        if bases.is_empty() {
+            return Ok(Vec::new());
+        }
+        let outputs_by_txid = read_history_outputs(
+            &read_tx,
+            &uuid_bytes,
+            bases.iter().map(|base| base.txid.as_slice()),
+        )?;
+        drop(read_tx);
+
+        Ok(assemble_history(
+            &bases,
+            &outputs_by_txid,
+            &uuid_bytes,
+            limit,
+        ))
+    }
+
+    /// Pin the batched balance read to the single-account one.
+    ///
+    /// `get_wallet_balances` exists so a caller wanting several accounts
+    /// pays for one `get_wallet_summary` instead of one per account. It
+    /// must return exactly what looping over `get_wallet_balance` would,
+    /// including order and the unavailable-account fallbacks.
+    ///
+    /// Needs a real wallet DB, same as the history equivalence check:
+    ///
+    /// ```text
+    /// VIZOR_HISTORY_EQUIV_DB=/path/to/zcash_wallet.db \
+    ///   cargo test --lib wallet_balances_batch_matches_single -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "requires a librustzcash-built wallet DB via VIZOR_HISTORY_EQUIV_DB"]
+    fn wallet_balances_batch_matches_single() {
+        let db_path = std::env::var("VIZOR_HISTORY_EQUIV_DB")
+            .expect("set VIZOR_HISTORY_EQUIV_DB to a librustzcash-built wallet DB");
+        let conn = open_readonly_conn(&db_path).unwrap();
+        let uuids: Vec<String> = conn
+            .prepare("SELECT uuid FROM accounts ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .unwrap()
+            .map(|raw| uuid::Uuid::from_slice(&raw.unwrap()).unwrap().to_string())
+            .collect();
+        assert!(!uuids.is_empty(), "{db_path} has no accounts");
+        drop(conn);
+
+        let network = WalletNetwork::Main;
+        let refs: Vec<&str> = uuids.iter().map(String::as_str).collect();
+        let batched = get_wallet_balances(&db_path, network, &refs).unwrap();
+        assert_eq!(
+            batched.len(),
+            uuids.len(),
+            "batch must return one entry per requested account"
+        );
+
+        for (uuid, batch_entry) in uuids.iter().zip(batched.iter()) {
+            let single = get_wallet_balance(&db_path, network, uuid).unwrap();
+            assert_eq!(
+                batch_entry, &single,
+                "account {uuid}: batched balance diverged from get_wallet_balance"
+            );
+        }
+
+        // An account absent from the summary must degrade per entry, not
+        // fail the batch, so one stale uuid cannot blank a whole sweep.
+        let missing = uuid::Uuid::nil().to_string();
+        let mut with_missing: Vec<&str> = refs.clone();
+        with_missing.push(&missing);
+        let mixed = get_wallet_balances(&db_path, network, &with_missing).unwrap();
+        assert_eq!(mixed.len(), with_missing.len());
+        assert_eq!(
+            mixed.last().unwrap().availability,
+            WalletBalanceAvailability::AccountUnavailable
+        );
+        assert_eq!(
+            &mixed[..refs.len()],
+            &batched[..],
+            "a missing account must not disturb the others"
+        );
+        println!("compared {} accounts", uuids.len());
+    }
+
+    /// Pin `HISTORY_BASES_CTE` to the upstream `v_transactions` view.
+    ///
+    /// This is the tripwire for a `zcash_client_sqlite` upgrade that
+    /// changes the view: the CTE inlines the view's aggregates minus
+    /// `transactions.raw`, so the two must return identical rows.
+    ///
+    /// It needs a database built by librustzcash itself — the synthetic
+    /// fixtures in this module define `v_transactions` as a table and
+    /// have none of the note-level schema the CTE reads. Point it at a
+    /// regtest wallet (`./run-regtest-rust-tests.sh` leaves one behind)
+    /// or any real wallet DB:
+    ///
+    /// ```text
+    /// VIZOR_HISTORY_EQUIV_DB=/path/to/zcash_wallet.db \
+    ///   cargo test --lib history_bases_match_v_transactions -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "requires a librustzcash-built wallet DB via VIZOR_HISTORY_EQUIV_DB"]
+    fn history_bases_match_v_transactions() {
+        let db_path = std::env::var("VIZOR_HISTORY_EQUIV_DB")
+            .expect("set VIZOR_HISTORY_EQUIV_DB to a librustzcash-built wallet DB");
+        let conn = open_readonly_conn(&db_path).unwrap();
+
+        let accounts: Vec<Vec<u8>> = conn
+            .prepare("SELECT uuid FROM accounts ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            !accounts.is_empty(),
+            "{db_path} has no accounts; point at a synced wallet"
+        );
+
+        let mut compared = 0usize;
+        for account in &accounts {
+            let sort = |mut rows: Vec<TxBase>| {
+                rows.sort_by(|a, b| a.txid.cmp(&b.txid));
+                rows
+            };
+            let via_cte = sort(read_history_bases(&conn, account).unwrap());
+            let via_view = sort(read_history_bases_via_v_transactions(&conn, account).unwrap());
+
+            assert_eq!(
+                via_cte.len(),
+                via_view.len(),
+                "account {}: row count differs between HISTORY_BASES_CTE and v_transactions",
+                hex::encode(account)
+            );
+            for (cte, view) in via_cte.iter().zip(via_view.iter()) {
+                assert_eq!(
+                    cte,
+                    view,
+                    "account {} tx {}: HISTORY_BASES_CTE diverged from v_transactions; \
+                     re-check the mirrored SQL against the upstream view definition",
+                    hex::encode(account),
+                    hex::encode(&cte.txid),
+                );
+            }
+            compared += via_cte.len();
+        }
+        println!(
+            "compared {compared} rows across {} accounts",
+            accounts.len()
+        );
+        assert!(compared > 0, "{db_path} has no history rows to compare");
+    }
+
+    /// Old `read_history_outputs` filter: DISTINCT txid from
+    /// `v_transactions` for the active account. Kept only as the
+    /// equivalence oracle for the `rarray(bases)` path.
+    fn read_history_outputs_via_v_transactions_distinct(
+        conn: &rusqlite::Connection,
+        account_uuid: &[u8],
+    ) -> Result<HashMap<Vec<u8>, Vec<TxOutput>>, String> {
+        let mut stmt = conn
+            .prepare(
+                r#"
+            SELECT
+                txo.txid,
+                txo.output_pool,
+                txo.output_index,
+                txo.from_account_uuid,
+                txo.to_account_uuid,
+                txo.to_address,
+                (
+                    SELECT sn.to_address
+                    FROM sent_notes sn
+                    JOIN transactions st ON st.id_tx = sn.transaction_id
+                    JOIN accounts from_acc ON from_acc.id = sn.from_account_id
+                    WHERE st.txid = txo.txid
+                      AND from_acc.uuid = ?1
+                      AND sn.output_pool = txo.output_pool
+                      AND sn.output_index = txo.output_index
+                      AND sn.to_address IS NOT NULL
+                    LIMIT 1
+                ) AS sent_to_address,
+                NULL AS transparent_receiver_address,
+                (
+                    SELECT a.key_scope
+                    FROM accounts acc
+                    JOIN addresses a ON a.account_id = acc.id
+                    WHERE acc.uuid = txo.to_account_uuid
+                      AND (
+                          a.address = txo.to_address
+                          OR a.cached_transparent_receiver_address = txo.to_address
+                      )
+                    LIMIT 1
+                ) AS to_key_scope,
+                txo.value,
+                txo.memo,
+                (
+                    SELECT orn.note_version
+                    FROM orchard_received_notes orn
+                    WHERE txo.output_pool IN (3, 4)
+                      AND orn.transaction_id = txo.transaction_id
+                      AND orn.action_index = txo.output_index
+                    LIMIT 1
+                ) AS note_version
+            FROM v_tx_outputs txo
+            JOIN (
+                SELECT DISTINCT txid
+                FROM v_transactions
+                WHERE account_uuid = ?1
+            ) active_tx ON active_tx.txid = txo.txid
+            WHERE txo.from_account_uuid = ?1
+               OR txo.to_account_uuid = ?1
+            "#,
+            )
+            .map_err(|e| format!("SQL error: {e}"))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![account_uuid], |row| {
+                Ok(TxOutput {
+                    txid: row.get(0)?,
+                    output_pool: row.get(1)?,
+                    output_index: row.get(2)?,
+                    from_account_uuid: row.get(3)?,
+                    to_account_uuid: row.get(4)?,
+                    to_address: row.get(5)?,
+                    sent_to_address: row.get(6)?,
+                    transparent_receiver_address: row.get(7)?,
+                    to_key_scope: row.get(8)?,
+                    value: row.get::<_, i64>(9)?.unsigned_abs(),
+                    memo: row.get(10)?,
+                    note_version: row.get(11)?,
+                })
+            })
+            .map_err(|e| format!("Query error: {e}"))?;
+
+        let mut outputs = HashMap::<Vec<u8>, Vec<TxOutput>>::new();
+        for row in rows {
+            let output = row.map_err(|e| format!("Row error: {e}"))?;
+            outputs.entry(output.txid.clone()).or_default().push(output);
+        }
+        Ok(outputs)
+    }
+
+    fn distinct_v_transactions_txids(
+        conn: &rusqlite::Connection,
+        account_uuid: &[u8],
+    ) -> Result<HashSet<Vec<u8>>, String> {
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT txid FROM v_transactions WHERE account_uuid = ?1")
+            .map_err(|e| format!("SQL error: {e}"))?;
+        let rows = stmt
+            .query_map(rusqlite::params![account_uuid], |row| row.get(0))
+            .map_err(|e| format!("Query error: {e}"))?;
+        rows.collect::<Result<HashSet<_>, _>>()
+            .map_err(|e| format!("Row error: {e}"))
+    }
+
+    fn sorted_history_outputs(outputs: &HashMap<Vec<u8>, Vec<TxOutput>>) -> Vec<TxOutput> {
+        let mut flat: Vec<TxOutput> = outputs.values().flatten().cloned().collect();
+        flat.sort_by(|a, b| {
+            (
+                &a.txid,
+                a.output_pool,
+                a.output_index,
+                &a.from_account_uuid,
+                &a.to_account_uuid,
+                a.value,
+            )
+                .cmp(&(
+                    &b.txid,
+                    b.output_pool,
+                    b.output_index,
+                    &b.from_account_uuid,
+                    &b.to_account_uuid,
+                    b.value,
+                ))
+        });
+        flat
+    }
+
+    #[test]
+    fn history_outputs_rarray_matches_v_transactions_distinct_txids() {
+        // `read_history_outputs` binds txids from `read_history_bases`
+        // via `rarray` instead of re-deriving
+        // `SELECT DISTINCT txid FROM v_transactions`. These setups pin
+        // that the two filters stay row-identical.
+        struct Case {
+            name: &'static str,
+            setup: fn(&NamedTempFile, uuid::Uuid, uuid::Uuid),
+        }
+
+        let cases = [
+            Case {
+                name: "empty",
+                setup: |_, _, _| {},
+            },
+            Case {
+                name: "one_received",
+                setup: |db, account, _| {
+                    let txid = fake_txid(0x01);
+                    insert_history_tx(
+                        db,
+                        account,
+                        &txid,
+                        Some(100),
+                        0,
+                        None,
+                        1_000_000,
+                        0,
+                        1_000_000,
+                        false,
+                        Some("2026-01-01T00:00:00Z"),
+                    );
+                    insert_output(db, &txid, 3, None, Some(account), 1_000_000, false);
+                },
+            },
+            Case {
+                name: "many_mixed",
+                setup: |db, account, _| {
+                    for (i, (pool, delta, spent, received, from_self, to_self)) in [
+                        (3_i64, 500_000_i64, 0_i64, 500_000_i64, false, true),
+                        (3, -400_000, 400_000, 0, true, false),
+                        (0, -250_000, 250_000, 0, true, false),
+                        (3, 0, 100_000, 100_000, true, true),
+                        (4, 75_000, 0, 75_000, false, true),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let txid = fake_txid(0x10 + i as u8);
+                        insert_history_tx(
+                            db,
+                            account,
+                            &txid,
+                            Some(200 + i as i64),
+                            i as i64,
+                            None,
+                            delta,
+                            spent,
+                            received,
+                            false,
+                            Some("2026-01-02T00:00:00Z"),
+                        );
+                        // Fat raw must not change the output filter set.
+                        set_history_tx_raw(db, account, &txid, &vec![0xAB; 64 * (i + 1)]);
+                        let from = from_self.then_some(account);
+                        let to = to_self.then_some(account);
+                        insert_output(db, &txid, pool, from, to, received.max(spent), false);
+                        if from_self && to_self {
+                            insert_output(db, &txid, pool, Some(account), None, 1, true);
+                        }
+                    }
+                },
+            },
+            Case {
+                name: "other_account_only",
+                setup: |db, _, other| {
+                    let txid = fake_txid(0x20);
+                    insert_history_tx(
+                        db,
+                        other,
+                        &txid,
+                        Some(300),
+                        0,
+                        None,
+                        2_000_000,
+                        0,
+                        2_000_000,
+                        false,
+                        None,
+                    );
+                    insert_output(db, &txid, 3, None, Some(other), 2_000_000, false);
+                },
+            },
+            Case {
+                name: "mixed_accounts",
+                setup: |db, account, other| {
+                    let ours = fake_txid(0x30);
+                    let theirs = fake_txid(0x31);
+                    insert_history_tx(
+                        db,
+                        account,
+                        &ours,
+                        Some(400),
+                        0,
+                        None,
+                        3_000_000,
+                        0,
+                        3_000_000,
+                        false,
+                        None,
+                    );
+                    insert_output(db, &ours, 3, None, Some(account), 3_000_000, false);
+                    insert_history_tx(
+                        db,
+                        other,
+                        &theirs,
+                        Some(401),
+                        0,
+                        None,
+                        4_000_000,
+                        0,
+                        4_000_000,
+                        false,
+                        None,
+                    );
+                    insert_output(db, &theirs, 3, None, Some(other), 4_000_000, false);
+                },
+            },
+            Case {
+                name: "tx_without_outputs",
+                setup: |db, account, _| {
+                    insert_history_tx(
+                        db,
+                        account,
+                        &fake_txid(0x40),
+                        Some(500),
+                        0,
+                        None,
+                        0,
+                        0,
+                        0,
+                        false,
+                        None,
+                    );
+                },
+            },
+            Case {
+                name: "duplicate_v_transactions_rows",
+                setup: |db, account, _| {
+                    let txid = fake_txid(0x50);
+                    insert_history_tx(
+                        db,
+                        account,
+                        &txid,
+                        Some(600),
+                        0,
+                        None,
+                        1_000_000,
+                        0,
+                        1_000_000,
+                        false,
+                        None,
+                    );
+                    // Second view row for the same account+txid: DISTINCT
+                    // collapses it; rarray dedupes the same way so the
+                    // joined output rows stay identical.
+                    let conn = rusqlite::Connection::open(db.path()).unwrap();
+                    conn.execute(
+                        "INSERT INTO v_transactions (
+                             account_uuid, txid, raw, mined_height, expired_unmined,
+                             account_balance_delta, fee_paid, block_time, total_spent,
+                             total_received, is_shielding, expiry_height, tx_index
+                         ) VALUES (?1, ?2, NULL, 600, 0, 1_000_000, 0, 0, 0, 1_000_000, 0, NULL, 0)",
+                        rusqlite::params![account.as_bytes().as_slice(), txid.as_slice()],
+                    )
+                    .unwrap();
+                    insert_output(db, &txid, 3, None, Some(account), 1_000_000, false);
+                },
+            },
+        ];
+
+        for case in cases {
+            let db = fresh_history_db();
+            let account = test_account_uuid();
+            let other = second_test_account_uuid();
+            (case.setup)(&db, account, other);
+
+            let conn = open_readonly_conn(db.path().to_str().unwrap()).unwrap();
+            let account_bytes = account.as_bytes().as_slice();
+            // Bases come from the fixture oracle, not `HISTORY_BASES_CTE`:
+            // this case is about the outputs filter, and the synthetic
+            // schema cannot feed the CTE. The CTE's own agreement with
+            // `v_transactions` is pinned against a real wallet database.
+            let bases = read_history_bases_via_v_transactions(&conn, account_bytes).unwrap();
+            let base_txids: HashSet<Vec<u8>> = bases.iter().map(|base| base.txid.clone()).collect();
+            let distinct_txids = distinct_v_transactions_txids(&conn, account_bytes).unwrap();
+            assert_eq!(
+                base_txids, distinct_txids,
+                "{}: bases txids must equal DISTINCT v_transactions.txid",
+                case.name
+            );
+
+            let via_rarray = read_history_outputs(
+                &conn,
+                account_bytes,
+                bases.iter().map(|base| base.txid.as_slice()),
+            )
+            .unwrap();
+            let via_view =
+                read_history_outputs_via_v_transactions_distinct(&conn, account_bytes).unwrap();
+            assert_eq!(
+                sorted_history_outputs(&via_rarray),
+                sorted_history_outputs(&via_view),
+                "{}: rarray(bases) outputs must match DISTINCT v_transactions join",
+                case.name
+            );
+        }
+    }
+
     #[test]
     fn history_suppresses_funding_step_after_limit_filtering() {
         let db = fresh_history_db();
@@ -3022,7 +3796,7 @@ mod tests {
             false,
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             Some(1),
@@ -3074,7 +3848,7 @@ mod tests {
             15_000,
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3138,7 +3912,7 @@ mod tests {
             10_000,
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3196,7 +3970,7 @@ mod tests {
             Some(0),
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3249,7 +4023,7 @@ mod tests {
         insert_received_note_version(&db, &migration_tx, output_index, IRONWOOD_NOTE_VERSION);
         insert_spent_note_version(&db, &migration_tx, ORCHARD_NOTE_VERSION);
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3297,7 +4071,7 @@ mod tests {
         );
         insert_spent_note_version(&db, &migration_tx, ORCHARD_NOTE_VERSION);
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3342,7 +4116,7 @@ mod tests {
             false,
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3386,7 +4160,7 @@ mod tests {
             false,
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3442,7 +4216,7 @@ mod tests {
             Some(1),
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3503,7 +4277,7 @@ mod tests {
             None,
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3575,7 +4349,7 @@ mod tests {
             Some(1),
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3636,7 +4410,7 @@ mod tests {
             Some(1),
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3676,7 +4450,7 @@ mod tests {
             true,
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -3744,7 +4518,7 @@ mod tests {
             None,
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -4458,7 +5232,7 @@ mod tests {
             Some(0),
         );
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -4474,7 +5248,7 @@ mod tests {
         assert_eq!(got[2].txid_hex, hex::encode(older_failed));
         assert!(got[2].expired_unmined);
 
-        let limited = get_transaction_history(
+        let limited = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             Some(1),
@@ -4524,7 +5298,7 @@ mod tests {
         );
         insert_output(&db, &pending, 3, None, Some(account), 2_000_000, false);
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             Some(1),
@@ -4576,7 +5350,7 @@ mod tests {
         );
         insert_output(&db, &pending, 3, Some(account), None, 1_000_000, false);
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             Some(1),
@@ -4613,7 +5387,7 @@ mod tests {
         clear_tx_index(&db, &txid);
         insert_output(&db, &txid, 0, Some(account), None, 10_000_000, false);
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,
@@ -4648,7 +5422,7 @@ mod tests {
         set_history_fee(&db, &txid, 10_000);
         insert_output(&db, &txid, 3, Some(account), Some(account), 9_000_000, true);
 
-        let got = get_transaction_history(
+        let got = history_from_fixture(
             db.path().to_str().unwrap(),
             WalletNetwork::Test,
             None,

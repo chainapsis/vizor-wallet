@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -427,6 +427,32 @@ Future<MigrationStatus> getOrchardMigrationStatus({
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+);
+
+/// Migration statuses for several accounts from a single wallet summary.
+///
+/// `get_orchard_migration_status` needs four per-account pool balances,
+/// but obtaining them through `get_wallet_balance` computes a summary
+/// across *every* account. Calling it once per account — which the
+/// migration coordinator does on every poll — is therefore quadratic in
+/// account count, and profiling showed it accounted for ~81% of all
+/// balance computations in the process.
+///
+/// This computes the summary once and derives each account's status
+/// from it. Statuses in one batch also share a single point-in-time
+/// snapshot, instead of being read seconds apart as the per-account
+/// loop did.
+///
+/// A per-account failure is reported in that entry's `error` rather
+/// than failing the batch, so one bad account cannot blank the sweep.
+Future<List<MigrationStatusEntry>> getOrchardMigrationStatuses({
+  required String dbPath,
+  required String network,
+  required List<String> accountUuids,
+}) => RustLib.instance.api.crateApiSyncGetOrchardMigrationStatuses(
+  dbPath: dbPath,
+  network: network,
+  accountUuids: accountUuids,
 );
 
 Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
@@ -1817,6 +1843,35 @@ class MigrationStatus {
           scheduledBroadcasts == other.scheduledBroadcasts &&
           preparationTransactions == other.preparationTransactions &&
           parts == other.parts;
+}
+
+/// One account's slot in a batched migration-status read.
+///
+/// `status` and `error` are mutually exclusive: a per-account failure is
+/// reported here so it cannot fail the whole batch, matching the
+/// per-account error handling the caller already does.
+class MigrationStatusEntry {
+  final String accountUuid;
+  final MigrationStatus? status;
+  final String? error;
+
+  const MigrationStatusEntry({
+    required this.accountUuid,
+    this.status,
+    this.error,
+  });
+
+  @override
+  int get hashCode => accountUuid.hashCode ^ status.hashCode ^ error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MigrationStatusEntry &&
+          runtimeType == other.runtimeType &&
+          accountUuid == other.accountUuid &&
+          status == other.status &&
+          error == other.error;
 }
 
 class OrchardMigrationImmediatePlan {

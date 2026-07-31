@@ -193,7 +193,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
 
   Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
     try {
-      await syncNotifier.refreshAfterSend();
+      await syncNotifier.refreshAfterAccountSwitch();
     } catch (e) {
       log('AppMainSidebar: refresh after account switch failed: $e');
     }

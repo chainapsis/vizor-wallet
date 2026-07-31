@@ -140,6 +140,22 @@ class _FakeAccountNotifier extends AccountNotifier {
   @override
   Future<void> removeAccount(String uuid) async {
     removedUuid = uuid;
+    final previous = state.value ?? initialState;
+    final remaining = [
+      for (final account in previous.accounts)
+        if (account.uuid != uuid) account,
+    ];
+    state = AsyncData(
+      AccountState(
+        accounts: remaining,
+        activeAccountUuid: previous.activeAccountUuid == uuid
+            ? remaining.first.uuid
+            : previous.activeAccountUuid,
+        activeAddress: previous.activeAccountUuid == uuid
+            ? null
+            : previous.activeAddress,
+      ),
+    );
   }
 
   @override
@@ -388,6 +404,39 @@ void main() {
     expect(syncNotifier.clearCachedDbPathCount, 1);
     expect(biometricNotifier.disableCount, 1);
     expect(find.text('welcome route'), findsOneWidget);
+  });
+
+  testWidgets('removing the active account uses the switch refresh', (
+    tester,
+  ) async {
+    final accountState = AccountState(
+      accounts: [_account('a', 'Active'), _account('b', 'Replacement')],
+      activeAccountUuid: 'a',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    final syncNotifier = _FakeWalletMutationSyncNotifier();
+
+    await tester.pumpWidget(
+      _app(
+        accountState,
+        accountNotifier: () => accountNotifier,
+        syncNotifier: () => syncNotifier,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_a')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('mobile_account_menu_remove')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_account_remove_confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.removedUuid, 'a');
+    expect(syncNotifier.accountSwitchRefreshes, 1);
+    expect(syncNotifier.balanceRefreshes, 1);
   });
 
   testWidgets('row menu stays above the floating tab bar clearance', (
