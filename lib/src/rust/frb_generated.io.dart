@@ -114,6 +114,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MigrationStatus dco_decode_box_autoadd_migration_status(dynamic raw);
+
+  @protected
   OrchardMigrationImmediatePlan
   dco_decode_box_autoadd_orchard_migration_immediate_plan(dynamic raw);
 
@@ -352,6 +355,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MigrationStatusEntry> dco_decode_list_migration_status_entry(
+    dynamic raw,
+  );
+
+  @protected
   List<NextStepView> dco_decode_list_next_step_view(dynamic raw);
 
   @protected
@@ -491,6 +499,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MigrationStatus dco_decode_migration_status(dynamic raw);
 
   @protected
+  MigrationStatusEntry dco_decode_migration_status_entry(dynamic raw);
+
+  @protected
   NextStepView dco_decode_next_step_view(dynamic raw);
 
   @protected
@@ -510,6 +521,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MigrationOutboxBatch? dco_decode_opt_box_autoadd_migration_outbox_batch(
     dynamic raw,
   );
+
+  @protected
+  MigrationStatus? dco_decode_opt_box_autoadd_migration_status(dynamic raw);
 
   @protected
   OrchardMigrationImmediatePlan?
@@ -842,6 +856,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  MigrationStatus sse_decode_box_autoadd_migration_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   OrchardMigrationImmediatePlan
   sse_decode_box_autoadd_orchard_migration_immediate_plan(
     SseDeserializer deserializer,
@@ -1150,6 +1169,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MigrationStatusEntry> sse_decode_list_migration_status_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<NextStepView> sse_decode_list_next_step_view(
     SseDeserializer deserializer,
   );
@@ -1321,6 +1345,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MigrationStatus sse_decode_migration_status(SseDeserializer deserializer);
 
   @protected
+  MigrationStatusEntry sse_decode_migration_status_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   NextStepView sse_decode_next_step_view(SseDeserializer deserializer);
 
   @protected
@@ -1340,6 +1369,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationOutboxBatch? sse_decode_opt_box_autoadd_migration_outbox_batch(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MigrationStatus? sse_decode_opt_box_autoadd_migration_status(
     SseDeserializer deserializer,
   );
 
@@ -1750,6 +1784,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_migration_status(
+    MigrationStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_orchard_migration_immediate_plan(
     OrchardMigrationImmediatePlan self,
     SseSerializer serializer,
@@ -2122,6 +2162,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_migration_status_entry(
+    List<MigrationStatusEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_next_step_view(
     List<NextStepView> self,
     SseSerializer serializer,
@@ -2341,6 +2387,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_migration_status_entry(
+    MigrationStatusEntry self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_next_step_view(NextStepView self, SseSerializer serializer);
 
   @protected
@@ -2361,6 +2413,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_migration_outbox_batch(
     MigrationOutboxBatch? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_migration_status(
+    MigrationStatus? self,
     SseSerializer serializer,
   );
 

@@ -821,6 +821,17 @@ pub struct MigrationPreparationTransactionStatus {
     pub confirmation_target: u32,
 }
 
+/// One account's slot in a batched migration-status read.
+///
+/// `status` and `error` are mutually exclusive: a per-account failure is
+/// reported here so it cannot fail the whole batch, matching the
+/// per-account error handling the caller already does.
+pub struct MigrationStatusEntry {
+    pub account_uuid: String,
+    pub status: Option<MigrationStatus>,
+    pub error: Option<String>,
+}
+
 pub struct MigrationStatus {
     pub phase: String,
     pub active_run_id: Option<String>,
@@ -1321,6 +1332,69 @@ pub fn get_orchard_migration_status(
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let balance = wallet_sync::get_wallet_balance(&db_path, network, &account_uuid)?;
+        migration_status_from_balance(&db_path, network, &account_uuid, &balance)
+    })
+}
+
+/// Migration statuses for several accounts from a single wallet summary.
+///
+/// `get_orchard_migration_status` needs four per-account pool balances,
+/// but obtaining them through `get_wallet_balance` computes a summary
+/// across *every* account. Calling it once per account — which the
+/// migration coordinator does on every poll — is therefore quadratic in
+/// account count, and profiling showed it accounted for ~81% of all
+/// balance computations in the process.
+///
+/// This computes the summary once and derives each account's status
+/// from it. Statuses in one batch also share a single point-in-time
+/// snapshot, instead of being read seconds apart as the per-account
+/// loop did.
+///
+/// A per-account failure is reported in that entry's `error` rather
+/// than failing the batch, so one bad account cannot blank the sweep.
+pub fn get_orchard_migration_statuses(
+    db_path: String,
+    network: String,
+    account_uuids: Vec<String>,
+) -> Result<Vec<MigrationStatusEntry>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let uuid_refs = account_uuids
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<&str>>();
+        let balances = wallet_sync::get_wallet_balances(&db_path, network, &uuid_refs)?;
+
+        Ok(account_uuids
+            .iter()
+            .zip(balances.iter())
+            .map(|(account_uuid, balance)| {
+                match migration_status_from_balance(&db_path, network, account_uuid, balance) {
+                    Ok(status) => MigrationStatusEntry {
+                        account_uuid: account_uuid.clone(),
+                        status: Some(status),
+                        error: None,
+                    },
+                    Err(error) => MigrationStatusEntry {
+                        account_uuid: account_uuid.clone(),
+                        status: None,
+                        error: Some(error),
+                    },
+                }
+            })
+            .collect())
+    })
+}
+
+fn migration_status_from_balance(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    balance: &wallet_sync::WalletBalance,
+) -> Result<MigrationStatus, String> {
+    {
+        let db_path = db_path.to_string();
+        let account_uuid = account_uuid.to_string();
         let status = wallet_sync::migration_status(
             &db_path,
             network,
@@ -1462,7 +1536,7 @@ pub fn get_orchard_migration_status(
                 })
                 .collect(),
         })
-    })
+    }
 }
 
 pub fn get_orchard_migration_private_plan(
