@@ -538,6 +538,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
     note_ref: &super::migration::PreparedOrchardNoteRef,
     migration_index: u32,
     schedule_block_offset: u32,
+    recovery_schedule_origin_height: Option<u32>,
     timing_policy: super::migration::MigrationTimingPolicy,
     allow_replacing_local_spend: bool,
 ) -> Result<Option<CreatedMigrationPczt>, String> {
@@ -627,11 +628,15 @@ fn create_orchard_to_ironwood_pczt_from_note(
     if u64::from(selected_value) != note_ref.value_zatoshi {
         return Err("Prepared note value changed during revalidation".to_string());
     }
-    let target_height_u32: u32 = target_height.into();
-    let scheduled_height = target_height_u32
-        .saturating_sub(1)
-        .checked_add(schedule_block_offset)
-        .ok_or("Migration scheduled height overflow")?;
+    // Rebuilds share the persisted recovery-schedule origin so every signing
+    // batch extends one ladder; note revalidation and anchor selection above
+    // and below stay on the current chain state either way.
+    let current_target_height: u32 = target_height.into();
+    let (child_target_height, scheduled_height) = initial_migration_schedule_heights(
+        current_target_height,
+        recovery_schedule_origin_height,
+        schedule_block_offset,
+    )?;
     let anchor_height_u32 = u32::from(anchor_height);
     let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
     let mined_height = orchard_selected
@@ -660,7 +665,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         let mut builder =
             migration_child_builder(
                 network,
-                BlockHeight::from(target_height),
+                BlockHeight::from(child_target_height),
                 BlockHeight::from(scheduled_height),
                 orchard_anchor,
             )?;
@@ -729,7 +734,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         orchard_spend_action_indices: built_pczt.orchard_spend_action_indices,
         pczt_with_proofs: None,
         redacted_pczt: built_pczt.redacted_bytes,
-        target_height: target_height_u32,
+        target_height: child_target_height,
         anchor_boundary_height: Some(anchor_boundary_height),
         expiry_height,
         scheduled_height,

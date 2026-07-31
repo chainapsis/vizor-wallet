@@ -689,6 +689,13 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "anchor_boundary_height",
         "INTEGER",
     )?;
+    add_column_if_missing(
+        conn,
+        RUNS_TABLE,
+        "recovery_schedule_origin_height",
+        "INTEGER",
+    )?;
+    add_column_if_missing(conn, PENDING_TXS_TABLE, "rebuild_block_offset", "INTEGER")?;
     stages::ensure_schema(conn)
 }
 

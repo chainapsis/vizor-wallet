@@ -951,29 +951,22 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
         super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
     let signed_schedule_origin =
         super::migration::signed_schedule_origin_for_run(db_path, &run.run_id)?;
-    // Recovery batches anchor at the rebuild-time chain target, so they draw
-    // a remaining-count schedule instead of replaying original whole-run
-    // offsets; see `rebuild_schedule_block_offsets`.
-    let recovery_rebuild_offsets = if initial_signing {
-        Vec::new()
+    // Recovery batches consume the run's persisted recovery-schedule
+    // generation, so every QR session extends one ladder instead of
+    // anchoring a fresh per-batch ladder at its own chain tip; see
+    // `ensure_rebuild_schedule_generation`.
+    let recovery_generation = if initial_signing {
+        None
     } else {
-        let recovery_parts = signing_part_indices
-            .iter()
-            .map(|part_index| {
-                run.target_values_zatoshi
-                    .get(*part_index as usize)
-                    .map(|value| (*part_index, *value))
-                    .ok_or("Migration part is outside the approved target list")
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        super::migration::rebuild_schedule_block_offsets(
-            &approved_schedule,
-            &run.target_values_zatoshi,
-            &recovery_parts,
-            network,
-            timing_policy,
-            &mut OsRng,
-        )?
+        Some(
+            super::migration::ensure_rebuild_schedule_generation(
+                db_path,
+                &run.run_id,
+                network,
+                chain_tip_height,
+            )?
+            .ok_or("Migration rebuild schedule generation is missing its recovery parts")?,
+        )
     };
     for (index, note_ref) in prepared_notes.iter().enumerate() {
         let part_index = *signing_part_indices
@@ -990,10 +983,16 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
             )
             .ok_or("Approved migration schedule is missing a child")?
         } else {
-            recovery_rebuild_offsets
-                .get(index)
-                .copied()
-                .ok_or("Migration recovery schedule omitted a rebuilt part")?
+            recovery_generation
+                .as_ref()
+                .zip(recoveries.get(index))
+                .and_then(|(generation, recovery)| {
+                    generation
+                        .offsets_by_txid
+                        .get(&recovery.old_txid_hex.to_ascii_lowercase())
+                        .copied()
+                })
+                .ok_or("Migration rebuild schedule omitted a rebuilt part")?
         };
         let migration_index = part_index + 1;
         let pczt_result = if initial_signing {
@@ -1007,6 +1006,9 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 signed_schedule_origin,
             )
         } else {
+            let recovery_origin_height = recovery_generation
+                .as_ref()
+                .map(|generation| generation.origin_height);
             with_wallet_db_write_lock("send.migration.prepare_exact_note_pczt", || {
                 create_orchard_to_ironwood_pczt_from_note(
                     db_path,
@@ -1016,6 +1018,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                     note_ref,
                     migration_index,
                     schedule_block_offset,
+                    recovery_origin_height,
                     timing_policy,
                     true,
                 )
