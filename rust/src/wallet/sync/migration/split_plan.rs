@@ -12,11 +12,46 @@ use super::{
 
 pub(crate) const DENOMINATION_SPLIT_ACTIONS: usize = PREP_TX_ACTIONS;
 
-const MAX_DENOMINATION_REFINEMENT_PERCENT: u32 = 30;
-// Within Vizor's 30% gate, these conditional weights follow ZIP 318's
-// provisional preference for keeping smaller selections infrequent.
-const FIVE_THOUSAND_SELECTION_PERCENT: u32 = 65;
-const TWO_THOUSAND_SELECTION_PERCENT: u32 = 25;
+const TEN_THOUSAND_ZEC_ZATOSHI: u64 = super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI;
+const FIVE_THOUSAND_ZEC_ZATOSHI: u64 = TEN_THOUSAND_ZEC_ZATOSHI / 2;
+const TWO_THOUSAND_ZEC_ZATOSHI: u64 = TEN_THOUSAND_ZEC_ZATOSHI / 5;
+const ONE_THOUSAND_ZEC_ZATOSHI: u64 = TEN_THOUSAND_ZEC_ZATOSHI / 10;
+
+/// Vizor's configurable policy for optional ZIP 318 denomination refinement.
+/// Each percentage is an independent gate applied recursively to that bucket.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DenominationRefinementPolicy {
+    ten_thousand_split_percent: u32,
+    five_thousand_split_percent: u32,
+    two_thousand_split_percent: u32,
+}
+
+impl DenominationRefinementPolicy {
+    const fn new(
+        ten_thousand_split_percent: u32,
+        five_thousand_split_percent: u32,
+        two_thousand_split_percent: u32,
+    ) -> Self {
+        Self {
+            ten_thousand_split_percent,
+            five_thousand_split_percent,
+            two_thousand_split_percent,
+        }
+    }
+
+    fn split_percent(self, denomination_zatoshi: u64) -> Option<u32> {
+        match denomination_zatoshi {
+            TEN_THOUSAND_ZEC_ZATOSHI => Some(self.ten_thousand_split_percent),
+            FIVE_THOUSAND_ZEC_ZATOSHI => Some(self.five_thousand_split_percent),
+            TWO_THOUSAND_ZEC_ZATOSHI => Some(self.two_thousand_split_percent),
+            _ => None,
+        }
+    }
+}
+
+// These are Vizor policy values, not ZIP 318's provisional selection weights.
+const AGGRESSIVE_REFINEMENT_POLICY: DenominationRefinementPolicy =
+    DenominationRefinementPolicy::new(80, 55, 35);
 const APPROVED_PLAN_STALE_ERROR: &str =
     "Approved migration plan no longer matches the spendable Orchard balance. Review the migration plan again.";
 const APPROVED_PLAN_ORDER_ERROR: &str =
@@ -105,8 +140,8 @@ struct PlanningContext {
 /// candidate note, so exact-note reuse, consolidation, fanout, and their real
 /// padded transaction fees all affect which denominations fit. Planning stops
 /// only when the remaining balance cannot fund another canonical migration
-/// note and its preparation cost. Each 10,000 ZEC selection has a 30% chance of
-/// starting with a smaller 5,000, 2,000, or 1,000 ZEC denomination.
+/// note and its preparation cost. The configured policy can recursively refine
+/// 10,000, 5,000, and 2,000 ZEC buckets, with 1,000 ZEC as the floor.
 pub(crate) fn plan_padded_denominations(
     input_values: &[u64],
     fee_per_stage_zatoshi: u64,
@@ -135,7 +170,7 @@ pub(crate) fn plan_padded_denominations_without_refinement(
         fee_per_stage_zatoshi,
         migration_fee_zatoshi,
         minimum_output_zatoshi,
-        |greedy| greedy,
+        |greedy| vec![greedy],
     )
 }
 
@@ -146,16 +181,34 @@ fn plan_padded_denominations_with_rng<R: RngCore + ?Sized>(
     minimum_output_zatoshi: u64,
     rng: &mut R,
 ) -> Result<Option<PaddedDenominationPlan>, String> {
+    plan_padded_denominations_with_policy_and_rng(
+        input_values,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+        minimum_output_zatoshi,
+        AGGRESSIVE_REFINEMENT_POLICY,
+        rng,
+    )
+}
+
+fn plan_padded_denominations_with_policy_and_rng<R: RngCore + ?Sized>(
+    input_values: &[u64],
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+    policy: DenominationRefinementPolicy,
+    rng: &mut R,
+) -> Result<Option<PaddedDenominationPlan>, String> {
     plan_padded_denominations_with_refiner(
         input_values,
         fee_per_stage_zatoshi,
         migration_fee_zatoshi,
         minimum_output_zatoshi,
-        |greedy| refine_max_denomination(greedy, rng),
+        |greedy| refine_denomination(greedy, policy, rng),
     )
 }
 
-fn plan_padded_denominations_with_refiner<F: FnMut(u64) -> u64>(
+fn plan_padded_denominations_with_refiner<F: FnMut(u64) -> Vec<u64>>(
     input_values: &[u64],
     fee_per_stage_zatoshi: u64,
     migration_fee_zatoshi: u64,
@@ -192,12 +245,26 @@ fn plan_padded_denominations_with_refiner<F: FnMut(u64) -> u64>(
             let Some(greedy) = super::largest_zip318_denomination_at_or_below(affordable) else {
                 break;
             };
-            let refined = refine(greedy);
-            let candidates = [refined, greedy];
-            let candidate_count = if refined == greedy { 1 } else { 2 };
+            let mut refined = refine(greedy);
+            if checked_sum(&refined, "Denomination refinement total overflow")? != greedy {
+                return Err("Denomination refinement must preserve the selected value".to_string());
+            }
+            if refined
+                .iter()
+                .any(|value| !super::is_zip318_canonical_denomination(*value))
+            {
+                return Err("Denomination refinement produced a noncanonical value".to_string());
+            }
+            refined.sort_unstable_by(|left, right| right.cmp(left));
 
-            for crossing in candidates.into_iter().take(candidate_count) {
-                crossing_values.push(crossing);
+            let is_refined = refined.len() != 1 || refined[0] != greedy;
+            let greedy_candidate = [greedy];
+            let candidates = [&refined[..], &greedy_candidate[..]];
+            let candidate_count = if is_refined { 2 } else { 1 };
+
+            for candidate in candidates.into_iter().take(candidate_count) {
+                let prior_crossing_count = crossing_values.len();
+                crossing_values.extend_from_slice(candidate);
                 match preparation_for_crossings(
                     &context,
                     &crossing_values,
@@ -210,7 +277,7 @@ fn plan_padded_denominations_with_refiner<F: FnMut(u64) -> u64>(
                         break;
                     }
                     None => {
-                        crossing_values.pop();
+                        crossing_values.truncate(prior_crossing_count);
                     }
                 }
             }
@@ -353,20 +420,38 @@ fn planning_context(
     }))
 }
 
-fn refine_max_denomination<R: RngCore + ?Sized>(greedy: u64, rng: &mut R) -> u64 {
-    if greedy != super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI
-        || rng.next_u32() % 100 >= MAX_DENOMINATION_REFINEMENT_PERCENT
-    {
-        return greedy;
+fn refine_denomination<R: RngCore + ?Sized>(
+    denomination_zatoshi: u64,
+    policy: DenominationRefinementPolicy,
+    rng: &mut R,
+) -> Vec<u64> {
+    let Some(split_percent) = policy.split_percent(denomination_zatoshi) else {
+        return vec![denomination_zatoshi];
+    };
+    assert!(
+        split_percent <= 100,
+        "denomination refinement percentage exceeds 100"
+    );
+    if split_percent == 0 || rng.next_u32() % 100 >= split_percent {
+        return vec![denomination_zatoshi];
     }
 
-    match rng.next_u32() % 100 {
-        roll if roll < FIVE_THOUSAND_SELECTION_PERCENT => greedy / 2,
-        roll if roll < FIVE_THOUSAND_SELECTION_PERCENT + TWO_THOUSAND_SELECTION_PERCENT => {
-            greedy / 5
-        }
-        _ => greedy / 10,
+    let children: &[u64] = match denomination_zatoshi {
+        TEN_THOUSAND_ZEC_ZATOSHI => &[FIVE_THOUSAND_ZEC_ZATOSHI, FIVE_THOUSAND_ZEC_ZATOSHI],
+        FIVE_THOUSAND_ZEC_ZATOSHI => &[
+            TWO_THOUSAND_ZEC_ZATOSHI,
+            TWO_THOUSAND_ZEC_ZATOSHI,
+            ONE_THOUSAND_ZEC_ZATOSHI,
+        ],
+        TWO_THOUSAND_ZEC_ZATOSHI => &[ONE_THOUSAND_ZEC_ZATOSHI, ONE_THOUSAND_ZEC_ZATOSHI],
+        _ => unreachable!("policy only returns percentages for refinable denominations"),
+    };
+
+    let mut refined = Vec::new();
+    for child in children {
+        refined.extend(refine_denomination(*child, policy, rng));
     }
+    refined
 }
 
 fn preparation_for_crossings(
@@ -678,10 +763,51 @@ fn checked_sum(values: &[u64], context: &str) -> Result<u64, String> {
 mod tests {
     use super::*;
     use rand::rngs::mock::StepRng;
+    use std::collections::VecDeque;
 
     const ZEC: u64 = 100_000_000;
     const PREP_FEE: u64 = 80_000;
     const MIGRATION_FEE: u64 = 15_000;
+
+    struct ScriptedRng {
+        rolls: VecDeque<u32>,
+    }
+
+    impl ScriptedRng {
+        fn new(rolls: impl IntoIterator<Item = u32>) -> Self {
+            Self {
+                rolls: rolls.into_iter().collect(),
+            }
+        }
+
+        fn assert_exhausted(&self) {
+            assert!(self.rolls.is_empty(), "unused scripted random rolls");
+        }
+    }
+
+    impl RngCore for ScriptedRng {
+        fn next_u32(&mut self) -> u32 {
+            self.rolls
+                .pop_front()
+                .expect("denomination refinement requested an unexpected random roll")
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            (u64::from(self.next_u32()) << 32) | u64::from(self.next_u32())
+        }
+
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            for chunk in dest.chunks_mut(4) {
+                let bytes = self.next_u32().to_le_bytes();
+                chunk.copy_from_slice(&bytes[..chunk.len()]);
+            }
+        }
+
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+            self.fill_bytes(dest);
+            Ok(())
+        }
+    }
 
     fn funding(crossing: u64) -> u64 {
         crossing + MIGRATION_FEE
@@ -694,60 +820,80 @@ mod tests {
     }
 
     #[test]
-    fn capped_denomination_refinement_uses_a_thirty_percent_gate() {
-        let cap = super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI;
-        assert_eq!(cap, 10_000 * ZEC);
-        let refined_rolls = (0..100u64)
-            .filter(|roll| {
-                let mut rng = StepRng::new(*roll, 0);
-                refine_max_denomination(cap, &mut rng) != cap
-            })
-            .count();
+    fn aggressive_policy_uses_configured_gate_percentages() {
+        assert_eq!(
+            AGGRESSIVE_REFINEMENT_POLICY,
+            DenominationRefinementPolicy::new(80, 55, 35)
+        );
+        let cases = [
+            (
+                10_000 * ZEC,
+                DenominationRefinementPolicy::new(80, 0, 0),
+                80,
+            ),
+            (5_000 * ZEC, DenominationRefinementPolicy::new(0, 55, 0), 55),
+            (2_000 * ZEC, DenominationRefinementPolicy::new(0, 0, 35), 35),
+        ];
 
-        assert_eq!(refined_rolls, 30);
+        for (denomination, policy, expected_refined_rolls) in cases {
+            let refined_rolls = (0..100u64)
+                .filter(|roll| {
+                    let mut rng = StepRng::new(*roll, 0);
+                    refine_denomination(denomination, policy, &mut rng) != vec![denomination]
+                })
+                .count();
+
+            assert_eq!(refined_rolls, expected_refined_rolls);
+        }
     }
 
     #[test]
     fn ten_thousand_zec_balance_has_deterministic_refinement_examples() {
         let input = 10_000 * ZEC + 230_000;
         let cases = [
-            ("keep 10k", 30, 0, vec![10_000 * ZEC], 135_000),
+            ("keep 10k", vec![80], vec![10_000 * ZEC], Some(135_000)),
             (
-                "start with 5k",
-                0,
-                0,
+                "split to 5k",
+                vec![0, 55, 55],
                 vec![5_000 * ZEC, 5_000 * ZEC],
-                120_000,
+                Some(120_000),
             ),
             (
-                "start with 2k",
-                0,
-                65,
+                "split one 5k child",
+                vec![0, 55, 0, 35, 35],
                 vec![5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC],
-                90_000,
+                Some(90_000),
             ),
             (
-                "start with 1k",
-                0,
-                90,
-                vec![5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC],
-                90_000,
+                "split one 2k grandchild",
+                vec![0, 55, 0, 35, 0],
+                vec![
+                    5_000 * ZEC,
+                    2_000 * ZEC,
+                    1_000 * ZEC,
+                    1_000 * ZEC,
+                    1_000 * ZEC,
+                ],
+                Some(75_000),
+            ),
+            (
+                "split to the 1k floor",
+                vec![0; 7],
+                vec![1_000 * ZEC; 10],
+                None,
             ),
         ];
 
-        for (name, initial_roll, next_roll, expected, expected_change) in cases {
-            let mut rng = StepRng::new(initial_roll, next_roll);
+        for (name, rolls, expected, expected_change) in cases {
+            let mut rng = ScriptedRng::new(rolls);
             let plan =
                 plan_padded_denominations_with_rng(&[input], PREP_FEE, MIGRATION_FEE, 1, &mut rng)
                     .unwrap()
                     .unwrap();
+            rng.assert_exhausted();
 
             assert_eq!(plan.denominations.migration_outputs, expected, "{name}");
-            assert_eq!(
-                plan.denominations.orchard_change,
-                Some(expected_change),
-                "{name}"
-            );
+            assert_eq!(plan.denominations.orchard_change, expected_change, "{name}");
             assert!(plan.denominations.migration_outputs.iter().all(|value| {
                 *value <= super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI
             }));
@@ -785,9 +931,9 @@ mod tests {
     }
 
     #[test]
-    fn twenty_five_thousand_zec_balance_can_replace_every_cap_selection() {
-        let input = 25_000 * ZEC + 300_000;
-        let mut keep_rng = StepRng::new(30, 0);
+    fn twenty_five_thousand_zec_balance_can_refine_every_eligible_bucket() {
+        let input = 25_000 * ZEC + 900_000;
+        let mut keep_rng = StepRng::new(80, 0);
         let greedy =
             plan_padded_denominations_with_rng(&[input], PREP_FEE, MIGRATION_FEE, 1, &mut keep_rng)
                 .unwrap()
@@ -809,8 +955,119 @@ mod tests {
         );
         assert_eq!(
             refined.denominations.migration_outputs,
-            vec![5_000 * ZEC; 5]
+            vec![1_000 * ZEC; 25]
         );
+    }
+
+    #[test]
+    fn refinement_recurses_through_five_and_two_thousand_zec_children() {
+        let input = 10_000 * ZEC + 230_000;
+        let mut rng = StepRng::new(0, 0);
+        let plan =
+            plan_padded_denominations_with_rng(&[input], PREP_FEE, MIGRATION_FEE, 1, &mut rng)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(plan.denominations.migration_outputs, vec![1_000 * ZEC; 10]);
+    }
+
+    #[test]
+    fn existing_five_and_two_thousand_zec_roots_are_also_refined() {
+        let input = 7_000 * ZEC + 185_000;
+        let mut rng = StepRng::new(0, 0);
+        let plan =
+            plan_padded_denominations_with_rng(&[input], PREP_FEE, MIGRATION_FEE, 1, &mut rng)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(plan.denominations.migration_outputs, vec![1_000 * ZEC; 7]);
+        assert_eq!(plan.denominations.orchard_change, None);
+    }
+
+    #[test]
+    fn policy_configuration_controls_recursive_depth() {
+        let input = 10_000 * ZEC + 230_000;
+        let mut shallow_rng = ScriptedRng::new([0]);
+        let shallow = plan_padded_denominations_with_policy_and_rng(
+            &[input],
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+            DenominationRefinementPolicy::new(100, 0, 0),
+            &mut shallow_rng,
+        )
+        .unwrap()
+        .unwrap();
+        shallow_rng.assert_exhausted();
+
+        let mut deep_rng = ScriptedRng::new([0; 7]);
+        let deep = plan_padded_denominations_with_policy_and_rng(
+            &[input],
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+            DenominationRefinementPolicy::new(100, 100, 100),
+            &mut deep_rng,
+        )
+        .unwrap()
+        .unwrap();
+        deep_rng.assert_exhausted();
+
+        assert_eq!(
+            shallow.denominations.migration_outputs,
+            vec![5_000 * ZEC, 5_000 * ZEC]
+        );
+        assert_eq!(deep.denominations.migration_outputs, vec![1_000 * ZEC; 10]);
+    }
+
+    #[test]
+    fn unaffordable_recursive_subtree_falls_back_to_its_parent() {
+        let mut rng = StepRng::new(0, 0);
+        let plan = plan_padded_denominations_with_rng(
+            &[funding(5_000 * ZEC)],
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+            &mut rng,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan.denominations.migration_outputs, vec![5_000 * ZEC]);
+        assert!(plan.stages.is_empty());
+        assert_eq!(plan.direct_migration_inputs.len(), 1);
+    }
+
+    #[test]
+    fn fifty_thousand_zec_balance_has_a_deterministic_aggressive_example() {
+        let rolls = [
+            80, // 10
+            0, 55, 55, // 5 + 5
+            0, 55, 0, 35, 35, // 5 + 2 + 2 + 1
+            0, 55, 0, 35, 0, // 5 + 2 + 1 + 1 + 1
+            0, 0, 35, 35, 0, 35, 0, // 2 + 2 + 2 + 1 + 1 + 1 + 1
+        ];
+        let mut rng = ScriptedRng::new(rolls);
+        let plan = plan_padded_denominations_with_rng(
+            &[50_000 * ZEC + 900_000],
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+            &mut rng,
+        )
+        .unwrap()
+        .unwrap();
+        rng.assert_exhausted();
+
+        let expected = [
+            vec![10_000 * ZEC],
+            vec![5_000 * ZEC; 4],
+            vec![2_000 * ZEC; 6],
+            vec![1_000 * ZEC; 8],
+        ]
+        .concat();
+        assert_eq!(plan.denominations.migration_outputs, expected);
+        assert_eq!(plan.denominations.migration_outputs.len(), 19);
     }
 
     #[test]
@@ -890,9 +1147,9 @@ mod tests {
         let refined =
             plan_padded_denominations_with_refiner(&inputs, PREP_FEE, MIGRATION_FEE, 1, |greedy| {
                 if greedy == super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI {
-                    5_000 * ZEC
+                    vec![5_000 * ZEC, 5_000 * ZEC]
                 } else {
-                    greedy
+                    vec![greedy]
                 }
             })
             .unwrap()
