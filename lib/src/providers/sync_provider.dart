@@ -2624,6 +2624,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       hasAuthoritativeBalance: hasAuthoritativeBalance,
       clearRestoredSnapshotIfUnavailable: clearRestoredSnapshotIfUnavailable,
     )) {
+      // The current state is no longer complete after this branch, so a
+      // subsequent switch away will not replace the cached snapshot. Evict it
+      // now to prevent switching back from restoring the same stale balance.
+      _lastKnownByAccount.remove(accountUuid);
       final cleared = (current ?? SyncState()).withoutAccountScopedData(
         accountUuid: accountUuid,
       );
@@ -2859,6 +2863,10 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   @visibleForTesting
   Future<void> handleSyncProgressForTesting(SyncProgressEvent event) =>
       _onSyncProgress(event);
+
+  @visibleForTesting
+  void handleAccountSwitchForTesting(String? accountUuid) =>
+      _clearAccountScopedStateFor(accountUuid);
 
   bool get _requiresUnlock {
     return ref.read(appSecurityProvider).requiresUnlock;

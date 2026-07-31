@@ -247,6 +247,64 @@ void main() {
     },
   );
 
+  test(
+    'unavailable switch balance evicts the restored account snapshot',
+    () async {
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final initial = SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        orchardBalance: BigInt.from(40),
+        displayOrchardBalance: BigInt.from(40),
+        spendableBalance: BigInt.from(40),
+        displaySpendableBalance: BigInt.from(40),
+        totalBalance: BigInt.from(40),
+        displayTotalBalance: BigInt.from(40),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier = _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+              initialState: initial,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+
+      // Cache account 1, then switch back to restore that cached snapshot.
+      notifier.handleAccountSwitchForTesting(_otherAccountUuid);
+      notifier.handleAccountSwitchForTesting(_accountUuid);
+      expect(
+        container.read(syncProvider).requireValue.displaySpendableBalance,
+        BigInt.from(40),
+      );
+
+      await notifier.refreshAfterAccountSwitch();
+      expect(
+        container.read(syncProvider).requireValue.displaySpendableBalance,
+        BigInt.zero,
+      );
+
+      // The cleared, incomplete state cannot overwrite the cache when leaving.
+      // Switching back must therefore remain blank rather than restoring 40.
+      notifier.handleAccountSwitchForTesting(_otherAccountUuid);
+      notifier.handleAccountSwitchForTesting(_accountUuid);
+
+      final current = container.read(syncProvider).requireValue;
+      expect(current.accountUuid, _accountUuid);
+      expect(current.hasBalanceData, isFalse);
+      expect(current.displaySpendableBalance, BigInt.zero);
+      expect(current.displayOrchardBalance, BigInt.zero);
+      expect(current.displayTotalBalance, BigInt.zero);
+    },
+  );
+
   test('concurrent refresh triggers coalesce into one trailing pass', () async {
     // The defect this pins: switch, unlock, resume, mempool and recovery
     // each called `_refreshBalance` directly, so overlapping triggers ran
@@ -445,6 +503,7 @@ class _UnavailableSwitchBalanceNotifier extends SyncNotifier {
 }
 
 const _accountUuid = 'account-1';
+const _otherAccountUuid = 'account-2';
 
 class _ExistingAccountNotifier extends AccountNotifier {
   @override
