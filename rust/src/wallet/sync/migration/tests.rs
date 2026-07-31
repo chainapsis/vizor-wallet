@@ -4672,9 +4672,12 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
     // Once local raw is present, the same past-expiry broadcasted row resigns.
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     conn.execute_batch(
+        // `mined_height` stays NULL: the row is stored but not mined, and the
+        // chain-identity fallback query still needs the column to exist.
         "CREATE TABLE transactions (
              txid BLOB PRIMARY KEY,
-             raw BLOB
+             raw BLOB,
+             mined_height INTEGER
          );",
     )
     .unwrap();
