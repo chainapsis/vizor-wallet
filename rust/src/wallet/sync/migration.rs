@@ -2375,19 +2375,33 @@ fn insert_signed_child_pczts_with_tx(
                 child.value_zatoshi,
             )
             .ok_or("Approved migration schedule is missing a signed child")?;
-            let child_schedule_origin = child
-                .scheduled_height
-                .checked_sub(block_offset)
-                .ok_or("Signed migration schedule starts below zero")?;
-            if let Some(origin) = signed_schedule_origin {
-                if origin != child_schedule_origin {
-                    return Err(
-                        "Signed migration children do not share one absolute schedule origin"
-                            .to_string(),
-                    );
+            match mode {
+                SignedChildInsertMode::Initial => {
+                    let child_schedule_origin = child
+                        .scheduled_height
+                        .checked_sub(block_offset)
+                        .ok_or("Signed migration schedule starts below zero")?;
+                    if let Some(origin) = signed_schedule_origin {
+                        if origin != child_schedule_origin {
+                            return Err(
+                                "Signed migration children do not share one absolute schedule origin"
+                                    .to_string(),
+                            );
+                        }
+                    } else {
+                        signed_schedule_origin = Some(child_schedule_origin);
+                    }
                 }
-            } else {
-                signed_schedule_origin = Some(child_schedule_origin);
+                // Rebuilt children carry per-batch fresh offsets anchored at
+                // their own rebuild target (see `rebuild_schedule_block_offsets`),
+                // so a shared origin derived from original offsets no longer
+                // holds; require a non-negative rebuild offset instead.
+                SignedChildInsertMode::Replacement => {
+                    child
+                        .scheduled_height
+                        .checked_sub(child.target_height.saturating_sub(1))
+                        .ok_or("Signed migration schedule starts below zero")?;
+                }
             }
         }
         let encrypted_base_pczt = secret_payload::encrypt_payload(

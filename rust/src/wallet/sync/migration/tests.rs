@@ -4781,6 +4781,167 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
 }
 
 #[test]
+fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    let notes = [0u32, 1].map(|index| PreparedOrchardNoteRef {
+        txid_hex: format!("{:02x}", 0x17 + index).repeat(32),
+        output_index: index,
+        value_zatoshi: 110 + 100 * u64::from(index),
+        note_version: 2,
+        nullifier_hex: None,
+    });
+    // Distinct original whole-run offsets (10 and 40): the rebuilt heights
+    // below use fresh remaining-count offsets, so no single origin satisfies
+    // `scheduled - original_offset` for both children.
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              signed_schedule_origin_height)
+             VALUES ('rebuild-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,200]',
+                     '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":10}},{{\"part_index\":1,\"value_zatoshi\":200,\"block_offset\":40}}]',
+                     90)"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    for (index, note) in notes.iter().enumerate() {
+        let metadata = PendingMigrationTxMetadata {
+            tx_kind: "migration".to_string(),
+            funding_account_uuid: "account-1".to_string(),
+            selected_note: note.clone(),
+        };
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  scheduled_height, status, metadata_json)
+                 VALUES ('rebuild-run', ?1, ?2, 'encrypted', 90, 69120, ?3, 10, ?4,
+                         ?5, ?6, 1, ?7, 'needs_resign', ?8)"
+            ),
+            params![
+                format!("{:02x}", 0x22 + index).repeat(32),
+                index as u32,
+                100 + 100 * index as u64,
+                note.txid_hex,
+                note.output_index,
+                note.value_zatoshi,
+                90 + 30 * index as u32,
+                serde_json::to_string(&metadata).unwrap(),
+            ],
+        )
+        .unwrap();
+    }
+    drop(conn);
+
+    // Fresh remaining-count offsets 3 and 7 from the rebuild target 101.
+    let scheduled_heights = [103u32, 107];
+    let (replacements, replacement_children): (Vec<_>, Vec<_>) = notes
+        .iter()
+        .enumerate()
+        .map(|(index, note)| {
+            let metadata = PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note: note.clone(),
+            };
+            let scheduled_height = scheduled_heights[index];
+            let expiry_height =
+                zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+            let value_zatoshi = 100 + 100 * index as u64;
+            (
+                PendingMigrationTxReplacement {
+                    old_txid_hex: format!("{:02x}", 0x22 + index).repeat(32),
+                    replacement: PendingMigrationTxInsert {
+                        part_index: index as u32,
+                        txid_hex: format!("{:02x}", 0x44 + index).repeat(32),
+                        raw_tx: vec![index as u8; 4],
+                        target_height: 101,
+                        anchor_boundary_height: Some(90),
+                        expiry_height,
+                        scheduled_height,
+                        value_zatoshi,
+                        fee_zatoshi: 10,
+                        selected_note: note.clone(),
+                        metadata: metadata.clone(),
+                    },
+                },
+                SignedMigrationPcztInsert {
+                    message_id: format!("rebuild-child-{index}"),
+                    child_index: index as u32,
+                    base_pczt: vec![index as u8; 3],
+                    sigs: Vec::new(),
+                    target_height: 101,
+                    anchor_boundary_height: Some(90),
+                    expiry_height,
+                    scheduled_height,
+                    value_zatoshi,
+                    fee_zatoshi: 10,
+                    selected_note: note.clone(),
+                    metadata,
+                },
+            )
+        })
+        .unzip();
+
+    replace_resigned_pending_parts(
+        &db_path,
+        "rebuild-run",
+        WalletNetwork::Regtest,
+        replacements,
+        replacement_children,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let rows: Vec<(String, u32, u32, String)> = {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT txid_hex, schedule_start_height, scheduled_height, status
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'rebuild-run'
+                 ORDER BY scheduled_height ASC"
+            ))
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap();
+        rows.collect::<Result<Vec<_>, _>>().unwrap()
+    };
+    assert_eq!(rows.len(), 2);
+    for (index, (txid_hex, schedule_start_height, scheduled_height, status)) in
+        rows.iter().enumerate()
+    {
+        assert_eq!(*txid_hex, format!("{:02x}", 0x44 + index).repeat(32));
+        assert_eq!(*schedule_start_height, 100);
+        assert_eq!(*scheduled_height, scheduled_heights[index]);
+        assert_eq!(status, "scheduled");
+    }
+    let signed_count: u32 = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM {SIGNED_CHILD_PCZTS_TABLE}
+                 WHERE run_id = 'rebuild-run'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(signed_count, 2);
+}
+
+#[test]
 fn pending_policy_checks_detect_fee_drift_and_only_mined_input_spends() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
