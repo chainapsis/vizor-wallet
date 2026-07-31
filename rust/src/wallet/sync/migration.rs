@@ -4084,30 +4084,6 @@ pub(crate) fn replace_resigned_pending_parts(
         salt_base64,
         SignedChildInsertMode::Replacement,
     )?;
-    // A finished recovery set retires its schedule generation so a later
-    // `needs_resign` wave anchors a fresh ladder at its own time.
-    let remaining_resign: u32 = tx
-        .query_row(
-            &format!(
-                "SELECT COUNT(*) FROM {PENDING_TXS_TABLE}
-                 WHERE run_id = ?1 AND status = 'needs_resign'"
-            ),
-            params![run_id],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("Count remaining migration re-sign parts: {e}"))?;
-    if remaining_resign == 0 {
-        tx.execute(
-            &format!(
-                "UPDATE {RUNS_TABLE}
-                 SET recovery_schedule_origin_height = NULL,
-                     recovery_schedule_max_block_offset = NULL
-                 WHERE run_id = ?1"
-            ),
-            params![run_id],
-        )
-        .map_err(|e| format!("Retire migration rebuild schedule generation: {e}"))?;
-    }
     let now = now_ms()?;
     tx.execute(
         &format!(
@@ -4425,10 +4401,10 @@ pub(crate) struct RebuildScheduleGeneration {
 /// lacks one, anchored at one shared recovery origin (created at
 /// `origin_candidate_height` when absent). The generation persists its
 /// historical maximum so parts marked `needs_resign` after earlier batches
-/// were replaced still extend the same ladder. The generation is cleared
-/// when the last `needs_resign` row is replaced (see
-/// `replace_resigned_pending_parts`). Returns `None` when the run has no
-/// parts waiting for re-sign.
+/// or recovery waves still extend the same ladder. The cursor also advances
+/// to the current tip when the previous ladder has elapsed. The generation
+/// remains for the active run and is cleared when the run stops. Returns
+/// `None` when the run has no parts waiting for re-sign.
 pub(crate) fn ensure_rebuild_schedule_generation(
     db_path: &str,
     run_id: &str,
@@ -4504,7 +4480,7 @@ pub(crate) fn ensure_rebuild_schedule_generation(
     {
         return Err("Migration recovery schedule metadata is incomplete".to_string());
     }
-    let base_offset = match persisted_max_offset {
+    let persisted_base_offset = match persisted_max_offset {
         Some(max_offset) if max_offset >= observed_max_offset => max_offset,
         Some(_) => {
             return Err(
@@ -4513,14 +4489,8 @@ pub(crate) fn ensure_rebuild_schedule_generation(
         }
         None => observed_max_offset,
     };
-    if missing.is_empty() && persisted_origin.is_some() && persisted_max_offset.is_some() {
-        tx.commit()
-            .map_err(|e| format!("Commit migration rebuild schedule update: {e}"))?;
-        return Ok(Some(RebuildScheduleGeneration {
-            origin_height,
-            offsets_by_txid,
-        }));
-    }
+    let base_offset =
+        persisted_base_offset.max(origin_candidate_height.saturating_sub(origin_height));
 
     let mut generation_max_offset = base_offset;
     if !missing.is_empty() {

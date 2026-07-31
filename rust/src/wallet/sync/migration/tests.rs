@@ -4925,6 +4925,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             .unwrap();
     assert_eq!(repeated.origin_height, 5_000);
     assert_eq!(repeated.offsets_by_txid, generation.offsets_by_txid);
+    let persisted_generation_max = generation_max_offset.max(1_000);
 
     let replacement_for = |(txid_hex, note): &(String, PreparedOrchardNoteRef),
                            part_index: u32,
@@ -5010,11 +5011,12 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         .unwrap();
     assert_eq!(
         mid_generation,
-        (Some(5_000), Some(generation_max_offset))
+        (Some(5_000), Some(persisted_generation_max))
     );
     drop(conn);
 
-    // The second batch consumes the same generation and retires it.
+    // The second batch consumes the same generation. Its cursor remains for
+    // later recovery waves in the active run.
     let (batch_two, batch_two_children): (Vec<_>, Vec<_>) = rows[8..]
         .iter()
         .enumerate()
@@ -5044,7 +5046,10 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
-    assert_eq!(final_generation, (None, None));
+    assert_eq!(
+        final_generation,
+        (Some(5_000), Some(persisted_generation_max))
+    );
     let mut rebuilt = {
         let mut stmt = conn
             .prepare(&format!(
@@ -5065,6 +5070,26 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         .map(|(_, scheduled)| scheduled - 5_000)
         .collect::<Vec<_>>();
     assert_eq!(rebuilt_ladder, ladder, "both batches must extend one ladder");
+
+    // A later recovery wave keeps the generation and starts no earlier than
+    // the current tip relative to its origin.
+    let later_txid = format!("{:02x}", 0x90).repeat(32);
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET status = 'needs_resign', rebuild_block_offset = NULL
+             WHERE run_id = 'gen-run' AND txid_hex = ?1"
+        ),
+        params![later_txid],
+    )
+    .unwrap();
+    drop(conn);
+    let later =
+        ensure_rebuild_schedule_generation(&db_path, "gen-run", WalletNetwork::Main, 20_000)
+            .unwrap()
+            .unwrap();
+    assert_eq!(later.origin_height, 5_000);
+    assert!(later.offsets_by_txid[&later_txid] >= 15_000);
 }
 
 #[test]
