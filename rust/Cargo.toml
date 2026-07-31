@@ -6,12 +6,6 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
-[features]
-# Enables timing for librustzcash's existing wallet-summary tracing spans.
-# Instrumented local builds opt in through rust/cargokit.yaml; release builds
-# do not include the subscriber.
-debug-wallet-summary-timing = ["dep:tracing", "dep:tracing-subscriber"]
-
 [dependencies]
 flutter_rust_bridge = "=2.11.1"
 
@@ -66,8 +60,6 @@ redb = "4.1.0"
 
 # Logging (FRB forwards to Dart console via setup_default_user_utils)
 log = "0.4"
-tracing = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"], optional = true }
 
 # Hex encoding
 hex = "0.4"
