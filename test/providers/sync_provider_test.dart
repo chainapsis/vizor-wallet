@@ -7,6 +7,7 @@ import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
   test('migration entry restarts a sync from an older foreground epoch', () {
@@ -157,6 +158,36 @@ void main() {
     expect(current.failure, same(failure));
     expect(current.isSyncing, isFalse);
   });
+
+  test(
+    'unavailable switch balance clears balances but keeps fetched history',
+    () async {
+      final fetchedTx = _transaction('b' * 64);
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => _UnavailableSwitchBalanceNotifier(fetchedTx),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+
+      await container.read(syncProvider.notifier).refreshAfterAccountSwitch();
+
+      final current = container.read(syncProvider).requireValue;
+      expect(current.accountUuid, _accountUuid);
+      expect(current.hasBalanceData, isFalse);
+      expect(current.displaySpendableBalance, BigInt.zero);
+      expect(current.displayOrchardBalance, BigInt.zero);
+      expect(current.displayTotalBalance, BigInt.zero);
+      expect(current.hasRecentTransactionsData, isTrue);
+      expect(current.recentTransactions, [fetchedTx]);
+    },
+  );
 }
 
 class _LifecycleTestSyncNotifier extends SyncNotifier {
@@ -171,6 +202,42 @@ class _LifecycleTestSyncNotifier extends SyncNotifier {
   }
 }
 
+class _UnavailableSwitchBalanceNotifier extends SyncNotifier {
+  _UnavailableSwitchBalanceNotifier(this.fetchedTx)
+    : super(walletDbPathResolver: () async => 'wallet.db');
+
+  final rust_sync.TransactionInfo fetchedTx;
+
+  @override
+  Future<SyncState> build() async => SyncState(
+    accountUuid: _accountUuid,
+    hasAccountScopedData: true,
+    orchardBalance: BigInt.from(40),
+    displayOrchardBalance: BigInt.from(40),
+    spendableBalance: BigInt.from(40),
+    displaySpendableBalance: BigInt.from(40),
+    displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+    totalBalance: BigInt.from(40),
+    displayTotalBalance: BigInt.from(40),
+    recentTransactions: [_transaction('a' * 64)],
+  );
+
+  @override
+  Future<rust_sync.WalletBalance> readWalletBalance({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async => _unavailableBalance;
+
+  @override
+  Future<List<rust_sync.TransactionInfo>> readTransactionHistory({
+    required String dbPath,
+    required String network,
+    int? limit,
+    required String accountUuid,
+  }) async => [fetchedTx];
+}
+
 const _accountUuid = 'account-1';
 
 class _ExistingAccountNotifier extends AccountNotifier {
@@ -178,5 +245,43 @@ class _ExistingAccountNotifier extends AccountNotifier {
   AccountState build() => const AccountState(
     accounts: [AccountInfo(uuid: _accountUuid, name: 'Account 1', order: 0)],
     activeAccountUuid: _accountUuid,
+  );
+}
+
+final _unavailableBalance = rust_sync.WalletBalance(
+  availability: rust_sync.WalletBalanceAvailability.summaryUnavailable,
+  transparent: BigInt.zero,
+  sapling: BigInt.zero,
+  orchard: BigInt.zero,
+  ironwood: BigInt.zero,
+  transparentLocked: BigInt.zero,
+  saplingLocked: BigInt.zero,
+  orchardLocked: BigInt.zero,
+  ironwoodLocked: BigInt.zero,
+  transparentPending: BigInt.zero,
+  saplingPending: BigInt.zero,
+  orchardPending: BigInt.zero,
+  ironwoodPending: BigInt.zero,
+  changePendingConfirmation: BigInt.zero,
+  valuePendingSpendability: BigInt.zero,
+  uneconomicValue: BigInt.zero,
+  spendable: BigInt.zero,
+  locked: BigInt.zero,
+  total: BigInt.zero,
+);
+
+rust_sync.TransactionInfo _transaction(String txidHex) {
+  return rust_sync.TransactionInfo(
+    txidHex: txidHex,
+    minedHeight: BigInt.one,
+    expiredUnmined: false,
+    accountBalanceDelta: 0,
+    fee: BigInt.zero,
+    blockTime: BigInt.from(1800000000),
+    isTransparent: false,
+    txKind: 'received',
+    displayAmount: BigInt.one,
+    displayPool: 'shielded',
+    createdTime: BigInt.from(1800000000),
   );
 }

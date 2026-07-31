@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, protected;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -205,6 +205,16 @@ class SyncState {
           previous?.displaySpendableFreshness ??
           SpendableBalanceFreshness.authoritative,
     );
+  }
+
+  static bool shouldClearUnavailableRestoredSnapshot({
+    required SyncState? previous,
+    required bool hasAuthoritativeBalance,
+    required bool clearRestoredSnapshotIfUnavailable,
+  }) {
+    return clearRestoredSnapshotIfUnavailable &&
+        !hasAuthoritativeBalance &&
+        (previous?.isUsingCompletedSpendableSnapshot ?? false);
   }
 
   SyncState withSyncActivityStopped() {
@@ -677,7 +687,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// ## What bounds staleness
   ///
   /// * Restored values are overwritten by the refresh already in flight
-  ///   for that switch, typically within a second.
+  ///   for that switch, typically within a second. If Rust cannot provide
+  ///   an authoritative balance, the switch refresh clears the restored
+  ///   balance fields while retaining independently refreshed history.
   /// * Only wallet-wide sync fields are taken from the live state via
   ///   `withGlobalSyncFieldsFrom`, so sync progress cannot regress to
   ///   whatever it was when the account was last active.
@@ -691,12 +703,11 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   ///
   /// ## Where staleness can still be observed
   ///
-  /// This bounds staleness; it does not eliminate it. If the refresh in
-  /// step 3 fails, or reports the balance unavailable — a normal
-  /// non-error return while a summary is not yet computable — the
-  /// commit path keeps the previous values rather than blanking, so the
-  /// restored figures remain until a later refresh succeeds. Polling,
-  /// sync completion, and resume usually make that within ~10s.
+  /// This bounds staleness; it does not eliminate it. A thrown refresh
+  /// failure leaves the restored figures in place until a later refresh
+  /// succeeds. An unavailable balance is handled differently: the
+  /// account-switch refresh returns balance surfaces to their blank state
+  /// while still committing any transaction history it fetched.
   ///
   /// Only the mobile send screen currently reads
   /// `displaySpendableFreshness`; desktop surfaces render a restored
@@ -706,6 +717,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   bool _balanceRefreshInFlight = false;
   bool _balanceRefreshQueued = false;
   bool _balanceRefreshQueuedReleaseSnapshot = false;
+  bool _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
   Future<void>? _balanceRefreshChain;
 
   @override
@@ -1578,6 +1590,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // running pass's `finally` so a new pass cannot start alongside it.
     _balanceRefreshQueued = false;
     _balanceRefreshQueuedReleaseSnapshot = false;
+    _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
     _lastKnownByAccount.clear();
     state = AsyncData(SyncState());
 
@@ -2247,6 +2260,15 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   Future<void> refreshAfterSend() =>
       _requestBalanceRefresh(releaseSnapshotOnAuthoritativeBalance: true);
 
+  /// Reconciles the account selected by a switch or active-account removal.
+  ///
+  /// If its balance summary is temporarily unavailable, discard only the
+  /// restored balance snapshot so it cannot remain visibly stale.
+  Future<void> refreshAfterAccountSwitch() => _requestBalanceRefresh(
+    releaseSnapshotOnAuthoritativeBalance: true,
+    clearRestoredSnapshotIfUnavailable: true,
+  );
+
   Future<void> refreshAfterUnlock() => _requestBalanceRefresh();
 
   /// Coalesce concurrent refresh triggers into one running pass.
@@ -2256,9 +2278,13 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// reflecting the caller's event.
   Future<void> _requestBalanceRefresh({
     bool releaseSnapshotOnAuthoritativeBalance = false,
+    bool clearRestoredSnapshotIfUnavailable = false,
   }) {
     if (releaseSnapshotOnAuthoritativeBalance) {
       _balanceRefreshQueuedReleaseSnapshot = true;
+    }
+    if (clearRestoredSnapshotIfUnavailable) {
+      _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = true;
     }
     if (_balanceRefreshInFlight) {
       _balanceRefreshQueued = true;
@@ -2279,9 +2305,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         _balanceRefreshQueued = false;
         final releaseSnapshot = _balanceRefreshQueuedReleaseSnapshot;
         _balanceRefreshQueuedReleaseSnapshot = false;
+        final clearRestoredSnapshotIfUnavailable =
+            _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable;
+        _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
         try {
           await _refreshBalance(
             releaseSnapshotOnAuthoritativeBalance: releaseSnapshot,
+            clearRestoredSnapshotIfUnavailable:
+                clearRestoredSnapshotIfUnavailable,
           );
         } catch (e, st) {
           log('SyncNotifier: coalesced balance refresh failed: $e\n$st');
@@ -2291,6 +2322,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       _balanceRefreshInFlight = false;
       _balanceRefreshQueued = false;
       _balanceRefreshQueuedReleaseSnapshot = false;
+      _balanceRefreshQueuedClearRestoredSnapshotIfUnavailable = false;
       _balanceRefreshChain = null;
     }
   }
@@ -2434,6 +2466,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> _refreshBalance({
     bool releaseSnapshotOnAuthoritativeBalance = false,
+    bool clearRestoredSnapshotIfUnavailable = false,
   }) async {
     if (_requiresUnlock) {
       _stopDisplayProgressTimer();
@@ -2473,17 +2506,17 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // `onError` is attached here rather than only in the `catch` blocks
     // below: if the first await throws, the second future would
     // otherwise complete with an unobserved error.
-    final balanceRead = rust_sync
-        .getBalance(dbPath: dbPath, network: network, accountUuid: accountUuid)
-        .then<Object>((value) => value, onError: (Object error) => error);
-    final historyRead = rust_sync
-        .getTransactionHistory(
-          dbPath: dbPath,
-          network: network,
-          limit: 10,
-          accountUuid: accountUuid,
-        )
-        .then<Object>((value) => value, onError: (Object error) => error);
+    final balanceRead = readWalletBalance(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+    ).then<Object>((value) => value, onError: (Object error) => error);
+    final historyRead = readTransactionHistory(
+      dbPath: dbPath,
+      network: network,
+      limit: 10,
+      accountUuid: accountUuid,
+    ).then<Object>((value) => value, onError: (Object error) => error);
 
     try {
       final balanceResult = await balanceRead;
@@ -2518,7 +2551,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         scopedPrev?.recentTransactions ?? const <rust_sync.TransactionInfo>[];
     try {
       final historyResult = await historyRead;
-      if (historyResult is! List<rust_sync.TransactionInfo>) throw historyResult;
+      if (historyResult is! List<rust_sync.TransactionInfo>) {
+        throw historyResult;
+      }
       recentTxs = historyResult;
       didFetchRecentTxs = true;
     } catch (e) {
@@ -2554,16 +2589,35 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       log('SyncNotifier: discarding superseded balance refresh');
       return;
     }
-    if (hasAuthoritativeBalance) {
-      ++_authoritativeBalanceVersion;
-    }
-
     // Commit against the latest state so a slow balance/history refresh
     // cannot roll sync progress or completion metadata back to the snapshot
     // captured before the awaits above.
     final current = state.value;
     final currentScoped = _previousScopedState(current, accountUuid);
     final accountFallback = currentScoped ?? scopedPrev;
+    if (SyncState.shouldClearUnavailableRestoredSnapshot(
+      previous: accountFallback,
+      hasAuthoritativeBalance: hasAuthoritativeBalance,
+      clearRestoredSnapshotIfUnavailable: clearRestoredSnapshotIfUnavailable,
+    )) {
+      final cleared = (current ?? SyncState()).withoutAccountScopedData(
+        accountUuid: accountUuid,
+      );
+      state = AsyncData(
+        cleared.copyWith(
+          hasRecentTransactionsData:
+              didFetchRecentTxs ||
+              (accountFallback?.hasRecentTransactionsData ?? false),
+          recentTransactions: didFetchRecentTxs
+              ? recentTxs
+              : accountFallback?.recentTransactions ?? const [],
+        ),
+      );
+      return;
+    }
+    if (hasAuthoritativeBalance) {
+      ++_authoritativeBalanceVersion;
+    }
     final nextSpendableBalance =
         spendable ?? accountFallback?.spendableBalance ?? BigInt.zero;
     final syncComplete = current?.isSyncedToTip ?? false;
@@ -2664,6 +2718,30 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   String? _getActiveAccountUuid() {
     return ref.read(accountProvider).value?.activeAccountUuid;
   }
+
+  @protected
+  Future<rust_sync.WalletBalance> readWalletBalance({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) => rust_sync.getBalance(
+    dbPath: dbPath,
+    network: network,
+    accountUuid: accountUuid,
+  );
+
+  @protected
+  Future<List<rust_sync.TransactionInfo>> readTransactionHistory({
+    required String dbPath,
+    required String network,
+    int? limit,
+    required String accountUuid,
+  }) => rust_sync.getTransactionHistory(
+    dbPath: dbPath,
+    network: network,
+    limit: limit,
+    accountUuid: accountUuid,
+  );
 
   void _logSpendableDropBreakdown(
     rust_sync.WalletBalance balance,

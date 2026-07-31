@@ -403,6 +403,41 @@ void main() {
     expect(resolved.freshness, SpendableBalanceFreshness.lastCompletedSync);
   });
 
+  test(
+    'account switch clears a restored snapshot when balance is unavailable',
+    () {
+      final restored = SyncState(
+        displaySpendableBalance: BigInt.from(50),
+        displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+      );
+
+      expect(
+        SyncState.shouldClearUnavailableRestoredSnapshot(
+          previous: restored,
+          hasAuthoritativeBalance: false,
+          clearRestoredSnapshotIfUnavailable: true,
+        ),
+        isTrue,
+      );
+      expect(
+        SyncState.shouldClearUnavailableRestoredSnapshot(
+          previous: restored,
+          hasAuthoritativeBalance: false,
+          clearRestoredSnapshotIfUnavailable: false,
+        ),
+        isFalse,
+      );
+      expect(
+        SyncState.shouldClearUnavailableRestoredSnapshot(
+          previous: restored,
+          hasAuthoritativeBalance: true,
+          clearRestoredSnapshotIfUnavailable: true,
+        ),
+        isFalse,
+      );
+    },
+  );
+
   test('displayPercentage defaults to actual percentage', () {
     final state = SyncState(percentage: 0.25);
 

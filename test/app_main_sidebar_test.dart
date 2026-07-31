@@ -1275,6 +1275,9 @@ class _FakeSyncNotifier extends SyncNotifier {
 
   @override
   Future<SyncState> build() async => initialState;
+
+  @override
+  Future<void> refreshAfterAccountSwitch() async {}
 }
 
 class _FakeMigrationCoordinator extends IronwoodMigrationCoordinator {

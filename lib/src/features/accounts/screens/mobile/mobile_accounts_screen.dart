@@ -408,6 +408,10 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     setState(() => _busy = true);
     final accountNotifier = ref.read(accountProvider.notifier);
     final syncNotifier = ref.read(syncProvider.notifier);
+    final activeAccountBeforeRemoval = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid;
     try {
       if (isLastAccount) {
         // runWithSyncPausedForWalletReset clears the cached DB path in its
@@ -431,7 +435,15 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
           ref,
           () => accountNotifier.removeAccount(account.uuid),
         );
-        await syncNotifier.refreshAfterSend();
+        final activeAccountAfterRemoval = ref
+            .read(accountProvider)
+            .value
+            ?.activeAccountUuid;
+        if (activeAccountBeforeRemoval != activeAccountAfterRemoval) {
+          await syncNotifier.refreshAfterAccountSwitch();
+        } else {
+          await syncNotifier.refreshAfterSend();
+        }
       }
     } catch (e, st) {
       log('MobileAccounts: remove failed: $e\n$st');

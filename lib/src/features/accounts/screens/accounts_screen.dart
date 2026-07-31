@@ -176,6 +176,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     }
 
     final accountNotifier = ref.read(accountProvider.notifier);
+    final activeAccountBeforeRemoval = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid;
     onProgress?.call(AccountRemoveProgress.stoppingSync);
     final flowWatch = Stopwatch()..start();
     final pauseWatch = Stopwatch()..start();
@@ -203,9 +207,18 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     if (!mounted) return;
     _closeModal();
     final refreshWatch = Stopwatch()..start();
-    await ref.read(syncProvider.notifier).refreshAfterSend();
+    final activeAccountAfterRemoval = ref
+        .read(accountProvider)
+        .value
+        ?.activeAccountUuid;
+    final syncNotifier = ref.read(syncProvider.notifier);
+    if (activeAccountBeforeRemoval != activeAccountAfterRemoval) {
+      await syncNotifier.refreshAfterAccountSwitch();
+    } else {
+      await syncNotifier.refreshAfterSend();
+    }
     log(
-      'removeAccountFlow: refreshAfterSend complete in '
+      'removeAccountFlow: balance refresh complete in '
       '${refreshWatch.elapsedMilliseconds}ms uuid=$uuid '
       'total=${flowWatch.elapsedMilliseconds}ms',
     );
@@ -454,9 +467,9 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
 
   Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
     try {
-      await syncNotifier.refreshAfterSend();
+      await syncNotifier.refreshAfterAccountSwitch();
     } catch (e) {
-      log('switchAccount: refreshAfterSend failed: $e');
+      log('switchAccount: balance refresh failed: $e');
     }
   }
 

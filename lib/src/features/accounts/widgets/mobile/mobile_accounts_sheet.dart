@@ -101,7 +101,7 @@ class _MobileAccountsSheetState extends ConsumerState<MobileAccountsSheet> {
 
   Future<void> _refreshAfterAccountSwitch(SyncNotifier syncNotifier) async {
     try {
-      await syncNotifier.refreshAfterSend();
+      await syncNotifier.refreshAfterAccountSwitch();
     } catch (e) {
       log('MobileAccountsSheet: refresh after account switch failed: $e');
     }
