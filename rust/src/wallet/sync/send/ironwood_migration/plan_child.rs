@@ -446,6 +446,42 @@ mod schedule_height_tests {
             (900, 903)
         );
     }
+
+    /// Reproduction of the secondary amplifier: the resign/rebuild path rebases a
+    /// part's *cumulative* ladder offset onto the current tip instead of the
+    /// persisted run origin, so a part deep in a long ladder is pushed out by its
+    /// whole cumulative offset rather than by its own gap.
+    #[test]
+    fn repro_resign_rebases_cumulative_offset_onto_current_tip() {
+        let origin_height = 3_000_000u32;
+        // A part sitting ~40 rungs up a legacy-cadence ladder.
+        let cumulative_offset = 40 * 66 /* NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS */;
+
+        // Initial signing: absolute against the persisted origin.
+        let (_, initial_scheduled) =
+            initial_migration_schedule_heights(origin_height + 1, Some(origin_height), cumulative_offset)
+                .unwrap();
+        assert_eq!(initial_scheduled, origin_height + cumulative_offset);
+
+        // The same part re-signed 500 blocks later. `create_orchard_to_ironwood_
+        // pczt_from_note` passes no persisted origin, so the cumulative offset is
+        // re-applied from the new tip.
+        let tip_at_resign = origin_height + 500;
+        let (_, resigned_scheduled) =
+            initial_migration_schedule_heights(tip_at_resign + 1, None, cumulative_offset).unwrap();
+
+        let push_out = resigned_scheduled - initial_scheduled;
+        println!(
+            "resign push-out: {push_out} blocks ({} h)",
+            push_out * 75 / 3600
+        );
+        assert!(
+            push_out >= 500,
+            "resign did not push the part out (push_out={push_out})"
+        );
+        // It is pushed a further full cumulative offset past where it should land.
+        assert_eq!(resigned_scheduled, tip_at_resign + cumulative_offset);
+    }
 }
 
 fn create_deferred_orchard_to_ironwood_pczt_from_prepared_note(

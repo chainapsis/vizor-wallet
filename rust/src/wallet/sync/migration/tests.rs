@@ -8422,3 +8422,360 @@ fn due_pending_unblocks_later_parts_after_stale_head_is_mined() {
         "after promoting part 0, two later scheduled parts remain due at tip"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Ironwood migration transfer spacing: how far apart consecutive transfers can
+// land, and what bounds that distance. Each test isolates one mechanism.
+// ---------------------------------------------------------------------------
+
+/// Sorted scheduled offsets of the parts that a first signing batch actually
+/// materializes, mirroring the production pipeline: the ladder is drawn over
+/// every part of the run, and `select_migration_batch_signing_part_indices`
+/// then picks part indices in numeric order.
+fn first_batch_scheduled_offsets(
+    part_count: u32,
+    timing_policy: MigrationTimingPolicy,
+    rng: &mut StdRng,
+) -> Vec<u32> {
+    let values = (1..=u64::from(part_count)).collect::<Vec<_>>();
+    let schedule = planned_transfer_schedule_with_policy(
+        values.iter().copied(),
+        WalletNetwork::Main,
+        timing_policy,
+        rng,
+    );
+    let signing_part_indices =
+        select_migration_batch_signing_part_indices(part_count, 0, 0, &[]).unwrap();
+    let mut offsets = signing_part_indices
+        .iter()
+        .map(|part_index| {
+            schedule_block_offset_for_part(
+                &schedule,
+                &values,
+                *part_index,
+                values[*part_index as usize],
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    offsets
+}
+
+fn consecutive_gaps(offsets: &[u32]) -> Vec<u32> {
+    offsets.windows(2).map(|pair| pair[1] - pair[0]).collect()
+}
+
+/// Baseline. A run whose part count fits inside one signing batch stays within
+/// policy: the ladder rejection-samples every gap against `max_delay_blocks`,
+/// so no consecutive pair can exceed it. Also records that *sustained* wide
+/// spacing -- every visible gap large at once -- does not arise at this size.
+#[test]
+fn single_batch_run_stays_within_policy_cap() {
+    let mut rng = StdRng::seed_from_u64(0x5150);
+    for timing_policy in [
+        MigrationTimingPolicy::Standard,
+        MigrationTimingPolicy::Standard90Minutes,
+    ] {
+        let (_, max_delay_blocks) =
+            schedule_parameters_with_policy(WalletNetwork::Main, timing_policy);
+        // Policy-derived threshold for "wide": five eighths of the per-gap cap.
+        let wide_spacing_blocks = max_delay_blocks * 5 / 8;
+        let trials = 20_000u64;
+        let mut worst_gap = 0;
+        let mut all_gaps_wide = 0u64;
+        for _ in 0..trials {
+            let offsets = first_batch_scheduled_offsets(6, timing_policy, &mut rng);
+            assert_eq!(offsets.len(), 6);
+            let mut spacings = vec![offsets[0]];
+            spacings.extend(consecutive_gaps(&offsets));
+            worst_gap = worst_gap.max(spacings.iter().copied().max().unwrap());
+            if spacings.iter().all(|gap| *gap >= wide_spacing_blocks) {
+                all_gaps_wide += 1;
+            }
+        }
+        println!(
+            "6-part {timing_policy:?}: worst spacing {worst_gap} blk (cap {max_delay_blocks}), \
+             all-gaps-wide in {all_gaps_wide}/{trials} runs"
+        );
+        assert!(
+            worst_gap <= max_delay_blocks,
+            "{timing_policy:?}: gap {worst_gap} exceeded the policy cap {max_delay_blocks}"
+        );
+        assert_eq!(
+            all_gaps_wide, 0,
+            "{timing_policy:?}: a single-batch run produced sustained wide spacing \
+             {all_gaps_wide} times"
+        );
+    }
+}
+
+/// Once the run has more parts than one signing batch, the transfers that
+/// materialize are a random sparse subset of the whole-run ladder, because
+/// `planned_transfer_schedule_for_parts_with_policy` shuffles parts before
+/// assigning cumulative offsets while the batch selector walks part indices in
+/// numeric order. Visible spacing then scales with the run length rather than
+/// staying at the policy cadence, and exceeds the cap that drew it.
+#[test]
+fn repro_batch_materialization_stretches_visible_spacing() {
+    let mut rng = StdRng::seed_from_u64(0x318318);
+    let timing_policy = MigrationTimingPolicy::Standard;
+    let (mean_delay_blocks, max_delay_blocks) =
+        schedule_parameters_with_policy(WalletNetwork::Main, timing_policy);
+
+    let mut mean_gap_by_part_count = Vec::new();
+    for part_count in [6u32, 12, 24, 60, 120] {
+        let trials = 4_000u64;
+        let mut gap_total = 0u64;
+        let mut gap_count = 0u64;
+        let mut first_total = 0u64;
+        let mut over_cap = 0u64;
+        for _ in 0..trials {
+            let offsets = first_batch_scheduled_offsets(part_count, timing_policy, &mut rng);
+            first_total += u64::from(offsets[0]);
+            for gap in consecutive_gaps(&offsets) {
+                gap_total += u64::from(gap);
+                gap_count += 1;
+                if gap > max_delay_blocks {
+                    over_cap += 1;
+                }
+            }
+        }
+        let mean_gap = gap_total / gap_count;
+        let mean_first = first_total / trials;
+        println!(
+            "parts={part_count:3} mean_first={mean_first:5} blk  mean_gap={mean_gap:5} blk  \
+             over_policy_cap={:3}%",
+            over_cap * 100 / gap_count,
+        );
+        mean_gap_by_part_count.push((part_count, mean_gap, over_cap));
+    }
+
+    // Within one batch the visible cadence is the policy cadence.
+    let (_, single_batch_gap, single_batch_over_cap) = mean_gap_by_part_count[0];
+    assert!(
+        single_batch_gap <= u64::from(mean_delay_blocks) + 20,
+        "6-part run already deviates from the policy mean ({single_batch_gap})"
+    );
+    assert_eq!(
+        single_batch_over_cap, 0,
+        "6-part run produced gaps past the policy cap"
+    );
+
+    // Beyond it, visible spacing grows with the run length and breaks the cap.
+    assert!(
+        mean_gap_by_part_count
+            .windows(2)
+            .all(|pair| pair[1].1 > pair[0].1),
+        "visible spacing did not grow with run length: {mean_gap_by_part_count:?}"
+    );
+    let (_, sixty_part_gap, sixty_part_over_cap) = mean_gap_by_part_count[3];
+    assert!(
+        sixty_part_gap > u64::from(mean_delay_blocks) * 4,
+        "60-part run gap {sixty_part_gap} did not stretch past 4x the policy mean"
+    );
+    assert!(
+        sixty_part_over_cap > 0,
+        "60-part run produced no gap past the {max_delay_blocks}-block cap"
+    );
+}
+
+/// Scale of the stretch at a long ladder: at 60 parts on the legacy cadence the
+/// leading offset and the typical visible gap both sit around six times the
+/// policy mean, i.e. most of a day between consecutive transfers.
+#[test]
+fn visible_spacing_at_sixty_parts_far_exceeds_policy_cadence() {
+    let mut rng = StdRng::seed_from_u64(0xB16B00);
+    let (mean_delay_blocks, _) =
+        schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard);
+    let trials = 4_000u64;
+    let mut first_total = 0u64;
+    let mut gap_total = 0u64;
+    let mut gap_count = 0u64;
+    for _ in 0..trials {
+        let offsets = first_batch_scheduled_offsets(60, MigrationTimingPolicy::Standard, &mut rng);
+        first_total += u64::from(offsets[0]);
+        for gap in consecutive_gaps(&offsets) {
+            gap_total += u64::from(gap);
+            gap_count += 1;
+        }
+    }
+    let mean_first = first_total / trials;
+    let mean_gap = gap_total / gap_count;
+    println!("60-part legacy run: first={mean_first} blk, gap={mean_gap} blk");
+    let mean = u64::from(mean_delay_blocks);
+    assert!(
+        (mean * 5..mean * 8).contains(&mean_first),
+        "first transfer offset {mean_first} is not ~6x the policy mean {mean}"
+    );
+    assert!(
+        (mean * 5..mean * 8).contains(&mean_gap),
+        "mean visible gap {mean_gap} is not ~6x the policy mean {mean}"
+    );
+}
+
+/// Discriminator between the two send paths. The ladder itself is sound: when
+/// every part is materialized at once -- which is what the software path in
+/// `status_advance.rs` does, mapping over all `predicted_notes` with no batch
+/// limit -- consecutive spacing stays at the policy cadence no matter how long
+/// the run is. The stretching in
+/// `repro_batch_materialization_stretches_visible_spacing` therefore comes
+/// purely from `MIGRATION_KEYSTONE_BATCH_MAX_PARTS` sampling a sparse subset,
+/// which confines the defect to the batched signing path.
+#[test]
+fn repro_full_materialization_keeps_policy_cadence_at_every_run_length() {
+    let mut rng = StdRng::seed_from_u64(0xD15C0);
+    let timing_policy = MigrationTimingPolicy::Standard;
+    let (mean_delay_blocks, max_delay_blocks) =
+        schedule_parameters_with_policy(WalletNetwork::Main, timing_policy);
+
+    for part_count in [6u32, 24, 60, 120] {
+        let values = (1..=u64::from(part_count)).collect::<Vec<_>>();
+        let mut gap_total = 0u64;
+        let mut gap_count = 0u64;
+        for _ in 0..500 {
+            let schedule = planned_transfer_schedule_with_policy(
+                values.iter().copied(),
+                WalletNetwork::Main,
+                timing_policy,
+                &mut rng,
+            );
+            // Every part materialized: read the ladder in schedule order.
+            let mut offsets = schedule
+                .iter()
+                .map(|entry| entry.block_offset)
+                .collect::<Vec<_>>();
+            offsets.sort_unstable();
+            for gap in consecutive_gaps(&offsets) {
+                assert!(
+                    gap <= max_delay_blocks,
+                    "parts={part_count}: gap {gap} exceeded the cap"
+                );
+                gap_total += u64::from(gap);
+                gap_count += 1;
+            }
+        }
+        let mean_gap = gap_total / gap_count;
+        println!("parts={part_count:3} fully materialized: mean_gap={mean_gap} blk");
+        assert!(
+            mean_gap <= u64::from(mean_delay_blocks) + 20,
+            "parts={part_count}: full materialization drifted off the policy mean ({mean_gap})"
+        );
+    }
+}
+
+/// Bounds the whole defect. The visible-spacing stretch scales with the number
+/// of migration parts, so how many parts a realistic balance produces decides
+/// how bad it can get. ZIP 318 denominations are a 1-2-5 ladder spanning only
+/// the six decades between the 0.01 ZEC floor and the 10 000 ZEC cap, so part
+/// count grows with the logarithm of the balance until the cap, and only
+/// linearly above it.
+#[test]
+fn part_count_grows_logarithmically_with_balance() {
+    const ZEC: u64 = ZATOSHIS_PER_ZEC;
+    // Same fee estimates the status layer uses.
+    let split_fee = 80_000u64;
+    let migration_fee = 15_000u64;
+    let parts_for = |zec: u64| {
+        plan_denominations(zec * ZEC, split_fee, migration_fee, 1)
+            .unwrap()
+            .migration_outputs
+            .len()
+    };
+
+    // A decade of balance buys roughly three more parts.
+    assert_eq!(parts_for(1), 6);
+    assert_eq!(parts_for(100), 12);
+    assert_eq!(parts_for(1_000), 15);
+    assert_eq!(parts_for(10_000), 18);
+    // Above the maximum denomination growth is linear, one part per 10 000 ZEC.
+    assert_eq!(parts_for(100_000), 27);
+
+    // Consequence: part counts far beyond the signing batch limit require
+    // balances that do not occur in practice. The 60-part cases above expose
+    // the mechanism; this records that 60 parts is not a reachable operating
+    // point.
+    let first_balance_reaching =
+        |target: usize| (1..=700_000u64).find(|zec| parts_for(*zec) >= target);
+    assert_eq!(first_balance_reaching(12), Some(89));
+    assert_eq!(first_balance_reaching(24), Some(68_889));
+    assert_eq!(first_balance_reaching(60), Some(428_889));
+
+    // So realistic runs sit at or barely above the 8-part signing batch, where
+    // the batch effect is worth at most ~2x the policy cadence.
+    assert!(parts_for(10_000) <= (MIGRATION_KEYSTONE_BATCH_MAX_PARTS as usize) * 3);
+}
+
+/// The stretch has a hard ceiling, not just a low probability. A visible batch
+/// cannot span further than the ladder it is drawn from, and the ladder is
+/// `part_count` steps long -- so at realistic part counts the total span simply
+/// cannot reach the multi-day range, however the sampling falls.
+///
+/// Thresholds are expressed as multiples of the per-gap policy cap so the test
+/// describes the schedule's own limits rather than any external figure.
+#[test]
+fn visible_batch_span_is_bounded_at_realistic_part_counts() {
+    // 10 000 ZEC decomposes to 18 parts; see
+    // `part_count_grows_logarithmically_with_balance`.
+    const REALISTIC_MAX_PARTS: u32 = 18;
+
+    for (policy_label, timing_policy) in [
+        ("standard", MigrationTimingPolicy::Standard),
+        ("90m", MigrationTimingPolicy::Standard90Minutes),
+    ] {
+        let (_, max_delay_blocks) =
+            schedule_parameters_with_policy(WalletNetwork::Main, timing_policy);
+        let wide_spacing_blocks = max_delay_blocks * 5 / 8;
+        let very_wide_spacing_blocks = max_delay_blocks * 5 / 4;
+        // A span of nine cap-lengths is the multi-day range in question.
+        let multi_day_span_blocks = max_delay_blocks * 9;
+
+        for part_count in [6u32, 9, 12, 15, 18, 24, 30] {
+            let mut rng = StdRng::seed_from_u64(0xFEED ^ u64::from(part_count));
+            let trials = 200_000u64;
+            let mut all_wide = 0u64;
+            let mut sustained_multi_day = 0u64;
+            let mut max_total = 0u32;
+            for _ in 0..trials {
+                let offsets = first_batch_scheduled_offsets(part_count, timing_policy, &mut rng);
+                let visible = offsets.len().min(6);
+                let mut spacings = vec![offsets[0]];
+                spacings.extend(consecutive_gaps(&offsets[..visible]));
+                let total: u32 = offsets[visible - 1];
+                max_total = max_total.max(total);
+                if spacings.iter().all(|s| *s >= wide_spacing_blocks) {
+                    all_wide += 1;
+                    if total >= multi_day_span_blocks
+                        && spacings
+                            .iter()
+                            .filter(|s| **s >= very_wide_spacing_blocks)
+                            .count()
+                            >= 4
+                    {
+                        sustained_multi_day += 1;
+                    }
+                }
+            }
+            println!(
+                "{policy_label:>9} parts={part_count:3}  all_wide: {all_wide:6}/{trials}  \
+                 sustained_multi_day: {sustained_multi_day:5}/{trials}  \
+                 max_total_span={max_total} blk"
+            );
+
+            if part_count <= REALISTIC_MAX_PARTS {
+                assert_eq!(
+                    sustained_multi_day, 0,
+                    "{policy_label} parts={part_count}: reached the multi-day range \
+                     {sustained_multi_day} times"
+                );
+                // Stronger than improbability: the visible batch cannot span
+                // that far at all.
+                assert!(
+                    max_total < multi_day_span_blocks,
+                    "{policy_label} parts={part_count}: batch span reached {max_total} blk, \
+                     within reach of {multi_day_span_blocks} blk"
+                );
+            }
+        }
+    }
+}
