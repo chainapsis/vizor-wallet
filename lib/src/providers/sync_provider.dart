@@ -729,7 +729,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     _lifecycleListener = AppLifecycleListener(
       onResume: () {
         _isInForeground = true;
-        unawaited(_requestBalanceRefresh());
+        unawaited(_refreshBalanceAfterResume());
         _checkAndSync();
       },
       onHide: () {
@@ -2273,6 +2273,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
   Future<void> refreshAfterUnlock() => _requestBalanceRefresh();
 
+  Future<void> _refreshBalanceAfterResume() async {
+    try {
+      await _requestBalanceRefresh();
+    } catch (e, st) {
+      log('SyncNotifier: resume balance refresh failed: $e\n$st');
+    }
+  }
+
   /// Coalesce concurrent refresh triggers into one running pass.
   ///
   /// Returns a future that completes once a pass that started *after*
@@ -2302,6 +2310,8 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<void> _runCoalescedBalanceRefresh() async {
+    Object? terminalError;
+    StackTrace? terminalStackTrace;
     try {
       do {
         _balanceRefreshQueued = false;
@@ -2316,10 +2326,22 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
             clearRestoredSnapshotIfUnavailable:
                 clearRestoredSnapshotIfUnavailable,
           );
+          // A successful trailing pass satisfies every caller sharing this
+          // chain, even if an earlier pass failed.
+          terminalError = null;
+          terminalStackTrace = null;
         } catch (e, st) {
           log('SyncNotifier: coalesced balance refresh failed: $e\n$st');
+          terminalError = e;
+          terminalStackTrace = st;
         }
       } while (_balanceRefreshQueued && !_requiresUnlock);
+
+      final error = terminalError;
+      final stackTrace = terminalStackTrace;
+      if (error != null && stackTrace != null) {
+        Error.throwWithStackTrace(error, stackTrace);
+      }
     } finally {
       _balanceRefreshInFlight = false;
       _balanceRefreshQueued = false;

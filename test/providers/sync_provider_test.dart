@@ -66,6 +66,64 @@ void main() {
     },
   );
 
+  test('refreshAfterUnlock propagates DB path resolution failures', () async {
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(
+          () => _BalanceRefreshTestSyncNotifier(
+            () async => throw StateError('wallet path unavailable'),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+
+    await expectLater(
+      container.read(syncProvider.notifier).refreshAfterUnlock(),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'wallet path unavailable',
+        ),
+      ),
+    );
+  });
+
+  test('successful queued refresh recovers an earlier pass failure', () async {
+    final firstPathResolution = Completer<String>();
+    var pathResolutionCount = 0;
+    late _BalanceRefreshTestSyncNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(
+          () => notifier = _BalanceRefreshTestSyncNotifier(() {
+            pathResolutionCount++;
+            if (pathResolutionCount == 1) return firstPathResolution.future;
+            return Future.value('wallet.db');
+          }),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+
+    final firstRefresh = notifier.refreshAfterUnlock();
+    final queuedRefresh = notifier.refreshAfterUnlock();
+    firstPathResolution.completeError(StateError('temporary path failure'));
+
+    await expectLater(Future.wait([firstRefresh, queuedRefresh]), completes);
+    expect(pathResolutionCount, 2);
+    expect(notifier.balanceReadCount, 1);
+  });
+
   test('in-flight progress exits quietly after notifier disposal', () async {
     final resolverStarted = Completer<void>();
     final dbPath = Completer<String>();
@@ -200,6 +258,35 @@ class _LifecycleTestSyncNotifier extends SyncNotifier {
   void replaceState(SyncState next) {
     state = AsyncData(next);
   }
+}
+
+class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
+  _BalanceRefreshTestSyncNotifier(
+    Future<String> Function() walletDbPathResolver,
+  ) : super(walletDbPathResolver: walletDbPathResolver);
+
+  var balanceReadCount = 0;
+
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  Future<rust_sync.WalletBalance> readWalletBalance({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    balanceReadCount++;
+    return _unavailableBalance;
+  }
+
+  @override
+  Future<List<rust_sync.TransactionInfo>> readTransactionHistory({
+    required String dbPath,
+    required String network,
+    int? limit,
+    required String accountUuid,
+  }) async => [];
 }
 
 class _UnavailableSwitchBalanceNotifier extends SyncNotifier {
