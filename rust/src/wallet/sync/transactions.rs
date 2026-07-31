@@ -24,7 +24,7 @@ use std::{
 
 use rusqlite::{types::Value, vtab::array::Array, OptionalExtension};
 use transparent::address::TransparentAddress;
-use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletWrite};
+use zcash_client_backend::data_api::{WalletRead, WalletWrite};
 use zcash_primitives::transaction::Transaction;
 use zcash_protocol::{
     consensus::{BlockHeight, BranchId},
@@ -130,10 +130,7 @@ pub fn get_wallet_balances(
         .map(|uuid| parse_account_uuid(uuid))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let db = open_wallet_db_for_read(db_path, network)?;
-    let summary = db
-        .get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| format!("{e}"))?;
+    let summary = crate::wallet::wallet_summary_cache::get_wallet_summary_cached(db_path, network)?;
 
     let Some(summary) = summary else {
         return Ok(target_ids
@@ -3146,11 +3143,11 @@ mod tests {
     ///
     /// This is needed because the synthetic `v_transactions` table
     /// doesn't have the note-derived aggregates that the real
-    /// `HISTORY_BASES_CTE` does. 
-    /// 
+    /// `HISTORY_BASES_CTE` does.
+    ///
     /// This helper allows us to test `read_history_bases` against the
     /// synthetic `v_transactions` table.
-    /// 
+    ///
     /// The equivalency test checks that the two paths return the same rows.
     fn read_history_bases_via_v_transactions(
         conn: &rusqlite::Connection,

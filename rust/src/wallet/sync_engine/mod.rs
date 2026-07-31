@@ -1656,7 +1656,7 @@ async fn run_sync_impl(
     }
 
     // 3. Download subtree roots (incremental)
-    download_subtree_roots(&mut client, &mut db, network, tip_height).await?;
+    download_subtree_roots(&mut client, &mut db, db_data_path, network, tip_height).await?;
 
     if migration_anchor_retention_required {
         with_wallet_db_write_lock(
