@@ -387,15 +387,32 @@ fn is_completed_sync_status(
         && last_completed_height == Some(chain_tip_height)
 }
 
+/// Reads only the two wallet heights needed for status and completion checks.
+///
+/// `WalletSummary` uses `birthday - 1` before the first block has been fully
+/// scanned, so preserve that behavior when `block_fully_scanned` has no value.
+pub(crate) fn wallet_scan_heights(db: &WalletDatabase) -> Result<Option<(u64, u64)>, String> {
+    let Some(chain_tip_height) = db.chain_height().map_err(|e| format!("{e}"))? else {
+        return Ok(None);
+    };
+    let scanned_height = match db.block_fully_scanned().map_err(|e| format!("{e}"))? {
+        Some(block) => u32::from(block.block_height()) as u64,
+        None => {
+            let Some(birthday_height) = db.get_wallet_birthday().map_err(|e| format!("{e}"))?
+            else {
+                return Ok(None);
+            };
+            u32::from(birthday_height).saturating_sub(1) as u64
+        }
+    };
+
+    Ok(Some((scanned_height, u32::from(chain_tip_height) as u64)))
+}
+
 pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncProgress, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
-    match db
-        .get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| format!("{e}"))?
-    {
-        Some(s) => {
-            let scanned_height = u32::from(s.fully_scanned_height()) as u64;
-            let chain_tip_height = u32::from(s.chain_tip_height()) as u64;
+    match wallet_scan_heights(&db)? {
+        Some((scanned_height, chain_tip_height)) => {
             let last_completed_height = super::sync_engine::completed_sync_height_for_status(
                 db_path,
                 scanned_height,
@@ -408,7 +425,7 @@ pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncPr
             Ok(SyncProgress {
                 scanned_height,
                 chain_tip_height,
-                is_syncing: s.fully_scanned_height() < s.chain_tip_height(),
+                is_syncing: scanned_height < chain_tip_height,
                 is_complete: is_completed_sync_status(
                     scanned_height,
                     chain_tip_height,
@@ -714,6 +731,31 @@ mod tests {
         assert!(!is_completed_sync_status(100, 100, Some(99)));
         assert!(!is_completed_sync_status(99, 100, Some(100)));
         assert!(!is_completed_sync_status(0, 0, Some(0)));
+    }
+
+    #[test]
+    fn sync_progress_preserves_pre_scan_birthday_height_without_wallet_summary() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let phrase = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&phrase).unwrap();
+
+        crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            WalletNetwork::Regtest,
+            &seed,
+            Some(1_000),
+            "test",
+        )
+        .unwrap();
+        update_chain_tip(db_path, WalletNetwork::Regtest, 1_100).unwrap();
+
+        let progress = get_sync_progress(db_path, WalletNetwork::Regtest).unwrap();
+        assert_eq!(progress.scanned_height, 999);
+        assert_eq!(progress.chain_tip_height, 1_100);
+        assert!(progress.is_syncing);
+        assert!(!progress.is_complete);
     }
 
     /// Pull a proposal ID that is guaranteed not to collide with anything a

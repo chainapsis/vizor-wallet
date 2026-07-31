@@ -24,7 +24,7 @@ use crate::wallet::{
     },
     keys,
     network::WalletNetwork,
-    transparent_receive_cache,
+    sync, transparent_receive_cache,
 };
 
 use {
@@ -411,19 +411,6 @@ fn earliest_pending_scan_start(ranges: &[ScanRange]) -> Option<u64> {
         .min()
 }
 
-fn wallet_summary_heights(db: &WalletDatabase) -> Result<Option<(u64, u64)>, SyncError> {
-    db.get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| SyncError::db(format!("get_wallet_summary: {e}")))
-        .map(|summary| {
-            summary.map(|s| {
-                (
-                    u32::from(s.fully_scanned_height()) as u64,
-                    u32::from(s.chain_tip_height()) as u64,
-                )
-            })
-        })
-}
-
 fn block_range_len(range: &std::ops::Range<BlockHeight>) -> u64 {
     u32::from(range.end).saturating_sub(u32::from(range.start)) as u64
 }
@@ -806,7 +793,9 @@ fn ensure_complete_scan_state(
         ));
     }
 
-    let Some((fully_scanned_height, db_tip_height)) = wallet_summary_heights(db)? else {
+    let Some((fully_scanned_height, db_tip_height)) =
+        sync::wallet_scan_heights(db).map_err(SyncError::db)?
+    else {
         if current_tip_height == 0 {
             return Ok((0, 0));
         }
@@ -2265,7 +2254,7 @@ async fn run_sync_impl(
                     let post_rewind_pending = pending_scan_blocks(&post_rewind_ranges);
                     let first_pending = first_pending_scan_range(&post_rewind_ranges)
                         .unwrap_or_else(|| "none".into());
-                    let summary = wallet_summary_heights(&db)?;
+                    let summary = sync::wallet_scan_heights(&db).map_err(SyncError::db)?;
                     let actual_rewind_height_u64 = u32::from(actual_rewind_height) as u64;
                     log::info!(
                         "[{}] sync: {phase_name} rewound to {actual_rewind_height} \
