@@ -3926,7 +3926,7 @@ pub(crate) fn replace_resigned_pending_parts(
         return Err("Replacement migration schedule does not match its denominations".to_string());
     }
 
-    for (replacement, schedule_entry) in scheduled_replacements {
+    for (replacement, _schedule_entry) in scheduled_replacements {
         let original = tx
             .query_row(
                 &format!(
@@ -3968,9 +3968,13 @@ pub(crate) fn replace_resigned_pending_parts(
                     .to_string(),
             );
         }
-        let schedule_start_height = pending
+        // The rebuild schedule is anchored at the rebuild-time chain target
+        // (see `rebuild_schedule_block_offsets`), so derive this row's origin
+        // and offset from its own heights rather than the original run entry.
+        let schedule_start_height = pending.target_height.saturating_sub(1);
+        let rebuild_block_offset = pending
             .scheduled_height
-            .checked_sub(schedule_entry.block_offset)
+            .checked_sub(schedule_start_height)
             .ok_or("Replacement migration schedule starts below zero")?;
         let encrypted_raw_tx = secret_payload::encrypt_payload(
             Zeroizing::new(pending.raw_tx),
@@ -3980,7 +3984,7 @@ pub(crate) fn replace_resigned_pending_parts(
         let metadata_json = serde_json::to_string(&pending.metadata)
             .map_err(|e| format!("Encode replacement migration metadata: {e}"))?;
         let scheduled_at_ms = scheduled_start_ms
-            .checked_add(i64::from(schedule_entry.block_offset).saturating_mul(1000))
+            .checked_add(i64::from(rebuild_block_offset).saturating_mul(1000))
             .ok_or("Replacement migration time overflow")?;
         let scheduled_height = pending.scheduled_height;
         let original_scheduled_height = original.3;

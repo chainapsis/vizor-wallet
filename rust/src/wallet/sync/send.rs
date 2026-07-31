@@ -4321,14 +4321,21 @@ fn rebuild_expired_software_migration_parts(
     let mut replacements = Vec::with_capacity(recoveries.len());
     let mut replacement_children = Vec::with_capacity(recoveries.len());
 
-    for (index, recovery) in recoveries.into_iter().enumerate() {
-        let schedule_block_offset = super::migration::schedule_block_offset_for_part(
-            &approved_schedule,
-            &target_values,
-            recovery.part_index,
-            recovery.value_zatoshi,
-        )
-        .ok_or("Approved migration schedule is missing a recovery child")?;
+    let recovery_parts = recoveries
+        .iter()
+        .map(|recovery| (recovery.part_index, recovery.value_zatoshi))
+        .collect::<Vec<_>>();
+    let rebuild_offsets = super::migration::rebuild_schedule_block_offsets(
+        &approved_schedule,
+        &target_values,
+        &recovery_parts,
+        network,
+        timing_policy,
+        &mut OsRng,
+    )?;
+    for ((index, recovery), schedule_block_offset) in
+        recoveries.into_iter().enumerate().zip(rebuild_offsets)
+    {
         let created = create_orchard_to_ironwood_pczt_from_note(
             db_path,
             network,

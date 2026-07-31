@@ -2619,6 +2619,55 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
 }
 
 #[test]
+fn rebuilt_parts_fit_a_remaining_count_schedule() {
+    let mut rng = StdRng::seed_from_u64(0x318);
+    // A large run on the standard mainnet policy: the original ladder spans
+    // roughly `mean * count` blocks.
+    let target_values = vec![100 * ZATOSHIS_PER_ZEC; 45];
+    let schedule = planned_transfer_schedule_with_policy(
+        target_values.iter().copied(),
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        &mut rng,
+    );
+    // Six parts survive at scattered schedule positions (broadcast order is
+    // shuffled, so survivors spread across the whole ladder).
+    let recoveries = [4usize, 16, 26, 32, 41, 44].map(|schedule_order| {
+        let entry = &schedule[schedule_order];
+        (entry.part_index.unwrap(), entry.value_zatoshi)
+    });
+
+    let offsets = rebuild_schedule_block_offsets(
+        &schedule,
+        &target_values,
+        &recoveries,
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        &mut rng,
+    )
+    .unwrap();
+
+    // Rebuilds anchor at the rebuild-time chain target, so the remaining
+    // parts must fit a schedule drawn over their own count instead of
+    // replaying day-0 positions from the 45-part ladder.
+    let (_, max_delay_blocks) =
+        schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard);
+    let remaining_bound = max_delay_blocks * recoveries.len() as u32;
+    let mut sorted = offsets.clone();
+    sorted.sort_unstable();
+    assert!(
+        *sorted.last().unwrap() <= remaining_bound,
+        "rebuilt offsets {offsets:?} replay the original 45-part ladder \
+         (remaining-count bound: {remaining_bound})",
+    );
+    assert!(
+        sorted.windows(2).all(|w| w[1] - w[0] <= max_delay_blocks),
+        "rebuilt offsets {offsets:?} must keep every gap within \
+         {max_delay_blocks} blocks",
+    );
+}
+
+#[test]
 fn preparation_schedule_is_planned_across_dependency_layers() {
     assert_eq!(ZIP318_PREPARATION_MEAN_DELAY_BLOCKS, 16);
     assert_eq!(ZIP318_PREPARATION_MAX_DELAY_BLOCKS, 96);

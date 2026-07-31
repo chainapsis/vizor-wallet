@@ -109,6 +109,46 @@ where
         .collect()
 }
 
+/// Block offsets for re-signed (rebuilt) migration parts, aligned with
+/// `recoveries` (`(part_index, value_zatoshi)`) order. The rebuild path
+/// anchors these offsets at the rebuild-time chain target rather than the
+/// run's persisted schedule origin, so they are drawn fresh over the
+/// remaining count — mirroring `reschedule_overdue_pending_txs` — instead of
+/// replaying each part's original whole-run offset, which would push the
+/// survivors of a large run a full original-ladder span past the rebuild
+/// height.
+pub(crate) fn rebuild_schedule_block_offsets<R: RngCore + CryptoRng + ?Sized>(
+    schedule: &[MigrationScheduleEntry],
+    target_values: &[u64],
+    recoveries: &[(u32, u64)],
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    rng: &mut R,
+) -> Result<Vec<u32>, String> {
+    for (part_index, value_zatoshi) in recoveries {
+        schedule_block_offset_for_part(schedule, target_values, *part_index, *value_zatoshi)
+            .ok_or("Approved migration schedule is missing a recovery child")?;
+    }
+
+    let (mean_delay_blocks, max_delay_blocks) =
+        schedule_parameters_with_policy(network, timing_policy);
+    let offsets = random_schedule_block_offsets_with_rng(
+        recoveries.len(),
+        mean_delay_blocks,
+        max_delay_blocks,
+        rng,
+    );
+    // Hand out the cumulative slots in a shuffled order so the rebuilt
+    // broadcast order does not reveal which original part each transfer is.
+    let mut slots = (0..recoveries.len()).collect::<Vec<_>>();
+    slots.shuffle(rng);
+    let mut assigned = vec![0u32; recoveries.len()];
+    for (slot, offset) in slots.into_iter().zip(offsets) {
+        assigned[slot] = offset;
+    }
+    Ok(assigned)
+}
+
 pub(crate) fn validate_schedule(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],
