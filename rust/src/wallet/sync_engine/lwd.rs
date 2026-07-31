@@ -338,7 +338,7 @@ pub(super) async fn download_subtree_roots(
     let ironwood_enabled = ironwood_sync_enabled(network, chain_tip);
     let (sap_start, orch_start, ironwood_start) = {
         let summary =
-            crate::wallet::wallet_summary_cache::get_wallet_snapshot_cached(db_path, network)
+            crate::wallet::wallet_snapshot_cache::get_wallet_snapshot_cached(db_path, network)
                 .map_err(SyncError::db)?;
         match summary {
             Some(s) => (

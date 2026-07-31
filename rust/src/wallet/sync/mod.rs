@@ -164,7 +164,7 @@ pub fn get_next_subtree_indices(
     network: WalletNetwork,
 ) -> Result<(u64, u64, u64), String> {
     let summary =
-        crate::wallet::wallet_summary_cache::get_wallet_snapshot_cached(db_path, network)?;
+        crate::wallet::wallet_snapshot_cache::get_wallet_snapshot_cached(db_path, network)?;
     match summary {
         Some(s) => Ok((
             s.next_sapling_subtree_index(),
