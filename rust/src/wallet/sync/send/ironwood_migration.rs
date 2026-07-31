@@ -951,19 +951,50 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
         super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
     let signed_schedule_origin =
         super::migration::signed_schedule_origin_for_run(db_path, &run.run_id)?;
+    // Recovery batches anchor at the rebuild-time chain target, so they draw
+    // a remaining-count schedule instead of replaying original whole-run
+    // offsets; see `rebuild_schedule_block_offsets`.
+    let recovery_rebuild_offsets = if initial_signing {
+        Vec::new()
+    } else {
+        let recovery_parts = signing_part_indices
+            .iter()
+            .map(|part_index| {
+                run.target_values_zatoshi
+                    .get(*part_index as usize)
+                    .map(|value| (*part_index, *value))
+                    .ok_or("Migration part is outside the approved target list")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        super::migration::rebuild_schedule_block_offsets(
+            &approved_schedule,
+            &run.target_values_zatoshi,
+            &recovery_parts,
+            network,
+            timing_policy,
+            &mut OsRng,
+        )?
+    };
     for (index, note_ref) in prepared_notes.iter().enumerate() {
         let part_index = *signing_part_indices
             .get(index)
             .ok_or("Migration signing selector omitted a prepared note")?;
-        let schedule_block_offset = super::migration::schedule_block_offset_for_part(
-            &approved_schedule,
-            &run.target_values_zatoshi,
-            part_index,
-            *run.target_values_zatoshi
-                .get(part_index as usize)
-                .ok_or("Migration part is outside the approved target list")?,
-        )
-        .ok_or("Approved migration schedule is missing a child")?;
+        let schedule_block_offset = if initial_signing {
+            super::migration::schedule_block_offset_for_part(
+                &approved_schedule,
+                &run.target_values_zatoshi,
+                part_index,
+                *run.target_values_zatoshi
+                    .get(part_index as usize)
+                    .ok_or("Migration part is outside the approved target list")?,
+            )
+            .ok_or("Approved migration schedule is missing a child")?
+        } else {
+            recovery_rebuild_offsets
+                .get(index)
+                .copied()
+                .ok_or("Migration recovery schedule omitted a rebuilt part")?
+        };
         let migration_index = part_index + 1;
         let pczt_result = if initial_signing {
             create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
