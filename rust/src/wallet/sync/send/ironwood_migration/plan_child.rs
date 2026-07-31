@@ -546,7 +546,7 @@ fn create_orchard_to_ironwood_pczt_from_note(
         return Err("Prepared migration note is not an Orchard V2 note".to_string());
     }
 
-    let mut db = open_wallet_db(db_path, network)?;
+    let db = open_wallet_db(db_path, network)?;
     let account_id = parse_account_uuid(account_uuid)?;
     let account = db
         .get_account(account_id)
@@ -637,29 +637,20 @@ fn create_orchard_to_ironwood_pczt_from_note(
         recovery_schedule_origin_height,
         schedule_block_offset,
     )?;
-    let anchor_height_u32 = u32::from(anchor_height);
-    let nu6_3_activation_height = nu6_3_activation_height_u32(network)?;
-    let mined_height = orchard_selected
-        .mined_height()
-        .ok_or("Prepared migration note mined height unavailable")?;
-    let Some(anchor_boundary_height) =
-        super::migration::zip318_draw_anchor_boundary_for_note_with_policy(
+    drop(db);
+    let Some((anchor_boundary_height, orchard_anchor, orchard_witness)) =
+        orchard_anchor_and_witness_for_prepared_note(
+            db_path,
             network,
+            account_uuid,
+            note_ref,
+            None,
             timing_policy,
-            anchor_height_u32,
-            u32::from(mined_height),
-            nu6_3_activation_height,
-        )
+        )?
     else {
         return Ok(None);
     };
-
-    let (orchard_anchor, orchard_inputs) = migration_orchard_witnesses(
-        &mut db,
-        network,
-        BlockHeight::from(anchor_boundary_height),
-        std::slice::from_ref(&orchard_selected),
-    )?;
+    let orchard_inputs = [(orchard_note, orchard_witness)];
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
         let mut builder =
