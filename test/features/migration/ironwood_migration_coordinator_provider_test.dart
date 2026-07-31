@@ -1392,6 +1392,54 @@ void main() {
   });
 
   test(
+    'batch status failure falls back to isolated per-account reads',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('waiting_denom_confirmations'),
+        _hardwareUuid: _status('waiting_migration_confirmations'),
+      };
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        isMobile: false,
+        getStatuses:
+            ({required dbPath, required network, required accountUuids}) async {
+              throw StateError('wallet summary failed');
+            },
+        loadStatus: (accountUuid) async {
+          if (accountUuid == _softwareUuid) {
+            throw StateError('software status failed');
+          }
+          return statuses[accountUuid]!;
+        },
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+
+      await expectLater(
+        container
+            .read(ironwoodMigrationCoordinatorProvider.notifier)
+            .refreshNow(),
+        completes,
+      );
+
+      final state = container.read(ironwoodMigrationCoordinatorProvider);
+      expect(state.errors[_softwareUuid], contains('software status failed'));
+      expect(
+        state.statuses[_hardwareUuid]?.phase,
+        'waiting_migration_confirmations',
+      );
+      expect(state.errors[_hardwareUuid], isNull);
+    },
+  );
+
+  test(
     'coalesces a refresh requested while status loading is active',
     () async {
       final statuses = {
@@ -1936,6 +1984,7 @@ ProviderContainer _container({
   required List<String> softwareStarts,
   required List<String> broadcasts,
   Future<rust_sync.MigrationStatus> Function(String accountUuid)? loadStatus,
+  IronwoodMigrationStatusesGetter? getStatuses,
   Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
   broadcast,
   Future<IronwoodMigrationOutboxRunResult> Function(String accountUuid)?
@@ -1948,6 +1997,7 @@ ProviderContainer _container({
   List<String>? backgroundPreparationStarts,
   List<String>? proofReadinessRecords,
   bool mutableAccounts = false,
+  bool isMobile = true,
   AppSecurityState? initialSecurityState,
   IronwoodMigrationStopper? stopMigrationRun,
 }) {
@@ -1957,6 +2007,7 @@ ProviderContainer _container({
         ({required dbPath, required network, required accountUuid}) async {
           return loadStatus?.call(accountUuid) ?? statuses[accountUuid]!;
         },
+    getStatuses: getStatuses,
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
             null,
@@ -1964,7 +2015,7 @@ ProviderContainer _container({
     getEndpoint: () => _endpoint,
     getSessionPassword: () => 'test-password',
     isMacOS: () => true,
-    isMobile: () => true,
+    isMobile: () => isMobile,
     isIOS: () => isIOS,
     supportsBackgroundMigration: () => usesNativeOutbox,
     isHardwareAccount: (uuid) => uuid == _hardwareUuid,

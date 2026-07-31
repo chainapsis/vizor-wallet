@@ -711,11 +711,40 @@ class IronwoodMigrationCoordinator
     // It doubles as this pass's status source below, so a sweep now
     // costs one summary rather than one per account.
     final sweepErrors = <String, Object>{};
-    final sweptStatuses = await service.statuses(
-      network: endpoint.networkName,
-      accountUuids: [for (final account in accountState.accounts) account.uuid],
-      onAccountError: (accountUuid, error) => sweepErrors[accountUuid] = error,
-    );
+    final sweptStatuses = <String, rust_sync.MigrationStatus>{};
+    try {
+      sweptStatuses.addAll(
+        await service.statuses(
+          network: endpoint.networkName,
+          accountUuids: [
+            for (final account in accountState.accounts) account.uuid,
+          ],
+          onAccountError: (accountUuid, error) =>
+              sweepErrors[accountUuid] = error,
+        ),
+      );
+    } catch (error) {
+      // The native batch can fail before it can return per-account entries
+      // (for example while opening/migrating the DB or parsing one UUID).
+      // Preserve the old per-account degradation instead of failing an
+      // unawaited refresh or attributing a wallet-wide read failure to the
+      // account whose stop happened to trigger it.
+      log(
+        'Ironwood migration batched status refresh failed; '
+        'falling back to per-account reads: $error',
+      );
+      for (final account in accountState.accounts) {
+        try {
+          sweptStatuses[account.uuid] = await service.status(
+            network: endpoint.networkName,
+            accountUuid: account.uuid,
+          );
+        } catch (accountError) {
+          sweepErrors[account.uuid] = accountError;
+        }
+        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+      }
+    }
     if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
 
     final desktopOpenStatuses = <String, rust_sync.MigrationStatus>{};
