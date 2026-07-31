@@ -2334,8 +2334,8 @@ fn insert_signed_child_pczts_with_tx(
         return Ok(());
     }
 
-    let (schedule_json, target_values_json, persisted_signed_schedule_origin, recovery_origin) =
-        tx.query_row(
+    let (schedule_json, target_values_json, persisted_signed_schedule_origin, recovery_origin) = tx
+        .query_row(
             &format!(
                 "SELECT schedule_json, target_values_json, signed_schedule_origin_height,
                         recovery_schedule_origin_height
