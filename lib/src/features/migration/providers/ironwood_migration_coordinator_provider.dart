@@ -1307,12 +1307,36 @@ class IronwoodMigrationCoordinator
       status.broadcastedTxCount,
       status.confirmedTxCount,
       status.signedChildPcztCount,
+      // Crossing a scheduled height is what makes a transfer broadcastable,
+      // but it changes nothing else in the status. Without it here the
+      // transfer waits out `_migrationAdvanceInterval` before an advance even
+      // attempts it (mean 15s, up to 30s at the 15s poll cadence).
+      _dueScheduledBroadcastCount(status),
       for (final part in status.parts) ...[
         part.partIndex,
         part.state.name,
         part.confirmationCount,
       ],
     ].join(':');
+  }
+
+  /// Scheduled transfers whose target height the wallet has already observed.
+  ///
+  /// Counted rather than flagged so that a second transfer coming due is also
+  /// a key change. The count is stable between crossings, so an advance that
+  /// cannot broadcast yet still falls back to the ordinary interval instead of
+  /// re-firing on every poll.
+  int _dueScheduledBroadcastCount(rust_sync.MigrationStatus status) {
+    final currentHeight = _observedBroadcastHeight();
+    if (currentHeight <= 0) return 0;
+    return status.scheduledBroadcasts
+        .where(
+          (broadcast) =>
+              broadcast.status.toLowerCase() == 'scheduled' &&
+              broadcast.scheduledHeight > 0 &&
+              broadcast.scheduledHeight <= currentHeight,
+        )
+        .length;
   }
 
   void _invalidateMigrationProviders(String? activeAccountUuid) {
