@@ -13,10 +13,14 @@ use super::{
 pub(crate) const DENOMINATION_SPLIT_ACTIONS: usize = PREP_TX_ACTIONS;
 
 const MAX_DENOMINATION_REFINEMENT_PERCENT: u32 = 30;
-// Conditional weights follow ZIP 318's provisional preference for keeping
-// smaller-denomination selections infrequent enough to limit part growth.
+// Within Vizor's 30% gate, these conditional weights follow ZIP 318's
+// provisional preference for keeping smaller selections infrequent.
 const FIVE_THOUSAND_SELECTION_PERCENT: u32 = 65;
 const TWO_THOUSAND_SELECTION_PERCENT: u32 = 25;
+const APPROVED_PLAN_STALE_ERROR: &str =
+    "Approved migration plan no longer matches the spendable Orchard balance. Review the migration plan again.";
+const APPROVED_PLAN_ORDER_ERROR: &str =
+    "Approved migration denominations are not in canonical part order. Review the migration plan again.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SplitStageInput {
@@ -243,11 +247,6 @@ pub(crate) fn plan_padded_denominations_for_targets(
     migration_fee_zatoshi: u64,
     minimum_output_zatoshi: u64,
 ) -> Result<Option<PaddedDenominationPlan>, String> {
-    let Some(context) =
-        planning_context(input_values, fee_per_stage_zatoshi, minimum_output_zatoshi)?
-    else {
-        return Ok(None);
-    };
     if target_values_zatoshi.is_empty() {
         return Ok(None);
     }
@@ -258,6 +257,18 @@ pub(crate) fn plan_padded_denominations_for_targets(
             ));
         }
     }
+    if !target_values_zatoshi
+        .windows(2)
+        .all(|pair| pair[0] >= pair[1])
+    {
+        return Err(APPROVED_PLAN_ORDER_ERROR.to_string());
+    }
+
+    let Some(context) =
+        planning_context(input_values, fee_per_stage_zatoshi, minimum_output_zatoshi)?
+    else {
+        return Err(APPROVED_PLAN_STALE_ERROR.to_string());
+    };
 
     let Some((funding_values, preparation)) = preparation_for_crossings(
         &context,
@@ -266,7 +277,7 @@ pub(crate) fn plan_padded_denominations_for_targets(
         migration_fee_zatoshi,
     )?
     else {
-        return Ok(None);
+        return Err(APPROVED_PLAN_STALE_ERROR.to_string());
     };
     if can_append_canonical_denomination(
         &context,
@@ -276,9 +287,7 @@ pub(crate) fn plan_padded_denominations_for_targets(
         fee_per_stage_zatoshi,
         migration_fee_zatoshi,
     )? {
-        return Err(
-            "Approved migration denominations leave another affordable canonical part".to_string(),
-        );
+        return Err(APPROVED_PLAN_STALE_ERROR.to_string());
     }
 
     finish_plan(
@@ -468,6 +477,18 @@ fn finish_plan(
     if crossing_values.is_empty() {
         return Ok(None);
     }
+    if crossing_values.len() != funding_values.len() {
+        return Err("Migration denomination and funding note counts differ".to_string());
+    }
+
+    let mut denomination_funding = crossing_values
+        .into_iter()
+        .zip(funding_values)
+        .collect::<Vec<_>>();
+    // Prepared notes are reloaded in this order and selected by part index.
+    denomination_funding.sort_unstable_by(|(left, _), (right, _)| right.cmp(left));
+    let (crossing_values, funding_values): (Vec<_>, Vec<_>) =
+        denomination_funding.into_iter().unzip();
 
     let split_fee_zatoshi = fee_per_stage_zatoshi
         .checked_mul(
@@ -702,14 +723,14 @@ mod tests {
                 "start with 2k",
                 0,
                 65,
-                vec![2_000 * ZEC, 5_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC],
+                vec![5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC],
                 90_000,
             ),
             (
                 "start with 1k",
                 0,
                 90,
-                vec![1_000 * ZEC, 5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC],
+                vec![5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC],
                 90_000,
             ),
         ];
@@ -731,6 +752,36 @@ mod tests {
                 *value <= super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI
             }));
         }
+    }
+
+    #[test]
+    fn randomized_plan_matches_prepared_note_database_order() {
+        let input = 10_000 * ZEC + 230_000;
+        let mut rng = StepRng::new(0, 65);
+        let plan =
+            plan_padded_denominations_with_rng(&[input], PREP_FEE, MIGRATION_FEE, 1, &mut rng)
+                .unwrap()
+                .unwrap();
+
+        let mut prepared_funding_values = plan
+            .direct_migration_inputs
+            .iter()
+            .map(|input| input.value_zatoshi)
+            .chain(plan.stages.iter().flat_map(|stage| {
+                stage
+                    .outputs
+                    .iter()
+                    .filter(|output| output.kind == SplitTerminalKind::Migration)
+                    .map(|output| output.value_zatoshi)
+            }))
+            .collect::<Vec<_>>();
+        prepared_funding_values.sort_unstable_by(|left, right| right.cmp(left));
+        let prepared_targets = prepared_funding_values
+            .into_iter()
+            .map(|value| value.checked_sub(MIGRATION_FEE).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(plan.denominations.migration_outputs, prepared_targets);
     }
 
     #[test]
@@ -765,7 +816,7 @@ mod tests {
     #[test]
     fn approved_refined_targets_rebuild_without_another_random_draw() {
         let input = 10_000 * ZEC + 230_000;
-        let targets = vec![2_000 * ZEC, 5_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC];
+        let targets = vec![5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC];
         let plan =
             plan_padded_denominations_for_targets(&[input], &targets, PREP_FEE, MIGRATION_FEE, 1)
                 .unwrap()
@@ -773,6 +824,60 @@ mod tests {
 
         assert_eq!(plan.denominations.migration_outputs, targets);
         assert_eq!(plan.denominations.orchard_change, Some(90_000));
+    }
+
+    #[test]
+    fn approved_targets_reject_non_database_order() {
+        let targets = vec![2_000 * ZEC, 5_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC];
+        let error = plan_padded_denominations_for_targets(
+            &[10_000 * ZEC + 230_000],
+            &targets,
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "Approved migration denominations are not in canonical part order. Review the migration plan again."
+        );
+    }
+
+    #[test]
+    fn approved_targets_report_when_the_balance_can_no_longer_fund_them() {
+        let targets = vec![5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC];
+        let error = plan_padded_denominations_for_targets(
+            &[10_000 * ZEC + 100_000],
+            &targets,
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "Approved migration plan no longer matches the spendable Orchard balance. Review the migration plan again."
+        );
+    }
+
+    #[test]
+    fn approved_targets_report_when_the_balance_can_fund_another_part() {
+        let targets = vec![5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC];
+        let error = plan_padded_denominations_for_targets(
+            &[10_000 * ZEC + 2_300_000],
+            &targets,
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "Approved migration plan no longer matches the spendable Orchard balance. Review the migration plan again."
+        );
     }
 
     #[test]

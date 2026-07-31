@@ -308,20 +308,18 @@ fn prepare_software_migration_run(
     account_uuid: &str,
     seed: SecretVec<u8>,
     approved_schedule: &[super::migration::MigrationScheduleEntry],
+    target_values_zatoshi: Option<&[u64]>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
     migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<Option<PreparedSoftwareMigrationRun>, String> {
     let usk = derive_migration_usk(db_path, network, account_uuid, seed)?;
-    let target_values_zatoshi = (!approved_schedule.is_empty())
-        .then(|| super::migration::target_values_from_schedule(approved_schedule))
-        .transpose()?;
     let Some(mut split) = create_padded_orchard_denomination_pczts(
         db_path,
         network,
         account_uuid,
         preparation_timing_policy,
         migration_timing_policy,
-        target_values_zatoshi.as_deref(),
+        target_values_zatoshi,
     )?
     else {
         return Ok(None);

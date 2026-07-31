@@ -29,8 +29,45 @@ fn draftless_denomination_request_replays_approved_targets() {
     ];
 
     assert_eq!(
-        denomination_target_values_for_request(None, Some(&approved_schedule)).unwrap(),
+        migration_target_values_for_request(None, Some(&approved_schedule)).unwrap(),
         Some(vec![5_000, 5_000]),
+    );
+}
+
+#[test]
+fn draft_replay_uses_persisted_targets_instead_of_legacy_schedule_order() {
+    let draft = migration::ActiveRun {
+        run_id: "run-1".to_string(),
+        phase: migration::PHASE_AWAITING_PREPARATION.to_string(),
+        target_values_zatoshi: vec![5_000, 2_000, 2_000, 1_000],
+        last_error: None,
+    };
+    let legacy_schedule = vec![
+        migration::MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 2_000,
+            block_offset: 4,
+        },
+        migration::MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 5_000,
+            block_offset: 8,
+        },
+        migration::MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 2_000,
+            block_offset: 12,
+        },
+        migration::MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 1_000,
+            block_offset: 16,
+        },
+    ];
+
+    assert_eq!(
+        migration_target_values_for_request(Some(&draft), Some(&legacy_schedule)).unwrap(),
+        Some(draft.target_values_zatoshi)
     );
 }
 

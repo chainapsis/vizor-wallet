@@ -2720,6 +2720,27 @@ fn approved_schedule_restores_randomized_targets_in_part_order() {
 }
 
 #[test]
+fn unindexed_schedule_cannot_invent_randomized_target_order() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 2_000,
+            block_offset: 4,
+        },
+        MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 5_000,
+            block_offset: 8,
+        },
+    ];
+
+    assert_eq!(
+        target_values_from_schedule(&schedule).unwrap_err(),
+        "Approved migration schedule does not identify migration parts"
+    );
+}
+
+#[test]
 fn preparation_schedule_is_planned_across_dependency_layers() {
     assert_eq!(ZIP318_PREPARATION_MEAN_DELAY_BLOCKS, 16);
     assert_eq!(ZIP318_PREPARATION_MAX_DELAY_BLOCKS, 96);

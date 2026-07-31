@@ -161,8 +161,11 @@ pub(crate) fn validate_schedule(
 pub(crate) fn target_values_from_schedule(
     schedule: &[MigrationScheduleEntry],
 ) -> Result<Vec<u64>, String> {
+    if schedule.is_empty() {
+        return Ok(Vec::new());
+    }
     if schedule.iter().all(|entry| entry.part_index.is_none()) {
-        return Ok(schedule.iter().map(|entry| entry.value_zatoshi).collect());
+        return Err("Approved migration schedule does not identify migration parts".to_string());
     }
     if schedule.iter().any(|entry| entry.part_index.is_none()) {
         return Err("Approved migration schedule part indexes are incomplete".to_string());

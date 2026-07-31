@@ -1526,6 +1526,8 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::configured_timing_policy(network),
         ),
     };
+    let target_values_zatoshi =
+        migration_target_values_for_request(draft_run.as_ref(), Some(&signing_schedule))?;
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
         prepare_software_migration_run(
             db_path,
@@ -1533,6 +1535,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             account_uuid,
             seed,
             &signing_schedule,
+            target_values_zatoshi.as_deref(),
             preparation_policy_for_build,
             migration_policy_for_build,
         )

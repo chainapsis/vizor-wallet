@@ -6,7 +6,14 @@ pub(crate) fn create_or_resume_private_migration_draft(
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<String, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    let target_values_zatoshi = super::migration::target_values_from_schedule(&approved_schedule)?;
+    let active_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
+    let draft_run = active_run.as_ref().filter(|run| {
+        run.phase == super::migration::PHASE_AWAITING_PREPARATION
+            || run.phase == super::migration::PHASE_AWAITING_DENOMINATION_SIGNATURE
+    });
+    let target_values_zatoshi =
+        migration_target_values_for_request(draft_run, Some(&approved_schedule))?
+            .ok_or("Approved migration schedule is empty")?;
     let plan = get_orchard_migration_private_plan_for_targets(
         db_path,
         network,
@@ -73,7 +80,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
         ),
     };
     let target_values_zatoshi =
-        denomination_target_values_for_request(draft_run.as_ref(), approved_schedule)?;
+        migration_target_values_for_request(draft_run.as_ref(), approved_schedule)?;
     let split = with_wallet_db_write_lock("send.migration.prepare_denominations_pczt", || {
         create_padded_orchard_denomination_pczts(
             db_path,
@@ -152,7 +159,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     })
 }
 
-fn denomination_target_values_for_request(
+fn migration_target_values_for_request(
     draft_run: Option<&super::migration::ActiveRun>,
     approved_schedule: Option<&[super::migration::MigrationScheduleEntry]>,
 ) -> Result<Option<Vec<u64>>, String> {
@@ -160,9 +167,10 @@ fn denomination_target_values_for_request(
         return Ok(Some(run.target_values_zatoshi.clone()));
     }
 
-    approved_schedule
-        .map(super::migration::target_values_from_schedule)
-        .transpose()
+    match approved_schedule {
+        None | Some([]) => Ok(None),
+        Some(schedule) => super::migration::target_values_from_schedule(schedule).map(Some),
+    }
 }
 
 pub(crate) async fn complete_orchard_migration_denominations_pczt(
