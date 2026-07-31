@@ -1440,6 +1440,135 @@ void main() {
   );
 
   test(
+    'desktop sweep costs one batched status read, not one per account',
+    () async {
+      // The defect this pins: `status()` computes a full
+      // `get_wallet_summary` across *every* account, so a per-account
+      // sweep was quadratic in account count. Equivalence tests still
+      // pass if that loop comes back — only the call count catches it.
+      final statuses = {
+        _softwareUuid: _status('waiting_denom_confirmations'),
+        _hardwareUuid: _status('waiting_migration_confirmations'),
+      };
+      var batchedReads = 0;
+      var singularReads = 0;
+      var sweptAccountUuids = const <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        isMobile: false,
+        getStatuses:
+            ({required dbPath, required network, required accountUuids}) async {
+              batchedReads++;
+              sweptAccountUuids = accountUuids;
+              return [
+                for (final uuid in accountUuids)
+                  rust_sync.MigrationStatusEntry(
+                    accountUuid: uuid,
+                    status: statuses[uuid],
+                  ),
+              ];
+            },
+        loadStatus: (accountUuid) async {
+          singularReads++;
+          return statuses[accountUuid]!;
+        },
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      final notifier = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      // Drain whatever provider construction scheduled, so the counters
+      // below describe exactly one pass.
+      await notifier.refreshNow();
+      batchedReads = 0;
+      singularReads = 0;
+
+      await notifier.refreshNow();
+
+      expect(batchedReads, 1, reason: 'one summary per sweep');
+      expect(
+        singularReads,
+        0,
+        reason:
+            'a singular status() call per account reintroduces the '
+            'quadratic sweep',
+      );
+      expect(sweptAccountUuids, [_softwareUuid, _hardwareUuid]);
+      final state = container.read(ironwoodMigrationCoordinatorProvider);
+      expect(
+        state.statuses[_softwareUuid]?.phase,
+        'waiting_denom_confirmations',
+      );
+      expect(
+        state.statuses[_hardwareUuid]?.phase,
+        'waiting_migration_confirmations',
+      );
+      expect(state.errors, isEmpty);
+    },
+  );
+
+  test('mobile sweep keeps the per-account status path', () async {
+    // Batching is desktop-only on purpose: on mobile `status()` also
+    // resolves credential context and drives preparation, so a batched
+    // read would silently drop those side effects.
+    final statuses = {
+      _softwareUuid: _status('waiting_denom_confirmations'),
+      _hardwareUuid: _status('waiting_migration_confirmations'),
+    };
+    var batchedReads = 0;
+    var singularReads = 0;
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      isMobile: true,
+      getStatuses:
+          ({required dbPath, required network, required accountUuids}) async {
+            batchedReads++;
+            return [
+              for (final uuid in accountUuids)
+                rust_sync.MigrationStatusEntry(
+                  accountUuid: uuid,
+                  status: statuses[uuid],
+                ),
+            ];
+          },
+      loadStatus: (accountUuid) async {
+        singularReads++;
+        return statuses[accountUuid]!;
+      },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final notifier = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    await notifier.refreshNow();
+    batchedReads = 0;
+    singularReads = 0;
+
+    await notifier.refreshNow();
+
+    expect(batchedReads, 0, reason: 'mobile must not take the batched path');
+    expect(singularReads, statuses.length);
+  });
+
+  test(
     'coalesces a refresh requested while status loading is active',
     () async {
       final statuses = {

@@ -246,6 +246,104 @@ void main() {
       expect(current.recentTransactions, [fetchedTx]);
     },
   );
+
+  test('concurrent refresh triggers coalesce into one trailing pass', () async {
+    // The defect this pins: switch, unlock, resume, mempool and recovery
+    // each called `_refreshBalance` directly, so overlapping triggers ran
+    // concurrent passes contending on the wallet DB. Behaviour assertions
+    // pass either way — only the read count catches a regression.
+    late _BalanceRefreshTestSyncNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        accountProvider.overrideWith(_ExistingAccountNotifier.new),
+        syncProvider.overrideWith(
+          () => notifier = _BalanceRefreshTestSyncNotifier(
+            () async => 'wallet.db',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    notifier.gateFirstBalanceRead();
+
+    final inFlight = notifier.refreshAfterUnlock();
+    await notifier.firstBalanceReadStarted;
+
+    // Three more triggers arrive while that pass is still reading.
+    final queued = [
+      notifier.refreshAfterSend(),
+      notifier.refreshAfterUnlock(),
+      notifier.refreshAfterSend(),
+    ];
+    notifier.releaseFirstBalanceRead();
+    await Future.wait([inFlight, ...queued]);
+
+    expect(
+      notifier.balanceReadCount,
+      2,
+      reason:
+          'the in-flight pass plus one trailing pass covering all three '
+          'queued triggers; without coalescing this is 4',
+    );
+  });
+
+  test(
+    'a switch refresh queued mid-flight still clears the restored snapshot',
+    () async {
+      // Queued triggers are collapsed into one trailing pass, so that
+      // pass must carry every requesting caller's flags. If the switch's
+      // clear-on-unavailable request is dropped by the queue, the stale
+      // restored balance stays pinned on screen.
+      final fetchedTx = _transaction('c' * 64);
+      late _BalanceRefreshTestSyncNotifier notifier;
+      final restored = SyncState(
+        accountUuid: _accountUuid,
+        hasAccountScopedData: true,
+        orchardBalance: BigInt.from(40),
+        displayOrchardBalance: BigInt.from(40),
+        spendableBalance: BigInt.from(40),
+        displaySpendableBalance: BigInt.from(40),
+        displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+        totalBalance: BigInt.from(40),
+        displayTotalBalance: BigInt.from(40),
+        recentTransactions: [_transaction('a' * 64)],
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+          accountProvider.overrideWith(_ExistingAccountNotifier.new),
+          syncProvider.overrideWith(
+            () => notifier = _BalanceRefreshTestSyncNotifier(
+              () async => 'wallet.db',
+              initialState: restored,
+              history: [fetchedTx],
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(syncProvider, (_, _) {});
+      await container.read(syncProvider.future);
+      notifier.gateFirstBalanceRead();
+
+      // An unrelated refresh occupies the single-flight slot first.
+      final inFlight = notifier.refreshAfterUnlock();
+      await notifier.firstBalanceReadStarted;
+      final switchRefresh = notifier.refreshAfterAccountSwitch();
+      notifier.releaseFirstBalanceRead();
+      await Future.wait([inFlight, switchRefresh]);
+
+      final current = container.read(syncProvider).requireValue;
+      expect(current.hasBalanceData, isFalse);
+      expect(current.displaySpendableBalance, BigInt.zero);
+      expect(current.displayOrchardBalance, BigInt.zero);
+      expect(current.displayTotalBalance, BigInt.zero);
+      expect(current.recentTransactions, [fetchedTx]);
+    },
+  );
 }
 
 class _LifecycleTestSyncNotifier extends SyncNotifier {
@@ -262,13 +360,30 @@ class _LifecycleTestSyncNotifier extends SyncNotifier {
 
 class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
   _BalanceRefreshTestSyncNotifier(
-    Future<String> Function() walletDbPathResolver,
-  ) : super(walletDbPathResolver: walletDbPathResolver);
+    Future<String> Function() walletDbPathResolver, {
+    this.initialState,
+    this.history = const [],
+  }) : super(walletDbPathResolver: walletDbPathResolver);
+
+  final SyncState? initialState;
+  final List<rust_sync.TransactionInfo> history;
 
   var balanceReadCount = 0;
 
+  var _gateFirstBalanceRead = false;
+  final _firstBalanceReadStarted = Completer<void>();
+  final _firstBalanceReadReleased = Completer<void>();
+
+  /// Hold the next balance read open so further refresh triggers arrive
+  /// while a pass is genuinely in flight.
+  void gateFirstBalanceRead() => _gateFirstBalanceRead = true;
+
+  Future<void> get firstBalanceReadStarted => _firstBalanceReadStarted.future;
+
+  void releaseFirstBalanceRead() => _firstBalanceReadReleased.complete();
+
   @override
-  Future<SyncState> build() async => SyncState();
+  Future<SyncState> build() async => initialState ?? SyncState();
 
   @override
   Future<rust_sync.WalletBalance> readWalletBalance({
@@ -277,6 +392,10 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     required String accountUuid,
   }) async {
     balanceReadCount++;
+    if (_gateFirstBalanceRead && !_firstBalanceReadStarted.isCompleted) {
+      _firstBalanceReadStarted.complete();
+      await _firstBalanceReadReleased.future;
+    }
     return _unavailableBalance;
   }
 
@@ -286,7 +405,7 @@ class _BalanceRefreshTestSyncNotifier extends SyncNotifier {
     required String network,
     int? limit,
     required String accountUuid,
-  }) async => [];
+  }) async => history;
 }
 
 class _UnavailableSwitchBalanceNotifier extends SyncNotifier {
