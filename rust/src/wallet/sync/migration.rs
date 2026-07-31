@@ -4368,8 +4368,11 @@ fn reschedule_overdue_pending_txs_with_options(
 
     txids.shuffle(&mut OsRng);
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
+    // Every row selected above is already overdue, so this is a catch-up
+    // ladder rather than a fresh plan. Drawing it at the planning cadence
+    // makes the backlog outlive the foreground session that would drain it.
     let (mean_delay_blocks, max_delay_blocks) =
-        schedule_parameters_with_policy(network, timing_policy);
+        catch_up_schedule_parameters_with_policy(network, timing_policy);
     let offsets = random_schedule_block_offsets_with_rng(
         txids.len(),
         mean_delay_blocks,

@@ -1501,6 +1501,132 @@ fn on_open_reschedule_redraws_overdue_transfers_across_wallet_runs() {
 }
 
 #[test]
+fn catch_up_cadence_never_exceeds_the_planning_cadence() {
+    for (network, timing_policy) in [
+        (WalletNetwork::Main, MigrationTimingPolicy::Standard),
+        (WalletNetwork::Main, MigrationTimingPolicy::Standard90Minutes),
+        (
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard90MinutesLatestAnchor,
+        ),
+        (WalletNetwork::Test, MigrationTimingPolicy::Standard90Minutes),
+        (WalletNetwork::Test, MigrationTimingPolicy::FastTestnet),
+        (WalletNetwork::Regtest, MigrationTimingPolicy::Standard),
+        (WalletNetwork::Regtest, MigrationTimingPolicy::FastTestnet),
+    ] {
+        let (plan_mean, plan_max) = schedule_parameters_with_policy(network, timing_policy);
+        let (catch_up_mean, catch_up_max) =
+            catch_up_schedule_parameters_with_policy(network, timing_policy);
+        // `random_schedule_block_offsets_with_rng` asserts both are non-zero
+        // and rejects samples above the max, so an inverted or empty window
+        // would panic or spin.
+        assert!(catch_up_mean > 0 && catch_up_max > 0);
+        assert!(catch_up_mean <= catch_up_max);
+        assert!(catch_up_mean <= plan_mean);
+        assert!(catch_up_max <= plan_max);
+    }
+
+    // Mainnet is the case the catch-up window actually shortens.
+    assert_eq!(
+        catch_up_schedule_parameters_with_policy(
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard90Minutes
+        ),
+        (
+            CATCH_UP_TRANSFER_MEAN_DELAY_BLOCKS,
+            CATCH_UP_TRANSFER_MAX_DELAY_BLOCKS
+        )
+    );
+    // Networks that already draw faster than catch-up keep their own cadence.
+    assert_eq!(
+        catch_up_schedule_parameters_with_policy(
+            WalletNetwork::Regtest,
+            MigrationTimingPolicy::Standard
+        ),
+        schedule_parameters_with_policy(WalletNetwork::Regtest, MigrationTimingPolicy::Standard)
+    );
+}
+
+#[test]
+fn overdue_reschedule_redraws_a_backlog_at_the_catch_up_cadence() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(
+        &db_path,
+        "run-1",
+        &[100, 200, 300, 400, 500],
+        &[Some(90), Some(90), Some(90), Some(90), Some(90)],
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    // Adopt the mainnet planning cadence (mean 66, max 576) so the redraw is
+    // exercised against the policy the reported wallets run.
+    conn.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE} SET network = 'main', timing_policy = 'standard_90m'
+             WHERE run_id = 'run-1'"
+        ),
+        [],
+    )
+    .unwrap();
+    // Every part is overdue at the tip, as it is for a wallet reopened after
+    // being closed past its whole schedule.
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 503, schedule_start_height = 502
+             WHERE status = 'scheduled'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    reschedule_overdue_pending_txs(&db_path, "run-1", WalletNetwork::Main, 503).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let redrawn = conn
+        .prepare(&format!(
+            "SELECT scheduled_height, schedule_start_height FROM {PENDING_TXS_TABLE}
+             WHERE run_id = 'run-1' AND status = 'scheduled'
+             ORDER BY scheduled_height ASC"
+        ))
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get::<_, u32>(0)?, row.get::<_, Option<u32>>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    drop(conn);
+
+    assert_eq!(redrawn.len(), 5);
+    // Re-anchored at the tip that observed them as overdue.
+    assert!(redrawn
+        .iter()
+        .all(|(_, start_height)| *start_height == Some(503)));
+
+    let (_, plan_max) =
+        schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard90Minutes);
+    let mut previous_height = 503;
+    for (scheduled_height, _) in &redrawn {
+        let gap = scheduled_height.checked_sub(previous_height).unwrap();
+        // Still separated by a random draw rather than emitted as a burst...
+        assert!(gap <= CATCH_UP_TRANSFER_MAX_DELAY_BLOCKS);
+        // ...but bounded well inside a single planning-cadence step, which is
+        // what makes the backlog drainable within one foreground session.
+        assert!(gap < plan_max);
+        previous_height = *scheduled_height;
+    }
+    // The whole backlog now lands inside the window a single planning draw
+    // could have spent on one part.
+    assert!(previous_height <= 503 + 5 * CATCH_UP_TRANSFER_MAX_DELAY_BLOCKS);
+}
+
+#[test]
 fn on_open_storage_recovery_keeps_accepted_tx_and_redraws_every_other_run() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir

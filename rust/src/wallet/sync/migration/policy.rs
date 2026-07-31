@@ -14,6 +14,11 @@ pub(crate) const REGTEST_TRANSFER_MAX_DELAY_BLOCKS: u32 = 4;
 pub(crate) const FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 12;
 pub(crate) const FAST_TESTNET_TRANSFER_MAX_DELAY_BLOCKS: u32 = 48;
 pub(crate) const FAST_TESTNET_ANCHOR_BUCKET_MODULUS: u32 = 12;
+// Cadence for redrawing a backlog of transfers that are already overdue,
+// as opposed to drawing a fresh plan. See
+// `catch_up_schedule_parameters_with_policy`.
+pub(crate) const CATCH_UP_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 8;
+pub(crate) const CATCH_UP_TRANSFER_MAX_DELAY_BLOCKS: u32 = 32;
 pub(crate) const MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI: u64 = 1;
 // Mirrors the per-child ZIP-317 migration fee estimate used by send planning:
 // 3 logical actions (a 2-action padded Orchard bundle and a 1-action
@@ -73,6 +78,36 @@ pub(crate) fn configured_timing_policy(network: WalletNetwork) -> MigrationTimin
 
 pub(crate) fn schedule_parameters(network: WalletNetwork) -> (u32, u32) {
     schedule_parameters_with_policy(network, configured_timing_policy(network))
+}
+
+/// Timing parameters for redrawing transfers that are *already overdue*,
+/// rather than for drawing a fresh plan.
+///
+/// The two cases have different requirements. A fresh plan spaces transfers so
+/// that an observer cannot tell they belong to one wallet, and can afford the
+/// full mean because nothing is waiting yet. A backlog redraw re-times parts
+/// that have already served a randomized delay and are still pending only
+/// because the wallet was closed when they came due. Drawing those at the
+/// planning mean puts the tail of the ladder hours past the current tip, which
+/// a foreground session rarely outlives; the backlog is then redrawn from the
+/// tip at the next open, discarding the wait again. The observable result is
+/// one transfer per app open, so emission times track the user's app usage
+/// instead of the schedule — the correlation the schedule exists to prevent.
+///
+/// Catch-up keeps the randomized, never-zero separation that stops a burst,
+/// at a cadence one session can drain. It is clamped to never exceed the
+/// configured plan cadence, so networks that are already faster than this
+/// (regtest, fast testnet) keep their own parameters.
+pub(crate) fn catch_up_schedule_parameters_with_policy(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+) -> (u32, u32) {
+    let (mean_delay_blocks, max_delay_blocks) =
+        schedule_parameters_with_policy(network, timing_policy);
+    (
+        mean_delay_blocks.min(CATCH_UP_TRANSFER_MEAN_DELAY_BLOCKS),
+        max_delay_blocks.min(CATCH_UP_TRANSFER_MAX_DELAY_BLOCKS),
+    )
 }
 
 fn schedule_parameters_with_policy(
