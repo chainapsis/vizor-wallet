@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -541,6 +542,16 @@ void main() {
     expect(scoped.displayTargetBlocks, 120);
     expect(scoped.scannedHeight, 10);
     expect(scoped.chainTipHeight, 20);
+  });
+
+  test('restoring an account clears a recovered wallet-wide failure', () {
+    final failure = classifySyncFailure(StateError('sync failed'));
+    final cached = SyncState(failure: failure, error: failure.rawMessage);
+
+    final restored = cached.withGlobalSyncFieldsFrom(SyncState());
+
+    expect(restored.failure, isNull);
+    expect(restored.error, isNull);
   });
 
   test('cleared account state is scoped but not renderable account data', () {
