@@ -2188,6 +2188,50 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
 }
 
 #[test]
+fn anchor_bucket_draw_uses_age_zero_only_as_the_sole_fallback() {
+    let latest_boundary = 5616;
+    let fallback_candidates = zip318_anchor_candidate_boundaries_with_policy(
+        WalletNetwork::Test,
+        MigrationTimingPolicy::Standard,
+        5700,
+        5600,
+        5000,
+    );
+    assert_eq!(fallback_candidates, vec![latest_boundary]);
+    assert_eq!(
+        zip318_draw_anchor_boundary_for_note_with_policy(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            5700,
+            5600,
+            5000,
+        ),
+        Some(latest_boundary)
+    );
+
+    let aged_candidates = zip318_anchor_candidate_boundaries_with_policy(
+        WalletNetwork::Test,
+        MigrationTimingPolicy::Standard,
+        5700,
+        5000,
+        5000,
+    );
+    assert!(!aged_candidates.contains(&latest_boundary));
+    for _ in 0..32 {
+        let selected = zip318_draw_anchor_boundary_for_note_with_policy(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            5700,
+            5000,
+            5000,
+        )
+        .unwrap();
+        assert!(aged_candidates.contains(&selected));
+        assert_ne!(selected, latest_boundary);
+    }
+}
+
+#[test]
 fn anchor_bucket_draw_renormalizes_over_available_checkpoint_boundaries() {
     let candidates = zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000);
     let available = vec![candidates[1], candidates[3]];
