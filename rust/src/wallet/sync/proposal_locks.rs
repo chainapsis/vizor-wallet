@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::{params, Connection};
 use zcash_client_backend::{
-    data_api::{WalletRead, WalletWrite},
+    data_api::{OutputLockStore, WalletRead},
     wallet::{LockOwner, OutputRef},
 };
 use zcash_primitives::transaction::TxId;

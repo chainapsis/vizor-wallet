@@ -88,7 +88,7 @@ package = "zcash_transparent"
 version = "0.10.0"
 
 [dependencies.zcash_client_backend]
-version = "0.24.0-rc.4"
+version = "0.24.0-rc.6"
 features = [
     "orchard",
     "transparent-inputs",
@@ -99,7 +99,7 @@ features = [
 ]
 
 [dependencies.zcash_client_sqlite]
-version = "0.22.0-rc.4"
+version = "0.22.0-rc.6"
 features = ["orchard", "transparent-inputs", "unstable", "serde"]
 
 # Voting clients need PIR lookup support and vote-commitment-tree sync.

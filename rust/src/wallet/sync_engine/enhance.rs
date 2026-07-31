@@ -44,9 +44,8 @@ use crate::wallet::network::WalletNetwork;
 use super::{lwd, SyncError, WalletDatabase};
 
 /// Services `db.transaction_data_requests()` against lightwalletd until
-/// the queue is empty or no request is actionable. Status-only requests
-/// in `deferred_status_txids` remain queued for compact scanning. Returns
-/// `SyncError::Db` if `db.transaction_data_requests()` itself fails.
+/// the queue is empty or no request is actionable. Returns `SyncError::Db`
+/// if `db.transaction_data_requests()` itself fails.
 /// Per-request failures are split by semantics: an explicit
 /// "txid not recognized" response is recorded via
 /// `set_transaction_status` so it doesn't get retried forever, while
@@ -57,9 +56,10 @@ pub(super) async fn run_enhancement(
     db: &mut WalletDatabase,
     db_path: &str,
     network: WalletNetwork,
-    deferred_status_txids: &HashSet<Vec<u8>>,
 ) -> Result<(), SyncError> {
     let mut failed_txids: HashSet<String> = HashSet::new();
+
+    backfill_stored_fees(client, db, db_path).await?;
 
     for _ in 0..3 {
         let requests = db
@@ -73,9 +73,7 @@ pub(super) async fn run_enhancement(
         // requests without an `end` height, which we can't service
         // without synthesizing a range), break rather than looping
         // forever on the same inert queue.
-        let actionable = requests
-            .iter()
-            .any(|request| request_is_actionable(request, deferred_status_txids));
+        let actionable = requests.iter().any(request_is_actionable);
         if !actionable {
             break;
         }
@@ -83,57 +81,10 @@ pub(super) async fn run_enhancement(
         for req in &requests {
             match req {
                 TransactionDataRequest::GetStatus(txid)
-                    if deferred_status_txids.contains(txid.as_ref().as_slice()) =>
-                {
-                    continue
-                }
-                TransactionDataRequest::GetStatus(txid)
                 | TransactionDataRequest::Enhancement(txid) => {
                     let txid_str = format!("{txid}");
                     if failed_txids.contains(&txid_str) {
                         continue;
-                    }
-
-                    if matches!(req, TransactionDataRequest::GetStatus(_)) {
-                        match scanned_mined_height(db, *txid) {
-                            Ok(Some(mined_height)) => {
-                                let can_resolve_locally = match db.get_transaction(*txid) {
-                                    Ok(Some(tx)) => {
-                                        if let Err(e) =
-                                            fill_missing_transparent_fee(client, db_path, &tx).await
-                                        {
-                                            log::warn!(
-                                                "sync: transparent fee enhancement failed for {txid_str}: {e}"
-                                            );
-                                        }
-                                        true
-                                    }
-                                    Ok(None) => true,
-                                    Err(e) => {
-                                        log::error!(
-                                            "sync: could not read stored transaction for local status resolution: {e}"
-                                        );
-                                        false
-                                    }
-                                };
-                                if can_resolve_locally {
-                                    match resolve_status_from_scanned_height(
-                                        db,
-                                        *txid,
-                                        mined_height,
-                                    ) {
-                                        Ok(()) => continue,
-                                        Err(e) => log::error!(
-                                            "sync: could not resolve transaction status locally: {e}"
-                                        ),
-                                    }
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(e) => log::error!(
-                                "sync: could not read locally restored transaction status: {e}"
-                            ),
-                        }
                     }
 
                     match lwd::get_transaction(client, txid.as_ref().to_vec()).await {
@@ -157,11 +108,10 @@ pub(super) async fn run_enhancement(
                                                 "sync: decrypt_and_store_transaction failed: {e}"
                                             );
                                         }
-                                        if let Err(e) =
-                                            fill_missing_transparent_fee(client, db_path, &tx).await
+                                        if let Err(e) = fill_missing_fee(client, db_path, &tx).await
                                         {
                                             log::warn!(
-                                                "sync: transparent fee enhancement failed for {txid_str}: {e}"
+                                                "sync: fee enhancement failed for {txid_str}: {e}"
                                             );
                                         }
                                     }
@@ -254,7 +204,7 @@ pub(super) async fn run_enhancement(
                                                             "sync: decrypt_and_store_transaction (addr) failed: {e}"
                                                         );
                                                     }
-                                                    if let Err(e) = fill_missing_transparent_fee(
+                                                    if let Err(e) = fill_missing_fee(
                                                         &mut fee_client,
                                                         db_path,
                                                         &tx,
@@ -262,7 +212,7 @@ pub(super) async fn run_enhancement(
                                                     .await
                                                     {
                                                         log::warn!(
-                                                            "sync: transparent fee enhancement (addr) failed for {}: {e}",
+                                                            "sync: fee enhancement (addr) failed for {}: {e}",
                                                             tx.txid()
                                                         );
                                                     }
@@ -289,65 +239,95 @@ pub(super) async fn run_enhancement(
     Ok(())
 }
 
-/// Whether servicing `request` can make progress right now: full-data
-/// enhancements always can, status-only requests unless their transaction is
-/// deferred for compact scanning, and address-scoped requests only when they
-/// carry a bounded block range.
-fn request_is_actionable(
-    request: &TransactionDataRequest,
-    deferred_status_txids: &HashSet<Vec<u8>>,
-) -> bool {
-    match request {
-        TransactionDataRequest::Enhancement(_) => true,
-        TransactionDataRequest::GetStatus(txid) => {
-            !deferred_status_txids.contains(txid.as_ref().as_slice())
+/// Backfills fees for stored transactions whose status requests are dormant
+/// while their mined heights are known.
+async fn backfill_stored_fees(
+    client: &mut CompactTxStreamerClient<Channel>,
+    db: &WalletDatabase,
+    db_path: &str,
+) -> Result<(), SyncError> {
+    for txid in stored_transaction_ids_missing_fee(db_path)? {
+        let txid_str = format!("{txid}");
+        match db.get_transaction(txid) {
+            Ok(Some(tx)) => {
+                if let Err(e) = fill_missing_fee(client, db_path, &tx).await {
+                    log::warn!("sync: stored fee enhancement failed for {txid_str}: {e}");
+                }
+            }
+            Ok(None) => {}
+            Err(e) => log::warn!(
+                "sync: could not read stored transaction for fee enhancement {txid_str}: {e}"
+            ),
         }
+    }
+
+    Ok(())
+}
+
+fn stored_transaction_ids_missing_fee(db_path: &str) -> Result<Vec<TxId>, SyncError> {
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|e| SyncError::db(format!("open wallet DB for fee scan: {e}")))?;
+    conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
+        .map_err(|e| SyncError::db(format!("configure fee scan busy timeout: {e}")))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT t.txid
+             FROM transactions t
+             WHERE t.raw IS NOT NULL
+             AND t.fee IS NULL
+             AND (t.tx_index IS NULL OR t.tx_index != 0)
+             AND EXISTS (
+                 SELECT 1
+                 FROM v_transactions vt
+                 WHERE vt.txid = t.txid
+             )",
+        )
+        .map_err(|e| SyncError::db(format!("prepare missing fee scan: {e}")))?;
+    let rows = stmt
+        .query_map([], |row| row.get(0).map(TxId::from_bytes))
+        .map_err(|e| SyncError::db(format!("query missing fees: {e}")))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| SyncError::db(format!("read missing fee transaction: {e}")))
+}
+
+/// Whether servicing `request` can make progress right now. Transaction
+/// requests always can; address-scoped requests need a bounded block range.
+fn request_is_actionable(request: &TransactionDataRequest) -> bool {
+    match request {
+        TransactionDataRequest::Enhancement(_) | TransactionDataRequest::GetStatus(_) => true,
         TransactionDataRequest::TransactionsInvolvingAddress(req) => {
             req.block_range_end().is_some()
         }
     }
 }
 
-fn scanned_mined_height(db: &WalletDatabase, txid: TxId) -> Result<Option<BlockHeight>, SyncError> {
-    db.get_tx_height(txid)
-        .map_err(|e| SyncError::db(format!("get transaction height: {e}")))
-}
-
-/// Re-asserts a compact-scan-restored mined status after any missing fee has
-/// been backfilled, which also dequeues the `GetStatus` request.
-fn resolve_status_from_scanned_height(
-    db: &mut WalletDatabase,
-    txid: TxId,
-    mined_height: BlockHeight,
-) -> Result<(), SyncError> {
-    with_wallet_db_write_lock(
-        "sync_engine.enhance.set_known_mined_transaction_status",
-        || {
-            db.set_transaction_status(txid, TransactionStatus::Mined(mined_height))
-                .map_err(|e| SyncError::db(format!("set known mined transaction status: {e}")))
-        },
-    )
-}
-
-async fn fill_missing_transparent_fee(
+async fn fill_missing_fee(
     client: &mut CompactTxStreamerClient<Channel>,
     db_path: &str,
     tx: &Transaction,
 ) -> Result<(), SyncError> {
-    let Some(bundle) = tx.transparent_bundle() else {
-        return Ok(());
-    };
-    if bundle.vin.is_empty() || !should_fill_missing_transparent_fee(db_path, tx)? {
+    if !should_fill_missing_fee(db_path, tx)? {
         return Ok(());
     }
 
-    let prevout_values = fetch_transparent_prevout_values(client, tx).await?;
-    if prevout_values.is_empty() {
-        return Ok(());
-    }
+    // Fully shielded transactions need no parent lookup: their fee is
+    // determined entirely by the public shielded-pool value balances. Persist
+    // that fee too so these rows do not remain in the backfill query forever.
+    let prevout_values = match tx.transparent_bundle() {
+        Some(bundle) if !bundle.vin.is_empty() => {
+            let values = fetch_transparent_prevout_values(client, tx).await?;
+            if values.is_empty() {
+                return Ok(());
+            }
+            values
+        }
+        _ => BTreeMap::new(),
+    };
 
     let Some(fee) = fee_from_prevout_values(tx, &prevout_values)
-        .map_err(|e| SyncError::parse(format!("transparent fee computation failed: {e:?}")))?
+        .map_err(|e| SyncError::parse(format!("fee computation failed: {e:?}")))?
     else {
         return Ok(());
     };
@@ -417,15 +397,15 @@ async fn fetch_transparent_prevout_values(
     Ok(prevout_values)
 }
 
-fn should_fill_missing_transparent_fee(db_path: &str, tx: &Transaction) -> Result<bool, SyncError> {
+fn should_fill_missing_fee(db_path: &str, tx: &Transaction) -> Result<bool, SyncError> {
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| SyncError::db(format!("open wallet DB for fee lookup: {e}")))?;
     conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
         .map_err(|e| SyncError::db(format!("configure fee lookup busy timeout: {e}")))?;
 
-    // Backfill transaction-level transparent fees for every wallet-relevant
-    // transaction, including receives. Received receipts label this separately
-    // as a network fee because the sender paid it.
+    // Backfill transaction fees for every wallet-relevant transaction,
+    // including receives. Received receipts label this separately as a network
+    // fee because the sender paid it.
     let fillable_rows: i64 = conn
         .query_row(
             "SELECT COUNT(*)
@@ -440,7 +420,7 @@ fn should_fill_missing_transparent_fee(db_path: &str, tx: &Transaction) -> Resul
             rusqlite::params![tx.txid().as_ref()],
             |row| row.get(0),
         )
-        .map_err(|e| SyncError::db(format!("query transparent fee: {e}")))?;
+        .map_err(|e| SyncError::db(format!("query missing fee: {e}")))?;
 
     Ok(fillable_rows > 0)
 }
@@ -460,13 +440,13 @@ fn fee_from_prevout_values(
 
 fn persist_fee_if_missing(db_path: &str, tx: &Transaction, fee: Zatoshis) -> Result<(), SyncError> {
     let fee_zatoshi = i64::try_from(u64::from(fee))
-        .map_err(|_| SyncError::parse("transparent fee exceeded SQLite integer range"))?;
+        .map_err(|_| SyncError::parse("fee exceeded SQLite integer range"))?;
     let conn = rusqlite::Connection::open(db_path)
         .map_err(|e| SyncError::db(format!("open wallet DB for fee update: {e}")))?;
     conn.busy_timeout(SYNC_DB_BUSY_TIMEOUT)
         .map_err(|e| SyncError::db(format!("configure fee update busy timeout: {e}")))?;
 
-    with_wallet_db_write_lock("sync_engine.enhance.persist_transparent_fee", || {
+    with_wallet_db_write_lock("sync_engine.enhance.persist_fee", || {
         conn.execute(
             "UPDATE transactions
              SET fee = ?2
@@ -514,13 +494,8 @@ fn transaction_status_from_raw_height(raw_height: u64) -> Result<TransactionStat
 mod tests {
     use super::*;
 
-    /// Builds a real migrated wallet DB containing one transaction with a
-    /// known mined height plus an explicit status-type retrieval-queue entry
-    /// for it, mirroring the post-recovery state `resolve_status_from_scanned_height`
-    /// services.
-    fn status_recovery_test_db(
+    fn scanned_transaction_missing_fee_test_db(
         mined_height: BlockHeight,
-        fee: Option<i64>,
     ) -> (tempfile::NamedTempFile, WalletDatabase, Transaction) {
         let (tx, raw) = transparent_fee_test_tx_and_bytes();
         let txid = tx.txid();
@@ -540,8 +515,8 @@ mod tests {
         conn.execute(
             "INSERT INTO transactions
                 (txid, mined_height, raw, fee, min_observed_height)
-             VALUES (?1, ?2, ?3, ?4, ?2)",
-            rusqlite::params![txid.as_ref(), u32::from(mined_height), raw, fee],
+             VALUES (?1, ?2, ?3, NULL, ?2)",
+            rusqlite::params![txid.as_ref(), u32::from(mined_height), raw],
         )
         .unwrap();
         conn.execute(
@@ -588,6 +563,23 @@ mod tests {
 
     fn transparent_fee_test_tx() -> Transaction {
         transparent_fee_test_tx_and_bytes().0
+    }
+
+    fn no_transparent_inputs_test_tx() -> Transaction {
+        use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
+
+        TransactionData::<Authorized>::from_parts(
+            TxVersion::V5,
+            BranchId::Nu5,
+            0,
+            BlockHeight::from_u32(1),
+            None,
+            None,
+            None,
+            None,
+        )
+        .freeze()
+        .unwrap()
     }
 
     fn transparent_fee_test_db(
@@ -658,59 +650,64 @@ mod tests {
     }
 
     #[test]
-    fn deferred_status_requests_do_not_block_full_data_enhancement() {
-        let deferred = HashSet::from([vec![1; 32]]);
-        assert!(!request_is_actionable(
-            &TransactionDataRequest::GetStatus(TxId::from_bytes([1; 32])),
-            &deferred,
-        ));
-        assert!(request_is_actionable(
-            &TransactionDataRequest::GetStatus(TxId::from_bytes([2; 32])),
-            &deferred,
-        ));
-        assert!(request_is_actionable(
-            &TransactionDataRequest::Enhancement(TxId::from_bytes([1; 32])),
-            &deferred,
-        ));
-    }
-
-    #[test]
-    fn scanned_height_resolves_status_without_transaction_download() {
+    fn scanned_transaction_missing_fee_is_selected_when_status_request_is_dormant() {
         let mined_height = BlockHeight::from_u32(500);
-        let (_file, mut db, tx) = status_recovery_test_db(mined_height, Some(0));
+        let (file, db, tx) = scanned_transaction_missing_fee_test_db(mined_height);
         let txid = tx.txid();
 
-        assert!(db
-            .transaction_data_requests()
-            .unwrap()
-            .contains(&TransactionDataRequest::GetStatus(txid)));
-        assert_eq!(scanned_mined_height(&db, txid).unwrap(), Some(mined_height));
-        resolve_status_from_scanned_height(&mut db, txid, mined_height).unwrap();
         assert!(!db
             .transaction_data_requests()
             .unwrap()
             .contains(&TransactionDataRequest::GetStatus(txid)));
-        assert_eq!(db.get_tx_height(txid).unwrap(), Some(mined_height));
-    }
-
-    #[test]
-    fn scanned_status_loads_missing_fee_input_before_dequeue() {
-        let mined_height = BlockHeight::from_u32(500);
-        let (file, mut db, tx) = status_recovery_test_db(mined_height, None);
-        let txid = tx.txid();
-
+        assert_eq!(
+            stored_transaction_ids_missing_fee(file.path().to_str().unwrap()).unwrap(),
+            vec![txid]
+        );
         assert_eq!(db.get_transaction(txid).unwrap().unwrap().txid(), txid);
-        assert!(should_fill_missing_transparent_fee(file.path().to_str().unwrap(), &tx).unwrap());
-        assert!(db
-            .transaction_data_requests()
-            .unwrap()
-            .contains(&TransactionDataRequest::GetStatus(txid)));
+    }
 
-        resolve_status_from_scanned_height(&mut db, txid, mined_height).unwrap();
-        assert!(!db
-            .transaction_data_requests()
+    #[test]
+    fn coinbase_transaction_is_not_selected_for_fee_backfill() {
+        let mined_height = BlockHeight::from_u32(500);
+        let (file, _db, tx) = scanned_transaction_missing_fee_test_db(mined_height);
+        let conn = rusqlite::Connection::open(file.path()).unwrap();
+        conn.execute(
+            "UPDATE transactions SET tx_index = 0 WHERE txid = ?1",
+            rusqlite::params![tx.txid().as_ref()],
+        )
+        .unwrap();
+
+        assert!(
+            stored_transaction_ids_missing_fee(file.path().to_str().unwrap())
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn fee_without_transparent_inputs_is_persisted() {
+        // Fully shielded transactions follow this path: no transparent
+        // prevouts are required to compute their fee from public value
+        // balances. This minimal transaction isolates that property.
+        let tx = no_transparent_inputs_test_tx();
+        let db = transparent_fee_test_db(&tx, 1);
+        let fee = fee_from_prevout_values(&tx, &BTreeMap::new())
             .unwrap()
-            .contains(&TransactionDataRequest::GetStatus(txid)));
+            .unwrap();
+
+        assert!(should_fill_missing_fee(db.path().to_str().unwrap(), &tx).unwrap());
+        persist_fee_if_missing(db.path().to_str().unwrap(), &tx, fee).unwrap();
+        assert!(!should_fill_missing_fee(db.path().to_str().unwrap(), &tx).unwrap());
+
+        let conn = rusqlite::Connection::open(db.path()).unwrap();
+        let stored_fee: i64 = conn
+            .query_row(
+                "SELECT fee FROM transactions WHERE txid = ?1",
+                rusqlite::params![tx.txid().as_ref()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_fee, 0);
     }
 
     #[test]
@@ -741,7 +738,7 @@ mod tests {
         let tx = transparent_fee_test_tx();
         let db = transparent_fee_test_db_with_optional_wallet_row(&tx, None);
 
-        assert!(!should_fill_missing_transparent_fee(db.path().to_str().unwrap(), &tx).unwrap());
+        assert!(!should_fill_missing_fee(db.path().to_str().unwrap(), &tx).unwrap());
     }
 
     #[test]
@@ -749,7 +746,7 @@ mod tests {
         let tx = transparent_fee_test_tx();
         let db = transparent_fee_test_db(&tx, 1_000_000);
 
-        assert!(should_fill_missing_transparent_fee(db.path().to_str().unwrap(), &tx).unwrap());
+        assert!(should_fill_missing_fee(db.path().to_str().unwrap(), &tx).unwrap());
     }
 
     #[test]
@@ -757,7 +754,7 @@ mod tests {
         let tx = transparent_fee_test_tx();
         let db = transparent_fee_test_db(&tx, -40_000);
 
-        assert!(should_fill_missing_transparent_fee(db.path().to_str().unwrap(), &tx).unwrap());
+        assert!(should_fill_missing_fee(db.path().to_str().unwrap(), &tx).unwrap());
     }
 
     #[test]

@@ -74,7 +74,7 @@
 use std::convert::Infallible;
 use std::sync::OnceLock;
 
-use zcash_client_backend::data_api::WalletWrite;
+use zcash_client_backend::data_api::OutputLockStore;
 use zcash_primitives::transaction::{builder::BundlePadding, Transaction, TxId};
 use zcash_proofs::prover::LocalTxProver;
 
@@ -308,14 +308,6 @@ pub async fn create_pczt_from_proposal(
         )
         .map_err(|e| format!("Revalidate hardware proposal input locks: {e:?}"))?;
         super::proposal_locks::update_expiry(db_path, current_lock.owner, live_expiry_height)?;
-        // Build with the padding policy the proposal was fee-counted against
-        // (see `StoredProposal::unpadded_orchard_pool_bundles`), so the
-        // builder's balance check matches the proposal's fee.
-        let bundle_padding = if stored.unpadded_orchard_pool_bundles {
-            BundlePadding::UNPADDED
-        } else {
-            BundlePadding::DEFAULT
-        };
         // The transaction version rides on the proposal; expiry is pinned to
         // the live chain tip obtained immediately before this DB operation.
         let proposal_for_pczt = stored
@@ -329,7 +321,7 @@ pub async fn create_pczt_from_proposal(
             OvkPolicy::Sender,
             &proposal_for_pczt,
             Some(live_expiry_height),
-            bundle_padding,
+            BundlePadding::DEFAULT,
         )
         .map_err(|e| format!("Create PCZT failed: {e}"))?;
         let pczt_bytes = pczt
@@ -1803,9 +1795,9 @@ mod tests {
         // compact-PCZT format. Every action sheds `cv_net` and `cmx`, both
         // wallet-decryptable output ciphertexts (the Ironwood migration output
         // AND the deterministic zero-value Orchard output) travel as stripped
-        // memo plaintext, true dummy spends shed `alpha`, and the v6 bundle
-        // anchors and `bsk`s are cleared. The wallet retains the unredacted PCZT
-        // for proof/extraction.
+        // memo plaintext, preauthorized dummy spends retain their signatures
+        // but shed `alpha`, and the v6 bundle anchors and `bsk`s are cleared.
+        // The wallet retains the unredacted PCZT for proof/extraction.
         #[test]
         fn batch_redaction_elides_verified_fields_and_signs_identically() {
             use crate::wallet::sync::pczt::redact_pczt_for_batch_signer;
@@ -1865,7 +1857,10 @@ mod tests {
                         .zip(base.ironwood().actions().iter()),
                 )
             {
-                assert!(action.spend().spend_auth_sig().is_none());
+                assert_eq!(
+                    action.spend().spend_auth_sig(),
+                    base_action.spend().spend_auth_sig(),
+                );
                 assert!(action.cv_net().is_none());
                 assert!(matches!(
                     action.output().enc_ciphertext(),
