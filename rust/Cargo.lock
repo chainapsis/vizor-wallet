@@ -940,8 +940,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "306286e8dcc39ab3dfceb74c792ce8baffdab90591321d3ffaae64829734c37f"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -966,8 +965,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d42773cb15447644d170be20231a3268600e0c4cea8987d013b93ac973d3cf7"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2326,8 +2324,7 @@ dependencies = [
 [[package]]
 name = "pczt"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7d4693dcb3d72f30064e0fdab122292d803bd9325a95b25df08679cf895452f"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "blake2b_simd",
  "bls12_381",
@@ -2994,6 +2991,8 @@ dependencies = [
  "time",
  "tokio",
  "tonic",
+ "tracing",
+ "tracing-subscriber",
  "ur",
  "ur-registry",
  "url",
@@ -3331,6 +3330,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharded-slab"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "shardtree"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3555,6 +3563,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "thread_local"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -3812,6 +3829,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.3.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7f578e5945fb242538965c2d0b04418d38ec25c79d160cd279bf0731c8d319"
+dependencies = [
+ "sharded-slab",
+ "thread_local",
+ "tracing-core",
 ]
 
 [[package]]
@@ -4446,8 +4474,7 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a854b28c07dba372f4410ea8ad62b4bf7d5c2bf8be32fc4b31bc0db6521a975"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "bech32",
  "bs58",
@@ -4460,8 +4487,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_backend"
 version = "0.24.0-rc.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "832ace878c125814bb9e82228d3661499124c6f2936e60fc1df3c6876eb54624"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "async-trait",
  "base64",
@@ -4515,8 +4541,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_sqlite"
 version = "0.22.0-rc.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4a789c0038359968f93bfe3952d2b942e3bae5582f79c2f31137c6fd736a225"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "bip32",
  "bitflags",
@@ -4574,8 +4599,7 @@ dependencies = [
 [[package]]
 name = "zcash_keys"
 version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "def800f128e459eedebc900f36f408eaf0687634128dcf64ecfeaeebc3e16c14"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "bech32",
  "bip32",
@@ -4617,8 +4641,7 @@ dependencies = [
 [[package]]
 name = "zcash_pool_migration"
 version = "0.1.0-rc.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9010904169a92805128b3a8eab0dd4ff79fd164dd416af68aaeac5c7ebbd2522"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "corez",
  "getset",
@@ -4638,8 +4661,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ca4de11896f704ffe6319c2cd7bc8fc6ab31a55cec80d26def15c009d83678"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "blake2b_simd",
  "block-buffer 0.11.0-rc.3",
@@ -4691,8 +4713,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f074493fff337207e28bcfa5bbdf0e2a125c4203a4bdd07e72067eea81e9e7b"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "corez",
  "document-features",
@@ -4730,8 +4751,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "547c012778bae17f58007731af074d638aa146ab0ecfc120adebf23d049aff6c"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "bip32",
  "bs58",
@@ -4918,8 +4938,7 @@ dependencies = [
 [[package]]
 name = "zip321"
 version = "0.9.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb464491970d9b61889e4f2b7b00fb9f471a33692e5c0de3122fdc575d8067ab"
+source = "git+https://github.com/zcash/librustzcash.git?branch=vizor%2Fno-progress-wallet-snapshot-release#d4ea9267b5386099f02faa1525ee4caf9aefbc40"
 dependencies = [
  "base64",
  "nom",

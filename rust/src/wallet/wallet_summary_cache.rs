@@ -1,10 +1,15 @@
-//! Process-wide coalescing cache for `WalletDb::get_wallet_summary`.
+//! Process-wide coalescing cache for `WalletDb::get_wallet_snapshot`.
 //!
 //! Concurrent callers for the same `(db_path, network)` share one load by
 //! holding a per-key mutex through the SQLite computation. Successful
 //! results (including `None`) are retained until a wallet-DB write advances
 //! the seqlock epoch in [`crate::wallet::db::with_wallet_db_write_lock`].
 //! Errors are never cached.
+//!
+//! Vizor tracks sync progress through its own scan engine, so this cache
+//! loads the no-progress [`WalletSnapshot`] rather than
+//! [`WalletDb::get_wallet_summary`]. That skips the `subtree_scan_progress`
+//! aggregates that dominate summary cost for deep or fragmented wallets.
 
 use std::{
     collections::HashMap,
@@ -12,15 +17,15 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
-use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletSummary};
-use zcash_client_sqlite::AccountUuid;
+use zcash_client_backend::data_api::wallet::ConfirmationsPolicy;
+use zcash_client_sqlite::{AccountUuid, WalletSnapshot};
 
 use crate::wallet::{
     db::{open_wallet_db_for_read_with_timeout, wallet_db_write_epoch, READ_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
 };
 
-type CachedSummary = Option<WalletSummary<AccountUuid>>;
+type CachedSnapshot = Option<WalletSnapshot<AccountUuid>>;
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 struct CacheKey {
@@ -32,7 +37,7 @@ struct CacheEntry {
     /// Epoch observed when this value was published. Must still match the
     /// live write epoch (and be even) for a hit.
     epoch: u64,
-    summary: CachedSummary,
+    snapshot: CachedSnapshot,
 }
 
 struct EntrySlot {
@@ -54,14 +59,14 @@ fn slot_for(key: CacheKey) -> Arc<Mutex<EntrySlot>> {
         .clone()
 }
 
-/// Cached `get_wallet_summary` for the default confirmation policy.
-pub(crate) fn get_wallet_summary_cached(
+/// Cached `get_wallet_snapshot` for the default confirmation policy.
+pub(crate) fn get_wallet_snapshot_cached(
     db_path: &str,
     network: WalletNetwork,
-) -> Result<CachedSummary, String> {
+) -> Result<CachedSnapshot, String> {
     get_or_load_with(db_path, network, || {
         let db = open_wallet_db_for_read_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
-        db.get_wallet_summary(ConfirmationsPolicy::default())
+        db.get_wallet_snapshot(ConfirmationsPolicy::default())
             .map_err(|e| format!("{e}"))
     })
 }
@@ -72,9 +77,9 @@ pub(crate) fn get_or_load_with<F>(
     db_path: &str,
     network: WalletNetwork,
     loader: F,
-) -> Result<CachedSummary, String>
+) -> Result<CachedSnapshot, String>
 where
-    F: FnOnce() -> Result<CachedSummary, String>,
+    F: FnOnce() -> Result<CachedSnapshot, String>,
 {
     get_or_load_with_epoch(db_path, network, wallet_db_write_epoch, loader)
 }
@@ -84,10 +89,10 @@ fn get_or_load_with_epoch<E, F>(
     network: WalletNetwork,
     epoch_fn: E,
     loader: F,
-) -> Result<CachedSummary, String>
+) -> Result<CachedSnapshot, String>
 where
     E: Fn() -> u64,
-    F: FnOnce() -> Result<CachedSummary, String>,
+    F: FnOnce() -> Result<CachedSnapshot, String>,
 {
     let key = CacheKey {
         db_path: db_path.to_string(),
@@ -102,7 +107,7 @@ where
     if let Some(cached) = entry.cached.as_ref() {
         let current = epoch_fn();
         if current == cached.epoch && current % 2 == 0 && Path::new(db_path).exists() {
-            return Ok(cached.summary.clone());
+            return Ok(cached.snapshot.clone());
         }
         // Stale epoch, write in progress, or DB file replaced/deleted.
         entry.cached = None;
@@ -122,7 +127,7 @@ where
     if epoch_before == epoch_after && epoch_before % 2 == 0 {
         entry.cached = Some(CacheEntry {
             epoch: epoch_before,
-            summary: loaded.clone(),
+            snapshot: loaded.clone(),
         });
     } else {
         entry.cached = None;
@@ -144,7 +149,6 @@ mod tests {
         time::Duration,
     };
 
-    use zcash_client_backend::data_api::{Progress, Ratio, WalletSummary};
     use zcash_protocol::consensus::BlockHeight;
 
     use crate::wallet::db::with_wallet_db_write_lock;
@@ -167,12 +171,11 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 
-    fn summary_with_tip(tip: u32) -> WalletSummary<AccountUuid> {
-        WalletSummary::new(
+    fn snapshot_with_tip(tip: u32) -> WalletSnapshot<AccountUuid> {
+        WalletSnapshot::new(
             HashMap::new(),
             BlockHeight::from_u32(tip),
             BlockHeight::from_u32(tip),
-            Progress::new(Ratio::new(0, 0), None),
             0,
             0,
             0,
@@ -184,9 +187,9 @@ mod tests {
         network: WalletNetwork,
         epoch: &AtomicU64,
         loader: F,
-    ) -> Result<CachedSummary, String>
+    ) -> Result<CachedSnapshot, String>
     where
-        F: FnOnce() -> Result<CachedSummary, String>,
+        F: FnOnce() -> Result<CachedSnapshot, String>,
     {
         get_or_load_with_epoch(db_path, network, || epoch.load(Ordering::Acquire), loader)
     }
@@ -216,7 +219,7 @@ mod tests {
                     loads.fetch_add(1, Ordering::SeqCst);
                     entered_load.wait();
                     finish_load.wait();
-                    Ok(Some(summary_with_tip(100)))
+                    Ok(Some(snapshot_with_tip(100)))
                 })
             }));
         }
@@ -247,12 +250,12 @@ mod tests {
 
         let first = load_with_local_epoch(&path, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(42)))
+            Ok(Some(snapshot_with_tip(42)))
         })
         .unwrap();
         let second = load_with_local_epoch(&path, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(99)))
+            Ok(Some(snapshot_with_tip(99)))
         })
         .unwrap();
 
@@ -277,17 +280,17 @@ mod tests {
 
         let a = load_with_local_epoch(&path_a, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(1)))
+            Ok(Some(snapshot_with_tip(1)))
         })
         .unwrap();
         let b = load_with_local_epoch(&path_b, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(2)))
+            Ok(Some(snapshot_with_tip(2)))
         })
         .unwrap();
         let c = load_with_local_epoch(&path_a, WalletNetwork::Test, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(3)))
+            Ok(Some(snapshot_with_tip(3)))
         })
         .unwrap();
 
@@ -314,7 +317,7 @@ mod tests {
         .unwrap();
         let second = load_with_local_epoch(&path, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(1)))
+            Ok(Some(snapshot_with_tip(1)))
         })
         .unwrap();
 
@@ -340,7 +343,7 @@ mod tests {
 
         let ok = load_with_local_epoch(&path, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(7)))
+            Ok(Some(snapshot_with_tip(7)))
         })
         .unwrap();
 
@@ -359,7 +362,7 @@ mod tests {
 
         load_with_local_epoch(&path, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(5)))
+            Ok(Some(snapshot_with_tip(5)))
         })
         .unwrap();
         assert_eq!(loads.load(Ordering::SeqCst), 1);
@@ -397,7 +400,7 @@ mod tests {
                 epoch_reader.fetch_add(1, Ordering::AcqRel);
                 epoch_reader.fetch_add(1, Ordering::AcqRel);
                 release_reader.wait();
-                Ok(Some(summary_with_tip(1)))
+                Ok(Some(snapshot_with_tip(1)))
             })
         });
 
@@ -414,7 +417,7 @@ mod tests {
         // reloads and observes the post-write value.
         let fresh = load_with_local_epoch(&path, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(2)))
+            Ok(Some(snapshot_with_tip(2)))
         })
         .unwrap();
         assert_eq!(loads.load(Ordering::SeqCst), 2);
@@ -432,7 +435,7 @@ mod tests {
 
         load_with_local_epoch(&path, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(10)))
+            Ok(Some(snapshot_with_tip(10)))
         })
         .unwrap();
         assert_eq!(loads.load(Ordering::SeqCst), 1);
@@ -442,7 +445,7 @@ mod tests {
 
         let after = load_with_local_epoch(&path, WalletNetwork::Main, &epoch, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(11)))
+            Ok(Some(snapshot_with_tip(11)))
         })
         .unwrap();
         assert_eq!(loads.load(Ordering::SeqCst), 2);
@@ -461,7 +464,7 @@ mod tests {
         // invalidates the published entry.
         get_or_load_with(&path, WalletNetwork::Main, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(10)))
+            Ok(Some(snapshot_with_tip(10)))
         })
         .unwrap();
 
@@ -469,7 +472,7 @@ mod tests {
 
         get_or_load_with(&path, WalletNetwork::Main, || {
             loads.fetch_add(1, Ordering::SeqCst);
-            Ok(Some(summary_with_tip(11)))
+            Ok(Some(snapshot_with_tip(11)))
         })
         .unwrap();
 
@@ -506,7 +509,7 @@ mod tests {
                 WalletNetwork::Regtest,
                 READ_DB_BUSY_TIMEOUT,
             )?;
-            db.get_wallet_summary(ConfirmationsPolicy::default())
+            db.get_wallet_snapshot(ConfirmationsPolicy::default())
                 .map_err(|e| format!("{e}"))
         })
         .unwrap();
@@ -517,11 +520,11 @@ mod tests {
                 WalletNetwork::Regtest,
                 READ_DB_BUSY_TIMEOUT,
             )?;
-            db.get_wallet_summary(ConfirmationsPolicy::default())
+            db.get_wallet_snapshot(ConfirmationsPolicy::default())
                 .map_err(|e| format!("{e}"))
         })
         .unwrap();
-        // Fresh wallets can still return Ok(None) from get_wallet_summary
+        // Fresh wallets can still return Ok(None) from get_wallet_snapshot
         // before any blocks are scanned; the important property is that the
         // successful None (or Some) was cached across the second call.
         assert_eq!(first, second);
@@ -536,7 +539,7 @@ mod tests {
                 WalletNetwork::Regtest,
                 READ_DB_BUSY_TIMEOUT,
             )?;
-            db.get_wallet_summary(ConfirmationsPolicy::default())
+            db.get_wallet_snapshot(ConfirmationsPolicy::default())
                 .map_err(|e| format!("{e}"))
         })
         .unwrap();

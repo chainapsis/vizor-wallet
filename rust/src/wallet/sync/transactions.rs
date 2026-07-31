@@ -108,16 +108,16 @@ pub fn get_wallet_balance(
         .expect("get_wallet_balances returns one entry per requested account"))
 }
 
-/// Balances for several accounts from a single `get_wallet_summary`.
+/// Balances for several accounts from a single `get_wallet_snapshot`.
 ///
-/// `get_wallet_summary` computes every account's balance regardless of
+/// `get_wallet_snapshot` computes every account's balance regardless of
 /// which one the caller wants, so asking it once per account is
 /// quadratic in account count. Callers that need more than one account
 /// — the Ironwood migration coordinator sweeps all of them every poll —
 /// must use this instead of looping over `get_wallet_balance`.
 ///
 /// Returns one entry per requested uuid, in the order given. An account
-/// missing from the summary yields `AccountUnavailable` rather than an
+/// missing from the snapshot yields `AccountUnavailable` rather than an
 /// error, matching the single-account behaviour, so one unknown account
 /// cannot fail the whole batch.
 pub fn get_wallet_balances(
@@ -130,7 +130,8 @@ pub fn get_wallet_balances(
         .map(|uuid| parse_account_uuid(uuid))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let summary = crate::wallet::wallet_summary_cache::get_wallet_summary_cached(db_path, network)?;
+    let summary =
+        crate::wallet::wallet_summary_cache::get_wallet_snapshot_cached(db_path, network)?;
 
     let Some(summary) = summary else {
         return Ok(target_ids
@@ -3257,7 +3258,7 @@ mod tests {
     /// Pin the batched balance read to the single-account one.
     ///
     /// `get_wallet_balances` exists so a caller wanting several accounts
-    /// pays for one `get_wallet_summary` instead of one per account. It
+    /// pays for one `get_wallet_snapshot` instead of one per account. It
     /// must return exactly what looping over `get_wallet_balance` would,
     /// including order and the unavailable-account fallbacks.
     ///
