@@ -109,14 +109,10 @@ where
         .collect()
 }
 
-/// Block offsets for re-signed (rebuilt) migration parts, aligned with
-/// `recoveries` (`(part_index, value_zatoshi)`) order. The rebuild path
-/// anchors these offsets at the rebuild-time chain target rather than the
-/// run's persisted schedule origin, so they are drawn fresh over the
-/// remaining count — mirroring `reschedule_overdue_pending_txs` — instead of
-/// replaying each part's original whole-run offset, which would push the
-/// survivors of a large run a full original-ladder span past the rebuild
-/// height.
+/// Fresh cumulative offsets for rebuilt migration parts, aligned with
+/// `recoveries` (`(part_index, value_zatoshi)`) order. The caller appends them
+/// to the run's persisted recovery ladder instead of replaying each part's
+/// original whole-run offset.
 pub(crate) fn rebuild_schedule_block_offsets<R: RngCore + CryptoRng + ?Sized>(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],

@@ -4326,10 +4326,11 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase,
               created_at_ms, updated_at_ms, target_values_json, schedule_json,
-              signed_schedule_origin_height)
+              signed_schedule_origin_height, recovery_schedule_origin_height,
+              recovery_schedule_max_block_offset)
              VALUES ('expired-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]',
                      '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":1}}]',
-                     90)"
+                     90, 100, 1)"
         ),
         params![db_path, PHASE_BROADCAST_SCHEDULED],
     )
@@ -4350,9 +4351,9 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
              (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
               value_zatoshi, fee_zatoshi, selected_note_txid,
               selected_note_output_index, selected_note_value, scheduled_at_ms,
-              scheduled_height, status, metadata_json)
+              scheduled_height, status, metadata_json, rebuild_block_offset)
              VALUES ('expired-run', ?1, 'encrypted', 90, 100, 100, 10, ?2,
-                     0, 110, 1, 95, 'scheduled', ?3)"
+                     0, 110, 1, 95, 'scheduled', ?3, 1)"
         ),
         params![
             "22".repeat(32),
@@ -4493,6 +4494,8 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         &format!(
             "UPDATE {RUNS_TABLE}
              SET signed_schedule_origin_height = NULL,
+                 recovery_schedule_origin_height = NULL,
+                 recovery_schedule_max_block_offset = NULL,
                  target_values_json = 'unrecoverable legacy metadata'
              WHERE run_id = 'expired-run'"
         ),
@@ -4876,6 +4879,46 @@ fn rebuild_replacement_for(
 }
 
 #[test]
+fn replacement_signed_children_require_recovery_origin() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('missing-origin', 'account-1', 'main', ?1, ?2, 1, 1,
+                     '[100]', '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":3}}]')"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    let row = insert_needs_resign_fixture_rows(&conn, "missing-origin", 0..1)
+        .pop()
+        .unwrap();
+    drop(conn);
+    let (replacement, child) = rebuild_replacement_for(&row.0, &row.1, 0, 101, 103);
+
+    assert_eq!(
+        replace_resigned_pending_parts(
+            &db_path,
+            "missing-origin",
+            WalletNetwork::Main,
+            100,
+            vec![replacement],
+            vec![child],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap_err(),
+        "Migration recovery schedule origin is missing"
+    );
+}
+
+#[test]
 fn rebuild_generation_spans_batches_with_one_ladder() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
@@ -4962,12 +5005,10 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         "Replacement migration schedule does not match its persisted recovery offset"
     );
 
-    // A child anchored at a different origin than the generation is rejected,
-    // even when the replacement pending row matches its persisted offset.
-    let stray_offset = generation.offsets_by_txid[&rows[9].0.to_ascii_lowercase()];
-    let (stray_replacement, mut stray_child) = replacement_for(&rows[9], 9, 5_001);
-    stray_child.target_height = 6_001;
-    stray_child.scheduled_height = 6_000 + stray_offset;
+    // A live construction target may differ from the generation origin, but
+    // the signed child's scheduled height cannot precede that origin.
+    let (stray_replacement, mut stray_child) = replacement_for(&rows[9], 9, 6_001);
+    stray_child.scheduled_height = 4_999;
     stray_child.expiry_height =
         zip318_canonical_migration_expiry_height(stray_child.scheduled_height).unwrap();
     assert_eq!(
@@ -4982,7 +5023,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             TEST_SALT_BASE64,
         )
         .unwrap_err(),
-        "Rebuilt migration children must share the recovery schedule origin"
+        "Signed migration schedule starts below zero"
     );
 
     // First signing batch covers eight parts; the generation survives it.
@@ -5046,7 +5087,13 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         .enumerate()
         .map(|(offset, row)| {
             let assigned = late_return.offsets_by_txid[&row.0.to_ascii_lowercase()];
-            rebuild_replacement_for(&row.0, &row.1, 8 + offset as u32, 5_001, 5_000 + assigned)
+            rebuild_replacement_for(
+                &row.0,
+                &row.1,
+                8 + offset as u32,
+                late_tip + 1,
+                5_000 + assigned,
+            )
         })
         .unzip();
     replace_resigned_pending_parts(
@@ -5083,21 +5130,37 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     let mut rebuilt = {
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT schedule_start_height, scheduled_height FROM {PENDING_TXS_TABLE}
+                "SELECT part_index, target_height, schedule_start_height, scheduled_height
+                 FROM {PENDING_TXS_TABLE}
                  WHERE run_id = 'gen-run'"
             ))
             .unwrap();
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)))
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, u32>(3)?,
+                ))
+            })
             .unwrap();
         rows.collect::<Result<Vec<_>, _>>().unwrap()
     };
     assert_eq!(rebuilt.len(), 10);
-    assert!(rebuilt.iter().all(|(start, _)| *start == 5_000));
-    rebuilt.sort_by_key(|(_, scheduled)| *scheduled);
+    assert!(rebuilt.iter().all(|(_, _, start, _)| *start == 5_000));
+    assert!(rebuilt.iter().all(|(part_index, target, _, _)| {
+        *target
+            == if *part_index < 8 {
+                5_001
+            } else {
+                late_tip + 1
+            }
+    }));
+    rebuilt.sort_by_key(|(_, _, _, scheduled)| *scheduled);
     let rebuilt_ladder = rebuilt
         .iter()
-        .map(|(_, scheduled)| scheduled - 5_000)
+        .map(|(_, _, _, scheduled)| scheduled - 5_000)
         .collect::<Vec<_>>();
     let mut expected_ladder = rows[..8]
         .iter()
@@ -5246,10 +5309,11 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase,
               created_at_ms, updated_at_ms, target_values_json, schedule_json,
-              signed_schedule_origin_height)
+              signed_schedule_origin_height, recovery_schedule_origin_height,
+              recovery_schedule_max_block_offset)
              VALUES ('rebuild-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,200]',
                      '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":10}},{{\"part_index\":1,\"value_zatoshi\":200,\"block_offset\":40}}]',
-                     90)"
+                     90, 100, 57)"
         ),
         params![db_path, PHASE_READY_TO_MIGRATE],
     )
@@ -5266,9 +5330,9 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
                  (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
                   expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
                   selected_note_output_index, selected_note_value, scheduled_at_ms,
-                  scheduled_height, status, metadata_json)
+                  scheduled_height, status, metadata_json, rebuild_block_offset)
                  VALUES ('rebuild-run', ?1, ?2, 'encrypted', 90, 69120, ?3, 10, ?4,
-                         ?5, ?6, 1, ?7, 'needs_resign', ?8)"
+                         ?5, ?6, 1, ?7, 'needs_resign', ?8, ?9)"
             ),
             params![
                 format!("{:02x}", 0x22 + index).repeat(32),
@@ -5279,14 +5343,16 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
                 note.value_zatoshi,
                 90 + 30 * index as u32,
                 serde_json::to_string(&metadata).unwrap(),
+                53 + 4 * index as u32,
             ],
         )
         .unwrap();
     }
     drop(conn);
 
-    // Fresh remaining-count offsets 3 and 7 from the rebuild target 101.
-    let scheduled_heights = [103u32, 107];
+    // The live construction target has advanced beyond the persisted origin;
+    // fresh offsets 53 and 57 still schedule from that origin.
+    let scheduled_heights = [153u32, 157];
     let (replacements, replacement_children): (Vec<_>, Vec<_>) = notes
         .iter()
         .enumerate()
@@ -5307,7 +5373,7 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
                         part_index: index as u32,
                         txid_hex: format!("{:02x}", 0x44 + index).repeat(32),
                         raw_tx: vec![index as u8; 4],
-                        target_height: 101,
+                        target_height: 151,
                         anchor_boundary_height: Some(90),
                         expiry_height,
                         scheduled_height,
@@ -5322,7 +5388,7 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
                     child_index: index as u32,
                     base_pczt: vec![index as u8; 3],
                     sigs: Vec::new(),
-                    target_height: 101,
+                    target_height: 151,
                     anchor_boundary_height: Some(90),
                     expiry_height,
                     scheduled_height,
@@ -5339,7 +5405,7 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
         &db_path,
         "rebuild-run",
         WalletNetwork::Regtest,
-        101,
+        150,
         replacements,
         replacement_children,
         TEST_PASSWORD,
@@ -5348,10 +5414,10 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
     .unwrap();
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    let rows: Vec<(String, u32, u32, String)> = {
+    let rows: Vec<(String, u32, u32, u32, String)> = {
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT txid_hex, schedule_start_height, scheduled_height, status
+                "SELECT txid_hex, target_height, schedule_start_height, scheduled_height, status
                  FROM {PENDING_TXS_TABLE}
                  WHERE run_id = 'rebuild-run'
                  ORDER BY scheduled_height ASC"
@@ -5359,16 +5425,23 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
             .unwrap();
         let rows = stmt
             .query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
             })
             .unwrap();
         rows.collect::<Result<Vec<_>, _>>().unwrap()
     };
     assert_eq!(rows.len(), 2);
-    for (index, (txid_hex, schedule_start_height, scheduled_height, status)) in
+    for (index, (txid_hex, target_height, schedule_start_height, scheduled_height, status)) in
         rows.iter().enumerate()
     {
         assert_eq!(*txid_hex, format!("{:02x}", 0x44 + index).repeat(32));
+        assert_eq!(*target_height, 151);
         assert_eq!(*schedule_start_height, 100);
         assert_eq!(*scheduled_height, scheduled_heights[index]);
         assert_eq!(status, "scheduled");

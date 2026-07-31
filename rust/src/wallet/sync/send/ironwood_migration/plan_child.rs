@@ -628,15 +628,14 @@ fn create_orchard_to_ironwood_pczt_from_note(
     if u64::from(selected_value) != note_ref.value_zatoshi {
         return Err("Prepared note value changed during revalidation".to_string());
     }
-    // Rebuilds share the persisted recovery-schedule origin so every signing
-    // batch extends one ladder; note revalidation and anchor selection above
-    // and below stay on the current chain state either way.
-    let current_target_height: u32 = target_height.into();
-    let (child_target_height, scheduled_height) = initial_migration_schedule_heights(
-        current_target_height,
-        recovery_schedule_origin_height,
-        schedule_block_offset,
-    )?;
+    // The recovery origin controls only the broadcast ladder. Build at the
+    // live target so the transaction matches the current consensus branch.
+    let child_target_height: u32 = target_height.into();
+    let schedule_origin_height = recovery_schedule_origin_height
+        .ok_or("Migration rebuild schedule generation is missing its origin")?;
+    let scheduled_height = schedule_origin_height
+        .checked_add(schedule_block_offset)
+        .ok_or("Migration scheduled height overflow")?;
     drop(db);
     let Some((anchor_boundary_height, orchard_anchor, orchard_witness)) =
         orchard_anchor_and_witness_for_prepared_note(

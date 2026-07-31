@@ -26,7 +26,7 @@ void main() {
   setUpAll(initializeZcashWalletRuntime);
 
   testWidgets(
-    're-signs multiple expired migration parts in the existing approved run',
+    're-signs expired migration parts across waves in the approved run',
     (tester) async {
       addTearDown(cleanupDesktopRegtestWallet);
       await cleanupDesktopRegtestWallet();
@@ -210,24 +210,16 @@ void main() {
 
       final syncNotifier = container.read(syncProvider.notifier);
       final syncPause = await syncNotifier.pauseForWalletMutation();
-      late rust_sync.MigrationStatus replacement;
+      late rust_sync.MigrationStatus firstReplacement;
+      late Set<String> firstReplacementTxids;
+      late String secondWaveOldTxid;
+      late ({int originHeight, int maxBlockOffset}) firstGeneration;
       try {
-        await _runSqlite(
+        await _forceScheduledPartsExpired(
           dbPath,
-          "UPDATE vizor_migration_pending_txs "
-          "SET expiry_height = $recoveryChainHeight "
-          "WHERE run_id = '${_sqlLiteral(originalRunId)}' "
-          "AND status = 'scheduled';",
-        );
-        expect(
-          (await _runSqlite(
-            dbPath,
-            "SELECT COUNT(*) FROM vizor_migration_pending_txs "
-            "WHERE run_id = '${_sqlLiteral(originalRunId)}' "
-            "AND status = 'scheduled' "
-            "AND expiry_height = $recoveryChainHeight;",
-          )).trim(),
-          '2',
+          originalRunId,
+          recoveryChainHeight,
+          expectedCount: 2,
         );
         e2eLog(
           'forced both parts of run $originalRunId to expire at tip '
@@ -243,7 +235,7 @@ void main() {
           e2eLog('replacement submission unavailable as expected: $error');
         }
 
-        replacement = await waitForDesktopRegtestMigrationStatus(
+        firstReplacement = await waitForDesktopRegtestMigrationStatus(
           tester,
           accountUuid,
           (status) =>
@@ -261,8 +253,24 @@ void main() {
           description: 'same-run replacement migration transactions',
           timeout: const Duration(minutes: 3),
         );
-        expect(replacement.targetValuesZatoshi, orderedEquals(originalTargets));
-        expect(replacement.scheduledBroadcasts, hasLength(2));
+        expect(
+          firstReplacement.targetValuesZatoshi,
+          orderedEquals(originalTargets),
+        );
+        expect(firstReplacement.scheduledBroadcasts, hasLength(2));
+        firstReplacementTxids = firstReplacement.scheduledBroadcasts
+            .map((broadcast) => broadcast.txidHex)
+            .toSet();
+        final firstReplacementSchedule =
+            firstReplacement.scheduledBroadcasts.toList()..sort(
+              (left, right) =>
+                  left.scheduledHeight.compareTo(right.scheduledHeight),
+            );
+        secondWaveOldTxid = firstReplacementSchedule.first.txidHex;
+        firstGeneration = await _migrationRecoveryGeneration(
+          dbPath,
+          originalRunId,
+        );
 
         final recovered = await _runSqlite(
           dbPath,
@@ -315,8 +323,142 @@ void main() {
         description: 'wallet sync after forced migration expiry',
         timeout: const Duration(minutes: 5),
       );
+
+      await ironwoodDriverPost(
+        _driverUrl,
+        '/mine',
+        payload: const {'blocks': 1},
+      );
+      final secondRecoveryChain = await ironwoodDriverGet(
+        _driverUrl,
+        '/status',
+      );
+      final secondRecoveryChainHeight =
+          (secondRecoveryChain['zcashdHeight'] as num).toInt();
+      expect(secondRecoveryChainHeight, greaterThan(recoveryChainHeight));
+      await syncNotifier.startSyncAnyway();
+      await pumpUntil(
+        tester,
+        () {
+          final sync = container.read(syncProvider).value;
+          return sync?.isSyncing == false &&
+              (sync?.scannedHeight ?? 0) >= secondRecoveryChainHeight;
+        },
+        description: 'wallet sync before the later recovery wave',
+        timeout: const Duration(minutes: 5),
+      );
+
+      await ironwoodDriverPost(_driverUrl, '/lightwalletd/stop');
+      final secondSyncPause = await syncNotifier.pauseForWalletMutation();
+      late rust_sync.MigrationStatus secondReplacement;
+      try {
+        await _forceScheduledPartsExpired(
+          dbPath,
+          originalRunId,
+          secondRecoveryChainHeight,
+          txidHex: secondWaveOldTxid,
+          expectedCount: 1,
+        );
+        e2eLog(
+          'forced one replacement part of run $originalRunId to expire at '
+          'the later tip $secondRecoveryChainHeight',
+        );
+
+        try {
+          await container
+              .read(ironwoodMigrationServiceProvider)
+              .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+        } catch (error) {
+          expect(error.toString(), contains('transport error'));
+          e2eLog(
+            'second replacement submission unavailable as expected: $error',
+          );
+        }
+
+        secondReplacement = await waitForDesktopRegtestMigrationStatus(
+          tester,
+          accountUuid,
+          (status) {
+            final txids = status.scheduledBroadcasts
+                .map((broadcast) => broadcast.txidHex)
+                .toSet();
+            return status.activeRunId == originalRunId &&
+                status.scheduledBroadcasts.length ==
+                    firstReplacementTxids.length &&
+                status.scheduledBroadcasts.every(
+                  (broadcast) => broadcast.status == 'scheduled',
+                ) &&
+                txids.difference(firstReplacementTxids).length == 1 &&
+                firstReplacementTxids.difference(txids).length == 1;
+          },
+          description: 'later single-part recovery wave',
+          timeout: const Duration(minutes: 3),
+        );
+        final secondReplacementTxids = secondReplacement.scheduledBroadcasts
+            .map((broadcast) => broadcast.txidHex)
+            .toSet();
+        final secondWaveNewTxid = secondReplacementTxids
+            .difference(firstReplacementTxids)
+            .single;
+        final secondGeneration = await _migrationRecoveryGeneration(
+          dbPath,
+          originalRunId,
+        );
+        expect(secondGeneration.originHeight, firstGeneration.originHeight);
+        expect(
+          secondGeneration.maxBlockOffset,
+          greaterThanOrEqualTo(firstGeneration.maxBlockOffset),
+        );
+
+        final persistedSecondWave = (await _runSqlite(
+          dbPath,
+          "SELECT target_height || ':' || schedule_start_height || ':' || "
+          "(scheduled_height - schedule_start_height) || ':' || status "
+          "FROM vizor_migration_pending_txs "
+          "WHERE run_id = '${_sqlLiteral(originalRunId)}' "
+          "AND txid_hex = '${_sqlLiteral(secondWaveNewTxid)}';",
+        )).trim().split(':');
+        expect(persistedSecondWave, hasLength(4));
+        expect(
+          int.parse(persistedSecondWave[0]),
+          secondRecoveryChainHeight + 1,
+        );
+        expect(int.parse(persistedSecondWave[1]), firstGeneration.originHeight);
+        expect(
+          int.parse(persistedSecondWave[2]),
+          secondGeneration.maxBlockOffset,
+        );
+        expect(persistedSecondWave[3], 'scheduled');
+      } finally {
+        try {
+          await ironwoodDriverPost(
+            _driverUrl,
+            '/node/restart',
+            timeout: const Duration(minutes: 5),
+          );
+        } finally {
+          syncNotifier.resumeAfterWalletMutation(secondSyncPause);
+        }
+      }
+
+      await syncNotifier.startSyncAnyway();
+      await pumpUntil(
+        tester,
+        () {
+          final sync = container.read(syncProvider).value;
+          return sync?.isSyncing == false &&
+              (sync?.scannedHeight ?? 0) >= secondRecoveryChainHeight;
+        },
+        description: 'wallet sync after the later recovery wave',
+        timeout: const Duration(minutes: 5),
+      );
       coordinator.enableAutomaticAdvances();
       await coordinator.refreshNow(forceAdvance: true);
+      final retryStatus = await desktopRegtestMigrationStatus(accountUuid);
+      if (retryStatus.phase == 'failed_recoverable') {
+        e2eLog('retrying the expected offline recovery failure');
+        await coordinator.retry(accountUuid, status: retryStatus);
+      }
 
       final submitted = await advanceDesktopRegtestMigrationSchedule(
         tester,
@@ -341,7 +483,7 @@ void main() {
         timeout: const Duration(minutes: 5),
       );
     },
-    timeout: const Timeout(Duration(minutes: 20)),
+    timeout: const Timeout(Duration(minutes: 25)),
   );
 }
 
@@ -380,6 +522,53 @@ Future<void> _waitForNoPendingDenominationStages(
     await Future<void>.delayed(const Duration(milliseconds: 150));
   }
   fail('Timed out waiting for the scheduled denomination broadcast.');
+}
+
+Future<void> _forceScheduledPartsExpired(
+  String dbPath,
+  String runId,
+  int chainHeight, {
+  String? txidHex,
+  required int expectedCount,
+}) async {
+  final txidPredicate = txidHex == null
+      ? ''
+      : " AND txid_hex = '${_sqlLiteral(txidHex)}'";
+  await _runSqlite(
+    dbPath,
+    "UPDATE vizor_migration_pending_txs "
+    "SET expiry_height = $chainHeight "
+    "WHERE run_id = '${_sqlLiteral(runId)}' "
+    "AND status = 'scheduled'$txidPredicate;",
+  );
+  expect(
+    (await _runSqlite(
+      dbPath,
+      "SELECT COUNT(*) FROM vizor_migration_pending_txs "
+      "WHERE run_id = '${_sqlLiteral(runId)}' "
+      "AND status = 'scheduled' "
+      "AND expiry_height = $chainHeight$txidPredicate;",
+    )).trim(),
+    '$expectedCount',
+  );
+}
+
+Future<({int originHeight, int maxBlockOffset})> _migrationRecoveryGeneration(
+  String dbPath,
+  String runId,
+) async {
+  final fields = (await _runSqlite(
+    dbPath,
+    "SELECT recovery_schedule_origin_height || ':' || "
+    "recovery_schedule_max_block_offset "
+    "FROM vizor_migration_runs "
+    "WHERE run_id = '${_sqlLiteral(runId)}';",
+  )).trim().split(':');
+  expect(fields, hasLength(2));
+  return (
+    originHeight: int.parse(fields[0]),
+    maxBlockOffset: int.parse(fields[1]),
+  );
 }
 
 Future<String> _runSqlite(String dbPath, String sql) async {

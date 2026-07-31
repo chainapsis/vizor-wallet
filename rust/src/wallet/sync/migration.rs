@@ -2377,44 +2377,30 @@ fn insert_signed_child_pczts_with_tx(
                 child.value_zatoshi,
             )
             .ok_or("Approved migration schedule is missing a signed child")?;
-            match mode {
-                SignedChildInsertMode::Initial => {
-                    let child_schedule_origin = child
-                        .scheduled_height
-                        .checked_sub(block_offset)
-                        .ok_or("Signed migration schedule starts below zero")?;
-                    if let Some(origin) = signed_schedule_origin {
-                        if origin != child_schedule_origin {
-                            return Err(
-                                "Signed migration children do not share one absolute schedule origin"
-                                    .to_string(),
-                            );
-                        }
-                    } else {
-                        signed_schedule_origin = Some(child_schedule_origin);
+            if matches!(mode, SignedChildInsertMode::Initial) {
+                let child_schedule_origin = child
+                    .scheduled_height
+                    .checked_sub(block_offset)
+                    .ok_or("Signed migration schedule starts below zero")?;
+                if let Some(origin) = signed_schedule_origin {
+                    if origin != child_schedule_origin {
+                        return Err(
+                            "Signed migration children do not share one absolute schedule origin"
+                                .to_string(),
+                        );
                     }
-                }
-                // Rebuilt children carry fresh offsets anchored at the run's
-                // recovery-schedule generation (see
-                // `ensure_rebuild_schedule_generation`), so a shared origin
-                // derived from original offsets no longer holds; require the
-                // generation origin plus a non-negative rebuild offset.
-                SignedChildInsertMode::Replacement => {
-                    let child_origin = child.target_height.saturating_sub(1);
-                    if let Some(origin) = recovery_origin {
-                        if child_origin != origin {
-                            return Err(
-                                "Rebuilt migration children must share the recovery schedule origin"
-                                    .to_string(),
-                            );
-                        }
-                    }
-                    child
-                        .scheduled_height
-                        .checked_sub(child_origin)
-                        .ok_or("Signed migration schedule starts below zero")?;
+                } else {
+                    signed_schedule_origin = Some(child_schedule_origin);
                 }
             }
+        }
+        if matches!(mode, SignedChildInsertMode::Replacement) {
+            let recovery_origin = recovery_origin
+                .ok_or("Migration recovery schedule origin is missing")?;
+            child
+                .scheduled_height
+                .checked_sub(recovery_origin)
+                .ok_or("Signed migration schedule starts below zero")?;
         }
         let encrypted_base_pczt = secret_payload::encrypt_payload(
             Zeroizing::new(child.base_pczt),
@@ -4000,31 +3986,29 @@ pub(crate) fn replace_resigned_pending_parts(
                     .to_string(),
             );
         }
-        // Rebuilt rows use their recovery generation rather than the original
-        // approved schedule.
-        let schedule_start_height = pending.target_height.saturating_sub(1);
-        pending
-            .scheduled_height
-            .checked_sub(schedule_start_height)
-            .ok_or("Replacement migration schedule starts below zero")?;
-        match (recovery_origin, original.4) {
+        // Rebuilt rows use their recovery generation rather than the live
+        // transaction construction target.
+        let schedule_start_height = match (recovery_origin, original.4) {
             (Some(origin), Some(persisted_offset)) => {
                 let persisted_scheduled_height = origin
                     .checked_add(persisted_offset)
                     .ok_or("Persisted migration recovery schedule overflow")?;
-                if schedule_start_height != origin
-                    || pending.scheduled_height != persisted_scheduled_height
-                {
+                if pending.scheduled_height != persisted_scheduled_height {
                     return Err(
                         "Replacement migration schedule does not match its persisted recovery offset"
                             .to_string(),
                     );
                 }
+                origin
             }
             // Runs created before recovery generations have neither field.
-            (None, None) => {}
+            (None, None) => pending.target_height.saturating_sub(1),
             _ => return Err("Migration recovery schedule metadata is incomplete".to_string()),
-        }
+        };
+        pending
+            .scheduled_height
+            .checked_sub(schedule_start_height)
+            .ok_or("Replacement migration schedule starts below zero")?;
         let encrypted_raw_tx = secret_payload::encrypt_payload(
             Zeroizing::new(pending.raw_tx),
             password,
