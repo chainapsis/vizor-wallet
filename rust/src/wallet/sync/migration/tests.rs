@@ -4913,7 +4913,8 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard);
     let mut ladder = generation.offsets_by_txid.values().copied().collect::<Vec<_>>();
     ladder.sort_unstable();
-    assert!(*ladder.last().unwrap() <= max_delay_blocks * 10);
+    let generation_max_offset = *ladder.last().unwrap();
+    assert!(generation_max_offset <= max_delay_blocks * 10);
     assert!(ladder.windows(2).all(|w| w[1] - w[0] <= max_delay_blocks));
 
     // A later call (for example the next QR session at a new tip) reuses the
@@ -4932,11 +4933,38 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         rebuild_replacement_for(txid_hex, note, part_index, target_height, 5_000 + offset)
     };
 
+    // The replacement boundary enforces the exact persisted offset, not only
+    // the generation origin.
+    let persisted_offset = generation.offsets_by_txid[&rows[9].0.to_ascii_lowercase()];
+    let (wrong_offset_replacement, wrong_offset_child) = rebuild_replacement_for(
+        &rows[9].0,
+        &rows[9].1,
+        9,
+        5_001,
+        5_001 + persisted_offset,
+    );
+    assert_eq!(
+        replace_resigned_pending_parts(
+            &db_path,
+            "gen-run",
+            WalletNetwork::Main,
+            vec![wrong_offset_replacement],
+            vec![wrong_offset_child],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap_err(),
+        "Replacement migration schedule does not match its persisted recovery offset"
+    );
+
     // A child anchored at a different origin than the generation is rejected,
-    // even when its own pending bookkeeping is self-consistent.
+    // even when the replacement pending row matches its persisted offset.
     let stray_offset = generation.offsets_by_txid[&rows[9].0.to_ascii_lowercase()];
-    let (stray_replacement, stray_child) =
-        rebuild_replacement_for(&rows[9].0, &rows[9].1, 9, 6_001, 6_000 + stray_offset);
+    let (stray_replacement, mut stray_child) = replacement_for(&rows[9], 9, 5_001);
+    stray_child.target_height = 6_001;
+    stray_child.scheduled_height = 6_000 + stray_offset;
+    stray_child.expiry_height =
+        zip318_canonical_migration_expiry_height(stray_child.scheduled_height).unwrap();
     assert_eq!(
         replace_resigned_pending_parts(
             &db_path,
@@ -4968,17 +4996,22 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     )
     .unwrap();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    let mid_origin: Option<u32> = conn
+    let mid_generation: (Option<u32>, Option<u32>) = conn
         .query_row(
             &format!(
-                "SELECT recovery_schedule_origin_height FROM {RUNS_TABLE}
+                "SELECT recovery_schedule_origin_height,
+                        recovery_schedule_max_block_offset
+                 FROM {RUNS_TABLE}
                  WHERE run_id = 'gen-run'"
             ),
             [],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
-    assert_eq!(mid_origin, Some(5_000));
+    assert_eq!(
+        mid_generation,
+        (Some(5_000), Some(generation_max_offset))
+    );
     drop(conn);
 
     // The second batch consumes the same generation and retires it.
@@ -4999,17 +5032,19 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     .unwrap();
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    let final_origin: Option<u32> = conn
+    let final_generation: (Option<u32>, Option<u32>) = conn
         .query_row(
             &format!(
-                "SELECT recovery_schedule_origin_height FROM {RUNS_TABLE}
+                "SELECT recovery_schedule_origin_height,
+                        recovery_schedule_max_block_offset
+                 FROM {RUNS_TABLE}
                  WHERE run_id = 'gen-run'"
             ),
             [],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
-    assert_eq!(final_origin, None);
+    assert_eq!(final_generation, (None, None));
     let mut rebuilt = {
         let mut stmt = conn
             .prepare(&format!(
@@ -5033,7 +5068,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
 }
 
 #[test]
-fn rebuild_generation_extends_for_late_needs_resign_parts() {
+fn rebuild_generation_retains_consumed_max_for_late_needs_resign_parts() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir.path().join("wallet.db");
     let db_path = db_path.to_string_lossy().to_string();
@@ -5043,36 +5078,78 @@ fn rebuild_generation_extends_for_late_needs_resign_parts() {
         &format!(
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase,
-              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              recovery_schedule_origin_height, recovery_schedule_max_block_offset)
              VALUES ('late-run', 'account-1', 'main', ?1, ?2, 1, 1, '[100,100,100]',
-                     '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":10}},{{\"part_index\":1,\"value_zatoshi\":100,\"block_offset\":20}},{{\"part_index\":2,\"value_zatoshi\":100,\"block_offset\":30}}]')"
+                     '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":10}},{{\"part_index\":1,\"value_zatoshi\":100,\"block_offset\":20}},{{\"part_index\":2,\"value_zatoshi\":100,\"block_offset\":30}}]',
+                     2000, 1000)"
         ),
         params![db_path, PHASE_READY_TO_MIGRATE],
     )
     .unwrap();
-    insert_needs_resign_fixture_rows(&conn, "late-run", 0..2);
+    let rows = insert_needs_resign_fixture_rows(&conn, "late-run", 0..2);
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE} SET rebuild_block_offset = 10
+             WHERE run_id = 'late-run' AND part_index = 0"
+        ),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE} SET rebuild_block_offset = 1000
+             WHERE run_id = 'late-run' AND part_index = 1"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
 
-    let generation =
-        ensure_rebuild_schedule_generation(&db_path, "late-run", WalletNetwork::Main, 2_000)
-            .unwrap()
-            .unwrap();
-    let drawn_max = generation.offsets_by_txid.values().copied().max().unwrap();
+    // Consume the part that held the generation's largest offset. The one
+    // remaining needs_resign row only carries offset 10.
+    let (replacement, child) =
+        rebuild_replacement_for(&rows[1].0, &rows[1].1, 1, 2_001, 3_000);
+    replace_resigned_pending_parts(
+        &db_path,
+        "late-run",
+        WalletNetwork::Main,
+        vec![replacement],
+        vec![child],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
 
-    // A part expiring after the generation exists joins the same ladder past
-    // its current maximum instead of anchoring a second ladder.
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     insert_needs_resign_fixture_rows(&conn, "late-run", 2..3);
     drop(conn);
+
+    // A later expiry extends from the persisted historical maximum rather
+    // than the maximum among rows still waiting for re-sign.
     let extended =
         ensure_rebuild_schedule_generation(&db_path, "late-run", WalletNetwork::Main, 2_500)
             .unwrap()
             .unwrap();
     assert_eq!(extended.origin_height, 2_000);
-    assert_eq!(extended.offsets_by_txid.len(), 3);
-    for (txid_hex, offset) in &generation.offsets_by_txid {
-        assert_eq!(extended.offsets_by_txid[txid_hex], *offset);
-    }
+    assert_eq!(extended.offsets_by_txid.len(), 2);
+    assert_eq!(extended.offsets_by_txid[&rows[0].0], 10);
     let late_txid = format!("{:02x}", 0x32).repeat(32);
-    assert!(extended.offsets_by_txid[&late_txid] > drawn_max);
+    let late_offset = extended.offsets_by_txid[&late_txid];
+    assert!(late_offset >= 1_000);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let persisted_max: u32 = conn
+        .query_row(
+            &format!(
+                "SELECT recovery_schedule_max_block_offset FROM {RUNS_TABLE}
+                 WHERE run_id = 'late-run'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(persisted_max, late_offset);
 }
 
 #[test]
