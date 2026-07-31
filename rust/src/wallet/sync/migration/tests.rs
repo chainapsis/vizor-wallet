@@ -1953,7 +1953,7 @@ fn planner_accepts_only_zip318_one_two_five_denominations() {
 }
 
 #[test]
-fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
+fn anchor_bucket_candidates_prefer_aged_boundaries_with_latest_fallback() {
     assert_eq!(ZIP318_ANCHOR_AGE_CAP, 4);
 
     assert_eq!(
@@ -1973,8 +1973,20 @@ fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5000),
         vec![5472, 5328, 5184, 5040]
     );
+    // No aged boundary clears the note height: fall back to the newest
+    // boundary instead of returning an empty set.
     assert_eq!(
         zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5600, 5000),
+        vec![5616]
+    );
+    // Same fallback when NU6.3 activation excludes every aged boundary.
+    assert_eq!(
+        zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5000, 5500),
+        vec![5616]
+    );
+    // Even the newest boundary is below the note height: genuinely empty.
+    assert_eq!(
+        zip318_anchor_candidate_boundaries(WalletNetwork::Test, 5700, 5650, 5000),
         Vec::<u32>::new()
     );
     assert_eq!(
@@ -1994,6 +2006,16 @@ fn anchor_bucket_candidates_exclude_latest_and_pre_activation_boundaries() {
         5616,
         5700,
         5000,
+        5000
+    ));
+    // Intentional asymmetry: the lone newest-boundary fallback is emitted by
+    // the candidate builder but not accepted by the aged-candidate check; a
+    // rejected persisted pick re-draws the same single candidate instead.
+    assert!(!zip318_anchor_boundary_is_candidate(
+        WalletNetwork::Test,
+        5616,
+        5700,
+        5600,
         5000
     ));
     assert_eq!(
@@ -2144,8 +2166,15 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
             zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5000, 5000).unwrap();
         assert!(candidates.contains(&boundary));
     }
+    // The lone newest-boundary fallback is drawable even though its age is
+    // below the policy minimum.
     assert_eq!(
         zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5600, 5000),
+        Some(5616)
+    );
+    // Nothing usable at all: the draw still yields no boundary.
+    assert_eq!(
+        zip318_draw_anchor_boundary_for_note(WalletNetwork::Test, 5700, 5650, 5000),
         None
     );
     assert_eq!(
@@ -2156,6 +2185,50 @@ fn anchor_bucket_draw_stays_within_candidate_set() {
         zip318_anchor_candidate_boundaries(WalletNetwork::Regtest, 501, 501, 500),
         vec![501]
     );
+}
+
+#[test]
+fn anchor_bucket_draw_uses_age_zero_only_as_the_sole_fallback() {
+    let latest_boundary = 5616;
+    let fallback_candidates = zip318_anchor_candidate_boundaries_with_policy(
+        WalletNetwork::Test,
+        MigrationTimingPolicy::Standard,
+        5700,
+        5600,
+        5000,
+    );
+    assert_eq!(fallback_candidates, vec![latest_boundary]);
+    assert_eq!(
+        zip318_draw_anchor_boundary_for_note_with_policy(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            5700,
+            5600,
+            5000,
+        ),
+        Some(latest_boundary)
+    );
+
+    let aged_candidates = zip318_anchor_candidate_boundaries_with_policy(
+        WalletNetwork::Test,
+        MigrationTimingPolicy::Standard,
+        5700,
+        5000,
+        5000,
+    );
+    assert!(!aged_candidates.contains(&latest_boundary));
+    for _ in 0..32 {
+        let selected = zip318_draw_anchor_boundary_for_note_with_policy(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard,
+            5700,
+            5000,
+            5000,
+        )
+        .unwrap();
+        assert!(aged_candidates.contains(&selected));
+        assert_ne!(selected, latest_boundary);
+    }
 }
 
 #[test]
