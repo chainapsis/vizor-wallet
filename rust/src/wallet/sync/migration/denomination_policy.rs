@@ -315,6 +315,15 @@ pub(crate) fn zip318_anchor_candidate_boundaries_with_policy(
         }
         candidates.push(boundary);
     }
+    // If every aged boundary is older than the note/activation lower bound,
+    // but the newest boundary meets it, use that age-0 boundary as the sole
+    // fallback candidate. This commonly occurs just after NU6.3 activation.
+    if candidates.is_empty()
+        && anchor_bucket_min_age(network, timing_policy) > 0
+        && latest_boundary >= lower_bound
+    {
+        candidates.push(latest_boundary);
+    }
     candidates
 }
 
@@ -335,6 +344,10 @@ pub(crate) fn zip318_anchor_boundary_is_candidate(
     )
 }
 
+/// Validates only normally aged candidates, so the age-0 fallback is rejected
+/// even when `zip318_anchor_candidate_boundaries_with_policy` emitted it. If a
+/// persisted age-0 pick is rejected, the caller performs a fresh draw; because
+/// that fallback is the only candidate, the draw selects it again.
 pub(crate) fn zip318_anchor_boundary_is_candidate_with_policy(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
@@ -410,6 +423,11 @@ pub(crate) fn zip318_draw_anchor_boundary_from_available_with_policy(
     )?;
     if available_candidates.is_empty() {
         return None;
+    }
+    // If the only available candidate is the newest boundary, select it immediately.
+    // This permits age 0 when none of the aged boundaries are usable.
+    if available_candidates == [latest_boundary] {
+        return Some(latest_boundary);
     }
 
     let mut weighted = Vec::with_capacity(available_candidates.len());
