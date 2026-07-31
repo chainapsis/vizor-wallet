@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
@@ -403,6 +404,41 @@ void main() {
     expect(resolved.freshness, SpendableBalanceFreshness.lastCompletedSync);
   });
 
+  test(
+    'account switch clears a restored snapshot when balance is unavailable',
+    () {
+      final restored = SyncState(
+        displaySpendableBalance: BigInt.from(50),
+        displaySpendableFreshness: SpendableBalanceFreshness.lastCompletedSync,
+      );
+
+      expect(
+        SyncState.shouldClearUnavailableRestoredSnapshot(
+          previous: restored,
+          hasAuthoritativeBalance: false,
+          clearRestoredSnapshotIfUnavailable: true,
+        ),
+        isTrue,
+      );
+      expect(
+        SyncState.shouldClearUnavailableRestoredSnapshot(
+          previous: restored,
+          hasAuthoritativeBalance: false,
+          clearRestoredSnapshotIfUnavailable: false,
+        ),
+        isFalse,
+      );
+      expect(
+        SyncState.shouldClearUnavailableRestoredSnapshot(
+          previous: restored,
+          hasAuthoritativeBalance: true,
+          clearRestoredSnapshotIfUnavailable: true,
+        ),
+        isFalse,
+      );
+    },
+  );
+
   test('displayPercentage defaults to actual percentage', () {
     final state = SyncState(percentage: 0.25);
 
@@ -506,6 +542,16 @@ void main() {
     expect(scoped.displayTargetBlocks, 120);
     expect(scoped.scannedHeight, 10);
     expect(scoped.chainTipHeight, 20);
+  });
+
+  test('restoring an account clears a recovered wallet-wide failure', () {
+    final failure = classifySyncFailure(StateError('sync failed'));
+    final cached = SyncState(failure: failure, error: failure.rawMessage);
+
+    final restored = cached.withGlobalSyncFieldsFrom(SyncState());
+
+    expect(restored.failure, isNull);
+    expect(restored.error, isNull);
   });
 
   test('cleared account state is scoped but not renderable account data', () {

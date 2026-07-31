@@ -1392,6 +1392,183 @@ void main() {
   });
 
   test(
+    'batch status failure falls back to isolated per-account reads',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('waiting_denom_confirmations'),
+        _hardwareUuid: _status('waiting_migration_confirmations'),
+      };
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        isMobile: false,
+        getStatuses:
+            ({required dbPath, required network, required accountUuids}) async {
+              throw StateError('wallet summary failed');
+            },
+        loadStatus: (accountUuid) async {
+          if (accountUuid == _softwareUuid) {
+            throw StateError('software status failed');
+          }
+          return statuses[accountUuid]!;
+        },
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+
+      await expectLater(
+        container
+            .read(ironwoodMigrationCoordinatorProvider.notifier)
+            .refreshNow(),
+        completes,
+      );
+
+      final state = container.read(ironwoodMigrationCoordinatorProvider);
+      expect(state.errors[_softwareUuid], contains('software status failed'));
+      expect(
+        state.statuses[_hardwareUuid]?.phase,
+        'waiting_migration_confirmations',
+      );
+      expect(state.errors[_hardwareUuid], isNull);
+    },
+  );
+
+  test(
+    'desktop sweep costs one batched status read, not one per account',
+    () async {
+      // The defect this pins: `status()` computes a full
+      // `get_wallet_summary` across *every* account, so a per-account
+      // sweep was quadratic in account count. Equivalence tests still
+      // pass if that loop comes back — only the call count catches it.
+      final statuses = {
+        _softwareUuid: _status('waiting_denom_confirmations'),
+        _hardwareUuid: _status('waiting_migration_confirmations'),
+      };
+      var batchedReads = 0;
+      var singularReads = 0;
+      var sweptAccountUuids = const <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: [],
+        isMobile: false,
+        getStatuses:
+            ({required dbPath, required network, required accountUuids}) async {
+              batchedReads++;
+              sweptAccountUuids = accountUuids;
+              return [
+                for (final uuid in accountUuids)
+                  rust_sync.MigrationStatusEntry(
+                    accountUuid: uuid,
+                    status: statuses[uuid],
+                  ),
+              ];
+            },
+        loadStatus: (accountUuid) async {
+          singularReads++;
+          return statuses[accountUuid]!;
+        },
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      final notifier = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+
+      // Drain whatever provider construction scheduled, so the counters
+      // below describe exactly one pass.
+      await notifier.refreshNow();
+      batchedReads = 0;
+      singularReads = 0;
+
+      await notifier.refreshNow();
+
+      expect(batchedReads, 1, reason: 'one summary per sweep');
+      expect(
+        singularReads,
+        0,
+        reason:
+            'a singular status() call per account reintroduces the '
+            'quadratic sweep',
+      );
+      expect(sweptAccountUuids, [_softwareUuid, _hardwareUuid]);
+      final state = container.read(ironwoodMigrationCoordinatorProvider);
+      expect(
+        state.statuses[_softwareUuid]?.phase,
+        'waiting_denom_confirmations',
+      );
+      expect(
+        state.statuses[_hardwareUuid]?.phase,
+        'waiting_migration_confirmations',
+      );
+      expect(state.errors, isEmpty);
+    },
+  );
+
+  test('mobile sweep keeps the per-account status path', () async {
+    // Batching is desktop-only on purpose: on mobile `status()` also
+    // resolves credential context and drives preparation, so a batched
+    // read would silently drop those side effects.
+    final statuses = {
+      _softwareUuid: _status('waiting_denom_confirmations'),
+      _hardwareUuid: _status('waiting_migration_confirmations'),
+    };
+    var batchedReads = 0;
+    var singularReads = 0;
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: [],
+      broadcasts: [],
+      isMobile: true,
+      getStatuses:
+          ({required dbPath, required network, required accountUuids}) async {
+            batchedReads++;
+            return [
+              for (final uuid in accountUuids)
+                rust_sync.MigrationStatusEntry(
+                  accountUuid: uuid,
+                  status: statuses[uuid],
+                ),
+            ];
+          },
+      loadStatus: (accountUuid) async {
+        singularReads++;
+        return statuses[accountUuid]!;
+      },
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    final notifier = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+
+    await notifier.refreshNow();
+    batchedReads = 0;
+    singularReads = 0;
+
+    await notifier.refreshNow();
+
+    expect(batchedReads, 0, reason: 'mobile must not take the batched path');
+    expect(singularReads, statuses.length);
+  });
+
+  test(
     'coalesces a refresh requested while status loading is active',
     () async {
       final statuses = {
@@ -1936,6 +2113,7 @@ ProviderContainer _container({
   required List<String> softwareStarts,
   required List<String> broadcasts,
   Future<rust_sync.MigrationStatus> Function(String accountUuid)? loadStatus,
+  IronwoodMigrationStatusesGetter? getStatuses,
   Future<rust_sync.IronwoodMigrationResult> Function(String accountUuid)?
   broadcast,
   Future<IronwoodMigrationOutboxRunResult> Function(String accountUuid)?
@@ -1948,6 +2126,7 @@ ProviderContainer _container({
   List<String>? backgroundPreparationStarts,
   List<String>? proofReadinessRecords,
   bool mutableAccounts = false,
+  bool isMobile = true,
   AppSecurityState? initialSecurityState,
   IronwoodMigrationStopper? stopMigrationRun,
 }) {
@@ -1957,6 +2136,7 @@ ProviderContainer _container({
         ({required dbPath, required network, required accountUuid}) async {
           return loadStatus?.call(accountUuid) ?? statuses[accountUuid]!;
         },
+    getStatuses: getStatuses,
     getPrivatePlan:
         ({required dbPath, required network, required accountUuid}) async =>
             null,
@@ -1964,7 +2144,7 @@ ProviderContainer _container({
     getEndpoint: () => _endpoint,
     getSessionPassword: () => 'test-password',
     isMacOS: () => true,
-    isMobile: () => true,
+    isMobile: () => isMobile,
     isIOS: () => isIOS,
     supportsBackgroundMigration: () => usesNativeOutbox,
     isHardwareAccount: (uuid) => uuid == _hardwareUuid,

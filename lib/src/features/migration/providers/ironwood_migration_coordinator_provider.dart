@@ -705,24 +705,64 @@ class IronwoodMigrationCoordinator
 
     final service = ref.read(ironwoodMigrationServiceProvider);
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    // One batched read per pass. `service.statuses` shares a single
+    // wallet-summary computation across accounts; asking per account
+    // recomputed it every time, which was quadratic in account count.
+    // It doubles as this pass's status source below, so a sweep now
+    // costs one summary rather than one per account.
+    final sweepErrors = <String, Object>{};
+    final sweptStatuses = <String, rust_sync.MigrationStatus>{};
+    try {
+      sweptStatuses.addAll(
+        await service.statuses(
+          network: endpoint.networkName,
+          accountUuids: [
+            for (final account in accountState.accounts) account.uuid,
+          ],
+          onAccountError: (accountUuid, error) =>
+              sweepErrors[accountUuid] = error,
+        ),
+      );
+    } catch (error) {
+      // The native batch can fail before it can return per-account entries
+      // (for example while opening/migrating the DB or parsing one UUID).
+      // Preserve the old per-account degradation instead of failing an
+      // unawaited refresh or attributing a wallet-wide read failure to the
+      // account whose stop happened to trigger it.
+      log(
+        'Ironwood migration batched status refresh failed; '
+        'falling back to per-account reads: $error',
+      );
+      for (final account in accountState.accounts) {
+        try {
+          sweptStatuses[account.uuid] = await service.status(
+            network: endpoint.networkName,
+            accountUuid: account.uuid,
+          );
+        } catch (accountError) {
+          sweepErrors[account.uuid] = accountError;
+        }
+        if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+      }
+    }
+    if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
+
     final desktopOpenStatuses = <String, rust_sync.MigrationStatus>{};
     if (kAppFormFactor == AppFormFactor.desktop &&
         _desktopOpenFallbackGate.needsOpenStatusSnapshot) {
       var snapshotComplete = true;
       for (final account in accountState.accounts) {
-        try {
-          desktopOpenStatuses[account.uuid] = await service.status(
-            network: endpoint.networkName,
-            accountUuid: account.uuid,
-          );
-          if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
-        } catch (error) {
+        final status = sweptStatuses[account.uuid];
+        if (status == null) {
           snapshotComplete = false;
           log(
             'Ironwood migration on-open status snapshot failed for '
-            '${account.uuid}; scheduled fallback remains paused: $error',
+            '${account.uuid}; scheduled fallback remains paused: '
+            '${sweepErrors[account.uuid]}',
           );
+          continue;
         }
+        desktopOpenStatuses[account.uuid] = status;
       }
       if (snapshotComplete) {
         _desktopOpenFallbackGate.captureOpenStatuses(
@@ -739,12 +779,14 @@ class IronwoodMigrationCoordinator
     for (final account in accountState.accounts) {
       try {
         final previousStatus = state.statuses[account.uuid];
-        var status =
-            desktopOpenStatuses[account.uuid] ??
-            await service.status(
-              network: endpoint.networkName,
-              accountUuid: account.uuid,
-            );
+        final sweptStatus = sweptStatuses[account.uuid];
+        if (sweptStatus == null) {
+          // Surface the batch's per-account failure through the same
+          // path the per-account try/catch used.
+          throw sweepErrors[account.uuid] ??
+              StateError('migration status unavailable for ${account.uuid}');
+        }
+        var status = desktopOpenStatuses[account.uuid] ?? sweptStatus;
         if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
         nextStatuses[account.uuid] = status;
         nextErrors.remove(account.uuid);
@@ -759,7 +801,7 @@ class IronwoodMigrationCoordinator
             accountUuid: account.uuid,
           );
           if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
-          status = await service.status(
+          status = await service.readOnlyStatus(
             network: endpoint.networkName,
             accountUuid: account.uuid,
           );

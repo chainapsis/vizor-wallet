@@ -756,7 +756,7 @@ void main() {
     });
 
     final accountNotifier = _FakeAccountNotifier(
-      _bootstrap.initialAccountState,
+      _bootstrap.initialAccountState.copyWith(activeAccountUuid: 'account-2'),
     );
     final syncNotifier = _FakeSyncNotifier();
     await tester.pumpWidget(
@@ -794,6 +794,7 @@ void main() {
 
     expect(accountNotifier.removedUuid, 'account-2');
     expect(syncNotifier.refreshCount, 1);
+    expect(syncNotifier.accountSwitchRefreshCount, 1);
     expect(
       find.byKey(const ValueKey('accounts_other_row_account-2')),
       findsNothing,
@@ -1021,7 +1022,7 @@ void main() {
     expect(
       messages.any(
         (message) =>
-            message.contains('removeAccountFlow: refreshAfterSend complete'),
+            message.contains('removeAccountFlow: balance refresh complete'),
       ),
       isTrue,
     );
@@ -1402,7 +1403,20 @@ class _FakeAccountNotifier extends AccountNotifier {
       for (final account in prev.accounts)
         if (account.uuid != uuid) account,
     ];
-    state = AsyncData(prev.copyWith(accounts: updated));
+    final nextActiveUuid = prev.activeAccountUuid == uuid
+        ? updated.isEmpty
+              ? null
+              : updated.first.uuid
+        : prev.activeAccountUuid;
+    state = AsyncData(
+      AccountState(
+        accounts: updated,
+        activeAccountUuid: nextActiveUuid,
+        activeAddress: nextActiveUuid == prev.activeAccountUuid
+            ? prev.activeAddress
+            : null,
+      ),
+    );
   }
 
   @override
@@ -1484,6 +1498,7 @@ class _FakeSyncNotifier extends SyncNotifier {
   final List<String>? events;
   final Completer<void>? pauseCompleter;
   int refreshCount = 0;
+  int accountSwitchRefreshCount = 0;
 
   @override
   Future<SyncState> build() async => SyncState();
@@ -1492,6 +1507,12 @@ class _FakeSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterSend() async {
     events?.add('refresh');
     refreshCount += 1;
+  }
+
+  @override
+  Future<void> refreshAfterAccountSwitch() async {
+    accountSwitchRefreshCount += 1;
+    await refreshAfterSend();
   }
 
   @override

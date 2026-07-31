@@ -1471,6 +1471,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                             network,
                             account_uuid,
                             &run.run_id,
+                            chain_tip_height,
                             recoveries,
                             &usk,
                             pending_password.as_slice(),
@@ -4309,6 +4310,7 @@ fn rebuild_expired_software_migration_parts(
     network: WalletNetwork,
     account_uuid: &str,
     run_id: &str,
+    chain_tip_height: u32,
     recoveries: Vec<super::migration::PendingMigrationPartRecovery>,
     usk: &UnifiedSpendingKey,
     pending_password: &[u8],
@@ -4316,19 +4318,22 @@ fn rebuild_expired_software_migration_parts(
 ) -> Result<(), String> {
     let retained_message_ids = super::migration::signed_child_message_ids_by_part(db_path, run_id)?;
     let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
-    let approved_schedule = super::migration::approved_schedule_for_run(db_path, run_id)?;
-    let target_values = super::migration::target_values_for_run(db_path, run_id)?;
+    let generation = super::migration::ensure_rebuild_schedule_generation(
+        db_path,
+        run_id,
+        network,
+        chain_tip_height,
+    )?
+    .ok_or("Migration rebuild schedule generation is missing its recovery parts")?;
     let mut replacements = Vec::with_capacity(recoveries.len());
     let mut replacement_children = Vec::with_capacity(recoveries.len());
 
     for (index, recovery) in recoveries.into_iter().enumerate() {
-        let schedule_block_offset = super::migration::schedule_block_offset_for_part(
-            &approved_schedule,
-            &target_values,
-            recovery.part_index,
-            recovery.value_zatoshi,
-        )
-        .ok_or("Approved migration schedule is missing a recovery child")?;
+        let schedule_block_offset = generation
+            .offsets_by_txid
+            .get(&recovery.old_txid_hex.to_ascii_lowercase())
+            .copied()
+            .ok_or("Migration rebuild schedule omitted a recovery part")?;
         let created = create_orchard_to_ironwood_pczt_from_note(
             db_path,
             network,
@@ -4337,6 +4342,7 @@ fn rebuild_expired_software_migration_parts(
             &recovery.selected_note,
             (index + 1) as u32,
             schedule_block_offset,
+            Some(generation.origin_height),
             timing_policy,
             true,
         )?
@@ -4407,6 +4413,7 @@ fn rebuild_expired_software_migration_parts(
         db_path,
         run_id,
         network,
+        chain_tip_height,
         replacements,
         replacement_children,
         pending_password,

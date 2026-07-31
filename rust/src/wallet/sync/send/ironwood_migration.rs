@@ -951,19 +951,49 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
         super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
     let signed_schedule_origin =
         super::migration::signed_schedule_origin_for_run(db_path, &run.run_id)?;
+    // Recovery batches consume the run's persisted recovery-schedule
+    // generation, so every QR session extends one ladder instead of
+    // anchoring a fresh per-batch ladder at its own chain tip; see
+    // `ensure_rebuild_schedule_generation`.
+    let recovery_generation = if initial_signing {
+        None
+    } else {
+        Some(
+            super::migration::ensure_rebuild_schedule_generation(
+                db_path,
+                &run.run_id,
+                network,
+                chain_tip_height,
+            )?
+            .ok_or("Migration rebuild schedule generation is missing its recovery parts")?,
+        )
+    };
     for (index, note_ref) in prepared_notes.iter().enumerate() {
         let part_index = *signing_part_indices
             .get(index)
             .ok_or("Migration signing selector omitted a prepared note")?;
-        let schedule_block_offset = super::migration::schedule_block_offset_for_part(
-            &approved_schedule,
-            &run.target_values_zatoshi,
-            part_index,
-            *run.target_values_zatoshi
-                .get(part_index as usize)
-                .ok_or("Migration part is outside the approved target list")?,
-        )
-        .ok_or("Approved migration schedule is missing a child")?;
+        let schedule_block_offset = if initial_signing {
+            super::migration::schedule_block_offset_for_part(
+                &approved_schedule,
+                &run.target_values_zatoshi,
+                part_index,
+                *run.target_values_zatoshi
+                    .get(part_index as usize)
+                    .ok_or("Migration part is outside the approved target list")?,
+            )
+            .ok_or("Approved migration schedule is missing a child")?
+        } else {
+            recovery_generation
+                .as_ref()
+                .zip(recoveries.get(index))
+                .and_then(|(generation, recovery)| {
+                    generation
+                        .offsets_by_txid
+                        .get(&recovery.old_txid_hex.to_ascii_lowercase())
+                        .copied()
+                })
+                .ok_or("Migration rebuild schedule omitted a rebuilt part")?
+        };
         let migration_index = part_index + 1;
         let pczt_result = if initial_signing {
             create_deferred_orchard_to_ironwood_pczt_from_prepared_note(
@@ -976,6 +1006,9 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                 signed_schedule_origin,
             )
         } else {
+            let recovery_origin_height = recovery_generation
+                .as_ref()
+                .map(|generation| generation.origin_height);
             with_wallet_db_write_lock("send.migration.prepare_exact_note_pczt", || {
                 create_orchard_to_ironwood_pczt_from_note(
                     db_path,
@@ -985,6 +1018,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
                     note_ref,
                     migration_index,
                     schedule_block_offset,
+                    recovery_origin_height,
                     timing_policy,
                     true,
                 )
@@ -1297,10 +1331,14 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
                     }
                 })
                 .collect();
+            let chain_tip_height =
+                u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+                    .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
             super::migration::replace_resigned_pending_parts(
                 db_path,
                 &stored.run_id,
                 network,
+                chain_tip_height,
                 replacements,
                 Vec::new(),
                 pending_password,

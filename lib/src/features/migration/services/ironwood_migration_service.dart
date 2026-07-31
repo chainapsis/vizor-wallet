@@ -103,6 +103,13 @@ typedef IronwoodMigrationStatusGetter =
       required String accountUuid,
     });
 
+typedef IronwoodMigrationStatusesGetter =
+    Future<List<rust_sync.MigrationStatusEntry>> Function({
+      required String dbPath,
+      required String network,
+      required List<String> accountUuids,
+    });
+
 typedef IronwoodMigrationPrivatePlanGetter =
     Future<rust_sync.OrchardMigrationPrivatePlan?> Function({
       required String dbPath,
@@ -603,6 +610,7 @@ class IronwoodMigrationService {
   IronwoodMigrationService({
     required this.getWalletDbPath,
     required this.getStatus,
+    IronwoodMigrationStatusesGetter? getStatuses,
     required this.getPrivatePlan,
     required this.secureStore,
     IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
@@ -679,6 +687,7 @@ class IronwoodMigrationService {
        getSessionPassword = getSessionPassword ?? _missingSessionPassword,
        getMnemonicBytesForAccount =
            getMnemonicBytesForAccount ?? _missingMnemonicBytesForAccount,
+       getStatuses = getStatuses ?? rust_sync.getOrchardMigrationStatuses,
        isMacOS = isMacOS ?? _defaultIsMacOS,
        isMobile = isMobile ?? _defaultIsMobile,
        isIOS = isIOS ?? _defaultIsIOS,
@@ -810,6 +819,7 @@ class IronwoodMigrationService {
 
   final IronwoodMigrationWalletDbPathGetter getWalletDbPath;
   final IronwoodMigrationStatusGetter getStatus;
+  final IronwoodMigrationStatusesGetter getStatuses;
   final IronwoodMigrationPrivatePlanGetter getPrivatePlan;
   final IronwoodMigrationImmediatePlanGetter getImmediatePlan;
   final AppSecureStore secureStore;
@@ -987,6 +997,83 @@ class IronwoodMigrationService {
       accountUuid: accountUuid,
       runId: runId,
     );
+  }
+
+  /// Statuses for several accounts, sharing one wallet-summary read.
+  ///
+  /// `status` computes a full `get_wallet_summary` — across *every*
+  /// account — to obtain four pool balances for one. Calling it per
+  /// account is quadratic; profiling attributed ~81% of all balance
+  /// computations in the process to this sweep. The batched native call
+  /// computes that summary once.
+  ///
+  /// Two deliberate differences from looping over [status]:
+  ///
+  /// * It does not take the per-account operation-registry queue, so a
+  ///   sweep no longer serialises behind unrelated in-flight work. This
+  ///   is a read, and callers that need a post-mutation read still use
+  ///   the singular [status]. Revoked accounts are reported per entry
+  ///   rather than thrown, matching the caller's per-account errors.
+  /// * On mobile, [status] does more than read — it resolves credential
+  ///   context and drives preparation — so this falls back to the
+  ///   per-account path there and batches only on desktop.
+  Future<Map<String, rust_sync.MigrationStatus>> statuses({
+    required String network,
+    required List<String> accountUuids,
+    required void Function(String accountUuid, Object error) onAccountError,
+  }) async {
+    if (accountUuids.isEmpty) return const {};
+    if (isMobile()) {
+      final results = <String, rust_sync.MigrationStatus>{};
+      for (final accountUuid in accountUuids) {
+        try {
+          results[accountUuid] = await status(
+            network: network,
+            accountUuid: accountUuid,
+          );
+        } catch (error) {
+          onAccountError(accountUuid, error);
+        }
+      }
+      return results;
+    }
+
+    final live = <String>[];
+    for (final accountUuid in accountUuids) {
+      if (operationRegistry.isRevoked(
+        network: network,
+        accountUuid: accountUuid,
+      )) {
+        onAccountError(
+          accountUuid,
+          IronwoodMigrationAccountRevokedException(accountUuid),
+        );
+        continue;
+      }
+      live.add(accountUuid);
+    }
+    if (live.isEmpty) return const {};
+
+    final dbPath = await getWalletDbPath();
+    final entries = await getStatuses(
+      dbPath: dbPath,
+      network: network,
+      accountUuids: live,
+    );
+
+    final results = <String, rust_sync.MigrationStatus>{};
+    for (final entry in entries) {
+      final entryStatus = entry.status;
+      if (entryStatus == null) {
+        onAccountError(
+          entry.accountUuid,
+          StateError(entry.error ?? 'migration status unavailable'),
+        );
+        continue;
+      }
+      results[entry.accountUuid] = entryStatus;
+    }
+    return results;
   }
 
   Future<rust_sync.MigrationStatus> status({

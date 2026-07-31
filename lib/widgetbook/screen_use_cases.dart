@@ -4090,6 +4090,9 @@ class _PreviewSyncNotifier extends SyncNotifier {
   Future<void> refreshAfterSend() async {}
 
   @override
+  Future<void> refreshAfterAccountSwitch() async {}
+
+  @override
   Future<WalletMutationSyncPause> pauseForWalletMutation({
     FutureOr<void> Function()? onStoppingSync,
   }) async {
