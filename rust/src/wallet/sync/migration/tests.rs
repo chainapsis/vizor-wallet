@@ -2619,6 +2619,55 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
 }
 
 #[test]
+fn rebuilt_parts_fit_a_remaining_count_schedule() {
+    let mut rng = StdRng::seed_from_u64(0x318);
+    // A large run on the standard mainnet policy: the original ladder spans
+    // roughly `mean * count` blocks.
+    let target_values = vec![100 * ZATOSHIS_PER_ZEC; 45];
+    let schedule = planned_transfer_schedule_with_policy(
+        target_values.iter().copied(),
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        &mut rng,
+    );
+    // Six parts survive at scattered schedule positions (broadcast order is
+    // shuffled, so survivors spread across the whole ladder).
+    let recoveries = [4usize, 16, 26, 32, 41, 44].map(|schedule_order| {
+        let entry = &schedule[schedule_order];
+        (entry.part_index.unwrap(), entry.value_zatoshi)
+    });
+
+    let offsets = rebuild_schedule_block_offsets(
+        &schedule,
+        &target_values,
+        &recoveries,
+        WalletNetwork::Main,
+        MigrationTimingPolicy::Standard,
+        &mut rng,
+    )
+    .unwrap();
+
+    // Rebuilds anchor at the rebuild-time chain target, so the remaining
+    // parts must fit a schedule drawn over their own count instead of
+    // replaying day-0 positions from the 45-part ladder.
+    let (_, max_delay_blocks) =
+        schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard);
+    let remaining_bound = max_delay_blocks * recoveries.len() as u32;
+    let mut sorted = offsets.clone();
+    sorted.sort_unstable();
+    assert!(
+        *sorted.last().unwrap() <= remaining_bound,
+        "rebuilt offsets {offsets:?} replay the original 45-part ladder \
+         (remaining-count bound: {remaining_bound})",
+    );
+    assert!(
+        sorted.windows(2).all(|w| w[1] - w[0] <= max_delay_blocks),
+        "rebuilt offsets {offsets:?} must keep every gap within \
+         {max_delay_blocks} blocks",
+    );
+}
+
+#[test]
 fn preparation_schedule_is_planned_across_dependency_layers() {
     assert_eq!(ZIP318_PREPARATION_MEAN_DELAY_BLOCKS, 16);
     assert_eq!(ZIP318_PREPARATION_MAX_DELAY_BLOCKS, 96);
@@ -4277,10 +4326,11 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase,
               created_at_ms, updated_at_ms, target_values_json, schedule_json,
-              signed_schedule_origin_height)
+              signed_schedule_origin_height, recovery_schedule_origin_height,
+              recovery_schedule_max_block_offset)
              VALUES ('expired-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100]',
                      '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":1}}]',
-                     90)"
+                     90, 100, 1)"
         ),
         params![db_path, PHASE_BROADCAST_SCHEDULED],
     )
@@ -4301,9 +4351,9 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
              (run_id, txid_hex, encrypted_raw_tx, target_height, expiry_height,
               value_zatoshi, fee_zatoshi, selected_note_txid,
               selected_note_output_index, selected_note_value, scheduled_at_ms,
-              scheduled_height, status, metadata_json)
+              scheduled_height, status, metadata_json, rebuild_block_offset)
              VALUES ('expired-run', ?1, 'encrypted', 90, 100, 100, 10, ?2,
-                     0, 110, 1, 95, 'scheduled', ?3)"
+                     0, 110, 1, 95, 'scheduled', ?3, 1)"
         ),
         params![
             "22".repeat(32),
@@ -4349,6 +4399,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         &db_path,
         "expired-run",
         WalletNetwork::Regtest,
+        100,
         vec![PendingMigrationTxReplacement {
             old_txid_hex: "22".repeat(32),
             replacement: PendingMigrationTxInsert {
@@ -4443,6 +4494,8 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         &format!(
             "UPDATE {RUNS_TABLE}
              SET signed_schedule_origin_height = NULL,
+                 recovery_schedule_origin_height = NULL,
+                 recovery_schedule_max_block_offset = NULL,
                  target_values_json = 'unrecoverable legacy metadata'
              WHERE run_id = 'expired-run'"
         ),
@@ -4455,6 +4508,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         &db_path,
         "expired-run",
         WalletNetwork::Regtest,
+        101,
         vec![PendingMigrationTxReplacement {
             old_txid_hex: "33".repeat(32),
             replacement: PendingMigrationTxInsert {
@@ -4672,9 +4726,12 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
     // Once local raw is present, the same past-expiry broadcasted row resigns.
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     conn.execute_batch(
+        // `mined_height` stays NULL: the row is stored but not mined, and the
+        // chain-identity fallback query still needs the column to exist.
         "CREATE TABLE transactions (
              txid BLOB PRIMARY KEY,
-             raw BLOB
+             raw BLOB,
+             mined_height INTEGER
          );",
     )
     .unwrap();
@@ -4726,6 +4783,680 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
         )
         .unwrap();
     assert_eq!(status, "needs_resign");
+}
+
+fn insert_needs_resign_fixture_rows(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    part_indices: std::ops::Range<u32>,
+) -> Vec<(String, PreparedOrchardNoteRef)> {
+    part_indices
+        .map(|part_index| {
+            let note = PreparedOrchardNoteRef {
+                txid_hex: format!("{:02x}", 0x60 + part_index).repeat(32),
+                output_index: part_index,
+                value_zatoshi: 110,
+                note_version: 2,
+                nullifier_hex: None,
+            };
+            let metadata = PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note: note.clone(),
+            };
+            let txid_hex = format!("{:02x}", 0x30 + part_index).repeat(32);
+            conn.execute(
+                &format!(
+                    "INSERT INTO {PENDING_TXS_TABLE}
+                     (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+                      expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                      selected_note_output_index, selected_note_value, scheduled_at_ms,
+                      scheduled_height, status, metadata_json)
+                     VALUES (?1, ?2, ?3, 'encrypted', 90, 69120, 100, 10, ?4, ?5, 110,
+                             1, ?6, 'needs_resign', ?7)"
+                ),
+                params![
+                    run_id,
+                    txid_hex,
+                    part_index,
+                    note.txid_hex,
+                    note.output_index,
+                    90 + part_index,
+                    serde_json::to_string(&metadata).unwrap(),
+                ],
+            )
+            .unwrap();
+            (txid_hex, note)
+        })
+        .collect()
+}
+
+fn rebuild_replacement_for(
+    old_txid_hex: &str,
+    note: &PreparedOrchardNoteRef,
+    part_index: u32,
+    target_height: u32,
+    scheduled_height: u32,
+) -> (PendingMigrationTxReplacement, SignedMigrationPcztInsert) {
+    let metadata = PendingMigrationTxMetadata {
+        tx_kind: "migration".to_string(),
+        funding_account_uuid: "account-1".to_string(),
+        selected_note: note.clone(),
+    };
+    let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+    (
+        PendingMigrationTxReplacement {
+            old_txid_hex: old_txid_hex.to_string(),
+            replacement: PendingMigrationTxInsert {
+                part_index,
+                txid_hex: format!("{:02x}", 0x90 + part_index).repeat(32),
+                raw_tx: vec![part_index as u8; 4],
+                target_height,
+                anchor_boundary_height: Some(90),
+                expiry_height,
+                scheduled_height,
+                value_zatoshi: 100,
+                fee_zatoshi: 10,
+                selected_note: note.clone(),
+                metadata: metadata.clone(),
+            },
+        },
+        SignedMigrationPcztInsert {
+            message_id: format!("rebuild-generation-child-{part_index}"),
+            child_index: part_index,
+            base_pczt: vec![part_index as u8; 3],
+            sigs: Vec::new(),
+            target_height,
+            anchor_boundary_height: Some(90),
+            expiry_height,
+            scheduled_height,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note: note.clone(),
+            metadata,
+        },
+    )
+}
+
+#[test]
+fn replacement_signed_children_require_recovery_origin() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('missing-origin', 'account-1', 'main', ?1, ?2, 1, 1,
+                     '[100]', '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":3}}]')"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    let row = insert_needs_resign_fixture_rows(&conn, "missing-origin", 0..1)
+        .pop()
+        .unwrap();
+    drop(conn);
+    let (replacement, child) = rebuild_replacement_for(&row.0, &row.1, 0, 101, 103);
+
+    assert_eq!(
+        replace_resigned_pending_parts(
+            &db_path,
+            "missing-origin",
+            WalletNetwork::Main,
+            100,
+            vec![replacement],
+            vec![child],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap_err(),
+        "Migration recovery schedule origin is missing"
+    );
+}
+
+#[test]
+fn rebuild_generation_spans_batches_with_one_ladder() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    let schedule_json = (0..10u32)
+        .map(|part_index| {
+            format!(
+                "{{\"part_index\":{part_index},\"value_zatoshi\":100,\"block_offset\":{}}}",
+                10 * (part_index + 1)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json)
+             VALUES ('gen-run', 'account-1', 'main', ?1, ?2, 1, 1,
+                     '[100,100,100,100,100,100,100,100,100,100]', ?3)"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE, format!("[{schedule_json}]")],
+    )
+    .unwrap();
+    let rows = insert_needs_resign_fixture_rows(&conn, "gen-run", 0..10);
+    drop(conn);
+
+    let generation =
+        ensure_rebuild_schedule_generation(&db_path, "gen-run", WalletNetwork::Main, 5_000)
+            .unwrap()
+            .unwrap();
+    assert_eq!(generation.origin_height, 5_000);
+    assert_eq!(generation.offsets_by_txid.len(), 10);
+    let (_, max_delay_blocks) =
+        schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard);
+    let mut ladder = generation.offsets_by_txid.values().copied().collect::<Vec<_>>();
+    ladder.sort_unstable();
+    let generation_max_offset = *ladder.last().unwrap();
+    assert!(generation_max_offset <= max_delay_blocks * 10);
+    assert!(ladder.windows(2).all(|w| w[1] - w[0] <= max_delay_blocks));
+
+    // A later call (for example the next QR session) reuses the persisted
+    // generation instead of anchoring a new ladder while no assigned height
+    // has elapsed.
+    let repeated =
+        ensure_rebuild_schedule_generation(&db_path, "gen-run", WalletNetwork::Main, 5_000)
+            .unwrap()
+            .unwrap();
+    assert_eq!(repeated.origin_height, 5_000);
+    assert_eq!(repeated.offsets_by_txid, generation.offsets_by_txid);
+    let persisted_generation_max = generation_max_offset;
+
+    let replacement_for = |(txid_hex, note): &(String, PreparedOrchardNoteRef),
+                           part_index: u32,
+                           target_height: u32| {
+        let offset = generation.offsets_by_txid[&txid_hex.to_ascii_lowercase()];
+        rebuild_replacement_for(txid_hex, note, part_index, target_height, 5_000 + offset)
+    };
+
+    // The replacement boundary enforces the exact persisted offset, not only
+    // the generation origin.
+    let persisted_offset = generation.offsets_by_txid[&rows[9].0.to_ascii_lowercase()];
+    let (wrong_offset_replacement, wrong_offset_child) = rebuild_replacement_for(
+        &rows[9].0,
+        &rows[9].1,
+        9,
+        5_001,
+        5_001 + persisted_offset,
+    );
+    assert_eq!(
+        replace_resigned_pending_parts(
+            &db_path,
+            "gen-run",
+            WalletNetwork::Main,
+            5_000,
+            vec![wrong_offset_replacement],
+            vec![wrong_offset_child],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap_err(),
+        "Replacement migration schedule does not match its persisted recovery offset"
+    );
+
+    // A live construction target may differ from the generation origin, but
+    // the signed child's scheduled height cannot precede that origin.
+    let (stray_replacement, mut stray_child) = replacement_for(&rows[9], 9, 6_001);
+    stray_child.scheduled_height = 4_999;
+    stray_child.expiry_height =
+        zip318_canonical_migration_expiry_height(stray_child.scheduled_height).unwrap();
+    assert_eq!(
+        replace_resigned_pending_parts(
+            &db_path,
+            "gen-run",
+            WalletNetwork::Main,
+            5_000,
+            vec![stray_replacement],
+            vec![stray_child],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap_err(),
+        "Signed migration schedule starts below zero"
+    );
+
+    // First signing batch covers eight parts; the generation survives it.
+    let (batch_one, batch_one_children): (Vec<_>, Vec<_>) = rows[..8]
+        .iter()
+        .enumerate()
+        .map(|(part_index, row)| replacement_for(row, part_index as u32, 5_001))
+        .unzip();
+    replace_resigned_pending_parts(
+        &db_path,
+        "gen-run",
+        WalletNetwork::Main,
+        5_000,
+        batch_one,
+        batch_one_children,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let mid_generation: (Option<u32>, Option<u32>) = conn
+        .query_row(
+            &format!(
+                "SELECT recovery_schedule_origin_height,
+                        recovery_schedule_max_block_offset
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = 'gen-run'"
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        mid_generation,
+        (Some(5_000), Some(persisted_generation_max))
+    );
+    drop(conn);
+
+    // The signer returns after every remaining assigned height has elapsed:
+    // the still-unsigned parts are redrawn above the cursor instead of being
+    // rebuilt due-on-arrival, while the generation origin stays fixed.
+    let late_tip = 5_000 + persisted_generation_max + 500;
+    let late_return =
+        ensure_rebuild_schedule_generation(&db_path, "gen-run", WalletNetwork::Main, late_tip)
+            .unwrap()
+            .unwrap();
+    assert_eq!(late_return.origin_height, 5_000);
+    assert_eq!(late_return.offsets_by_txid.len(), 2);
+    for row in &rows[8..] {
+        let redrawn = late_return.offsets_by_txid[&row.0.to_ascii_lowercase()];
+        assert!(
+            redrawn > persisted_generation_max + 500,
+            "elapsed offset must be redrawn above the cursor, got {redrawn}"
+        );
+    }
+
+    // The second batch consumes the redrawn generation. Its cursor remains
+    // for later recovery waves in the active run.
+    let (batch_two, batch_two_children): (Vec<_>, Vec<_>) = rows[8..]
+        .iter()
+        .enumerate()
+        .map(|(offset, row)| {
+            let assigned = late_return.offsets_by_txid[&row.0.to_ascii_lowercase()];
+            rebuild_replacement_for(
+                &row.0,
+                &row.1,
+                8 + offset as u32,
+                late_tip + 1,
+                5_000 + assigned,
+            )
+        })
+        .unzip();
+    replace_resigned_pending_parts(
+        &db_path,
+        "gen-run",
+        WalletNetwork::Main,
+        late_tip,
+        batch_two,
+        batch_two_children,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let final_generation: (Option<u32>, Option<u32>) = conn
+        .query_row(
+            &format!(
+                "SELECT recovery_schedule_origin_height,
+                        recovery_schedule_max_block_offset
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = 'gen-run'"
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let late_generation_max = rows[8..]
+        .iter()
+        .map(|row| late_return.offsets_by_txid[&row.0.to_ascii_lowercase()])
+        .max()
+        .unwrap();
+    assert_eq!(final_generation, (Some(5_000), Some(late_generation_max)));
+    let mut rebuilt = {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT part_index, target_height, schedule_start_height, scheduled_height
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'gen-run'"
+            ))
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, u32>(3)?,
+                ))
+            })
+            .unwrap();
+        rows.collect::<Result<Vec<_>, _>>().unwrap()
+    };
+    assert_eq!(rebuilt.len(), 10);
+    assert!(rebuilt.iter().all(|(_, _, start, _)| *start == 5_000));
+    assert!(rebuilt.iter().all(|(part_index, target, _, _)| {
+        *target
+            == if *part_index < 8 {
+                5_001
+            } else {
+                late_tip + 1
+            }
+    }));
+    rebuilt.sort_by_key(|(_, _, _, scheduled)| *scheduled);
+    let rebuilt_ladder = rebuilt
+        .iter()
+        .map(|(_, _, _, scheduled)| scheduled - 5_000)
+        .collect::<Vec<_>>();
+    let mut expected_ladder = rows[..8]
+        .iter()
+        .map(|row| generation.offsets_by_txid[&row.0.to_ascii_lowercase()])
+        .chain(
+            rows[8..]
+                .iter()
+                .map(|row| late_return.offsets_by_txid[&row.0.to_ascii_lowercase()]),
+        )
+        .collect::<Vec<_>>();
+    expected_ladder.sort_unstable();
+    assert_eq!(
+        rebuilt_ladder, expected_ladder,
+        "both batches must extend one ladder"
+    );
+
+    // A later recovery wave keeps the generation and starts no earlier than
+    // the current tip relative to its origin.
+    let later_txid = format!("{:02x}", 0x90).repeat(32);
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET status = 'needs_resign', rebuild_block_offset = NULL
+             WHERE run_id = 'gen-run' AND txid_hex = ?1"
+        ),
+        params![later_txid],
+    )
+    .unwrap();
+    drop(conn);
+    let later =
+        ensure_rebuild_schedule_generation(&db_path, "gen-run", WalletNetwork::Main, 20_000)
+            .unwrap()
+            .unwrap();
+    assert_eq!(later.origin_height, 5_000);
+    assert!(later.offsets_by_txid[&later_txid] >= 15_000);
+}
+
+#[test]
+fn rebuild_generation_retains_consumed_max_for_late_needs_resign_parts() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              recovery_schedule_origin_height, recovery_schedule_max_block_offset)
+             VALUES ('late-run', 'account-1', 'main', ?1, ?2, 1, 1, '[100,100,100]',
+                     '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":10}},{{\"part_index\":1,\"value_zatoshi\":100,\"block_offset\":20}},{{\"part_index\":2,\"value_zatoshi\":100,\"block_offset\":30}}]',
+                     2000, 1000)"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    let rows = insert_needs_resign_fixture_rows(&conn, "late-run", 0..2);
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE} SET rebuild_block_offset = 10
+             WHERE run_id = 'late-run' AND part_index = 0"
+        ),
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE} SET rebuild_block_offset = 1000
+             WHERE run_id = 'late-run' AND part_index = 1"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    // Consume the part that held the generation's largest offset. The one
+    // remaining needs_resign row only carries offset 10.
+    let (replacement, child) =
+        rebuild_replacement_for(&rows[1].0, &rows[1].1, 1, 2_001, 3_000);
+    replace_resigned_pending_parts(
+        &db_path,
+        "late-run",
+        WalletNetwork::Main,
+        2_400,
+        vec![replacement],
+        vec![child],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    insert_needs_resign_fixture_rows(&conn, "late-run", 2..3);
+    drop(conn);
+
+    // A later expiry extends from the persisted historical maximum rather
+    // than the maximum among rows still waiting for re-sign. Part 0's stored
+    // height (origin + 10) has already elapsed at the new tip, so it is
+    // redrawn above that maximum together with the late part.
+    let extended =
+        ensure_rebuild_schedule_generation(&db_path, "late-run", WalletNetwork::Main, 2_500)
+            .unwrap()
+            .unwrap();
+    assert_eq!(extended.origin_height, 2_000);
+    assert_eq!(extended.offsets_by_txid.len(), 2);
+    let part_zero_offset = extended.offsets_by_txid[&rows[0].0];
+    assert!(part_zero_offset > 1_000);
+    let late_txid = format!("{:02x}", 0x32).repeat(32);
+    let late_offset = extended.offsets_by_txid[&late_txid];
+    assert!(late_offset > 1_000);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let persisted_max: u32 = conn
+        .query_row(
+            &format!(
+                "SELECT recovery_schedule_max_block_offset FROM {RUNS_TABLE}
+                 WHERE run_id = 'late-run'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(persisted_max, part_zero_offset.max(late_offset));
+}
+
+#[test]
+fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    let notes = [0u32, 1].map(|index| PreparedOrchardNoteRef {
+        txid_hex: format!("{:02x}", 0x17 + index).repeat(32),
+        output_index: index,
+        value_zatoshi: 110 + 100 * u64::from(index),
+        note_version: 2,
+        nullifier_hex: None,
+    });
+    // Distinct original whole-run offsets (10 and 40): the rebuilt heights
+    // below use fresh remaining-count offsets, so no single origin satisfies
+    // `scheduled - original_offset` for both children.
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              signed_schedule_origin_height, recovery_schedule_origin_height,
+              recovery_schedule_max_block_offset)
+             VALUES ('rebuild-run', 'account-1', 'regtest', ?1, ?2, 1, 1, '[100,200]',
+                     '[{{\"part_index\":0,\"value_zatoshi\":100,\"block_offset\":10}},{{\"part_index\":1,\"value_zatoshi\":200,\"block_offset\":40}}]',
+                     90, 100, 57)"
+        ),
+        params![db_path, PHASE_READY_TO_MIGRATE],
+    )
+    .unwrap();
+    for (index, note) in notes.iter().enumerate() {
+        let metadata = PendingMigrationTxMetadata {
+            tx_kind: "migration".to_string(),
+            funding_account_uuid: "account-1".to_string(),
+            selected_note: note.clone(),
+        };
+        conn.execute(
+            &format!(
+                "INSERT INTO {PENDING_TXS_TABLE}
+                 (run_id, txid_hex, part_index, encrypted_raw_tx, target_height,
+                  expiry_height, value_zatoshi, fee_zatoshi, selected_note_txid,
+                  selected_note_output_index, selected_note_value, scheduled_at_ms,
+                  scheduled_height, status, metadata_json, rebuild_block_offset)
+                 VALUES ('rebuild-run', ?1, ?2, 'encrypted', 90, 69120, ?3, 10, ?4,
+                         ?5, ?6, 1, ?7, 'needs_resign', ?8, ?9)"
+            ),
+            params![
+                format!("{:02x}", 0x22 + index).repeat(32),
+                index as u32,
+                100 + 100 * index as u64,
+                note.txid_hex,
+                note.output_index,
+                note.value_zatoshi,
+                90 + 30 * index as u32,
+                serde_json::to_string(&metadata).unwrap(),
+                53 + 4 * index as u32,
+            ],
+        )
+        .unwrap();
+    }
+    drop(conn);
+
+    // The live construction target has advanced beyond the persisted origin;
+    // fresh offsets 53 and 57 still schedule from that origin.
+    let scheduled_heights = [153u32, 157];
+    let (replacements, replacement_children): (Vec<_>, Vec<_>) = notes
+        .iter()
+        .enumerate()
+        .map(|(index, note)| {
+            let metadata = PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note: note.clone(),
+            };
+            let scheduled_height = scheduled_heights[index];
+            let expiry_height =
+                zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+            let value_zatoshi = 100 + 100 * index as u64;
+            (
+                PendingMigrationTxReplacement {
+                    old_txid_hex: format!("{:02x}", 0x22 + index).repeat(32),
+                    replacement: PendingMigrationTxInsert {
+                        part_index: index as u32,
+                        txid_hex: format!("{:02x}", 0x44 + index).repeat(32),
+                        raw_tx: vec![index as u8; 4],
+                        target_height: 151,
+                        anchor_boundary_height: Some(90),
+                        expiry_height,
+                        scheduled_height,
+                        value_zatoshi,
+                        fee_zatoshi: 10,
+                        selected_note: note.clone(),
+                        metadata: metadata.clone(),
+                    },
+                },
+                SignedMigrationPcztInsert {
+                    message_id: format!("rebuild-child-{index}"),
+                    child_index: index as u32,
+                    base_pczt: vec![index as u8; 3],
+                    sigs: Vec::new(),
+                    target_height: 151,
+                    anchor_boundary_height: Some(90),
+                    expiry_height,
+                    scheduled_height,
+                    value_zatoshi,
+                    fee_zatoshi: 10,
+                    selected_note: note.clone(),
+                    metadata,
+                },
+            )
+        })
+        .unzip();
+
+    replace_resigned_pending_parts(
+        &db_path,
+        "rebuild-run",
+        WalletNetwork::Regtest,
+        150,
+        replacements,
+        replacement_children,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let rows: Vec<(String, u32, u32, u32, String)> = {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT txid_hex, target_height, schedule_start_height, scheduled_height, status
+                 FROM {PENDING_TXS_TABLE}
+                 WHERE run_id = 'rebuild-run'
+                 ORDER BY scheduled_height ASC"
+            ))
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })
+            .unwrap();
+        rows.collect::<Result<Vec<_>, _>>().unwrap()
+    };
+    assert_eq!(rows.len(), 2);
+    for (index, (txid_hex, target_height, schedule_start_height, scheduled_height, status)) in
+        rows.iter().enumerate()
+    {
+        assert_eq!(*txid_hex, format!("{:02x}", 0x44 + index).repeat(32));
+        assert_eq!(*target_height, 151);
+        assert_eq!(*schedule_start_height, 100);
+        assert_eq!(*scheduled_height, scheduled_heights[index]);
+        assert_eq!(status, "scheduled");
+    }
+    let signed_count: u32 = conn
+        .query_row(
+            &format!(
+                "SELECT COUNT(*) FROM {SIGNED_CHILD_PCZTS_TABLE}
+                 WHERE run_id = 'rebuild-run'"
+            ),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(signed_count, 2);
 }
 
 #[test]
