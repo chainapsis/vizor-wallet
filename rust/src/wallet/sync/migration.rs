@@ -3135,8 +3135,11 @@ pub(crate) fn export_scheduled_migration_outbox(
         return Ok(None);
     };
     let timing_policy = timing_policy_for_run_with_conn(&conn, &run.run_id, network)?;
-    let (timing_mean_blocks, timing_max_blocks) =
-        schedule_parameters_with_policy(network, timing_policy);
+    let (timing_mean_blocks, timing_max_blocks) = schedule_parameters_with_policy_for_part_count(
+        network,
+        timing_policy,
+        run.target_values_zatoshi.len(),
+    );
     let unmaterialized_count = unpromoted_signed_child_pczt_count_with_conn(&conn, &run.run_id)?;
     let next_proof_height = if unmaterialized_count == 0 {
         None
@@ -4613,8 +4616,9 @@ fn reschedule_overdue_pending_txs_with_options(
 
     txids.shuffle(&mut OsRng);
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
+    let planned_part_count = planned_part_count_with_conn(&conn, run_id)? as usize;
     let (mean_delay_blocks, max_delay_blocks) =
-        schedule_parameters_with_policy(network, timing_policy);
+        schedule_parameters_with_policy_for_part_count(network, timing_policy, planned_part_count);
     let offsets = random_schedule_block_offsets_with_rng(
         txids.len(),
         mean_delay_blocks,
@@ -5709,14 +5713,24 @@ fn status_for_run(
         message: run.last_error,
         can_abandon,
         signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
-        schedule_mean_delay_blocks: schedule_parameters_with_policy(network, timing_policy).0,
+        schedule_mean_delay_blocks: schedule_parameters_with_policy_for_part_count(
+            network,
+            timing_policy,
+            total_count as usize,
+        )
+        .0,
         schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
         preparation_mean_delay_blocks: if preparation_timing_policy
             == PreparationTimingPolicy::Immediate
         {
             0
         } else {
-            preparation_schedule_parameters(network, timing_policy).0
+            preparation_schedule_parameters_for_transaction_count(
+                network,
+                timing_policy,
+                denomination_split_progress.total_count as usize,
+            )
+            .0
         },
         next_action_height: timing_projection.next_action_height,
         next_proof_window_height: timing_projection.next_proof_window_height,

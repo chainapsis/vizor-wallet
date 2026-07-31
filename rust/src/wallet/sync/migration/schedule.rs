@@ -89,7 +89,7 @@ where
     let mut parts = parts.into_iter().collect::<Vec<_>>();
     parts.shuffle(rng);
     let (mean_delay_blocks, max_delay_blocks) =
-        schedule_parameters_with_policy(network, timing_policy);
+        schedule_parameters_with_policy_for_part_count(network, timing_policy, parts.len());
     let offsets = random_schedule_block_offsets_with_rng(
         parts.len(),
         mean_delay_blocks,

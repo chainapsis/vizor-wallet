@@ -84,8 +84,8 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   let accountUuid: String
   let runId: String
   var lightwalletdUrl: String
-  let timingMeanBlocks: UInt64
-  let timingMaxBlocks: UInt64
+  var timingMeanBlocks: UInt64
+  var timingMaxBlocks: UInt64
   let createdAt: Date
   var armedAt: Date?
   var nextProofHeight: UInt64?
@@ -240,9 +240,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       let existing = batches[batchIndex]
       guard existing.network == batch.network,
         existing.accountUuid == batch.accountUuid,
-        existing.runId == batch.runId,
-        existing.timingMeanBlocks == batch.timingMeanBlocks,
-        existing.timingMaxBlocks == batch.timingMaxBlocks
+        existing.runId == batch.runId
       else {
         throw BackgroundMigrationOutboxError.conflictingBatch
       }
@@ -251,6 +249,21 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
           throw BackgroundMigrationOutboxError.conflictingBatch
         }
         batches[batchIndex].lightwalletdUrl = batch.lightwalletdUrl
+      }
+      // The timing cadence is scheduling policy, not batch identity: a newer
+      // app build may legitimately recompute it for the same run (e.g. the
+      // dense-plan mean halving), and rejecting the restage would strand a run
+      // that already has broadcast progress and therefore cannot be discarded.
+      // Delivery evidence (item statuses, receipts) is untouched; only future
+      // rescheduling reads these values.
+      if existing.timingMeanBlocks != batch.timingMeanBlocks
+        || existing.timingMaxBlocks != batch.timingMaxBlocks
+      {
+        guard !existing.items.contains(where: { $0.status == .submitting }) else {
+          throw BackgroundMigrationOutboxError.conflictingBatch
+        }
+        batches[batchIndex].timingMeanBlocks = batch.timingMeanBlocks
+        batches[batchIndex].timingMaxBlocks = batch.timingMaxBlocks
       }
       var addedItem = false
       for incoming in batch.items {

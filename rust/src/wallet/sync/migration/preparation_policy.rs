@@ -4,6 +4,7 @@ const REGTEST_PREPARATION_MEAN_DELAY_BLOCKS: u32 = 1;
 const REGTEST_PREPARATION_MAX_DELAY_BLOCKS: u32 = 4;
 const FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS: u32 = 4;
 const FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS: u32 = 16;
+pub(crate) const DENSE_PREPARATION_TRANSACTION_THRESHOLD: usize = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreparationTimingPolicy {
@@ -62,6 +63,21 @@ fn preparation_schedule_parameters(
     }
 }
 
+fn preparation_schedule_parameters_for_transaction_count(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    transaction_count: usize,
+) -> (u32, u32) {
+    let (mean_delay_blocks, max_delay_blocks) =
+        preparation_schedule_parameters(network, timing_policy);
+    let effective_mean = if transaction_count > DENSE_PREPARATION_TRANSACTION_THRESHOLD {
+        (mean_delay_blocks / 2).max(1)
+    } else {
+        mean_delay_blocks
+    };
+    (effective_mean, max_delay_blocks)
+}
+
 pub(crate) fn estimated_preparation_spacing_delay_blocks(
     network: WalletNetwork,
     preparation_policy: PreparationTimingPolicy,
@@ -70,7 +86,11 @@ pub(crate) fn estimated_preparation_spacing_delay_blocks(
     if preparation_policy == PreparationTimingPolicy::Immediate {
         return Ok(0);
     }
-    preparation_schedule_parameters(network, configured_timing_policy(network))
+    preparation_schedule_parameters_for_transaction_count(
+        network,
+        configured_timing_policy(network),
+        transaction_count as usize,
+    )
         .0
         .checked_mul(transaction_count)
         .ok_or_else(|| "Migration preparation spacing estimate overflow".to_string())
@@ -79,10 +99,15 @@ pub(crate) fn estimated_preparation_spacing_delay_blocks(
 fn preparation_delay_with_rng<R: RngCore + CryptoRng + ?Sized>(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
+    transaction_count: usize,
     rng: &mut R,
 ) -> u32 {
     let (mean_delay_blocks, max_delay_blocks) =
-        preparation_schedule_parameters(network, timing_policy);
+        preparation_schedule_parameters_for_transaction_count(
+            network,
+            timing_policy,
+            transaction_count,
+        );
     loop {
         let uniform = draw_unit_left_open(rng);
         let sampled = round_nonnegative_to_u32(-uniform.ln() * f64::from(mean_delay_blocks));
@@ -108,6 +133,7 @@ pub(crate) fn planned_preparation_scheduled_heights<
     let Some(last_layer) = stage_layers.iter().copied().max() else {
         return Ok(Vec::new());
     };
+    let transaction_count = stage_layers.len();
     let mut heights = vec![0; stage_layers.len()];
     let mut layer_base = target_height.saturating_sub(1);
 
@@ -130,7 +156,12 @@ pub(crate) fn planned_preparation_scheduled_heights<
         for stage_index in stage_indices {
             if preparation_policy == PreparationTimingPolicy::Zip318Spaced {
                 scheduled_height = scheduled_height
-                    .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
+                    .checked_add(preparation_delay_with_rng(
+                        network,
+                        timing_policy,
+                        transaction_count,
+                        rng,
+                    ))
                     .ok_or("Migration preparation scheduled height overflow")?;
             }
             heights[stage_index] = scheduled_height;
@@ -161,6 +192,7 @@ pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
         return Ok(0);
     }
     let timing_policy = timing_policy_for_run_with_conn(tx, run_id, network)?;
+    let transaction_count = count_for_run(tx, STAGES_TABLE, run_id)? as usize;
     let remaining = {
         let mut stmt = tx
             .prepare_cached(&format!(
@@ -190,7 +222,12 @@ pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
     let mut preceding_height = chain_tip_height;
     for (stage_index, scheduled_height, existing_not_before_height) in &remaining {
         let randomized_height = preceding_height
-            .checked_add(preparation_delay_with_rng(network, timing_policy, rng))
+            .checked_add(preparation_delay_with_rng(
+                network,
+                timing_policy,
+                transaction_count,
+                rng,
+            ))
             .ok_or("Migration preparation catch-up height overflow")?;
         let effective_height = randomized_height
             .max(*scheduled_height)

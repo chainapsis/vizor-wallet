@@ -2619,6 +2619,32 @@ fn schedule_offsets_delay_every_transfer_and_cap_each_gap() {
 }
 
 #[test]
+fn dense_migration_parts_halve_the_schedule_mean_after_ten_parts() {
+    assert_eq!(
+        schedule_parameters_with_policy_for_part_count(
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard90Minutes,
+            DENSE_MIGRATION_PART_THRESHOLD,
+        ),
+        (
+            NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
+            ZIP318_TRANSFER_MAX_DELAY_BLOCKS,
+        ),
+    );
+    assert_eq!(
+        schedule_parameters_with_policy_for_part_count(
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard90Minutes,
+            DENSE_MIGRATION_PART_THRESHOLD + 1,
+        ),
+        (
+            NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS / 2,
+            ZIP318_TRANSFER_MAX_DELAY_BLOCKS,
+        ),
+    );
+}
+
+#[test]
 fn rebuilt_parts_fit_a_remaining_count_schedule() {
     let mut rng = StdRng::seed_from_u64(0x318);
     // A large run on the standard mainnet policy: the original ladder spans
@@ -2695,6 +2721,41 @@ fn preparation_schedule_is_planned_across_dependency_layers() {
 }
 
 #[test]
+fn dense_preparation_halves_the_schedule_mean_after_three_transactions() {
+    assert_eq!(
+        preparation_schedule_parameters_for_transaction_count(
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard,
+            DENSE_PREPARATION_TRANSACTION_THRESHOLD,
+        ),
+        (
+            ZIP318_PREPARATION_MEAN_DELAY_BLOCKS,
+            ZIP318_PREPARATION_MAX_DELAY_BLOCKS,
+        ),
+    );
+    assert_eq!(
+        preparation_schedule_parameters_for_transaction_count(
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard,
+            DENSE_PREPARATION_TRANSACTION_THRESHOLD + 1,
+        ),
+        (
+            ZIP318_PREPARATION_MEAN_DELAY_BLOCKS / 2,
+            ZIP318_PREPARATION_MAX_DELAY_BLOCKS,
+        ),
+    );
+    assert_eq!(
+        preparation_schedule_parameters_for_transaction_count(
+            WalletNetwork::Regtest,
+            MigrationTimingPolicy::Standard,
+            DENSE_PREPARATION_TRANSACTION_THRESHOLD + 1,
+        )
+        .0,
+        1,
+    );
+}
+
+#[test]
 fn immediate_preparation_schedule_still_serializes_dependency_layers() {
     let mut rng = StdRng::seed_from_u64(0x318);
     let heights = planned_preparation_scheduled_heights(
@@ -2765,6 +2826,7 @@ fn preparation_delay_rounds_to_nearest_block() {
             preparation_delay_with_rng(
                 WalletNetwork::Main,
                 MigrationTimingPolicy::Standard,
+                1,
                 &mut rng,
             )
         })

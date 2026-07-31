@@ -274,6 +274,65 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
+  func testRestagingUpdatesTimingCadenceOnAnIdleBatch() throws {
+    let original = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    var replacement = original
+    replacement.timingMeanBlocks = original.timingMeanBlocks / 2
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+
+    try snapshot.stage(original)
+    try snapshot.armBatch(
+      batchId: original.batchId,
+      expectedDigests: digests(original),
+      at: now
+    )
+    try snapshot.stage(replacement)
+
+    XCTAssertEqual(
+      snapshot.batches.first?.timingMeanBlocks,
+      replacement.timingMeanBlocks
+    )
+    XCTAssertEqual(
+      snapshot.batches.first?.timingMaxBlocks,
+      original.timingMaxBlocks
+    )
+  }
+
+  func testRestagingCannotChangeTimingCadenceDuringAnInFlightSubmission() throws {
+    let original = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    var replacement = original
+    replacement.timingMeanBlocks = original.timingMeanBlocks / 2
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+
+    try snapshot.stage(original)
+    try snapshot.armBatch(
+      batchId: original.batchId,
+      expectedDigests: digests(original),
+      at: now
+    )
+    try snapshot.beginSubmission(
+      itemId: original.items[0].itemId,
+      attemptId: "attempt",
+      at: now
+    )
+
+    XCTAssertThrowsError(try snapshot.stage(replacement)) { error in
+      XCTAssertEqual(error as? BackgroundMigrationOutboxError, .conflictingBatch)
+    }
+    XCTAssertEqual(
+      snapshot.batches.first?.timingMeanBlocks,
+      original.timingMeanBlocks
+    )
+  }
+
   func testRestagingCannotMoveAnInFlightSubmissionToAnotherEndpoint() throws {
     let original = makeBatch(
       batchId: "batch-a",

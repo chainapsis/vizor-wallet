@@ -123,7 +123,12 @@ pub(crate) fn get_orchard_migration_private_plan(
         denomination_split_stage_count,
         denomination_split_layer_count,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
-        schedule_mean_delay_blocks: super::migration::schedule_parameters(network).0,
+        schedule_mean_delay_blocks:
+            super::migration::schedule_parameters_for_part_count(
+                network,
+                planned_batch_count as usize,
+            )
+            .0,
         schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
         proof_readiness_delay_blocks,
         estimated_proof_ready_height,
