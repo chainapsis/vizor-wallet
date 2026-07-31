@@ -2,7 +2,6 @@ use zcash_client_backend::{
     data_api::{
         chain::{scan_cached_blocks, CommitmentTreeRoot},
         scanning::ScanPriority,
-        wallet::ConfirmationsPolicy,
         WalletCommitmentTrees, WalletRead, WalletWrite,
     },
     proto::service::TreeState,
@@ -164,10 +163,7 @@ pub fn get_next_subtree_indices(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<(u64, u64, u64), String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
-    let summary = db
-        .get_wallet_summary(ConfirmationsPolicy::default())
-        .map_err(|e| format!("{e}"))?;
+    let summary = crate::wallet::wallet_summary_cache::get_wallet_summary_cached(db_path, network)?;
     match summary {
         Some(s) => Ok((
             s.next_sapling_subtree_index(),
