@@ -10,6 +10,7 @@ use std::{
     collections::HashMap,
     path::Path,
     sync::{Arc, Mutex, OnceLock},
+    time::Instant,
 };
 
 use zcash_client_backend::data_api::{wallet::ConfirmationsPolicy, WalletRead, WalletSummary};
@@ -18,6 +19,7 @@ use zcash_client_sqlite::AccountUuid;
 use crate::wallet::{
     db::{open_wallet_db_for_read_with_timeout, wallet_db_write_epoch, READ_DB_BUSY_TIMEOUT},
     network::WalletNetwork,
+    wallet_shape_diagnostics,
 };
 
 type CachedSummary = Option<WalletSummary<AccountUuid>>;
@@ -102,6 +104,7 @@ where
     if let Some(cached) = entry.cached.as_ref() {
         let current = epoch_fn();
         if current == cached.epoch && current % 2 == 0 && Path::new(db_path).exists() {
+            wallet_shape_diagnostics::record_hit();
             return Ok(cached.summary.clone());
         }
         // Stale epoch, write in progress, or DB file replaced/deleted.
@@ -109,6 +112,7 @@ where
     }
 
     let epoch_before = epoch_fn();
+    let started = Instant::now();
     let loaded = match loader() {
         Ok(value) => value,
         Err(error) => {
@@ -118,15 +122,28 @@ where
         }
     };
 
+    let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
     let epoch_after = epoch_fn();
     if epoch_before == epoch_after && epoch_before % 2 == 0 {
         entry.cached = Some(CacheEntry {
             epoch: epoch_before,
             summary: loaded.clone(),
         });
+        wallet_shape_diagnostics::record_store();
     } else {
         entry.cached = None;
+        wallet_shape_diagnostics::record_stale_discard();
     }
+
+    // Release the slot before diagnosing: the shape dump opens its own
+    // read-only connection and runs a dozen counting queries, and holding
+    // the per-key lock through that would make a diagnostic build stall
+    // exactly the callers it is meant to be measuring.
+    drop(entry);
+
+    // Every completed computation is a chance to explain itself: the first
+    // one dumps the wallet shape, and slow ones re-dump periodically.
+    wallet_shape_diagnostics::maybe_log_wallet_shape(db_path, elapsed_ms);
 
     Ok(loaded)
 }
