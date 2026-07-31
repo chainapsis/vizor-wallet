@@ -4413,6 +4413,7 @@ fn rebuild_expired_software_migration_parts(
         db_path,
         run_id,
         network,
+        chain_tip_height,
         replacements,
         replacement_children,
         pending_password,

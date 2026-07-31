@@ -1331,10 +1331,14 @@ pub(crate) fn complete_orchard_migration_batch_pczt(
                     }
                 })
                 .collect();
+            let chain_tip_height =
+                u32::try_from(super::get_sync_progress(db_path, network)?.chain_tip_height)
+                    .map_err(|_| "Migration chain tip exceeds u32".to_string())?;
             super::migration::replace_resigned_pending_parts(
                 db_path,
                 &stored.run_id,
                 network,
+                chain_tip_height,
                 replacements,
                 Vec::new(),
                 pending_password,

@@ -4398,6 +4398,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         &db_path,
         "expired-run",
         WalletNetwork::Regtest,
+        100,
         vec![PendingMigrationTxReplacement {
             old_txid_hex: "22".repeat(32),
             replacement: PendingMigrationTxInsert {
@@ -4504,6 +4505,7 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         &db_path,
         "expired-run",
         WalletNetwork::Regtest,
+        101,
         vec![PendingMigrationTxReplacement {
             old_txid_hex: "33".repeat(32),
             replacement: PendingMigrationTxInsert {
@@ -4917,15 +4919,16 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     assert!(generation_max_offset <= max_delay_blocks * 10);
     assert!(ladder.windows(2).all(|w| w[1] - w[0] <= max_delay_blocks));
 
-    // A later call (for example the next QR session at a new tip) reuses the
-    // persisted generation instead of anchoring a new ladder.
+    // A later call (for example the next QR session) reuses the persisted
+    // generation instead of anchoring a new ladder while no assigned height
+    // has elapsed.
     let repeated =
-        ensure_rebuild_schedule_generation(&db_path, "gen-run", WalletNetwork::Main, 6_000)
+        ensure_rebuild_schedule_generation(&db_path, "gen-run", WalletNetwork::Main, 5_000)
             .unwrap()
             .unwrap();
     assert_eq!(repeated.origin_height, 5_000);
     assert_eq!(repeated.offsets_by_txid, generation.offsets_by_txid);
-    let persisted_generation_max = generation_max_offset.max(1_000);
+    let persisted_generation_max = generation_max_offset;
 
     let replacement_for = |(txid_hex, note): &(String, PreparedOrchardNoteRef),
                            part_index: u32,
@@ -4949,6 +4952,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             &db_path,
             "gen-run",
             WalletNetwork::Main,
+            5_000,
             vec![wrong_offset_replacement],
             vec![wrong_offset_child],
             TEST_PASSWORD,
@@ -4971,6 +4975,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             &db_path,
             "gen-run",
             WalletNetwork::Main,
+            5_000,
             vec![stray_replacement],
             vec![stray_child],
             TEST_PASSWORD,
@@ -4990,6 +4995,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         &db_path,
         "gen-run",
         WalletNetwork::Main,
+        5_000,
         batch_one,
         batch_one_children,
         TEST_PASSWORD,
@@ -5015,17 +5021,39 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     );
     drop(conn);
 
-    // The second batch consumes the same generation. Its cursor remains for
-    // later recovery waves in the active run.
+    // The signer returns after every remaining assigned height has elapsed:
+    // the still-unsigned parts are redrawn above the cursor instead of being
+    // rebuilt due-on-arrival, while the generation origin stays fixed.
+    let late_tip = 5_000 + persisted_generation_max + 500;
+    let late_return =
+        ensure_rebuild_schedule_generation(&db_path, "gen-run", WalletNetwork::Main, late_tip)
+            .unwrap()
+            .unwrap();
+    assert_eq!(late_return.origin_height, 5_000);
+    assert_eq!(late_return.offsets_by_txid.len(), 2);
+    for row in &rows[8..] {
+        let redrawn = late_return.offsets_by_txid[&row.0.to_ascii_lowercase()];
+        assert!(
+            redrawn > persisted_generation_max + 500,
+            "elapsed offset must be redrawn above the cursor, got {redrawn}"
+        );
+    }
+
+    // The second batch consumes the redrawn generation. Its cursor remains
+    // for later recovery waves in the active run.
     let (batch_two, batch_two_children): (Vec<_>, Vec<_>) = rows[8..]
         .iter()
         .enumerate()
-        .map(|(offset, row)| replacement_for(row, 8 + offset as u32, 5_001))
+        .map(|(offset, row)| {
+            let assigned = late_return.offsets_by_txid[&row.0.to_ascii_lowercase()];
+            rebuild_replacement_for(&row.0, &row.1, 8 + offset as u32, 5_001, 5_000 + assigned)
+        })
         .unzip();
     replace_resigned_pending_parts(
         &db_path,
         "gen-run",
         WalletNetwork::Main,
+        late_tip,
         batch_two,
         batch_two_children,
         TEST_PASSWORD,
@@ -5046,10 +5074,12 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
-    assert_eq!(
-        final_generation,
-        (Some(5_000), Some(persisted_generation_max))
-    );
+    let late_generation_max = rows[8..]
+        .iter()
+        .map(|row| late_return.offsets_by_txid[&row.0.to_ascii_lowercase()])
+        .max()
+        .unwrap();
+    assert_eq!(final_generation, (Some(5_000), Some(late_generation_max)));
     let mut rebuilt = {
         let mut stmt = conn
             .prepare(&format!(
@@ -5069,7 +5099,20 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         .iter()
         .map(|(_, scheduled)| scheduled - 5_000)
         .collect::<Vec<_>>();
-    assert_eq!(rebuilt_ladder, ladder, "both batches must extend one ladder");
+    let mut expected_ladder = rows[..8]
+        .iter()
+        .map(|row| generation.offsets_by_txid[&row.0.to_ascii_lowercase()])
+        .chain(
+            rows[8..]
+                .iter()
+                .map(|row| late_return.offsets_by_txid[&row.0.to_ascii_lowercase()]),
+        )
+        .collect::<Vec<_>>();
+    expected_ladder.sort_unstable();
+    assert_eq!(
+        rebuilt_ladder, expected_ladder,
+        "both batches must extend one ladder"
+    );
 
     // A later recovery wave keeps the generation and starts no earlier than
     // the current tip relative to its origin.
@@ -5139,6 +5182,7 @@ fn rebuild_generation_retains_consumed_max_for_late_needs_resign_parts() {
         &db_path,
         "late-run",
         WalletNetwork::Main,
+        2_400,
         vec![replacement],
         vec![child],
         TEST_PASSWORD,
@@ -5151,17 +5195,20 @@ fn rebuild_generation_retains_consumed_max_for_late_needs_resign_parts() {
     drop(conn);
 
     // A later expiry extends from the persisted historical maximum rather
-    // than the maximum among rows still waiting for re-sign.
+    // than the maximum among rows still waiting for re-sign. Part 0's stored
+    // height (origin + 10) has already elapsed at the new tip, so it is
+    // redrawn above that maximum together with the late part.
     let extended =
         ensure_rebuild_schedule_generation(&db_path, "late-run", WalletNetwork::Main, 2_500)
             .unwrap()
             .unwrap();
     assert_eq!(extended.origin_height, 2_000);
     assert_eq!(extended.offsets_by_txid.len(), 2);
-    assert_eq!(extended.offsets_by_txid[&rows[0].0], 10);
+    let part_zero_offset = extended.offsets_by_txid[&rows[0].0];
+    assert!(part_zero_offset > 1_000);
     let late_txid = format!("{:02x}", 0x32).repeat(32);
     let late_offset = extended.offsets_by_txid[&late_txid];
-    assert!(late_offset >= 1_000);
+    assert!(late_offset > 1_000);
 
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     let persisted_max: u32 = conn
@@ -5174,7 +5221,7 @@ fn rebuild_generation_retains_consumed_max_for_late_needs_resign_parts() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(persisted_max, late_offset);
+    assert_eq!(persisted_max, part_zero_offset.max(late_offset));
 }
 
 #[test]
@@ -5292,6 +5339,7 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
         &db_path,
         "rebuild-run",
         WalletNetwork::Regtest,
+        101,
         replacements,
         replacement_children,
         TEST_PASSWORD,

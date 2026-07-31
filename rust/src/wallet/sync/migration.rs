@@ -3906,6 +3906,7 @@ pub(crate) fn replace_resigned_pending_parts(
     db_path: &str,
     run_id: &str,
     _network: WalletNetwork,
+    chain_tip_height: u32,
     mut replacements: Vec<PendingMigrationTxReplacement>,
     signed_children: Vec<SignedMigrationPcztInsert>,
     password: &[u8],
@@ -4002,7 +4003,7 @@ pub(crate) fn replace_resigned_pending_parts(
         // Rebuilt rows use their recovery generation rather than the original
         // approved schedule.
         let schedule_start_height = pending.target_height.saturating_sub(1);
-        let rebuild_block_offset = pending
+        pending
             .scheduled_height
             .checked_sub(schedule_start_height)
             .ok_or("Replacement migration schedule starts below zero")?;
@@ -4031,8 +4032,12 @@ pub(crate) fn replace_resigned_pending_parts(
         )?;
         let metadata_json = serde_json::to_string(&pending.metadata)
             .map_err(|e| format!("Encode replacement migration metadata: {e}"))?;
+        // `rebuild_block_offset` counts from the generation origin and so
+        // includes blocks that already elapsed for later waves; the time hint
+        // uses only the portion still ahead of the chain tip.
+        let remaining_offset_blocks = pending.scheduled_height.saturating_sub(chain_tip_height);
         let scheduled_at_ms = scheduled_start_ms
-            .checked_add(i64::from(rebuild_block_offset).saturating_mul(1000))
+            .checked_add(i64::from(remaining_offset_blocks).saturating_mul(1000))
             .ok_or("Replacement migration time overflow")?;
         let scheduled_height = pending.scheduled_height;
         let original_scheduled_height = original.3;
@@ -4402,9 +4407,11 @@ pub(crate) struct RebuildScheduleGeneration {
 /// `origin_candidate_height` when absent). The generation persists its
 /// historical maximum so parts marked `needs_resign` after earlier batches
 /// or recovery waves still extend the same ladder. The cursor also advances
-/// to the current tip when the previous ladder has elapsed. The generation
-/// remains for the active run and is cleared when the run stops. Returns
-/// `None` when the run has no parts waiting for re-sign.
+/// to the current tip when the previous ladder has elapsed, and a still
+/// unsigned part whose assigned height the chain has already passed is
+/// redrawn above the cursor rather than rebuilt due-on-arrival. The
+/// generation remains for the active run and is cleared when the run stops.
+/// Returns `None` when the run has no parts waiting for re-sign.
 pub(crate) fn ensure_rebuild_schedule_generation(
     db_path: &str,
     run_id: &str,
@@ -4463,21 +4470,31 @@ pub(crate) fn ensure_rebuild_schedule_generation(
         .map_err(|e| format!("Read migration rebuild schedule origin: {e}"))?;
     let origin_height = persisted_origin.unwrap_or(origin_candidate_height);
 
+    let elapsed_cursor = origin_candidate_height.saturating_sub(origin_height);
     let mut offsets_by_txid = BTreeMap::new();
-    let mut missing = Vec::new();
+    let mut to_assign = Vec::new();
+    let mut observed_max_offset = 0u32;
+    let mut any_persisted_offset = false;
     for (txid_hex, part_index, value_zatoshi, offset) in rows {
         let part_index =
             part_index.ok_or("Migration part waiting for re-sign is missing its part index")?;
         match offset {
             Some(offset) => {
-                offsets_by_txid.insert(txid_hex.to_ascii_lowercase(), offset);
+                any_persisted_offset = true;
+                observed_max_offset = observed_max_offset.max(offset);
+                // A height the chain already passed would rebuild the part
+                // due on arrival, defeating the recovery cadence; the part
+                // rejoins the draw above the cursor instead.
+                if offset < elapsed_cursor {
+                    to_assign.push((txid_hex, part_index, value_zatoshi, Some(offset)));
+                } else {
+                    offsets_by_txid.insert(txid_hex.to_ascii_lowercase(), offset);
+                }
             }
-            None => missing.push((txid_hex, part_index, value_zatoshi)),
+            None => to_assign.push((txid_hex, part_index, value_zatoshi, None)),
         }
     }
-    let observed_max_offset = offsets_by_txid.values().copied().max().unwrap_or(0);
-    if persisted_origin.is_none() && (persisted_max_offset.is_some() || !offsets_by_txid.is_empty())
-    {
+    if persisted_origin.is_none() && (persisted_max_offset.is_some() || any_persisted_offset) {
         return Err("Migration recovery schedule metadata is incomplete".to_string());
     }
     let persisted_base_offset = match persisted_max_offset {
@@ -4489,18 +4506,17 @@ pub(crate) fn ensure_rebuild_schedule_generation(
         }
         None => observed_max_offset,
     };
-    let base_offset =
-        persisted_base_offset.max(origin_candidate_height.saturating_sub(origin_height));
+    let base_offset = persisted_base_offset.max(elapsed_cursor);
 
     let mut generation_max_offset = base_offset;
-    if !missing.is_empty() {
+    if !to_assign.is_empty() {
         let schedule: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
             .map_err(|e| format!("Decode migration rebuild schedule: {e}"))?;
         let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
             .map_err(|e| format!("Decode migration rebuild target values: {e}"))?;
-        let recovery_parts = missing
+        let recovery_parts = to_assign
             .iter()
-            .map(|(_, part_index, value_zatoshi)| (*part_index, *value_zatoshi))
+            .map(|(_, part_index, value_zatoshi, _)| (*part_index, *value_zatoshi))
             .collect::<Vec<_>>();
         let fresh_offsets = rebuild_schedule_block_offsets(
             &schedule,
@@ -4511,21 +4527,35 @@ pub(crate) fn ensure_rebuild_schedule_generation(
             &mut OsRng,
         )?;
 
-        for ((txid_hex, _, _), fresh_offset) in missing.iter().zip(fresh_offsets) {
+        for ((txid_hex, _, _, previous_offset), fresh_offset) in to_assign.iter().zip(fresh_offsets)
+        {
             let assigned = base_offset
                 .checked_add(fresh_offset)
                 .ok_or("Migration rebuild schedule offset overflow")?;
-            let updated = tx
-                .execute(
-                    &format!(
-                        "UPDATE {PENDING_TXS_TABLE}
-                         SET rebuild_block_offset = ?1
-                         WHERE run_id = ?2 AND txid_hex = ?3
-                           AND status = 'needs_resign' AND rebuild_block_offset IS NULL"
-                    ),
-                    params![assigned, run_id, txid_hex],
-                )
-                .map_err(|e| format!("Persist migration rebuild schedule offset: {e}"))?;
+            let updated = match previous_offset {
+                Some(previous_offset) => tx
+                    .execute(
+                        &format!(
+                            "UPDATE {PENDING_TXS_TABLE}
+                             SET rebuild_block_offset = ?1
+                             WHERE run_id = ?2 AND txid_hex = ?3
+                               AND status = 'needs_resign' AND rebuild_block_offset = ?4"
+                        ),
+                        params![assigned, run_id, txid_hex, previous_offset],
+                    )
+                    .map_err(|e| format!("Advance migration rebuild schedule offset: {e}"))?,
+                None => tx
+                    .execute(
+                        &format!(
+                            "UPDATE {PENDING_TXS_TABLE}
+                             SET rebuild_block_offset = ?1
+                             WHERE run_id = ?2 AND txid_hex = ?3
+                               AND status = 'needs_resign' AND rebuild_block_offset IS NULL"
+                        ),
+                        params![assigned, run_id, txid_hex],
+                    )
+                    .map_err(|e| format!("Persist migration rebuild schedule offset: {e}"))?,
+            };
             if updated != 1 {
                 return Err("Migration recovery part changed while scheduling".to_string());
             }
