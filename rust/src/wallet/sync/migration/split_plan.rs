@@ -26,6 +26,23 @@ struct DenominationRefinementPolicy {
     two_thousand_split_percent: u32,
 }
 
+/// A selected refinement and every recursively selected child split.
+/// Collapsing any node back to its value preserves a canonical denomination.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DenominationRefinement {
+    value_zatoshi: u64,
+    children: Vec<Self>,
+}
+
+impl DenominationRefinement {
+    fn leaf(value_zatoshi: u64) -> Self {
+        Self {
+            value_zatoshi,
+            children: Vec::new(),
+        }
+    }
+}
+
 impl DenominationRefinementPolicy {
     const fn new(
         ten_thousand_split_percent: u32,
@@ -170,7 +187,7 @@ pub(crate) fn plan_padded_denominations_without_refinement(
         fee_per_stage_zatoshi,
         migration_fee_zatoshi,
         minimum_output_zatoshi,
-        |greedy| vec![greedy],
+        DenominationRefinement::leaf,
     )
 }
 
@@ -208,7 +225,7 @@ fn plan_padded_denominations_with_policy_and_rng<R: RngCore + ?Sized>(
     )
 }
 
-fn plan_padded_denominations_with_refiner<F: FnMut(u64) -> Vec<u64>>(
+fn plan_padded_denominations_with_refiner<F: FnMut(u64) -> DenominationRefinement>(
     input_values: &[u64],
     fee_per_stage_zatoshi: u64,
     migration_fee_zatoshi: u64,
@@ -245,26 +262,15 @@ fn plan_padded_denominations_with_refiner<F: FnMut(u64) -> Vec<u64>>(
             let Some(greedy) = super::largest_zip318_denomination_at_or_below(affordable) else {
                 break;
             };
-            let mut refined = refine(greedy);
-            if checked_sum(&refined, "Denomination refinement total overflow")? != greedy {
+            let refinement = refine(greedy);
+            if refinement.value_zatoshi != greedy {
                 return Err("Denomination refinement must preserve the selected value".to_string());
             }
-            if refined
-                .iter()
-                .any(|value| !super::is_zip318_canonical_denomination(*value))
-            {
-                return Err("Denomination refinement produced a noncanonical value".to_string());
-            }
-            refined.sort_unstable_by(|left, right| right.cmp(left));
+            let candidates = refinement_candidates(&refinement)?;
 
-            let is_refined = refined.len() != 1 || refined[0] != greedy;
-            let greedy_candidate = [greedy];
-            let candidates = [&refined[..], &greedy_candidate[..]];
-            let candidate_count = if is_refined { 2 } else { 1 };
-
-            for candidate in candidates.into_iter().take(candidate_count) {
+            for candidate in candidates {
                 let prior_crossing_count = crossing_values.len();
-                crossing_values.extend_from_slice(candidate);
+                crossing_values.extend_from_slice(&candidate);
                 match preparation_for_crossings(
                     &context,
                     &crossing_values,
@@ -424,16 +430,16 @@ fn refine_denomination<R: RngCore + ?Sized>(
     denomination_zatoshi: u64,
     policy: DenominationRefinementPolicy,
     rng: &mut R,
-) -> Vec<u64> {
+) -> DenominationRefinement {
     let Some(split_percent) = policy.split_percent(denomination_zatoshi) else {
-        return vec![denomination_zatoshi];
+        return DenominationRefinement::leaf(denomination_zatoshi);
     };
     assert!(
         split_percent <= 100,
         "denomination refinement percentage exceeds 100"
     );
     if split_percent == 0 || rng.next_u32() % 100 >= split_percent {
-        return vec![denomination_zatoshi];
+        return DenominationRefinement::leaf(denomination_zatoshi);
     }
 
     let children: &[u64] = match denomination_zatoshi {
@@ -447,11 +453,64 @@ fn refine_denomination<R: RngCore + ?Sized>(
         _ => unreachable!("policy only returns percentages for refinable denominations"),
     };
 
-    let mut refined = Vec::new();
-    for child in children {
-        refined.extend(refine_denomination(*child, policy, rng));
+    DenominationRefinement {
+        value_zatoshi: denomination_zatoshi,
+        children: children
+            .iter()
+            .map(|child| refine_denomination(*child, policy, rng))
+            .collect(),
     }
-    refined
+}
+
+/// Returns every valid pruning of a selected refinement tree, ordered from the
+/// most split candidate to the unsplit root so the planner keeps the deepest
+/// affordable result. The current policy produces at most 26 candidates.
+fn refinement_candidates(refinement: &DenominationRefinement) -> Result<Vec<Vec<u64>>, String> {
+    if !super::is_zip318_canonical_denomination(refinement.value_zatoshi) {
+        return Err("Denomination refinement produced a noncanonical value".to_string());
+    }
+    if refinement.children.is_empty() {
+        return Ok(vec![vec![refinement.value_zatoshi]]);
+    }
+
+    let child_values = refinement
+        .children
+        .iter()
+        .map(|child| child.value_zatoshi)
+        .collect::<Vec<_>>();
+    if checked_sum(&child_values, "Denomination refinement total overflow")?
+        != refinement.value_zatoshi
+    {
+        return Err("Denomination refinement must preserve the selected value".to_string());
+    }
+
+    let mut expanded = vec![Vec::new()];
+    for child in &refinement.children {
+        let child_candidates = refinement_candidates(child)?;
+        let combined_capacity = expanded
+            .len()
+            .checked_mul(child_candidates.len())
+            .ok_or("Denomination refinement candidate count overflow")?;
+        let mut combined = Vec::with_capacity(combined_capacity);
+        for prefix in expanded {
+            for child_candidate in &child_candidates {
+                let mut candidate = Vec::with_capacity(prefix.len() + child_candidate.len());
+                candidate.extend_from_slice(&prefix);
+                candidate.extend_from_slice(child_candidate);
+                combined.push(candidate);
+            }
+        }
+        expanded = combined;
+    }
+    expanded.push(vec![refinement.value_zatoshi]);
+
+    for candidate in &mut expanded {
+        candidate.sort_unstable_by(|left, right| right.cmp(left));
+    }
+    expanded
+        .sort_unstable_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+    expanded.dedup();
+    Ok(expanded)
 }
 
 fn preparation_for_crossings(
@@ -839,7 +898,9 @@ mod tests {
             let refined_rolls = (0..100u64)
                 .filter(|roll| {
                     let mut rng = StepRng::new(*roll, 0);
-                    refine_denomination(denomination, policy, &mut rng) != vec![denomination]
+                    !refine_denomination(denomination, policy, &mut rng)
+                        .children
+                        .is_empty()
                 })
                 .count();
 
@@ -1039,6 +1100,27 @@ mod tests {
     }
 
     #[test]
+    fn unaffordable_descendant_preserves_affordable_ancestor_split() {
+        let mut rng = ScriptedRng::new([0, 55, 0, 35, 35]);
+        let plan = plan_padded_denominations_with_rng(
+            &[10_000 * ZEC + 120_000],
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+            &mut rng,
+        )
+        .unwrap()
+        .unwrap();
+        rng.assert_exhausted();
+
+        assert_eq!(
+            plan.denominations.migration_outputs,
+            vec![5_000 * ZEC, 5_000 * ZEC]
+        );
+        assert_eq!(plan.denominations.orchard_change, Some(10_000));
+    }
+
+    #[test]
     fn fifty_thousand_zec_balance_has_a_deterministic_aggressive_example() {
         let rolls = [
             80, // 10
@@ -1147,9 +1229,15 @@ mod tests {
         let refined =
             plan_padded_denominations_with_refiner(&inputs, PREP_FEE, MIGRATION_FEE, 1, |greedy| {
                 if greedy == super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI {
-                    vec![5_000 * ZEC, 5_000 * ZEC]
+                    DenominationRefinement {
+                        value_zatoshi: greedy,
+                        children: vec![
+                            DenominationRefinement::leaf(5_000 * ZEC),
+                            DenominationRefinement::leaf(5_000 * ZEC),
+                        ],
+                    }
                 } else {
-                    vec![greedy]
+                    DenominationRefinement::leaf(greedy)
                 }
             })
             .unwrap()
