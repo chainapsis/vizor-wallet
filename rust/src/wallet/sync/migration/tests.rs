@@ -2642,22 +2642,6 @@ fn dense_migration_parts_halve_the_schedule_mean_after_ten_parts() {
             ZIP318_TRANSFER_MAX_DELAY_BLOCKS,
         ),
     );
-    assert_eq!(
-        schedule_parameters_with_policy(
-            WalletNetwork::Main,
-            MigrationTimingPolicy::Standard90Minutes,
-        )
-        .0,
-        NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
-    );
-    assert_eq!(
-        schedule_parameters_with_policy(
-            WalletNetwork::Main,
-            MigrationTimingPolicy::Standard90MinutesDense,
-        )
-        .0,
-        NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS / 2,
-    );
 }
 
 #[test]
@@ -2693,7 +2677,6 @@ fn dense_preparation_halves_the_schedule_mean_after_three_transactions() {
         preparation_schedule_parameters_for_transaction_count(
             WalletNetwork::Main,
             MigrationTimingPolicy::Standard,
-            PreparationTimingPolicy::Zip318Spaced,
             DENSE_PREPARATION_TRANSACTION_THRESHOLD,
         ),
         (
@@ -2705,7 +2688,6 @@ fn dense_preparation_halves_the_schedule_mean_after_three_transactions() {
         preparation_schedule_parameters_for_transaction_count(
             WalletNetwork::Main,
             MigrationTimingPolicy::Standard,
-            PreparationTimingPolicy::Zip318Spaced,
             DENSE_PREPARATION_TRANSACTION_THRESHOLD + 1,
         ),
         (
@@ -2717,29 +2699,10 @@ fn dense_preparation_halves_the_schedule_mean_after_three_transactions() {
         preparation_schedule_parameters_for_transaction_count(
             WalletNetwork::Regtest,
             MigrationTimingPolicy::Standard,
-            PreparationTimingPolicy::Zip318Spaced,
             DENSE_PREPARATION_TRANSACTION_THRESHOLD + 1,
         )
         .0,
         1,
-    );
-    assert_eq!(
-        preparation_schedule_parameters_for_policy(
-            WalletNetwork::Main,
-            MigrationTimingPolicy::Standard,
-            PreparationTimingPolicy::Zip318Spaced,
-        )
-        .0,
-        ZIP318_PREPARATION_MEAN_DELAY_BLOCKS,
-    );
-    assert_eq!(
-        preparation_schedule_parameters_for_policy(
-            WalletNetwork::Main,
-            MigrationTimingPolicy::Standard,
-            PreparationTimingPolicy::Zip318SpacedDense,
-        )
-        .0,
-        ZIP318_PREPARATION_MEAN_DELAY_BLOCKS / 2,
     );
 }
 
@@ -2814,7 +2777,7 @@ fn preparation_delay_rounds_to_nearest_block() {
             preparation_delay_with_rng(
                 WalletNetwork::Main,
                 MigrationTimingPolicy::Standard,
-                PreparationTimingPolicy::Zip318Spaced,
+                1,
                 &mut rng,
             )
         })
@@ -3326,40 +3289,6 @@ fn new_mainnet_draft_persists_ninety_minute_policy() {
     assert_eq!(
         timing_policy_for_run(&db_path, &run_id, WalletNetwork::Main).unwrap(),
         MigrationTimingPolicy::Standard90Minutes,
-    );
-}
-
-#[test]
-fn new_dense_mainnet_draft_persists_dense_policy() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let db_path = temp_dir.path().join("wallet.db");
-    let db_path = db_path.to_string_lossy().to_string();
-    let values = (1..=DENSE_MIGRATION_PART_THRESHOLD + 1)
-        .map(|value| value as u64 * 100)
-        .collect::<Vec<_>>();
-    let schedule = values
-        .iter()
-        .enumerate()
-        .map(|(part_index, value_zatoshi)| MigrationScheduleEntry {
-            part_index: Some(part_index as u32),
-            value_zatoshi: *value_zatoshi,
-            block_offset: part_index as u32 + 1,
-        })
-        .collect::<Vec<_>>();
-
-    let run_id = create_or_resume_private_migration_draft(
-        &db_path,
-        "account-1",
-        WalletNetwork::Main,
-        &values,
-        &schedule,
-        PreparationTimingPolicy::Zip318Spaced,
-    )
-    .unwrap();
-
-    assert_eq!(
-        timing_policy_for_run(&db_path, &run_id, WalletNetwork::Main).unwrap(),
-        MigrationTimingPolicy::Standard90MinutesDense,
     );
 }
 
@@ -5494,53 +5423,6 @@ fn create_staged_run_persists_pending_split_atomically() {
     assert_eq!(stages[0].expected_txid_hex, expected_txid);
     assert_eq!(stages[0].raw_tx.as_deref(), Some(raw_tx.as_slice()));
     assert_eq!(stages[0].status, DenominationStageStatus::Pending);
-}
-
-#[test]
-fn new_dense_preparation_run_persists_dense_policy() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let db_path = temp_dir.path().join("wallet.db");
-    let db_path = db_path.to_string_lossy().to_string();
-    let stage_count = DENSE_PREPARATION_TRANSACTION_THRESHOLD + 1;
-    let migration_outputs = vec![100_000_000; stage_count];
-    let plan = DenominationPlan {
-        migration_outputs,
-        orchard_change: None,
-        split_fee_zatoshi: 80_000 * stage_count as u64,
-        migration_fee_zatoshi: 15_000,
-        total_input_zatoshi: 100_095_000 * stage_count as u64,
-        total_migratable_zatoshi: 100_000_000 * stage_count as u64,
-    };
-    let stages = (0..stage_count)
-        .map(|index| {
-            pending_test_stage_for_part(
-                index as u32,
-                &format!("{:064x}", index + 1),
-                100_000_000,
-                Some(index as u32),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let run_id = create_run_with_staged_denominations_and_signed_children(
-        &db_path,
-        "account-1",
-        WalletNetwork::Test,
-        &plan,
-        &[],
-        Vec::new(),
-        stages,
-        None,
-        PreparationTimingPolicy::Zip318Spaced,
-        TEST_PASSWORD,
-        TEST_SALT_BASE64,
-    )
-    .unwrap();
-
-    assert_eq!(
-        preparation_timing_policy_for_run(&db_path, &run_id).unwrap(),
-        PreparationTimingPolicy::Zip318SpacedDense,
-    );
 }
 
 #[test]
@@ -8155,71 +8037,6 @@ fn denomination_reconciliation_waits_for_spendable_note_metadata() {
 }
 
 const MINIMUM_OUTPUT_FOR_TEST: u64 = 1;
-
-#[test]
-fn legacy_dense_outbox_keeps_its_persisted_mean_after_upgrade() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let db_path = temp_dir
-        .path()
-        .join("wallet.db")
-        .to_string_lossy()
-        .to_string();
-    let values = (1..=DENSE_MIGRATION_PART_THRESHOLD + 1)
-        .map(|value| value as u64 * 100)
-        .collect::<Vec<_>>();
-    let anchors = vec![Some(90); values.len()];
-    create_outbox_test_run(&db_path, "legacy-dense-outbox", &values, &anchors);
-    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    conn.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET network = 'main', timing_policy = 'standard_90m'
-             WHERE run_id = 'legacy-dense-outbox'"
-        ),
-        [],
-    )
-    .unwrap();
-    drop(conn);
-
-    let legacy = export_scheduled_migration_outbox(
-        &db_path,
-        "account-1",
-        WalletNetwork::Main,
-        TEST_PASSWORD,
-        TEST_SALT_BASE64,
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(
-        legacy.timing_mean_blocks,
-        NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS,
-    );
-
-    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    conn.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET timing_policy = 'standard_90m_dense'
-             WHERE run_id = 'legacy-dense-outbox'"
-        ),
-        [],
-    )
-    .unwrap();
-    drop(conn);
-    let dense = export_scheduled_migration_outbox(
-        &db_path,
-        "account-1",
-        WalletNetwork::Main,
-        TEST_PASSWORD,
-        TEST_SALT_BASE64,
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(
-        dense.timing_mean_blocks,
-        NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS / 2,
-    );
-}
 
 #[test]
 fn migration_outbox_export_decrypts_only_scheduled_children() {

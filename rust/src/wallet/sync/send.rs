@@ -4762,7 +4762,7 @@ fn denomination_stage_broadcast_readiness(
     // for an expiry scan that deliberately excludes zero-expiry stages.
     if stage.expiry_height > 0 && stage.expiry_height <= chain_tip_height {
         DenominationStageBroadcastReadiness::AwaitingExpiryScan
-    } else if preparation_timing_policy.is_immediate()
+    } else if preparation_timing_policy == super::migration::PreparationTimingPolicy::Immediate
         || stage.effective_broadcast_height() <= chain_tip_height
     {
         DenominationStageBroadcastReadiness::Ready
@@ -4904,11 +4904,12 @@ async fn broadcast_pending_denomination_stages(
         .collect::<Vec<_>>();
 
     let mut broadcasted_count = 0u32;
-    let broadcast_limit = if preparation_timing_policy.is_spaced() {
-        1
-    } else {
-        policy.limit(due.len())
-    };
+    let broadcast_limit =
+        if preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced {
+            1
+        } else {
+            policy.limit(due.len())
+        };
     for stage in due.into_iter().take(broadcast_limit) {
         let stage_was_overdue = stage.effective_broadcast_height() < chain_tip_height;
         if policy.is_cancelled() {
@@ -4969,7 +4970,9 @@ async fn broadcast_pending_denomination_stages(
             run_id,
             &stage.expected_txid_hex,
         )?;
-        if preparation_timing_policy.is_spaced() && stage_was_overdue {
+        if preparation_timing_policy == super::migration::PreparationTimingPolicy::Zip318Spaced
+            && stage_was_overdue
+        {
             super::migration::rerandomize_remaining_preparation_broadcast_heights(
                 &tx,
                 run_id,
@@ -5001,7 +5004,9 @@ async fn broadcast_pending_denomination_stages(
         message: Some(if policy.is_cancelled() {
             "Background migration stopped before the next denomination broadcast.".to_string()
         } else if broadcasted_count < total_count
-            && (policy.max_per_step.is_some() || preparation_timing_policy.is_spaced())
+            && (policy.max_per_step.is_some()
+                || preparation_timing_policy
+                    == super::migration::PreparationTimingPolicy::Zip318Spaced)
         {
             "One denomination stage was submitted. Remaining stages will continue on later migration advances."
                 .to_string()

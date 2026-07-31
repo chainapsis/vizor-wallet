@@ -6,15 +6,10 @@ const FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS: u32 = 4;
 const FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS: u32 = 16;
 pub(crate) const DENSE_PREPARATION_TRANSACTION_THRESHOLD: usize = 3;
 
-/// Persisted preparation cadence.
-///
-/// The dense variant keeps catch-up scheduling consistent with the cadence
-/// selected before the preparation transactions were signed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PreparationTimingPolicy {
     Immediate,
     Zip318Spaced,
-    Zip318SpacedDense,
 }
 
 impl PreparationTimingPolicy {
@@ -30,7 +25,6 @@ impl PreparationTimingPolicy {
         match self {
             Self::Immediate => "immediate",
             Self::Zip318Spaced => "zip318_spaced",
-            Self::Zip318SpacedDense => "zip318_spaced_dense",
         }
     }
 
@@ -38,34 +32,9 @@ impl PreparationTimingPolicy {
         match value {
             "immediate" => Ok(Self::Immediate),
             "zip318_spaced" => Ok(Self::Zip318Spaced),
-            "zip318_spaced_dense" => Ok(Self::Zip318SpacedDense),
             _ => Err(format!(
                 "Unsupported migration preparation timing policy: {value}"
             )),
-        }
-    }
-
-    pub(crate) const fn is_immediate(self) -> bool {
-        matches!(self, Self::Immediate)
-    }
-
-    pub(crate) const fn is_spaced(self) -> bool {
-        matches!(self, Self::Zip318Spaced | Self::Zip318SpacedDense)
-    }
-
-    const fn is_dense(self) -> bool {
-        matches!(self, Self::Zip318SpacedDense)
-    }
-
-    pub(crate) const fn with_transaction_count(self, transaction_count: usize) -> Self {
-        match self {
-            Self::Immediate => Self::Immediate,
-            Self::Zip318Spaced | Self::Zip318SpacedDense
-                if transaction_count > DENSE_PREPARATION_TRANSACTION_THRESHOLD =>
-            {
-                Self::Zip318SpacedDense
-            }
-            Self::Zip318Spaced | Self::Zip318SpacedDense => Self::Zip318Spaced,
         }
     }
 }
@@ -75,7 +44,7 @@ fn preparation_schedule_parameters(
     timing_policy: MigrationTimingPolicy,
 ) -> (u32, u32) {
     match network {
-        WalletNetwork::Regtest if timing_policy.is_fast_testnet() => (
+        WalletNetwork::Regtest if timing_policy == MigrationTimingPolicy::FastTestnet => (
             FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS,
             FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS,
         ),
@@ -83,7 +52,7 @@ fn preparation_schedule_parameters(
             REGTEST_PREPARATION_MEAN_DELAY_BLOCKS,
             REGTEST_PREPARATION_MAX_DELAY_BLOCKS,
         ),
-        WalletNetwork::Test if timing_policy.is_fast_testnet() => (
+        WalletNetwork::Test if timing_policy == MigrationTimingPolicy::FastTestnet => (
             FAST_TESTNET_PREPARATION_MEAN_DELAY_BLOCKS,
             FAST_TESTNET_PREPARATION_MAX_DELAY_BLOCKS,
         ),
@@ -97,24 +66,11 @@ fn preparation_schedule_parameters(
 fn preparation_schedule_parameters_for_transaction_count(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
-    preparation_policy: PreparationTimingPolicy,
     transaction_count: usize,
-) -> (u32, u32) {
-    preparation_schedule_parameters_for_policy(
-        network,
-        timing_policy,
-        preparation_policy.with_transaction_count(transaction_count),
-    )
-}
-
-fn preparation_schedule_parameters_for_policy(
-    network: WalletNetwork,
-    timing_policy: MigrationTimingPolicy,
-    preparation_policy: PreparationTimingPolicy,
 ) -> (u32, u32) {
     let (mean_delay_blocks, max_delay_blocks) =
         preparation_schedule_parameters(network, timing_policy);
-    let effective_mean = if preparation_policy.is_dense() {
+    let effective_mean = if transaction_count > DENSE_PREPARATION_TRANSACTION_THRESHOLD {
         (mean_delay_blocks / 2).max(1)
     } else {
         mean_delay_blocks
@@ -127,13 +83,12 @@ pub(crate) fn estimated_preparation_spacing_delay_blocks(
     preparation_policy: PreparationTimingPolicy,
     transaction_count: u32,
 ) -> Result<u32, String> {
-    if preparation_policy.is_immediate() {
+    if preparation_policy == PreparationTimingPolicy::Immediate {
         return Ok(0);
     }
     preparation_schedule_parameters_for_transaction_count(
         network,
         configured_timing_policy(network),
-        preparation_policy,
         transaction_count as usize,
     )
         .0
@@ -144,11 +99,15 @@ pub(crate) fn estimated_preparation_spacing_delay_blocks(
 fn preparation_delay_with_rng<R: RngCore + CryptoRng + ?Sized>(
     network: WalletNetwork,
     timing_policy: MigrationTimingPolicy,
-    preparation_policy: PreparationTimingPolicy,
+    transaction_count: usize,
     rng: &mut R,
 ) -> u32 {
     let (mean_delay_blocks, max_delay_blocks) =
-        preparation_schedule_parameters_for_policy(network, timing_policy, preparation_policy);
+        preparation_schedule_parameters_for_transaction_count(
+            network,
+            timing_policy,
+            transaction_count,
+        );
     loop {
         let uniform = draw_unit_left_open(rng);
         let sampled = round_nonnegative_to_u32(-uniform.ln() * f64::from(mean_delay_blocks));
@@ -174,7 +133,7 @@ pub(crate) fn planned_preparation_scheduled_heights<
     let Some(last_layer) = stage_layers.iter().copied().max() else {
         return Ok(Vec::new());
     };
-    let preparation_policy = preparation_policy.with_transaction_count(stage_layers.len());
+    let transaction_count = stage_layers.len();
     let mut heights = vec![0; stage_layers.len()];
     let mut layer_base = target_height.saturating_sub(1);
 
@@ -189,18 +148,18 @@ pub(crate) fn planned_preparation_scheduled_heights<
                 "Migration preparation schedule is missing layer {layer_index}"
             ));
         }
-        if preparation_policy.is_spaced() {
+        if preparation_policy == PreparationTimingPolicy::Zip318Spaced {
             stage_indices.shuffle(rng);
         }
 
         let mut scheduled_height = layer_base;
         for stage_index in stage_indices {
-            if preparation_policy.is_spaced() {
+            if preparation_policy == PreparationTimingPolicy::Zip318Spaced {
                 scheduled_height = scheduled_height
                     .checked_add(preparation_delay_with_rng(
                         network,
                         timing_policy,
-                        preparation_policy,
+                        transaction_count,
                         rng,
                     ))
                     .ok_or("Migration preparation scheduled height overflow")?;
@@ -227,11 +186,13 @@ pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
     chain_tip_height: u32,
     rng: &mut R,
 ) -> Result<u32, String> {
-    let preparation_policy = preparation_timing_policy_for_run_with_conn(tx, run_id)?;
-    if preparation_policy.is_immediate() {
+    if preparation_timing_policy_for_run_with_conn(tx, run_id)?
+        == PreparationTimingPolicy::Immediate
+    {
         return Ok(0);
     }
     let timing_policy = timing_policy_for_run_with_conn(tx, run_id, network)?;
+    let transaction_count = count_for_run(tx, STAGES_TABLE, run_id)? as usize;
     let remaining = {
         let mut stmt = tx
             .prepare_cached(&format!(
@@ -264,7 +225,7 @@ pub(crate) fn rerandomize_remaining_preparation_broadcast_heights<
             .checked_add(preparation_delay_with_rng(
                 network,
                 timing_policy,
-                preparation_policy,
+                transaction_count,
                 rng,
             ))
             .ok_or("Migration preparation catch-up height overflow")?;

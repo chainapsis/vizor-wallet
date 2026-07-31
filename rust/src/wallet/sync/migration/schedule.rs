@@ -44,16 +44,13 @@ where
     R: RngCore + CryptoRng + ?Sized,
     I: IntoIterator<Item = u64>,
 {
-    let values = values.into_iter().collect::<Vec<_>>();
-    let timing_policy = configured_timing_policy(network)
-        .with_dense_schedule(values.len() > DENSE_MIGRATION_PART_THRESHOLD);
     planned_transfer_schedule_for_parts_with_policy(
         values
             .into_iter()
             .enumerate()
             .map(|(part_index, value_zatoshi)| (part_index as u32, value_zatoshi)),
         network,
-        timing_policy,
+        configured_timing_policy(network),
         rng,
     )
 }
@@ -92,7 +89,7 @@ where
     let mut parts = parts.into_iter().collect::<Vec<_>>();
     parts.shuffle(rng);
     let (mean_delay_blocks, max_delay_blocks) =
-        schedule_parameters_with_policy(network, timing_policy);
+        schedule_parameters_with_policy_for_part_count(network, timing_policy, parts.len());
     let offsets = random_schedule_block_offsets_with_rng(
         parts.len(),
         mean_delay_blocks,
