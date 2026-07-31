@@ -3015,12 +3015,20 @@ void main() {
   );
 
   test(
-    'prepareKeystoneDenominationPrivateMigration prepares signing request',
+    'prepareKeystoneDenominationPrivateMigration forwards approved schedule',
     () async {
       String? seenDbPath;
       String? seenNetwork;
       String? seenAccountUuid;
+      List<rust_sync.MigrationScheduledTransfer>? seenSchedule;
       final expected = _keystoneSigningRequest();
+      final approvedSchedule = [
+        rust_sync.MigrationScheduledTransfer(
+          partIndex: 0,
+          valueZatoshi: BigInt.from(5_000_000),
+          blockOffset: 144,
+        ),
+      ];
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
         getStatus: ({required dbPath, required network, required accountUuid}) {
@@ -3038,22 +3046,30 @@ void main() {
           lightwalletdUrl: 'https://lwd.example:443',
         ),
         prepareKeystoneDenominationMigration:
-            ({required dbPath, required network, required accountUuid}) {
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+            }) {
               seenDbPath = dbPath;
               seenNetwork = network;
               seenAccountUuid = accountUuid;
+              seenSchedule = approvedSchedule;
               return Future.value(expected);
             },
       );
 
       final request = await service.prepareKeystoneDenominationPrivateMigration(
         accountUuid: 'account-1',
+        approvedSchedule: approvedSchedule,
       );
 
       expect(request, expected);
       expect(seenDbPath, '/tmp/wallet.db');
       expect(seenNetwork, 'test');
       expect(seenAccountUuid, 'account-1');
+      expect(seenSchedule, approvedSchedule);
     },
   );
 
@@ -4618,8 +4634,12 @@ void main() {
               required saltBase64,
             }) async => null,
         prepareKeystoneDenominationMigration:
-            ({required dbPath, required network, required accountUuid}) async =>
-                _keystoneSigningRequest(),
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+            }) async => _keystoneSigningRequest(),
         completeKeystoneDenominationMigration:
             ({
               required dbPath,
@@ -4655,6 +4675,7 @@ void main() {
 
       await service.prepareKeystoneDenominationPrivateMigration(
         accountUuid: 'account-1',
+        approvedSchedule: const [],
       );
       expect(
         await store.read(network: 'test', accountUuid: 'account-1'),

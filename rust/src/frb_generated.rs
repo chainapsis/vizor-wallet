@@ -4524,6 +4524,8 @@ fn wire__crate__api__sync__prepare_orchard_migration_denominations_pczt_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
+            let api_approved_schedule =
+                <Vec<crate::api::sync::MigrationScheduledTransfer>>::sse_decode(&mut deserializer);
             let api_space_preparation_broadcasts = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -4532,6 +4534,7 @@ fn wire__crate__api__sync__prepare_orchard_migration_denominations_pczt_impl(
                         api_db_path,
                         api_network,
                         api_account_uuid,
+                        api_approved_schedule,
                         api_space_preparation_broadcasts,
                     )?;
                     Ok(output_ok)

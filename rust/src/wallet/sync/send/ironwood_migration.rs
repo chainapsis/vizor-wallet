@@ -29,6 +29,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
+    approved_schedule: Option<&[super::migration::MigrationScheduleEntry]>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
@@ -71,9 +72,8 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             super::migration::configured_timing_policy(network),
         ),
     };
-    let target_values_zatoshi = draft_run
-        .as_ref()
-        .map(|run| run.target_values_zatoshi.clone());
+    let target_values_zatoshi =
+        denomination_target_values_for_request(draft_run.as_ref(), approved_schedule)?;
     let split = with_wallet_db_write_lock("send.migration.prepare_denominations_pczt", || {
         create_padded_orchard_denomination_pczts(
             db_path,
@@ -150,6 +150,19 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
         messages,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
     })
+}
+
+fn denomination_target_values_for_request(
+    draft_run: Option<&super::migration::ActiveRun>,
+    approved_schedule: Option<&[super::migration::MigrationScheduleEntry]>,
+) -> Result<Option<Vec<u64>>, String> {
+    if let Some(run) = draft_run {
+        return Ok(Some(run.target_values_zatoshi.clone()));
+    }
+
+    approved_schedule
+        .map(super::migration::target_values_from_schedule)
+        .transpose()
 }
 
 pub(crate) async fn complete_orchard_migration_denominations_pczt(

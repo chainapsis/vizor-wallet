@@ -403,6 +403,7 @@ typedef IronwoodMigrationKeystoneDenominationPreparer =
       required String dbPath,
       required String network,
       required String accountUuid,
+      required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
 typedef IronwoodMigrationKeystoneSingleQrPreparer =
     Future<rust_sync.KeystoneMigrationSigningRequest> Function({
@@ -488,10 +489,12 @@ _defaultPrepareKeystoneDenominationMigration({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
 }) => rust_sync.prepareOrchardMigrationDenominationsPczt(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
 );
 
@@ -1992,6 +1995,7 @@ class IronwoodMigrationService {
   Future<rust_sync.KeystoneMigrationSigningRequest>
   prepareKeystoneDenominationPrivateMigration({
     required String accountUuid,
+    required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -2002,6 +2006,7 @@ class IronwoodMigrationService {
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
+        approvedSchedule: approvedSchedule,
       ),
     );
   }

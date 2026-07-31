@@ -1144,7 +1144,12 @@ IronwoodMigrationService _migrationService({
             onStartImmediate?.call(accountUuid) ??
             Future.value(_migrationResult()),
     prepareKeystoneDenominationMigration:
-        ({required dbPath, required network, required accountUuid}) =>
+        ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+        }) =>
             onPrepareKeystoneDenominations?.call(accountUuid) ??
             Future.value(_keystoneDenominationRequest()),
     completeKeystoneDenominationMigration:
@@ -3587,17 +3592,21 @@ void main() {
         getSessionPassword: () => 'test-password',
         isMobile: () => true,
         prepareKeystoneDenominationMigration:
-            ({required dbPath, required network, required accountUuid}) async =>
-                rust_sync.KeystoneMigrationSigningRequest(
-                  requestId: 'partial-success-request',
-                  messages: [
-                    rust_sync.KeystoneMigrationMessage(
-                      id: 'split-1',
-                      redactedPczt: Uint8List.fromList([1]),
-                    ),
-                  ],
-                  signingBatchLimit: 35,
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+            }) async => rust_sync.KeystoneMigrationSigningRequest(
+              requestId: 'partial-success-request',
+              messages: [
+                rust_sync.KeystoneMigrationMessage(
+                  id: 'split-1',
+                  redactedPczt: Uint8List.fromList([1]),
                 ),
+              ],
+              signingBatchLimit: 35,
+            ),
         completeKeystoneDenominationMigration:
             ({
               required dbPath,
@@ -3948,7 +3957,12 @@ void main() {
         ),
         getEndpoint: () => defaultRpcEndpointConfig('main'),
         prepareKeystoneDenominationMigration:
-            ({required dbPath, required network, required accountUuid}) async {
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+            }) async {
               prepareCount += 1;
               return rust_sync.KeystoneMigrationSigningRequest(
                 requestId: 'request-$prepareCount',

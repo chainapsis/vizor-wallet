@@ -393,6 +393,7 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
       _KeystonePrivateSignStep.denominations =>
         service.prepareKeystoneDenominationPrivateMigration(
           accountUuid: accountUuid,
+          approvedSchedule: approvedSchedule,
         ),
       _KeystonePrivateSignStep.batch =>
         service.prepareKeystoneBatchPrivateMigration(accountUuid: accountUuid),

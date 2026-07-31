@@ -14,6 +14,27 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn draftless_denomination_request_replays_approved_targets() {
+    let approved_schedule = vec![
+        migration::MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 5_000,
+            block_offset: 4,
+        },
+        migration::MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 5_000,
+            block_offset: 8,
+        },
+    ];
+
+    assert_eq!(
+        denomination_target_values_for_request(None, Some(&approved_schedule)).unwrap(),
+        Some(vec![5_000, 5_000]),
+    );
+}
+
+#[test]
 fn migration_stop_preserves_zero_as_the_no_expiry_sentinel() {
     assert!(!migration_stop_candidate_is_expired(0, u32::MAX));
     assert!(!migration_stop_candidate_is_expired(200, 199));

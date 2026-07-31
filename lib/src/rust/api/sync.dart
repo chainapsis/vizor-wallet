@@ -557,18 +557,20 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
       saltBase64: saltBase64,
     );
 
-/// Prepares denomination PCZTs with expiry heights derived from their planned
-/// broadcast heights.
+/// Prepares denomination PCZTs for the approved schedule, with expiry heights
+/// derived from their planned broadcast heights.
 Future<KeystoneMigrationSigningRequest>
 prepareOrchardMigrationDenominationsPczt({
   required String dbPath,
   required String network,
   required String accountUuid,
+  required List<MigrationScheduledTransfer> approvedSchedule,
   required bool spacePreparationBroadcasts,
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationDenominationsPczt(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
+  approvedSchedule: approvedSchedule,
   spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 

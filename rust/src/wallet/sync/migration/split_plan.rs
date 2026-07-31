@@ -776,6 +776,34 @@ mod tests {
     }
 
     #[test]
+    fn direct_refined_targets_can_diverge_from_a_greedy_rebuild() {
+        let inputs = [
+            funding(5_000 * ZEC),
+            funding(5_000 * ZEC),
+            2 * PREP_FEE - MIGRATION_FEE,
+        ];
+        let refined =
+            plan_padded_denominations_with_refiner(&inputs, PREP_FEE, MIGRATION_FEE, 1, |greedy| {
+                if greedy == super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI {
+                    5_000 * ZEC
+                } else {
+                    greedy
+                }
+            })
+            .unwrap()
+            .unwrap();
+        let greedy = plan_without_refinement(&inputs).unwrap().unwrap();
+
+        assert_eq!(
+            refined.denominations.migration_outputs,
+            vec![5_000 * ZEC, 5_000 * ZEC]
+        );
+        assert!(refined.stages.is_empty());
+        assert_eq!(greedy.denominations.migration_outputs, vec![10_000 * ZEC]);
+        assert_eq!(greedy.stages.len(), 2);
+    }
+
+    #[test]
     fn reuses_an_exact_funding_note_without_a_preparation_transaction() {
         let plan = plan_without_refinement(&[funding(100 * ZEC)])
             .unwrap()
