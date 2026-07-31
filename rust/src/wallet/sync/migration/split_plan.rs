@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use rand::{rngs::OsRng, RngCore};
 use zcash_protocol::value::Zatoshis;
 
 use super::{
@@ -10,6 +11,12 @@ use super::{
 };
 
 pub(crate) const DENOMINATION_SPLIT_ACTIONS: usize = PREP_TX_ACTIONS;
+
+const MAX_DENOMINATION_REFINEMENT_PERCENT: u32 = 30;
+// Conditional weights follow ZIP 318's provisional preference for keeping
+// smaller-denomination selections infrequent enough to limit part growth.
+const FIVE_THOUSAND_SELECTION_PERCENT: u32 = 65;
+const TWO_THOUSAND_SELECTION_PERCENT: u32 = 25;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SplitStageInput {
@@ -80,20 +87,216 @@ pub(crate) struct PaddedDenominationPlan {
     pub direct_migration_inputs: Vec<DirectMigrationInput>,
 }
 
-/// Plans the canonical ZIP 318 denominations and the native preparation graph.
+struct PlanningContext {
+    positive_input_indices: Vec<usize>,
+    total_input_zatoshi: u64,
+    available: Vec<Zatoshis>,
+    prep_fee: Zatoshis,
+}
+
+/// Plans canonical ZIP 318 denominations and the native preparation graph.
 ///
 /// This mirrors the upstream backend's coupling between denomination selection
 /// and preparation layout. The preparation planner is consulted after every
 /// candidate note, so exact-note reuse, consolidation, fanout, and their real
 /// padded transaction fees all affect which denominations fit. Planning stops
 /// only when the remaining balance cannot fund another canonical migration
-/// note and its preparation cost.
+/// note and its preparation cost. Each 10,000 ZEC selection has a 30% chance of
+/// starting with a smaller 5,000, 2,000, or 1,000 ZEC denomination.
 pub(crate) fn plan_padded_denominations(
     input_values: &[u64],
     fee_per_stage_zatoshi: u64,
     migration_fee_zatoshi: u64,
     minimum_output_zatoshi: u64,
 ) -> Result<Option<PaddedDenominationPlan>, String> {
+    plan_padded_denominations_with_rng(
+        input_values,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+        minimum_output_zatoshi,
+        &mut OsRng,
+    )
+}
+
+/// Retains the deterministic fallback for builders that have no approved
+/// target list to replay. New plans use [`plan_padded_denominations`].
+pub(crate) fn plan_padded_denominations_without_refinement(
+    input_values: &[u64],
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+) -> Result<Option<PaddedDenominationPlan>, String> {
+    plan_padded_denominations_with_refiner(
+        input_values,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+        minimum_output_zatoshi,
+        |greedy| greedy,
+    )
+}
+
+fn plan_padded_denominations_with_rng<R: RngCore + ?Sized>(
+    input_values: &[u64],
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+    rng: &mut R,
+) -> Result<Option<PaddedDenominationPlan>, String> {
+    plan_padded_denominations_with_refiner(
+        input_values,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+        minimum_output_zatoshi,
+        |greedy| refine_max_denomination(greedy, rng),
+    )
+}
+
+fn plan_padded_denominations_with_refiner<F: FnMut(u64) -> u64>(
+    input_values: &[u64],
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+    mut refine: F,
+) -> Result<Option<PaddedDenominationPlan>, String> {
+    let Some(context) =
+        planning_context(input_values, fee_per_stage_zatoshi, minimum_output_zatoshi)?
+    else {
+        return Ok(None);
+    };
+
+    let minimum_denomination = super::ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI;
+    let minimum_funding_note = minimum_denomination
+        .checked_add(migration_fee_zatoshi)
+        .ok_or("Minimum migration funding note overflow")?;
+    let mut crossing_values = Vec::new();
+    let mut funding_values = Vec::new();
+    let mut preparation = PreparationPlan::from_parts(Vec::new(), Vec::new());
+
+    loop {
+        let committed = committed_value(&funding_values, &preparation, fee_per_stage_zatoshi)?;
+        let budget = context.total_input_zatoshi.saturating_sub(committed);
+        if budget < minimum_funding_note {
+            break;
+        }
+
+        let mut affordable = budget
+            .checked_sub(migration_fee_zatoshi)
+            .expect("minimum funding note check guarantees the subtraction")
+            .min(super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI);
+        let mut accepted = None;
+        while affordable >= minimum_denomination {
+            let Some(greedy) = super::largest_zip318_denomination_at_or_below(affordable) else {
+                break;
+            };
+            let refined = refine(greedy);
+            let candidates = [refined, greedy];
+            let candidate_count = if refined == greedy { 1 } else { 2 };
+
+            for crossing in candidates.into_iter().take(candidate_count) {
+                crossing_values.push(crossing);
+                match preparation_for_crossings(
+                    &context,
+                    &crossing_values,
+                    fee_per_stage_zatoshi,
+                    migration_fee_zatoshi,
+                )? {
+                    Some((candidate_funding, candidate_preparation)) => {
+                        funding_values = candidate_funding;
+                        accepted = Some(candidate_preparation);
+                        break;
+                    }
+                    None => {
+                        crossing_values.pop();
+                    }
+                }
+            }
+
+            if accepted.is_some() || greedy == minimum_denomination {
+                break;
+            }
+            affordable = greedy - 1;
+        }
+
+        let Some(candidate) = accepted else {
+            break;
+        };
+        preparation = candidate;
+    }
+
+    finish_plan(
+        context,
+        crossing_values,
+        funding_values,
+        preparation,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+        minimum_output_zatoshi,
+    )
+}
+
+/// Rebuilds a preparation graph for denomination values that were already
+/// approved and persisted. This must not draw randomness again.
+pub(crate) fn plan_padded_denominations_for_targets(
+    input_values: &[u64],
+    target_values_zatoshi: &[u64],
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+) -> Result<Option<PaddedDenominationPlan>, String> {
+    let Some(context) =
+        planning_context(input_values, fee_per_stage_zatoshi, minimum_output_zatoshi)?
+    else {
+        return Ok(None);
+    };
+    if target_values_zatoshi.is_empty() {
+        return Ok(None);
+    }
+    for value in target_values_zatoshi {
+        if !super::is_zip318_canonical_denomination(*value) {
+            return Err(format!(
+                "Approved migration denomination {value} is not canonical"
+            ));
+        }
+    }
+
+    let Some((funding_values, preparation)) = preparation_for_crossings(
+        &context,
+        target_values_zatoshi,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+    )?
+    else {
+        return Ok(None);
+    };
+    if can_append_canonical_denomination(
+        &context,
+        target_values_zatoshi,
+        &funding_values,
+        &preparation,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+    )? {
+        return Err(
+            "Approved migration denominations leave another affordable canonical part".to_string(),
+        );
+    }
+
+    finish_plan(
+        context,
+        target_values_zatoshi.to_vec(),
+        funding_values,
+        preparation,
+        fee_per_stage_zatoshi,
+        migration_fee_zatoshi,
+        minimum_output_zatoshi,
+    )
+}
+
+fn planning_context(
+    input_values: &[u64],
+    fee_per_stage_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+) -> Result<Option<PlanningContext>, String> {
     let positive_input_indices = input_values
         .iter()
         .enumerate()
@@ -133,90 +336,135 @@ pub(crate) fn plan_padded_denominations(
     let prep_fee = Zatoshis::from_u64(fee_per_stage_zatoshi)
         .map_err(|_| "Padded denomination fee is invalid".to_string())?;
 
+    Ok(Some(PlanningContext {
+        positive_input_indices,
+        total_input_zatoshi,
+        available,
+        prep_fee,
+    }))
+}
+
+fn refine_max_denomination<R: RngCore + ?Sized>(greedy: u64, rng: &mut R) -> u64 {
+    if greedy != super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI
+        || rng.next_u32() % 100 >= MAX_DENOMINATION_REFINEMENT_PERCENT
+    {
+        return greedy;
+    }
+
+    match rng.next_u32() % 100 {
+        roll if roll < FIVE_THOUSAND_SELECTION_PERCENT => greedy / 2,
+        roll if roll < FIVE_THOUSAND_SELECTION_PERCENT + TWO_THOUSAND_SELECTION_PERCENT => {
+            greedy / 5
+        }
+        _ => greedy / 10,
+    }
+}
+
+fn preparation_for_crossings(
+    context: &PlanningContext,
+    crossing_values: &[u64],
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+) -> Result<Option<(Vec<u64>, PreparationPlan)>, String> {
+    let funding_values = crossing_values
+        .iter()
+        .map(|crossing| {
+            crossing
+                .checked_add(migration_fee_zatoshi)
+                .ok_or_else(|| "Prepared migration note value overflow".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let typed_funding = funding_values
+        .iter()
+        .map(|value| {
+            Zatoshis::from_u64(*value)
+                .map_err(|_| "Prepared migration note value is invalid".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let preparation = match plan_preparation(&context.available, &typed_funding, context.prep_fee) {
+        Ok(candidate) => candidate,
+        Err(PrepError::InsufficientFunds) => return Ok(None),
+        Err(PrepError::BalanceInvalid) => {
+            return Err("Migration preparation balance is invalid".to_string());
+        }
+    };
+    let committed = committed_value(&funding_values, &preparation, fee_per_stage_zatoshi)?;
+    Ok((committed <= context.total_input_zatoshi).then_some((funding_values, preparation)))
+}
+
+fn can_append_canonical_denomination(
+    context: &PlanningContext,
+    crossing_values: &[u64],
+    funding_values: &[u64],
+    preparation: &PreparationPlan,
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+) -> Result<bool, String> {
+    let committed = committed_value(funding_values, preparation, fee_per_stage_zatoshi)?;
+    let budget = context.total_input_zatoshi.saturating_sub(committed);
     let minimum_denomination = super::ZIP318_MAX_RESIDUAL_VALUE_ZATOSHI;
     let minimum_funding_note = minimum_denomination
         .checked_add(migration_fee_zatoshi)
         .ok_or("Minimum migration funding note overflow")?;
-    let mut crossing_values = Vec::new();
-    let mut funding_values = Vec::new();
-    let mut preparation = PreparationPlan::from_parts(Vec::new(), Vec::new());
-
-    loop {
-        let funding_total = checked_sum(&funding_values, "Migration funding total overflow")?;
-        let prep_fees = fee_per_stage_zatoshi
-            .checked_mul(
-                u64::try_from(preparation.transaction_count())
-                    .map_err(|_| "Preparation transaction count overflow".to_string())?,
-            )
-            .ok_or("Preparation fee total overflow")?;
-        let committed = funding_total
-            .checked_add(prep_fees)
-            .ok_or("Migration committed value overflow")?;
-        let budget = total_input_zatoshi.saturating_sub(committed);
-        if budget < minimum_funding_note {
-            break;
-        }
-
-        let mut affordable = budget
-            .checked_sub(migration_fee_zatoshi)
-            .expect("minimum funding note check guarantees the subtraction")
-            .min(super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI);
-        let mut accepted = None;
-        while affordable >= minimum_denomination {
-            let Some(crossing) = super::largest_zip318_denomination_at_or_below(affordable) else {
-                break;
-            };
-            let funding = crossing
-                .checked_add(migration_fee_zatoshi)
-                .ok_or("Prepared migration note value overflow")?;
-            funding_values.push(funding);
-            let typed_funding = funding_values
-                .iter()
-                .map(|value| {
-                    Zatoshis::from_u64(*value)
-                        .map_err(|_| "Prepared migration note value is invalid".to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-
-            match plan_preparation(&available, &typed_funding, prep_fee) {
-                Ok(candidate) => {
-                    let candidate_fees =
-                        fee_per_stage_zatoshi
-                            .checked_mul(u64::try_from(candidate.transaction_count()).map_err(
-                                |_| "Preparation transaction count overflow".to_string(),
-                            )?)
-                            .ok_or("Preparation fee total overflow")?;
-                    let candidate_total =
-                        checked_sum(&funding_values, "Migration funding total overflow")?
-                            .checked_add(candidate_fees)
-                            .ok_or("Migration candidate value overflow")?;
-                    if candidate_total <= total_input_zatoshi {
-                        accepted = Some((crossing, candidate));
-                    }
-                }
-                Err(PrepError::InsufficientFunds) => {}
-                Err(PrepError::BalanceInvalid) => {
-                    return Err("Migration preparation balance is invalid".to_string());
-                }
-            }
-
-            if accepted.is_some() {
-                break;
-            }
-            funding_values.pop();
-            if crossing == minimum_denomination {
-                break;
-            }
-            affordable = crossing - 1;
-        }
-
-        let Some((crossing, candidate)) = accepted else {
-            break;
-        };
-        crossing_values.push(crossing);
-        preparation = candidate;
+    if budget < minimum_funding_note {
+        return Ok(false);
     }
 
+    let mut affordable = budget
+        .checked_sub(migration_fee_zatoshi)
+        .expect("minimum funding note check guarantees the subtraction")
+        .min(super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI);
+    let mut trial = crossing_values.to_vec();
+    while affordable >= minimum_denomination {
+        let Some(crossing) = super::largest_zip318_denomination_at_or_below(affordable) else {
+            break;
+        };
+        trial.push(crossing);
+        if preparation_for_crossings(
+            context,
+            &trial,
+            fee_per_stage_zatoshi,
+            migration_fee_zatoshi,
+        )?
+        .is_some()
+        {
+            return Ok(true);
+        }
+        trial.pop();
+        if crossing == minimum_denomination {
+            break;
+        }
+        affordable = crossing - 1;
+    }
+    Ok(false)
+}
+
+fn committed_value(
+    funding_values: &[u64],
+    preparation: &PreparationPlan,
+    fee_per_stage_zatoshi: u64,
+) -> Result<u64, String> {
+    let funding_total = checked_sum(funding_values, "Migration funding total overflow")?;
+    let prep_fees = fee_per_stage_zatoshi
+        .checked_mul(
+            u64::try_from(preparation.transaction_count())
+                .map_err(|_| "Preparation transaction count overflow".to_string())?,
+        )
+        .ok_or("Preparation fee total overflow")?;
+    funding_total
+        .checked_add(prep_fees)
+        .ok_or_else(|| "Migration committed value overflow".to_string())
+}
+
+fn finish_plan(
+    context: PlanningContext,
+    crossing_values: Vec<u64>,
+    funding_values: Vec<u64>,
+    preparation: PreparationPlan,
+    fee_per_stage_zatoshi: u64,
+    migration_fee_zatoshi: u64,
+    minimum_output_zatoshi: u64,
+) -> Result<Option<PaddedDenominationPlan>, String> {
     if crossing_values.is_empty() {
         return Ok(None);
     }
@@ -228,7 +476,8 @@ pub(crate) fn plan_padded_denominations(
         )
         .ok_or("Preparation fee total overflow")?;
     let funding_total = checked_sum(&funding_values, "Migration funding total overflow")?;
-    let remaining = total_input_zatoshi
+    let remaining = context
+        .total_input_zatoshi
         .checked_sub(funding_total)
         .and_then(|value| value.checked_sub(split_fee_zatoshi))
         .ok_or("Migration preparation plan exceeds selected Orchard value")?;
@@ -239,14 +488,14 @@ pub(crate) fn plan_padded_denominations(
         orchard_change: (remaining >= minimum_output_zatoshi).then_some(remaining),
         split_fee_zatoshi,
         migration_fee_zatoshi,
-        total_input_zatoshi,
+        total_input_zatoshi: context.total_input_zatoshi,
         total_migratable_zatoshi,
     };
 
     translate_preparation_plan(
         preparation,
         denominations,
-        &positive_input_indices,
+        &context.positive_input_indices,
         &funding_values,
         fee_per_stage_zatoshi,
     )
@@ -407,6 +656,7 @@ fn checked_sum(values: &[u64], context: &str) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::mock::StepRng;
 
     const ZEC: u64 = 100_000_000;
     const PREP_FEE: u64 = 80_000;
@@ -416,9 +666,118 @@ mod tests {
         crossing + MIGRATION_FEE
     }
 
+    fn plan_without_refinement(
+        input_values: &[u64],
+    ) -> Result<Option<PaddedDenominationPlan>, String> {
+        plan_padded_denominations_without_refinement(input_values, PREP_FEE, MIGRATION_FEE, 1)
+    }
+
+    #[test]
+    fn capped_denomination_refinement_uses_a_thirty_percent_gate() {
+        let cap = super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI;
+        assert_eq!(cap, 10_000 * ZEC);
+        let refined_rolls = (0..100u64)
+            .filter(|roll| {
+                let mut rng = StepRng::new(*roll, 0);
+                refine_max_denomination(cap, &mut rng) != cap
+            })
+            .count();
+
+        assert_eq!(refined_rolls, 30);
+    }
+
+    #[test]
+    fn ten_thousand_zec_balance_has_deterministic_refinement_examples() {
+        let input = 10_000 * ZEC + 230_000;
+        let cases = [
+            ("keep 10k", 30, 0, vec![10_000 * ZEC], 135_000),
+            (
+                "start with 5k",
+                0,
+                0,
+                vec![5_000 * ZEC, 5_000 * ZEC],
+                120_000,
+            ),
+            (
+                "start with 2k",
+                0,
+                65,
+                vec![2_000 * ZEC, 5_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC],
+                90_000,
+            ),
+            (
+                "start with 1k",
+                0,
+                90,
+                vec![1_000 * ZEC, 5_000 * ZEC, 2_000 * ZEC, 2_000 * ZEC],
+                90_000,
+            ),
+        ];
+
+        for (name, initial_roll, next_roll, expected, expected_change) in cases {
+            let mut rng = StepRng::new(initial_roll, next_roll);
+            let plan =
+                plan_padded_denominations_with_rng(&[input], PREP_FEE, MIGRATION_FEE, 1, &mut rng)
+                    .unwrap()
+                    .unwrap();
+
+            assert_eq!(plan.denominations.migration_outputs, expected, "{name}");
+            assert_eq!(
+                plan.denominations.orchard_change,
+                Some(expected_change),
+                "{name}"
+            );
+            assert!(plan.denominations.migration_outputs.iter().all(|value| {
+                *value <= super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI
+            }));
+        }
+    }
+
+    #[test]
+    fn twenty_five_thousand_zec_balance_can_replace_every_cap_selection() {
+        let input = 25_000 * ZEC + 300_000;
+        let mut keep_rng = StepRng::new(30, 0);
+        let greedy =
+            plan_padded_denominations_with_rng(&[input], PREP_FEE, MIGRATION_FEE, 1, &mut keep_rng)
+                .unwrap()
+                .unwrap();
+        let mut refine_rng = StepRng::new(0, 0);
+        let refined = plan_padded_denominations_with_rng(
+            &[input],
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+            &mut refine_rng,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            greedy.denominations.migration_outputs,
+            vec![10_000 * ZEC, 10_000 * ZEC, 5_000 * ZEC]
+        );
+        assert_eq!(
+            refined.denominations.migration_outputs,
+            vec![5_000 * ZEC; 5]
+        );
+    }
+
+    #[test]
+    fn approved_refined_targets_rebuild_without_another_random_draw() {
+        let input = 10_000 * ZEC + 230_000;
+        let targets = vec![2_000 * ZEC, 5_000 * ZEC, 2_000 * ZEC, 1_000 * ZEC];
+        let plan =
+            plan_padded_denominations_for_targets(&[input], &targets, PREP_FEE, MIGRATION_FEE, 1)
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(plan.denominations.migration_outputs, targets);
+        assert_eq!(plan.denominations.orchard_change, Some(90_000));
+    }
+
     #[test]
     fn reuses_an_exact_funding_note_without_a_preparation_transaction() {
-        let plan = plan_padded_denominations(&[funding(100 * ZEC)], PREP_FEE, MIGRATION_FEE, 1)
+        let plan = plan_without_refinement(&[funding(100 * ZEC)])
             .unwrap()
             .unwrap();
 
@@ -439,9 +798,7 @@ mod tests {
     #[test]
     fn reuses_all_exact_funding_notes_beyond_the_old_run_cap() {
         let inputs = vec![funding(10_000 * ZEC); 65];
-        let plan = plan_padded_denominations(&inputs, PREP_FEE, MIGRATION_FEE, 1)
-            .unwrap()
-            .unwrap();
+        let plan = plan_without_refinement(&inputs).unwrap().unwrap();
 
         assert_eq!(plan.denominations.migration_outputs.len(), inputs.len());
         assert_eq!(plan.direct_migration_inputs.len(), inputs.len());
@@ -451,14 +808,9 @@ mod tests {
 
     #[test]
     fn combines_direct_funding_with_a_minted_funding_note() {
-        let plan = plan_padded_denominations(
-            &[funding(100 * ZEC), funding(20 * ZEC) + PREP_FEE],
-            PREP_FEE,
-            MIGRATION_FEE,
-            1,
-        )
-        .unwrap()
-        .unwrap();
+        let plan = plan_without_refinement(&[funding(100 * ZEC), funding(20 * ZEC) + PREP_FEE])
+            .unwrap()
+            .unwrap();
 
         assert_eq!(
             plan.denominations.migration_outputs,
@@ -478,9 +830,7 @@ mod tests {
         let preparation_transaction_count = 5u64;
         let input =
             note_count as u64 * funding(10_000 * ZEC) + preparation_transaction_count * PREP_FEE;
-        let plan = plan_padded_denominations(&[input], PREP_FEE, MIGRATION_FEE, 1)
-            .unwrap()
-            .unwrap();
+        let plan = plan_without_refinement(&[input]).unwrap().unwrap();
 
         assert_eq!(plan.denominations.migration_outputs.len(), note_count);
         assert_eq!(plan.stages.len(), preparation_transaction_count as usize);
@@ -510,9 +860,7 @@ mod tests {
     #[test]
     fn every_preparation_transaction_respects_actions_and_value() {
         let inputs = vec![7 * ZEC; 40];
-        let plan = plan_padded_denominations(&inputs, PREP_FEE, MIGRATION_FEE, 1)
-            .unwrap()
-            .unwrap();
+        let plan = plan_without_refinement(&inputs).unwrap().unwrap();
 
         for stage in &plan.stages {
             assert!(stage.requested_actions <= DENOMINATION_SPLIT_ACTIONS);
@@ -543,11 +891,9 @@ mod tests {
             vec![792_001_600; 5],
         ]
         .concat();
-        let plan = plan_padded_denominations(&inputs, PREP_FEE, MIGRATION_FEE, 1)
-            .unwrap()
-            .unwrap();
+        let plan = plan_without_refinement(&inputs).unwrap().unwrap();
         let change = plan.denominations.orchard_change.unwrap_or_default();
-        let follow_up = plan_padded_denominations(&[change], PREP_FEE, MIGRATION_FEE, 1).unwrap();
+        let follow_up = plan_without_refinement(&[change]).unwrap();
 
         assert!(
             follow_up.is_none(),

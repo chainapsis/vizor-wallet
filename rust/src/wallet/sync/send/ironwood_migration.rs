@@ -6,11 +6,13 @@ pub(crate) fn create_or_resume_private_migration_draft(
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<String, String> {
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
-    let plan = get_orchard_migration_private_plan(
+    let target_values_zatoshi = super::migration::target_values_from_schedule(&approved_schedule)?;
+    let plan = get_orchard_migration_private_plan_for_targets(
         db_path,
         network,
         account_uuid,
         preparation_timing_policy,
+        Some(&target_values_zatoshi),
     )?
     .ok_or("Migration plan is unavailable")?;
     super::migration::create_or_resume_private_migration_draft(
@@ -69,6 +71,9 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             super::migration::configured_timing_policy(network),
         ),
     };
+    let target_values_zatoshi = draft_run
+        .as_ref()
+        .map(|run| run.target_values_zatoshi.clone());
     let split = with_wallet_db_write_lock("send.migration.prepare_denominations_pczt", || {
         create_padded_orchard_denomination_pczts(
             db_path,
@@ -76,6 +81,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             account_uuid,
             preparation_policy_for_build,
             migration_policy_for_build,
+            target_values_zatoshi.as_deref(),
         )
     })?;
     let Some(split) = split else {
@@ -336,6 +342,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
         ensure_no_live_single_qr_migration_request(&mut store, account_uuid, network)?;
     }
 
+    let target_values_zatoshi = super::migration::target_values_from_schedule(&approved_schedule)?;
     let split = with_wallet_db_write_lock("send.migration.prepare_single_qr_pczt", || {
         create_padded_orchard_denomination_pczts(
             db_path,
@@ -343,6 +350,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
             account_uuid,
             preparation_timing_policy,
             super::migration::configured_timing_policy(network),
+            Some(&target_values_zatoshi),
         )
     })?;
     let Some(split) = split else {

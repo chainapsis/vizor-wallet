@@ -25,7 +25,9 @@ mod preparation_plan;
 mod split_plan;
 mod stages;
 pub(crate) use split_plan::{
-    plan_padded_denominations, SplitStageInput, SplitTerminalKind, DENOMINATION_SPLIT_ACTIONS,
+    plan_padded_denominations, plan_padded_denominations_for_targets,
+    plan_padded_denominations_without_refinement, SplitStageInput, SplitTerminalKind,
+    DENOMINATION_SPLIT_ACTIONS,
 };
 #[allow(unused_imports)]
 pub(crate) use stages::{

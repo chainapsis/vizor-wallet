@@ -2694,6 +2694,32 @@ fn rebuilt_parts_fit_a_remaining_count_schedule() {
 }
 
 #[test]
+fn approved_schedule_restores_randomized_targets_in_part_order() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: Some(2),
+            value_zatoshi: 2_000,
+            block_offset: 4,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 5_000,
+            block_offset: 8,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 1_000,
+            block_offset: 12,
+        },
+    ];
+
+    assert_eq!(
+        target_values_from_schedule(&schedule).unwrap(),
+        vec![5_000, 1_000, 2_000]
+    );
+}
+
+#[test]
 fn preparation_schedule_is_planned_across_dependency_layers() {
     assert_eq!(ZIP318_PREPARATION_MEAN_DELAY_BLOCKS, 16);
     assert_eq!(ZIP318_PREPARATION_MAX_DELAY_BLOCKS, 96);
