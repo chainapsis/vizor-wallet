@@ -161,8 +161,22 @@ void main({
       );
       final runId = started.activeRunId;
       expect(runId, isNotNull);
-      expect(started.scheduleMeanDelayBlocks, 12);
-      expect(started.scheduleMaxDelayBlocks, 48);
+      // Fast-testnet transfer timing starts at 12/48 blocks. Dense plans with
+      // more than ten parts halve only the mean so large migrations do not
+      // take twice as long merely because they contain more outputs.
+      final expectedScheduleMean = approvedPlan.scheduledTransfers.length > 10
+          ? 6
+          : 12;
+      expect(approvedPlan.scheduleMeanDelayBlocks, expectedScheduleMean);
+      expect(approvedPlan.scheduleMaxDelayBlocks, 48);
+      expect(
+        started.scheduleMeanDelayBlocks,
+        approvedPlan.scheduleMeanDelayBlocks,
+      );
+      expect(
+        started.scheduleMaxDelayBlocks,
+        approvedPlan.scheduleMaxDelayBlocks,
+      );
 
       rust_sync.MigrationStatus? privacyLockBaseline;
       var migrationAdvancedWhileLocked = false;
@@ -571,26 +585,40 @@ bool _renderedScheduleRowsMatchStatus(
     );
     final part = partsByIndex[partIndex];
     if (part == null) return false;
-    final expectedState = _scheduleStateLabel(part.state);
     final row = find.byKey(ValueKey(key));
-    if (find
-            .descendant(of: row, matching: find.text(expectedState))
-            .evaluate()
-            .length !=
-        1) {
+    if (!_scheduleRowMatchesState(row, part.state)) {
       return false;
     }
   }
   return true;
 }
 
-String _scheduleStateLabel(rust_sync.MigrationPartState state) {
+bool _scheduleRowMatchesState(Finder row, rust_sync.MigrationPartState state) {
+  final labels = find
+      .descendant(of: row, matching: find.byType(Text))
+      .evaluate()
+      .map((element) => (element.widget as Text).data)
+      .whereType<String>();
+  return labels.any((label) => _scheduleStateLabelMatches(state, label));
+}
+
+bool _scheduleStateLabelMatches(
+  rust_sync.MigrationPartState state,
+  String label,
+) {
   return switch (state) {
-    rust_sync.MigrationPartState.completed => 'Completed',
-    rust_sync.MigrationPartState.migrating => 'Migrating...',
-    rust_sync.MigrationPartState.confirming => 'Confirming...',
-    rust_sync.MigrationPartState.needsInput => 'Needs approval',
-    _ => 'Scheduled',
+    rust_sync.MigrationPartState.completed =>
+      label == 'Complete' || label.startsWith('Completed at block '),
+    rust_sync.MigrationPartState.migrating => label == 'Waiting to be mined',
+    rust_sync.MigrationPartState.confirming => label.startsWith('Confirming '),
+    rust_sync.MigrationPartState.needsInput => label == 'Ready to sign',
+    rust_sync.MigrationPartState.scheduled =>
+      label == 'Schedule pending' ||
+          label == 'Due now' ||
+          label.startsWith('Scheduled #') ||
+          label.startsWith('Rescheduled #'),
+    rust_sync.MigrationPartState.preparing =>
+      label == 'Preparing' || label.startsWith('Window #'),
   };
 }
 
@@ -622,12 +650,14 @@ Future<void> _expectAllScheduleRowsCompleted(
   await pumpUntil(
     tester,
     () {
-      final renderedCount = _schedulePartFinder().evaluate().length;
-      final completedRowCount = find
-          .descendant(of: listFinder, matching: find.text('Completed'))
-          .evaluate()
-          .length;
-      return renderedCount > 0 && completedRowCount == renderedCount;
+      final renderedParts = _schedulePartFinder().evaluate().toList();
+      return renderedParts.isNotEmpty &&
+          renderedParts.every(
+            (element) => _scheduleRowMatchesState(
+              find.byKey(element.widget.key!),
+              rust_sync.MigrationPartState.completed,
+            ),
+          );
     },
     description: 'completed schedule rows',
     timeout: const Duration(minutes: 2),
@@ -641,8 +671,13 @@ Future<void> _expectAllScheduleRowsCompleted(
         .toSet();
     seenParts.addAll(renderedKeys);
     expect(
-      find.descendant(of: listFinder, matching: find.text('Completed')),
-      findsNWidgets(renderedParts.length),
+      renderedParts.every(
+        (element) => _scheduleRowMatchesState(
+          find.byKey(element.widget.key!),
+          rust_sync.MigrationPartState.completed,
+        ),
+      ),
+      isTrue,
     );
 
     final scrollable = tester.state<ScrollableState>(
