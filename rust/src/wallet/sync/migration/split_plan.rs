@@ -49,6 +49,12 @@ impl DenominationRefinementPolicy {
         five_thousand_split_percent: u32,
         two_thousand_split_percent: u32,
     ) -> Self {
+        assert!(
+            ten_thousand_split_percent <= 100
+                && five_thousand_split_percent <= 100
+                && two_thousand_split_percent <= 100,
+            "denomination refinement percentage exceeds 100"
+        );
         Self {
             ten_thousand_split_percent,
             five_thousand_split_percent,
@@ -56,11 +62,25 @@ impl DenominationRefinementPolicy {
         }
     }
 
-    fn split_percent(self, denomination_zatoshi: u64) -> Option<u32> {
+    /// Keeps each gate and child shape together when refinable buckets change.
+    fn split_rule(self, denomination_zatoshi: u64) -> Option<(u32, &'static [u64])> {
         match denomination_zatoshi {
-            TEN_THOUSAND_ZEC_ZATOSHI => Some(self.ten_thousand_split_percent),
-            FIVE_THOUSAND_ZEC_ZATOSHI => Some(self.five_thousand_split_percent),
-            TWO_THOUSAND_ZEC_ZATOSHI => Some(self.two_thousand_split_percent),
+            TEN_THOUSAND_ZEC_ZATOSHI => Some((
+                self.ten_thousand_split_percent,
+                &[FIVE_THOUSAND_ZEC_ZATOSHI, FIVE_THOUSAND_ZEC_ZATOSHI],
+            )),
+            FIVE_THOUSAND_ZEC_ZATOSHI => Some((
+                self.five_thousand_split_percent,
+                &[
+                    TWO_THOUSAND_ZEC_ZATOSHI,
+                    TWO_THOUSAND_ZEC_ZATOSHI,
+                    ONE_THOUSAND_ZEC_ZATOSHI,
+                ],
+            )),
+            TWO_THOUSAND_ZEC_ZATOSHI => Some((
+                self.two_thousand_split_percent,
+                &[ONE_THOUSAND_ZEC_ZATOSHI, ONE_THOUSAND_ZEC_ZATOSHI],
+            )),
             _ => None,
         }
     }
@@ -431,27 +451,12 @@ fn refine_denomination<R: RngCore + ?Sized>(
     policy: DenominationRefinementPolicy,
     rng: &mut R,
 ) -> DenominationRefinement {
-    let Some(split_percent) = policy.split_percent(denomination_zatoshi) else {
+    let Some((split_percent, children)) = policy.split_rule(denomination_zatoshi) else {
         return DenominationRefinement::leaf(denomination_zatoshi);
     };
-    assert!(
-        split_percent <= 100,
-        "denomination refinement percentage exceeds 100"
-    );
     if split_percent == 0 || rng.next_u32() % 100 >= split_percent {
         return DenominationRefinement::leaf(denomination_zatoshi);
     }
-
-    let children: &[u64] = match denomination_zatoshi {
-        TEN_THOUSAND_ZEC_ZATOSHI => &[FIVE_THOUSAND_ZEC_ZATOSHI, FIVE_THOUSAND_ZEC_ZATOSHI],
-        FIVE_THOUSAND_ZEC_ZATOSHI => &[
-            TWO_THOUSAND_ZEC_ZATOSHI,
-            TWO_THOUSAND_ZEC_ZATOSHI,
-            ONE_THOUSAND_ZEC_ZATOSHI,
-        ],
-        TWO_THOUSAND_ZEC_ZATOSHI => &[ONE_THOUSAND_ZEC_ZATOSHI, ONE_THOUSAND_ZEC_ZATOSHI],
-        _ => unreachable!("policy only returns percentages for refinable denominations"),
-    };
 
     DenominationRefinement {
         value_zatoshi: denomination_zatoshi,
@@ -821,7 +826,7 @@ fn checked_sum(values: &[u64], context: &str) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::mock::StepRng;
+    use rand::{rngs::mock::StepRng, rngs::StdRng, SeedableRng};
     use std::collections::VecDeque;
 
     const ZEC: u64 = 100_000_000;
@@ -989,6 +994,74 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(plan.denominations.migration_outputs, prepared_targets);
+    }
+
+    #[test]
+    fn randomized_plans_replay_exactly_across_balances_and_input_shapes() {
+        let mut case_rng = StdRng::seed_from_u64(0x5eed_0318);
+
+        for case_index in 0..1_500 {
+            let balance_zec = 1 + case_rng.next_u64() % 300_000;
+            let total_zatoshi = balance_zec.checked_mul(ZEC).unwrap();
+            let input_count = 1 + (case_rng.next_u32() % 4) as usize;
+            let mut remaining = total_zatoshi;
+            let mut inputs = Vec::with_capacity(input_count);
+            for remaining_input_count in (1..input_count).rev() {
+                let reserved = remaining_input_count as u64;
+                let value = 1 + case_rng.next_u64() % (remaining - reserved);
+                inputs.push(value);
+                remaining -= value;
+            }
+            inputs.push(remaining);
+
+            let mut plan_rng = StdRng::seed_from_u64(case_rng.next_u64());
+            let planned = plan_padded_denominations_with_rng(
+                &inputs,
+                PREP_FEE,
+                MIGRATION_FEE,
+                1,
+                &mut plan_rng,
+            )
+            .unwrap()
+            .unwrap();
+            let outputs = &planned.denominations.migration_outputs;
+
+            assert!(
+                outputs.windows(2).all(|pair| pair[0] >= pair[1]),
+                "case {case_index} is not in prepared-note order"
+            );
+            assert!(outputs.iter().all(|value| {
+                *value <= super::super::ZIP318_MAX_MIGRATION_DENOMINATION_ZATOSHI
+                    && super::super::is_zip318_canonical_denomination(*value)
+            }));
+
+            let replayed =
+                plan_padded_denominations_for_targets(&inputs, outputs, PREP_FEE, MIGRATION_FEE, 1)
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(planned, replayed, "case {case_index} did not replay");
+        }
+
+        let mut large_plan_rng = StdRng::seed_from_u64(0x1_000_000);
+        let large_plan = plan_padded_denominations_with_rng(
+            &[1_000_000 * ZEC],
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+            &mut large_plan_rng,
+        )
+        .unwrap()
+        .unwrap();
+        let large_replay = plan_padded_denominations_for_targets(
+            &[1_000_000 * ZEC],
+            &large_plan.denominations.migration_outputs,
+            PREP_FEE,
+            MIGRATION_FEE,
+            1,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(large_plan, large_replay);
     }
 
     #[test]
