@@ -625,15 +625,10 @@ class IronwoodMigrationCoordinator
       state = state.copyWith(
         errors: Map<String, String>.from(state.errors)..remove(accountUuid),
       );
-      try {
-        await ref.read(syncProvider.notifier).refreshAfterSend();
-      } catch (error) {
-        // The durable stop has already committed. A balance refresh failure
-        // must not invite the user to repeat the destructive action.
-        log('Ironwood migration post-stop balance refresh failed: $error');
-      }
-      if (!ref.mounted) return;
-      await refreshNow();
+      // The durable stop has committed. The schedule screen navigates on this
+      // future, so anything awaited past this point is pure spinner: the
+      // balance refresh and status sweep measured 350ms of a 666ms stop.
+      unawaited(_refreshAfterStop());
     } catch (error) {
       if (ref.mounted) {
         state = state.copyWith(
@@ -641,6 +636,27 @@ class IronwoodMigrationCoordinator
         );
       }
       rethrow;
+    }
+  }
+
+  /// Follow-up reads for a stop that has already committed durably.
+  ///
+  /// Deliberately detached from the caller: neither refresh can change the
+  /// outcome, and awaiting them also let a post-commit refresh failure be
+  /// reported as a stop failure, inviting the user to repeat a destructive
+  /// action that had in fact succeeded.
+  Future<void> _refreshAfterStop() async {
+    if (!ref.mounted) return;
+    try {
+      await ref.read(syncProvider.notifier).refreshAfterSend();
+    } catch (error) {
+      log('Ironwood migration post-stop balance refresh failed: $error');
+    }
+    if (!ref.mounted) return;
+    try {
+      await refreshNow();
+    } catch (error) {
+      log('Ironwood migration post-stop status refresh failed: $error');
     }
   }
 
