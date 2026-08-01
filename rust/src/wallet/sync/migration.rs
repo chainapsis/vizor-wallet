@@ -11,8 +11,8 @@ use zcash_client_backend::data_api::{
 use zeroize::Zeroizing;
 
 use crate::wallet::db::{
-    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, with_wallet_db_write_lock,
-    WALLET_DB_BUSY_TIMEOUT,
+    open_readonly_conn_with_timeout, open_wallet_raw_conn_with_timeout, open_wallet_write_conn,
+    with_wallet_db_write_lock,
 };
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::secret_payload;
@@ -921,7 +921,7 @@ pub(crate) fn migration_reserves_orchard_inputs(
     account_uuid: &str,
     network: WalletNetwork,
 ) -> Result<bool, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin migration reservation snapshot: {e}"))?;
@@ -1249,7 +1249,7 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     if let Some(run) = active_run(&conn, account_uuid, network)? {
         return Err(format!("Migration already active: {}", run.run_id));
@@ -1347,7 +1347,7 @@ pub(crate) fn create_or_resume_private_migration_draft(
     approved_schedule: &[MigrationScheduleEntry],
     preparation_timing_policy: PreparationTimingPolicy,
 ) -> Result<String, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let tx = conn
         .unchecked_transaction()
@@ -1430,7 +1430,7 @@ pub(crate) fn finalize_private_migration_draft(
     if denomination_stages.is_empty() && prepared_notes.is_empty() {
         return Err("Migration run has no prepared funding notes".to_string());
     }
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let run = active_run(&conn, account_uuid, network)?
         .ok_or("Saved private migration draft was not found")?;
@@ -1509,7 +1509,7 @@ pub(crate) fn mark_run_phase(
     phase: &str,
     message: Option<&str>,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let now = now_ms()?;
     conn.execute(
@@ -1884,7 +1884,7 @@ pub(crate) fn insert_pending_txs(
     }
 
     with_wallet_db_write_lock("migration.insert_pending_txs", || {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        let conn = open_wallet_write_conn(db_path)?;
         ensure_schema(&conn)?;
         let tx = conn
             .unchecked_transaction()
@@ -1911,7 +1911,7 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     with_wallet_db_write_lock(
         "migration.promote_signed_child_pczts_to_pending_txs",
         || {
-            let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+            let conn = open_wallet_write_conn(db_path)?;
             ensure_schema(&conn)?;
             let tx = conn
                 .unchecked_transaction()
@@ -1961,7 +1961,7 @@ pub(crate) fn set_run_approved_schedule(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
     validate_schedule_with_policy(schedule, target_values, network, timing_policy)?;
@@ -2473,7 +2473,7 @@ pub(crate) fn persist_signed_child_pczts_for_run(
     if signed_children.is_empty() {
         return Err("Keystone migration returned no signed children".to_string());
     }
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let tx = conn
         .unchecked_transaction()
@@ -2777,7 +2777,7 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
     if denomination_txids.is_empty() {
         return Ok(false);
     }
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let tx = conn
         .unchecked_transaction()
@@ -2903,7 +2903,7 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
     recovery_chain_tip_height: Option<u32>,
     rng: &mut R,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let records = denomination_stage_chain_records(&conn, run_id)?;
     if records.is_empty() {
@@ -3020,7 +3020,7 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
         // stage resets, so it must tolerate the foreground scanner finishing
         // a concurrent wallet write. The read timeout can expire first on
         // mobile and strand an otherwise completed preparation run.
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        let conn = open_wallet_write_conn(db_path)?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| format!("Begin denomination chain-state reconciliation: {e}"))?;
@@ -3084,7 +3084,7 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
     }
 
     if !affected.is_empty() {
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        let conn = open_wallet_write_conn(db_path)?;
         let now = now_ms()?;
         let transitioned = conn
             .execute(
@@ -3476,7 +3476,7 @@ pub(crate) fn mark_pending_broadcast_attempted(
     run_id: &str,
     txid_hex: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let updated = conn
         .execute(
@@ -3502,7 +3502,7 @@ pub(crate) fn mark_denomination_broadcast_attempted(
     run_id: &str,
     txid_hex: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let updated = conn
         .execute(
@@ -3529,7 +3529,7 @@ pub(crate) fn clear_denomination_broadcast_attempted(
     run_id: &str,
     txid_hex: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     conn.execute(
         &format!(
@@ -3615,7 +3615,7 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
     // window is promoted to `confirmed` instead of `needs_resign`, and
     // foreground sync cannot commit that chain identity between the check and
     // the status update.
-    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let mut conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let canonical_expiry = zip318_canonical_migration_expiry_height(chain_tip_height)?;
     let tx = conn
@@ -3703,7 +3703,7 @@ pub(crate) fn set_proof_retry_height(
     run_id: &str,
     retry_height: u32,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     conn.execute(
         &format!(
@@ -3806,7 +3806,7 @@ pub(crate) fn mark_expired_pending_parts_for_resign(
     // transaction so a mined-but-still-`scheduled` part past its expiry height
     // is promoted to `confirmed` instead of `needs_resign`, and foreground sync
     // cannot commit that chain identity between the check and the status update.
-    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let mut conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -3904,7 +3904,7 @@ pub(crate) fn replace_resigned_pending_parts(
     if replacements.is_empty() {
         return Ok(());
     }
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let (schedule_json, recovery_origin) = conn
         .query_row(
@@ -4198,7 +4198,7 @@ pub(crate) fn retire_run_for_rebuild(
     run_id: &str,
     message: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let now = now_ms()?;
     let tx = conn
@@ -4234,7 +4234,7 @@ pub(crate) fn abandon_run(
     network: WalletNetwork,
     expected_run_id: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let run = conn
         .query_row(
@@ -4337,7 +4337,7 @@ pub(crate) fn abandon_run(
 }
 
 fn discard_unsubmitted_preparation_stages(db_path: &str, run_id: &str) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let tx = conn
         .unchecked_transaction()
@@ -4405,7 +4405,7 @@ pub(crate) fn ensure_rebuild_schedule_generation(
     network: WalletNetwork,
     origin_candidate_height: u32,
 ) -> Result<Option<RebuildScheduleGeneration>, String> {
-    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let mut conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -4590,7 +4590,7 @@ fn reschedule_overdue_pending_txs_with_options(
     minimum_delay_blocks: u32,
     excluded_txid: Option<&str>,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
         .prepare_cached(&format!(
@@ -4760,7 +4760,7 @@ pub(crate) fn mark_pending_broadcasted(
     run_id: &str,
     txid_hex: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let now = now_ms()?;
     let tx = conn
@@ -4880,7 +4880,7 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
     remote_height: u32,
     schedule_updates: &[MigrationOutboxScheduleUpdate],
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    let conn = open_wallet_write_conn(db_path)?;
     ensure_schema(&conn)?;
     let tx = conn
         .unchecked_transaction()

@@ -14,11 +14,19 @@ use crate::wallet::network::WalletNetwork;
 pub(crate) type WalletDatabase = WalletDb<rusqlite::Connection, WalletNetwork, SystemClock, OsRng>;
 
 /// User-driven wallet operations can afford a longer wait for a short sync write.
+///
+/// This is the tier for any write a user is waiting on, including migration
+/// stop, scheduled broadcast, and coordinator advance. `scan_cached_blocks`
+/// runs a whole batch inside one transaction, so on a large wallet the writer
+/// can be held for seconds; a user-driven write must outlast that rather than
+/// fail. The two `wallet::db::tests` busy-timeout tests pin both directions.
 pub(crate) const WALLET_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 /// Account creation/import runs after sync is paused, so a shorter wait exposes real stalls.
 pub(crate) const ACCOUNT_MUTATION_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// The sync loop should absorb brief read/write overlap without stretching cancel too far.
 pub(crate) const SYNC_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
+/// Reads only. A write opened with this gives up while a sync batch is still
+/// committing -- use [`WALLET_DB_BUSY_TIMEOUT`] for writes a user is waiting on.
 pub(crate) const READ_DB_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Seqlock-style write epoch for in-process wallet-summary cache invalidation.
@@ -156,6 +164,28 @@ pub(crate) fn with_wallet_db_write_lock<T>(
     result
 }
 
+/// Raw connection for a wallet write a user is waiting on.
+///
+/// Two settings, and both are needed for either to matter:
+///
+/// - [`WALLET_DB_BUSY_TIMEOUT`], so the write waits out a sync batch rather
+///   than failing. `scan_cached_blocks` runs a whole batch in one transaction,
+///   which on a large wallet holds the writer for seconds.
+/// - [`rusqlite::TransactionBehavior::Immediate`], so that wait can actually
+///   happen. SQLite deliberately does *not* invoke the busy handler when a
+///   deferred transaction tries to upgrade a read to a write, because two
+///   connections both waiting to upgrade would deadlock; such a transaction
+///   gets `SQLITE_BUSY` immediately no matter how large the timeout is. Taking
+///   the write lock at `BEGIN` puts the wait back under the timeout.
+///
+/// `unchecked_transaction()` reads this connection-level default, so callers
+/// need no change beyond opening through this function.
+pub(crate) fn open_wallet_write_conn(db_path: &str) -> Result<rusqlite::Connection, String> {
+    let mut conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+    conn.set_transaction_behavior(rusqlite::TransactionBehavior::Immediate);
+    Ok(conn)
+}
+
 pub(crate) fn open_readonly_conn_with_timeout(
     db_path: &str,
     timeout: Option<Duration>,
@@ -204,6 +234,157 @@ mod tests {
             .pragma_query_value(None, "journal_mode", |row| row.get(0))
             .unwrap();
         assert_ne!(journal_mode.to_ascii_lowercase(), "wal");
+    }
+
+    /// Holds a write transaction on `path` for `hold`, then commits.
+    ///
+    /// Stands in for a scan batch: `scan_cached_blocks` runs a whole batch
+    /// inside one transaction, so on a large wallet the DB has an open writer
+    /// for as long as that batch takes.
+    fn hold_writer_for(
+        path: std::path::PathBuf,
+        hold: Duration,
+    ) -> (std::thread::JoinHandle<()>, std::sync::mpsc::Receiver<()>) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.busy_timeout(Duration::from_secs(30)).unwrap();
+            conn.execute_batch("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS held (v);")
+                .unwrap();
+            tx.send(()).unwrap();
+            std::thread::sleep(hold);
+            conn.execute_batch("COMMIT").unwrap();
+        });
+        (handle, rx)
+    }
+
+    fn try_write(path: &std::path::Path, timeout: Duration) -> Result<(), rusqlite::Error> {
+        let conn = rusqlite::Connection::open(path).unwrap();
+        configure_wallet_connection(&conn, timeout, true).unwrap();
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS other (v)")
+    }
+
+    fn wal_db(dir: &tempfile::TempDir) -> std::path::PathBuf {
+        let path = dir.path().join("wallet.db");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        configure_wallet_connection(&conn, Duration::from_secs(5), true).unwrap();
+        path
+    }
+
+    /// A migration write opened with the *read* timeout gives up while a sync
+    /// batch still holds the writer. The user sees a failed stop or a failed
+    /// scheduled broadcast rather than a slow one.
+    #[test]
+    fn read_timeout_write_fails_under_a_long_sync_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = wal_db(&dir);
+
+        // 2x the read timeout, so a loaded CI box cannot accidentally satisfy
+        // the wait and flip this assertion.
+        let (writer, started) = hold_writer_for(path.clone(), READ_DB_BUSY_TIMEOUT * 2);
+        started.recv().unwrap();
+
+        let result = try_write(&path, READ_DB_BUSY_TIMEOUT);
+
+        assert!(
+            matches!(
+                result,
+                Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error {
+                        code: rusqlite::ErrorCode::DatabaseBusy,
+                        ..
+                    },
+                    _
+                ))
+            ),
+            "expected SQLITE_BUSY from a read-timeout write under a longer sync write, got {result:?}"
+        );
+        writer.join().unwrap();
+    }
+
+    /// The user-operation timeout waits it out instead.
+    #[test]
+    fn wallet_timeout_write_survives_a_long_sync_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = wal_db(&dir);
+
+        // Same hold as the read-timeout case, so the pair differs only in the
+        // timeout under test.
+        let (writer, started) = hold_writer_for(path.clone(), READ_DB_BUSY_TIMEOUT * 2);
+        started.recv().unwrap();
+
+        let result = try_write(&path, WALLET_DB_BUSY_TIMEOUT);
+
+        assert!(
+            result.is_ok(),
+            "a 10s user-operation timeout absorbs a longer sync write, got {result:?}"
+        );
+        writer.join().unwrap();
+    }
+
+    /// Seeds a row so a transaction can read before it writes.
+    fn seeded_wal_db(dir: &tempfile::TempDir) -> std::path::PathBuf {
+        let path = wal_db(dir);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE rows (id INTEGER PRIMARY KEY, v INTEGER); INSERT INTO rows VALUES (1, 1);",
+        )
+        .unwrap();
+        path
+    }
+
+    /// Why [`open_wallet_write_conn`] sets `Immediate`.
+    ///
+    /// A deferred transaction that reads before it writes has to upgrade its
+    /// read lock. SQLite skips the busy handler for that upgrade -- two
+    /// connections both waiting to upgrade would deadlock -- so it fails
+    /// instantly however large the timeout is. A long busy timeout alone does
+    /// not fix a read-then-write transaction.
+    #[test]
+    fn deferred_read_then_write_ignores_the_busy_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = seeded_wal_db(&dir);
+
+        let (writer, started) = hold_writer_for(path.clone(), READ_DB_BUSY_TIMEOUT * 2);
+        started.recv().unwrap();
+
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        configure_wallet_connection(&conn, WALLET_DB_BUSY_TIMEOUT, true).unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        let _: i64 = tx
+            .query_row("SELECT v FROM rows WHERE id = 1", [], |row| row.get(0))
+            .unwrap();
+        let result = tx.execute("UPDATE rows SET v = 2 WHERE id = 1", []);
+
+        assert!(
+            result.is_err(),
+            "a deferred read-then-write should fail instantly despite a 10s timeout, got {result:?}"
+        );
+        writer.join().unwrap();
+    }
+
+    /// And that taking the write lock at `BEGIN` puts the wait back under the
+    /// timeout, which is what `open_wallet_write_conn` configures.
+    #[test]
+    fn immediate_read_then_write_waits_out_the_sync_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = seeded_wal_db(&dir);
+
+        let (writer, started) = hold_writer_for(path.clone(), READ_DB_BUSY_TIMEOUT * 2);
+        started.recv().unwrap();
+
+        let conn = open_wallet_write_conn(path.to_str().unwrap()).unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        let _: i64 = tx
+            .query_row("SELECT v FROM rows WHERE id = 1", [], |row| row.get(0))
+            .unwrap();
+        let result = tx.execute("UPDATE rows SET v = 2 WHERE id = 1", []);
+
+        assert!(
+            result.is_ok(),
+            "an immediate transaction should wait out the sync write, got {result:?}"
+        );
+        writer.join().unwrap();
     }
 
     #[test]
