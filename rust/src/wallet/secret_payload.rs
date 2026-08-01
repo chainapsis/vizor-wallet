@@ -64,15 +64,53 @@ pub fn derive_password_verifier_base64(
     Ok(STANDARD.encode(key.as_slice()))
 }
 
+/// A payload key derived once for one `(password, salt)` pair.
+///
+/// [`derive_key`] runs `KDF_ITERATIONS` PBKDF2-HMAC-SHA256 iterations, which
+/// measures ~27ms per derivation on an M-series Mac in release. Loops handling
+/// one payload per row re-derived the same key on every iteration; build this
+/// once outside the loop instead.
+///
+/// Deliberately not a process-wide cache. The key lives exactly as long as the
+/// call that needs it, so this does not widen the window in which key material
+/// is resident relative to the password the caller already holds.
+pub struct PayloadKey {
+    key: Zeroizing<[u8; KEY_LEN]>,
+}
+
+impl PayloadKey {
+    pub fn new(password: &[u8], salt: &[u8]) -> Self {
+        Self {
+            key: derive_key(password, salt),
+        }
+    }
+
+    fn cipher(&self) -> Result<Aes256Gcm, String> {
+        Aes256Gcm::new_from_slice(self.key.as_slice())
+            .map_err(|e| format!("Failed to initialize AES-GCM: {e}"))
+    }
+
+    pub fn encrypt(&self, clear_text: Zeroizing<Vec<u8>>) -> Result<String, String> {
+        encrypt_with_cipher(self.cipher()?, clear_text)
+    }
+
+    pub fn decrypt(&self, raw_payload: &[u8]) -> Result<Zeroizing<Vec<u8>>, String> {
+        decrypt_with_cipher(self.cipher()?, raw_payload)
+    }
+}
+
 pub fn encrypt_payload(
     clear_text: Zeroizing<Vec<u8>>,
     password: &[u8],
     salt: &[u8],
 ) -> Result<String, String> {
-    let key = derive_key(password, salt);
-    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
-        .map_err(|e| format!("Failed to initialize AES-GCM: {e}"))?;
-    drop(key);
+    PayloadKey::new(password, salt).encrypt(clear_text)
+}
+
+fn encrypt_with_cipher(
+    cipher: Aes256Gcm,
+    clear_text: Zeroizing<Vec<u8>>,
+) -> Result<String, String> {
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let cipher_text_and_tag = Zeroizing::new(
         cipher
@@ -103,6 +141,13 @@ pub fn decrypt_payload(
     password: &[u8],
     salt: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, String> {
+    PayloadKey::new(password, salt).decrypt(raw_payload)
+}
+
+fn decrypt_with_cipher(
+    cipher: Aes256Gcm,
+    raw_payload: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, String> {
     let payload: EncryptedPayload<'_> = serde_json::from_slice(raw_payload)
         .map_err(|e| format!("Failed to parse encrypted payload: {e}"))?;
     if payload.version != 1 {
@@ -131,10 +176,6 @@ pub fn decrypt_payload(
         ));
     }
 
-    let key = derive_key(password, salt);
-    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
-        .map_err(|e| format!("Failed to initialize AES-GCM: {e}"))?;
-    drop(key);
     let mut ciphertext_and_tag = Zeroizing::new(Vec::with_capacity(cipher_text.len() + mac.len()));
     ciphertext_and_tag.extend_from_slice(cipher_text.as_slice());
     ciphertext_and_tag.extend_from_slice(mac.as_slice());
@@ -169,6 +210,80 @@ fn derive_key(password: &[u8], salt: &[u8]) -> Zeroizing<[u8; KEY_LEN]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const BENCH_PASSWORD: &[u8] = b"correct horse battery staple";
+    const BENCH_SALT: [u8; 16] = [7u8; 16];
+
+    /// A `PayloadKey` and the free functions must be interchangeable, so
+    /// converting a loop cannot change what it reads or writes.
+    #[test]
+    fn payload_key_matches_the_free_functions() {
+        let clear = Zeroizing::new(b"migration payload".to_vec());
+        let key = PayloadKey::new(BENCH_PASSWORD, &BENCH_SALT);
+
+        // Written by the loop helper, read by the free function.
+        let via_key = key.encrypt(clear.clone()).unwrap();
+        let back = decrypt_payload(via_key.as_bytes(), BENCH_PASSWORD, &BENCH_SALT).unwrap();
+        assert_eq!(back.as_slice(), clear.as_slice());
+
+        // Written by the free function, read by the loop helper.
+        let via_free = encrypt_payload(clear.clone(), BENCH_PASSWORD, &BENCH_SALT).unwrap();
+        let back = key.decrypt(via_free.as_bytes()).unwrap();
+        assert_eq!(back.as_slice(), clear.as_slice());
+    }
+
+    #[test]
+    fn payload_key_rejects_a_wrong_password() {
+        let clear = Zeroizing::new(b"migration payload".to_vec());
+        let sealed = encrypt_payload(clear, BENCH_PASSWORD, &BENCH_SALT).unwrap();
+
+        let wrong = PayloadKey::new(b"not the password", &BENCH_SALT);
+
+        assert!(wrong.decrypt(sealed.as_bytes()).is_err());
+    }
+
+    /// Cost of one migration read that decrypts a payload per row.
+    ///
+    /// Run with:
+    /// `cargo test --release -p zcash_wallet kdf_reuse -- --ignored --nocapture`
+    #[test]
+    #[ignore = "timing benchmark; run explicitly"]
+    fn kdf_reuse_benchmark() {
+        use std::time::Instant;
+
+        // `denomination_stages_for_run` decrypts three payloads per stage.
+        const ROWS: usize = 20;
+        const PER_ROW: usize = 3;
+
+        let clear = Zeroizing::new(vec![0x5au8; 512]);
+        let sealed = encrypt_payload(clear, BENCH_PASSWORD, &BENCH_SALT).unwrap();
+
+        let started = Instant::now();
+        for _ in 0..ROWS * PER_ROW {
+            decrypt_payload(sealed.as_bytes(), BENCH_PASSWORD, &BENCH_SALT).unwrap();
+        }
+        let per_call = started.elapsed();
+
+        let started = Instant::now();
+        let key = PayloadKey::new(BENCH_PASSWORD, &BENCH_SALT);
+        for _ in 0..ROWS * PER_ROW {
+            key.decrypt(sealed.as_bytes()).unwrap();
+        }
+        let derived_once = started.elapsed();
+
+        println!(
+            "kdf: {ROWS} rows x {PER_ROW} payloads ({} derivations -> 1)",
+            ROWS * PER_ROW
+        );
+        println!("  per-call derivation : {per_call:?}");
+        println!("  derived once        : {derived_once:?}");
+        println!(
+            "  saved               : {:?} ({:.1}x)",
+            per_call.saturating_sub(derived_once),
+            per_call.as_secs_f64() / derived_once.as_secs_f64().max(f64::MIN_POSITIVE),
+        );
+        assert!(derived_once < per_call);
+    }
 
     #[test]
     fn decrypt_payload_accepts_dart_generated_fixture() {
