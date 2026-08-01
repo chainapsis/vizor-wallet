@@ -499,6 +499,7 @@ mod tests {
         crate::wallet::sync::update_chain_tip(db_path, WalletNetwork::Regtest, 1_100).unwrap();
 
         let loads = AtomicUsize::new(0);
+        let epoch_before = wallet_db_write_epoch();
         let first = get_or_load_with(db_path, WalletNetwork::Regtest, || {
             loads.fetch_add(1, Ordering::SeqCst);
             let db = open_wallet_db_for_read_with_timeout(
@@ -525,7 +526,14 @@ mod tests {
         // before any blocks are scanned; the important property is that the
         // successful None (or Some) was cached across the second call.
         assert_eq!(first, second);
-        assert_eq!(loads.load(Ordering::SeqCst), 1);
+        // This test reads the real global write epoch, so a parallel suite
+        // writing between these two loads legitimately invalidates the cache.
+        // The reload assertions below absorb that as a lower bound, but a
+        // cache *hit* cannot be expressed that way -- so only assert it when
+        // no write intervened.
+        if epoch_before == wallet_db_write_epoch() && epoch_before % 2 == 0 {
+            assert_eq!(loads.load(Ordering::SeqCst), 1);
+        }
 
         crate::wallet::sync::update_chain_tip(db_path, WalletNetwork::Regtest, 1_200).unwrap();
 
