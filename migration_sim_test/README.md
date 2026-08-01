@@ -36,8 +36,11 @@ The scenario:
 
 The fast flag deliberately maps regtest to the fast-testnet timing policy for
 this opt-in build: preparation delay mean/max `4/16` blocks, transfer delay
-mean/max `12/48` blocks, and a 12-block anchor bucket. Regtest without the flag
-retains its original `1/4`-block E2E timing.
+mean/max `12/48` blocks, and a 12-block anchor bucket. Dense plans halve the
+mean preparation delay when they contain more than three transactions and the
+mean transfer delay when they contain more than ten parts; the maximum delays
+stay unchanged. Regtest without the flag retains its original `1/4`-block E2E
+timing.
 
 At the default three-second cadence, the full run takes several minutes,
 depending on the randomly sampled preparation and transfer heights and local
