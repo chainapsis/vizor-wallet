@@ -279,8 +279,7 @@ MigrationNextActionPresentation migrationNextActionPresentation({
   final proofWindowIsNext =
       nextProofWindowHeight != null &&
       proofWindowPartIndices.isNotEmpty &&
-      (earliestScheduledHeight == null ||
-          nextProofWindowHeight < earliestScheduledHeight);
+      earliestScheduledHeight == null;
   if (proofWindowIsNext) {
     final windowAmount = parts
         .where((part) => proofWindowPartIndices.contains(part.partIndex))

@@ -1,8 +1,61 @@
+use rand::{rngs::StdRng, SeedableRng};
+
+#[derive(Clone, Copy)]
+pub(crate) struct CustomMigrationPlanRequest {
+    pub amount_group_count: u32,
+    pub parallel_schedule_count: u32,
+    pub plan_seed: u64,
+}
+
 pub(crate) fn get_orchard_migration_private_plan(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    get_orchard_migration_plan(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        None,
+    )
+}
+
+pub(crate) fn get_orchard_migration_custom_plan(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    request: CustomMigrationPlanRequest,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    if !(1..=64).contains(&request.amount_group_count) {
+        return Err(
+            "Custom migration amount group count must be between 1 and 64".to_string(),
+        );
+    }
+    super::migration::validate_custom_parallel_schedule_count(request.parallel_schedule_count)?;
+    if request.parallel_schedule_count > request.amount_group_count {
+        return Err(
+            "Custom migration parallel schedule count cannot exceed the amount group count"
+                .to_string(),
+        );
+    }
+    get_orchard_migration_plan(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        Some(request),
+    )
+}
+
+fn get_orchard_migration_plan(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    custom: Option<CustomMigrationPlanRequest>,
 ) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
@@ -59,12 +112,25 @@ pub(crate) fn get_orchard_migration_private_plan(
             0,
         )
         .map_err(|e| format!("Failed to estimate padded denomination fee: {e}"))?;
-    let padded_plan = super::migration::plan_padded_denominations(
-        &input_values,
-        u64::from(split_fee),
-        u64::from(migration_fee_estimate),
-        MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-    )?;
+    let padded_plan = match custom {
+        Some(request) => {
+            let mut rng = StdRng::seed_from_u64(request.plan_seed);
+            super::migration::plan_custom_padded_denominations(
+                &input_values,
+                u64::from(split_fee),
+                u64::from(migration_fee_estimate),
+                MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+                request.amount_group_count,
+                &mut rng,
+            )?
+        }
+        None => super::migration::plan_padded_denominations(
+            &input_values,
+            u64::from(split_fee),
+            u64::from(migration_fee_estimate),
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        )?,
+    };
     let Some(padded_plan) = padded_plan else {
         return Ok(None);
     };
@@ -105,11 +171,40 @@ pub(crate) fn get_orchard_migration_private_plan(
         .split_fee_zatoshi
         .checked_add(migration_fee_zatoshi)
         .ok_or("Migration total fee estimate overflow")?;
-    let scheduled_transfers = super::migration::planned_transfer_schedule(
-        padded_plan.denominations.migration_outputs.iter().copied(),
-        network,
-        &mut OsRng,
-    );
+    let (scheduled_transfers, schedule_mean_delay_blocks, schedule_max_delay_blocks) = match custom
+    {
+        Some(request) => {
+            let timing_policy = super::migration::configured_timing_policy(network);
+            let mut rng = super::migration::seeded_custom_schedule_rng(request.plan_seed);
+            let schedule = super::migration::planned_custom_transfer_schedule(
+                padded_plan.denominations.migration_outputs.iter().copied(),
+                network,
+                timing_policy,
+                request.parallel_schedule_count,
+                &mut rng,
+            )?;
+            let (mean, max) = super::migration::custom_schedule_parameters(
+                network,
+                timing_policy,
+                request.parallel_schedule_count,
+                planned_batch_count,
+            )?;
+            (schedule, mean, max)
+        }
+        None => (
+            super::migration::planned_transfer_schedule(
+                padded_plan.denominations.migration_outputs.iter().copied(),
+                network,
+                &mut OsRng,
+            ),
+            super::migration::schedule_parameters_for_part_count(
+                network,
+                planned_batch_count as usize,
+            )
+            .0,
+            super::migration::schedule_parameters(network).1,
+        ),
+    };
 
     Ok(Some(OrchardMigrationPrivatePlan {
         target_values_zatoshi: padded_plan.denominations.migration_outputs,
@@ -123,16 +218,14 @@ pub(crate) fn get_orchard_migration_private_plan(
         denomination_split_stage_count,
         denomination_split_layer_count,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
-        schedule_mean_delay_blocks:
-            super::migration::schedule_parameters_for_part_count(
-                network,
-                planned_batch_count as usize,
-            )
-            .0,
-        schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
+        schedule_mean_delay_blocks,
+        schedule_max_delay_blocks,
         proof_readiness_delay_blocks,
         estimated_proof_ready_height,
         scheduled_transfers,
+        custom_amount_group_count: custom.map(|request| request.amount_group_count),
+        custom_parallel_schedule_count: custom.map(|request| request.parallel_schedule_count),
+        custom_plan_seed: custom.map(|request| request.plan_seed),
     }))
 }
 

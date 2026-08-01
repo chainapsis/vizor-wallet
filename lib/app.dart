@@ -782,6 +782,12 @@ List<RouteBase> _desktopRoutes() => [
     ),
   ),
   GoRoute(
+    path: '/migration/custom',
+    builder: (_, _) => const IronwoodMigrationFlowScreen(
+      step: IronwoodMigrationFlowStep.custom,
+    ),
+  ),
+  GoRoute(
     path: '/migration/immediate/review',
     builder: (_, _) => const IronwoodMigrationFlowScreen(
       step: IronwoodMigrationFlowStep.immediateReview,

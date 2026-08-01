@@ -44,6 +44,7 @@ abstract final class AppIcons {
   static const cross = 'cross';
   static const crystalBall = 'crystal_ball';
   static const day = 'day';
+  static const dice = 'dice';
   static const doubleArrowVertical = 'double_arrow_vertical';
   static const dragon = 'dragon';
   static const edit = 'edit';

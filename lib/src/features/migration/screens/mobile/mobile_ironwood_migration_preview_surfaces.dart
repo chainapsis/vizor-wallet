@@ -354,14 +354,23 @@ class _MobileMigrationNotificationPermissionScreenState
     context.go('/migration/private/start', extra: widget.privatePlan);
   }
 
+  void _returnToReview() {
+    final plan = widget.privatePlan;
+    if (plan != null && _isCustomMigrationPlan(plan)) {
+      context.go('/migration/custom', extra: plan);
+    } else {
+      context.go('/migration/options');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _MobileIronwoodMigrationBackScope(
-      onFallback: () => context.go('/migration/options'),
+      onFallback: _returnToReview,
       child: _MigrationNotificationPromptPreview(
         busy: _busy,
         errorMessage: _continueError,
-        onBack: () => context.go('/migration/options'),
+        onBack: _returnToReview,
         onAllow: () => unawaited(_allowNotifications()),
         onNotNow: () => unawaited(_confirmNotNow()),
       ),

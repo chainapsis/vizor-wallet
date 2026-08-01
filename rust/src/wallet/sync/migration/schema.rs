@@ -514,6 +514,12 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             schedule_json TEXT NOT NULL DEFAULT '[]',
             timing_policy TEXT NOT NULL DEFAULT 'standard',
             preparation_timing_policy TEXT NOT NULL DEFAULT 'immediate',
+            amount_policy TEXT NOT NULL DEFAULT 'standard',
+            custom_amount_group_count INTEGER,
+            custom_parallel_schedule_count INTEGER,
+            custom_plan_seed TEXT,
+            schedule_mean_delay_blocks INTEGER,
+            schedule_max_delay_blocks INTEGER,
             proof_retry_height INTEGER,
             signed_schedule_origin_height INTEGER,
             last_error TEXT
@@ -629,13 +635,19 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "preparation_timing_policy",
         "TEXT NOT NULL DEFAULT 'immediate'",
     )?;
-    add_column_if_missing(conn, RUNS_TABLE, "proof_retry_height", "INTEGER")?;
     add_column_if_missing(
         conn,
         RUNS_TABLE,
-        "signed_schedule_origin_height",
-        "INTEGER",
+        "amount_policy",
+        "TEXT NOT NULL DEFAULT 'standard'",
     )?;
+    add_column_if_missing(conn, RUNS_TABLE, "custom_amount_group_count", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "custom_parallel_schedule_count", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "custom_plan_seed", "TEXT")?;
+    add_column_if_missing(conn, RUNS_TABLE, "schedule_mean_delay_blocks", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "schedule_max_delay_blocks", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "proof_retry_height", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "signed_schedule_origin_height", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "schedule_start_height", "INTEGER")?;
     add_column_if_missing(

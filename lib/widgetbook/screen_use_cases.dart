@@ -1412,6 +1412,7 @@ Widget _buildMobileIronwoodMigrationUseCase({
     MobileIronwoodMigrationStep.howItWorks ||
     MobileIronwoodMigrationStep.options => BigInt.from(14_223_000_000),
     MobileIronwoodMigrationStep.fastReview => BigInt.from(14_224_000_000),
+    MobileIronwoodMigrationStep.custom => BigInt.from(14_220_000_000),
     MobileIronwoodMigrationStep.notifications ||
     MobileIronwoodMigrationStep.preparing ||
     MobileIronwoodMigrationStep.migrating => BigInt.from(14_220_000_000),

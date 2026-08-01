@@ -23,6 +23,52 @@ pub(crate) fn create_or_resume_private_migration_draft(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_or_resume_custom_migration_draft(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    target_values_zatoshi: Vec<u64>,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
+    amount_group_count: u32,
+    parallel_schedule_count: u32,
+    plan_seed: u64,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+) -> Result<String, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let custom_config = super::migration::CustomMigrationRunConfig {
+        amount_group_count,
+        parallel_schedule_count,
+        plan_seed,
+    };
+    let plan = get_orchard_migration_custom_plan(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        CustomMigrationPlanRequest {
+            amount_group_count,
+            parallel_schedule_count,
+            plan_seed,
+        },
+    )?
+    .ok_or("Migration plan is unavailable")?;
+    if plan.target_values_zatoshi != target_values_zatoshi
+        || plan.scheduled_transfers != approved_schedule
+    {
+        return Err("Custom migration plan no longer matches this balance".to_string());
+    }
+    super::migration::create_or_resume_custom_migration_draft(
+        db_path,
+        account_uuid,
+        network,
+        &target_values_zatoshi,
+        &approved_schedule,
+        preparation_timing_policy,
+        custom_config,
+    )
+}
+
 pub(crate) fn prepare_orchard_migration_denominations_pczt(
     db_path: &str,
     network: WalletNetwork,
@@ -76,6 +122,9 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             account_uuid,
             preparation_policy_for_build,
             migration_policy_for_build,
+            draft_run
+                .as_ref()
+                .map(|run| run.target_values_zatoshi.as_slice()),
         )
     })?;
     let Some(split) = split else {
@@ -343,6 +392,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
             account_uuid,
             preparation_timing_policy,
             super::migration::configured_timing_policy(network),
+            None,
         )
     })?;
     let Some(split) = split else {

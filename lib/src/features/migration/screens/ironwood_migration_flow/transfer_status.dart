@@ -1889,7 +1889,7 @@ class _MigrationRingVisualPainter extends CustomPainter {
           paint.color = const Color(0xFFFFFFFF);
         }
       }
-      if (sweep > 0.001 && paint.color.a > 0) {
+      if (sweep > 0 && paint.color.a > 0) {
         canvas.drawArc(rect, angle + gap * presence / 2, sweep, false, paint);
       }
       angle += sweep + gap * presence;

@@ -311,6 +311,20 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       ),
     ),
     GoRoute(
+      path: '/migration/custom',
+      redirect: _redirectUnsupportedPrivateMigration,
+      pageBuilder: (context, state) => CupertinoPage(
+        key: state.pageKey,
+        child: MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.custom,
+          previewCustomPlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => null,
+          },
+        ),
+      ),
+    ),
+    GoRoute(
       path: '/migration/private/notifications',
       redirect: _redirectUnsupportedPrivateMigration,
       pageBuilder: (context, state) => CupertinoPage(

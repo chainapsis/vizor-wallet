@@ -964,7 +964,7 @@ class _SpendAsFundsArriveCard extends StatelessWidget {
   }
 }
 
-enum _MigrationMode { private, fast }
+enum _MigrationMode { private, fast, custom }
 
 class _MigrationOptionCard extends StatelessWidget {
   const _MigrationOptionCard({
@@ -1101,9 +1101,11 @@ class _OptionIcon extends StatelessWidget {
         ? context.colors.text.accent
         : context.colors.icon.disabled;
     return AppIcon(
-      mode == _MigrationMode.private
-          ? AppIcons.shieldKeyhole
-          : AppIcons.migrationFast,
+      switch (mode) {
+        _MigrationMode.private => AppIcons.shieldKeyhole,
+        _MigrationMode.custom => AppIcons.options,
+        _MigrationMode.fast => AppIcons.migrationFast,
+      },
       size: 20,
       color: color,
     );

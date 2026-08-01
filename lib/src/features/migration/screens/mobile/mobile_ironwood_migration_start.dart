@@ -12,6 +12,19 @@ bool _privatePlanUsesCombinedKeystoneSigning(
   rust_sync.OrchardMigrationPrivatePlan plan,
 ) => plan.denominationSplitStageCount > 0;
 
+bool _isCustomMigrationPlan(rust_sync.OrchardMigrationPrivatePlan plan) {
+  final fields = [
+    plan.customAmountGroupCount,
+    plan.customParallelScheduleCount,
+    plan.customPlanSeed,
+  ];
+  final populated = fields.where((value) => value != null).length;
+  if (populated != 0 && populated != fields.length) {
+    throw StateError('Custom migration plan metadata is incomplete.');
+  }
+  return populated == fields.length;
+}
+
 Future<void> _refreshPrivateMigrationDraftPresentation(WidgetRef ref) async {
   ref.invalidate(ironwoodMigrationRouteCtaProvider);
   ref.invalidate(ironwoodHomeMigrationCtaProvider);
@@ -160,11 +173,70 @@ _continuePrivateMigrationAfterNotificationGate(
   );
 }
 
+Future<
+  ({
+    _PrivateMigrationContinuationDestination destination,
+    MobileIronwoodMigrationKeystoneCombinedSignEntry? combinedEntry,
+    MobileIronwoodMigrationKeystoneDenominationSignEntry? denominationEntry,
+  })
+>
+_continueCustomMigrationAfterNotificationGate(
+  WidgetRef ref,
+  rust_sync.OrchardMigrationPrivatePlan plan, {
+  required String accountUuid,
+  required bool isHardware,
+}) async {
+  if (isHardware) {
+    final service = ref.read(ironwoodMigrationServiceProvider);
+    final request = await service.prepareKeystoneDenominationPrivateMigration(
+      accountUuid: accountUuid,
+    );
+    if (request.messages.isEmpty) {
+      await service.completeKeystoneDenominationPrivateMigration(
+        accountUuid: accountUuid,
+        requestId: request.requestId,
+        signedMessages: const [],
+        approvedSchedule: plan.scheduledTransfers,
+      );
+      _invalidateStartedPrivateMigration(ref);
+      return (
+        destination: _PrivateMigrationContinuationDestination.status,
+        combinedEntry: null,
+        denominationEntry: null,
+      );
+    }
+    return (
+      destination:
+          _PrivateMigrationContinuationDestination.keystoneDenominationSigning,
+      combinedEntry: null,
+      denominationEntry: MobileIronwoodMigrationKeystoneDenominationSignEntry(
+        approvedSchedule: plan.scheduledTransfers,
+        request: request,
+        accountUuid: accountUuid,
+      ),
+    );
+  }
+
+  await ref
+      .read(ironwoodMigrationCoordinatorProvider.notifier)
+      .startSoftwareCustomMigration(
+        accountUuid: accountUuid,
+        approvedPlan: plan,
+      );
+  _invalidateStartedPrivateMigration(ref);
+  return (
+    destination: _PrivateMigrationContinuationDestination.status,
+    combinedEntry: null,
+    denominationEntry: null,
+  );
+}
+
 void _invalidateStartedPrivateMigration(WidgetRef ref) {
   ref.invalidate(ironwoodMigrationRouteCtaProvider);
   ref.invalidate(ironwoodHomeMigrationCtaProvider);
   ref.invalidate(ironwoodMigrationFlowDataProvider);
   ref.invalidate(ironwoodMigrationPrivatePlanProvider);
+  ref.invalidate(ironwoodMigrationCustomPlanProvider);
 }
 
 class MobileIronwoodMigrationStartScreen extends ConsumerStatefulWidget {
@@ -287,6 +359,7 @@ class _MobileIronwoodMigrationStartScreenState
         throw StateError('No active account is selected.');
       }
       final isHardware = accountState.activeAccount?.isHardware ?? false;
+      final isCustom = _isCustomMigrationPlan(plan);
       if (isHardware && !_keystoneTwoRoundPlanSupported(plan)) {
         throw StateError(
           'This migration needs more transactions than one Keystone '
@@ -294,7 +367,19 @@ class _MobileIronwoodMigrationStartScreenState
         );
       }
 
-      if (!isHardware || !_privatePlanUsesCombinedKeystoneSigning(plan)) {
+      if (isCustom && isHardware) {
+        await ref
+            .read(ironwoodMigrationServiceProvider)
+            .saveCustomMigrationDraft(
+              accountUuid: accountUuid,
+              approvedPlan: plan,
+            );
+        draftSaved = true;
+        if (!mounted) return;
+        await _refreshPrivateMigrationDraftPresentation(ref);
+        if (!mounted) return;
+      } else if (!isCustom &&
+          (!isHardware || !_privatePlanUsesCombinedKeystoneSigning(plan))) {
         await ref
             .read(ironwoodMigrationServiceProvider)
             .savePrivateMigrationDraft(
@@ -307,10 +392,14 @@ class _MobileIronwoodMigrationStartScreenState
         if (!mounted) return;
       }
 
-      final continuation = await _continuePrivateMigrationAfterNotificationGate(
-        ref,
-        plan,
-      );
+      final continuation = isCustom
+          ? await _continueCustomMigrationAfterNotificationGate(
+              ref,
+              plan,
+              accountUuid: accountUuid,
+              isHardware: isHardware,
+            )
+          : await _continuePrivateMigrationAfterNotificationGate(ref, plan);
       await minimumDelay;
       if (!mounted) {
         // The request exists in Rust from here on, but nothing has stored it
@@ -383,6 +472,15 @@ class _MobileIronwoodMigrationStartScreenState
   Widget build(BuildContext context) {
     final loading = _phase == _MobileMigrationStartPhase.loading;
     final ready = _phase == _MobileMigrationStartPhase.keystoneReady;
+    void returnToReview() {
+      final plan = _resolvedPlan ?? widget.approvedPlan;
+      if (plan != null && _isCustomMigrationPlan(plan)) {
+        context.go('/migration/custom', extra: plan);
+      } else {
+        context.go('/migration/options');
+      }
+    }
+
     return _MobileIronwoodMigrationBackScope(
       // Loading is mid-preparation and stays put. keystoneReady leaves through
       // the same cancel path as its on-screen button, so the prepared signing
@@ -392,15 +490,13 @@ class _MobileIronwoodMigrationStartScreenState
         _MobileMigrationStartPhase.keystoneReady => () => unawaited(
           _cancelKeystoneSigning(),
         ),
-        _MobileMigrationStartPhase.error => () => context.go(
-          '/migration/options',
-        ),
+        _MobileMigrationStartPhase.error => returnToReview,
       },
       child: _MigrationPreviewPage(
         navTitle: 'Preparing your migration',
         showBackButton: _phase == _MobileMigrationStartPhase.error,
         onBack: _phase == _MobileMigrationStartPhase.error
-            ? () => context.go('/migration/options')
+            ? returnToReview
             : null,
         bottom: ready
             ? Column(

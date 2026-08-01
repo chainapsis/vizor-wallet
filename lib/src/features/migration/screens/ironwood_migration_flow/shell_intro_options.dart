@@ -43,6 +43,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
     required this.data,
     this.previewPrivatePlan,
     this.previewImmediatePlan,
+    this.previewCustomPlan,
     this.previewReviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.onOpenReleaseNotesOverride,
   });
@@ -51,6 +52,7 @@ class _IronwoodMigrationShell extends ConsumerWidget {
   final IronwoodMigrationFlowData data;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
+  final rust_sync.OrchardMigrationPrivatePlan? previewCustomPlan;
   final IronwoodMigrationReviewPreviewStage previewReviewStage;
   final VoidCallback? onOpenReleaseNotesOverride;
 
@@ -89,6 +91,10 @@ class _IronwoodMigrationShell extends ConsumerWidget {
           data: data,
           previewPlan: previewImmediatePlan,
         ),
+      IronwoodMigrationFlowStep.custom => IronwoodMigrationCustomContent(
+        data: data,
+        previewPlan: previewCustomPlan,
+      ),
     };
 
     return _IronwoodMigrationFrame(
@@ -122,6 +128,7 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
         IronwoodMigrationFlowStep.options => 'About Migration',
         IronwoodMigrationFlowStep.review => 'Migration Options',
         IronwoodMigrationFlowStep.immediateReview => 'Migration Options',
+        IronwoodMigrationFlowStep.custom => 'Migration Options',
       },
       onTap: () {
         switch (step) {
@@ -138,6 +145,8 @@ Widget _toolbarFor(BuildContext context, IronwoodMigrationFlowStep step) {
           case IronwoodMigrationFlowStep.review:
             context.go('/migration/options');
           case IronwoodMigrationFlowStep.immediateReview:
+            context.go('/migration/options');
+          case IronwoodMigrationFlowStep.custom:
             context.go('/migration/options');
         }
       },
@@ -1058,9 +1067,9 @@ class _IronwoodMigrationOptionsContentState
                 SizedBox(
                   width: 322,
                   child: Text(
-                    'Choose between more privacy over time or a faster '
-                    'migration. You can review the details before anything '
-                    'moves.',
+                    'Choose a private preset, migrate immediately, or '
+                    'customize how your balance blends in. You can review '
+                    'the details before anything moves.',
                     textAlign: TextAlign.center,
                     style: AppTypography.bodyMedium.copyWith(
                       color: colors.text.secondary,
@@ -1099,6 +1108,18 @@ class _IronwoodMigrationOptionsContentState
                       'less private.',
                   onTap: () => setState(() => _selected = _MigrationMode.fast),
                 ),
+                const SizedBox(height: 12),
+                _MigrationOptionCard(
+                  key: const ValueKey('ironwood_migration_custom_option'),
+                  mode: _MigrationMode.custom,
+                  selected: selected == _MigrationMode.custom,
+                  title: 'Custom',
+                  body:
+                      'Choose the migration amount distribution and control '
+                      'how many schedules run in parallel.',
+                  onTap: () =>
+                      setState(() => _selected = _MigrationMode.custom),
+                ),
               ],
             ),
           ),
@@ -1109,11 +1130,11 @@ class _IronwoodMigrationOptionsContentState
             child: AppButton(
               key: const ValueKey('ironwood_migration_select_review_button'),
               onPressed: () {
-                context.go(
-                  _selected == _MigrationMode.private
-                      ? '/migration/private/review'
-                      : '/migration/immediate/review',
-                );
+                context.go(switch (_selected) {
+                  _MigrationMode.private => '/migration/private/review',
+                  _MigrationMode.custom => '/migration/custom',
+                  _MigrationMode.fast => '/migration/immediate/review',
+                });
               },
               height: 44,
               minWidth: 230,

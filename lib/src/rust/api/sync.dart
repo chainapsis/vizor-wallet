@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_api_private_plan`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -467,6 +467,24 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
   spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
+Future<OrchardMigrationPrivatePlan?> getOrchardMigrationCustomPlan({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required int amountGroupCount,
+  required int parallelScheduleCount,
+  required BigInt planSeed,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api.crateApiSyncGetOrchardMigrationCustomPlan(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  amountGroupCount: amountGroupCount,
+  parallelScheduleCount: parallelScheduleCount,
+  planSeed: planSeed,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+);
+
 /// Foreground-only migration preparation for the Swift-owned outbox.
 /// Denomination stages may advance, and every currently provable signed child
 /// is materialized, but scheduled child transactions are never broadcast here.
@@ -583,6 +601,28 @@ Future<String> createOrResumePrivateMigrationDraft({
   network: network,
   accountUuid: accountUuid,
   approvedSchedule: approvedSchedule,
+  spacePreparationBroadcasts: spacePreparationBroadcasts,
+);
+
+Future<String> createOrResumeCustomMigrationDraft({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required Uint64List targetValuesZatoshi,
+  required List<MigrationScheduledTransfer> approvedSchedule,
+  required int amountGroupCount,
+  required int parallelScheduleCount,
+  required BigInt planSeed,
+  required bool spacePreparationBroadcasts,
+}) => RustLib.instance.api.crateApiSyncCreateOrResumeCustomMigrationDraft(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  targetValuesZatoshi: targetValuesZatoshi,
+  approvedSchedule: approvedSchedule,
+  amountGroupCount: amountGroupCount,
+  parallelScheduleCount: parallelScheduleCount,
+  planSeed: planSeed,
   spacePreparationBroadcasts: spacePreparationBroadcasts,
 );
 
@@ -1929,6 +1969,16 @@ class OrchardMigrationPrivatePlan {
   final int? estimatedProofReadyHeight;
   final List<MigrationScheduledTransfer> scheduledTransfers;
 
+  /// Amount-group count used by Custom migration. `None` identifies the
+  /// ordinary ZIP 318 private plan.
+  final int? customAmountGroupCount;
+
+  /// Parallel broadcast schedules used by Custom migration.
+  final int? customParallelScheduleCount;
+
+  /// Deterministic seed that reproduces the approved custom plan.
+  final BigInt? customPlanSeed;
+
   const OrchardMigrationPrivatePlan({
     required this.targetValuesZatoshi,
     required this.totalInputZatoshi,
@@ -1946,6 +1996,9 @@ class OrchardMigrationPrivatePlan {
     required this.proofReadinessDelayBlocks,
     this.estimatedProofReadyHeight,
     required this.scheduledTransfers,
+    this.customAmountGroupCount,
+    this.customParallelScheduleCount,
+    this.customPlanSeed,
   });
 
   @override
@@ -1965,7 +2018,10 @@ class OrchardMigrationPrivatePlan {
       scheduleMaxDelayBlocks.hashCode ^
       proofReadinessDelayBlocks.hashCode ^
       estimatedProofReadyHeight.hashCode ^
-      scheduledTransfers.hashCode;
+      scheduledTransfers.hashCode ^
+      customAmountGroupCount.hashCode ^
+      customParallelScheduleCount.hashCode ^
+      customPlanSeed.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1987,7 +2043,10 @@ class OrchardMigrationPrivatePlan {
           scheduleMaxDelayBlocks == other.scheduleMaxDelayBlocks &&
           proofReadinessDelayBlocks == other.proofReadinessDelayBlocks &&
           estimatedProofReadyHeight == other.estimatedProofReadyHeight &&
-          scheduledTransfers == other.scheduledTransfers;
+          scheduledTransfers == other.scheduledTransfers &&
+          customAmountGroupCount == other.customAmountGroupCount &&
+          customParallelScheduleCount == other.customParallelScheduleCount &&
+          customPlanSeed == other.customPlanSeed;
 }
 
 class ProposalResult {

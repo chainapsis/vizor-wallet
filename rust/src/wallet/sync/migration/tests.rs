@@ -322,7 +322,10 @@ fn stop_candidates_include_broadcasted_rows_missing_local_raw() {
         1,
         "only broadcasted-without-local-raw rows remain stop-reconcilable"
     );
-    assert_eq!(candidates[0].kind, MigrationStopCandidateKind::MigrationTransaction);
+    assert_eq!(
+        candidates[0].kind,
+        MigrationStopCandidateKind::MigrationTransaction
+    );
     assert_eq!(candidates[0].txid_hex, *unstored_txid);
     assert_eq!(
         candidates[0].attempt_state,
@@ -3342,6 +3345,113 @@ fn new_mainnet_draft_persists_ninety_minute_policy() {
 }
 
 #[test]
+fn custom_draft_persists_amount_and_schedule_policy() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let targets = [1_000_000, 2_000_000, 5_000_000];
+    let schedule = [
+        MigrationScheduleEntry {
+            part_index: Some(2),
+            value_zatoshi: targets[2],
+            block_offset: 10,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: targets[0],
+            block_offset: 30,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: targets[1],
+            block_offset: 55,
+        },
+    ];
+    let config = CustomMigrationRunConfig {
+        amount_group_count: 12,
+        parallel_schedule_count: 4,
+        plan_seed: 0x1234_5678_9abc_def0,
+    };
+
+    let run_id = create_or_resume_custom_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Main,
+        &targets,
+        &schedule,
+        PreparationTimingPolicy::Zip318Spaced,
+        config,
+    )
+    .unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(
+        custom_migration_config_for_run_with_conn(&conn, &run_id).unwrap(),
+        Some(config),
+    );
+    assert_eq!(
+        schedule_parameters_for_run_with_conn(
+            &conn,
+            &run_id,
+            WalletNetwork::Main,
+            MigrationTimingPolicy::Standard90Minutes,
+            targets.len(),
+        )
+        .unwrap(),
+        (22, ZIP318_TRANSFER_MAX_DELAY_BLOCKS),
+    );
+    assert_eq!(
+        approved_schedule_for_run_with_conn(&conn, &run_id).unwrap(),
+        schedule,
+    );
+    drop(conn);
+
+    assert_eq!(
+        create_or_resume_custom_migration_draft(
+            &db_path,
+            "account-1",
+            WalletNetwork::Main,
+            &targets,
+            &schedule,
+            PreparationTimingPolicy::Zip318Spaced,
+            config,
+        )
+        .unwrap(),
+        run_id,
+    );
+
+    let changed = CustomMigrationRunConfig {
+        plan_seed: config.plan_seed + 1,
+        ..config
+    };
+    assert_eq!(
+        create_or_resume_custom_migration_draft(
+            &db_path,
+            "account-1",
+            WalletNetwork::Main,
+            &targets,
+            &schedule,
+            PreparationTimingPolicy::Zip318Spaced,
+            changed,
+        )
+        .unwrap_err(),
+        "Saved custom migration draft differs from this plan",
+    );
+    assert_eq!(
+        create_or_resume_private_migration_draft(
+            &db_path,
+            "account-1",
+            WalletNetwork::Main,
+            &targets,
+            &schedule,
+            PreparationTimingPolicy::Zip318Spaced,
+        )
+        .unwrap_err(),
+        "Saved migration draft uses a different amount policy",
+    );
+}
+
+#[test]
 fn shortened_schedule_samples_the_truncated_distribution() {
     let count = 20_000;
     let mut rng = StdRng::seed_from_u64(0x90);
@@ -3452,6 +3562,105 @@ fn fast_testnet_adopts_unstarted_run_and_replaces_schedule() {
         MigrationTimingPolicy::FastTestnet,
     )
     .unwrap();
+}
+
+#[test]
+fn fast_testnet_adopts_custom_schedule_and_parameters() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    let targets = [100, 200, 300];
+    let config = CustomMigrationRunConfig {
+        amount_group_count: 12,
+        parallel_schedule_count: 4,
+        plan_seed: 0x1234_5678_9abc_def0,
+    };
+    let mut initial_rng = seeded_custom_schedule_rng(config.plan_seed);
+    let initial_schedule = planned_custom_transfer_schedule(
+        targets,
+        WalletNetwork::Test,
+        MigrationTimingPolicy::Standard90Minutes,
+        config.parallel_schedule_count,
+        &mut initial_rng,
+    )
+    .unwrap();
+    let initial_parameters = config
+        .schedule_parameters(
+            WalletNetwork::Test,
+            MigrationTimingPolicy::Standard90Minutes,
+            targets.len() as u32,
+        )
+        .unwrap();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, timing_policy,
+              schedule_json, amount_policy, custom_amount_group_count,
+              custom_parallel_schedule_count, custom_plan_seed,
+              schedule_mean_delay_blocks, schedule_max_delay_blocks)
+             VALUES ('run-custom', 'account-1', 'test', ?1, ?2, 1, 1,
+                     '[100,200,300]', 'standard_90m', ?3, 'custom', ?4, ?5,
+                     ?6, ?7, ?8)"
+        ),
+        params![
+            db_path,
+            PHASE_READY_TO_MIGRATE,
+            serde_json::to_string(&initial_schedule).unwrap(),
+            config.amount_group_count,
+            config.parallel_schedule_count,
+            config.plan_seed.to_string(),
+            initial_parameters.0,
+            initial_parameters.1,
+        ],
+    )
+    .unwrap();
+
+    adopt_timing_policy_for_active_run(
+        &conn,
+        "account-1",
+        WalletNetwork::Test,
+        MigrationTimingPolicy::FastTestnet,
+    )
+    .unwrap();
+
+    let persisted: (String, String, u32, u32) = conn
+        .query_row(
+            &format!(
+                "SELECT timing_policy, schedule_json, schedule_mean_delay_blocks,
+                        schedule_max_delay_blocks
+                 FROM {RUNS_TABLE} WHERE run_id = 'run-custom'"
+            ),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    let mut expected_rng = seeded_custom_schedule_rng(config.plan_seed);
+    let expected_schedule = planned_custom_transfer_schedule(
+        targets,
+        WalletNetwork::Test,
+        MigrationTimingPolicy::FastTestnet,
+        config.parallel_schedule_count,
+        &mut expected_rng,
+    )
+    .unwrap();
+    assert_eq!(persisted.0, "fast_testnet");
+    assert_eq!(
+        serde_json::from_str::<Vec<MigrationScheduleEntry>>(&persisted.1).unwrap(),
+        expected_schedule,
+    );
+    assert_eq!(
+        (persisted.2, persisted.3),
+        config
+            .schedule_parameters(
+                WalletNetwork::Test,
+                MigrationTimingPolicy::FastTestnet,
+                targets.len() as u32,
+            )
+            .unwrap(),
+    );
 }
 
 #[test]
@@ -4744,23 +4953,20 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
     mark_pending_broadcasted(&db_path, "store-retry-run", &txid_hex).unwrap();
 
     // Past expiry, but no local transactions.raw yet: do not resign.
-    assert!(
-        !pending_row_is_expired_for_resign(
-            &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
-            "broadcasted",
-            expiry_height,
-            expiry_height,
-            &txid_hex,
-        )
-        .unwrap()
-    );
+    assert!(!pending_row_is_expired_for_resign(
+        &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
+        "broadcasted",
+        expiry_height,
+        expiry_height,
+        &txid_hex,
+    )
+    .unwrap());
     assert_eq!(
         expired_unconfirmed_pending_count(&db_path, "store-retry-run", expiry_height).unwrap(),
         0
     );
     assert_eq!(
-        mark_expired_pending_parts_for_resign(&db_path, "store-retry-run", expiry_height)
-            .unwrap(),
+        mark_expired_pending_parts_for_resign(&db_path, "store-retry-run", expiry_height).unwrap(),
         0
     );
     let status: String = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
@@ -4806,16 +5012,14 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
     .unwrap();
     drop(conn);
 
-    assert!(
-        pending_row_is_expired_for_resign(
-            &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
-            "broadcasted",
-            expiry_height,
-            expiry_height,
-            &txid_hex,
-        )
-        .unwrap()
-    );
+    assert!(pending_row_is_expired_for_resign(
+        &open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap(),
+        "broadcasted",
+        expiry_height,
+        expiry_height,
+        &txid_hex,
+    )
+    .unwrap());
     assert!(
         broadcasted_pending_txs_missing_local_identity(
             &db_path,
@@ -4832,8 +5036,7 @@ fn expired_broadcasted_without_local_raw_stays_broadcasted_for_store_retry() {
         1
     );
     assert_eq!(
-        mark_expired_pending_parts_for_resign(&db_path, "store-retry-run", expiry_height)
-            .unwrap(),
+        mark_expired_pending_parts_for_resign(&db_path, "store-retry-run", expiry_height).unwrap(),
         1
     );
     let status: String = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT)
@@ -5004,7 +5207,11 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
              VALUES ('gen-run', 'account-1', 'main', ?1, ?2, 1, 1,
                      '[100,100,100,100,100,100,100,100,100,100]', ?3)"
         ),
-        params![db_path, PHASE_READY_TO_MIGRATE, format!("[{schedule_json}]")],
+        params![
+            db_path,
+            PHASE_READY_TO_MIGRATE,
+            format!("[{schedule_json}]")
+        ],
     )
     .unwrap();
     let rows = insert_needs_resign_fixture_rows(&conn, "gen-run", 0..10);
@@ -5018,7 +5225,11 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     assert_eq!(generation.offsets_by_txid.len(), 10);
     let (_, max_delay_blocks) =
         schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard);
-    let mut ladder = generation.offsets_by_txid.values().copied().collect::<Vec<_>>();
+    let mut ladder = generation
+        .offsets_by_txid
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
     ladder.sort_unstable();
     let generation_max_offset = *ladder.last().unwrap();
     assert!(generation_max_offset <= max_delay_blocks * 10);
@@ -5045,13 +5256,8 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     // The replacement boundary enforces the exact persisted offset, not only
     // the generation origin.
     let persisted_offset = generation.offsets_by_txid[&rows[9].0.to_ascii_lowercase()];
-    let (wrong_offset_replacement, wrong_offset_child) = rebuild_replacement_for(
-        &rows[9].0,
-        &rows[9].1,
-        9,
-        5_001,
-        5_001 + persisted_offset,
-    );
+    let (wrong_offset_replacement, wrong_offset_child) =
+        rebuild_replacement_for(&rows[9].0, &rows[9].1, 9, 5_001, 5_001 + persisted_offset);
     assert_eq!(
         replace_resigned_pending_parts(
             &db_path,
@@ -5212,12 +5418,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     assert_eq!(rebuilt.len(), 10);
     assert!(rebuilt.iter().all(|(_, _, start, _)| *start == 5_000));
     assert!(rebuilt.iter().all(|(part_index, target, _, _)| {
-        *target
-            == if *part_index < 8 {
-                5_001
-            } else {
-                late_tip + 1
-            }
+        *target == if *part_index < 8 { 5_001 } else { late_tip + 1 }
     }));
     rebuilt.sort_by_key(|(_, _, _, scheduled)| *scheduled);
     let rebuilt_ladder = rebuilt
@@ -5301,8 +5502,7 @@ fn rebuild_generation_retains_consumed_max_for_late_needs_resign_parts() {
 
     // Consume the part that held the generation's largest offset. The one
     // remaining needs_resign row only carries offset 10.
-    let (replacement, child) =
-        rebuild_replacement_for(&rows[1].0, &rows[1].1, 1, 2_001, 3_000);
+    let (replacement, child) = rebuild_replacement_for(&rows[1].0, &rows[1].1, 1, 2_001, 3_000);
     replace_resigned_pending_parts(
         &db_path,
         "late-run",
@@ -5425,8 +5625,7 @@ fn multi_part_rebuild_replacements_persist_with_fresh_offsets() {
                 selected_note: note.clone(),
             };
             let scheduled_height = scheduled_heights[index];
-            let expiry_height =
-                zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+            let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
             let value_zatoshi = 100 + 100 * index as u64;
             (
                 PendingMigrationTxReplacement {
@@ -9061,12 +9260,8 @@ fn expiry_recovery_promotes_locally_mined_scheduled_part_instead_of_resign() {
         .join("wallet.db")
         .to_string_lossy()
         .to_string();
-    let txids = create_outbox_test_run(
-        &db_path,
-        "expiry-mined",
-        &[100, 200],
-        &[Some(90), Some(90)],
-    );
+    let txids =
+        create_outbox_test_run(&db_path, "expiry-mined", &[100, 200], &[Some(90), Some(90)]);
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     // Force past-expiry bookkeeping while leaving status as `scheduled`.
     conn.execute(

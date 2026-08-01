@@ -138,7 +138,7 @@ class _MobileMigrationHowItWorks extends StatelessWidget {
   }
 }
 
-enum _MobileMigrationOption { private, immediate }
+enum _MobileMigrationOption { private, immediate, custom }
 
 class _MobileMigrationOptions extends ConsumerStatefulWidget {
   const _MobileMigrationOptions({required this.privateEnabled});
@@ -172,6 +172,9 @@ class _MobileMigrationOptionsState
     if (option == _MobileMigrationOption.private && !widget.privateEnabled) {
       return;
     }
+    if (option == _MobileMigrationOption.custom && !widget.privateEnabled) {
+      return;
+    }
     if (_selectedOption == option) return;
     setState(() => _selectedOption = option);
   }
@@ -180,6 +183,10 @@ class _MobileMigrationOptionsState
     if (_isContinuing) return;
     if (_selectedOption == _MobileMigrationOption.immediate) {
       context.go('/migration/fast/review');
+      return;
+    }
+    if (_selectedOption == _MobileMigrationOption.custom) {
+      context.go('/migration/custom');
       return;
     }
 
@@ -221,6 +228,7 @@ class _MobileMigrationOptionsState
   @override
   Widget build(BuildContext context) {
     final privateSelected = _selectedOption == _MobileMigrationOption.private;
+    final customSelected = _selectedOption == _MobileMigrationOption.custom;
     final immediateSelected =
         _selectedOption == _MobileMigrationOption.immediate;
     return _MobileIronwoodMigrationBackScope(
@@ -238,8 +246,8 @@ class _MobileMigrationOptionsState
         childGap: 24,
         title: 'Choose How to Migrate',
         subtitle: widget.privateEnabled
-            ? 'Choose between more privacy over time or a faster migration. '
-                  'You can review the details before anything moves.'
+            ? 'Choose a private preset, migrate immediately, or shape a '
+                  'custom plan. You can review details before anything moves.'
             : 'Private migration is temporarily unavailable on Android. '
                   'Choose immediate to continue.',
         bottom: Column(
@@ -291,6 +299,20 @@ class _MobileMigrationOptionsState
               onTap: _isContinuing
                   ? null
                   : () => _select(_MobileMigrationOption.immediate),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MobileMigrationOptionCard(
+              key: const ValueKey('mobile_ironwood_custom_option'),
+              title: 'Custom',
+              body: widget.privateEnabled
+                  ? 'Choose the migration amount distribution and how many '
+                        'schedules run in parallel.'
+                  : 'Not available on Android.',
+              selected: customSelected,
+              icon: _MigrationChoiceIcon.custom,
+              onTap: _isContinuing || !widget.privateEnabled
+                  ? null
+                  : () => _select(_MobileMigrationOption.custom),
             ),
           ],
         ),

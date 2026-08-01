@@ -8,6 +8,7 @@ enum IronwoodMigrationFlowStep {
   options,
   review,
   immediateReview,
+  custom,
 }
 
 enum IronwoodMigrationReviewPreviewStage { review, analyzing }
@@ -114,6 +115,52 @@ final ironwoodMigrationPrivatePlanProvider =
           .privatePlan(
             network: request.network,
             accountUuid: request.accountUuid,
+          );
+    });
+
+class IronwoodMigrationCustomPlanRequest {
+  const IronwoodMigrationCustomPlanRequest({
+    required this.amountGroupCount,
+    required this.parallelScheduleCount,
+    required this.planSeed,
+  });
+
+  final int amountGroupCount;
+  final int parallelScheduleCount;
+  final BigInt planSeed;
+
+  @override
+  int get hashCode =>
+      Object.hash(amountGroupCount, parallelScheduleCount, planSeed);
+
+  @override
+  bool operator ==(Object other) =>
+      other is IronwoodMigrationCustomPlanRequest &&
+      other.amountGroupCount == amountGroupCount &&
+      other.parallelScheduleCount == parallelScheduleCount &&
+      other.planSeed == planSeed;
+}
+
+final ironwoodMigrationCustomPlanProvider = FutureProvider.autoDispose
+    .family<
+      rust_sync.OrchardMigrationPrivatePlan?,
+      IronwoodMigrationCustomPlanRequest
+    >((ref, custom) async {
+      final request = ref.watch(
+        ironwoodMigrationInputsProvider.select(
+          (inputs) => inputs.statusRequest,
+        ),
+      );
+      if (request == null) return null;
+
+      return ref
+          .watch(ironwoodMigrationServiceProvider)
+          .customPlan(
+            network: request.network,
+            accountUuid: request.accountUuid,
+            amountGroupCount: custom.amountGroupCount,
+            parallelScheduleCount: custom.parallelScheduleCount,
+            planSeed: custom.planSeed,
           );
     });
 

@@ -59,11 +59,11 @@ pub(crate) use send::{
     abandon_orchard_migration, advance_orchard_migration_preparation_for_run,
     complete_orchard_migration_batch_pczt, complete_orchard_migration_denominations_pczt,
     complete_orchard_migration_immediate_pczt, complete_orchard_migration_single_qr_pczt,
-    create_or_resume_private_migration_draft, discard_all_keystone_migration_requests,
-    discard_keystone_migration_request, discard_keystone_migration_requests_for_account,
-    keystone_migration_proof_status, migrate_orchard_to_ironwood,
-    migrate_orchard_to_ironwood_immediately, orchard_migration_proof_readiness,
-    orchard_migration_proof_readiness_at_scanned_height,
+    create_or_resume_custom_migration_draft, create_or_resume_private_migration_draft,
+    discard_all_keystone_migration_requests, discard_keystone_migration_request,
+    discard_keystone_migration_requests_for_account, keystone_migration_proof_status,
+    migrate_orchard_to_ironwood, migrate_orchard_to_ironwood_immediately,
+    orchard_migration_proof_readiness, orchard_migration_proof_readiness_at_scanned_height,
     orchard_migration_proof_readiness_read_only, prepare_orchard_migration_batch_pczt,
     prepare_orchard_migration_denominations_pczt, prepare_orchard_migration_immediate_pczt,
     prepare_orchard_migration_single_qr_pczt, retain_migration_anchor_checkpoints_before_scan,
@@ -78,7 +78,10 @@ pub use send::{
 pub(crate) use send::{
     create_shield_transparent_pczt, get_shield_transparent_status, shield_transparent_balance,
 };
-pub(crate) use send::{get_orchard_migration_immediate_plan, get_orchard_migration_private_plan};
+pub(crate) use send::{
+    get_orchard_migration_custom_plan, get_orchard_migration_immediate_plan,
+    get_orchard_migration_private_plan, CustomMigrationPlanRequest, OrchardMigrationPrivatePlan,
+};
 // Internal-only re-export for `sync_engine::run_sync_impl`'s
 // auto-resubmit pass. Not part of the `wallet::sync` public surface.
 pub(crate) use send::migration_anchor_retention_required;

@@ -9,6 +9,7 @@ pub(crate) const ZIP318_EXPIRY_MODULUS: u32 = 34_560;
 pub(crate) const ZIP318_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 144;
 pub(crate) const ZIP318_TRANSFER_MAX_DELAY_BLOCKS: u32 = 576;
 pub(crate) const NINETY_MINUTE_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 66;
+pub(crate) const CUSTOM_MIGRATION_MAX_PARALLEL_SCHEDULES: u32 = 32;
 pub(crate) const REGTEST_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 1;
 pub(crate) const REGTEST_TRANSFER_MAX_DELAY_BLOCKS: u32 = 4;
 pub(crate) const FAST_TESTNET_TRANSFER_MEAN_DELAY_BLOCKS: u32 = 12;
@@ -85,6 +86,34 @@ pub(crate) fn schedule_parameters_for_part_count(
         configured_timing_policy(network),
         part_count,
     )
+}
+
+pub(crate) fn validate_custom_parallel_schedule_count(
+    parallel_schedules: u32,
+) -> Result<(), String> {
+    if !(1..=CUSTOM_MIGRATION_MAX_PARALLEL_SCHEDULES).contains(&parallel_schedules) {
+        return Err(format!(
+            "Custom migration parallel schedule count must be between 1 and \
+             {CUSTOM_MIGRATION_MAX_PARALLEL_SCHEDULES}"
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn custom_schedule_parameters(
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    parallel_schedules: u32,
+    part_count: u32,
+) -> Result<(u32, u32), String> {
+    validate_custom_parallel_schedule_count(parallel_schedules)?;
+    let effective_parallel_schedules = parallel_schedules.min(part_count.max(1));
+    let (mean_delay_blocks, max_delay_blocks) =
+        schedule_parameters_with_policy(network, timing_policy);
+    Ok((
+        (mean_delay_blocks / effective_parallel_schedules).max(1),
+        max_delay_blocks,
+    ))
 }
 
 fn schedule_parameters_with_policy_for_part_count(
