@@ -109,9 +109,7 @@ fn backfill_pending_part_indices(conn: &rusqlite::Connection) -> Result<(), Stri
     Ok(())
 }
 
-fn backfill_legacy_signed_schedule_metadata(
-    conn: &rusqlite::Connection,
-) -> Result<(), String> {
+fn backfill_legacy_signed_schedule_metadata(conn: &rusqlite::Connection) -> Result<(), String> {
     let mut run_stmt = conn
         .prepare_cached(&format!(
             "SELECT run_id, target_values_json, schedule_json,
@@ -137,8 +135,7 @@ fn backfill_legacy_signed_schedule_metadata(
         let Ok(target_values) = serde_json::from_str::<Vec<u64>>(&target_values_json) else {
             continue;
         };
-        let Ok(schedule) =
-            serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json)
+        let Ok(schedule) = serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json)
         else {
             continue;
         };
@@ -281,9 +278,7 @@ fn backfill_legacy_signed_schedule_metadata(
     Ok(())
 }
 
-fn backfill_legacy_pending_schedule_metadata(
-    conn: &rusqlite::Connection,
-) -> Result<(), String> {
+fn backfill_legacy_pending_schedule_metadata(conn: &rusqlite::Connection) -> Result<(), String> {
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT p.run_id, p.txid_hex, p.part_index, p.target_height,
@@ -340,12 +335,7 @@ fn backfill_legacy_pending_schedule_metadata(
         }
         let recovered = part_index
             .and_then(|part_index| {
-                schedule_block_offset_for_part(
-                    &schedule,
-                    &target_values,
-                    part_index,
-                    value_zatoshi,
-                )
+                schedule_block_offset_for_part(&schedule, &target_values, part_index, value_zatoshi)
             })
             .and_then(|offset| target_height.saturating_sub(1).checked_add(offset));
         let origin = target_height.saturating_sub(1);
@@ -417,9 +407,7 @@ fn backfill_legacy_pending_schedule_metadata(
     Ok(())
 }
 
-fn backfill_original_pending_schedule_heights(
-    conn: &rusqlite::Connection,
-) -> Result<(), String> {
+fn backfill_original_pending_schedule_heights(conn: &rusqlite::Connection) -> Result<(), String> {
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT p.run_id, p.txid_hex, p.part_index, p.value_zatoshi,
@@ -462,8 +450,7 @@ fn backfill_original_pending_schedule_heights(
         let original_height = part_index
             .zip(schedule_origin)
             .and_then(|(part_index, origin)| {
-                let target_values =
-                    serde_json::from_str::<Vec<u64>>(&target_values_json).ok()?;
+                let target_values = serde_json::from_str::<Vec<u64>>(&target_values_json).ok()?;
                 let schedule =
                     serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json).ok()?;
                 let block_offset = schedule_block_offset_for_part(
@@ -514,6 +501,12 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             schedule_json TEXT NOT NULL DEFAULT '[]',
             timing_policy TEXT NOT NULL DEFAULT 'standard',
             preparation_timing_policy TEXT NOT NULL DEFAULT 'immediate',
+            amount_policy TEXT NOT NULL DEFAULT 'standard',
+            custom_profile_count INTEGER,
+            custom_concurrent_profiles INTEGER,
+            custom_plan_seed TEXT,
+            schedule_mean_delay_blocks INTEGER,
+            schedule_max_delay_blocks INTEGER,
             proof_retry_height INTEGER,
             signed_schedule_origin_height INTEGER,
             last_error TEXT
@@ -629,13 +622,19 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         "preparation_timing_policy",
         "TEXT NOT NULL DEFAULT 'immediate'",
     )?;
-    add_column_if_missing(conn, RUNS_TABLE, "proof_retry_height", "INTEGER")?;
     add_column_if_missing(
         conn,
         RUNS_TABLE,
-        "signed_schedule_origin_height",
-        "INTEGER",
+        "amount_policy",
+        "TEXT NOT NULL DEFAULT 'standard'",
     )?;
+    add_column_if_missing(conn, RUNS_TABLE, "custom_profile_count", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "custom_concurrent_profiles", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "custom_plan_seed", "TEXT")?;
+    add_column_if_missing(conn, RUNS_TABLE, "schedule_mean_delay_blocks", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "schedule_max_delay_blocks", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "proof_retry_height", "INTEGER")?;
+    add_column_if_missing(conn, RUNS_TABLE, "signed_schedule_origin_height", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "schedule_start_height", "INTEGER")?;
     add_column_if_missing(

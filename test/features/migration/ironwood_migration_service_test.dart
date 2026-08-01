@@ -1815,6 +1815,7 @@ void main() {
         scheduleMaxDelayBlocks: 576,
         proofReadinessDelayBlocks: 146,
         scheduledTransfers: const [],
+        isSimulated: false,
       );
       final service = IronwoodMigrationService(
         getWalletDbPath: () async => '/tmp/wallet.db',
@@ -1842,6 +1843,69 @@ void main() {
       expect(seenDbPath, '/tmp/wallet.db');
       expect(seenNetwork, 'test');
       expect(seenAccountUuid, 'account-1');
+    },
+  );
+
+  test(
+    'customPlan forwards profile, concurrency, seed, and simulation',
+    () async {
+      String? seenDbPath;
+      String? seenNetwork;
+      String? seenAccountUuid;
+      int? seenProfileCount;
+      int? seenConcurrentProfiles;
+      BigInt? seenPlanSeed;
+      BigInt? seenSimulation;
+      final expected = _customMigrationPlan();
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        getCustomPlan:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required profileCount,
+              required concurrentProfiles,
+              required planSeed,
+              simulatedTotalZatoshi,
+            }) async {
+              seenDbPath = dbPath;
+              seenNetwork = network;
+              seenAccountUuid = accountUuid;
+              seenProfileCount = profileCount;
+              seenConcurrentProfiles = concurrentProfiles;
+              seenPlanSeed = planSeed;
+              seenSimulation = simulatedTotalZatoshi;
+              return expected;
+            },
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+      );
+
+      final plan = await service.customPlan(
+        network: 'regtest',
+        accountUuid: 'account-1',
+        profileCount: 64,
+        concurrentProfiles: 8,
+        planSeed: BigInt.from(42),
+        simulatedTotalZatoshi: BigInt.from(100_000_000_000_000),
+      );
+
+      expect(plan, expected);
+      expect(seenDbPath, '/tmp/wallet.db');
+      expect(seenNetwork, 'regtest');
+      expect(seenAccountUuid, 'account-1');
+      expect(seenProfileCount, 64);
+      expect(seenConcurrentProfiles, 8);
+      expect(seenPlanSeed, BigInt.from(42));
+      expect(seenSimulation, BigInt.from(100_000_000_000_000));
     },
   );
 
@@ -3186,6 +3250,137 @@ void main() {
       );
       expect(manifest, isNotNull);
       expect(manifest!.expectedRunId, 'draft-run-1');
+    },
+  );
+
+  test('saveCustomMigrationDraft preserves the exact approved plan', () async {
+    final expected = _customMigrationPlan();
+    frb.Uint64List? seenTargets;
+    List<rust_sync.MigrationScheduledTransfer>? seenSchedule;
+    int? seenProfileCount;
+    int? seenConcurrentProfiles;
+    BigInt? seenPlanSeed;
+    final service = IronwoodMigrationService(
+      getWalletDbPath: () async => '/tmp/wallet.db',
+      getStatus:
+          ({required dbPath, required network, required accountUuid}) async =>
+              _migrationStatus(),
+      getPrivatePlan:
+          ({required dbPath, required network, required accountUuid}) async =>
+              null,
+      secureStore: AppSecureStore.testing(
+        storage: const FlutterSecureStorage(),
+      ),
+      getEndpoint: _testEndpoint,
+      getSessionPassword: () => 'test-password',
+      isMobile: () => false,
+      createCustomMigrationDraft:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required targetValuesZatoshi,
+            required approvedSchedule,
+            required profileCount,
+            required concurrentProfiles,
+            required planSeed,
+          }) async {
+            seenTargets = targetValuesZatoshi;
+            seenSchedule = approvedSchedule;
+            seenProfileCount = profileCount;
+            seenConcurrentProfiles = concurrentProfiles;
+            seenPlanSeed = planSeed;
+            return 'custom-run-1';
+          },
+    );
+
+    final runId = await service.saveCustomMigrationDraft(
+      accountUuid: 'account-1',
+      approvedPlan: expected,
+    );
+
+    expect(runId, 'custom-run-1');
+    expect(seenTargets, expected.targetValuesZatoshi);
+    expect(seenSchedule, expected.scheduledTransfers);
+    expect(seenProfileCount, 12);
+    expect(seenConcurrentProfiles, 2);
+    expect(seenPlanSeed, BigInt.from(42));
+
+    await expectLater(
+      service.saveCustomMigrationDraft(
+        accountUuid: 'account-1',
+        approvedPlan: _customMigrationPlan(isSimulated: true),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('simulated migration plan'),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'startSoftwareCustomMigration starts only the durable saved draft',
+    () async {
+      final plan = _customMigrationPlan();
+      var draftCount = 0;
+      List<rust_sync.MigrationScheduledTransfer>? startSchedule;
+      final service = IronwoodMigrationService(
+        getWalletDbPath: () async => '/tmp/wallet.db',
+        getStatus:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _migrationStatus(),
+        getPrivatePlan:
+            ({required dbPath, required network, required accountUuid}) async =>
+                null,
+        secureStore: AppSecureStore.testing(
+          storage: const FlutterSecureStorage(),
+        ),
+        getEndpoint: _testEndpoint,
+        getSessionPassword: () => 'test-password',
+        getMnemonicBytesForAccount: (_) async => Uint8List.fromList([1, 2, 3]),
+        isMobile: () => false,
+        isMacOS: () => false,
+        createCustomMigrationDraft:
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required targetValuesZatoshi,
+              required approvedSchedule,
+              required profileCount,
+              required concurrentProfiles,
+              required planSeed,
+            }) async {
+              draftCount++;
+              return 'custom-run-1';
+            },
+        startSoftwareMigration:
+            ({
+              required dbPath,
+              required lightwalletdUrl,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+              required mnemonicBytes,
+              required password,
+              required saltBase64,
+            }) async {
+              startSchedule = approvedSchedule;
+              return _migrationResult();
+            },
+      );
+
+      final result = await service.startSoftwareCustomMigration(
+        accountUuid: 'account-1',
+        approvedPlan: plan,
+      );
+
+      expect(result.status, 'broadcasted');
+      expect(draftCount, 1);
+      expect(startSchedule, isEmpty);
     },
   );
 
@@ -5155,6 +5350,40 @@ void main() {
         },
       ]);
     },
+  );
+}
+
+rust_sync.OrchardMigrationPrivatePlan _customMigrationPlan({
+  bool isSimulated = false,
+}) {
+  const values = [1_000_000_000_000, 50_000_000_000, 5_000_000_000];
+  return rust_sync.OrchardMigrationPrivatePlan(
+    targetValuesZatoshi: frb.Uint64List.fromList(values),
+    totalInputZatoshi: BigInt.from(1_055_000_300_000),
+    totalMigratableZatoshi: BigInt.from(1_055_000_000_000),
+    orchardChangeZatoshi: BigInt.from(65_000),
+    denominationSplitFeeZatoshi: BigInt.from(160_000),
+    migrationFeeZatoshi: BigInt.from(75_000),
+    estimatedTotalFeeZatoshi: BigInt.from(235_000),
+    plannedBatchCount: values.length,
+    denominationSplitStageCount: 2,
+    denominationSplitLayerCount: 1,
+    signingBatchLimit: 35,
+    scheduleMeanDelayBlocks: 33,
+    scheduleMaxDelayBlocks: 576,
+    proofReadinessDelayBlocks: 146,
+    scheduledTransfers: [
+      for (var index = 0; index < values.length; index++)
+        rust_sync.MigrationScheduledTransfer(
+          partIndex: index,
+          valueZatoshi: BigInt.from(values[index]),
+          blockOffset: (index + 1) * 30,
+        ),
+    ],
+    customProfileCount: 12,
+    customConcurrentProfiles: 2,
+    customPlanSeed: BigInt.from(42),
+    isSimulated: isSimulated,
   );
 }
 

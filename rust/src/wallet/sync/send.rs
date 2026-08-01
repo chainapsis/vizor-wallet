@@ -520,6 +520,10 @@ pub(crate) struct OrchardMigrationPrivatePlan {
     /// can first use a valid migration anchor.
     pub estimated_proof_ready_height: Option<u32>,
     pub scheduled_transfers: Vec<super::migration::MigrationScheduleEntry>,
+    pub custom_profile_count: Option<u32>,
+    pub custom_concurrent_profiles: Option<u32>,
+    pub custom_plan_seed: Option<u64>,
+    pub is_simulated: bool,
 }
 
 pub(crate) struct KeystoneMigrationMessage {
@@ -1526,6 +1530,9 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::configured_timing_policy(network),
         ),
     };
+    let approved_target_values_for_build = draft_run
+        .as_ref()
+        .map(|run| run.target_values_zatoshi.clone());
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
         prepare_software_migration_run(
             db_path,
@@ -1533,6 +1540,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             account_uuid,
             seed,
             &signing_schedule,
+            approved_target_values_for_build.as_deref(),
             preparation_policy_for_build,
             migration_policy_for_build,
         )

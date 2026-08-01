@@ -4,6 +4,7 @@ enum MobileIronwoodMigrationStep {
   intro,
   howItWorks,
   options,
+  custom,
   notifications,
   fastReview,
   preparing,

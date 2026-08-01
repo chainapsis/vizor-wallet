@@ -1,8 +1,8 @@
-name: vizor-ironwood-regtest
+name: ${IRONWOOD_COMPOSE_PROJECT_NAME:-vizor-ironwood-regtest}
 
 services:
   zcashd:
-    image: ghcr.io/shieldedlabs/zero-zcashd@sha256:dce56bfbfc64a3d7c5562ccd59d70aed005bea8cd68dce063d687bef7ce181f5
+    image: ${IRONWOOD_ZCASHD_IMAGE:-ghcr.io/shieldedlabs/zero-zcashd@sha256:dce56bfbfc64a3d7c5562ccd59d70aed005bea8cd68dce063d687bef7ce181f5}
     platform: linux/amd64
     entrypoint: ["zcashd"]
     command:
@@ -14,7 +14,7 @@ services:
       - "${IRONWOOD_ZCASHD_RPC_PORT:-19232}:18232"
       - "${IRONWOOD_LIGHTWALLETD_PORT:-19067}:9067"
     volumes:
-      - ./.ironwood-regtest/zcashd:/srv/zcash/.zcash
+      - ${IRONWOOD_STATE_DIR:-./.ironwood-regtest}/zcashd:/srv/zcash/.zcash
       - ./scripts/ironwood-regtest/zcash.conf:/etc/zcash/zcash.conf:ro
 
   lightwalletd:
@@ -37,6 +37,6 @@ services:
       - zcashd
     network_mode: "service:zcashd"
     volumes:
-      - ./.ironwood-regtest/zcashd:/srv/zcash/.zcash:ro
-      - ./.ironwood-regtest/lightwalletd:/var/lib/lightwalletd
+      - ${IRONWOOD_STATE_DIR:-./.ironwood-regtest}/zcashd:/srv/zcash/.zcash:ro
+      - ${IRONWOOD_STATE_DIR:-./.ironwood-regtest}/lightwalletd:/var/lib/lightwalletd
       - ./scripts/ironwood-regtest/lightwalletd-zcash.conf:/etc/zcash/lightwalletd-zcash.conf:ro

@@ -3,24 +3,21 @@ fn prepared_refs_from_denomination_split(
     stages: &[CreatedDenominationStagePczt],
 ) -> Vec<super::migration::PreparedOrchardNoteRef> {
     let mut prepared_refs = direct_refs.to_vec();
-    prepared_refs.extend(stages
-        .iter()
-        .flat_map(|stage| {
-            stage
-                .outputs
-                .iter()
-                .filter(|output| {
-                    output.kind == super::migration::DenominationStageOutputKind::Migration
-                })
-                .map(|output| super::migration::PreparedOrchardNoteRef {
-                    txid_hex: stage.expected_txid_hex.clone(),
-                    output_index: output.output_index,
-                    value_zatoshi: output.value_zatoshi,
-                    note_version: output.note_version,
-                    nullifier_hex: None,
-                })
-        })
-    );
+    prepared_refs.extend(stages.iter().flat_map(|stage| {
+        stage
+            .outputs
+            .iter()
+            .filter(|output| {
+                output.kind == super::migration::DenominationStageOutputKind::Migration
+            })
+            .map(|output| super::migration::PreparedOrchardNoteRef {
+                txid_hex: stage.expected_txid_hex.clone(),
+                output_index: output.output_index,
+                value_zatoshi: output.value_zatoshi,
+                note_version: output.note_version,
+                nullifier_hex: None,
+            })
+    }));
     prepared_refs.sort_by(|left, right| {
         right
             .value_zatoshi
@@ -245,6 +242,7 @@ fn create_padded_orchard_denomination_pczts(
     account_uuid: &str,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
     migration_timing_policy: super::migration::MigrationTimingPolicy,
+    approved_target_values: Option<&[u64]>,
 ) -> Result<Option<CreatedPaddedDenominationPczts>, String> {
     let mut db = open_wallet_db(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
@@ -321,12 +319,21 @@ fn create_padded_orchard_denomination_pczts(
             0,
         )
         .map_err(|e| format!("Failed to estimate padded denomination fee: {e}"))?;
-    let padded_plan = super::migration::plan_padded_denominations(
-        &input_values,
-        u64::from(split_fee),
-        u64::from(migration_fee_estimate),
-        MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-    )?
+    let padded_plan = match approved_target_values {
+        Some(target_values) => super::migration::plan_padded_denominations_for_targets(
+            &input_values,
+            target_values,
+            u64::from(split_fee),
+            u64::from(migration_fee_estimate),
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        )?,
+        None => super::migration::plan_padded_denominations(
+            &input_values,
+            u64::from(split_fee),
+            u64::from(migration_fee_estimate),
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        )?,
+    }
     .ok_or("Insufficient spendable Orchard funds for denomination split")?;
     let stage_layers = padded_plan
         .stages
@@ -352,8 +359,7 @@ fn create_padded_orchard_denomination_pczts(
     let mut stages = Vec::with_capacity(padded_plan.stages.len());
     let mut predicted_migration_notes =
         Vec::with_capacity(padded_plan.denominations.migration_outputs.len());
-    let mut direct_prepared_refs =
-        Vec::with_capacity(padded_plan.direct_migration_inputs.len());
+    let mut direct_prepared_refs = Vec::with_capacity(padded_plan.direct_migration_inputs.len());
     let mut predicted_stage_outputs = BTreeMap::<(usize, usize), PredictedMigrationNote>::new();
 
     for direct in &padded_plan.direct_migration_inputs {
@@ -572,20 +578,14 @@ fn create_padded_orchard_denomination_pczts(
                 value_zatoshi: *value_zatoshi,
                 note: *note,
             };
-            predicted_stage_outputs.insert(
-                (stage_index, logical_output_index),
-                predicted.clone(),
-            );
+            predicted_stage_outputs.insert((stage_index, logical_output_index), predicted.clone());
             if let Some(part_index) = terminal.part_index {
                 if terminal.kind != super::migration::SplitTerminalKind::Migration {
                     return Err(
                         "Only migration outputs may carry a migration part index".to_string()
                     );
                 }
-                predicted_migration_notes.push((
-                    part_index,
-                    predicted,
-                ));
+                predicted_migration_notes.push((part_index, predicted));
             }
         }
 

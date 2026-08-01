@@ -49,9 +49,7 @@ fn prepared_notes_not_spendable_result(
         status: super::migration::PHASE_READY_TO_MIGRATE.to_string(),
         broadcasted_count: 0,
         total_count,
-        message: Some(
-            "Waiting for the anchor block needed to migrate prepared notes.".to_string(),
-        ),
+        message: Some("Waiting for the anchor block needed to migrate prepared notes.".to_string()),
         fee_zatoshi: 0,
         migrated_zatoshi,
     }
@@ -244,8 +242,7 @@ async fn advance_staged_denomination_run(
         ));
     }
 
-    let denomination_ready =
-        super::migration::reconcile_denomination_run(db_path, &run.run_id)?;
+    let denomination_ready = super::migration::reconcile_denomination_run(db_path, &run.run_id)?;
     // Denomination outputs become lockable only after sync has discovered
     // them. Reconcile here, at that state transition, instead of making every
     // ordinary-send migration predicate perform a full lock write pass.
@@ -308,6 +305,7 @@ fn prepare_software_migration_run(
     account_uuid: &str,
     seed: SecretVec<u8>,
     approved_schedule: &[super::migration::MigrationScheduleEntry],
+    approved_target_values: Option<&[u64]>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
     migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<Option<PreparedSoftwareMigrationRun>, String> {
@@ -318,6 +316,7 @@ fn prepare_software_migration_run(
         account_uuid,
         preparation_timing_policy,
         migration_timing_policy,
+        approved_target_values,
     )?
     else {
         return Ok(None);
@@ -344,10 +343,8 @@ fn prepare_software_migration_run(
         }
         split_sigs.insert(stage.id.clone(), sigs);
     }
-    let prepared_refs = prepared_refs_from_denomination_split(
-        &split.direct_prepared_refs,
-        &split.stages,
-    );
+    let prepared_refs =
+        prepared_refs_from_denomination_split(&split.direct_prepared_refs, &split.stages);
     let denomination_stages = signed_denomination_stage_inserts(&split.stages, &split_sigs)?;
 
     let child_messages = split
@@ -360,7 +357,9 @@ fn prepare_software_migration_run(
                 approved_schedule,
                 &split.plan.migration_outputs,
                 part_index,
-                predicted.value_zatoshi.saturating_sub(split.plan.migration_fee_zatoshi),
+                predicted
+                    .value_zatoshi
+                    .saturating_sub(split.plan.migration_fee_zatoshi),
             )
             .ok_or("Approved migration schedule is missing a child")?;
             create_orchard_to_ironwood_pczt_from_predicted_note(

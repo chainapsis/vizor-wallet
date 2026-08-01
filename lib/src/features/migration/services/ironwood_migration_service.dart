@@ -4,6 +4,8 @@ import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
+    show Uint64List;
 import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 
 import '../../../core/config/rpc_endpoint_config.dart';
@@ -115,6 +117,17 @@ typedef IronwoodMigrationPrivatePlanGetter =
       required String dbPath,
       required String network,
       required String accountUuid,
+    });
+
+typedef IronwoodMigrationCustomPlanGetter =
+    Future<rust_sync.OrchardMigrationPrivatePlan?> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required int profileCount,
+      required int concurrentProfiles,
+      required BigInt planSeed,
+      BigInt? simulatedTotalZatoshi,
     });
 
 typedef IronwoodMigrationImmediatePlanGetter =
@@ -437,6 +450,17 @@ typedef IronwoodMigrationPrivateDraftCreator =
       required String accountUuid,
       required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
     });
+typedef IronwoodMigrationCustomDraftCreator =
+    Future<String> Function({
+      required String dbPath,
+      required String network,
+      required String accountUuid,
+      required Uint64List targetValuesZatoshi,
+      required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+      required int profileCount,
+      required int concurrentProfiles,
+      required BigInt planSeed,
+    });
 typedef IronwoodMigrationKeystoneDenominationCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
@@ -606,12 +630,53 @@ Future<String> _defaultCreatePrivateMigrationDraft({
   spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
 );
 
+Future<rust_sync.OrchardMigrationPrivatePlan?> _defaultGetCustomMigrationPlan({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required int profileCount,
+  required int concurrentProfiles,
+  required BigInt planSeed,
+  BigInt? simulatedTotalZatoshi,
+}) => rust_sync.getOrchardMigrationCustomPlan(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  profileCount: profileCount,
+  concurrentProfiles: concurrentProfiles,
+  planSeed: planSeed,
+  simulatedTotalZatoshi: simulatedTotalZatoshi,
+  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+);
+
+Future<String> _defaultCreateCustomMigrationDraft({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required Uint64List targetValuesZatoshi,
+  required List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+  required int profileCount,
+  required int concurrentProfiles,
+  required BigInt planSeed,
+}) => rust_sync.createOrResumeCustomMigrationDraft(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  targetValuesZatoshi: targetValuesZatoshi,
+  approvedSchedule: approvedSchedule,
+  profileCount: profileCount,
+  concurrentProfiles: concurrentProfiles,
+  planSeed: planSeed,
+  spacePreparationBroadcasts: kAppFormFactor == AppFormFactor.desktop,
+);
+
 class IronwoodMigrationService {
   IronwoodMigrationService({
     required this.getWalletDbPath,
     required this.getStatus,
     IronwoodMigrationStatusesGetter? getStatuses,
     required this.getPrivatePlan,
+    IronwoodMigrationCustomPlanGetter? getCustomPlan,
     required this.secureStore,
     IronwoodMigrationBackgroundCredentialStore? backgroundCredentialStore,
     IronwoodMigrationEndpointGetter? getEndpoint,
@@ -671,6 +736,7 @@ class IronwoodMigrationService {
     IronwoodMigrationKeystoneImmediateCompleter?
     completeKeystoneImmediateMigration,
     IronwoodMigrationPrivateDraftCreator? createPrivateMigrationDraft,
+    IronwoodMigrationCustomDraftCreator? createCustomMigrationDraft,
     IronwoodMigrationKeystoneDenominationCompleter?
     completeKeystoneDenominationMigration,
     IronwoodMigrationKeystoneSingleQrCompleter?
@@ -688,6 +754,7 @@ class IronwoodMigrationService {
        getMnemonicBytesForAccount =
            getMnemonicBytesForAccount ?? _missingMnemonicBytesForAccount,
        getStatuses = getStatuses ?? rust_sync.getOrchardMigrationStatuses,
+       getCustomPlan = getCustomPlan ?? _defaultGetCustomMigrationPlan,
        isMacOS = isMacOS ?? _defaultIsMacOS,
        isMobile = isMobile ?? _defaultIsMobile,
        isIOS = isIOS ?? _defaultIsIOS,
@@ -797,6 +864,8 @@ class IronwoodMigrationService {
            rust_sync.completeOrchardMigrationImmediatePczt,
        createPrivateMigrationDraft =
            createPrivateMigrationDraft ?? _defaultCreatePrivateMigrationDraft,
+       createCustomMigrationDraft =
+           createCustomMigrationDraft ?? _defaultCreateCustomMigrationDraft,
        completeKeystoneDenominationMigration =
            completeKeystoneDenominationMigration ??
            _defaultCompleteKeystoneDenominationMigration,
@@ -821,6 +890,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationStatusGetter getStatus;
   final IronwoodMigrationStatusesGetter getStatuses;
   final IronwoodMigrationPrivatePlanGetter getPrivatePlan;
+  final IronwoodMigrationCustomPlanGetter getCustomPlan;
   final IronwoodMigrationImmediatePlanGetter getImmediatePlan;
   final AppSecureStore secureStore;
   final IronwoodMigrationBackgroundCredentialStore backgroundCredentialStore;
@@ -884,6 +954,7 @@ class IronwoodMigrationService {
   final IronwoodMigrationKeystoneImmediateCompleter
   completeKeystoneImmediateMigration;
   final IronwoodMigrationPrivateDraftCreator createPrivateMigrationDraft;
+  final IronwoodMigrationCustomDraftCreator createCustomMigrationDraft;
   final IronwoodMigrationKeystoneDenominationCompleter
   completeKeystoneDenominationMigration;
   final IronwoodMigrationKeystoneSingleQrCompleter
@@ -1450,6 +1521,32 @@ class IronwoodMigrationService {
           dbPath: dbPath,
           network: network,
           accountUuid: accountUuid,
+        );
+      },
+    );
+  }
+
+  Future<rust_sync.OrchardMigrationPrivatePlan?> customPlan({
+    required String network,
+    required String accountUuid,
+    required int profileCount,
+    required int concurrentProfiles,
+    required BigInt planSeed,
+    BigInt? simulatedTotalZatoshi,
+  }) async {
+    return operationRegistry.run(
+      network: network,
+      accountUuid: accountUuid,
+      operation: () async {
+        final dbPath = await getWalletDbPath();
+        return getCustomPlan(
+          dbPath: dbPath,
+          network: network,
+          accountUuid: accountUuid,
+          profileCount: profileCount,
+          concurrentProfiles: concurrentProfiles,
+          planSeed: planSeed,
+          simulatedTotalZatoshi: simulatedTotalZatoshi,
         );
       },
     );
@@ -2072,6 +2169,62 @@ class IronwoodMigrationService {
         accountUuid: accountUuid,
         approvedSchedule: approvedSchedule,
       ),
+    );
+  }
+
+  Future<String> saveCustomMigrationDraft({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationPrivatePlan approvedPlan,
+  }) async {
+    if (approvedPlan.isSimulated) {
+      throw StateError('A simulated migration plan cannot be signed.');
+    }
+    final profileCount = approvedPlan.customProfileCount;
+    final concurrentProfiles = approvedPlan.customConcurrentProfiles;
+    final planSeed = approvedPlan.customPlanSeed;
+    if (profileCount == null ||
+        concurrentProfiles == null ||
+        planSeed == null) {
+      throw StateError('Custom migration plan metadata is missing.');
+    }
+
+    final dbPath = await getWalletDbPath();
+    final endpoint = getEndpoint();
+    final context = _MigrationCredentialContext(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+    );
+    return _runCredentialOperation(
+      context: context,
+      mayCreateRun: true,
+      prepareOutboxAfterOperation: false,
+      operation: (_) => createCustomMigrationDraft(
+        dbPath: dbPath,
+        network: endpoint.networkName,
+        accountUuid: accountUuid,
+        targetValuesZatoshi: approvedPlan.targetValuesZatoshi,
+        approvedSchedule: approvedPlan.scheduledTransfers,
+        profileCount: profileCount,
+        concurrentProfiles: concurrentProfiles,
+        planSeed: planSeed,
+      ),
+    );
+  }
+
+  Future<rust_sync.IronwoodMigrationResult> startSoftwareCustomMigration({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationPrivatePlan approvedPlan,
+  }) async {
+    await saveCustomMigrationDraft(
+      accountUuid: accountUuid,
+      approvedPlan: approvedPlan,
+    );
+    return startSoftwarePrivateMigration(
+      accountUuid: accountUuid,
+      // The durable custom draft is authoritative from this point onward.
+      approvedSchedule: const [],
     );
   }
 

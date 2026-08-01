@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
@@ -378,9 +379,7 @@ void main() {
     },
   );
 
-  testWidgets('migration options use the exact Figma shield and fast icons', (
-    tester,
-  ) async {
+  testWidgets('migration options use the expected mode icons', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1080, 720);
     addTearDown(tester.view.resetPhysicalSize);
@@ -401,11 +400,31 @@ void main() {
         (widget) => widget is AppIcon && widget.name == AppIcons.migrationFast,
       ),
     );
+    final customIcon = find.descendant(
+      of: find.byKey(const ValueKey('ironwood_migration_custom_option')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.users,
+      ),
+    );
 
     expect(privateIcon, findsOneWidget);
+    expect(customIcon, findsOneWidget);
     expect(immediateIcon, findsOneWidget);
     expect(tester.getSize(privateIcon), const Size.square(20));
+    expect(tester.getSize(customIcon), const Size.square(20));
     expect(tester.getSize(immediateIcon), const Size.square(20));
+
+    final privateRect = tester.getRect(
+      find.byKey(const ValueKey('ironwood_migration_private_option')),
+    );
+    final immediateRect = tester.getRect(
+      find.byKey(const ValueKey('ironwood_migration_fast_option')),
+    );
+    final customRect = tester.getRect(
+      find.byKey(const ValueKey('ironwood_migration_custom_option')),
+    );
+    expect(privateRect.top, lessThan(immediateRect.top));
+    expect(immediateRect.top, lessThan(customRect.top));
   });
 
   testWidgets('option selection does not move card content', (tester) async {
@@ -475,6 +494,267 @@ void main() {
     expect(find.text('Review Migration Plan'), findsOneWidget);
     expect(find.text('Privacy trade-off'), findsOneWidget);
     expect(find.widgetWithText(AppButton, 'Authorise anyway'), findsOneWidget);
+  });
+
+  testWidgets('custom selection opens the exact distribution and timeline', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1000);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        previewCustomPlan: _customPlan(isSimulated: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Custom'));
+    await tester.tap(find.text('Select & review'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Custom migration'), findsOneWidget);
+    expect(find.text('Smaller wallet profiles'), findsOneWidget);
+    expect(find.text('Parallel migration schedules'), findsOneWidget);
+    expect(find.text('Balance profiles (X)'), findsNothing);
+    expect(find.text('Concurrent schedules (Y)'), findsNothing);
+    expect(find.text('12 profiles'), findsOneWidget);
+    expect(find.text('2 at once'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('custom_migration_profile_64')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_profile_128')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_profile_256')),
+      findsNothing,
+    );
+    expect(find.text('Exact plan'), findsOneWidget);
+    expect(find.text('Expected note distribution'), findsOneWidget);
+    expect(find.text('Expected migration timeline'), findsOneWidget);
+    expect(find.text('First message'), findsOneWidget);
+    expect(find.text('Last message'), findsOneWidget);
+    expect(find.text('~4 hrs'), findsOneWidget);
+    expect(find.text('~11 hrs'), findsNWidgets(2));
+    expect(
+      find.byKey(const ValueKey('custom_migration_simulation_banner')),
+      findsNothing,
+    );
+    final button = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, 'Continue to signing'),
+    );
+    expect(button.onPressed, isNull);
+    expect(
+      find.textContaining('10,000 ZEC notes remain possible'),
+      findsNothing,
+    );
+    expect(
+      find.textContaining('This increases grouping ambiguity'),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_resample')),
+      findsOneWidget,
+    );
+    final resampleTooltip = tester.widget<Tooltip>(
+      find.descendant(
+        of: find.byKey(const ValueKey('custom_migration_resample')),
+        matching: find.byType(Tooltip),
+      ),
+    );
+    expect(
+      resampleTooltip.message,
+      'Generate a new balance distribution with the same settings.',
+    );
+    expect(find.textContaining('maximum transfer'), findsNothing);
+
+    final profileRect = tester.getRect(
+      find.byKey(const ValueKey('custom_migration_profile_control')),
+    );
+    final histogramRect = tester.getRect(
+      find.byKey(const ValueKey('custom_migration_histogram')),
+    );
+    final timelineRect = tester.getRect(
+      find.byKey(const ValueKey('custom_migration_timeline')),
+    );
+    final summaryRect = tester.getRect(
+      find.byKey(const ValueKey('custom_migration_plan_summary')),
+    );
+    expect(profileRect.right, lessThan(histogramRect.left));
+    expect(timelineRect.bottom, lessThanOrEqualTo(1000));
+    expect(summaryRect.top, moreOrLessEquals(timelineRect.top, epsilon: 1));
+    final screenRect = tester.getRect(
+      find.byKey(const ValueKey('ironwood_migration_custom_screen')),
+    );
+    final continueRect = tester.getRect(
+      find.byKey(const ValueKey('custom_migration_continue_button')),
+    );
+    expect(
+      continueRect.center.dx,
+      moreOrLessEquals(screenRect.center.dx, epsilon: 0.5),
+    );
+  });
+
+  testWidgets('custom controls update the visible distribution and timeline', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1080, 720);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final requests = <IronwoodMigrationCustomPlanRequest>[];
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/custom',
+        useCustomPreview: false,
+        statusGetter:
+            ({required dbPath, required network, required accountUuid}) async =>
+                _status(),
+        extraOverrides: [
+          ironwoodMigrationCustomPlanProvider.overrideWith((
+            ref,
+            request,
+          ) async {
+            requests.add(request);
+            return _customPlan(
+              isSimulated: true,
+              profileCount: request.profileCount,
+              concurrentProfiles: request.concurrentProfiles,
+              expandedDistribution: request.profileCount >= 32,
+            );
+          }),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final profileControl = find.byKey(
+      const ValueKey('custom_migration_profile_control'),
+    );
+    final histogram = find.byKey(const ValueKey('custom_migration_histogram'));
+    final timeline = find.byKey(const ValueKey('custom_migration_timeline'));
+    expect(
+      tester.getRect(profileControl).right,
+      lessThan(tester.getRect(histogram).left),
+    );
+    expect(tester.getRect(timeline).bottom, lessThanOrEqualTo(720));
+
+    List<String> timelineText() => tester
+        .widgetList<Text>(
+          find.descendant(of: timeline, matching: find.byType(Text)),
+        )
+        .map((widget) => widget.data ?? widget.textSpan?.toPlainText() ?? '')
+        .toList();
+    final initialTimeline = timelineText();
+
+    final initialPlanSeed = requests.last.planSeed;
+    await tester.tap(find.byKey(const ValueKey('custom_migration_resample')));
+    await tester.pumpAndSettle();
+
+    expect(requests.last.planSeed, isNot(initialPlanSeed));
+    expect(requests.last.profileCount, 12);
+    expect(requests.last.concurrentProfiles, 2);
+
+    await tester.tap(find.byKey(const ValueKey('custom_migration_profile_32')));
+    await tester.pumpAndSettle();
+
+    expect(requests.last.profileCount, 32);
+    expect(find.text('32 profiles'), findsOneWidget);
+    expect(
+      find.descendant(of: histogram, matching: find.text('×2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_concurrency_16')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_concurrency_32')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('custom_migration_concurrency_16')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(requests.last.concurrentProfiles, 16);
+    expect(find.text('16 at once'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('custom_migration_concurrency_32')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(requests.last.concurrentProfiles, 32);
+    expect(find.text('32 at once'), findsOneWidget);
+    expect(timelineText(), isNot(initialTimeline));
+  });
+
+  testWidgets('custom Keystone review saves approved targets before signing', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 1000);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final plan = _customPlan();
+    var draftSaved = false;
+    final service = _keystonePrivateReviewService(
+      plan: plan,
+      onSoftwareStart: () =>
+          fail('Custom Keystone migration started in software.'),
+      createCustomMigrationDraft:
+          ({
+            required dbPath,
+            required network,
+            required accountUuid,
+            required targetValuesZatoshi,
+            required approvedSchedule,
+            required profileCount,
+            required concurrentProfiles,
+            required planSeed,
+          }) async {
+            expect(accountUuid, 'account-1');
+            expect(
+              targetValuesZatoshi.toList(),
+              plan.targetValuesZatoshi.toList(),
+            );
+            expect(approvedSchedule, plan.scheduledTransfers);
+            expect(profileCount, plan.customProfileCount);
+            expect(concurrentProfiles, plan.customConcurrentProfiles);
+            expect(planSeed, plan.customPlanSeed);
+            draftSaved = true;
+            return 'custom-keystone-draft';
+          },
+    );
+
+    await tester.pumpWidget(
+      _migrationOptionsHarness(
+        initialLocation: '/migration/custom',
+        migrationService: service,
+        activeAccountIsHardware: true,
+        previewCustomPlan: plan,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final continueButton = find.byKey(
+      const ValueKey('custom_migration_continue_button'),
+    );
+    await tester.ensureVisible(continueButton);
+    await tester.tap(continueButton);
+    await tester.pumpAndSettle();
+
+    expect(draftSaved, isTrue);
+    expect(find.text('keystone-denomination-sign-route:5:5'), findsOneWidget);
   });
 
   testWidgets('offers Immediate migration to Keystone accounts', (
@@ -5282,10 +5562,13 @@ Widget _migrationOptionsHarness({
   bool disableAnimations = true,
   bool useImmediatePreview = true,
   bool usePrivatePreview = true,
+  bool useCustomPreview = true,
   TextScaler textScaler = TextScaler.noScaling,
   rust_sync.KeystoneMigrationSigningRequest? previewCombinedSigningRequest,
   List<String> previewCombinedSigningUrParts = const [],
   rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan,
+  rust_sync.OrchardMigrationPrivatePlan? previewCustomPlan,
+  List<Override> extraOverrides = const [],
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -5327,6 +5610,23 @@ Widget _migrationOptionsHarness({
           ),
           previewPrivatePlan: usePrivatePreview
               ? previewPrivatePlan ?? _privatePlan()
+              : null,
+        ),
+      ),
+      GoRoute(
+        path: '/migration/custom',
+        builder: (_, state) => IronwoodMigrationFlowScreen(
+          step: IronwoodMigrationFlowStep.custom,
+          previewData: IronwoodMigrationFlowData(
+            amountZatoshi: BigInt.from(10_000_000),
+            accountName: 'Account 1',
+            profilePictureId: kDefaultProfilePictureId,
+          ),
+          previewCustomPlan: useCustomPreview
+              ? switch (state.extra) {
+                  rust_sync.OrchardMigrationPrivatePlan plan => plan,
+                  _ => previewCustomPlan ?? _customPlan(),
+                }
               : null,
         ),
       ),
@@ -5457,6 +5757,7 @@ Widget _migrationOptionsHarness({
       ],
       if (migrationService != null)
         ironwoodMigrationServiceProvider.overrideWithValue(migrationService),
+      ...extraOverrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -6156,6 +6457,7 @@ class _FakeSyncNotifier extends SyncNotifier {
 IronwoodMigrationService _keystonePrivateReviewService({
   required rust_sync.OrchardMigrationPrivatePlan plan,
   required void Function() onSoftwareStart,
+  IronwoodMigrationCustomDraftCreator? createCustomMigrationDraft,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -6171,6 +6473,7 @@ IronwoodMigrationService _keystonePrivateReviewService({
     getSessionPassword: () => 'test-password',
     getMnemonicBytesForAccount: (_) async => [1, 2, 3, 4],
     isMacOS: () => false,
+    createCustomMigrationDraft: createCustomMigrationDraft,
     startSoftwareMigration:
         ({
           required dbPath,
@@ -6212,6 +6515,68 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan({
         blockOffset: 144,
       ),
     ],
+    isSimulated: false,
+  );
+}
+
+rust_sync.OrchardMigrationPrivatePlan _customPlan({
+  bool isSimulated = false,
+  int profileCount = 12,
+  int concurrentProfiles = 2,
+  bool expandedDistribution = false,
+}) {
+  final targetValues = expandedDistribution
+      ? const [
+          1_000_000_000_000,
+          50_000_000_000,
+          20_000_000_000,
+          10_000_000_000,
+          5_000_000_000,
+          5_000_000_000,
+        ]
+      : const [
+          1_000_000_000_000,
+          50_000_000_000,
+          20_000_000_000,
+          10_000_000_000,
+          5_000_000_000,
+        ];
+  final offsets = concurrentProfiles >= 8
+      ? [for (var index = 0; index < targetValues.length; index++) index + 1]
+      : expandedDistribution
+      ? const [5, 30, 90, 180, 360, 720]
+      : const [5, 30, 90, 180, 360];
+  final targetTotal = targetValues.fold<int>(
+    0,
+    (total, value) => total + value,
+  );
+  return rust_sync.OrchardMigrationPrivatePlan(
+    targetValuesZatoshi: frb.Uint64List.fromList(targetValues),
+    totalInputZatoshi: BigInt.from(targetTotal + 300_000),
+    totalMigratableZatoshi: BigInt.from(targetTotal),
+    orchardChangeZatoshi: BigInt.from(65_000),
+    denominationSplitFeeZatoshi: BigInt.from(160_000),
+    migrationFeeZatoshi: BigInt.from(75_000),
+    estimatedTotalFeeZatoshi: BigInt.from(235_000),
+    plannedBatchCount: targetValues.length,
+    denominationSplitStageCount: 2,
+    denominationSplitLayerCount: 1,
+    signingBatchLimit: 35,
+    scheduleMeanDelayBlocks: 33,
+    scheduleMaxDelayBlocks: 576,
+    proofReadinessDelayBlocks: 146,
+    scheduledTransfers: [
+      for (var index = 0; index < targetValues.length; index++)
+        rust_sync.MigrationScheduledTransfer(
+          partIndex: index,
+          valueZatoshi: BigInt.from(targetValues[index]),
+          blockOffset: offsets[index],
+        ),
+    ],
+    customProfileCount: profileCount,
+    customConcurrentProfiles: concurrentProfiles,
+    customPlanSeed: BigInt.from(42),
+    isSimulated: isSimulated,
   );
 }
 

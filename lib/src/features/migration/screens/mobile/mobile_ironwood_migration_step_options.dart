@@ -1,6 +1,6 @@
 part of 'mobile_ironwood_migration_flow_screen.dart';
 
-enum _MigrationChoiceIcon { private, immediate }
+enum _MigrationChoiceIcon { private, custom, immediate }
 
 class _MobileMigrationOptionCard extends StatelessWidget {
   const _MobileMigrationOptionCard({
@@ -57,6 +57,7 @@ class _MobileMigrationOptionCard extends StatelessWidget {
                           switch (icon) {
                             _MigrationChoiceIcon.private =>
                               AppIcons.shieldKeyhole,
+                            _MigrationChoiceIcon.custom => AppIcons.users,
                             _MigrationChoiceIcon.immediate =>
                               AppIcons.migrationFast,
                           },

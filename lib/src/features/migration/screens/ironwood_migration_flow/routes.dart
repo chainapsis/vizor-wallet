@@ -6,6 +6,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
     this.previewData,
     this.previewPrivatePlan,
     this.previewImmediatePlan,
+    this.previewCustomPlan,
     this.previewReviewStage = IronwoodMigrationReviewPreviewStage.review,
     this.onOpenReleaseNotesOverride,
     super.key,
@@ -15,6 +16,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
+  final rust_sync.OrchardMigrationPrivatePlan? previewCustomPlan;
   final IronwoodMigrationReviewPreviewStage previewReviewStage;
   final VoidCallback? onOpenReleaseNotesOverride;
 
@@ -29,6 +31,7 @@ class IronwoodMigrationFlowScreen extends ConsumerWidget {
       data: data,
       previewPrivatePlan: previewPrivatePlan,
       previewImmediatePlan: previewImmediatePlan,
+      previewCustomPlan: previewCustomPlan,
       previewReviewStage: previewReviewStage,
       onOpenReleaseNotesOverride: onOpenReleaseNotesOverride,
     );

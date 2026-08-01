@@ -23,6 +23,53 @@ pub(crate) fn create_or_resume_private_migration_draft(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_or_resume_custom_migration_draft(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    target_values_zatoshi: Vec<u64>,
+    approved_schedule: Vec<super::migration::MigrationScheduleEntry>,
+    profile_count: u32,
+    concurrent_profiles: u32,
+    plan_seed: u64,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+) -> Result<String, String> {
+    let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
+    let custom_config = super::migration::CustomMigrationRunConfig {
+        profile_count,
+        concurrent_profiles,
+        plan_seed,
+    };
+    let plan = get_orchard_migration_custom_plan(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        CustomMigrationPlanRequest {
+            profile_count,
+            concurrent_profiles,
+            plan_seed,
+            simulated_total_zatoshi: None,
+        },
+    )?
+    .ok_or("Migration plan is unavailable")?;
+    if plan.target_values_zatoshi != target_values_zatoshi
+        || plan.scheduled_transfers != approved_schedule
+    {
+        return Err("Custom migration plan no longer matches this balance".to_string());
+    }
+    super::migration::create_or_resume_custom_migration_draft(
+        db_path,
+        account_uuid,
+        network,
+        &target_values_zatoshi,
+        &approved_schedule,
+        preparation_timing_policy,
+        custom_config,
+    )
+}
+
 pub(crate) fn prepare_orchard_migration_denominations_pczt(
     db_path: &str,
     network: WalletNetwork,
@@ -32,11 +79,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let draft_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
     if draft_run.is_none()
-        && super::migration::migration_reserves_orchard_inputs(
-            db_path,
-            account_uuid,
-            network,
-        )?
+        && super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?
     {
         return Err("Migration recovery must complete before preparing a new run".to_string());
     }
@@ -76,6 +119,9 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
             account_uuid,
             preparation_policy_for_build,
             migration_policy_for_build,
+            draft_run
+                .as_ref()
+                .map(|run| run.target_values_zatoshi.as_slice()),
         )
     })?;
     let Some(split) = split else {
@@ -222,10 +268,8 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             return Err(format!("Keystone result missing {}", stage.id));
         }
     }
-    let prepared_refs = prepared_refs_from_denomination_split(
-        &stored.direct_prepared_refs,
-        &stored.split_stages,
-    );
+    let prepared_refs =
+        prepared_refs_from_denomination_split(&stored.direct_prepared_refs, &stored.split_stages);
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
             signed_denomination_stage_inserts(&stored.split_stages, &signed_by_id)?;
@@ -343,6 +387,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
             account_uuid,
             preparation_timing_policy,
             super::migration::configured_timing_policy(network),
+            None,
         )
     })?;
     let Some(split) = split else {
@@ -533,10 +578,8 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         }
     }
 
-    let prepared_refs = prepared_refs_from_denomination_split(
-        &stored.direct_prepared_refs,
-        &stored.split_stages,
-    );
+    let prepared_refs =
+        prepared_refs_from_denomination_split(&stored.direct_prepared_refs, &stored.split_stages);
 
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
@@ -754,7 +797,7 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
             }
             KeystoneMigrationRequestState::Completing => {
                 return Err(
-                    "Keystone Immediate migration request is already completing".to_string(),
+                    "Keystone Immediate migration request is already completing".to_string()
                 );
             }
             KeystoneMigrationRequestState::ProofReady => {}
@@ -770,12 +813,9 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
         .remove(&stored.message_id)
         .ok_or("Keystone Immediate migration signature is missing")?;
     let extraction_result = (|| {
-        super::pczt::preflight_orchard_spend_auth_signatures(
-            &stored.base_pczt,
-            &signatures,
-        )?;
+        super::pczt::preflight_orchard_spend_auth_signatures(&stored.base_pczt, &signatures)?;
         let proofed = stored
-        .pczt_with_proofs
+            .pczt_with_proofs
             .as_ref()
             .ok_or("Keystone Immediate migration proofs are not ready")?;
         super::pczt::apply_sigs_and_extract(proofed, &signatures, None, None)
@@ -817,22 +857,25 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
     {
         Ok(response) => response,
         Err(status) => {
-            let storage_message =
-                match decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx) {
-                    Ok(()) => {
-                        if let Err(error) = input_lock.release() {
-                            log::warn!(
+            let storage_message = match decrypt_and_store_migration_tx(
+                db_path,
+                network,
+                &extracted.raw_tx,
+            ) {
+                Ok(()) => {
+                    if let Err(error) = input_lock.release() {
+                        log::warn!(
                                 "Keystone Immediate migration stored after ambiguous broadcast but input unlock failed: {error}"
                             );
-                        }
-                        "The transaction was stored locally and will retry automatically during sync."
-                            .to_string()
                     }
-                    Err(error) => {
-                        input_lock.retain_until_expiry();
-                        format!("Local tracking also failed: {error}")
-                    }
-                };
+                    "The transaction was stored locally and will retry automatically during sync."
+                        .to_string()
+                }
+                Err(error) => {
+                    input_lock.retain_until_expiry();
+                    format!("Local tracking also failed: {error}")
+                }
+            };
             return Ok(IronwoodMigrationResult {
                 txids: extracted.txid.to_string(),
                 status: CreatedBroadcastResult::PENDING_BROADCAST.to_string(),
@@ -903,8 +946,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let initial_signing = recoveries.is_empty();
     let all_prepared_notes = super::migration::prepared_notes_for_run(db_path, &run.run_id)?;
     let pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-    let signed_child_pczt_count =
-        super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
+    let signed_child_pczt_count = super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
     let recovery_part_indices = recoveries
         .iter()
         .map(|recovery| recovery.part_index)
@@ -947,8 +989,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
 
     let mut created = Vec::with_capacity(prepared_notes.len());
     let timing_policy = super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
-    let approved_schedule =
-        super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
+    let approved_schedule = super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
     let signed_schedule_origin =
         super::migration::signed_schedule_origin_for_run(db_path, &run.run_id)?;
     // Recovery batches consume the run's persisted recovery-schedule

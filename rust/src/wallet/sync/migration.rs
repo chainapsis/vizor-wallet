@@ -25,7 +25,9 @@ mod preparation_plan;
 mod split_plan;
 mod stages;
 pub(crate) use split_plan::{
-    plan_padded_denominations, SplitStageInput, SplitTerminalKind, DENOMINATION_SPLIT_ACTIONS,
+    plan_custom_padded_denominations, plan_padded_denominations,
+    plan_padded_denominations_for_targets, SplitStageInput, SplitTerminalKind,
+    DENOMINATION_SPLIT_ACTIONS,
 };
 #[allow(unused_imports)]
 pub(crate) use stages::{
@@ -148,6 +150,28 @@ pub(crate) struct MigrationScheduleEntry {
     pub part_index: Option<u32>,
     pub value_zatoshi: u64,
     pub block_offset: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CustomMigrationRunConfig {
+    pub profile_count: u32,
+    pub concurrent_profiles: u32,
+    pub plan_seed: u64,
+}
+
+impl CustomMigrationRunConfig {
+    fn schedule_parameters(self) -> Result<(u32, u32), String> {
+        if !(1..=256).contains(&self.profile_count) {
+            return Err("Custom migration profile count must be between 1 and 256".to_string());
+        }
+        if self.concurrent_profiles > self.profile_count {
+            return Err(
+                "Custom migration parallel schedule count cannot exceed the profile count"
+                    .to_string(),
+            );
+        }
+        custom_schedule_parameters(self.concurrent_profiles)
+    }
 }
 
 pub(crate) struct PendingMigrationTxInsert {
@@ -671,6 +695,75 @@ fn timing_policy_for_run_with_conn(
         )
         .map_err(|e| format!("Read migration timing policy: {e}"))?;
     MigrationTimingPolicy::from_str(&value)
+}
+
+fn custom_migration_config_for_run_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<Option<CustomMigrationRunConfig>, String> {
+    let (amount_policy, profile_count, concurrent_profiles, plan_seed) = conn
+        .query_row(
+            &format!(
+                "SELECT amount_policy, custom_profile_count,
+                        custom_concurrent_profiles, custom_plan_seed
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<u32>>(1)?,
+                    row.get::<_, Option<u32>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .map_err(|e| format!("Read custom migration configuration: {e}"))?;
+    match amount_policy.as_str() {
+        "standard" => Ok(None),
+        "custom" => {
+            let config = CustomMigrationRunConfig {
+                profile_count: profile_count.ok_or("Custom migration profile count is missing")?,
+                concurrent_profiles: concurrent_profiles
+                    .ok_or("Custom migration concurrency is missing")?,
+                plan_seed: plan_seed
+                    .ok_or("Custom migration seed is missing")?
+                    .parse()
+                    .map_err(|_| "Custom migration seed is invalid".to_string())?,
+            };
+            config.schedule_parameters()?;
+            Ok(Some(config))
+        }
+        value => Err(format!("Unsupported migration amount policy: {value}")),
+    }
+}
+
+fn schedule_parameters_for_run_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    network: WalletNetwork,
+    timing_policy: MigrationTimingPolicy,
+    part_count: usize,
+) -> Result<(u32, u32), String> {
+    let (mean, max) = conn
+        .query_row(
+            &format!(
+                "SELECT schedule_mean_delay_blocks, schedule_max_delay_blocks
+                 FROM {RUNS_TABLE} WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get::<_, Option<u32>>(0)?, row.get::<_, Option<u32>>(1)?)),
+        )
+        .map_err(|e| format!("Read migration schedule parameters: {e}"))?;
+    match (mean, max) {
+        (Some(mean), Some(max)) if mean > 0 && max > 0 => Ok((mean, max)),
+        (None, None) => Ok(schedule_parameters_with_policy_for_part_count(
+            network,
+            timing_policy,
+            part_count,
+        )),
+        _ => Err("Migration schedule parameters are incomplete".to_string()),
+    }
 }
 
 fn adopt_configured_timing_policy_for_active_run(
@@ -1347,6 +1440,47 @@ pub(crate) fn create_or_resume_private_migration_draft(
     approved_schedule: &[MigrationScheduleEntry],
     preparation_timing_policy: PreparationTimingPolicy,
 ) -> Result<String, String> {
+    create_or_resume_migration_draft(
+        db_path,
+        account_uuid,
+        network,
+        target_values_zatoshi,
+        approved_schedule,
+        preparation_timing_policy,
+        None,
+    )
+}
+
+pub(crate) fn create_or_resume_custom_migration_draft(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    target_values_zatoshi: &[u64],
+    approved_schedule: &[MigrationScheduleEntry],
+    preparation_timing_policy: PreparationTimingPolicy,
+    custom_config: CustomMigrationRunConfig,
+) -> Result<String, String> {
+    create_or_resume_migration_draft(
+        db_path,
+        account_uuid,
+        network,
+        target_values_zatoshi,
+        approved_schedule,
+        preparation_timing_policy,
+        Some(custom_config),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_or_resume_migration_draft(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    target_values_zatoshi: &[u64],
+    approved_schedule: &[MigrationScheduleEntry],
+    preparation_timing_policy: PreparationTimingPolicy,
+    custom_config: Option<CustomMigrationRunConfig>,
+) -> Result<String, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let tx = conn
@@ -1359,6 +1493,21 @@ pub(crate) fn create_or_resume_private_migration_draft(
                     "Saved private migration plan no longer matches this balance".to_string(),
                 );
             }
+            let persisted_custom = custom_migration_config_for_run_with_conn(&tx, &run.run_id)?;
+            match (persisted_custom, custom_config) {
+                (Some(persisted), Some(expected)) if persisted != expected => {
+                    return Err("Saved custom migration draft differs from this plan".to_string());
+                }
+                (Some(_), None) | (None, Some(_)) => {
+                    return Err("Saved migration draft uses a different amount policy".to_string());
+                }
+                _ => {}
+            }
+            if custom_config.is_some()
+                && approved_schedule_for_run_with_conn(&tx, &run.run_id)? != approved_schedule
+            {
+                return Err("Saved custom migration draft differs from this plan".to_string());
+            }
             return Ok(run.run_id);
         }
         return Err(format!("Migration already active: {}", run.run_id));
@@ -1368,12 +1517,22 @@ pub(crate) fn create_or_resume_private_migration_draft(
     }
 
     let timing_policy = configured_timing_policy(network);
-    validate_schedule_with_policy(
-        approved_schedule,
-        target_values_zatoshi,
-        network,
-        timing_policy,
-    )?;
+    let custom_schedule_parameters = if let Some(config) = custom_config {
+        validate_custom_schedule(
+            approved_schedule,
+            target_values_zatoshi,
+            config.concurrent_profiles,
+        )?;
+        Some(config.schedule_parameters()?)
+    } else {
+        validate_schedule_with_policy(
+            approved_schedule,
+            target_values_zatoshi,
+            network,
+            timing_policy,
+        )?;
+        None
+    };
     let run_id = new_run_id(account_uuid);
     let now = now_ms()?;
     let target_values_json = serde_json::to_string(target_values_zatoshi)
@@ -1385,8 +1544,11 @@ pub(crate) fn create_or_resume_private_migration_draft(
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
               updated_at_ms, target_values_json, timing_policy, schedule_json,
-              preparation_timing_policy)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10)"
+              preparation_timing_policy, amount_policy, custom_profile_count,
+              custom_concurrent_profiles, custom_plan_seed,
+              schedule_mean_delay_blocks, schedule_max_delay_blocks)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10,
+                     ?11, ?12, ?13, ?14, ?15, ?16)"
         ),
         params![
             run_id,
@@ -1399,6 +1561,16 @@ pub(crate) fn create_or_resume_private_migration_draft(
             timing_policy.as_str(),
             schedule_json,
             preparation_timing_policy.as_str(),
+            if custom_config.is_some() {
+                "custom"
+            } else {
+                "standard"
+            },
+            custom_config.map(|config| config.profile_count),
+            custom_config.map(|config| config.concurrent_profiles),
+            custom_config.map(|config| config.plan_seed.to_string()),
+            custom_schedule_parameters.map(|parameters| parameters.0),
+            custom_schedule_parameters.map(|parameters| parameters.1),
         ],
     )
     .map_err(|e| format!("Create private migration draft: {e}"))?;
@@ -1964,7 +2136,11 @@ pub(crate) fn set_run_approved_schedule(
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
-    validate_schedule_with_policy(schedule, target_values, network, timing_policy)?;
+    if let Some(custom) = custom_migration_config_for_run_with_conn(&conn, run_id)? {
+        validate_custom_schedule(schedule, target_values, custom.concurrent_profiles)?;
+    } else {
+        validate_schedule_with_policy(schedule, target_values, network, timing_policy)?;
+    }
     let schedule_json = serde_json::to_string(schedule)
         .map_err(|e| format!("Encode approved migration schedule: {e}"))?;
     let updated = conn
@@ -1988,6 +2164,13 @@ pub(crate) fn approved_schedule_for_run(
 ) -> Result<Vec<MigrationScheduleEntry>, String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
+    approved_schedule_for_run_with_conn(&conn, run_id)
+}
+
+fn approved_schedule_for_run_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<Vec<MigrationScheduleEntry>, String> {
     let schedule_json = conn
         .query_row(
             &format!("SELECT schedule_json FROM {RUNS_TABLE} WHERE run_id = ?1"),
@@ -2099,13 +2282,21 @@ fn insert_pending_txs_with_tx(
         .map_err(|e| format!("Read approved migration schedule: {e}"))?;
     let mut schedule: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
         .map_err(|e| format!("Decode approved migration schedule: {e}"))?;
+    let custom_config = custom_migration_config_for_run_with_conn(tx, run_id)?;
     if schedule.is_empty() {
-        schedule = planned_transfer_schedule_with_policy(
-            target_values.iter().copied(),
-            network,
-            timing_policy,
-            &mut OsRng,
-        );
+        schedule = match custom_config {
+            Some(config) => planned_custom_transfer_schedule(
+                target_values.iter().copied(),
+                config.concurrent_profiles,
+                &mut OsRng,
+            )?,
+            None => planned_transfer_schedule_with_policy(
+                target_values.iter().copied(),
+                network,
+                timing_policy,
+                &mut OsRng,
+            ),
+        };
         let schedule_json = serde_json::to_string(&schedule)
             .map_err(|e| format!("Encode generated migration schedule: {e}"))?;
         tx.execute(
@@ -2114,7 +2305,11 @@ fn insert_pending_txs_with_tx(
         )
         .map_err(|e| format!("Save generated migration schedule: {e}"))?;
     }
-    validate_schedule_with_policy(&schedule, &target_values, network, timing_policy)?;
+    if let Some(config) = custom_config {
+        validate_custom_schedule(&schedule, &target_values, config.concurrent_profiles)?;
+    } else {
+        validate_schedule_with_policy(&schedule, &target_values, network, timing_policy)?;
+    }
     let persisted_signed_schedule_origin = tx
         .query_row(
             &format!(
@@ -2395,8 +2590,8 @@ fn insert_signed_child_pczts_with_tx(
             }
         }
         if matches!(mode, SignedChildInsertMode::Replacement) {
-            let recovery_origin = recovery_origin
-                .ok_or("Migration recovery schedule origin is missing")?;
+            let recovery_origin =
+                recovery_origin.ok_or("Migration recovery schedule origin is missing")?;
             child
                 .scheduled_height
                 .checked_sub(recovery_origin)
@@ -3135,11 +3330,13 @@ pub(crate) fn export_scheduled_migration_outbox(
         return Ok(None);
     };
     let timing_policy = timing_policy_for_run_with_conn(&conn, &run.run_id, network)?;
-    let (timing_mean_blocks, timing_max_blocks) = schedule_parameters_with_policy_for_part_count(
+    let (timing_mean_blocks, timing_max_blocks) = schedule_parameters_for_run_with_conn(
+        &conn,
+        &run.run_id,
         network,
         timing_policy,
         run.target_values_zatoshi.len(),
-    );
+    )?;
     let unmaterialized_count = unpromoted_signed_child_pczt_count_with_conn(&conn, &run.run_id)?;
     let next_proof_height = if unmaterialized_count == 0 {
         None
@@ -4505,12 +4702,25 @@ pub(crate) fn ensure_rebuild_schedule_generation(
             .iter()
             .map(|(_, part_index, value_zatoshi, _)| (*part_index, *value_zatoshi))
             .collect::<Vec<_>>();
-        let fresh_offsets = rebuild_schedule_block_offsets(
+        let (mean_delay_blocks, max_delay_blocks) =
+            if custom_migration_config_for_run_with_conn(&tx, run_id)?.is_some() {
+                schedule_parameters_for_run_with_conn(
+                    &tx,
+                    run_id,
+                    network,
+                    timing_policy,
+                    target_values.len(),
+                )?
+            } else {
+                // Preserve the existing recovery cadence for standard migrations.
+                schedule_parameters_with_policy(network, timing_policy)
+            };
+        let fresh_offsets = rebuild_schedule_block_offsets_with_parameters(
             &schedule,
             &target_values,
             &recovery_parts,
-            network,
-            timing_policy,
+            mean_delay_blocks,
+            max_delay_blocks,
             &mut OsRng,
         )?;
 
@@ -4617,8 +4827,13 @@ fn reschedule_overdue_pending_txs_with_options(
     txids.shuffle(&mut OsRng);
     let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
     let planned_part_count = planned_part_count_with_conn(&conn, run_id)? as usize;
-    let (mean_delay_blocks, max_delay_blocks) =
-        schedule_parameters_with_policy_for_part_count(network, timing_policy, planned_part_count);
+    let (mean_delay_blocks, max_delay_blocks) = schedule_parameters_for_run_with_conn(
+        &conn,
+        run_id,
+        network,
+        timing_policy,
+        planned_part_count,
+    )?;
     let offsets = random_schedule_block_offsets_with_rng(
         txids.len(),
         mean_delay_blocks,
@@ -4910,7 +5125,14 @@ pub(crate) fn apply_accepted_migration_outbox_receipt(
     }
 
     let timing_policy = timing_policy_for_run_with_conn(&tx, run_id, network)?;
-    let (_, timing_max_blocks) = schedule_parameters_with_policy(network, timing_policy);
+    let planned_part_count = planned_part_count_with_conn(&tx, run_id)? as usize;
+    let (_, timing_max_blocks) = schedule_parameters_for_run_with_conn(
+        &tx,
+        run_id,
+        network,
+        timing_policy,
+        planned_part_count,
+    )?;
     let accepted_txid = txid_hex.to_ascii_lowercase();
     let mut supplied = BTreeMap::new();
     let mut previous_scheduled_height = remote_height;
@@ -5695,6 +5917,15 @@ fn status_for_run(
     )
     .unwrap_or_default();
 
+    let (schedule_mean_delay_blocks, schedule_max_delay_blocks) =
+        schedule_parameters_for_run_with_conn(
+            conn,
+            &run.run_id,
+            network,
+            timing_policy,
+            total_count as usize,
+        )?;
+
     Ok(MigrationStatus {
         phase,
         active_run_id: Some(run.run_id),
@@ -5713,13 +5944,8 @@ fn status_for_run(
         message: run.last_error,
         can_abandon,
         signing_batch_limit: MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
-        schedule_mean_delay_blocks: schedule_parameters_with_policy_for_part_count(
-            network,
-            timing_policy,
-            total_count as usize,
-        )
-        .0,
-        schedule_max_delay_blocks: schedule_parameters_with_policy(network, timing_policy).1,
+        schedule_mean_delay_blocks,
+        schedule_max_delay_blocks,
         preparation_mean_delay_blocks: if preparation_timing_policy
             == PreparationTimingPolicy::Immediate
         {

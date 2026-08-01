@@ -898,6 +898,15 @@ pub struct OrchardMigrationPrivatePlan {
     /// can first use a valid migration anchor.
     pub estimated_proof_ready_height: Option<u32>,
     pub scheduled_transfers: Vec<MigrationScheduledTransfer>,
+    /// Synthetic balance profiles used by Custom migration. `None` identifies
+    /// the ordinary ZIP 318 private plan.
+    pub custom_profile_count: Option<u32>,
+    /// Independent Poisson-like broadcast lanes used by Custom migration.
+    pub custom_concurrent_profiles: Option<u32>,
+    /// Deterministic seed that reproduces the approved custom plan.
+    pub custom_plan_seed: Option<u64>,
+    /// Regtest-only preview backed by a display balance, not spendable notes.
+    pub is_simulated: bool,
 }
 
 pub struct OrchardMigrationImmediatePlan {
@@ -1555,35 +1564,73 @@ pub fn get_orchard_migration_private_plan(
                 space_preparation_broadcasts,
             ),
         )
-        .map(|plan| {
-            plan.map(|plan| OrchardMigrationPrivatePlan {
-                target_values_zatoshi: plan.target_values_zatoshi,
-                total_input_zatoshi: plan.total_input_zatoshi,
-                total_migratable_zatoshi: plan.total_migratable_zatoshi,
-                orchard_change_zatoshi: plan.orchard_change_zatoshi,
-                denomination_split_fee_zatoshi: plan.denomination_split_fee_zatoshi,
-                migration_fee_zatoshi: plan.migration_fee_zatoshi,
-                estimated_total_fee_zatoshi: plan.estimated_total_fee_zatoshi,
-                planned_batch_count: plan.planned_batch_count,
-                denomination_split_stage_count: plan.denomination_split_stage_count,
-                denomination_split_layer_count: plan.denomination_split_layer_count,
-                signing_batch_limit: plan.signing_batch_limit,
-                schedule_mean_delay_blocks: plan.schedule_mean_delay_blocks,
-                schedule_max_delay_blocks: plan.schedule_max_delay_blocks,
-                proof_readiness_delay_blocks: plan.proof_readiness_delay_blocks,
-                estimated_proof_ready_height: plan.estimated_proof_ready_height,
-                scheduled_transfers: plan
-                    .scheduled_transfers
-                    .into_iter()
-                    .map(|entry| MigrationScheduledTransfer {
-                        part_index: entry.part_index.unwrap_or(0),
-                        value_zatoshi: entry.value_zatoshi,
-                        block_offset: entry.block_offset,
-                    })
-                    .collect(),
-            })
-        })
+        .map(|plan| plan.map(to_api_private_plan))
     })
+}
+
+pub fn get_orchard_migration_custom_plan(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    profile_count: u32,
+    concurrent_profiles: u32,
+    plan_seed: u64,
+    simulated_total_zatoshi: Option<u64>,
+    space_preparation_broadcasts: bool,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::get_orchard_migration_custom_plan(
+            &db_path,
+            network,
+            &account_uuid,
+            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
+                space_preparation_broadcasts,
+            ),
+            wallet_sync::CustomMigrationPlanRequest {
+                profile_count,
+                concurrent_profiles,
+                plan_seed,
+                simulated_total_zatoshi,
+            },
+        )
+        .map(|plan| plan.map(to_api_private_plan))
+    })
+}
+
+fn to_api_private_plan(
+    plan: wallet_sync::OrchardMigrationPrivatePlan,
+) -> OrchardMigrationPrivatePlan {
+    OrchardMigrationPrivatePlan {
+        target_values_zatoshi: plan.target_values_zatoshi,
+        total_input_zatoshi: plan.total_input_zatoshi,
+        total_migratable_zatoshi: plan.total_migratable_zatoshi,
+        orchard_change_zatoshi: plan.orchard_change_zatoshi,
+        denomination_split_fee_zatoshi: plan.denomination_split_fee_zatoshi,
+        migration_fee_zatoshi: plan.migration_fee_zatoshi,
+        estimated_total_fee_zatoshi: plan.estimated_total_fee_zatoshi,
+        planned_batch_count: plan.planned_batch_count,
+        denomination_split_stage_count: plan.denomination_split_stage_count,
+        denomination_split_layer_count: plan.denomination_split_layer_count,
+        signing_batch_limit: plan.signing_batch_limit,
+        schedule_mean_delay_blocks: plan.schedule_mean_delay_blocks,
+        schedule_max_delay_blocks: plan.schedule_max_delay_blocks,
+        proof_readiness_delay_blocks: plan.proof_readiness_delay_blocks,
+        estimated_proof_ready_height: plan.estimated_proof_ready_height,
+        scheduled_transfers: plan
+            .scheduled_transfers
+            .into_iter()
+            .map(|entry| MigrationScheduledTransfer {
+                part_index: entry.part_index.unwrap_or(0),
+                value_zatoshi: entry.value_zatoshi,
+                block_offset: entry.block_offset,
+            })
+            .collect(),
+        custom_profile_count: plan.custom_profile_count,
+        custom_concurrent_profiles: plan.custom_concurrent_profiles,
+        custom_plan_seed: plan.custom_plan_seed,
+        is_simulated: plan.is_simulated,
+    }
 }
 
 /// Foreground-only migration preparation for the Swift-owned outbox.
@@ -1816,6 +1863,36 @@ pub fn create_or_resume_private_migration_draft(
             network,
             &account_uuid,
             to_wallet_migration_schedule(approved_schedule),
+            wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
+                space_preparation_broadcasts,
+            ),
+        )
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_or_resume_custom_migration_draft(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    target_values_zatoshi: Vec<u64>,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
+    profile_count: u32,
+    concurrent_profiles: u32,
+    plan_seed: u64,
+    space_preparation_broadcasts: bool,
+) -> Result<String, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        wallet_sync::create_or_resume_custom_migration_draft(
+            &db_path,
+            network,
+            &account_uuid,
+            target_values_zatoshi,
+            to_wallet_migration_schedule(approved_schedule),
+            profile_count,
+            concurrent_profiles,
+            plan_seed,
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),

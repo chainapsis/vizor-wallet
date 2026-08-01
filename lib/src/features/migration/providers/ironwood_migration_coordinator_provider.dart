@@ -412,6 +412,21 @@ class IronwoodMigrationCoordinator
     await refreshNow(forceAdvance: true);
   }
 
+  Future<void> startSoftwareCustomMigration({
+    required String accountUuid,
+    required rust_sync.OrchardMigrationPrivatePlan approvedPlan,
+  }) async {
+    await ref
+        .read(ironwoodMigrationServiceProvider)
+        .startSoftwareCustomMigration(
+          accountUuid: accountUuid,
+          approvedPlan: approvedPlan,
+        );
+    if (!ref.mounted) return;
+    grantForegroundProgressPermit(accountUuid);
+    await refreshNow(forceAdvance: true);
+  }
+
   Future<void> resumeSoftwarePreparation({
     required String accountUuid,
     required rust_sync.MigrationStatus status,

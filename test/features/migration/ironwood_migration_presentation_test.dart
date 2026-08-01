@@ -33,6 +33,7 @@ void main() {
           blockOffset: 144,
         ),
       ],
+      isSimulated: false,
     );
 
     expect(migrationPlanPreparationDelayBlocks(plan), 150);
@@ -67,6 +68,7 @@ void main() {
           blockOffset: 0,
         ),
       ],
+      isSimulated: false,
     );
 
     expect(migrationPlanCompletionDurationLabel(plan), '~4 mins');
@@ -99,6 +101,7 @@ void main() {
           blockOffset: 0,
         ),
       ],
+      isSimulated: false,
     );
 
     expect(migrationPlanPreparationDelayBlocks(plan), 144);

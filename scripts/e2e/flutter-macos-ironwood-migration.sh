@@ -11,13 +11,28 @@ DRIVER_PORT="${E2E_DRIVER_PORT:-39078}"
 DRIVER_URL="http://127.0.0.1:${DRIVER_PORT}"
 TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_ironwood_migration_test.dart}"
 TEST_NAME="$(basename "$TEST_FILE" .dart)"
-DRIVER_LOG="$ROOT_DIR/.ironwood-regtest/${TEST_NAME}-driver.log"
+REGTEST_STATE_DIR="${IRONWOOD_STATE_DIR:-$ROOT_DIR/.ironwood-regtest}"
+DRIVER_LOG="$REGTEST_STATE_DIR/${TEST_NAME}-driver.log"
+CHECKPOINT="${E2E_IRONWOOD_CHECKPOINT:-}"
 FUNDING_AMOUNT="${E2E_ORCHARD_FUNDING_AMOUNT:-0.011}"
 FUNDING_CONFIRMATIONS="${E2E_ORCHARD_FUNDING_CONFIRMATIONS:-10}"
 FUNDING_COINBASE_LIMIT="${E2E_ORCHARD_FUNDING_COINBASE_LIMIT:-1}"
 FUNDING_NOTE_COUNT="${E2E_ORCHARD_FUNDING_NOTE_COUNT:-1}"
 FUNDING_TX_COUNT="${E2E_ORCHARD_FUNDING_TX_COUNT:-1}"
 PREFUND_BLOCKS="${E2E_ORCHARD_PREFUND_BLOCKS:-0}"
+MACOS_SIGNING_OVERRIDES="$ROOT_DIR/macos/Runner/Configs/FlavorOverrides.xcconfig"
+
+macos_development_team="${E2E_MACOS_DEVELOPMENT_TEAM:-}"
+if [[ -z "$macos_development_team" && -f "$MACOS_SIGNING_OVERRIDES" ]]; then
+  macos_development_team="$(
+    sed -nE \
+      's/^[[:space:]]*DEVELOPMENT_TEAM[[:space:]]*=[[:space:]]*([^[:space:]#;]+).*/\1/p' \
+      "$MACOS_SIGNING_OVERRIDES" | tail -n 1
+  )"
+fi
+if [[ -n "$macos_development_team" ]]; then
+  export FLUTTER_XCODE_DEVELOPMENT_TEAM="${FLUTTER_XCODE_DEVELOPMENT_TEAM:-$macos_development_team}"
+fi
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -64,8 +79,13 @@ require_cmd python3
 cd "$ROOT_DIR"
 export IRONWOOD_ACTIVATION_HEIGHT="$ACTIVATION_HEIGHT"
 
-scripts/ironwood-regtest/reset.sh
-scripts/ironwood-regtest/up.sh
+if [[ -n "$CHECKPOINT" ]]; then
+  scripts/ironwood-regtest/checkpoint.sh restore "$CHECKPOINT"
+  scripts/ironwood-regtest/up.sh
+else
+  scripts/ironwood-regtest/reset.sh
+  scripts/ironwood-regtest/up.sh
+fi
 
 if ! [[ "$PREFUND_BLOCKS" =~ ^[0-9]+$ ]]; then
   echo "E2E_ORCHARD_PREFUND_BLOCKS must be a non-negative integer" >&2
@@ -80,18 +100,19 @@ if ! [[ "$FUNDING_TX_COUNT" =~ ^[1-9][0-9]*$ ]] ||
   echo "E2E_ORCHARD_FUNDING_TX_COUNT must be between 1 and the note count" >&2
   exit 1
 fi
-if [[ "$PREFUND_BLOCKS" -gt 0 ]]; then
-  scripts/ironwood-regtest/mine.sh "$PREFUND_BLOCKS" >/dev/null
-fi
+if [[ -z "$CHECKPOINT" ]]; then
+  if [[ "$PREFUND_BLOCKS" -gt 0 ]]; then
+    scripts/ironwood-regtest/mine.sh "$PREFUND_BLOCKS" >/dev/null
+  fi
 
-addresses_file="$ROOT_DIR/.ironwood-regtest/e2e-addresses.json"
-derive_addresses "$addresses_file"
-funding_manifest="$ROOT_DIR/.ironwood-regtest/e2e-funding-manifest.tsv"
-python3 - \
-  "$addresses_file" \
-  "$FUNDING_AMOUNT" \
-  "$FUNDING_TX_COUNT" \
-  >"$funding_manifest" <<'PY'
+  addresses_file="$REGTEST_STATE_DIR/e2e-addresses.json"
+  derive_addresses "$addresses_file"
+  funding_manifest="$REGTEST_STATE_DIR/e2e-funding-manifest.tsv"
+  python3 - \
+    "$addresses_file" \
+    "$FUNDING_AMOUNT" \
+    "$FUNDING_TX_COUNT" \
+    >"$funding_manifest" <<'PY'
 from decimal import Decimal, InvalidOperation
 import json
 import sys
@@ -124,16 +145,17 @@ for count, zatoshis in zip(note_counts, batch_zatoshis):
     print(f"{amount_text}\t{count}\t{addresses_text}")
 PY
 
-while IFS=$'\t' read -r batch_amount batch_note_count batch_destinations; do
-  scripts/ironwood-regtest/fund-orchard.sh \
-    "$batch_destinations" \
-    "$batch_amount" \
-    "$FUNDING_CONFIRMATIONS" \
-    "$FUNDING_COINBASE_LIMIT" \
-    "$batch_note_count" </dev/null >/dev/null
-done <"$funding_manifest"
+  while IFS=$'\t' read -r batch_amount batch_note_count batch_destinations; do
+    scripts/ironwood-regtest/fund-orchard.sh \
+      "$batch_destinations" \
+      "$batch_amount" \
+      "$FUNDING_CONFIRMATIONS" \
+      "$FUNDING_COINBASE_LIMIT" \
+      "$batch_note_count" </dev/null >/dev/null
+  done <"$funding_manifest"
+fi
 
-mkdir -p "$ROOT_DIR/.ironwood-regtest"
+mkdir -p "$REGTEST_STATE_DIR"
 : > "$DRIVER_LOG"
 python3 -u scripts/e2e/ironwood-regtest-driver.py \
   --repo-root "$ROOT_DIR" \
@@ -214,6 +236,41 @@ fi
 if [[ -n "${E2E_IRONWOOD_MIGRATION_PRIVACY_LOCK:-}" ]]; then
   scenario_define_args+=(
     --dart-define=VIZOR_IRONWOOD_MIGRATION_PRIVACY_LOCK="$E2E_IRONWOOD_MIGRATION_PRIVACY_LOCK"
+  )
+fi
+if [[ -n "${E2E_FAKE_MIGRATION_BALANCE_ZEC:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_REGTEST_FAKE_MIGRATION_BALANCE_ZEC="$E2E_FAKE_MIGRATION_BALANCE_ZEC"
+  )
+fi
+if [[ -n "${E2E_CUSTOM_MIGRATION_PREVIEW_HOLD_MS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_CUSTOM_MIGRATION_PREVIEW_HOLD_MS="$E2E_CUSTOM_MIGRATION_PREVIEW_HOLD_MS"
+  )
+fi
+if [[ -n "${E2E_CUSTOM_MIGRATION_LIVE_HOLD_MS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_CUSTOM_MIGRATION_LIVE_HOLD_MS="$E2E_CUSTOM_MIGRATION_LIVE_HOLD_MS"
+  )
+fi
+if [[ -n "${E2E_CUSTOM_MIGRATION_AUTO_START:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_CUSTOM_MIGRATION_AUTO_START="$E2E_CUSTOM_MIGRATION_AUTO_START"
+  )
+fi
+if [[ -n "${E2E_CUSTOM_MIGRATION_PACE_MS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_CUSTOM_MIGRATION_PACE_MS="$E2E_CUSTOM_MIGRATION_PACE_MS"
+  )
+fi
+if [[ -n "${E2E_CUSTOM_MIGRATION_COMPLETION_HOLD_MS:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_CUSTOM_MIGRATION_COMPLETION_HOLD_MS="$E2E_CUSTOM_MIGRATION_COMPLETION_HOLD_MS"
+  )
+fi
+if [[ -n "${E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN:-}" ]]; then
+  scenario_define_args+=(
+    --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN="$E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN"
   )
 fi
 flutter_args+=(

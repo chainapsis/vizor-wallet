@@ -8,6 +8,7 @@ enum IronwoodMigrationFlowStep {
   options,
   review,
   immediateReview,
+  custom,
 }
 
 enum IronwoodMigrationReviewPreviewStage { review, analyzing }
@@ -114,6 +115,68 @@ final ironwoodMigrationPrivatePlanProvider =
           .privatePlan(
             network: request.network,
             accountUuid: request.accountUuid,
+          );
+    });
+
+const _regtestFakeMigrationBalanceZec = String.fromEnvironment(
+  'ZCASH_REGTEST_FAKE_MIGRATION_BALANCE_ZEC',
+);
+
+class IronwoodMigrationCustomPlanRequest {
+  const IronwoodMigrationCustomPlanRequest({
+    required this.profileCount,
+    required this.concurrentProfiles,
+    required this.planSeed,
+  });
+
+  final int profileCount;
+  final int concurrentProfiles;
+  final BigInt planSeed;
+
+  @override
+  int get hashCode => Object.hash(profileCount, concurrentProfiles, planSeed);
+
+  @override
+  bool operator ==(Object other) =>
+      other is IronwoodMigrationCustomPlanRequest &&
+      other.profileCount == profileCount &&
+      other.concurrentProfiles == concurrentProfiles &&
+      other.planSeed == planSeed;
+}
+
+BigInt? _regtestSimulatedMigrationBalance(String network) {
+  if (network.toLowerCase() != 'regtest' ||
+      _regtestFakeMigrationBalanceZec.isEmpty) {
+    return null;
+  }
+  final zec = BigInt.tryParse(_regtestFakeMigrationBalanceZec);
+  if (zec == null || zec <= BigInt.zero) return null;
+  return zec * BigInt.from(100000000);
+}
+
+final ironwoodMigrationCustomPlanProvider = FutureProvider.autoDispose
+    .family<
+      rust_sync.OrchardMigrationPrivatePlan?,
+      IronwoodMigrationCustomPlanRequest
+    >((ref, custom) async {
+      final request = ref.watch(
+        ironwoodMigrationInputsProvider.select(
+          (inputs) => inputs.statusRequest,
+        ),
+      );
+      if (request == null) return null;
+
+      return ref
+          .watch(ironwoodMigrationServiceProvider)
+          .customPlan(
+            network: request.network,
+            accountUuid: request.accountUuid,
+            profileCount: custom.profileCount,
+            concurrentProfiles: custom.concurrentProfiles,
+            planSeed: custom.planSeed,
+            simulatedTotalZatoshi: _regtestSimulatedMigrationBalance(
+              request.network,
+            ),
           );
     });
 

@@ -1,0 +1,30 @@
+diff --git a/src/chainparams.cpp b/src/chainparams.cpp
+--- a/src/chainparams.cpp
++++ b/src/chainparams.cpp
+@@ -835,5 +835,6 @@ public:
+         consensus.fCoinbaseMustBeShielded = false;
+         consensus.nSubsidySlowStartInterval = 0;
++        consensus.nRegtestFaucetGrant = 1100000LL * COIN;
+         consensus.nPreBlossomSubsidyHalvingInterval = Consensus::PRE_BLOSSOM_REGTEST_HALVING_INTERVAL;
+         consensus.nPostBlossomSubsidyHalvingInterval = POST_BLOSSOM_HALVING_INTERVAL(Consensus::PRE_BLOSSOM_REGTEST_HALVING_INTERVAL);
+         consensus.nMajorityEnforceBlockUpgrade = 750;
+diff --git a/src/consensus/params.cpp b/src/consensus/params.cpp
+--- a/src/consensus/params.cpp
++++ b/src/consensus/params.cpp
+@@ -371,2 +371,6 @@ namespace Consensus {
+     {
++        if (nHeight == 1 && nRegtestFaucetGrant > 0) {
++            return nRegtestFaucetGrant;
++        }
++
+         CAmount nSubsidy = 12.5 * COIN;
+diff --git a/src/consensus/params.h b/src/consensus/params.h
+--- a/src/consensus/params.h
++++ b/src/consensus/params.h
+@@ -346,2 +346,6 @@ struct Params {
+     int nSubsidySlowStartInterval;
++
++    /** Optional one-time height-1 grant for isolated regtest faucet images. */
++    CAmount nRegtestFaucetGrant = 0;
++
+     /**

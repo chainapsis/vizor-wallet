@@ -1,8 +1,60 @@
+use rand::{rngs::StdRng, SeedableRng};
+
+#[derive(Clone, Copy)]
+pub(crate) struct CustomMigrationPlanRequest {
+    pub profile_count: u32,
+    pub concurrent_profiles: u32,
+    pub plan_seed: u64,
+    pub simulated_total_zatoshi: Option<u64>,
+}
+
 pub(crate) fn get_orchard_migration_private_plan(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    get_orchard_migration_plan(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        None,
+    )
+}
+
+pub(crate) fn get_orchard_migration_custom_plan(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    request: CustomMigrationPlanRequest,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    if !(1..=256).contains(&request.profile_count) {
+        return Err("Custom migration profile count must be between 1 and 256".to_string());
+    }
+    super::migration::custom_schedule_parameters(request.concurrent_profiles)?;
+    if request.concurrent_profiles > request.profile_count {
+        return Err("Custom migration concurrency cannot exceed the profile count".to_string());
+    }
+    if request.simulated_total_zatoshi.is_some() && network != WalletNetwork::Regtest {
+        return Err("A simulated migration balance is available only on regtest".to_string());
+    }
+    get_orchard_migration_plan(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        Some(request),
+    )
+}
+
+fn get_orchard_migration_plan(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    custom: Option<CustomMigrationPlanRequest>,
 ) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
@@ -25,10 +77,17 @@ pub(crate) fn get_orchard_migration_private_plan(
         return Ok(None);
     }
 
-    let input_values = orchard_notes
-        .iter()
-        .map(|note| note.note_value().map(u64::from).map_err(|e| format!("{e}")))
-        .collect::<Result<Vec<_>, String>>()?;
+    let is_simulated = custom
+        .and_then(|request| request.simulated_total_zatoshi)
+        .is_some();
+    let input_values = match custom.and_then(|request| request.simulated_total_zatoshi) {
+        Some(total) if total > 0 => vec![total],
+        Some(_) => return Err("Simulated migration balance must be positive".to_string()),
+        None => orchard_notes
+            .iter()
+            .map(|note| note.note_value().map(u64::from).map_err(|e| format!("{e}")))
+            .collect::<Result<Vec<_>, String>>()?,
+    };
     // Touch the FVK-derived nullifiers in the read-only estimate path so the
     // note-version/value assumptions match the mutating PCZT builder path.
     for received in &orchard_notes {
@@ -59,12 +118,25 @@ pub(crate) fn get_orchard_migration_private_plan(
             0,
         )
         .map_err(|e| format!("Failed to estimate padded denomination fee: {e}"))?;
-    let padded_plan = super::migration::plan_padded_denominations(
-        &input_values,
-        u64::from(split_fee),
-        u64::from(migration_fee_estimate),
-        MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-    )?;
+    let padded_plan = match custom {
+        Some(request) => {
+            let mut rng = StdRng::seed_from_u64(request.plan_seed);
+            super::migration::plan_custom_padded_denominations(
+                &input_values,
+                u64::from(split_fee),
+                u64::from(migration_fee_estimate),
+                MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+                request.profile_count,
+                &mut rng,
+            )?
+        }
+        None => super::migration::plan_padded_denominations(
+            &input_values,
+            u64::from(split_fee),
+            u64::from(migration_fee_estimate),
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        )?,
+    };
     let Some(padded_plan) = padded_plan else {
         return Ok(None);
     };
@@ -75,28 +147,31 @@ pub(crate) fn get_orchard_migration_private_plan(
         .map_err(|_| "Denomination split stage count exceeds u32".to_string())?;
     let denomination_split_layer_count = u32::try_from(padded_plan.layer_count)
         .map_err(|_| "Denomination split layer count exceeds u32".to_string())?;
-    let direct_note_mined_heights = padded_plan
-        .direct_migration_inputs
-        .iter()
-        .map(|direct| {
-            orchard_notes
-                .get(direct.input_index)
-                .ok_or("Direct migration input index is out of range")?
-                .mined_height()
-                .map(u32::from)
-                .ok_or_else(|| "Direct migration input mined height is unavailable".to_string())
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let (proof_readiness_delay_blocks, estimated_proof_ready_height) =
-        private_plan_proof_timing(
-            network,
-            preparation_timing_policy,
-            u32::from(target_height),
-            u32::from(anchor_height),
-            denomination_split_stage_count,
-            denomination_split_layer_count,
-            &direct_note_mined_heights,
-        )?;
+    let direct_note_mined_heights = if is_simulated {
+        vec![u32::from(anchor_height); padded_plan.direct_migration_inputs.len()]
+    } else {
+        padded_plan
+            .direct_migration_inputs
+            .iter()
+            .map(|direct| {
+                orchard_notes
+                    .get(direct.input_index)
+                    .ok_or("Direct migration input index is out of range")?
+                    .mined_height()
+                    .map(u32::from)
+                    .ok_or_else(|| "Direct migration input mined height is unavailable".to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()?
+    };
+    let (proof_readiness_delay_blocks, estimated_proof_ready_height) = private_plan_proof_timing(
+        network,
+        preparation_timing_policy,
+        u32::from(target_height),
+        u32::from(anchor_height),
+        denomination_split_stage_count,
+        denomination_split_layer_count,
+        &direct_note_mined_heights,
+    )?;
     let migration_fee_zatoshi = u64::from(migration_fee_estimate)
         .checked_mul(u64::from(planned_batch_count))
         .ok_or("Migration fee estimate overflow")?;
@@ -105,11 +180,33 @@ pub(crate) fn get_orchard_migration_private_plan(
         .split_fee_zatoshi
         .checked_add(migration_fee_zatoshi)
         .ok_or("Migration total fee estimate overflow")?;
-    let scheduled_transfers = super::migration::planned_transfer_schedule(
-        padded_plan.denominations.migration_outputs.iter().copied(),
-        network,
-        &mut OsRng,
-    );
+    let (scheduled_transfers, schedule_mean_delay_blocks, schedule_max_delay_blocks) = match custom
+    {
+        Some(request) => {
+            let mut rng = StdRng::seed_from_u64(request.plan_seed ^ 0xa5a5_5a5a_d3c3_3c3c);
+            let schedule = super::migration::planned_custom_transfer_schedule(
+                padded_plan.denominations.migration_outputs.iter().copied(),
+                request.concurrent_profiles,
+                &mut rng,
+            )?;
+            let (mean, max) =
+                super::migration::custom_schedule_parameters(request.concurrent_profiles)?;
+            (schedule, mean, max)
+        }
+        None => (
+            super::migration::planned_transfer_schedule(
+                padded_plan.denominations.migration_outputs.iter().copied(),
+                network,
+                &mut OsRng,
+            ),
+            super::migration::schedule_parameters_for_part_count(
+                network,
+                planned_batch_count as usize,
+            )
+            .0,
+            super::migration::schedule_parameters(network).1,
+        ),
+    };
 
     Ok(Some(OrchardMigrationPrivatePlan {
         target_values_zatoshi: padded_plan.denominations.migration_outputs,
@@ -123,16 +220,15 @@ pub(crate) fn get_orchard_migration_private_plan(
         denomination_split_stage_count,
         denomination_split_layer_count,
         signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
-        schedule_mean_delay_blocks:
-            super::migration::schedule_parameters_for_part_count(
-                network,
-                planned_batch_count as usize,
-            )
-            .0,
-        schedule_max_delay_blocks: super::migration::schedule_parameters(network).1,
+        schedule_mean_delay_blocks,
+        schedule_max_delay_blocks,
         proof_readiness_delay_blocks,
         estimated_proof_ready_height,
         scheduled_transfers,
+        custom_profile_count: custom.map(|request| request.profile_count),
+        custom_concurrent_profiles: custom.map(|request| request.concurrent_profiles),
+        custom_plan_seed: custom.map(|request| request.plan_seed),
+        is_simulated,
     }))
 }
 
@@ -150,7 +246,8 @@ fn private_plan_proof_timing(
         preparation_timing_policy,
         stage_count,
     )?;
-    let confirmation_lag = super::migration::denomination_confirmations_required().saturating_sub(1);
+    let confirmation_lag =
+        super::migration::denomination_confirmations_required().saturating_sub(1);
 
     let mut final_ready_height = direct_note_mined_heights
         .iter()
@@ -172,10 +269,9 @@ fn private_plan_proof_timing(
             .ok_or("Migration preparation height overflow")?;
         let generated_ready_height =
             super::migration::estimated_proof_ready_height(network, final_mined_height)?;
-        final_ready_height = Some(
-            final_ready_height
-                .map_or(generated_ready_height, |height| height.max(generated_ready_height)),
-        );
+        final_ready_height = Some(final_ready_height.map_or(generated_ready_height, |height| {
+            height.max(generated_ready_height)
+        }));
         final_mined_height
             .checked_add(confirmation_lag)
             .ok_or("Migration preparation trusted height overflow")?
@@ -340,13 +436,12 @@ fn create_orchard_to_ironwood_pczt_from_predicted_note(
     };
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder =
-            migration_child_builder(
-                network,
-                BlockHeight::from(target_height),
-                BlockHeight::from(scheduled_height),
-                dummy_anchor,
-            )?;
+        let mut builder = migration_child_builder(
+            network,
+            BlockHeight::from(target_height),
+            BlockHeight::from(scheduled_height),
+            dummy_anchor,
+        )?;
 
         builder
             .add_orchard_spend::<<ConservativeZip317FeeRule as FeeRule>::Error>(
@@ -657,13 +752,12 @@ fn create_orchard_to_ironwood_pczt_from_note(
     let orchard_inputs = [(orchard_note, orchard_witness)];
     let fee_rule = ConservativeZip317FeeRule;
     let make_builder = |ironwood_amount: Zatoshis| {
-        let mut builder =
-            migration_child_builder(
-                network,
-                BlockHeight::from(child_target_height),
-                BlockHeight::from(scheduled_height),
-                orchard_anchor,
-            )?;
+        let mut builder = migration_child_builder(
+            network,
+            BlockHeight::from(child_target_height),
+            BlockHeight::from(scheduled_height),
+            orchard_anchor,
+        )?;
 
         for (note, merkle_path) in orchard_inputs.iter() {
             builder

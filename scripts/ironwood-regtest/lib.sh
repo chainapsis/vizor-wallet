@@ -3,8 +3,35 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$ROOT_DIR/docker-compose.zcash-ironwood-regtest.yml"
-STATE_DIR="$ROOT_DIR/.ironwood-regtest"
-SNAPSHOT_DIR="$ROOT_DIR/.ironwood-regtest-snapshots"
+STATE_DIR="${IRONWOOD_STATE_DIR:-$ROOT_DIR/.ironwood-regtest}"
+SNAPSHOT_DIR="${IRONWOOD_SNAPSHOT_DIR:-$ROOT_DIR/.ironwood-regtest-snapshots}"
+IRONWOOD_COMPOSE_PROJECT_NAME="${IRONWOOD_COMPOSE_PROJECT_NAME:-vizor-ironwood-regtest}"
+IRONWOOD_ZCASHD_RPC_PORT="${IRONWOOD_ZCASHD_RPC_PORT:-19232}"
+
+validate_managed_regtest_dir() {
+  local path="$1"
+  local label="$2"
+  local parent base
+  parent="$(dirname "$path")"
+  base="$(basename "$path")"
+  if [[ "$parent" != "$ROOT_DIR" ]] ||
+    ! [[ "$base" =~ ^\.ironwood-[A-Za-z0-9._-]+$ ]]; then
+    echo "$label must be a direct hidden child of $ROOT_DIR named .ironwood-*" >&2
+    return 1
+  fi
+  if [[ -L "$path" ]]; then
+    echo "$label must not be a symbolic link: $path" >&2
+    return 1
+  fi
+}
+
+validate_managed_regtest_dir "$STATE_DIR" "IRONWOOD_STATE_DIR"
+validate_managed_regtest_dir "$SNAPSHOT_DIR" "IRONWOOD_SNAPSHOT_DIR"
+if ! [[ "$IRONWOOD_COMPOSE_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+  echo "IRONWOOD_COMPOSE_PROJECT_NAME must contain only lowercase letters, digits, underscores, and hyphens" >&2
+  exit 1
+fi
+
 ACTIVATION_FILE="$STATE_DIR/activation-height"
 if [[ -z "${IRONWOOD_ACTIVATION_HEIGHT:-}" && -f "$ACTIVATION_FILE" ]]; then
   IRONWOOD_ACTIVATION_HEIGHT="$(<"$ACTIVATION_FILE")"
@@ -15,6 +42,11 @@ LIGHTWALLETD_HOST="${LIGHTWALLETD_HOST:-127.0.0.1}"
 LIGHTWALLETD_PORT="${IRONWOOD_LIGHTWALLETD_PORT:-19067}"
 
 export IRONWOOD_ACTIVATION_HEIGHT
+export IRONWOOD_COMPOSE_PROJECT_NAME
+export IRONWOOD_LIGHTWALLETD_PORT="$LIGHTWALLETD_PORT"
+export IRONWOOD_STATE_DIR="$STATE_DIR"
+export IRONWOOD_SNAPSHOT_DIR="$SNAPSHOT_DIR"
+export IRONWOOD_ZCASHD_RPC_PORT
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then

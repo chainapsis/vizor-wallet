@@ -5,6 +5,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
     required this.step,
     this.previewData,
     this.previewPrivatePlan,
+    this.previewCustomPlan,
     this.previewImmediatePlan,
     this.previewStatus,
     this.previewParts,
@@ -16,6 +17,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
   final MobileIronwoodMigrationStep step;
   final IronwoodMigrationFlowData? previewData;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final rust_sync.OrchardMigrationPrivatePlan? previewCustomPlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final rust_sync.MigrationStatus? previewStatus;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
@@ -38,6 +40,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
         data: preview,
         previewMode: true,
         previewPrivatePlan: previewPrivatePlan,
+        previewCustomPlan: previewCustomPlan,
         previewImmediatePlan: previewImmediatePlan,
         previewParts: previewParts,
         privateMigrationSupported: privateMigrationSupported,
@@ -52,6 +55,7 @@ class MobileIronwoodMigrationFlowScreen extends ConsumerWidget {
       data: data,
       previewMode: false,
       previewPrivatePlan: previewPrivatePlan,
+      previewCustomPlan: previewCustomPlan,
       previewImmediatePlan: previewImmediatePlan,
       previewParts: previewParts,
       privateMigrationSupported: privateMigrationSupported,
@@ -66,6 +70,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
     required this.data,
     required this.previewMode,
     required this.previewPrivatePlan,
+    required this.previewCustomPlan,
     required this.previewImmediatePlan,
     required this.previewParts,
     required this.privateMigrationSupported,
@@ -76,6 +81,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
   final IronwoodMigrationFlowData data;
   final bool previewMode;
   final rust_sync.OrchardMigrationPrivatePlan? previewPrivatePlan;
+  final rust_sync.OrchardMigrationPrivatePlan? previewCustomPlan;
   final rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan;
   final List<MobileIronwoodMigrationPartPresentation>? previewParts;
   final bool? privateMigrationSupported;
@@ -88,6 +94,7 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         (previewMode || supportsPrivateMobileIronwoodMigration());
     if (!privateMigrationEnabled &&
         switch (step) {
+          MobileIronwoodMigrationStep.custom => true,
           MobileIronwoodMigrationStep.notifications => true,
           _ => false,
         }) {
@@ -102,6 +109,10 @@ class _MobileIronwoodMigrationContent extends ConsumerWidget {
         const _MobileMigrationHowItWorks(),
       MobileIronwoodMigrationStep.options => _MobileMigrationOptions(
         privateEnabled: privateMigrationEnabled,
+      ),
+      MobileIronwoodMigrationStep.custom => _MobileMigrationCustom(
+        data: data,
+        previewPlan: previewCustomPlan,
       ),
       MobileIronwoodMigrationStep.notifications =>
         _MobileMigrationNotificationPermissionScreen(

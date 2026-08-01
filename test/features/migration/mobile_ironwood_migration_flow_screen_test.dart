@@ -503,9 +503,46 @@ rust_sync.OrchardMigrationPrivatePlan _planWith({
         blockOffset: i == 0 ? 0 : i * 144 + blockOffsetAdjustment,
       ),
   ],
+  isSimulated: false,
 );
 
 rust_sync.OrchardMigrationPrivatePlan get _plan => _planWith();
+
+rust_sync.OrchardMigrationPrivatePlan _customPlan({
+  bool isSimulated = false,
+  int profileCount = 12,
+  int concurrentProfiles = 2,
+}) {
+  const values = [1_000_000_000_000, 50_000_000_000, 5_000_000_000];
+  return rust_sync.OrchardMigrationPrivatePlan(
+    targetValuesZatoshi: frb.Uint64List.fromList(values),
+    totalInputZatoshi: BigInt.from(1_055_000_300_000),
+    totalMigratableZatoshi: BigInt.from(1_055_000_000_000),
+    orchardChangeZatoshi: BigInt.from(65_000),
+    denominationSplitFeeZatoshi: BigInt.from(160_000),
+    migrationFeeZatoshi: BigInt.from(75_000),
+    estimatedTotalFeeZatoshi: BigInt.from(235_000),
+    plannedBatchCount: values.length,
+    denominationSplitStageCount: 2,
+    denominationSplitLayerCount: 1,
+    signingBatchLimit: 35,
+    scheduleMeanDelayBlocks: 33,
+    scheduleMaxDelayBlocks: 576,
+    proofReadinessDelayBlocks: 146,
+    scheduledTransfers: [
+      for (var index = 0; index < values.length; index++)
+        rust_sync.MigrationScheduledTransfer(
+          partIndex: index,
+          valueZatoshi: BigInt.from(values[index]),
+          blockOffset: (index + 1) * 30,
+        ),
+    ],
+    customProfileCount: profileCount,
+    customConcurrentProfiles: concurrentProfiles,
+    customPlanSeed: BigInt.from(42),
+    isSimulated: isSimulated,
+  );
+}
 
 final _immediatePlan = rust_sync.OrchardMigrationImmediatePlan(
   totalInputZatoshi: BigInt.from(14_223_000_000),
@@ -705,6 +742,7 @@ Widget _app({
   AppThemeData theme = AppThemeData.light,
   rust_sync.MigrationStatus? previewStatus,
   rust_sync.OrchardMigrationPrivatePlan? previewPlan,
+  rust_sync.OrchardMigrationPrivatePlan? previewCustomPlan,
   rust_sync.OrchardMigrationImmediatePlan? previewImmediatePlan,
   MobileIronwoodMigrationPreviewSurface? previewSurface,
   bool? privateMigrationSupported,
@@ -716,6 +754,7 @@ Widget _app({
       step: value,
       previewData: _data,
       previewPrivatePlan: previewPlan ?? _plan,
+      previewCustomPlan: previewCustomPlan ?? _customPlan(),
       previewImmediatePlan: previewImmediatePlan ?? _immediatePlan,
       previewStatus: previewStatus,
       previewSurface: previewSurface,
@@ -728,6 +767,7 @@ Widget _app({
       MobileIronwoodMigrationStep.intro => '/migration/intro',
       MobileIronwoodMigrationStep.howItWorks => '/migration/how-it-works',
       MobileIronwoodMigrationStep.options => '/migration/options',
+      MobileIronwoodMigrationStep.custom => '/migration/custom',
       MobileIronwoodMigrationStep.notifications =>
         '/migration/private/notifications',
       MobileIronwoodMigrationStep.fastReview => '/migration/fast/review',
@@ -747,6 +787,10 @@ Widget _app({
       GoRoute(
         path: '/migration/options',
         builder: (_, _) => screen(MobileIronwoodMigrationStep.options),
+      ),
+      GoRoute(
+        path: '/migration/custom',
+        builder: (_, _) => screen(MobileIronwoodMigrationStep.custom),
       ),
       GoRoute(
         path: '/migration/private/notifications',
@@ -804,6 +848,7 @@ Widget _productionApp({
   Future<IronwoodHomeMigrationCtaState> Function()? ctaLoader,
   bool hardware = false,
   rust_sync.OrchardMigrationPrivatePlan? privatePlan,
+  rust_sync.OrchardMigrationPrivatePlan? customPlan,
   Future<rust_sync.OrchardMigrationPrivatePlan?>? privatePlanFuture,
   Future<rust_sync.OrchardMigrationPrivatePlan?> Function()? privatePlanLoader,
   Future<rust_sync.OrchardMigrationImmediatePlan?> Function()?
@@ -845,6 +890,16 @@ Widget _productionApp({
         path: '/migration/options',
         builder: (_, _) => const MobileIronwoodMigrationFlowScreen(
           step: MobileIronwoodMigrationStep.options,
+        ),
+      ),
+      GoRoute(
+        path: '/migration/custom',
+        builder: (_, state) => MobileIronwoodMigrationFlowScreen(
+          step: MobileIronwoodMigrationStep.custom,
+          previewCustomPlan: switch (state.extra) {
+            rust_sync.OrchardMigrationPrivatePlan plan => plan,
+            _ => customPlan ?? privatePlan,
+          },
         ),
       ),
       GoRoute(
@@ -1077,6 +1132,15 @@ IronwoodMigrationService _migrationService({
     List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
   )?
   onCreatePrivateDraft,
+  Future<String> Function(
+    String accountUuid,
+    frb.Uint64List targetValuesZatoshi,
+    List<rust_sync.MigrationScheduledTransfer> approvedSchedule,
+    int profileCount,
+    int concurrentProfiles,
+    BigInt planSeed,
+  )?
+  onCreateCustomDraft,
 }) {
   return IronwoodMigrationService(
     getWalletDbPath: () async => '/tmp/wallet.db',
@@ -1195,6 +1259,26 @@ IronwoodMigrationService _migrationService({
         }) =>
             onCreatePrivateDraft?.call(accountUuid, approvedSchedule) ??
             Future.value('private-draft-run'),
+    createCustomMigrationDraft:
+        ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required targetValuesZatoshi,
+          required approvedSchedule,
+          required profileCount,
+          required concurrentProfiles,
+          required planSeed,
+        }) =>
+            onCreateCustomDraft?.call(
+              accountUuid,
+              targetValuesZatoshi,
+              approvedSchedule,
+              profileCount,
+              concurrentProfiles,
+              planSeed,
+            ) ??
+            Future.value('custom-draft-run'),
     getKeystoneProofStatus: ({required requestId}) async =>
         const rust_sync.KeystoneMigrationProofStatus(
           readyCount: 1,
@@ -1490,6 +1574,7 @@ void main() {
     expect(find.text('How to Migrate'), findsOneWidget);
     expect(find.textContaining('/3'), findsNothing);
     expect(find.text('Private'), findsOneWidget);
+    expect(find.text('Custom'), findsOneWidget);
     expect(find.text('Recommended'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('mobile_ironwood_recommended_badge')),
@@ -1508,6 +1593,10 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.byKey(const ValueKey('mobile_ironwood_custom_option')),
+      findsOneWidget,
+    );
+    expect(
       find.text(
         'Migrates your entire balance in one batch. Fast, but less private.',
       ),
@@ -1516,10 +1605,22 @@ void main() {
     expect(find.text('Customise'), findsNothing);
     expect(find.text('Advanced'), findsNothing);
 
+    final privateRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_private_option')),
+    );
+    final immediateRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_immediate_option')),
+    );
+    final customRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_ironwood_custom_option')),
+    );
+    expect(privateRect.top, lessThan(immediateRect.top));
+    expect(immediateRect.top, lessThan(customRect.top));
+
     final subtitle = tester.widget<Text>(
       find.text(
-        'Choose between more privacy over time or a faster migration. '
-        'You can review the details before anything moves.',
+        'Choose a private preset, migrate immediately, or shape a '
+        'custom plan. You can review details before anything moves.',
       ),
     );
     expect(subtitle.textAlign, TextAlign.center);
@@ -1560,7 +1661,7 @@ void main() {
     );
 
     final unselectedRadio = tester.widget<Container>(
-      find.byKey(const ValueKey('mobile_ironwood_unselected_radio')),
+      find.byKey(const ValueKey('mobile_ironwood_unselected_radio')).first,
     );
     expect(
       (unselectedRadio.decoration! as BoxDecoration).color,
@@ -1573,6 +1674,8 @@ void main() {
     final immediateOption = find.byKey(
       const ValueKey('mobile_ironwood_immediate_option'),
     );
+    await tester.ensureVisible(immediateOption);
+    await tester.pump();
     await tester.tap(immediateOption);
     await tester.pump();
     expect(
@@ -1600,6 +1703,220 @@ void main() {
     expect(find.text('Privacy trade-off'), findsOneWidget);
   });
 
+  testWidgets('shows the custom distribution and schedule on mobile', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _app(
+        step: MobileIronwoodMigrationStep.custom,
+        previewCustomPlan: _customPlan(isSimulated: true, profileCount: 32),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Custom migration'), findsOneWidget);
+    expect(find.text('Smaller wallet profiles'), findsOneWidget);
+    expect(find.text('Parallel migration schedules'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('custom_migration_profile_64')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_profile_128')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_profile_256')),
+      findsNothing,
+    );
+    expect(find.text('Balance profiles (X)'), findsNothing);
+    expect(find.text('Concurrent schedules (Y)'), findsNothing);
+    expect(find.text('Exact plan'), findsOneWidget);
+    expect(find.text('Expected note distribution'), findsOneWidget);
+    expect(find.text('Expected migration timeline'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('custom_migration_concurrency_16')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_concurrency_32')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_simulation_banner')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('custom_migration_resample')),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('10,000 ZEC notes remain possible'),
+      findsNothing,
+    );
+    expect(
+      find.textContaining('This increases grouping ambiguity'),
+      findsNothing,
+    );
+    final button = tester.widget<AppButton>(
+      find.widgetWithText(AppButton, 'Continue to signing'),
+    );
+    expect(button.onPressed, isNull);
+  });
+
+  testWidgets('keeps the approved custom plan through the notification gate', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final plan = _customPlan();
+    final startedStatus = _status(
+      phase: kIronwoodMigrationWaitingDenomConfirmationsPhase,
+    );
+    var draftCount = 0;
+    var startCount = 0;
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/options',
+        customPlan: plan,
+        migrationService: _migrationService(
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.denied,
+          onCreateCustomDraft:
+              (
+                accountUuid,
+                targetValues,
+                approvedSchedule,
+                profileCount,
+                concurrentProfiles,
+                planSeed,
+              ) async {
+                draftCount += 1;
+                expect(accountUuid, 'account-1');
+                expect(
+                  targetValues.toList(),
+                  plan.targetValuesZatoshi.toList(),
+                );
+                expect(approvedSchedule, plan.scheduledTransfers);
+                expect(profileCount, plan.customProfileCount);
+                expect(concurrentProfiles, plan.customConcurrentProfiles);
+                expect(planSeed, plan.customPlanSeed);
+                return 'custom-draft-run';
+              },
+          onStart: (accountUuid, approvedSchedule) async {
+            startCount += 1;
+            expect(accountUuid, 'account-1');
+            expect(approvedSchedule, isEmpty);
+            return _migrationResult();
+          },
+        ),
+        migrationCoordinator: () => _StartScreenTestMigrationCoordinator((
+          accountUuid,
+          approvedSchedule,
+        ) async {
+          fail('Custom migration used the ordinary coordinator entry point.');
+        }),
+        startedStatus: startedStatus,
+        ctaBuilder: () => startCount > 0
+            ? IronwoodHomeMigrationCtaState.resume(
+                network: 'main',
+                accountUuid: 'account-1',
+                status: startedStatus,
+              )
+            : const IronwoodHomeMigrationCtaState.start(
+                network: 'main',
+                accountUuid: 'account-1',
+              ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final customOption = find.byKey(
+      const ValueKey('mobile_ironwood_custom_option'),
+    );
+    await tester.ensureVisible(customOption);
+    await tester.tap(customOption);
+    await tester.pump();
+    final optionsContinue = find.byKey(
+      const ValueKey('mobile_ironwood_options_continue_button'),
+    );
+    await tester.ensureVisible(optionsContinue);
+    await tester.tap(optionsContinue);
+    await tester.pumpAndSettle();
+
+    final customContinue = find.byKey(
+      const ValueKey('custom_migration_continue_button'),
+    );
+    await tester.ensureVisible(customContinue);
+    await tester.tap(customContinue);
+    await tester.pumpAndSettle();
+
+    expect(draftCount, 0);
+    expect(find.text('Keep your migration on schedule'), findsOneWidget);
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continue without notifications'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(draftCount, 1);
+    expect(startCount, 1);
+    expect(find.text('Preparing your migration'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(
+      find.byType(MobileIronwoodMigrationPrivateStatusScreen),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('saves custom Keystone targets before denomination preparation', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    final plan = _customPlan();
+    final events = <String>[];
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/start',
+        migrationService: _migrationService(
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+          onCreateCustomDraft:
+              (
+                accountUuid,
+                targetValues,
+                approvedSchedule,
+                profileCount,
+                concurrentProfiles,
+                planSeed,
+              ) async {
+                events.add('draft');
+                expect(
+                  targetValues.toList(),
+                  plan.targetValuesZatoshi.toList(),
+                );
+                expect(approvedSchedule, plan.scheduledTransfers);
+                return 'custom-keystone-draft';
+              },
+          onPrepareKeystoneDenominations: (accountUuid) async {
+            expect(events, ['draft']);
+            events.add('prepare');
+            return _keystoneDenominationRequest();
+          },
+        ),
+        hardware: true,
+        privatePlan: plan,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(events, ['draft', 'prepare']);
+    expect(find.text('keystone denomination sign route'), findsOneWidget);
+  });
+
   testWidgets('routes Keystone Immediate migration through mobile signing', (
     tester,
   ) async {
@@ -1620,6 +1937,8 @@ void main() {
       matching: find.byType(GestureDetector),
     );
     expect(tester.widget<GestureDetector>(immediateGesture).onTap, isNotNull);
+    await tester.ensureVisible(immediateOption);
+    await tester.pump();
     await tester.tap(immediateOption);
     await tester.pump();
     expect(
@@ -2746,7 +3065,7 @@ void main() {
     expect(find.text('Authorise anyway'), findsNothing);
   });
 
-  testWidgets('Android shows Private disabled and selects Immediate', (
+  testWidgets('Android disables Private and Custom and selects Immediate', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -2763,6 +3082,9 @@ void main() {
     final immediateOption = find.byKey(
       const ValueKey('mobile_ironwood_immediate_option'),
     );
+    final customOption = find.byKey(
+      const ValueKey('mobile_ironwood_custom_option'),
+    );
     expect(find.text('Choose How to Migrate'), findsOneWidget);
     expect(find.text('Private'), findsOneWidget);
     expect(find.text('Immediate'), findsOneWidget);
@@ -2773,7 +3095,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Not available on Android.'), findsOneWidget);
+    expect(find.text('Not available on Android.'), findsNWidgets(2));
     expect(find.text('Recommended'), findsNothing);
     expect(
       find.descendant(
@@ -2796,13 +3118,26 @@ void main() {
       of: privateOption,
       matching: find.byType(GestureDetector),
     );
+    final customGesture = find.descendant(
+      of: customOption,
+      matching: find.byType(GestureDetector),
+    );
     expect(tester.widget<GestureDetector>(privateGesture).onTap, isNull);
+    expect(tester.widget<GestureDetector>(customGesture).onTap, isNull);
     expect(
       tester
           .widget<AnimatedOpacity>(
             find.byKey(
               const ValueKey('mobile_ironwood_private_option_opacity'),
             ),
+          )
+          .opacity,
+      0.5,
+    );
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.byKey(const ValueKey('mobile_ironwood_custom_option_opacity')),
           )
           .opacity,
       0.5,
