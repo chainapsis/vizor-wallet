@@ -564,6 +564,7 @@ pub(crate) fn denomination_stages_for_run(
     ensure_schema(conn)?;
     let salt =
         secret_payload::decode_base64(salt_base64.as_bytes(), "migration denomination stage salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT stage_index, encrypted_base_pczt, encrypted_compact_sigs,
@@ -613,19 +614,12 @@ pub(crate) fn denomination_stages_for_run(
             confirmed_mined_height,
             confirmed_block_hash,
         ) = row.map_err(|e| format!("Read migration denomination stage: {e}"))?;
-        let base_pczt = secret_payload::decrypt_payload(
-            encrypted_base_pczt.as_bytes(),
-            password,
-            salt.as_slice(),
-        )?;
-        let sigs_blob = secret_payload::decrypt_payload(
-            encrypted_compact_sigs.as_bytes(),
-            password,
-            salt.as_slice(),
-        )?;
+        let base_pczt = payload_key.decrypt(encrypted_base_pczt.as_bytes())?;
+        let sigs_blob = payload_key.decrypt(encrypted_compact_sigs.as_bytes())?;
         let raw_tx = encrypted_raw_tx
             .map(|encrypted| {
-                secret_payload::decrypt_payload(encrypted.as_bytes(), password, salt.as_slice())
+                payload_key
+                    .decrypt(encrypted.as_bytes())
                     .map(|raw| raw.to_vec())
             })
             .transpose()?;
@@ -778,6 +772,7 @@ pub(crate) fn pending_raw_denomination_stages(
     ensure_schema(conn)?;
     let salt =
         secret_payload::decode_base64(salt_base64.as_bytes(), "migration denomination stage salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT stage_index, expected_txid_hex, encrypted_raw_tx,
@@ -816,11 +811,7 @@ pub(crate) fn pending_raw_denomination_stages(
             expiry_height,
             fee_zatoshi,
         ) = row.map_err(|e| format!("Read pending migration denomination stage: {e}"))?;
-        let raw_tx = secret_payload::decrypt_payload(
-            encrypted_raw_tx.as_bytes(),
-            password,
-            salt.as_slice(),
-        )?;
+        let raw_tx = payload_key.decrypt(encrypted_raw_tx.as_bytes())?;
         pending.push(PendingRawDenominationStage {
             stage_index,
             expected_txid_hex,
