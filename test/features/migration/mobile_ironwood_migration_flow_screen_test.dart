@@ -3606,7 +3606,7 @@ void main() {
                   redactedPczt: Uint8List.fromList([1]),
                 ),
               ],
-              signingBatchLimit: 35,
+              signingBatchLimit: 40,
             ),
         completeKeystoneDenominationMigration:
             ({
@@ -3730,7 +3730,7 @@ void main() {
                       redactedPczt: Uint8List.fromList([1]),
                     ),
                   ],
-                  signingBatchLimit: 35,
+                  signingBatchLimit: 40,
                 ),
         completeKeystoneBatchMigration:
             ({
@@ -4275,12 +4275,12 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('continues Keystone signing with part 36 in batch two', (
+  testWidgets('continues Keystone signing with part 41 in batch two', (
     tester,
   ) async {
     _useMobileViewport(tester);
     final parts = [
-      for (var index = 0; index < 36; index++)
+      for (var index = 0; index < 41; index++)
         rust_sync.MigrationPartStatus(
           partIndex: index,
           scheduleOrder: index,
@@ -4298,19 +4298,19 @@ void main() {
         status: _status(
           phase: kIronwoodMigrationReadyToMigratePhase,
           parts: parts,
-          targetValues: List<int>.filled(36, 100_000_000),
+          targetValues: List<int>.filled(41, 100_000_000),
           pendingTxCount: 0,
           confirmedTxCount: 0,
-          signedChildPcztCount: 35,
-          currentSigningPartIndices: const [35],
-          signingBatchLimit: 35,
+          signedChildPcztCount: 40,
+          currentSigningPartIndices: const [40],
+          signingBatchLimit: 40,
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.text('Ready to sign'), findsOneWidget);
     expect(find.text('Batch #2'), findsOneWidget);
-    expect(find.text('1 ZEC (3%)'), findsOneWidget);
+    expect(find.text('1 ZEC (2%)'), findsOneWidget);
     expect(find.text('Sign migration transactions'), findsOneWidget);
     final ring = tester.widget<CustomPaint>(
       find.byWidgetPredicate(
@@ -4320,25 +4320,25 @@ void main() {
       ),
     );
     final painter = ring.painter as dynamic;
-    expect(painter.segments, 36);
+    expect(painter.segments, 41);
     expect(painter.completedSegments, isEmpty);
-    expect(painter.highlightedSegments, {35});
+    expect(painter.highlightedSegments, {40});
     expect(painter.visibleSegmentGap, 4);
     expect(painter.highlightedSegmentOffset, 3.5);
     expect(painter.highlightedOuterOutlineWidth, 18);
     expect(painter.highlightedOutlineWidth, 16);
-    expect(tester.getCenter(find.text('1 ZEC (3%)')).dx, greaterThan(250));
+    expect(tester.getCenter(find.text('1 ZEC (2%)')).dx, greaterThan(250));
     expect(
       mobileIronwoodMigrationAttention(
         _status(
           phase: kIronwoodMigrationReadyToMigratePhase,
           parts: parts,
-          targetValues: List<int>.filled(36, 100_000_000),
+          targetValues: List<int>.filled(41, 100_000_000),
           pendingTxCount: 0,
           confirmedTxCount: 0,
-          signedChildPcztCount: 35,
-          currentSigningPartIndices: const [35],
-          signingBatchLimit: 35,
+          signedChildPcztCount: 40,
+          currentSigningPartIndices: const [40],
+          signingBatchLimit: 40,
         ),
         currentHeight: 3_000_000,
         broadcastHeight: 3_000_000,
@@ -4353,7 +4353,7 @@ void main() {
     (tester) async {
       _useMobileViewport(tester);
       final parts = [
-        for (var index = 0; index < 70; index++)
+        for (var index = 0; index < 80; index++)
           rust_sync.MigrationPartStatus(
             partIndex: index,
             scheduleOrder: index,
@@ -4371,11 +4371,11 @@ void main() {
           status: _status(
             phase: kIronwoodMigrationReadyToMigratePhase,
             parts: parts,
-            targetValues: List<int>.filled(70, 100_000_000),
+            targetValues: List<int>.filled(80, 100_000_000),
             pendingTxCount: 0,
             confirmedTxCount: 0,
-            currentSigningPartIndices: List<int>.generate(35, (index) => index),
-            signingBatchLimit: 35,
+            currentSigningPartIndices: List<int>.generate(40, (index) => index),
+            signingBatchLimit: 40,
           ),
         ),
       );
@@ -4383,14 +4383,14 @@ void main() {
 
       expect(find.text('All transactions'), findsNothing);
       expect(find.text('Batch #1'), findsOneWidget);
-      expect(find.text('35 ZEC (50%)'), findsOneWidget);
+      expect(find.text('40 ZEC (50%)'), findsOneWidget);
       expect(find.text('Sign migration transactions'), findsOneWidget);
     },
   );
 
   test('distinguishes equal-sized Keystone signing batches', () {
     final parts = [
-      for (var index = 0; index < 70; index++)
+      for (var index = 0; index < 80; index++)
         rust_sync.MigrationPartStatus(
           partIndex: index,
           scheduleOrder: index,
@@ -4404,12 +4404,12 @@ void main() {
       final status = _status(
         phase: kIronwoodMigrationReadyToMigratePhase,
         parts: parts,
-        targetValues: List<int>.filled(70, 100_000_000),
+        targetValues: List<int>.filled(80, 100_000_000),
         pendingTxCount: 0,
         confirmedTxCount: 0,
         signedChildPcztCount: signedCount,
         currentSigningPartIndices: signingPartIndices,
-        signingBatchLimit: 35,
+        signingBatchLimit: 40,
       );
       final attention = mobileIronwoodMigrationAttention(
         status,
@@ -4417,7 +4417,7 @@ void main() {
         broadcastHeight: 3_000_000,
         isHardware: true,
       )!;
-      expect(attention.count, 35);
+      expect(attention.count, 40);
       return mobileIronwoodMigrationAttentionFingerprint(
         accountUuid: 'account-1',
         runId: status.activeRunId!,
@@ -4426,10 +4426,10 @@ void main() {
       );
     }
 
-    final first = fingerprintFor(List<int>.generate(35, (index) => index), 0);
+    final first = fingerprintFor(List<int>.generate(40, (index) => index), 0);
     final second = fingerprintFor(
-      List<int>.generate(35, (index) => index + 35),
-      35,
+      List<int>.generate(40, (index) => index + 40),
+      40,
     );
 
     expect(first, isNot(second));
@@ -4461,7 +4461,7 @@ void main() {
           parts: parts,
           targetValues: List<int>.filled(10, 100_000_000),
           currentSigningPartIndices: const [2, 8],
-          signingBatchLimit: 35,
+          signingBatchLimit: 40,
         ),
       ),
     );

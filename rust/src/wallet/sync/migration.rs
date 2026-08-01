@@ -105,9 +105,10 @@ pub(crate) const PHASE_AWAITING_PREPARATION: &str = "awaiting_preparation";
 pub(crate) const PHASE_AWAITING_DENOMINATION_SIGNATURE: &str = "awaiting_denomination_signature";
 pub(crate) const PHASE_WAITING_DENOM_CONFIRMATIONS: &str = "waiting_denom_confirmations";
 pub(crate) const PHASE_READY_TO_MIGRATE: &str = "ready_to_migrate";
-// Keep migration signing rounds below Keystone's 40-message protocol ceiling;
-// the QR encoder also applies the independent 512 KiB request limit.
-pub(crate) const MIGRATION_KEYSTONE_BATCH_MAX_PARTS: u32 = 35;
+// Use Keystone's message-count ceiling for every migration signing path. The
+// QR encoder also applies the independent 512 KiB request limit.
+pub(crate) const MIGRATION_KEYSTONE_BATCH_MAX_PARTS: u32 =
+    crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES as u32;
 pub(crate) const PHASE_BROADCAST_SCHEDULED: &str = "broadcast_scheduled";
 pub(crate) const PHASE_BROADCASTING: &str = "broadcasting";
 pub(crate) const PHASE_WAITING_MIGRATION_CONFIRMATIONS: &str = "waiting_migration_confirmations";

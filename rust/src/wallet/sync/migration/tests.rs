@@ -6989,12 +6989,11 @@ fn ready_to_migrate_does_not_report_denomination_parts_as_completed_transfers() 
 }
 
 #[test]
-fn migration_batch_signing_selector_honors_the_thirty_five_part_policy() {
-    assert_eq!(MIGRATION_KEYSTONE_BATCH_MAX_PARTS, 35);
+fn migration_batch_signing_selector_uses_the_keystone_message_limit() {
     assert_eq!(crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES, 40);
-    assert!(
-        MIGRATION_KEYSTONE_BATCH_MAX_PARTS
-            < crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES as u32
+    assert_eq!(
+        MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
+        crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES as u32
     );
     assert_eq!(
         select_migration_batch_signing_part_indices(3, 0, 0, &[]).unwrap(),
@@ -7004,18 +7003,18 @@ fn migration_batch_signing_selector_honors_the_thirty_five_part_policy() {
         select_migration_batch_signing_part_indices(2, 2, 2, &[1, 10]).unwrap(),
         vec![1, 10]
     );
-    let forty_parts = (0..40).collect::<Vec<_>>();
+    let forty_five_parts = (0..45).collect::<Vec<_>>();
     assert_eq!(
-        select_migration_batch_signing_part_indices(40, 40, 0, &forty_parts).unwrap(),
-        (0..35).collect::<Vec<_>>()
+        select_migration_batch_signing_part_indices(45, 45, 0, &forty_five_parts).unwrap(),
+        (0..40).collect::<Vec<_>>()
     );
     assert_eq!(
-        select_migration_batch_signing_part_indices(40, 0, 0, &[]).unwrap(),
-        (0..35).collect::<Vec<_>>()
+        select_migration_batch_signing_part_indices(45, 0, 0, &[]).unwrap(),
+        (0..40).collect::<Vec<_>>()
     );
     assert_eq!(
-        select_migration_batch_signing_part_indices(40, 35, 0, &[]).unwrap(),
-        vec![35, 36, 37, 38, 39]
+        select_migration_batch_signing_part_indices(45, 40, 0, &[]).unwrap(),
+        vec![40, 41, 42, 43, 44]
     );
     assert_eq!(
         select_migration_batch_signing_part_indices(0, 0, 0, &[]).unwrap_err(),
