@@ -54,6 +54,9 @@ rust/build/
 .regtest-logs/
 .ironwood-regtest/
 .ironwood-regtest-snapshots/
+.ironwood-large-value-regtest/
+.ironwood-large-value-regtest-snapshots/
+.ironwood-large-value-regtest-build/
 
 # Symbolication related
 app.*.symbols

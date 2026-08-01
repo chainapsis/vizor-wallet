@@ -93,6 +93,63 @@ transactions confirm. The base runner accepts `E2E_ORCHARD_FUNDING_AMOUNT`,
 `E2E_ORCHARD_PREFUND_BLOCKS`, and `E2E_ORCHARD_FUNDING_COINBASE_LIMIT` so other
 large-balance scenarios can reuse the same setup.
 
+## Synthetic extreme-value Custom migration
+
+The large-value fixture creates a separate regtest chain for a deliberately
+unrealistic 10,000,000 ZEC stress balance that normal regtest issuance cannot
+fund. Its zcashd image is built from the pinned Zero v15 source with one
+isolated consensus change: block 1 grants the regtest faucet 11,000,000 ZEC.
+Every later subsidy follows the normal regtest schedule. The value stays below
+`MAX_MONEY`, and both block creation and block validation obtain it through the
+same subsidy function.
+
+The fixture does not reuse the default stack. It has its own Compose project,
+image, state, checkpoints, and ports:
+
+- state: `.ironwood-large-value-regtest/`
+- checkpoints: `.ironwood-large-value-regtest-snapshots/`
+- zcashd RPC: `19234`
+- lightwalletd: `19069`
+- E2E driver: `39085`
+
+Build the custom image and create the reusable default checkpoint. The first
+build can take 15–25 minutes:
+
+```bash
+scripts/ironwood-regtest/prepare-large-value-checkpoint.sh
+```
+
+This funds the deterministic software wallet with one synthetic
+10,000,000.0002 ZEC Orchard note before NU6.3 activation and saves it as
+`custom-migration-10000000-zec`. Run the fully automated chain and ordering
+preflight from that checkpoint with:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-custom-migration-preflight.sh
+```
+
+Open the real interactive Custom flow with:
+
+```bash
+scripts/e2e/flutter-macos-ironwood-custom-migration-live.sh
+```
+
+The app stops on the Custom screen with physical pointer input enabled. Change
+the amount-group and parallel-schedule controls as desired, resample if needed,
+then select **Continue to signing**. The runner captures the exact
+approved target order, pauses at denomination and scheduled broadcast
+boundaries, mines to each persisted height, checks that nothing broadcasts one
+block early, and verifies the final Ironwood balance and note order. Press
+Ctrl-C to stop the runner.
+
+If the repository's default macOS signing team is unavailable, the runner
+honors `E2E_MACOS_DEVELOPMENT_TEAM` or a `DEVELOPMENT_TEAM` entry in the ignored
+`macos/Runner/Configs/FlavorOverrides.xcconfig` file.
+
+The source clone used for the custom image is kept under the ignored
+`.ironwood-large-value-regtest-build/` directory. The build script accepts only
+the pinned Zero revision and the three-file faucet patch.
+
 Test a wallet with many independent Orchard notes:
 
 ```bash
