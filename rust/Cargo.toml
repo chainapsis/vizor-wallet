@@ -151,6 +151,36 @@ zcash_note_encryption = "0.4"
 [dev-dependencies.vote-commitment-tree]
 version = "0.4.0-rc.1"
 
+[patch.crates-io]
+# librustzcash pinned to zcash/librustzcash#2883, which adds
+# `WalletDb::get_wallet_snapshot` on top of the 0.22.0-rc.6 release line.
+# Vizor tracks its own scan progress, so `WalletSummary::progress` is pure
+# cost here; the snapshot API drops it. See `rust/tests/summary_scaling.rs`.
+#
+# The branch is rc.6 plus three commits touching three files, so the crate
+# versions still match what Cargo.lock resolved from crates.io. Do NOT point
+# this at the sibling `-main` branch: that one carries everything on
+# librustzcash main beyond rc.6 (~1900 lines) and is not what Vizor's pins
+# or benchmarks describe.
+#
+# Git rather than a local path so the build does not depend on a sibling
+# checkout being on the right branch, and so Cargo.lock (which pins the exact
+# rev) can be committed. Revisit once the API lands in a crates.io release.
+#
+# Patch the shared public types too: the workspace manifests use path
+# dependencies for these crates, so leaving their crates.io copies active
+# would create incompatible duplicate types in zcash_voting.
+equihash = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+f4jumble = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+pczt = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+zcash_address = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+zcash_client_backend = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+zcash_client_sqlite = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash.git", branch = "vizor/no-progress-wallet-snapshot-release" }
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)', 'cfg(ironwood_masquerade)'] }
 
