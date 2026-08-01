@@ -362,9 +362,7 @@ _StatusAction _statusAction(
   return switch (status.phase) {
     kIronwoodMigrationWaitingDenomConfirmationsPhase => _StatusAction.none,
     kIronwoodMigrationReadyToMigratePhase =>
-      isHardware &&
-              (status.currentSigningPartIndices == null ||
-                  status.currentSigningPartIndices!.isNotEmpty)
+      isHardware && migrationRequiresKeystoneSignature(status)
           ? _StatusAction.needsInput
           : _StatusAction.none,
     kIronwoodMigrationFailedRecoverablePhase => _StatusAction.retry,

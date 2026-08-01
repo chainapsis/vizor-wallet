@@ -36,6 +36,7 @@ class _MobileMigrationRedesignedStatus extends ConsumerStatefulWidget {
 
 class _MobileMigrationRedesignedStatusState
     extends ConsumerState<_MobileMigrationRedesignedStatus> {
+  static const _softwarePartsPerBatch = 8;
   static const _syncSurfaceRevealDelay = Duration(milliseconds: 800);
   static const _syncSurfaceMinimumDuration = Duration(milliseconds: 500);
   static const _advancingLabelRevealDelay = Duration(milliseconds: 800);
@@ -735,7 +736,7 @@ class _MobileMigrationRedesignedStatusState
       final needsKeystoneResign =
           !needsHardwareCredentialAttention &&
           widget.isHardware &&
-          _requiresKeystoneSignature(widget.status);
+          migrationRequiresKeystoneSignature(widget.status);
       final keystoneResignLabel =
           widget.status.parts.any(
             (part) => part.state == rust_sync.MigrationPartState.needsInput,
@@ -1016,9 +1017,7 @@ class _MobileMigrationRedesignedStatusState
     )) {
       return true;
     }
-    if (widget.isHardware &&
-        status.phase == kIronwoodMigrationReadyToMigratePhase &&
-        status.signedChildPcztCount <= 0) {
+    if (widget.isHardware && migrationRequiresKeystoneSignature(status)) {
       return true;
     }
     if (_hasDueProofBatch(status)) return !hasChildProofBatchPermit;
@@ -1168,7 +1167,8 @@ class _MobileMigrationRedesignedStatusState
   /// Runs the required action for [accountUuid]. Only a tap reaches here.
   Future<void> _performRequiredAction(String accountUuid) async {
     if (_actionRunning) return;
-    if (widget.isHardware && _requiresKeystoneSignature(widget.status)) {
+    if (widget.isHardware &&
+        migrationRequiresKeystoneSignature(widget.status)) {
       context.push('/migration/private/keystone/batch/sign');
       return;
     }
@@ -1189,16 +1189,6 @@ class _MobileMigrationRedesignedStatusState
     }
   }
 
-  bool _requiresKeystoneSignature(rust_sync.MigrationStatus status) {
-    if (status.parts.any(
-      (part) => part.state == rust_sync.MigrationPartState.needsInput,
-    )) {
-      return true;
-    }
-    return status.phase == kIronwoodMigrationReadyToMigratePhase &&
-        status.signedChildPcztCount <= 0;
-  }
-
   String _requiredActionLabel(
     rust_sync.MigrationStatus status, {
     required int batchNumber,
@@ -1212,7 +1202,7 @@ class _MobileMigrationRedesignedStatusState
     }
     if (hasLateScheduledBroadcast) return 'Submit scheduled transaction';
     if (!widget.isHardware) return 'Prepare batch #$batchNumber';
-    if (_requiresKeystoneSignature(status)) {
+    if (migrationRequiresKeystoneSignature(status)) {
       final isResigning = status.parts.any(
         (part) => part.state == rust_sync.MigrationPartState.needsInput,
       );
@@ -1224,11 +1214,14 @@ class _MobileMigrationRedesignedStatusState
   }
 
   bool _isInitialKeystoneSigning(rust_sync.MigrationStatus status) {
+    final signingPartIndices = status.currentSigningPartIndices;
     return status.phase == kIronwoodMigrationReadyToMigratePhase &&
         status.signedChildPcztCount <= 0 &&
         !status.parts.any(
           (part) => part.state == rust_sync.MigrationPartState.needsInput,
-        );
+        ) &&
+        (signingPartIndices == null ||
+            signingPartIndices.toSet().length == _totalParts(status));
   }
 
   int _currentHeight() {
@@ -1383,6 +1376,12 @@ class _MobileMigrationRedesignedStatusState
     for (final part in ordered) {
       if (part.state == rust_sync.MigrationPartState.needsInput) return part;
     }
+    final signingPartIndices = status.currentSigningPartIndices?.toSet();
+    if (signingPartIndices != null && signingPartIndices.isNotEmpty) {
+      for (final part in ordered) {
+        if (signingPartIndices.contains(part.partIndex)) return part;
+      }
+    }
     final nextActionPartIndex = status.nextActionPartIndex;
     if (_hasDueProofBatch(status) && nextActionPartIndex != null) {
       for (final part in ordered) {
@@ -1421,9 +1420,12 @@ class _MobileMigrationRedesignedStatusState
     rust_sync.MigrationPartStatus? actionPart,
   }) {
     final totalParts = _totalParts(status);
-    final partsPerBatch = status.signingBatchLimit > 0
+    final keystonePartsPerBatch = status.signingBatchLimit > 0
         ? status.signingBatchLimit
         : 1;
+    final partsPerBatch = widget.isHardware
+        ? keystonePartsPerBatch
+        : _softwarePartsPerBatch;
     final totalBatches = math.max(
       1,
       (totalParts + partsPerBatch - 1) ~/ partsPerBatch,

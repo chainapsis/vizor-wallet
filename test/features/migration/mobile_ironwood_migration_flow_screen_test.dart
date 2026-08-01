@@ -4275,7 +4275,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('groups migration parts using the 35-part signing limit', (
+  testWidgets('continues Keystone signing with part 36 in batch two', (
     tester,
   ) async {
     _useMobileViewport(tester);
@@ -4285,10 +4285,8 @@ void main() {
           partIndex: index,
           scheduleOrder: index,
           valueZatoshi: BigInt.from(100_000_000),
-          state: index < 35
-              ? rust_sync.MigrationPartState.completed
-              : rust_sync.MigrationPartState.needsInput,
-          confirmationCount: index < 35 ? 3 : 0,
+          state: rust_sync.MigrationPartState.preparing,
+          confirmationCount: 0,
           confirmationTarget: 3,
         ),
     ];
@@ -4296,10 +4294,14 @@ void main() {
       _productionApp(
         initialLocation: '/migration/private/status',
         migrationService: _migrationService(),
+        hardware: true,
         status: _status(
           phase: kIronwoodMigrationReadyToMigratePhase,
           parts: parts,
           targetValues: List<int>.filled(36, 100_000_000),
+          pendingTxCount: 0,
+          confirmedTxCount: 0,
+          signedChildPcztCount: 35,
           currentSigningPartIndices: const [35],
           signingBatchLimit: 35,
         ),
@@ -4309,7 +4311,7 @@ void main() {
     expect(find.text('Ready to sign'), findsOneWidget);
     expect(find.text('Batch #2'), findsOneWidget);
     expect(find.text('1 ZEC (3%)'), findsOneWidget);
-    expect(find.text('Prepare batch #2'), findsOneWidget);
+    expect(find.text('Sign migration transactions'), findsOneWidget);
     final ring = tester.widget<CustomPaint>(
       find.byWidgetPredicate(
         (widget) =>
@@ -4319,15 +4321,118 @@ void main() {
     );
     final painter = ring.painter as dynamic;
     expect(painter.segments, 36);
-    expect(painter.completedSegments, {
-      for (var index = 0; index < 35; index++) index,
-    });
+    expect(painter.completedSegments, isEmpty);
     expect(painter.highlightedSegments, {35});
     expect(painter.visibleSegmentGap, 4);
     expect(painter.highlightedSegmentOffset, 3.5);
     expect(painter.highlightedOuterOutlineWidth, 18);
     expect(painter.highlightedOutlineWidth, 16);
     expect(tester.getCenter(find.text('1 ZEC (3%)')).dx, greaterThan(250));
+    expect(
+      mobileIronwoodMigrationAttention(
+        _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(36, 100_000_000),
+          pendingTxCount: 0,
+          confirmedTxCount: 0,
+          signedChildPcztCount: 35,
+          currentSigningPartIndices: const [35],
+          signingBatchLimit: 35,
+        ),
+        currentHeight: 3_000_000,
+        broadcastHeight: 3_000_000,
+        isHardware: true,
+      )?.count,
+      1,
+    );
+  });
+
+  testWidgets(
+    'labels a partial initial Keystone signing request as batch one',
+    (tester) async {
+      _useMobileViewport(tester);
+      final parts = [
+        for (var index = 0; index < 70; index++)
+          rust_sync.MigrationPartStatus(
+            partIndex: index,
+            scheduleOrder: index,
+            valueZatoshi: BigInt.from(100_000_000),
+            state: rust_sync.MigrationPartState.preparing,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+      ];
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          hardware: true,
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            parts: parts,
+            targetValues: List<int>.filled(70, 100_000_000),
+            pendingTxCount: 0,
+            confirmedTxCount: 0,
+            currentSigningPartIndices: List<int>.generate(35, (index) => index),
+            signingBatchLimit: 35,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('All transactions'), findsNothing);
+      expect(find.text('Batch #1'), findsOneWidget);
+      expect(find.text('35 ZEC (50%)'), findsOneWidget);
+      expect(find.text('Sign migration transactions'), findsOneWidget);
+    },
+  );
+
+  test('distinguishes equal-sized Keystone signing batches', () {
+    final parts = [
+      for (var index = 0; index < 70; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: rust_sync.MigrationPartState.preparing,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    String fingerprintFor(List<int> signingPartIndices, int signedCount) {
+      final status = _status(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        parts: parts,
+        targetValues: List<int>.filled(70, 100_000_000),
+        pendingTxCount: 0,
+        confirmedTxCount: 0,
+        signedChildPcztCount: signedCount,
+        currentSigningPartIndices: signingPartIndices,
+        signingBatchLimit: 35,
+      );
+      final attention = mobileIronwoodMigrationAttention(
+        status,
+        currentHeight: 3_000_000,
+        broadcastHeight: 3_000_000,
+        isHardware: true,
+      )!;
+      expect(attention.count, 35);
+      return mobileIronwoodMigrationAttentionFingerprint(
+        accountUuid: 'account-1',
+        runId: status.activeRunId!,
+        status: status,
+        attention: attention,
+      );
+    }
+
+    final first = fingerprintFor(List<int>.generate(35, (index) => index), 0);
+    final second = fingerprintFor(
+      List<int>.generate(35, (index) => index + 35),
+      35,
+    );
+
+    expect(first, isNot(second));
   });
 
   testWidgets('keeps action batch selection in part-index order', (
@@ -4356,7 +4461,7 @@ void main() {
           parts: parts,
           targetValues: List<int>.filled(10, 100_000_000),
           currentSigningPartIndices: const [2, 8],
-          signingBatchLimit: 8,
+          signingBatchLimit: 35,
         ),
       ),
     );

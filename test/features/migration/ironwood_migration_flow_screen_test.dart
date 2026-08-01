@@ -3475,6 +3475,7 @@ void main() {
                 index < 35
                     ? rust_sync.MigrationPartState.completed
                     : rust_sync.MigrationPartState.scheduled,
+                scheduleOrder: index == 35 ? 0 : index + 1,
               ),
           ],
         ),
