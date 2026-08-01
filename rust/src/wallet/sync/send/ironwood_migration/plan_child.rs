@@ -147,7 +147,7 @@ fn get_orchard_migration_private_plan_for_targets(
         planned_batch_count,
         denomination_split_stage_count,
         denomination_split_layer_count,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: super::migration::MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
         schedule_mean_delay_blocks:
             super::migration::schedule_parameters_for_part_count(
                 network,

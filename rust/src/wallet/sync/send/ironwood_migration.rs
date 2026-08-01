@@ -155,7 +155,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     Ok(KeystoneMigrationSigningRequest {
         request_id,
         messages,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: super::migration::MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
     })
 }
 
@@ -471,7 +471,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
     Ok(KeystoneMigrationSigningRequest {
         request_id,
         messages,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: super::migration::MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
     })
 }
 

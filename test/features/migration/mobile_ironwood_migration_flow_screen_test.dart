@@ -537,6 +537,7 @@ rust_sync.MigrationStatus _status({
   int confirmedTxCount = 1,
   int signedChildPcztCount = 0,
   int pendingSplitStageCount = 2,
+  int signingBatchLimit = 12,
   String? message,
   List<rust_sync.MigrationScheduledBroadcast>? scheduledBroadcasts,
 }) {
@@ -556,7 +557,7 @@ rust_sync.MigrationStatus _status({
     signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
-    signingBatchLimit: 12,
+    signingBatchLimit: signingBatchLimit,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
@@ -4274,20 +4275,20 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('groups migration parts into eight-part action batches', (
+  testWidgets('groups migration parts using the 35-part signing limit', (
     tester,
   ) async {
     _useMobileViewport(tester);
     final parts = [
-      for (var index = 0; index < 10; index++)
+      for (var index = 0; index < 36; index++)
         rust_sync.MigrationPartStatus(
           partIndex: index,
-          scheduleOrder: index == 8 ? 0 : index + 1,
+          scheduleOrder: index,
           valueZatoshi: BigInt.from(100_000_000),
-          state: index < 8
+          state: index < 35
               ? rust_sync.MigrationPartState.completed
               : rust_sync.MigrationPartState.needsInput,
-          confirmationCount: index < 8 ? 3 : 0,
+          confirmationCount: index < 35 ? 3 : 0,
           confirmationTarget: 3,
         ),
     ];
@@ -4298,15 +4299,16 @@ void main() {
         status: _status(
           phase: kIronwoodMigrationReadyToMigratePhase,
           parts: parts,
-          targetValues: List<int>.filled(10, 100_000_000),
-          currentSigningPartIndices: const [8, 9],
+          targetValues: List<int>.filled(36, 100_000_000),
+          currentSigningPartIndices: const [35],
+          signingBatchLimit: 35,
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.text('Ready to sign'), findsOneWidget);
     expect(find.text('Batch #2'), findsOneWidget);
-    expect(find.text('2 ZEC (20%)'), findsOneWidget);
+    expect(find.text('1 ZEC (3%)'), findsOneWidget);
     expect(find.text('Prepare batch #2'), findsOneWidget);
     final ring = tester.widget<CustomPaint>(
       find.byWidgetPredicate(
@@ -4316,16 +4318,16 @@ void main() {
       ),
     );
     final painter = ring.painter as dynamic;
-    expect(painter.segments, 10);
+    expect(painter.segments, 36);
     expect(painter.completedSegments, {
-      for (var index = 1; index <= 8; index++) index,
+      for (var index = 0; index < 35; index++) index,
     });
-    expect(painter.highlightedSegments, {0, 9});
+    expect(painter.highlightedSegments, {35});
     expect(painter.visibleSegmentGap, 4);
     expect(painter.highlightedSegmentOffset, 3.5);
     expect(painter.highlightedOuterOutlineWidth, 18);
     expect(painter.highlightedOutlineWidth, 16);
-    expect(tester.getCenter(find.text('2 ZEC (20%)')).dx, greaterThan(250));
+    expect(tester.getCenter(find.text('1 ZEC (3%)')).dx, greaterThan(250));
   });
 
   testWidgets('keeps action batch selection in part-index order', (
@@ -4354,6 +4356,7 @@ void main() {
           parts: parts,
           targetValues: List<int>.filled(10, 100_000_000),
           currentSigningPartIndices: const [2, 8],
+          signingBatchLimit: 8,
         ),
       ),
     );
@@ -5003,6 +5006,7 @@ void main() {
             signedChildPcztCount: 9,
             nextActionHeight: 3_000_100,
             nextActionPartIndex: 8,
+            signingBatchLimit: 8,
             scheduledBroadcasts: [
               rust_sync.MigrationScheduledBroadcast(
                 txidHex: 'tx-0',

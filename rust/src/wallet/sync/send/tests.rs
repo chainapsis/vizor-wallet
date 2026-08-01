@@ -463,7 +463,7 @@ fn migration_anchor_counts_empty_buckets_with_the_same_root_once() {
 
 #[test]
 fn keystone_migration_signing_accepts_multiple_firmware_rounds() {
-    let messages = (0..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
+    let messages = (0..=crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES)
         .map(|index| KeystoneMigrationMessage {
             id: format!("message-{index}"),
             redacted_pczt: vec![index as u8, 1],

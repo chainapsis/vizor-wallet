@@ -367,7 +367,10 @@ class _MigrationLiveStatusContent extends StatelessWidget {
       BigInt.zero,
       (sum, index) => index < values.length ? sum + values[index] : sum,
     );
-    final batchNumber = (batchIndex ~/ 8) + 1;
+    final signingBatchLimit = status.signingBatchLimit > 0
+        ? status.signingBatchLimit
+        : 1;
+    final batchNumber = (batchIndex ~/ signingBatchLimit) + 1;
     final percentage = _migrationPercentage(batchValue, totalZatoshi);
 
     return SizedBox(

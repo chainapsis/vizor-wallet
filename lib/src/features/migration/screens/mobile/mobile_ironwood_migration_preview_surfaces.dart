@@ -66,7 +66,8 @@ class _MobileIronwoodMigrationPreviewSurface extends StatelessWidget {
         _MigrationProgressPreview(
           state: _MigrationProgressState.needsInput,
           currentSigningPartIndices: {
-            for (var index = 0; index < _migrationPartsPerBatch; index++) index,
+            for (var index = 0; index < _migrationPreviewPartsPerBatch; index++)
+              index,
           },
           migratedAmountText: '777.888 ZEC',
           totalAmountText: '999.999 ZEC',
@@ -1141,7 +1142,7 @@ enum _MigrationProgressState {
   confirming,
 }
 
-const _migrationPartsPerBatch = 8;
+const _migrationPreviewPartsPerBatch = 8;
 
 class _MigrationProgressPreview extends StatelessWidget {
   const _MigrationProgressPreview({
@@ -1212,14 +1213,14 @@ class _MigrationProgressPreview extends StatelessWidget {
         totalBatches ??
         math.max(
           1,
-          (math.max(1, totalParts) + _migrationPartsPerBatch - 1) ~/
-              _migrationPartsPerBatch,
+          (math.max(1, totalParts) + _migrationPreviewPartsPerBatch - 1) ~/
+              _migrationPreviewPartsPerBatch,
         );
     final resolvedCompletedBatches =
         completedBatches ??
         (resolvedCompletedParts >= totalParts
             ? resolvedTotalBatches
-            : resolvedCompletedParts ~/ _migrationPartsPerBatch);
+            : resolvedCompletedParts ~/ _migrationPreviewPartsPerBatch);
     final resolvedCompletedRingSegments =
         completedRingSegments ??
         {

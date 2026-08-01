@@ -99,7 +99,6 @@ use crate::wallet::db::{
     with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::keys::parse_account_uuid;
-use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine;
 
