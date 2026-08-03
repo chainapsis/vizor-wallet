@@ -102,11 +102,11 @@ void main() {
         child: _ThemedHarness(
           theme: AppThemeData.light,
           child: AppContextMenu(
-            width: 192,
+            width: 176,
             children: [
               AppContextMenuItem(
                 iconName: AppIcons.key,
-                label: 'View secret passphrase',
+                label: 'View secret phrase',
                 scaleLabelToFit: true,
                 onTap: () {},
               ),
@@ -116,10 +116,10 @@ void main() {
       ),
     );
 
-    expect(find.text('View secret passphrase'), findsOneWidget);
+    expect(find.text('View secret phrase'), findsOneWidget);
     expect(
       find.ancestor(
-        of: find.text('View secret passphrase'),
+        of: find.text('View secret phrase'),
         matching: find.byType(FittedBox),
       ),
       findsOneWidget,

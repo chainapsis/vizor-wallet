@@ -296,7 +296,7 @@ void main() {
     expect(find.text('Send ZEC'), findsOneWidget);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
-    expect(find.text('View secret passphrase'), findsNothing);
+    expect(find.text('View secret phrase'), findsNothing);
     _expectVerticalTextOrder(tester, const [
       'Copy address',
       'Send ZEC',
@@ -342,18 +342,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret passphrase'), findsOneWidget);
-    expect(tester.getSize(find.byType(AppContextMenu)).width, 192);
+    expect(find.text('View secret phrase'), findsOneWidget);
+    expect(tester.getSize(find.byType(AppContextMenu)).width, 176);
     expect(
       find.ancestor(
-        of: find.text('View secret passphrase'),
+        of: find.text('View secret phrase'),
         matching: find.byType(FittedBox),
       ),
       findsOneWidget,
     );
     expect(
       tester
-          .renderObject<RenderParagraph>(find.text('View secret passphrase'))
+          .renderObject<RenderParagraph>(find.text('View secret phrase'))
           .didExceedMaxLines,
       isFalse,
     );
@@ -362,14 +362,14 @@ void main() {
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     _expectVerticalTextOrder(tester, const [
-      'View secret passphrase',
+      'View secret phrase',
       'Edit account',
       'Copy address',
       'Remove account',
     ]);
 
     final shortcutItem = find.ancestor(
-      of: find.text('View secret passphrase'),
+      of: find.text('View secret phrase'),
       matching: find.byType(AppContextMenuItem),
     );
     expect(shortcutItem, findsOneWidget);
@@ -383,7 +383,7 @@ void main() {
       AppIcons.key,
     );
 
-    await tester.tap(find.text('View secret passphrase'));
+    await tester.tap(find.text('View secret phrase'));
     await tester.pumpAndSettle();
 
     expect(find.text('secret passphrase route account-1'), findsOneWidget);
@@ -405,9 +405,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret passphrase'), findsOneWidget);
+    expect(find.text('View secret phrase'), findsOneWidget);
 
-    await tester.tap(find.text('View secret passphrase'));
+    await tester.tap(find.text('View secret phrase'));
     await tester.pumpAndSettle();
 
     expect(find.text('secret passphrase route account-3'), findsOneWidget);
@@ -445,7 +445,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret passphrase'), findsNothing);
+    expect(find.text('View secret phrase'), findsNothing);
   });
 
   testWidgets('current imported account can be removed', (tester) async {

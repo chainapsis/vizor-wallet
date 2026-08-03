@@ -1267,7 +1267,7 @@ class _AccountContextMenu extends StatelessWidget {
     required this.onDismiss,
   });
 
-  static const _width = 192.0;
+  static const _width = 176.0;
 
   final bool showSendZec;
   final VoidCallback? onViewSecretPassphrase;
@@ -1290,7 +1290,7 @@ class _AccountContextMenu extends StatelessWidget {
         if (onViewSecretPassphrase != null) ...[
           AppContextMenuItem(
             iconName: AppIcons.key,
-            label: 'View secret passphrase',
+            label: 'View secret phrase',
             scaleLabelToFit: true,
             onTap: onViewSecretPassphrase!,
           ),
