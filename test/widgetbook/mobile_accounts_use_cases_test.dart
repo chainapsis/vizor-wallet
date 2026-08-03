@@ -32,14 +32,18 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey('mobile_account_menu_card')))
           .width,
-      176,
+      208,
     );
     expect(
       find.ancestor(
         of: find.text('View secret phrase'),
         matching: find.byType(FittedBox),
       ),
-      findsOneWidget,
+      findsNothing,
+    );
+    expect(
+      tester.widget<Text>(find.text('View secret phrase')).overflow,
+      TextOverflow.ellipsis,
     );
     expect(tester.takeException(), isNull);
   });
