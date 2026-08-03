@@ -1063,6 +1063,7 @@ void main() {
       expect(find.text('Step 1 of 2'), findsNothing);
       expect(find.text('Round 1 of 2'), findsOneWidget);
       expect(find.text('Scan request with Keystone'), findsOneWidget);
+      expect(find.text('Scanning issues?'), findsOneWidget);
       expect(
         find.text(
           'Scan this request with Keystone to sign the preparation '
@@ -1070,10 +1071,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(
-        find.text('1 transaction to sign · click QR to enlarge'),
-        findsOneWidget,
-      );
+      expect(find.text('Click QR to enlarge'), findsOneWidget);
       final backToReviewButton = find.widgetWithText(
         AppButton,
         'Back to review',

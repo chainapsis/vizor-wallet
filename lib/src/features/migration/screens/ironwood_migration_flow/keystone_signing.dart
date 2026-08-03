@@ -364,13 +364,6 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
       'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.',
   };
 
-  String get messageUnit => switch (this) {
-    _KeystonePrivateSignStep.immediate => 'migration transaction',
-    _KeystonePrivateSignStep.combined => 'transaction',
-    _KeystonePrivateSignStep.denominations => 'split transaction',
-    _KeystonePrivateSignStep.batch => 'migration transaction',
-  };
-
   Future<rust_sync.KeystoneMigrationSigningRequest> prepare(
     IronwoodMigrationService service, {
     required String accountUuid,
@@ -468,7 +461,6 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   // scanner card reports it; the mobile view renders it under the viewfinder.
   int _scanProgress = 0;
   bool _requestCompleted = false;
-  bool _showImmediateScanHelp = true;
   Future<void>? _completionOperation;
   IronwoodMigrationPrivacyLockSuppressionNotifier?
   _privacyLockSuppressionNotifier;
@@ -1169,43 +1161,37 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ? null
           : AppPaneModalOverlay(
               onDismiss: () => unawaited(_returnToReview()),
-              child: _ImmediateKeystoneRequestModal(
-                showScanHelp: ready && _showImmediateScanHelp,
-                onDismissScanHelp: () {
-                  setState(() => _showImmediateScanHelp = false);
-                },
-                modal: KeystoneSigningModal(
-                  key: const ValueKey(
-                    'ironwood_immediate_keystone_signing_modal',
-                  ),
-                  phase: modalPhase,
-                  urParts: _urParts,
-                  error: _error,
-                  title: 'Confirm Migration with Keystone',
-                  subtitle: 'Scan with your Keystone',
-                  instruction: failed
-                      ? null
-                      : 'After you scanned, click Get signature.',
-                  primaryLabel: failed
-                      ? 'Try again'
-                      : ready
-                      ? 'Get signature'
-                      : 'Preparing',
-                  onPrimary: failed
-                      ? () => unawaited(_retryRequest())
-                      : ready && _urParts.isNotEmpty
-                      ? () {
-                          setState(() {
-                            _stage = _KeystoneDenominationSignStage.scanning;
-                            _error = null;
-                            _decoding = false;
-                          });
-                        }
-                      : null,
-                  secondaryLabel: 'Cancel',
-                  onSecondary: () => unawaited(_returnToReview()),
-                  qrSize: 200,
+              child: KeystoneSigningModal(
+                key: const ValueKey(
+                  'ironwood_immediate_keystone_signing_modal',
                 ),
+                phase: modalPhase,
+                urParts: _urParts,
+                error: _error,
+                title: 'Confirm Migration with Keystone',
+                subtitle: 'Scan with your Keystone',
+                instruction: failed
+                    ? null
+                    : 'After you scanned, click Get signature.',
+                primaryLabel: failed
+                    ? 'Try again'
+                    : ready
+                    ? 'Get signature'
+                    : 'Preparing',
+                onPrimary: failed
+                    ? () => unawaited(_retryRequest())
+                    : ready && _urParts.isNotEmpty
+                    ? () {
+                        setState(() {
+                          _stage = _KeystoneDenominationSignStage.scanning;
+                          _error = null;
+                          _decoding = false;
+                        });
+                      }
+                    : null,
+                secondaryLabel: 'Cancel',
+                onSecondary: () => unawaited(_returnToReview()),
+                qrSize: 200,
               ),
             ),
       child: showingScanner
@@ -1477,8 +1463,6 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   Widget _buildQrContent(BuildContext context) {
     final colors = context.colors;
-    final request = _request;
-    final signingRound = _currentSigningRound;
     final signingRoundLabel = _signingRoundLabel;
     final proofStatusText = _proofStatusText;
     final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
@@ -1527,23 +1511,22 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
                 key: const ValueKey('keystone_migration_enlarge_qr'),
                 onTap: () => unawaited(_showEnlargedRequestQr()),
                 behavior: HitTestBehavior.opaque,
-                child: KeystonePcztQrStage(
-                  phase: KeystonePcztQrStagePhase.ready,
-                  urParts: _urParts,
-                  error: _error,
-                  size: 264,
-                  frameInterval: _keystoneMigrationQrFrameInterval,
+                child: KeystoneScanHelpOverlay(
+                  visible: _urParts.isNotEmpty && !proofFailed,
+                  child: KeystonePcztQrStage(
+                    phase: KeystonePcztQrStagePhase.ready,
+                    urParts: _urParts,
+                    error: _error,
+                    size: 264,
+                    frameInterval: _keystoneMigrationQrFrameInterval,
+                  ),
                 ),
               ),
             ),
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
-            request == null || signingRound == null
-                ? 'Preparing migration request'
-                : '${signingRound.length} ${widget.step.messageUnit}'
-                      '${signingRound.length == 1 ? '' : 's'} to sign'
-                      ' · click QR to enlarge',
+            'Click QR to enlarge',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
@@ -1717,100 +1700,6 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ImmediateKeystoneRequestModal extends StatelessWidget {
-  const _ImmediateKeystoneRequestModal({
-    required this.modal,
-    required this.showScanHelp,
-    required this.onDismissScanHelp,
-  });
-
-  final Widget modal;
-  final bool showScanHelp;
-  final VoidCallback onDismissScanHelp;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 560,
-      height: 430,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          modal,
-          if (showScanHelp)
-            Positioned(
-              right: -64,
-              top: 150,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: -6,
-                    top: 40,
-                    child: Transform.rotate(
-                      angle: math.pi / 4,
-                      child: const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: ColoredBox(color: Color(0xFFFFFFFF)),
-                      ),
-                    ),
-                  ),
-                  Container(
-                    width: 224,
-                    padding: const EdgeInsets.all(AppSpacing.sm),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFFFFF),
-                      borderRadius: BorderRadius.circular(AppRadii.medium),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Scanning issues?',
-                                style: AppTypography.bodyMediumStrong.copyWith(
-                                  color: const Color(0xFF161819),
-                                ),
-                              ),
-                            ),
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: onDismissScanHelp,
-                              child: const Padding(
-                                padding: EdgeInsets.all(AppSpacing.xxs),
-                                child: AppIcon(
-                                  AppIcons.cross,
-                                  size: 12,
-                                  color: Color(0xFF161819),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          'Check Keystone firmware\nversion at keyst.one/firmware',
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: const Color(0xFF717678),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
       ),
     );
   }
