@@ -34,6 +34,50 @@ import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
 import 'desktop_sidebar_spacing.dart';
 
+final _sidebarThousandZatoshi = zatoshiPerZec * BigInt.from(1000);
+final _sidebarMillionZatoshi = zatoshiPerZec * BigInt.from(1000000);
+
+String _formatSidebarBalance(BigInt zatoshi) {
+  final absolute = zatoshi.abs();
+  if (absolute >= _sidebarMillionZatoshi) {
+    return _formatSidebarCompactBalance(
+      zatoshi,
+      unitZatoshi: _sidebarMillionZatoshi,
+      suffix: 'M',
+    );
+  }
+  if (absolute >= _sidebarThousandZatoshi) {
+    return _formatSidebarCompactBalance(
+      zatoshi,
+      unitZatoshi: _sidebarThousandZatoshi,
+      suffix: 'K',
+    );
+  }
+
+  final minimumVisibleZatoshi = BigInt.from(10000);
+  if (absolute > BigInt.zero && absolute < minimumVisibleZatoshi) {
+    return '${zatoshi.isNegative ? '-' : ''}<0.0001';
+  }
+  return ZecAmount.fromZatoshi(
+    zatoshi,
+  ).pretty(maxFractionDigits: 4, hideZeroFraction: true).amountText;
+}
+
+String _formatSidebarCompactBalance(
+  BigInt zatoshi, {
+  required BigInt unitZatoshi,
+  required String suffix,
+}) {
+  final scaledThousandths = (zatoshi.abs() * BigInt.from(1000)) ~/ unitZatoshi;
+  final whole = scaledThousandths ~/ BigInt.from(1000);
+  var fraction = (scaledThousandths % BigInt.from(1000))
+      .toString()
+      .padLeft(3, '0')
+      .replaceFirst(RegExp(r'0+$'), '');
+  if (fraction.isNotEmpty) fraction = '.$fraction';
+  return '${zatoshi.isNegative ? '-' : ''}$whole$fraction$suffix';
+}
+
 class AppMainSidebar extends ConsumerStatefulWidget {
   const AppMainSidebar({this.disabledRoutePaths = const {}, super.key});
 
@@ -335,7 +379,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
         !accountSync.hasAccountScopedData &&
         accountSync.failure == null;
     final balanceText =
-        '${ZecAmount.fromZatoshi(accountSync.displayTotalBalance).balance.amountText} '
+        '${_formatSidebarBalance(accountSync.displayTotalBalance)} '
         '$kZcashDefaultCurrencyTicker';
     final privacyModeEnabled = ref.watch(privacyModeProvider);
     final balanceLabel = hideAmountIfPrivacyMode(
@@ -534,11 +578,11 @@ class _SidebarMigrationHomeSection extends StatelessWidget {
         status.phase == kIronwoodMigrationReadyToMigratePhase &&
         (signingPartIndices == null || signingPartIndices.isNotEmpty);
     final orchardLabel = hideAmountIfPrivacyMode(
-      '${ZecAmount.fromZatoshi(orchardBalance).balance.amountText} ZEC',
+      '${_formatSidebarBalance(orchardBalance)} ZEC',
       privacyModeEnabled: privacyModeEnabled,
     );
     final ironwoodLabel = hideAmountIfPrivacyMode(
-      '${ZecAmount.fromZatoshi(ironwoodBalance).balance.amountText} ZEC',
+      '${_formatSidebarBalance(ironwoodBalance)} ZEC',
       privacyModeEnabled: privacyModeEnabled,
     );
 
