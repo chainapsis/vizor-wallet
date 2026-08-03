@@ -37,11 +37,13 @@ class MobileAccountsScreen extends ConsumerStatefulWidget {
   const MobileAccountsScreen({
     this.initialSheetAccountUuid,
     this.initialSheet,
+    this.initialOpenMenuAccountUuid,
     super.key,
   });
 
   final String? initialSheetAccountUuid;
   final MobileAccountsInitialSheet? initialSheet;
+  final String? initialOpenMenuAccountUuid;
 
   @override
   ConsumerState<MobileAccountsScreen> createState() =>
@@ -54,6 +56,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   var _busy = false;
   OverlayEntry? _rowMenuEntry;
   String? _openRowMenuAccountUuid;
+  var _didOpenInitialRowMenu = false;
 
   @override
   void initState() {
@@ -95,8 +98,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
   }
 
   /// Anchored dark popup at the row's ⋯ button — Figma `Accounts` row
-  /// menu: copy address / send ZEC / edit, with removal separated below
-  /// a divider when the eligibility rule allows it.
+  /// menu: secret passphrase (software only) / copy address / send ZEC / edit,
+  /// with removal separated below a divider when the eligibility rule allows
+  /// it.
   void _showRowMenu(AccountInfo account, BuildContext anchorContext) {
     if (_rowMenuEntry != null) {
       final wasOpenForAccount = _openRowMenuAccountUuid == account.uuid;
@@ -122,19 +126,21 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     );
     final anchorRect = anchorTopLeft & anchorRenderObject.size;
     final overlaySize = overlayRenderObject.size;
-    const menuWidth = 173.0;
+    final menuWidth = account.isHardware ? 173.0 : 232.0;
     const menuPadding = EdgeInsets.symmetric(
       horizontal: AppSpacing.xxs,
       vertical: AppSpacing.sm,
     );
-    final menuHeight = switch ((isCurrentAccount, canRemove)) {
+    final baseMenuHeight = switch ((isCurrentAccount, canRemove)) {
       (true, true) => 139.0,
       (true, false) => 92.0,
       (false, true) => 173.0,
       (false, false) => 126.0,
     };
+    final menuHeight = baseMenuHeight + (account.isHardware ? 0 : 34);
     const bottomNavClearance = kMobileTabBarHeight + AppSpacing.lg;
     final colors = context.colors;
+    final appTheme = AppTheme.of(context);
     final menuMaxTop = math.max(
       AppSpacing.sm,
       overlaySize.height - bottomNavClearance - menuHeight,
@@ -155,6 +161,8 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         switch (action) {
+          case _AccountAction.viewSecretPassphrase:
+            context.push('/settings/seed-phrase', extra: account.uuid);
           case _AccountAction.copy:
             unawaited(_copyAddress(account));
           case _AccountAction.send:
@@ -218,6 +226,13 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     }
 
     final menuItems = [
+      if (!account.isHardware)
+        item(
+          key: const ValueKey('mobile_account_menu_secret_passphrase'),
+          iconName: AppIcons.key,
+          label: 'View secret passphrase',
+          action: _AccountAction.viewSecretPassphrase,
+        ),
       item(
         key: const ValueKey('mobile_account_menu_copy'),
         iconName: AppIcons.copy,
@@ -265,31 +280,34 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
             right: menuRight,
             // Material ancestor: root overlays have none, and Text
             // would otherwise fall back to the debug underline style.
-            child: Material(
-              type: MaterialType.transparency,
-              child: DefaultTextStyle.merge(
-                style: const TextStyle(decoration: TextDecoration.none),
-                child: SizedBox(
-                  key: const ValueKey('mobile_account_menu_card'),
-                  width: menuWidth,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.background.inverse,
-                      borderRadius: BorderRadius.circular(AppRadii.medium),
-                      border: Border.all(color: colors.border.inverseOpacity),
-                      boxShadow: appContextMenuShadow,
-                    ),
-                    child: Padding(
-                      padding: menuPadding,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (var i = 0; i < menuItems.length; i++) ...[
-                            if (i > 0) const SizedBox(height: AppSpacing.xs),
-                            menuItems[i],
+            child: AppTheme(
+              data: appTheme,
+              child: Material(
+                type: MaterialType.transparency,
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(decoration: TextDecoration.none),
+                  child: SizedBox(
+                    key: const ValueKey('mobile_account_menu_card'),
+                    width: menuWidth,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.background.inverse,
+                        borderRadius: BorderRadius.circular(AppRadii.medium),
+                        border: Border.all(color: colors.border.inverseOpacity),
+                        boxShadow: appContextMenuShadow,
+                      ),
+                      child: Padding(
+                        padding: menuPadding,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var i = 0; i < menuItems.length; i++) ...[
+                              if (i > 0) const SizedBox(height: AppSpacing.xs),
+                              menuItems[i],
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -315,6 +333,20 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       _openRowMenuAccountUuid = null;
     }
     entry.remove();
+  }
+
+  void _openInitialRowMenuIfNeeded(
+    AccountInfo account,
+    BuildContext anchorContext,
+  ) {
+    if (_didOpenInitialRowMenu ||
+        widget.initialOpenMenuAccountUuid != account.uuid) {
+      return;
+    }
+    _didOpenInitialRowMenu = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showRowMenu(account, anchorContext);
+    });
   }
 
   Future<String?> _loadShieldedAddress(AccountInfo account) async {
@@ -549,36 +581,43 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       minRowHeight: 44,
       textStyle: AppTypography.labelLarge,
       trailing: Builder(
-        builder: (anchorContext) => Semantics(
-          button: true,
-          label: 'Account options for ${account.name}',
-          excludeSemantics: true,
-          child: GestureDetector(
-            key: ValueKey('mobile_accounts_menu_${account.uuid}'),
-            behavior: HitTestBehavior.opaque,
-            onTap: enabled ? () => _showRowMenu(account, anchorContext) : null,
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Center(
-                child: DecoratedBox(
-                  key: ValueKey('mobile_accounts_menu_button_${account.uuid}'),
-                  decoration: BoxDecoration(
-                    color: menuOpen
-                        ? colors.state.hover
-                        : const Color(0x00000000),
-                    borderRadius: BorderRadius.circular(AppRadii.xSmall),
-                  ),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: Center(
-                      child: Transform.rotate(
-                        angle: -math.pi / 2,
-                        child: AppIcon(
-                          AppIcons.options,
-                          size: AppIconSize.medium,
-                          color: colors.icon.accent,
+        builder: (anchorContext) {
+          _openInitialRowMenuIfNeeded(account, anchorContext);
+          return Semantics(
+            button: true,
+            label: 'Account options for ${account.name}',
+            excludeSemantics: true,
+            child: GestureDetector(
+              key: ValueKey('mobile_accounts_menu_${account.uuid}'),
+              behavior: HitTestBehavior.opaque,
+              onTap: enabled
+                  ? () => _showRowMenu(account, anchorContext)
+                  : null,
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Center(
+                  child: DecoratedBox(
+                    key: ValueKey(
+                      'mobile_accounts_menu_button_${account.uuid}',
+                    ),
+                    decoration: BoxDecoration(
+                      color: menuOpen
+                          ? colors.state.hover
+                          : const Color(0x00000000),
+                      borderRadius: BorderRadius.circular(AppRadii.xSmall),
+                    ),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: Center(
+                        child: Transform.rotate(
+                          angle: -math.pi / 2,
+                          child: AppIcon(
+                            AppIcons.options,
+                            size: AppIconSize.medium,
+                            color: colors.icon.accent,
+                          ),
                         ),
                       ),
                     ),
@@ -586,14 +625,14 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                 ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-enum _AccountAction { copy, send, edit, remove }
+enum _AccountAction { viewSecretPassphrase, copy, send, edit, remove }
 
 class _AccountsGroupCard extends StatelessWidget {
   const _AccountsGroupCard({

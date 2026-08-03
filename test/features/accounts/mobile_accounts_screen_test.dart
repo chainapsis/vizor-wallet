@@ -29,14 +29,19 @@ import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 import '../../fakes/fake_sync_notifier.dart';
 
-AccountInfo _account(String uuid, String name, {bool isSeedAnchor = false}) =>
-    AccountInfo(
-      uuid: uuid,
-      name: name,
-      order: 0,
-      profilePictureId: kDefaultProfilePictureId,
-      isSeedAnchor: isSeedAnchor,
-    );
+AccountInfo _account(
+  String uuid,
+  String name, {
+  bool isSeedAnchor = false,
+  bool isHardware = false,
+}) => AccountInfo(
+  uuid: uuid,
+  name: name,
+  order: 0,
+  profilePictureId: kDefaultProfilePictureId,
+  isSeedAnchor: isSeedAnchor,
+  isHardware: isHardware,
+);
 
 AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
   initialLocation: '/accounts',
@@ -68,6 +73,11 @@ Widget _app(
       GoRoute(
         path: '/add-account',
         builder: (_, _) => const Text('add account route'),
+      ),
+      GoRoute(
+        path: '/settings/seed-phrase',
+        builder: (_, state) =>
+            Text('seed phrase route ${state.extra as String?}'),
       ),
       GoRoute(path: '/welcome', builder: (_, _) => const Text('welcome route')),
     ],
@@ -340,11 +350,11 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
-      const Size(173, 173),
+      const Size(232, 207),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_copy'))),
-      const Size(165, 26),
+      const Size(224, 26),
     );
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
@@ -357,7 +367,69 @@ void main() {
     expect(find.text('Remove account'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
-      const Size(173, 139),
+      const Size(232, 173),
+    );
+  });
+
+  testWidgets('software account menu opens its secret passphrase', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        AccountState(
+          accounts: [
+            _account('a', 'Knight', isSeedAnchor: true),
+            _account('b', 'Viking'),
+          ],
+          activeAccountUuid: 'a',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('View secret passphrase'), findsOneWidget);
+    final shortcutIcon = tester.widget<AppIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
+        matching: find.byType(AppIcon),
+      ),
+    );
+    expect(shortcutIcon.name, AppIcons.key);
+
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('seed phrase route b'), findsOneWidget);
+  });
+
+  testWidgets('hardware account menu hides the secret passphrase shortcut', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        AccountState(
+          accounts: [
+            _account('a', 'Knight', isSeedAnchor: true),
+            _account('b', 'Keystone', isHardware: true),
+          ],
+          activeAccountUuid: 'a',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('View secret passphrase'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
+      findsNothing,
     );
   });
 

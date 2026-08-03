@@ -48,11 +48,19 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
 }
 
 class _FakeAccountNotifier extends AccountNotifier {
-  @override
-  FutureOr<AccountState> build() => _accountState;
+  _FakeAccountNotifier([this.initialState = _accountState]);
+
+  final AccountState initialState;
+  final requestedMnemonicUuids = <String>[];
 
   @override
-  Future<String?> getMnemonicForAccount(String uuid) async => _mnemonic;
+  FutureOr<AccountState> build() => initialState;
+
+  @override
+  Future<String?> getMnemonicForAccount(String uuid) async {
+    requestedMnemonicUuids.add(uuid);
+    return _mnemonic;
+  }
 }
 
 class _FakeBiometricUnlock extends BiometricUnlock {
@@ -108,11 +116,13 @@ Widget _app({
   Stream<void>? screenshotStream,
   SensitivePrivacyOverlayController? privacyOverlayController,
   _FakeBiometricController? biometric,
+  String? accountUuid,
+  AccountNotifier Function()? accountNotifier,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
-      accountProvider.overrideWith(_FakeAccountNotifier.new),
+      accountProvider.overrideWith(accountNotifier ?? _FakeAccountNotifier.new),
       appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
       if (biometric == null)
         biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock())
@@ -124,6 +134,7 @@ Widget _app({
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: MobileSeedPhraseScreen(
+        accountUuid: accountUuid,
         screenshotStream: screenshotStream,
         privacyOverlayController: privacyOverlayController,
         loadBirthday: false,
@@ -184,6 +195,28 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.text('Forgot Passcode?'), findsNothing);
+  });
+
+  testWidgets('reveals the requested account without making it active', (
+    tester,
+  ) async {
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+
+    await tester.pumpWidget(
+      _app(accountUuid: 'account-2', accountNotifier: () => accountNotifier),
+    );
+    await _revealSecret(tester);
+
+    expect(accountNotifier.requestedMnemonicUuids, ['account-2']);
+    expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
+    expect(find.text('abandon'), findsOneWidget);
   });
 
   testWidgets('confirm gate keeps biometric retry after prompt cancel', (

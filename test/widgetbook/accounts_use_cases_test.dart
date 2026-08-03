@@ -111,6 +111,36 @@ void main() {
     expect(find.text('Send ZEC'), findsOneWidget);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
+    expect(find.text('View secret passphrase'), findsNothing);
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_accounts_menu_preview-account-3')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('View secret passphrase'), findsOneWidget);
+  });
+
+  testWidgets('mobile account menu use cases distinguish software and '
+      'Keystone accounts', (tester) async {
+    await _pumpMobileAccountsUseCase(
+      tester,
+      buildMobileAccountsSoftwareMenuUseCase,
+    );
+
+    expect(find.text('View secret passphrase'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await _pumpMobileAccountsUseCase(
+      tester,
+      buildMobileAccountsKeystoneMenuUseCase,
+    );
+
+    expect(find.text('View secret passphrase'), findsNothing);
+    expect(find.text('Copy address'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('mobile accounts menu opens the edit sheet', (tester) async {

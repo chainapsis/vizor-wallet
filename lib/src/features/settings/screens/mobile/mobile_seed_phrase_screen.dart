@@ -43,11 +43,14 @@ enum _SeedStage { confirmAccess, reveal }
 /// state, and the wallet birthday loads best-effort alongside it.
 class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
   const MobileSeedPhraseScreen({
+    this.accountUuid,
     this.screenshotStream,
     this.privacyOverlayController,
     this.loadBirthday = true,
     super.key,
   });
+
+  final String? accountUuid;
 
   /// Test seam — production listens to the platform screenshot events.
   @visibleForTesting
@@ -247,12 +250,47 @@ class _MobileSeedPhraseScreenState
 
   // ── Reveal ─────────────────────────────────────────────────────────
 
+  AccountInfo? _targetAccount(AccountState? accountState) {
+    if (accountState == null) return null;
+    final requestedUuid = widget.accountUuid;
+    if (requestedUuid == null) return accountState.activeAccount;
+    for (final account in accountState.accounts) {
+      if (account.uuid == requestedUuid) return account;
+    }
+    return null;
+  }
+
+  bool _targetAccountChanged(String expectedAccountUuid) {
+    final accountState = ref.read(accountProvider).value;
+    return _targetAccount(accountState)?.uuid != expectedAccountUuid;
+  }
+
+  void _handleTargetAccountChanged() {
+    if (_stage == _SeedStage.confirmAccess && !_checking && _mnemonic == null) {
+      return;
+    }
+    setState(() {
+      _stage = _SeedStage.confirmAccess;
+      _entry = '';
+      _checking = false;
+      _gateError = 'Selected account changed. Enter your passcode again.';
+      _mnemonic = null;
+      _revealError = null;
+      _birthdayHeight = null;
+      _birthdayBlockTime = null;
+      _birthdayLoading = false;
+    });
+  }
+
   Future<void> _reveal() async {
-    final account = ref.read(accountProvider).value?.activeAccount;
+    final accountState = ref.read(accountProvider).value;
+    final account = _targetAccount(accountState);
     String? revealError;
     String? mnemonic;
     if (account == null) {
-      revealError = 'No active account is selected.';
+      revealError = widget.accountUuid == null
+          ? 'No active account is selected.'
+          : 'The selected account is no longer available.';
     } else if (account.isHardware) {
       revealError = 'Secret passphrase is not available for hardware accounts.';
     } else {
@@ -264,6 +302,10 @@ class _MobileSeedPhraseScreenState
       }
     }
     if (!mounted) return;
+    if (account != null && _targetAccountChanged(account.uuid)) {
+      _handleTargetAccountChanged();
+      return;
+    }
     setState(() {
       _mnemonic = mnemonic;
       _revealError = revealError;
@@ -373,6 +415,13 @@ class _MobileSeedPhraseScreenState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AccountInfo?>(
+      accountProvider.select((state) => _targetAccount(state.value)),
+      (previous, next) {
+        if (previous?.uuid == next?.uuid) return;
+        _handleTargetAccountChanged();
+      },
+    );
     final colors = context.colors;
     return Scaffold(
       backgroundColor: colors.background.window,

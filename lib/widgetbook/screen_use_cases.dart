@@ -601,6 +601,20 @@ Widget buildMobileAccountsUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(_accountsDesignState);
 }
 
+Widget buildMobileAccountsSoftwareMenuUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(
+    _accountsDesignState,
+    initialOpenMenuAccountUuid: 'preview-account-3',
+  );
+}
+
+Widget buildMobileAccountsKeystoneMenuUseCase(BuildContext context) {
+  return _buildMobileAccountsUseCase(
+    _accountsDesignState,
+    initialOpenMenuAccountUuid: 'preview-account-2',
+  );
+}
+
 Widget buildMobileAccountsEditAccountUseCase(BuildContext context) {
   return _buildMobileAccountsUseCase(
     _accountsDesignState,
@@ -1662,6 +1676,7 @@ Widget _buildMobileAccountsUseCase(
   AccountState accountState, {
   String? initialSheetAccountUuid,
   MobileAccountsInitialSheet? initialSheet,
+  String? initialOpenMenuAccountUuid,
   rust_sync.MigrationStatus? migrationStatus,
 }) {
   return ProviderScope(
@@ -1688,6 +1703,7 @@ Widget _buildMobileAccountsUseCase(
         child: _MobileAccountsHarness(
           initialSheetAccountUuid: initialSheetAccountUuid,
           initialSheet: initialSheet,
+          initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
         ),
       ),
     ),
@@ -2078,10 +2094,12 @@ class _MobileAccountsHarness extends StatefulWidget {
   const _MobileAccountsHarness({
     this.initialSheetAccountUuid,
     this.initialSheet,
+    this.initialOpenMenuAccountUuid,
   });
 
   final String? initialSheetAccountUuid;
   final MobileAccountsInitialSheet? initialSheet;
+  final String? initialOpenMenuAccountUuid;
 
   @override
   State<_MobileAccountsHarness> createState() => _MobileAccountsHarnessState();
@@ -2101,6 +2119,7 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
           builder: (_, _) => MobileAccountsScreen(
             initialSheetAccountUuid: widget.initialSheetAccountUuid,
             initialSheet: widget.initialSheet,
+            initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
           ),
         ),
         GoRoute(
@@ -2111,6 +2130,14 @@ class _MobileAccountsHarnessState extends State<_MobileAccountsHarness> {
         GoRoute(
           path: '/send',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/send'),
+        ),
+        GoRoute(
+          path: '/settings/seed-phrase',
+          builder: (_, state) => _PreviewRoutePlaceholder(
+            label:
+                '/settings/seed-phrase '
+                '(${state.extra as String? ?? 'active account'})',
+          ),
         ),
       ],
     );
