@@ -444,8 +444,10 @@ pub fn redact_pczt_for_signer(pczt_bytes: &[u8]) -> Result<Vec<u8>, String> {
 /// Redact a PCZT for a Keystone **migration batch** request.
 ///
 /// The v6 path uses librustzcash's batch signer policy, including its checked
-/// compaction of regenerable Orchard and Ironwood fields. The wallet keeps the
-/// unredacted PCZT for proof and signature combination.
+/// compaction of regenerable Orchard and Ironwood fields. Keystone requires an
+/// entirely unsigned batch request, so this additionally removes signatures
+/// retained on preauthorized padding spends. The wallet keeps the unredacted
+/// PCZT for proof and signature combination.
 ///
 /// Only use this for the migration batch flow; the single-transaction hardware
 /// send keeps [`redact_pczt_for_signer`].
@@ -468,21 +470,28 @@ fn apply_signer_redaction(pczt: pczt::Pczt, for_batch: bool) -> pczt::Pczt {
         pczt
     };
 
-    fn redact_bundle(r: &mut pczt::roles::redactor::orchard::OrchardRedactor<'_>) {
+    fn redact_bundle(r: &mut pczt::roles::redactor::orchard::OrchardRedactor<'_>, compact: bool) {
         r.redact_actions(|mut ar| {
             ar.clear_spend_witness();
             ar.redact_output_proprietary("zcash_client_backend:output_info");
+            if compact {
+                // librustzcash retains signatures for preauthorized protocol
+                // padding spends. Keystone's batch protocol rejects any
+                // request containing a spend-authorization signature; the
+                // wallet-owned base retains these signatures for extraction.
+                ar.clear_spend_auth_sig();
+            }
         });
     }
 
     let mut redactor = Redactor::new(pczt)
         .redact_global_with(|mut r| r.redact_proprietary("zcash_client_backend:proposal_info"))
         .redact_orchard_with(|mut r| {
-            redact_bundle(&mut r);
+            redact_bundle(&mut r, compact);
         });
 
     redactor = redactor.redact_ironwood_with(|mut r| {
-        redact_bundle(&mut r);
+        redact_bundle(&mut r, compact);
     });
 
     redactor
@@ -1795,9 +1804,9 @@ mod tests {
         // compact-PCZT format. Every action sheds `cv_net` and `cmx`, both
         // wallet-decryptable output ciphertexts (the Ironwood migration output
         // AND the deterministic zero-value Orchard output) travel as stripped
-        // memo plaintext, preauthorized dummy spends retain their signatures
-        // but shed `alpha`, and the v6 bundle anchors and `bsk`s are cleared.
-        // The wallet retains the unredacted PCZT for proof/extraction.
+        // memo plaintext, preauthorized dummy spends shed their signatures and
+        // `alpha`, and the v6 bundle anchors and `bsk`s are cleared. The wallet
+        // retains the unredacted PCZT for proof/extraction.
         #[test]
         fn batch_redaction_elides_verified_fields_and_signs_identically() {
             use crate::wallet::sync::pczt::redact_pczt_for_batch_signer;
@@ -1857,10 +1866,7 @@ mod tests {
                         .zip(base.ironwood().actions().iter()),
                 )
             {
-                assert_eq!(
-                    action.spend().spend_auth_sig(),
-                    base_action.spend().spend_auth_sig(),
-                );
+                assert!(action.spend().spend_auth_sig().is_none());
                 assert!(action.cv_net().is_none());
                 assert!(matches!(
                     action.output().enc_ciphertext(),
