@@ -39,6 +39,7 @@ import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signin
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
 import '../src/features/onboarding/import/import_secret_passphrase_screen.dart';
+import '../src/features/onboarding/import/import_split_view.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../src/features/onboarding/mobile/mobile_customise_account_screen.dart';
@@ -240,10 +241,14 @@ Widget buildImportSecretPassphraseUseCase(BuildContext context) {
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       ],
-      child: ImportSecretPassphraseScreen(
-        wordListOverride: _previewImportWordList,
-        mnemonicValidatorOverride: _previewMnemonicValidator,
-        useEnvironmentPrivacySignals: false,
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.secretPassphrase,
+        showPasswordStep: false,
+        child: ImportSecretPassphraseScreen(
+          wordListOverride: _previewImportWordList,
+          mnemonicValidatorOverride: _previewMnemonicValidator,
+          useEnvironmentPrivacySignals: false,
+        ),
       ),
     ),
   );
@@ -256,14 +261,18 @@ Widget buildImportSecretPassphrasePopulatedUseCase(BuildContext context) {
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       ],
-      child: ImportSecretPassphraseScreen(
-        args: const ImportSecretPassphraseArgs(
-          mnemonic: _previewMnemonic,
-          bip39Passphrase: 'My BIP39 passphrase',
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.secretPassphrase,
+        showPasswordStep: false,
+        child: ImportSecretPassphraseScreen(
+          args: const ImportSecretPassphraseArgs(
+            mnemonic: _previewMnemonic,
+            bip39Passphrase: 'My BIP39 passphrase',
+          ),
+          wordListOverride: _previewImportWordList,
+          mnemonicValidatorOverride: _previewMnemonicValidator,
+          useEnvironmentPrivacySignals: false,
         ),
-        wordListOverride: _previewImportWordList,
-        mnemonicValidatorOverride: _previewMnemonicValidator,
-        useEnvironmentPrivacySignals: false,
       ),
     ),
   );
@@ -276,15 +285,19 @@ Widget buildImportSecretPassphraseModalUseCase(BuildContext context) {
       overrides: [
         appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       ],
-      child: ImportSecretPassphraseScreen(
-        args: const ImportSecretPassphraseArgs(
-          mnemonic: _previewMnemonic,
-          bip39Passphrase: 'My BIP39 passphrase',
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.secretPassphrase,
+        showPasswordStep: false,
+        child: ImportSecretPassphraseScreen(
+          args: const ImportSecretPassphraseArgs(
+            mnemonic: _previewMnemonic,
+            bip39Passphrase: 'My BIP39 passphrase',
+          ),
+          wordListOverride: _previewImportWordList,
+          mnemonicValidatorOverride: _previewMnemonicValidator,
+          initialBip39PassphraseModalOpen: true,
+          useEnvironmentPrivacySignals: false,
         ),
-        wordListOverride: _previewImportWordList,
-        mnemonicValidatorOverride: _previewMnemonicValidator,
-        initialBip39PassphraseModalOpen: true,
-        useEnvironmentPrivacySignals: false,
       ),
     ),
   );

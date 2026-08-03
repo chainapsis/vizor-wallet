@@ -61,16 +61,19 @@ class _ImportSecretPassphraseScreenState
   static const _wordCountStep = 3;
   static const _wordCount = 24;
   static const _contentWidth = 396.0;
-  static const _onPageContentHeight = 580.0;
+  static const _passphraseHeight = 428.0;
+  static const _contentToButtonGap = AppSpacing.md;
+  static const _titleTop = 17.0;
+  static const _passphraseTop = 128.0;
+  static const _onPageContentHeight =
+      _passphraseTop + _passphraseHeight + _contentToButtonGap;
   static const _buttonHeight = 44.0;
   static const _layoutHeight = _onPageContentHeight + _buttonHeight;
   static const _referenceLayoutSlack = AppSpacing.sm;
   static const _referenceContentHeight = _layoutHeight + _referenceLayoutSlack;
   static const _scrollBottomPadding = AppSpacing.base;
-  static const _titleTop = 35.0;
-  static const _passphraseTop = 152.0;
   static const _gridWidth = 396.0;
-  static const _subtitleWidth = 320.0;
+  static const _subtitleWidth = 226.0;
   static const _buttonWidth = 230.0;
 
   late final List<TextEditingController> _controllers;
@@ -526,7 +529,7 @@ class _ImportSecretPassphraseScreenState
                             showClear:
                                 _hasEnteredMnemonicWords ||
                                 _bip39Passphrase.isNotEmpty,
-                            hasBip39Passphrase: _bip39Passphrase.isNotEmpty,
+                            bip39Passphrase: _bip39Passphrase,
                             onClear: _clearImportDraft,
                             onOpenBip39Passphrase: _openBip39PassphraseModal,
                           ),
@@ -614,7 +617,7 @@ class _ImportSecretTitle extends StatelessWidget {
         SizedBox(
           width: _ImportSecretPassphraseScreenState._subtitleWidth,
           child: Text(
-            'Accept 12, 15, 18, 21, or 24 words, with an optional BIP39 passphrase.',
+            'Accept 12, 15, 18, 21, or 24 words.',
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.primary,
             ),
@@ -639,7 +642,7 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
     required this.onChanged,
     required this.onSubmitted,
     required this.showClear,
-    required this.hasBip39Passphrase,
+    required this.bip39Passphrase,
     required this.onClear,
     required this.onOpenBip39Passphrase,
   });
@@ -655,7 +658,7 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
   final void Function(int index, String value) onChanged;
   final ValueChanged<int> onSubmitted;
   final bool showClear;
-  final bool hasBip39Passphrase;
+  final String bip39Passphrase;
   final VoidCallback onClear;
   final VoidCallback onOpenBip39Passphrase;
 
@@ -664,6 +667,7 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
     final wordSet = wordList.toSet();
 
     final colors = context.colors;
+    final hasBip39Passphrase = bip39Passphrase.isNotEmpty;
 
     Widget buildCell(int index) => _MnemonicWordCell(
       index: index,
@@ -684,7 +688,7 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
 
     return SizedBox(
       width: _ImportSecretPassphraseScreenState._gridWidth,
-      height: 428,
+      height: _ImportSecretPassphraseScreenState._passphraseHeight,
       child: Stack(
         children: [
           Positioned(
@@ -692,37 +696,38 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
             right: 0,
             bottom: 0,
             height: 96,
-            child: CustomPaint(
-              painter: _DashedPassphraseFooterPainter(
-                color: colors.border.subtle,
-                radius: AppRadii.large,
-              ),
-              child: Semantics(
-                button: true,
-                label: hasBip39Passphrase
-                    ? 'Edit BIP39 passphrase'
-                    : 'Add BIP39 passphrase',
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onOpenBip39Passphrase,
-                    child: Align(
-                      alignment: const Alignment(0, 0.42),
-                      child: Text(
-                        hasBip39Passphrase
-                            ? 'Edit BIP39 Passphrase'
-                            : 'Add BIP39 Passphrase',
-                        key: const ValueKey('bip39_passphrase_action'),
-                        style: AppTypography.labelLarge.copyWith(
-                          color: colors.text.muted,
+            child: hasBip39Passphrase
+                ? _SavedBip39PassphraseFooter(
+                    passphrase: bip39Passphrase,
+                    onPressed: onOpenBip39Passphrase,
+                  )
+                : CustomPaint(
+                    painter: _DashedPassphraseFooterPainter(
+                      color: colors.border.subtle,
+                      radius: AppRadii.large,
+                    ),
+                    child: Semantics(
+                      button: true,
+                      label: 'Add BIP39 passphrase',
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          key: const ValueKey('bip39_passphrase_action'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onOpenBip39Passphrase,
+                          child: Align(
+                            alignment: const Alignment(0, 0.42),
+                            child: Text(
+                              'Add BIP39 Passphrase (Optional)',
+                              style: AppTypography.labelLarge.copyWith(
+                                color: colors.text.muted,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            ),
           ),
           Positioned(
             left: 0,
@@ -735,11 +740,11 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AppRadii.large),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 child: Column(
                   children: [
                     SizedBox(
-                      height: 28,
+                      height: 32,
                       child: Row(
                         children: [
                           Expanded(
@@ -796,6 +801,77 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
   }
 }
 
+class _SavedBip39PassphraseFooter extends StatelessWidget {
+  const _SavedBip39PassphraseFooter({
+    required this.passphrase,
+    required this.onPressed,
+  });
+
+  final String passphrase;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Semantics(
+      button: true,
+      label: 'Edit BIP39 passphrase',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: const ValueKey('bip39_passphrase_action'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onPressed,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background.ground,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(AppRadii.large),
+                bottomRight: Radius.circular(AppRadii.large),
+              ),
+              boxShadow: appModalShadow,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'BIP39 Passphrase: $passphrase',
+                        key: const ValueKey('bip39_passphrase_preview'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    AppIcon(
+                      AppIcons.edit,
+                      size: AppIconSize.medium,
+                      color: colors.icon.accent,
+                    ),
+                    const SizedBox(width: AppSpacing.xxs),
+                    Text(
+                      'Edit',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: colors.text.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ClearMnemonicButton extends StatelessWidget {
   const _ClearMnemonicButton({required this.onPressed});
 
@@ -847,12 +923,22 @@ class _Bip39PassphraseModal extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'BIP39 Passphrase',
+            isEditing ? 'BIP39 Passphrase' : 'BIP39 Passphrase (Optional)',
             style: AppTypography.headlineSmall.copyWith(
               color: context.colors.text.accent,
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
+          if (!isEditing) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Add an optional passphrase (“25th word”) to create/import a '
+              'separate wallet from the same recovery phrase.',
+              style: AppTypography.bodyMedium.copyWith(
+                color: context.colors.text.primary,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
           KeyedSubtree(
             key: const ValueKey('bip39_passphrase_field'),
             child: AppTextField(
@@ -905,7 +991,7 @@ class _DashedPassphraseFooterPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 1
+      ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
     final path = Path()
       ..addRRect(
@@ -1178,17 +1264,17 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     final isKnownMnemonicWord = hasText && widget.wordSet.contains(enteredWord);
     final isInvalidUnfocused = hasText && !isFocused && !isKnownMnemonicWord;
     final valueStyle = AppTypography.labelLarge.copyWith(
-      fontWeight: FontWeight.w400,
-      color: colors.text.homeCard,
+      color: isInvalidUnfocused
+          ? colors.text.destructive
+          : colors.text.homeCard,
     );
     final hintStyle = AppTypography.labelLarge.copyWith(
-      fontWeight: FontWeight.w400,
-      color: colors.text.homeCard.withValues(alpha: 0.24),
+      color: colors.text.homeCard.withValues(alpha: 0.2),
     );
     final borderColor = isInvalidUnfocused
         ? colors.text.destructive
         : isFocused
-        ? colors.background.brandCrimsonStrong
+        ? colors.text.homeCard
         : _hovered
         ? colors.text.homeCard.withValues(alpha: 0.45)
         : colors.text.homeCard.withValues(alpha: 0.22);
@@ -1229,64 +1315,60 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
                   child: Row(
                     children: [
                       SizedBox(
-                        width: 25,
+                        width: 18,
                         child: Align(
                           alignment: Alignment.centerRight,
                           child: Text(
-                            '${widget.index + 1}',
-                            style: AppTypography.codeMedium.copyWith(
-                              fontSize: 12,
-                              height: 18 / 12,
+                            '${widget.index + 1}'.padLeft(2, '0'),
+                            maxLines: 1,
+                            softWrap: false,
+                            style: AppTypography.labelMedium.copyWith(
                               color: numberColor,
                             ),
                             textAlign: TextAlign.right,
                           ),
                         ),
                       ),
+                      const SizedBox(width: AppSpacing.xs),
                       Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Center(
-                            child: KeyedSubtree(
-                              key: widget.index == 0
-                                  ? const ValueKey(
-                                      'import_mnemonic_first_word_field',
-                                    )
-                                  : null,
-                              child: Listener(
-                                behavior: HitTestBehavior.translucent,
-                                onPointerDown: (_) => widget
-                                    .onAutocompleteReactivationRequested(),
-                                child: TextField(
-                                  key: _textFieldRegionKey,
-                                  controller: controller,
-                                  focusNode: focusNode,
-                                  autofocus: widget.autofocus,
-                                  keyboardType: TextInputType.text,
-                                  textInputAction: TextInputAction.next,
-                                  autocorrect: false,
-                                  enableSuggestions: false,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[A-Za-z\s]'),
-                                    ),
-                                  ],
-                                  style: valueStyle,
-                                  cursorColor:
-                                      colors.background.brandCrimsonStrong,
-                                  selectAllOnFocus: false,
-                                  decoration: InputDecoration.collapsed(
-                                    hintText: 'Word',
-                                    hintStyle: hintStyle,
+                        child: Center(
+                          child: KeyedSubtree(
+                            key: widget.index == 0
+                                ? const ValueKey(
+                                    'import_mnemonic_first_word_field',
+                                  )
+                                : null,
+                            child: Listener(
+                              behavior: HitTestBehavior.translucent,
+                              onPointerDown: (_) =>
+                                  widget.onAutocompleteReactivationRequested(),
+                              child: TextField(
+                                key: _textFieldRegionKey,
+                                controller: controller,
+                                focusNode: focusNode,
+                                autofocus: widget.autofocus,
+                                keyboardType: TextInputType.text,
+                                textInputAction: TextInputAction.next,
+                                autocorrect: false,
+                                enableSuggestions: false,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp(r'[A-Za-z\s]'),
                                   ),
-                                  onChanged: (value) {
-                                    widget
-                                        .onAutocompleteReactivationRequested();
-                                    widget.onChanged(value);
-                                  },
-                                  onSubmitted: (_) => _handleTextSubmitted(
-                                    onAutocompleteSubmitted,
-                                  ),
+                                ],
+                                style: valueStyle,
+                                cursorColor: colors.text.homeCard,
+                                selectAllOnFocus: false,
+                                decoration: InputDecoration.collapsed(
+                                  hintText: 'Seed word',
+                                  hintStyle: hintStyle,
+                                ),
+                                onChanged: (value) {
+                                  widget.onAutocompleteReactivationRequested();
+                                  widget.onChanged(value);
+                                },
+                                onSubmitted: (_) => _handleTextSubmitted(
+                                  onAutocompleteSubmitted,
                                 ),
                               ),
                             ),
@@ -1459,17 +1541,27 @@ class _MnemonicSuggestionPopoverState
       height: popoverHeight,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: colors.background.homeCard,
+          color: colors.background.ground,
           borderRadius: BorderRadius.circular(AppRadii.medium),
           border: Border.all(
-            color: colors.text.homeCard.withValues(alpha: 0.18),
+            color: colors.border.subtle,
             strokeAlign: BorderSide.strokeAlignInside,
           ),
           boxShadow: [
             BoxShadow(
-              color: colors.background.overlay.withValues(alpha: 0.28),
-              blurRadius: 15,
-              offset: const Offset(0, 10),
+              color: const Color(0x0F000000),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+            const BoxShadow(
+              color: Color(0x08000000),
+              blurRadius: 12,
+              offset: Offset(0, -6),
+            ),
+            const BoxShadow(
+              color: Color(0x14000000),
+              blurRadius: 28,
+              offset: Offset(0, 14),
             ),
           ],
         ),
@@ -1478,7 +1570,7 @@ class _MnemonicSuggestionPopoverState
           child: ScrollbarTheme(
             data: ScrollbarThemeData(
               thumbColor: WidgetStatePropertyAll(
-                colors.text.homeCard.withValues(alpha: 0.32),
+                colors.text.muted.withValues(alpha: 0.55),
               ),
               radius: const Radius.circular(AppRadii.full),
               thickness: const WidgetStatePropertyAll(6),
@@ -1544,9 +1636,7 @@ class _MnemonicSuggestionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final selectedBackgroundColor = colors.text.homeCard.withValues(
-      alpha: 0.12,
-    );
+    final selectedBackgroundColor = colors.background.base;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -1570,7 +1660,7 @@ class _MnemonicSuggestionRow extends StatelessWidget {
                     style: AppTypography.codeMedium.copyWith(
                       fontSize: 14,
                       height: 21 / 14,
-                      color: colors.text.homeCard.withValues(alpha: 0.45),
+                      color: colors.text.muted,
                     ),
                   ),
                 ),
@@ -1581,7 +1671,7 @@ class _MnemonicSuggestionRow extends StatelessWidget {
                   word,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelLarge.copyWith(
-                    color: colors.text.homeCard,
+                    color: colors.text.accent,
                   ),
                 ),
               ),

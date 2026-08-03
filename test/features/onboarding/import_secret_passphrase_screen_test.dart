@@ -24,6 +24,7 @@ import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_secret_passphrase_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/import/import_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -64,6 +65,10 @@ void main() {
       final referenceButtonTop = tester
           .getTopLeft(find.byKey(_submitButtonKey))
           .dy;
+      final referencePassphraseBottom = tester
+          .getBottomLeft(find.byKey(const ValueKey('bip39_passphrase_action')))
+          .dy;
+      expect(referenceButtonTop - referencePassphraseBottom, closeTo(24, 0.1));
 
       await tester.binding.setSurfaceSize(const Size(1080, 560));
       await tester.pump();
@@ -125,6 +130,29 @@ void main() {
     },
   );
 
+  testWidgets('fits the production onboarding shell without scrolling', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester, const Size(1080, 720));
+    await tester.pumpWidget(_importPassphraseShell());
+    await tester.pump();
+
+    expect(
+      tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+      isFalse,
+    );
+    final bodyScrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable).first,
+    );
+    expect(bodyScrollable.position.maxScrollExtent, 0);
+
+    final passphraseBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('bip39_passphrase_action')))
+        .dy;
+    final buttonTop = tester.getTopLeft(find.byKey(_submitButtonKey)).dy;
+    expect(buttonTop - passphraseBottom, closeTo(24, 0.1));
+  });
+
   testWidgets('uses home-card colors for mnemonic word field states', (
     tester,
   ) async {
@@ -134,41 +162,42 @@ void main() {
     final colors = AppThemeData.light.colors;
 
     expect(
-      _fieldNumberColor(tester, '2'),
+      _fieldNumberColor(tester, '02'),
       colors.text.homeCard.withValues(alpha: 0.4),
     );
     expect(
       _textField(tester, 1).decoration?.hintStyle?.fontWeight,
-      FontWeight.w400,
+      FontWeight.w500,
     );
     expect(
       _textField(tester, 1).decoration?.hintStyle?.color,
-      colors.text.homeCard.withValues(alpha: 0.24),
+      colors.text.homeCard.withValues(alpha: 0.2),
     );
 
     await tester.enterText(_wordField(0), 'zzz');
     await tester.pump();
 
     expect(
-      _fieldNumberColor(tester, '1'),
+      _fieldNumberColor(tester, '01'),
       colors.text.homeCard.withValues(alpha: 0.72),
     );
 
     _textField(tester, 1).focusNode!.requestFocus();
     await tester.pump();
 
-    expect(_fieldNumberColor(tester, '1'), colors.text.destructive);
+    expect(_fieldNumberColor(tester, '01'), colors.text.destructive);
+    expect(_textField(tester, 0).style?.color, colors.text.destructive);
 
     await tester.enterText(_wordField(2), 'abandon');
     _textField(tester, 3).focusNode!.requestFocus();
     await tester.pump();
 
     expect(
-      _fieldNumberColor(tester, '3'),
+      _fieldNumberColor(tester, '03'),
       colors.text.homeCard.withValues(alpha: 0.72),
     );
     expect(_textField(tester, 2).style?.color, colors.text.homeCard);
-    expect(_textField(tester, 2).style?.fontWeight, FontWeight.w400);
+    expect(_textField(tester, 2).style?.fontWeight, FontWeight.w500);
   });
 
   testWidgets('adds a BIP39 passphrase and submits it unchanged', (
@@ -183,7 +212,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
     await tester.pumpAndSettle();
 
-    expect(find.text('BIP39 Passphrase'), findsOneWidget);
+    expect(find.text('BIP39 Passphrase (Optional)'), findsOneWidget);
+    expect(find.textContaining('“25th word”'), findsOneWidget);
     expect(find.text('Add'), findsOneWidget);
     await tester.enterText(_bip39PassphraseField, '  My TREZOR phrase  ');
     await tester.pump();
@@ -192,7 +222,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Edit BIP39 Passphrase'), findsOneWidget);
+    expect(find.text('Edit'), findsOneWidget);
+    expect(find.textContaining('BIP39 Passphrase:'), findsOneWidget);
     await _enterWords(tester, 12);
     await tester.tap(find.byKey(_submitButtonKey));
     await tester.pumpAndSettle();
@@ -254,7 +285,7 @@ void main() {
     await tester.pump();
 
     expect(_textField(tester, 0).controller!.text, isEmpty);
-    expect(find.text('Add BIP39 Passphrase'), findsOneWidget);
+    expect(find.text('Add BIP39 Passphrase (Optional)'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('import_mnemonic_clear_button')),
       findsNothing,
@@ -694,6 +725,26 @@ Widget _importPassphraseScreen({
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(body: body),
+      ),
+    ),
+  );
+}
+
+Widget _importPassphraseShell() {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
+    child: MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: Scaffold(
+          body: ImportOnboardingShell(
+            activeStep: ImportOnboardingStep.secretPassphrase,
+            showPasswordStep: false,
+            child: const ImportSecretPassphraseScreen(),
+          ),
+        ),
       ),
     ),
   );

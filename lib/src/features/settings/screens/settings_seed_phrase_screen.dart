@@ -60,7 +60,7 @@ class SettingsSeedPhraseRevealPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppDesktopBackdropShell(
-      background: const SettingsPaneBackdrop(art: SettingsBackdropArt.vault),
+      background: ColoredBox(color: context.colors.background.window),
       sidebar: const AppMainSidebar(),
       pane: _SettingsSeedPhrasePane(
         onBeforeNavigateBack: () {},
@@ -443,11 +443,9 @@ class _SettingsSeedPhraseScreenState
     );
 
     return AppDesktopBackdropShell(
-      background: SettingsPaneBackdrop(
-        art: _stage == _SettingsSeedPhraseStage.reveal
-            ? SettingsBackdropArt.vault
-            : SettingsBackdropArt.castle,
-      ),
+      background: _stage == _SettingsSeedPhraseStage.reveal
+          ? ColoredBox(color: context.colors.background.window)
+          : const SettingsPaneBackdrop(art: SettingsBackdropArt.castle),
       sidebar: const AppMainSidebar(),
       pane: SensitivePrivacyOverlay(
         sensitiveContentVisible:
@@ -583,7 +581,7 @@ class _SeedPhraseRevealView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Secret passphrase',
+            'Secret Passphrase',
             textAlign: TextAlign.center,
             style: AppTypography.headlineLarge.copyWith(
               color: colors.text.accent,
@@ -592,9 +590,13 @@ class _SeedPhraseRevealView extends StatelessWidget {
           const SizedBox(height: AppSpacing.s),
           Text(
             'This is the master key to your wallet.\n'
-            "Don't share it with anyone.",
+            'Don’t share it with anyone.',
             textAlign: TextAlign.center,
-            style: AppTypography.labelLarge.copyWith(color: colors.text.accent),
+            style: AppTypography.labelLarge.copyWith(
+              color: colors.text.accent,
+              height: 18 / 14,
+              letterSpacing: -0.14,
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           if (errorText == null && mnemonic != null) ...[
@@ -664,7 +666,7 @@ class _SeedWordsCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.sm,
-              vertical: AppSpacing.sm,
+              vertical: AppSpacing.md,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -679,7 +681,7 @@ class _SeedWordsCard extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xxs),
                     Text(
-                      'Secret passphrase',
+                      'Secret Passphrase',
                       style: AppTypography.bodyLarge.copyWith(
                         color: cardTextColor,
                         fontWeight: FontWeight.w600,
@@ -689,8 +691,8 @@ class _SeedWordsCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Wrap(
-                  spacing: AppSpacing.xxs,
-                  runSpacing: AppSpacing.xxs,
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
                   children: [
                     for (var i = 0; i < words.length; i++)
                       _SeedWordChip(
@@ -719,8 +721,8 @@ class _SeedWordsCard extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: AppSpacing.s,
-            right: AppSpacing.s,
+            top: AppSpacing.md,
+            right: AppSpacing.sm,
             child: AppButton(
               onPressed: () {
                 onCopyPressed();
