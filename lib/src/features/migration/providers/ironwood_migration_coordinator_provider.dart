@@ -625,15 +625,10 @@ class IronwoodMigrationCoordinator
       state = state.copyWith(
         errors: Map<String, String>.from(state.errors)..remove(accountUuid),
       );
-      try {
-        await ref.read(syncProvider.notifier).refreshAfterSend();
-      } catch (error) {
-        // The durable stop has already committed. A balance refresh failure
-        // must not invite the user to repeat the destructive action.
-        log('Ironwood migration post-stop balance refresh failed: $error');
-      }
-      if (!ref.mounted) return;
-      await refreshNow();
+      // The durable stop has committed. The schedule screen navigates on this
+      // future, so anything awaited past this point is pure spinner: the
+      // balance refresh and status sweep measured 350ms of a 666ms stop.
+      unawaited(_refreshAfterStop());
     } catch (error) {
       if (ref.mounted) {
         state = state.copyWith(
@@ -641,6 +636,27 @@ class IronwoodMigrationCoordinator
         );
       }
       rethrow;
+    }
+  }
+
+  /// Follow-up reads for a stop that has already committed durably.
+  ///
+  /// Deliberately detached from the caller: neither refresh can change the
+  /// outcome, and awaiting them also let a post-commit refresh failure be
+  /// reported as a stop failure, inviting the user to repeat a destructive
+  /// action that had in fact succeeded.
+  Future<void> _refreshAfterStop() async {
+    if (!ref.mounted) return;
+    try {
+      await ref.read(syncProvider.notifier).refreshAfterSend();
+    } catch (error) {
+      log('Ironwood migration post-stop balance refresh failed: $error');
+    }
+    if (!ref.mounted) return;
+    try {
+      await refreshNow();
+    } catch (error) {
+      log('Ironwood migration post-stop status refresh failed: $error');
     }
   }
 
@@ -1307,12 +1323,36 @@ class IronwoodMigrationCoordinator
       status.broadcastedTxCount,
       status.confirmedTxCount,
       status.signedChildPcztCount,
+      // Crossing a scheduled height is what makes a transfer broadcastable,
+      // but it changes nothing else in the status. Without it here the
+      // transfer waits out `_migrationAdvanceInterval` before an advance even
+      // attempts it (mean 15s, up to 30s at the 15s poll cadence).
+      _dueScheduledBroadcastCount(status),
       for (final part in status.parts) ...[
         part.partIndex,
         part.state.name,
         part.confirmationCount,
       ],
     ].join(':');
+  }
+
+  /// Scheduled transfers whose target height the wallet has already observed.
+  ///
+  /// Counted rather than flagged so that a second transfer coming due is also
+  /// a key change. The count is stable between crossings, so an advance that
+  /// cannot broadcast yet still falls back to the ordinary interval instead of
+  /// re-firing on every poll.
+  int _dueScheduledBroadcastCount(rust_sync.MigrationStatus status) {
+    final currentHeight = _observedBroadcastHeight();
+    if (currentHeight <= 0) return 0;
+    return status.scheduledBroadcasts
+        .where(
+          (broadcast) =>
+              broadcast.status.toLowerCase() == 'scheduled' &&
+              broadcast.scheduledHeight > 0 &&
+              broadcast.scheduledHeight <= currentHeight,
+        )
+        .length;
   }
 
   void _invalidateMigrationProviders(String? activeAccountUuid) {

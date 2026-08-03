@@ -922,6 +922,11 @@ pub fn delete_account(
     })
 }
 
+/// Drop process-local wallet summary data after the wallet DB is deleted.
+pub fn evict_wallet_summary_cache(db_path: String) {
+    crate::wallet::wallet_summary_cache::evict_db(&db_path);
+}
+
 /// Get the Unified Address for a specific account (or first account if uuid is None).
 pub fn get_unified_address(
     db_path: String,
