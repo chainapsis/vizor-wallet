@@ -250,7 +250,9 @@ final _routerProvider = Provider<_AppRouter>((ref) {
         ? [
             SendStatusRoutePayloadObserver(
               onLeaveStatus: () =>
-                  ref.read(sendStatusRoutePayloadProvider.notifier).clear(),
+                  ref
+                      .read(sendStatusRoutePayloadProvider.notifier)
+                      .clearAfterNavigation(),
             ),
           ]
         : const [],

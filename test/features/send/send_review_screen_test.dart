@@ -504,6 +504,80 @@ void main() {
     expect(clearCount, 1);
   });
 
+  testWidgets('status payload cleanup waits until navigation finishes', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(sendStatusRoutePayloadProvider.notifier);
+    final payload = _reviewArgs(addressType: 'unified');
+    notifier.retain(payload);
+
+    notifier.clearAfterNavigation();
+
+    expect(container.read(sendStatusRoutePayloadProvider), same(payload));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(container.read(sendStatusRoutePayloadProvider), isNull);
+  });
+
+  testWidgets('deferred cleanup preserves a newer send flow', (tester) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(sendStatusRoutePayloadProvider.notifier);
+    final previousPayload = _reviewArgs(addressType: 'unified');
+    final nextPayload = _reviewArgs(addressType: 'transparent');
+    notifier.retain(previousPayload);
+
+    notifier.clearAfterNavigation();
+    notifier.retain(nextPayload);
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(container.read(sendStatusRoutePayloadProvider), same(nextPayload));
+  });
+
+  testWidgets('status back navigation clears payload without a build error', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(sendStatusRoutePayloadProvider.notifier);
+    final payload = _reviewArgs(addressType: 'unified');
+    notifier.retain(payload);
+    final router = GoRouter(
+      initialLocation: '/send/status?flow=${payload.sendFlowId}',
+      observers: [
+        SendStatusRoutePayloadObserver(
+          onLeaveStatus: notifier.clearAfterNavigation,
+        ),
+      ],
+      routes: [
+        GoRoute(path: '/home', builder: (_, _) => const Text('home-route')),
+        GoRoute(
+          path: '/send/status',
+          builder: (context, _) => TextButton(
+            onPressed: () => context.go('/home'),
+            child: const Text('back-home'),
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('back-home'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('home-route'), findsOneWidget);
+    expect(container.read(sendStatusRoutePayloadProvider), isNull);
+  });
+
   test(
     'status route observer preserves payload for same-route replacement',
     () {

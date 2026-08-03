@@ -64,12 +64,34 @@ class KeystoneBroadcastArgs {
 }
 
 class SendStatusRoutePayloadNotifier extends Notifier<Object?> {
+  var _disposed = false;
+  var _revision = 0;
+
   @override
-  Object? build() => null;
+  Object? build() {
+    ref.onDispose(() => _disposed = true);
+    return null;
+  }
 
-  void retain(Object payload) => state = payload;
+  void retain(Object payload) {
+    _revision++;
+    state = payload;
+  }
 
-  void clear() => state = null;
+  void clear() {
+    _revision++;
+    state = null;
+  }
+
+  void clearAfterNavigation() {
+    final retainedRevision = _revision;
+    unawaited(
+      Future<void>(() {
+        if (_disposed || _revision != retainedRevision) return;
+        clear();
+      }),
+    );
+  }
 }
 
 final sendStatusRoutePayloadProvider =
