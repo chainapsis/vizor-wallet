@@ -1071,10 +1071,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(
-        find.text('1 transaction to sign · click QR to enlarge'),
-        findsOneWidget,
-      );
+      expect(find.text('Click QR to enlarge'), findsOneWidget);
       final backToReviewButton = find.widgetWithText(
         AppButton,
         'Back to review',

@@ -364,13 +364,6 @@ extension _KeystonePrivateSignStepCopy on _KeystonePrivateSignStep {
       'Scan this request QR with Keystone. Keystone will show a new signed QR when it finishes.',
   };
 
-  String get messageUnit => switch (this) {
-    _KeystonePrivateSignStep.immediate => 'migration transaction',
-    _KeystonePrivateSignStep.combined => 'transaction',
-    _KeystonePrivateSignStep.denominations => 'split transaction',
-    _KeystonePrivateSignStep.batch => 'migration transaction',
-  };
-
   Future<rust_sync.KeystoneMigrationSigningRequest> prepare(
     IronwoodMigrationService service, {
     required String accountUuid,
@@ -1470,8 +1463,6 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   Widget _buildQrContent(BuildContext context) {
     final colors = context.colors;
-    final request = _request;
-    final signingRound = _currentSigningRound;
     final signingRoundLabel = _signingRoundLabel;
     final proofStatusText = _proofStatusText;
     final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
@@ -1535,11 +1526,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
           ),
           const SizedBox(height: AppSpacing.base),
           Text(
-            request == null || signingRound == null
-                ? 'Preparing migration request'
-                : '${signingRound.length} ${widget.step.messageUnit}'
-                      '${signingRound.length == 1 ? '' : 's'} to sign'
-                      ' · click QR to enlarge',
+            'Click QR to enlarge',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: colors.text.secondary,
