@@ -47,6 +47,15 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
   Future<bool> confirmPassword(String password) async => true;
 }
 
+class _ControlledSecurityNotifier extends AppSecurityNotifier {
+  _ControlledSecurityNotifier(this.result);
+
+  final Future<bool> result;
+
+  @override
+  Future<bool> confirmPassword(String password) => result;
+}
+
 class _FakeAccountNotifier extends AccountNotifier {
   _FakeAccountNotifier([this.initialState = _accountState]);
 
@@ -122,6 +131,7 @@ Widget _app({
   _FakeBiometricController? biometric,
   String? accountUuid,
   AccountNotifier Function()? accountNotifier,
+  AppSecurityNotifier Function()? securityNotifier,
   Future<int> Function(String accountUuid)? birthdayHeightLoader,
   Future<int> Function(int height)? birthdayBlockTimeLoader,
 }) {
@@ -129,7 +139,9 @@ Widget _app({
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
       accountProvider.overrideWith(accountNotifier ?? _FakeAccountNotifier.new),
-      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      appSecurityProvider.overrideWith(
+        securityNotifier ?? _FakeSecurityNotifier.new,
+      ),
       if (biometric == null)
         biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock())
       else
@@ -275,6 +287,41 @@ void main() {
 
     expect(find.text('222'), findsOneWidget);
     expect(requestedBlockTimes, [222]);
+  });
+
+  testWidgets('requires another confirmation when the account changes', (
+    tester,
+  ) async {
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    final confirmation = Completer<bool>();
+
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: () => accountNotifier,
+        securityNotifier: () =>
+            _ControlledSecurityNotifier(confirmation.future),
+      ),
+    );
+    await _revealSecret(tester);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    confirmation.complete(true);
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.requestedMnemonicUuids, isEmpty);
+    expect(find.text('abandon'), findsNothing);
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('confirm gate keeps biometric retry after prompt cancel', (

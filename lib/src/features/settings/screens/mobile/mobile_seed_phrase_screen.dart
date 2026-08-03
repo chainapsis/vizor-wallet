@@ -81,6 +81,7 @@ class _MobileSeedPhraseScreenState
   var _entry = '';
   var _checking = false;
   String? _gateError;
+  int _accessCheckGeneration = 0;
 
   String? _mnemonic;
   String? _revealError;
@@ -178,6 +179,10 @@ class _MobileSeedPhraseScreenState
   }
 
   Future<void> _confirmPasscode() async {
+    final expectedAccountUuid = _targetAccount(
+      ref.read(accountProvider).value,
+    )?.uuid;
+    final accessCheckGeneration = ++_accessCheckGeneration;
     setState(() => _checking = true);
     try {
       final valid = await ref
@@ -193,7 +198,12 @@ class _MobileSeedPhraseScreenState
         });
         return;
       }
-      await _reveal();
+      if (accessCheckGeneration != _accessCheckGeneration ||
+          _targetAccountChanged(expectedAccountUuid)) {
+        _handleTargetAccountChanged();
+        return;
+      }
+      await _reveal(expectedAccountUuid);
     } catch (e, st) {
       log('MobileSeedPhrase: passcode confirm failed: $e\n$st');
       if (!mounted) return;
@@ -269,7 +279,7 @@ class _MobileSeedPhraseScreenState
     return null;
   }
 
-  bool _targetAccountChanged(String expectedAccountUuid) {
+  bool _targetAccountChanged(String? expectedAccountUuid) {
     final accountState = ref.read(accountProvider).value;
     return _targetAccount(accountState)?.uuid != expectedAccountUuid;
   }
@@ -278,6 +288,7 @@ class _MobileSeedPhraseScreenState
     if (_stage == _SeedStage.confirmAccess && !_checking && _mnemonic == null) {
       return;
     }
+    _accessCheckGeneration += 1;
     _birthdayLoadGeneration += 1;
     setState(() {
       _stage = _SeedStage.confirmAccess;
@@ -292,9 +303,13 @@ class _MobileSeedPhraseScreenState
     });
   }
 
-  Future<void> _reveal() async {
+  Future<void> _reveal(String? expectedAccountUuid) async {
     final accountState = ref.read(accountProvider).value;
     final account = _targetAccount(accountState);
+    if (account?.uuid != expectedAccountUuid) {
+      _handleTargetAccountChanged();
+      return;
+    }
     String? revealError;
     String? mnemonic;
     if (account == null) {
@@ -312,7 +327,7 @@ class _MobileSeedPhraseScreenState
       }
     }
     if (!mounted) return;
-    if (account != null && _targetAccountChanged(account.uuid)) {
+    if (_targetAccountChanged(expectedAccountUuid)) {
       _handleTargetAccountChanged();
       return;
     }
