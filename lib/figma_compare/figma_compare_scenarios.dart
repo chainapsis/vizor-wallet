@@ -147,6 +147,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildDesktopHomeIronwoodMigrationInProgressUseCase,
   ),
   FigmaCompareScenario(
+    id: 'desktop-home-sidebar-compact-balances',
+    description: 'Desktop home sidebar with compact K balance labels',
+    builder: buildDesktopHomeSidebarCompactBalancesUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-intro',
     description: 'Ironwood migration intro screen',
     builder: buildIronwoodMigrationIntroUseCase,

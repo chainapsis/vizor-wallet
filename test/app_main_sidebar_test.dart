@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart'
     as frb;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -19,6 +21,14 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  setUpAll(() async {
+    final loader = FontLoader('Geist')
+      ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+      ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'))
+      ..addFont(rootBundle.load('assets/fonts/Geist-SemiBold.ttf'));
+    await loader.load();
+  });
+
   const failureLabels = {
     SyncFailureKind.endpoint: 'Syncing failed. Endpoint error...',
     SyncFailureKind.databaseBusy: 'Syncing failed. Wallet data busy...',
@@ -108,6 +118,109 @@ void main() {
           .widget<Text>(find.byKey(const ValueKey('sidebar_ironwood_balance')))
           .data,
       contains('12'),
+    );
+  });
+
+  testWidgets('sidebar limits visible balance fractions to four places', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          displayTotalBalance: BigInt.from(8_242_330_885),
+          displayOrchardBalance: BigInt.from(285_885),
+          displayIronwoodBalance: BigInt.from(5_240_000_000),
+        ),
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('82.4233 ZEC'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_orchard_balance')))
+          .data,
+      '0.0028 ZEC',
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_ironwood_balance')))
+          .data,
+      '52.4 ZEC',
+    );
+  });
+
+  testWidgets('sidebar keeps tiny positive balances visibly nonzero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          displayTotalBalance: BigInt.one,
+          displayOrchardBalance: BigInt.one,
+          displayIronwoodBalance: BigInt.one,
+        ),
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('<0.0001 ZEC'), findsNWidgets(3));
+  });
+
+  testWidgets('sidebar abbreviates thousand and million ZEC balances', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          isSyncComplete: true,
+          displayTotalBalance: BigInt.from(1_000_000_000_000),
+          displayOrchardBalance: BigInt.from(1_234_567_890_000),
+          displayIronwoodBalance: BigInt.from(123_456_789_000_000),
+        ),
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _readyMigrationStatus},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('10K ZEC'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_orchard_balance')))
+          .data,
+      '12.345K ZEC',
+    );
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('sidebar_ironwood_balance')))
+          .data,
+      '1.234M ZEC',
+    );
+    expect(
+      tester.renderObject<RenderParagraph>(find.text('Home')).didExceedMaxLines,
+      isFalse,
+    );
+    expect(
+      tester
+          .renderObject<RenderParagraph>(find.text('Ironwood'))
+          .didExceedMaxLines,
+      isFalse,
     );
   });
 

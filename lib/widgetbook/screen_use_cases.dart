@@ -792,6 +792,25 @@ Widget buildDesktopHomeIronwoodMigrationInProgressUseCase(
   );
 }
 
+Widget buildDesktopHomeSidebarCompactBalancesUseCase(BuildContext context) {
+  final status = _previewMigrationStatus(
+    kIronwoodMigrationBroadcastScheduledPhase,
+    activeRunId: 'preview-sidebar-compact-balances',
+  );
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: _homeSyncedState(
+      orchardBalance: BigInt.from(1_234_567_890_000),
+      ironwoodBalance: BigInt.from(5_240_000_000),
+    ),
+    migrationCta: IronwoodHomeMigrationCtaState.resume(
+      network: 'main',
+      accountUuid: _accountsDesignState.activeAccountUuid!,
+      status: status,
+    ),
+  );
+}
+
 Widget buildDesktopHomeIronwoodMigrationAnnouncementUseCase(
   BuildContext context,
 ) {
