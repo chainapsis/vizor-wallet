@@ -103,7 +103,7 @@ class _SettingsSeedPhraseScreenState
 
     setState(() {
       _clearSensitiveState(
-        passwordError: 'Active account changed. Enter your password again.',
+        passwordError: 'Selected account changed. Enter your password again.',
       );
     });
   }

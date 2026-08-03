@@ -56,6 +56,41 @@ void main() {
     expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
     expect(find.text('abandon'), findsOneWidget);
   });
+
+  testWidgets('describes removal of the requested account accurately', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    final privacyController = SensitivePrivacyOverlayController(
+      initiallySafe: true,
+    );
+    addTearDown(privacyController.dispose);
+    late _FakeAccountNotifier accountNotifier;
+
+    await tester.pumpWidget(
+      _harness(
+        privacyController: privacyController,
+        accountNotifier: () => accountNotifier = _FakeAccountNotifier(),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(EditableText), 'Correct123!');
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Confirm password'));
+    await tester.pump();
+    accountNotifier.removeRequestedAccount();
+    await tester.pump();
+
+    expect(
+      find.text('Selected account changed. Enter your password again.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Active account changed'), findsNothing);
+  });
 }
 
 Widget _harness({
@@ -67,11 +102,10 @@ Widget _harness({
     routes: [
       GoRoute(
         path: '/settings/secret-passphrase',
-        builder:
-            (_, _) => SettingsSeedPhraseScreen(
-              accountUuid: 'account-2',
-              privacyOverlayController: privacyController,
-            ),
+        builder: (_, _) => SettingsSeedPhraseScreen(
+          accountUuid: 'account-2',
+          privacyOverlayController: privacyController,
+        ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const SizedBox()),
       GoRoute(path: '/settings', builder: (_, _) => const SizedBox()),
@@ -116,6 +150,16 @@ class _FakeAccountNotifier extends AccountNotifier {
   Future<String?> getMnemonicForAccount(String uuid) async {
     requestedMnemonicUuids.add(uuid);
     return _mnemonic;
+  }
+
+  void removeRequestedAccount() {
+    state = AsyncData(
+      state.requireValue.copyWith(
+        accounts: state.requireValue.accounts
+            .where((account) => account.uuid != 'account-2')
+            .toList(),
+      ),
+    );
   }
 }
 
