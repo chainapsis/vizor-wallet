@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:zcash_wallet/src/core/layout/app_pane_scroll_scaffold.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_back_link.dart';
+import 'package:zcash_wallet/src/core/widgets/app_context_menu.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/core/widgets/app_pane_modal_overlay.dart';
 import 'package:zcash_wallet/src/features/accounts/screens/accounts_screen.dart';
@@ -28,6 +30,13 @@ const _validDeletePassword = 'Correct123!';
 const _invalidDeletePassword = 'Wrong123!';
 
 void main() {
+  setUpAll(() async {
+    final geist = FontLoader('Geist')
+      ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+      ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+    await geist.load();
+  });
+
   testWidgets('accounts screen renders active account and other accounts', (
     tester,
   ) async {
@@ -287,6 +296,7 @@ void main() {
     expect(find.text('Send ZEC'), findsOneWidget);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
+    expect(find.text('View secret phrase'), findsNothing);
     _expectVerticalTextOrder(tester, const [
       'Copy address',
       'Send ZEC',
@@ -316,7 +326,7 @@ void main() {
     expect(find.text('Remove account'), findsNothing);
   });
 
-  testWidgets('current account menu shows edit, copy, and remove actions', (
+  testWidgets('current account menu shows secret passphrase shortcut', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1512, 982));
@@ -332,15 +342,110 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('View secret phrase'), findsOneWidget);
+    expect(tester.getSize(find.byType(AppContextMenu)).width, 176);
+    expect(
+      find.ancestor(
+        of: find.text('View secret phrase'),
+        matching: find.byType(FittedBox),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester
+          .renderObject<RenderParagraph>(find.text('View secret phrase'))
+          .didExceedMaxLines,
+      isFalse,
+    );
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
     _expectVerticalTextOrder(tester, const [
+      'View secret phrase',
       'Edit account',
       'Copy address',
       'Remove account',
     ]);
+
+    final shortcutItem = find.ancestor(
+      of: find.text('View secret phrase'),
+      matching: find.byType(AppContextMenuItem),
+    );
+    expect(shortcutItem, findsOneWidget);
+    expect(
+      tester
+          .widgetList<AppIcon>(
+            find.descendant(of: shortcutItem, matching: find.byType(AppIcon)),
+          )
+          .single
+          .name,
+      AppIcons.key,
+    );
+
+    await tester.tap(find.text('View secret phrase'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('secret passphrase route account-1'), findsOneWidget);
+  });
+
+  testWidgets('other software account menu opens its secret passphrase', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(_accountsHarness());
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_account-3')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('View secret phrase'), findsOneWidget);
+
+    await tester.tap(find.text('View secret phrase'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('secret passphrase route account-3'), findsOneWidget);
+  });
+
+  testWidgets('hardware current account hides secret passphrase shortcut', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'hardware-account',
+          name: 'Keystone Vault',
+          order: 0,
+          isHardware: true,
+        ),
+      ],
+      activeAccountUuid: 'hardware-account',
+      activeAddress: 'u1hardwareaddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('accounts_row_menu_button_hardware-account')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('View secret phrase'), findsNothing);
   });
 
   testWidgets('current imported account can be removed', (tester) async {
@@ -1211,6 +1316,11 @@ Widget _accountsHarness({
       GoRoute(
         path: '/settings',
         builder: (_, _) => const Text('settings route'),
+      ),
+      GoRoute(
+        path: '/settings/secret-passphrase',
+        builder: (_, state) =>
+            Text('secret passphrase route ${state.extra as String?}'),
       ),
       GoRoute(path: '/about', builder: (_, _) => const Text('about route')),
     ],

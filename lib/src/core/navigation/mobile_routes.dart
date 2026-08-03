@@ -98,7 +98,9 @@ List<RouteBase> buildMobileRoutes({required List<RouteBase> entryRoutes}) {
       path: '/settings/seed-phrase',
       pageBuilder: (context, state) => CupertinoPage(
         key: state.pageKey,
-        child: const MobileSeedPhraseScreen(),
+        child: MobileSeedPhraseScreen(
+          accountUuid: state.extra is String ? state.extra as String : null,
+        ),
       ),
     ),
     GoRoute(

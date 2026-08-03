@@ -248,6 +248,8 @@ class _AppContextMenuItemState extends State<AppContextMenuItem> {
               Expanded(
                 child: Text(
                   widget.label,
+                  maxLines: 1,
+                  softWrap: false,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelMedium.copyWith(color: itemColor),
                 ),

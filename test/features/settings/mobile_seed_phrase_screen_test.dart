@@ -47,12 +47,33 @@ class _FakeSecurityNotifier extends AppSecurityNotifier {
   Future<bool> confirmPassword(String password) async => true;
 }
 
-class _FakeAccountNotifier extends AccountNotifier {
-  @override
-  FutureOr<AccountState> build() => _accountState;
+class _ControlledSecurityNotifier extends AppSecurityNotifier {
+  _ControlledSecurityNotifier(this.result);
+
+  final Future<bool> result;
 
   @override
-  Future<String?> getMnemonicForAccount(String uuid) async => _mnemonic;
+  Future<bool> confirmPassword(String password) => result;
+}
+
+class _FakeAccountNotifier extends AccountNotifier {
+  _FakeAccountNotifier([this.initialState = _accountState]);
+
+  final AccountState initialState;
+  final requestedMnemonicUuids = <String>[];
+
+  @override
+  FutureOr<AccountState> build() => initialState;
+
+  @override
+  Future<String?> getMnemonicForAccount(String uuid) async {
+    requestedMnemonicUuids.add(uuid);
+    return _mnemonic;
+  }
+
+  void setActiveAccount(String uuid) {
+    state = AsyncData(state.requireValue.copyWith(activeAccountUuid: uuid));
+  }
 }
 
 class _FakeBiometricUnlock extends BiometricUnlock {
@@ -66,6 +87,7 @@ class _FakeBiometricController {
 
   BiometricUnlockState initialState;
   String? passcode;
+  Future<String?>? readResult;
   var reads = 0;
   String? lastReason;
 }
@@ -82,6 +104,8 @@ class _FakeBiometricNotifier extends BiometricUnlockNotifier {
   Future<String?> readPasscode({required String reason}) async {
     controller.reads += 1;
     controller.lastReason = reason;
+    final result = controller.readResult;
+    if (result != null) return result;
     return controller.passcode;
   }
 }
@@ -108,12 +132,19 @@ Widget _app({
   Stream<void>? screenshotStream,
   SensitivePrivacyOverlayController? privacyOverlayController,
   _FakeBiometricController? biometric,
+  String? accountUuid,
+  AccountNotifier Function()? accountNotifier,
+  AppSecurityNotifier Function()? securityNotifier,
+  Future<int> Function(String accountUuid)? birthdayHeightLoader,
+  Future<int> Function(int height)? birthdayBlockTimeLoader,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
-      accountProvider.overrideWith(_FakeAccountNotifier.new),
-      appSecurityProvider.overrideWith(_FakeSecurityNotifier.new),
+      accountProvider.overrideWith(accountNotifier ?? _FakeAccountNotifier.new),
+      appSecurityProvider.overrideWith(
+        securityNotifier ?? _FakeSecurityNotifier.new,
+      ),
       if (biometric == null)
         biometricUnlockServiceProvider.overrideWithValue(_FakeBiometricUnlock())
       else
@@ -124,9 +155,12 @@ Widget _app({
     child: MaterialApp(
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
       home: MobileSeedPhraseScreen(
+        accountUuid: accountUuid,
         screenshotStream: screenshotStream,
         privacyOverlayController: privacyOverlayController,
-        loadBirthday: false,
+        loadBirthday: birthdayHeightLoader != null,
+        birthdayHeightLoader: birthdayHeightLoader,
+        birthdayBlockTimeLoader: birthdayBlockTimeLoader,
       ),
     ),
   );
@@ -186,6 +220,113 @@ void main() {
     expect(find.text('Forgot Passcode?'), findsNothing);
   });
 
+  testWidgets('reveals the requested account without making it active', (
+    tester,
+  ) async {
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+
+    await tester.pumpWidget(
+      _app(accountUuid: 'account-2', accountNotifier: () => accountNotifier),
+    );
+    await _revealSecret(tester);
+
+    expect(accountNotifier.requestedMnemonicUuids, ['account-2']);
+    expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
+    expect(find.text('abandon'), findsOneWidget);
+  });
+
+  testWidgets('ignores a stale birthday load after the account changes', (
+    tester,
+  ) async {
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    final birthdayLoads = <String, Completer<int>>{
+      'account-1': Completer<int>(),
+      'account-2': Completer<int>(),
+    };
+    final requestedBlockTimes = <int>[];
+
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: () => accountNotifier,
+        birthdayHeightLoader: (uuid) => birthdayLoads[uuid]!.future,
+        birthdayBlockTimeLoader: (height) async {
+          requestedBlockTimes.add(height);
+          return 0;
+        },
+      ),
+    );
+    await _revealSecret(tester);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsOneWidget,
+    );
+
+    await _revealSecret(tester);
+    birthdayLoads['account-1']!.complete(111);
+    await tester.pump();
+
+    expect(find.text('111'), findsNothing);
+    expect(requestedBlockTimes, isEmpty);
+
+    birthdayLoads['account-2']!.complete(222);
+    await tester.pumpAndSettle();
+
+    expect(find.text('222'), findsOneWidget);
+    expect(requestedBlockTimes, [222]);
+  });
+
+  testWidgets('requires another confirmation when the account changes', (
+    tester,
+  ) async {
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    final confirmation = Completer<bool>();
+
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: () => accountNotifier,
+        securityNotifier: () =>
+            _ControlledSecurityNotifier(confirmation.future),
+      ),
+    );
+    await _revealSecret(tester);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    confirmation.complete(true);
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.requestedMnemonicUuids, isEmpty);
+    expect(find.text('abandon'), findsNothing);
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('confirm gate keeps biometric retry after prompt cancel', (
     tester,
   ) async {
@@ -221,6 +362,41 @@ void main() {
     expect(find.bySemanticsLabel('Sign in with fingerprint'), findsOneWidget);
     expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
     expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+  });
+
+  testWidgets('biometric confirmation rejects an account change', (
+    tester,
+  ) async {
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    final biometricResult = Completer<String?>();
+    final biometric = _FakeBiometricController(
+      initialState: _faceBiometricState,
+    )..readResult = biometricResult.future;
+
+    await tester.pumpWidget(
+      _app(biometric: biometric, accountNotifier: () => accountNotifier),
+    );
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    biometricResult.complete('111111');
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.requestedMnemonicUuids, isEmpty);
+    expect(find.text('abandon'), findsNothing);
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('shows the screenshot warning after the phrase is revealed', (

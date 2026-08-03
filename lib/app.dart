@@ -936,7 +936,9 @@ List<RouteBase> _desktopRoutes() => [
   GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
   GoRoute(
     path: '/settings/secret-passphrase',
-    builder: (_, _) => const SettingsSeedPhraseScreen(),
+    builder: (_, state) => SettingsSeedPhraseScreen(
+      accountUuid: state.extra is String ? state.extra as String : null,
+    ),
   ),
   GoRoute(
     path: '/settings/change-password',

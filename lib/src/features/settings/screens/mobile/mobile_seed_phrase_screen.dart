@@ -43,11 +43,16 @@ enum _SeedStage { confirmAccess, reveal }
 /// state, and the wallet birthday loads best-effort alongside it.
 class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
   const MobileSeedPhraseScreen({
+    this.accountUuid,
     this.screenshotStream,
     this.privacyOverlayController,
     this.loadBirthday = true,
+    this.birthdayHeightLoader,
+    this.birthdayBlockTimeLoader,
     super.key,
   });
+
+  final String? accountUuid;
 
   /// Test seam — production listens to the platform screenshot events.
   @visibleForTesting
@@ -58,6 +63,12 @@ class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
 
   @visibleForTesting
   final bool loadBirthday;
+
+  @visibleForTesting
+  final Future<int> Function(String accountUuid)? birthdayHeightLoader;
+
+  @visibleForTesting
+  final Future<int> Function(int height)? birthdayBlockTimeLoader;
 
   @override
   ConsumerState<MobileSeedPhraseScreen> createState() =>
@@ -70,12 +81,14 @@ class _MobileSeedPhraseScreenState
   var _entry = '';
   var _checking = false;
   String? _gateError;
+  int _accessCheckGeneration = 0;
 
   String? _mnemonic;
   String? _revealError;
   int? _birthdayHeight;
   int? _birthdayBlockTime;
   bool _birthdayLoading = false;
+  int _birthdayLoadGeneration = 0;
 
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -114,13 +127,24 @@ class _MobileSeedPhraseScreenState
 
   Future<void> _tryBiometricGate() async {
     if (_checking || _stage != _SeedStage.confirmAccess) return;
+    final expectedAccountUuid = _targetAccount(
+      ref.read(accountProvider).value,
+    )?.uuid;
+    final accessCheckGeneration = ++_accessCheckGeneration;
     final biometric = await ref.read(biometricUnlockProvider.future);
-    if (!mounted || !biometric.usable) return;
+    if (!mounted) return;
+    if (accessCheckGeneration != _accessCheckGeneration ||
+        _targetAccountChanged(expectedAccountUuid)) {
+      _showTargetAccountChangedError();
+      return;
+    }
+    if (!biometric.usable) return;
     final wasEnabled = biometric.enabled;
     // The biometric sheet pushes the app to `inactive`; suppress the privacy
     // shield for its duration so the phrase revealed on success doesn't flash
     // the blur cover during the inactive→resumed transition. The environment
     // controller releases the suppression on resume.
+    setState(() => _checking = true);
     _privacyController.beginAuthPrompt();
     String? readResult;
     try {
@@ -131,15 +155,21 @@ class _MobileSeedPhraseScreenState
       _privacyController.endAuthPrompt();
     }
     if (!mounted) return;
+    if (accessCheckGeneration != _accessCheckGeneration ||
+        _targetAccountChanged(expectedAccountUuid)) {
+      _showTargetAccountChangedError();
+      return;
+    }
     final passcode = readResult;
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
-      if (wasEnabled && now != null && !now.enabled) {
-        setState(() {
-          _entry = '';
+      setState(() {
+        _entry = '';
+        _checking = false;
+        if (wasEnabled && now != null && !now.enabled) {
           _gateError = biometric.availability.kind.changedMessage;
-        });
-      }
+        }
+      });
       return;
     }
     setState(() {
@@ -166,6 +196,10 @@ class _MobileSeedPhraseScreenState
   }
 
   Future<void> _confirmPasscode() async {
+    final expectedAccountUuid = _targetAccount(
+      ref.read(accountProvider).value,
+    )?.uuid;
+    final accessCheckGeneration = ++_accessCheckGeneration;
     setState(() => _checking = true);
     try {
       final valid = await ref
@@ -181,7 +215,12 @@ class _MobileSeedPhraseScreenState
         });
         return;
       }
-      await _reveal();
+      if (accessCheckGeneration != _accessCheckGeneration ||
+          _targetAccountChanged(expectedAccountUuid)) {
+        _handleTargetAccountChanged();
+        return;
+      }
+      await _reveal(expectedAccountUuid);
     } catch (e, st) {
       log('MobileSeedPhrase: passcode confirm failed: $e\n$st');
       if (!mounted) return;
@@ -247,12 +286,57 @@ class _MobileSeedPhraseScreenState
 
   // ── Reveal ─────────────────────────────────────────────────────────
 
-  Future<void> _reveal() async {
-    final account = ref.read(accountProvider).value?.activeAccount;
+  AccountInfo? _targetAccount(AccountState? accountState) {
+    if (accountState == null) return null;
+    final requestedUuid = widget.accountUuid;
+    if (requestedUuid == null) return accountState.activeAccount;
+    for (final account in accountState.accounts) {
+      if (account.uuid == requestedUuid) return account;
+    }
+    return null;
+  }
+
+  bool _targetAccountChanged(String? expectedAccountUuid) {
+    final accountState = ref.read(accountProvider).value;
+    return _targetAccount(accountState)?.uuid != expectedAccountUuid;
+  }
+
+  void _handleTargetAccountChanged() {
+    _accessCheckGeneration += 1;
+    _birthdayLoadGeneration += 1;
+    if (_stage == _SeedStage.confirmAccess && !_checking && _mnemonic == null) {
+      return;
+    }
+    _showTargetAccountChangedError();
+  }
+
+  void _showTargetAccountChangedError() {
+    setState(() {
+      _stage = _SeedStage.confirmAccess;
+      _entry = '';
+      _checking = false;
+      _gateError = 'Selected account changed. Enter your passcode again.';
+      _mnemonic = null;
+      _revealError = null;
+      _birthdayHeight = null;
+      _birthdayBlockTime = null;
+      _birthdayLoading = false;
+    });
+  }
+
+  Future<void> _reveal(String? expectedAccountUuid) async {
+    final accountState = ref.read(accountProvider).value;
+    final account = _targetAccount(accountState);
+    if (account?.uuid != expectedAccountUuid) {
+      _handleTargetAccountChanged();
+      return;
+    }
     String? revealError;
     String? mnemonic;
     if (account == null) {
-      revealError = 'No active account is selected.';
+      revealError = widget.accountUuid == null
+          ? 'No active account is selected.'
+          : 'The selected account is no longer available.';
     } else if (account.isHardware) {
       revealError = 'Secret passphrase is not available for hardware accounts.';
     } else {
@@ -264,48 +348,77 @@ class _MobileSeedPhraseScreenState
       }
     }
     if (!mounted) return;
+    if (_targetAccountChanged(expectedAccountUuid)) {
+      _handleTargetAccountChanged();
+      return;
+    }
+    final birthdayLoadGeneration = ++_birthdayLoadGeneration;
     setState(() {
       _mnemonic = mnemonic;
       _revealError = revealError;
       _stage = _SeedStage.reveal;
       _checking = false;
-      _birthdayLoading = mnemonic != null;
+      _birthdayLoading = mnemonic != null && widget.loadBirthday;
     });
     if (mnemonic != null && account != null && widget.loadBirthday) {
-      unawaited(_loadBirthday(account.uuid));
+      unawaited(_loadBirthday(account.uuid, birthdayLoadGeneration));
     }
   }
 
-  Future<void> _loadBirthday(String accountUuid) async {
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      final height = await rust_sync.getExportBirthdayHeight(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-      );
-      if (!mounted) return;
-      setState(() => _birthdayHeight = height.toInt());
+  bool _canApplyBirthdayLoad(String accountUuid, int generation) {
+    return mounted &&
+        generation == _birthdayLoadGeneration &&
+        _stage == _SeedStage.reveal &&
+        _mnemonic != null &&
+        !_targetAccountChanged(accountUuid);
+  }
 
-      final blockTime = await ref
-          .read(rpcEndpointFailoverProvider.notifier)
-          .runWithEndpointFallback(
-            operation: 'birthday block time',
-            action: (endpoint) => rust_sync.getBlockTime(
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              height: height,
-            ),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (!mounted) return;
+  Future<int> _fetchBirthdayHeight(String accountUuid) async {
+    final loader = widget.birthdayHeightLoader;
+    if (loader != null) return loader(accountUuid);
+
+    final dbPath = await getWalletDbPath();
+    final endpoint = ref.read(rpcEndpointProvider);
+    final height = await rust_sync.getExportBirthdayHeight(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
+    return height.toInt();
+  }
+
+  Future<int> _fetchBirthdayBlockTime(int height) async {
+    final loader = widget.birthdayBlockTimeLoader;
+    if (loader != null) return loader(height);
+
+    final blockTime = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .runWithEndpointFallback(
+          operation: 'birthday block time',
+          action: (endpoint) => rust_sync.getBlockTime(
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            height: BigInt.from(height),
+          ),
+        )
+        .timeout(const Duration(seconds: 10));
+    return blockTime.toInt();
+  }
+
+  Future<void> _loadBirthday(String accountUuid, int generation) async {
+    try {
+      final height = await _fetchBirthdayHeight(accountUuid);
+      if (!_canApplyBirthdayLoad(accountUuid, generation)) return;
+      setState(() => _birthdayHeight = height);
+
+      final blockTime = await _fetchBirthdayBlockTime(height);
+      if (!_canApplyBirthdayLoad(accountUuid, generation)) return;
       setState(() {
-        _birthdayBlockTime = blockTime.toInt() > 0 ? blockTime.toInt() : null;
+        _birthdayBlockTime = blockTime > 0 ? blockTime : null;
         _birthdayLoading = false;
       });
     } catch (e, st) {
       log('MobileSeedPhrase: birthday load failed: $e\n$st');
-      if (!mounted) return;
+      if (!_canApplyBirthdayLoad(accountUuid, generation)) return;
       setState(() => _birthdayLoading = false);
     }
   }
@@ -373,6 +486,13 @@ class _MobileSeedPhraseScreenState
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AccountInfo?>(
+      accountProvider.select((state) => _targetAccount(state.value)),
+      (previous, next) {
+        if (previous?.uuid == next?.uuid) return;
+        _handleTargetAccountChanged();
+      },
+    );
     final colors = context.colors;
     return Scaffold(
       backgroundColor: colors.background.window,

@@ -584,6 +584,14 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildMobileAccountsUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Software account menu',
+                      builder: buildMobileAccountsSoftwareMenuUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Keystone account menu',
+                      builder: buildMobileAccountsKeystoneMenuUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Edit account',
                       builder: buildMobileAccountsEditAccountUseCase,
                     ),
