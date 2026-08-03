@@ -190,6 +190,7 @@ class AppContextMenuItem extends StatefulWidget {
     required this.label,
     required this.onTap,
     this.destructive = false,
+    this.scaleLabelToFit = false,
     super.key,
   });
 
@@ -197,6 +198,7 @@ class AppContextMenuItem extends StatefulWidget {
   final String label;
   final VoidCallback onTap;
   final bool destructive;
+  final bool scaleLabelToFit;
 
   @override
   State<AppContextMenuItem> createState() => _AppContextMenuItemState();
@@ -245,13 +247,7 @@ class _AppContextMenuItemState extends State<AppContextMenuItem> {
                 color: iconColor,
               ),
               const SizedBox(width: AppSpacing.xxs),
-              Expanded(
-                child: Text(
-                  widget.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.labelMedium.copyWith(color: itemColor),
-                ),
-              ),
+              Expanded(child: _buildLabel(itemColor)),
             ],
           ),
         ),
@@ -263,6 +259,24 @@ class _AppContextMenuItemState extends State<AppContextMenuItem> {
     if (!mounted) return;
     if (_isHovered == value) return;
     setState(() => _isHovered = value);
+  }
+
+  Widget _buildLabel(Color itemColor) {
+    final label = Text(
+      widget.label,
+      maxLines: 1,
+      softWrap: false,
+      overflow: widget.scaleLabelToFit
+          ? TextOverflow.visible
+          : TextOverflow.ellipsis,
+      style: AppTypography.labelMedium.copyWith(color: itemColor),
+    );
+    if (!widget.scaleLabelToFit) return label;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: label,
+    );
   }
 }
 

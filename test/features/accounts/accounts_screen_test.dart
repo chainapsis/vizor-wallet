@@ -343,7 +343,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret passphrase'), findsOneWidget);
-    expect(tester.getSize(find.byType(AppContextMenu)).width, 208);
+    expect(tester.getSize(find.byType(AppContextMenu)).width, 192);
+    expect(
+      find.ancestor(
+        of: find.text('View secret passphrase'),
+        matching: find.byType(FittedBox),
+      ),
+      findsOneWidget,
+    );
     expect(
       tester
           .renderObject<RenderParagraph>(find.text('View secret passphrase'))

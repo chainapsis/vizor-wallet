@@ -93,6 +93,40 @@ void main() {
     await gesture.removePointer();
   });
 
+  testWidgets('AppContextMenuItem can scale a long label to fit', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+        child: _ThemedHarness(
+          theme: AppThemeData.light,
+          child: AppContextMenu(
+            width: 192,
+            children: [
+              AppContextMenuItem(
+                iconName: AppIcons.key,
+                label: 'View secret passphrase',
+                scaleLabelToFit: true,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('View secret passphrase'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('View secret passphrase'),
+        matching: find.byType(FittedBox),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('AppContextMenuItem can be removed while hovered', (
     tester,
   ) async {
