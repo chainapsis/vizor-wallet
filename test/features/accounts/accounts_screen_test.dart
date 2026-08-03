@@ -335,6 +335,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret passphrase'), findsOneWidget);
+    expect(tester.getSize(find.byType(AppContextMenu)).width, 232);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit account'), findsOneWidget);

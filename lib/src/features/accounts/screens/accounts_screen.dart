@@ -1267,7 +1267,7 @@ class _AccountContextMenu extends StatelessWidget {
     required this.onDismiss,
   });
 
-  static const _width = 192.0;
+  static const _width = 232.0;
 
   final bool showSendZec;
   final VoidCallback? onViewSecretPassphrase;
