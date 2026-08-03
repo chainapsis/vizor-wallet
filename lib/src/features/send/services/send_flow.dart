@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
@@ -60,6 +61,92 @@ class KeystoneBroadcastArgs {
   final SendReviewArgs reviewArgs;
   final List<int> pcztWithProofsBytes;
   final List<int> pcztWithSignaturesBytes;
+}
+
+class SendStatusRoutePayloadNotifier extends Notifier<Object?> {
+  var _disposed = false;
+  var _revision = 0;
+
+  @override
+  Object? build() {
+    ref.onDispose(() => _disposed = true);
+    return null;
+  }
+
+  void retain(Object payload) {
+    _revision++;
+    state = payload;
+  }
+
+  void clear() {
+    _revision++;
+    state = null;
+  }
+
+  void clearAfterNavigation() {
+    final retainedRevision = _revision;
+    unawaited(
+      Future<void>(() {
+        if (_disposed || _revision != retainedRevision) return;
+        clear();
+      }),
+    );
+  }
+}
+
+final sendStatusRoutePayloadProvider =
+    NotifierProvider<SendStatusRoutePayloadNotifier, Object?>(
+      SendStatusRoutePayloadNotifier.new,
+    );
+
+class SendStatusRoutePayloadObserver extends NavigatorObserver {
+  SendStatusRoutePayloadObserver({required this.onLeaveStatus});
+
+  final VoidCallback onLeaveStatus;
+
+  bool _isSendStatus(Route<dynamic>? route) =>
+      route?.settings.name?.startsWith('/send/status') ?? false;
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (_isSendStatus(route)) onLeaveStatus();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (_isSendStatus(route)) onLeaveStatus();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (_isSendStatus(oldRoute) && !_isSendStatus(newRoute)) {
+      onLeaveStatus();
+    }
+  }
+}
+
+String sendStatusRouteLocation(String sendFlowId) =>
+    Uri(path: '/send/status', queryParameters: {'flow': sendFlowId}).toString();
+
+Object? resolveSendStatusRoutePayload({
+  required Object? routePayload,
+  required Object? retainedPayload,
+  required String? sendFlowId,
+}) {
+  if (routePayload is SendReviewArgs || routePayload is KeystoneBroadcastArgs) {
+    return routePayload;
+  }
+  return switch (retainedPayload) {
+    SendReviewArgs(sendFlowId: final retainedFlowId)
+        when retainedFlowId == sendFlowId =>
+      retainedPayload,
+    KeystoneBroadcastArgs(
+      reviewArgs: SendReviewArgs(sendFlowId: final retainedFlowId),
+    )
+        when retainedFlowId == sendFlowId =>
+      retainedPayload,
+    _ => null,
+  };
 }
 
 String newSendFlowId() {

@@ -110,7 +110,11 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
       return;
     }
 
-    await context.push('/send/status', extra: widget.args);
+    ref.read(sendStatusRoutePayloadProvider.notifier).retain(widget.args);
+    await context.push(
+      sendStatusRouteLocation(widget.args.sendFlowId),
+      extra: widget.args,
+    );
   }
 
   void _handleCancel() {
@@ -264,13 +268,15 @@ class _SendReviewScreenState extends ConsumerState<SendReviewScreen> {
     if (signatures == null || !mounted) return;
 
     _handoffToKeystone = true;
+    final statusArgs = KeystoneBroadcastArgs(
+      reviewArgs: widget.args,
+      pcztWithProofsBytes: pcztWithProofs,
+      pcztWithSignaturesBytes: signatures,
+    );
+    ref.read(sendStatusRoutePayloadProvider.notifier).retain(statusArgs);
     context.go(
-      '/send/status',
-      extra: KeystoneBroadcastArgs(
-        reviewArgs: widget.args,
-        pcztWithProofsBytes: pcztWithProofs,
-        pcztWithSignaturesBytes: signatures,
-      ),
+      sendStatusRouteLocation(widget.args.sendFlowId),
+      extra: statusArgs,
     );
   }
 
