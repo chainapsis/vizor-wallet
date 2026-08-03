@@ -559,14 +559,17 @@ class SyncState {
     );
   }
 
-  SyncState withoutAccountScopedData({String? accountUuid}) {
+  SyncState withoutAccountScopedData({
+    String? accountUuid,
+    bool invalidateCompletion = false,
+  }) {
     return SyncState(
       accountUuid: accountUuid,
       hasBalanceData: false,
       hasRecentTransactionsData: false,
       isSyncing: isSyncing,
       isBackgroundMode: isBackgroundMode,
-      isSyncComplete: isSyncComplete,
+      isSyncComplete: invalidateCompletion ? false : isSyncComplete,
       percentage: percentage,
       displayPercentage: displayPercentage,
       displayTargetPercentage: displayTargetPercentage,
@@ -798,10 +801,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       final nextCount = next.value?.accounts.length ?? 0;
       final prevAccountUuid = prev?.value?.activeAccountUuid;
       final nextAccountUuid = next.value?.activeAccountUuid;
+      final accountAdded = nextCount > prevCount;
       if (prevAccountUuid != nextAccountUuid) {
-        _clearAccountScopedStateFor(nextAccountUuid);
+        _clearAccountScopedStateFor(
+          nextAccountUuid,
+          invalidateCompletion: accountAdded,
+        );
+      } else if (accountAdded) {
+        _invalidateCompletionForAccountSetChange();
       }
-      if (nextCount > prevCount) {
+      if (accountAdded) {
         startSync();
         _startPolling();
       }
@@ -895,12 +904,14 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// any refresh still in flight for the outgoing account is discarded
   /// on commit, so it cannot land on top of the incoming account's
   /// restored values. See `_lastKnownByAccount` for the full sequence.
-  void _clearAccountScopedStateFor(String? accountUuid) {
+  void _clearAccountScopedStateFor(
+    String? accountUuid, {
+    bool invalidateCompletion = false,
+  }) {
     ++_balanceReadVersion;
     _authoritativeBalanceRecovery = null;
     final prev = state.value;
     if (prev == null) return;
-
     // Remember the account being left so switching back can paint
     // immediately instead of blanking. Only complete states are stored,
     // so a half-loaded account is never restored later.
@@ -921,6 +932,9 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
         restored
             .withGlobalSyncFieldsFrom(prev)
             .copyWith(
+              isSyncComplete: invalidateCompletion
+                  ? false
+                  : prev.isSyncComplete,
               displaySpendableFreshness:
                   SpendableBalanceFreshness.lastCompletedSync,
             ),
@@ -928,7 +942,18 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       return;
     }
 
-    state = AsyncData(prev.withoutAccountScopedData(accountUuid: accountUuid));
+    state = AsyncData(
+      prev.withoutAccountScopedData(
+        accountUuid: accountUuid,
+        invalidateCompletion: invalidateCompletion,
+      ),
+    );
+  }
+
+  void _invalidateCompletionForAccountSetChange() {
+    final prev = state.value;
+    if (prev == null || !prev.isSyncComplete) return;
+    state = AsyncData(prev.copyWith(isSyncComplete: false));
   }
 
   // ======================== Sync Control ========================
