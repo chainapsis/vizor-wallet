@@ -441,6 +441,10 @@ fn schema_backfills_only_recoverable_original_schedule_heights() {
     )
     .unwrap();
 
+    // The rows above model a database created before this backfill existed.
+    // Such a database cannot carry the current-schema sentinel.
+    conn.execute(&format!("DELETE FROM {MIGRATION_SCHEMA_META_TABLE}"), [])
+        .unwrap();
     ensure_schema(&conn).unwrap();
 
     let heights = conn
@@ -523,6 +527,8 @@ fn legacy_signed_schedule_backfill_uses_approved_offsets_and_discards_wrong_buck
         .unwrap();
     }
 
+    conn.execute(&format!("DELETE FROM {MIGRATION_SCHEMA_META_TABLE}"), [])
+        .unwrap();
     ensure_schema(&conn).unwrap();
 
     let (scheduled_height, origin): (u32, u32) = conn
@@ -632,6 +638,8 @@ fn legacy_signed_schedule_backfill_preserves_identity_for_pending_recovery() {
     )
     .unwrap();
 
+    conn.execute(&format!("DELETE FROM {MIGRATION_SCHEMA_META_TABLE}"), [])
+        .unwrap();
     ensure_schema(&conn).unwrap();
 
     let (message_id, status): (String, String) = conn
@@ -4401,13 +4409,13 @@ fn legacy_equal_value_schedule_maps_incremental_parts_by_rank() {
     };
 
     assert_eq!(
-        schedule_entry_for_pending(&schedule, &[100, 100], &pending(0))
+        schedule_entry_for_pending(&schedule, &[100, 100], pending(0).part_index, 100)
             .unwrap()
             .block_offset,
         1
     );
     assert_eq!(
-        schedule_entry_for_pending(&schedule, &[100, 100], &pending(1))
+        schedule_entry_for_pending(&schedule, &[100, 100], pending(1).part_index, 100)
             .unwrap()
             .block_offset,
         2
@@ -4474,6 +4482,10 @@ fn expired_pending_transaction_is_resigned_without_changing_its_denomination() {
         ],
     )
     .unwrap();
+    // Model a database created before the schema-version sentinel existed so
+    // the missing legacy part index is backfilled on the next access.
+    conn.execute(&format!("DELETE FROM {MIGRATION_SCHEMA_META_TABLE}"), [])
+        .unwrap();
     drop(conn);
 
     assert_eq!(
@@ -5958,6 +5970,524 @@ fn locked_migration_note_refs_without_migration_tables_is_empty() {
     assert!(locks.is_empty());
 }
 
+fn assert_waits_for_wallet_db_write_lock(
+    operation_name: &'static str,
+    write: impl FnOnce() -> Result<(), String> + Send + 'static,
+) {
+    let (lock_held_tx, lock_held_rx) = std::sync::mpsc::channel();
+    let (release_lock_tx, release_lock_rx) = std::sync::mpsc::channel();
+
+    let lock_holder = std::thread::spawn(move || {
+        with_wallet_db_write_lock(operation_name, || {
+            lock_held_tx.send(()).unwrap();
+            release_lock_rx.recv().unwrap();
+        });
+    });
+    lock_held_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+
+    let (write_started_tx, write_started_rx) = std::sync::mpsc::channel();
+    let (write_result_tx, write_result_rx) = std::sync::mpsc::channel();
+    let writer = std::thread::spawn(move || {
+        write_started_tx.send(()).unwrap();
+        write_result_tx.send(write()).unwrap();
+    });
+    write_started_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+
+    match write_result_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+        early => {
+            release_lock_tx.send(()).unwrap();
+            lock_holder.join().unwrap();
+            writer.join().unwrap();
+            panic!("migration write bypassed wallet DB lock: {early:?}");
+        }
+    }
+
+    release_lock_tx.send(()).unwrap();
+    lock_holder.join().unwrap();
+    assert!(write_result_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap()
+        .is_ok());
+    writer.join().unwrap();
+}
+
+#[test]
+fn current_migration_schema_check_does_not_wait_for_wallet_db_writer_lock() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    drop(conn);
+
+    let (lock_held_tx, lock_held_rx) = std::sync::mpsc::channel();
+    let (release_lock_tx, release_lock_rx) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        with_wallet_db_write_lock("test.hold_while_checking_current_migration_schema", || {
+            lock_held_tx.send(()).unwrap();
+            release_lock_rx.recv().unwrap();
+        });
+    });
+    lock_held_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+
+    let (result_tx, result_rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+        result_tx.send(ensure_schema(&conn)).unwrap();
+    });
+
+    result_rx
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .expect("current migration schema check waited for the wallet DB writer lock")
+        .unwrap();
+
+    release_lock_tx.send(()).unwrap();
+    holder.join().unwrap();
+    worker.join().unwrap();
+}
+
+#[test]
+fn migration_payload_encryption_preparation_does_not_wait_for_wallet_db_writer_lock() {
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: "11".repeat(32),
+        output_index: 0,
+        value_zatoshi: 110_000,
+        note_version: 2,
+        nullifier_hex: Some("22".repeat(32)),
+    };
+    let metadata = PendingMigrationTxMetadata {
+        tx_kind: "migration".to_string(),
+        funding_account_uuid: "account-1".to_string(),
+        selected_note: selected_note.clone(),
+    };
+
+    let (lock_held_tx, lock_held_rx) = std::sync::mpsc::channel();
+    let (release_lock_tx, release_lock_rx) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        with_wallet_db_write_lock("test.hold_while_preparing_migration_payloads", || {
+            lock_held_tx.send(()).unwrap();
+            release_lock_rx.recv().unwrap();
+        });
+    });
+    lock_held_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+
+    let (result_tx, result_rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let pending = prepare_pending_txs(
+            vec![PendingMigrationTxInsert {
+                part_index: 0,
+                txid_hex: "33".repeat(32),
+                raw_tx: vec![1, 2, 3],
+                target_height: 100,
+                anchor_boundary_height: Some(90),
+                expiry_height: 69_120,
+                scheduled_height: 110,
+                value_zatoshi: 100_000,
+                fee_zatoshi: 10_000,
+                selected_note: selected_note.clone(),
+                metadata: metadata.clone(),
+            }],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        );
+        let children = prepare_signed_child_pczts(
+            vec![SignedMigrationPcztInsert {
+                message_id: "migration-1".to_string(),
+                child_index: 0,
+                base_pczt: vec![4, 5, 6],
+                sigs: Vec::new(),
+                target_height: 100,
+                anchor_boundary_height: Some(90),
+                expiry_height: 69_120,
+                scheduled_height: 110,
+                value_zatoshi: 100_000,
+                fee_zatoshi: 10_000,
+                selected_note,
+                metadata,
+            }],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        );
+        result_tx.send((pending, children)).unwrap();
+    });
+
+    let (pending, children) = result_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("migration payload encryption waited for the wallet DB writer lock");
+    assert_eq!(pending.unwrap().len(), 1);
+    assert_eq!(children.unwrap().len(), 1);
+
+    release_lock_tx.send(()).unwrap();
+    holder.join().unwrap();
+    worker.join().unwrap();
+}
+
+#[test]
+fn private_migration_draft_waits_for_wallet_db_write_lock() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+
+    assert_waits_for_wallet_db_write_lock("test.hold_for_migration_draft", move || {
+        create_or_resume_private_migration_draft(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            &[100_000_000],
+            &[MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100_000_000,
+                block_offset: 1,
+            }],
+            PreparationTimingPolicy::Immediate,
+        )
+        .map(|_| ())
+    });
+}
+
+#[test]
+fn concurrent_private_migration_starts_for_different_accounts_are_serialized_and_preserved() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let (lock_held_tx, lock_held_rx) = std::sync::mpsc::channel();
+    let (release_lock_tx, release_lock_rx) = std::sync::mpsc::channel();
+    let lock_holder = std::thread::spawn(move || {
+        with_wallet_db_write_lock("test.hold_for_concurrent_migration_starts", || {
+            lock_held_tx.send(()).unwrap();
+            release_lock_rx.recv().unwrap();
+        });
+    });
+    lock_held_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+
+    let start_barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+    let (result_tx, result_rx) = std::sync::mpsc::channel();
+    let writers = ["account-1", "account-2"]
+        .into_iter()
+        .map(|account_uuid| {
+            let db_path = db_path.clone();
+            let start_barrier = start_barrier.clone();
+            let result_tx = result_tx.clone();
+            std::thread::spawn(move || {
+                start_barrier.wait();
+                let result = create_or_resume_private_migration_draft(
+                    &db_path,
+                    account_uuid,
+                    WalletNetwork::Test,
+                    &[100_000_000],
+                    &[MigrationScheduleEntry {
+                        part_index: Some(0),
+                        value_zatoshi: 100_000_000,
+                        block_offset: 1,
+                    }],
+                    PreparationTimingPolicy::Immediate,
+                );
+                result_tx.send((account_uuid, result)).unwrap();
+            })
+        })
+        .collect::<Vec<_>>();
+    drop(result_tx);
+    start_barrier.wait();
+
+    match result_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+        early => {
+            release_lock_tx.send(()).unwrap();
+            lock_holder.join().unwrap();
+            for writer in writers {
+                writer.join().unwrap();
+            }
+            panic!("concurrent migration start bypassed wallet DB lock: {early:?}");
+        }
+    }
+
+    release_lock_tx.send(()).unwrap();
+    lock_holder.join().unwrap();
+    let results = result_rx
+        .iter()
+        .map(|(account_uuid, result)| (account_uuid, result.unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for writer in writers {
+        writer.join().unwrap();
+    }
+
+    assert_eq!(results.len(), 2);
+    assert_ne!(results["account-1"], results["account-2"]);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let account_1_run = active_run(&conn, "account-1", WalletNetwork::Test)
+        .unwrap()
+        .unwrap();
+    let account_2_run = active_run(&conn, "account-2", WalletNetwork::Test)
+        .unwrap()
+        .unwrap();
+    assert_eq!(account_1_run.run_id, results["account-1"]);
+    assert_eq!(account_2_run.run_id, results["account-2"]);
+}
+
+#[test]
+fn concurrent_account_growth_sync_invalidation_and_migration_start_are_preserved() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let network = WalletNetwork::Main;
+    let first_seed =
+        crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic()).unwrap();
+    let (first_account_uuid, _) = crate::wallet::keys::init_db_and_create_account(
+        &db_path,
+        network,
+        &first_seed,
+        None,
+        "first",
+    )
+    .unwrap();
+    assert_eq!(
+        crate::wallet::sync_engine::completed_sync_height_for_status(&db_path, 100, 100).unwrap(),
+        Some(100),
+    );
+    let second_seed =
+        crate::wallet::keys::mnemonic_to_seed(&crate::wallet::keys::generate_mnemonic()).unwrap();
+
+    let (lock_held_tx, lock_held_rx) = std::sync::mpsc::channel();
+    let (release_lock_tx, release_lock_rx) = std::sync::mpsc::channel();
+    let lock_holder = std::thread::spawn(move || {
+        with_wallet_db_write_lock("test.hold_for_account_sync_migration_writers", || {
+            lock_held_tx.send(()).unwrap();
+            release_lock_rx.recv().unwrap();
+        });
+    });
+    lock_held_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+
+    let start_barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+    let account_db_path = db_path.clone();
+    let account_barrier = start_barrier.clone();
+    let account_writer = std::thread::spawn(move || {
+        account_barrier.wait();
+        crate::wallet::keys::add_account(&account_db_path, network, "second", &second_seed, Some(1))
+    });
+
+    let migration_db_path = db_path.clone();
+    let migration_account_uuid = first_account_uuid.clone();
+    let migration_barrier = start_barrier.clone();
+    let migration_writer = std::thread::spawn(move || {
+        migration_barrier.wait();
+        create_or_resume_private_migration_draft(
+            &migration_db_path,
+            &migration_account_uuid,
+            network,
+            &[100_000_000],
+            &[MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100_000_000,
+                block_offset: 1,
+            }],
+            PreparationTimingPolicy::Immediate,
+        )
+    });
+
+    let sync_db_path = db_path.clone();
+    let sync_barrier = start_barrier.clone();
+    let sync_writer = std::thread::spawn(move || {
+        sync_barrier.wait();
+        with_wallet_db_write_lock("test.concurrent_sync_invalidation", || {
+            crate::wallet::sync_engine::invalidate_sync_completion(&sync_db_path)
+        })
+    });
+
+    start_barrier.wait();
+    match account_writer.is_finished()
+        || migration_writer.is_finished()
+        || sync_writer.is_finished()
+    {
+        true => {
+            release_lock_tx.send(()).unwrap();
+            lock_holder.join().unwrap();
+            panic!("a queued wallet DB writer bypassed the global write lease");
+        }
+        false => release_lock_tx.send(()).unwrap(),
+    }
+    lock_holder.join().unwrap();
+
+    account_writer.join().unwrap().unwrap();
+    let migration_run_id = migration_writer.join().unwrap().unwrap();
+    sync_writer.join().unwrap().unwrap();
+
+    let accounts = crate::wallet::keys::list_accounts(&db_path, network).unwrap();
+    assert_eq!(accounts.len(), 2);
+    assert!(accounts
+        .iter()
+        .any(|account| account.uuid == first_account_uuid));
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let active = active_run(&conn, &first_account_uuid, network)
+        .unwrap()
+        .unwrap();
+    assert_eq!(active.run_id, migration_run_id);
+    assert_eq!(
+        crate::wallet::sync_engine::completed_sync_height_for_status(&db_path, 100, 100).unwrap(),
+        None,
+    );
+}
+
+#[test]
+fn private_migration_draft_finalization_waits_for_wallet_db_write_lock() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let target_values = vec![100_000_000];
+    let approved_schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: target_values[0],
+        block_offset: 1,
+    }];
+    let run_id = create_or_resume_private_migration_draft(
+        &db_path,
+        "account-1",
+        WalletNetwork::Test,
+        &target_values,
+        &approved_schedule,
+        PreparationTimingPolicy::Immediate,
+    )
+    .unwrap();
+    let plan = DenominationPlan {
+        migration_outputs: target_values,
+        orchard_change: None,
+        split_fee_zatoshi: 80_000,
+        migration_fee_zatoshi: 10_000,
+        total_input_zatoshi: 100_080_000,
+        total_migratable_zatoshi: 100_000_000,
+    };
+    let expected_txid = "11".repeat(32);
+    let prepared_notes = vec![PreparedOrchardNoteRef {
+        txid_hex: expected_txid.clone(),
+        output_index: 0,
+        value_zatoshi: 100_000_000,
+        note_version: 2,
+        nullifier_hex: None,
+    }];
+
+    assert_waits_for_wallet_db_write_lock("test.hold_for_migration_finalization", move || {
+        finalize_private_migration_draft(
+            &db_path,
+            &run_id,
+            "account-1",
+            WalletNetwork::Test,
+            &plan,
+            &prepared_notes,
+            Vec::new(),
+            vec![pending_test_stage(&expected_txid, vec![1, 2, 3])],
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+    });
+}
+
+#[test]
+fn staged_migration_run_waits_for_wallet_db_write_lock() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_string_lossy().to_string();
+    let plan = DenominationPlan {
+        migration_outputs: vec![100_000_000],
+        orchard_change: None,
+        split_fee_zatoshi: 80_000,
+        migration_fee_zatoshi: 10_000,
+        total_input_zatoshi: 100_080_000,
+        total_migratable_zatoshi: 100_000_000,
+    };
+    let expected_txid = "11".repeat(32);
+    let prepared_notes = vec![PreparedOrchardNoteRef {
+        txid_hex: expected_txid.clone(),
+        output_index: 0,
+        value_zatoshi: 100_000_000,
+        note_version: 2,
+        nullifier_hex: None,
+    }];
+    let approved_schedule = vec![MigrationScheduleEntry {
+        part_index: Some(0),
+        value_zatoshi: 100_000_000,
+        block_offset: 1,
+    }];
+
+    assert_waits_for_wallet_db_write_lock("test.hold_for_staged_migration_run", move || {
+        create_run_with_staged_denominations_and_signed_children(
+            &db_path,
+            "account-1",
+            WalletNetwork::Test,
+            &plan,
+            &prepared_notes,
+            Vec::new(),
+            vec![pending_test_stage(&expected_txid, vec![1, 2, 3])],
+            Some(&approved_schedule),
+            PreparationTimingPolicy::Immediate,
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .map(|_| ())
+    });
+}
+
+#[test]
+fn pending_broadcast_update_waits_for_wallet_db_write_lock() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txid =
+        create_outbox_test_run(&db_path, "broadcast-lock", &[100_000_000], &[Some(90)]).remove(0);
+
+    assert_waits_for_wallet_db_write_lock("test.hold_for_pending_broadcast", move || {
+        mark_pending_broadcasted(&db_path, "broadcast-lock", &txid)
+    });
+}
+
+#[test]
+fn accepted_outbox_receipt_waits_for_wallet_db_write_lock() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let txid = create_outbox_test_run(&db_path, "outbox-receipt-lock", &[100_000_000], &[Some(90)])
+        .remove(0);
+
+    assert_waits_for_wallet_db_write_lock("test.hold_for_outbox_receipt", move || {
+        apply_accepted_migration_outbox_receipt(
+            &db_path,
+            "account-1",
+            WalletNetwork::Regtest,
+            "outbox-receipt-lock",
+            &txid,
+            101,
+            &[],
+        )
+    });
+}
+
 #[test]
 fn private_migration_draft_persists_plan_and_finalizes_in_place() {
     let temp_dir = tempfile::tempdir().unwrap();
@@ -6322,12 +6852,19 @@ fn create_staged_run_rolls_back_on_encrypt_failure() {
         PREPARED_NOTES_TABLE,
         "vizor_migration_denomination_stages",
     ] {
-        let count: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1
+                 )",
+                [table],
+                |row| row.get(0),
+            )
             .unwrap();
-        assert_eq!(count, 0, "{table} should be empty after rollback");
+        assert!(
+            !exists,
+            "{table} should not be created when payload preparation fails"
+        );
     }
 }
 

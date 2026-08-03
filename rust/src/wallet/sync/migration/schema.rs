@@ -500,6 +500,50 @@ fn backfill_original_pending_schedule_heights(
 }
 
 fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
+    if migration_schema_is_current(conn)? {
+        return Ok(());
+    }
+    with_wallet_db_write_lock("migration.ensure_schema", || {
+        if migration_schema_is_current(conn)? {
+            return Ok(());
+        }
+        ensure_schema_inner(conn)?;
+        record_migration_schema_version(conn)
+    })
+}
+
+fn migration_schema_is_current(conn: &rusqlite::Connection) -> Result<bool, String> {
+    if !table_exists(conn, MIGRATION_SCHEMA_META_TABLE)? {
+        return Ok(false);
+    }
+    let version = conn
+        .query_row(
+            &format!(
+                "SELECT version FROM {MIGRATION_SCHEMA_META_TABLE} WHERE singleton_id = 1"
+            ),
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Read migration schema version: {e}"))?;
+    Ok(version.is_some_and(|version| version >= MIGRATION_SCHEMA_VERSION))
+}
+
+fn record_migration_schema_version(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(&format!(
+        "CREATE TABLE IF NOT EXISTS {MIGRATION_SCHEMA_META_TABLE} (
+             singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+             version INTEGER NOT NULL
+         );
+         INSERT INTO {MIGRATION_SCHEMA_META_TABLE} (singleton_id, version)
+         VALUES (1, {MIGRATION_SCHEMA_VERSION})
+         ON CONFLICT(singleton_id) DO UPDATE
+         SET version = MAX(version, excluded.version);"
+    ))
+    .map_err(|e| format!("Record migration schema version: {e}"))
+}
+
+fn ensure_schema_inner(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(&format!(
         "
         CREATE TABLE IF NOT EXISTS {RUNS_TABLE} (
@@ -746,3 +790,5 @@ fn table_column_exists(
     .map(|row| row.is_some())
     .map_err(|e| format!("Check migration column {table}.{column}: {e}"))
 }
+const MIGRATION_SCHEMA_META_TABLE: &str = "vizor_migration_schema_meta";
+const MIGRATION_SCHEMA_VERSION: i64 = 1;

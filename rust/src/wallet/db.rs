@@ -1,7 +1,8 @@
 use std::{
+    cell::Cell,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Mutex, OnceLock,
+        Mutex, MutexGuard, OnceLock,
     },
     time::{Duration, Instant},
 };
@@ -105,10 +106,60 @@ fn configure_wallet_connection(
     Ok(())
 }
 
-pub(crate) fn with_wallet_db_write_lock<T>(
+thread_local! {
+    static WALLET_DB_WRITE_DEPTH: Cell<u32> = const { Cell::new(0) };
+}
+
+struct WalletDbWriteDepthGuard;
+
+impl WalletDbWriteDepthGuard {
+    fn enter() -> Self {
+        WALLET_DB_WRITE_DEPTH.with(|depth| {
+            depth.set(
+                depth
+                    .get()
+                    .checked_add(1)
+                    .expect("wallet DB write lock nesting overflow"),
+            );
+        });
+        Self
+    }
+}
+
+impl Drop for WalletDbWriteDepthGuard {
+    fn drop(&mut self) {
+        WALLET_DB_WRITE_DEPTH.with(|depth| {
+            depth.set(
+                depth
+                    .get()
+                    .checked_sub(1)
+                    .expect("wallet DB write lock nesting underflow"),
+            );
+        });
+    }
+}
+
+struct WalletDbWriteGuard {
+    _epoch_guard: WriteEpochGuard,
+    _guard: MutexGuard<'static, ()>,
     operation: &'static str,
-    write: impl FnOnce() -> T,
-) -> T {
+    hold_start: Instant,
+}
+
+impl Drop for WalletDbWriteGuard {
+    fn drop(&mut self) {
+        let held = self.hold_start.elapsed();
+        if held >= Duration::from_secs(1) {
+            log::info!(
+                "wallet DB write lock held {:.3}s by {}",
+                held.as_secs_f64(),
+                self.operation
+            );
+        }
+    }
+}
+
+fn acquire_wallet_db_write_lock(operation: &'static str) -> WalletDbWriteGuard {
     // Serializes wallet-DB writes across FRB foreground calls, C-FFI
     // background sync calls, and Rust sync tasks inside this process. This
     // does not coordinate with a separate OS process that opens the same DB.
@@ -139,21 +190,27 @@ pub(crate) fn with_wallet_db_write_lock<T>(
 
     // Odd while the write closure runs; Drop makes it even on every exit.
     WALLET_DB_WRITE_EPOCH.fetch_add(1, Ordering::AcqRel);
-    let _epoch_guard = WriteEpochGuard;
+    WalletDbWriteGuard {
+        _epoch_guard: WriteEpochGuard,
+        _guard: guard,
+        operation,
+        hold_start: Instant::now(),
+    }
+}
 
-    let hold_start = Instant::now();
-    let result = write();
-    let held = hold_start.elapsed();
-    if held >= Duration::from_secs(1) {
-        log::info!(
-            "wallet DB write lock held {:.3}s by {operation}",
-            held.as_secs_f64()
-        );
+pub(crate) fn with_wallet_db_write_lock<T>(
+    operation: &'static str,
+    write: impl FnOnce() -> T,
+) -> T {
+    let is_nested = WALLET_DB_WRITE_DEPTH.with(|depth| depth.get() > 0);
+    if is_nested {
+        let _depth = WalletDbWriteDepthGuard::enter();
+        return write();
     }
 
-    drop(_epoch_guard);
-    drop(guard);
-    result
+    let _guard = acquire_wallet_db_write_lock(operation);
+    let _depth = WalletDbWriteDepthGuard::enter();
+    write()
 }
 
 pub(crate) fn open_readonly_conn_with_timeout(
@@ -241,5 +298,23 @@ mod tests {
         with_wallet_db_write_lock("test_after_panic", || {
             assert_eq!(wallet_db_write_epoch() % 2, 1);
         });
+    }
+
+    #[test]
+    fn wallet_db_write_lock_allows_same_thread_nesting() {
+        let (completed_tx, completed_rx) = std::sync::mpsc::channel();
+
+        let nested = std::thread::spawn(move || {
+            with_wallet_db_write_lock("test.outer", || {
+                with_wallet_db_write_lock("test.inner", || {
+                    completed_tx.send(()).unwrap();
+                });
+            });
+        });
+
+        completed_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("nested wallet DB write lock deadlocked");
+        nested.join().unwrap();
     }
 }

@@ -29,19 +29,23 @@ pub(crate) use split_plan::{
     plan_padded_denominations_without_refinement, SplitStageInput, SplitTerminalKind,
     DENOMINATION_SPLIT_ACTIONS,
 };
+#[cfg(test)]
+pub(crate) use stages::insert_denomination_stages_with_tx;
 #[allow(unused_imports)]
 pub(crate) use stages::{
     all_denomination_stages_confirmed, denomination_stage_chain_records,
     denomination_stage_expected_txids, denomination_stage_status, denomination_stage_status_counts,
     denomination_stages_for_run, expired_broadcasted_denomination_stage_count,
-    expired_unbroadcast_denomination_stage_count, insert_denomination_stages_with_tx,
+    expired_unbroadcast_denomination_stage_count, insert_prepared_denomination_stages_with_tx,
     locked_denomination_stage_input_outpoints, mark_denomination_stage_broadcasted,
     mark_denomination_stage_confirmed_at, pending_raw_denomination_stages,
+    prepare_denomination_raw_tx, prepare_denomination_stage_inserts,
     promote_awaiting_denomination_stage, replace_denomination_stage_confirmation_identity,
     reset_denomination_stage_exact, reset_denomination_stage_for_reorg, DenominationStage,
     DenominationStageChainRecord, DenominationStageInputRef, DenominationStageInsert,
     DenominationStageOutputKind, DenominationStageOutputRef, DenominationStageStatus,
-    DenominationStageStatusCounts, PendingRawDenominationStage,
+    DenominationStageStatusCounts, PendingRawDenominationStage, PreparedDenominationRawTx,
+    PreparedDenominationStageInsert,
 };
 use stages::{STAGES_TABLE, STAGE_INPUTS_TABLE, STAGE_OUTPUTS_TABLE};
 
@@ -54,6 +58,19 @@ const PENDING_TXS_TABLE: &str = "vizor_migration_pending_txs";
 const SIGNED_CHILD_PCZTS_TABLE: &str = "vizor_migration_signed_child_pczts";
 const RETAINED_ANCHORS_TABLE: &str = "vizor_migration_retained_orchard_anchors";
 const RETENTION_RELEASE_SENTINEL_RUN_ID: &str = "";
+
+pub(crate) fn with_migration_write_conn<T>(
+    db_path: &str,
+    operation: &'static str,
+    write: impl FnOnce(&mut rusqlite::Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    with_wallet_db_write_lock(operation, || {
+        let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        write(&mut conn)
+    })
+}
+
 pub(crate) fn delete_account_migration_rows_with_tx(
     tx: &rusqlite::Transaction<'_>,
     account_uuid: &str,
@@ -171,6 +188,20 @@ pub(crate) struct PendingMigrationTxInsert {
     pub metadata: PendingMigrationTxMetadata,
 }
 
+struct PreparedPendingMigrationTxInsert {
+    part_index: u32,
+    txid_hex: String,
+    encrypted_raw_tx: String,
+    target_height: u32,
+    anchor_boundary_height: Option<u32>,
+    expiry_height: u32,
+    scheduled_height: u32,
+    value_zatoshi: u64,
+    fee_zatoshi: u64,
+    selected_note: PreparedOrchardNoteRef,
+    metadata_json: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PendingMigrationPartRecovery {
     pub part_index: u32,
@@ -183,6 +214,11 @@ pub(crate) struct PendingMigrationPartRecovery {
 pub(crate) struct PendingMigrationTxReplacement {
     pub old_txid_hex: String,
     pub replacement: PendingMigrationTxInsert,
+}
+
+struct PreparedPendingMigrationTxReplacement {
+    old_txid_hex: String,
+    replacement: PreparedPendingMigrationTxInsert,
 }
 
 pub(crate) struct SignedMigrationPcztInsert {
@@ -202,6 +238,21 @@ pub(crate) struct SignedMigrationPcztInsert {
     pub fee_zatoshi: u64,
     pub selected_note: PreparedOrchardNoteRef,
     pub metadata: PendingMigrationTxMetadata,
+}
+
+struct PreparedSignedMigrationPcztInsert {
+    message_id: String,
+    child_index: u32,
+    encrypted_base_pczt: String,
+    encrypted_compact_sigs: String,
+    target_height: u32,
+    anchor_boundary_height: Option<u32>,
+    expiry_height: u32,
+    scheduled_height: u32,
+    value_zatoshi: u64,
+    fee_zatoshi: u64,
+    selected_note_json: String,
+    metadata_json: String,
 }
 
 pub(crate) struct SignedMigrationPczt {
@@ -591,55 +642,55 @@ fn migration_projection_scanned_height(
 /// balance information from the UI status call.
 pub(crate) fn reconcile_denomination_run(db_path: &str, run_id: &str) -> Result<bool, String> {
     reconcile_denomination_stage_chain_state(db_path, run_id)?;
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let run = conn
-        .query_row(
-            &format!(
-                "SELECT run_id, phase, target_values_json, last_error
-                 FROM {RUNS_TABLE}
-                 WHERE run_id = ?1"
-            ),
-            params![run_id],
-            |row| {
-                let target_values_json: String = row.get(2)?;
-                Ok(ActiveRun {
-                    run_id: row.get(0)?,
-                    phase: row.get(1)?,
-                    target_values_zatoshi: serde_json::from_str(&target_values_json)
-                        .unwrap_or_default(),
-                    last_error: row.get(3)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(|e| format!("Read staged migration run: {e}"))?
-        .ok_or_else(|| format!("Migration run {run_id} was not found"))?;
-    reconcile_denomination_confirmations(&conn, &run)?;
-    let phase = conn
-        .query_row(
-            &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
-            params![run_id],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(|e| format!("Read reconciled migration phase: {e}"))?;
-    if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
-        // Trusted confirmations are not sufficient until every terminal note
-        // also has the spend metadata populated by reconciliation above.
-        return Ok(false);
-    }
-    if phase == PHASE_READY_TO_MIGRATE {
-        return Ok(true);
-    }
-    if !matches!(
-        phase.as_str(),
-        PHASE_BROADCAST_SCHEDULED | PHASE_BROADCASTING | PHASE_WAITING_MIGRATION_CONFIRMATIONS
-    ) {
-        return Ok(false);
-    }
+    with_migration_write_conn(db_path, "migration.reconcile_denomination_run", |conn| {
+        let run = conn
+            .query_row(
+                &format!(
+                    "SELECT run_id, phase, target_values_json, last_error
+                     FROM {RUNS_TABLE}
+                     WHERE run_id = ?1"
+                ),
+                params![run_id],
+                |row| {
+                    let target_values_json: String = row.get(2)?;
+                    Ok(ActiveRun {
+                        run_id: row.get(0)?,
+                        phase: row.get(1)?,
+                        target_values_zatoshi: serde_json::from_str(&target_values_json)
+                            .unwrap_or_default(),
+                        last_error: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("Read staged migration run: {e}"))?
+            .ok_or_else(|| format!("Migration run {run_id} was not found"))?;
+        reconcile_denomination_confirmations(conn, &run)?;
+        let phase = conn
+            .query_row(
+                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                params![run_id],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|e| format!("Read reconciled migration phase: {e}"))?;
+        if phase == PHASE_WAITING_DENOM_CONFIRMATIONS {
+            // Trusted confirmations are not sufficient until every terminal note
+            // also has the spend metadata populated by reconciliation above.
+            return Ok(false);
+        }
+        if phase == PHASE_READY_TO_MIGRATE {
+            return Ok(true);
+        }
+        if !matches!(
+            phase.as_str(),
+            PHASE_BROADCAST_SCHEDULED | PHASE_BROADCASTING | PHASE_WAITING_MIGRATION_CONFIRMATIONS
+        ) {
+            return Ok(false);
+        }
 
-    let progress = denomination_split_progress_for_run(&conn, run_id)?;
-    Ok(progress.total_count == 0 || progress.completed_count == progress.total_count)
+        let progress = denomination_split_progress_for_run(conn, run_id)?;
+        Ok(progress.total_count == 0 || progress.completed_count == progress.total_count)
+    })
 }
 
 fn orchard_balance_can_create_migration_output(orchard_spendable: u64) -> Result<bool, String> {
@@ -1115,70 +1166,72 @@ pub(crate) fn reconcile_wallet_locks_after_sync(
     db_path: &str,
     network: WalletNetwork,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let mut account_stmt = conn
-        .prepare_cached(&format!(
-            "SELECT DISTINCT account_uuid
-             FROM {RUNS_TABLE}
-             WHERE network = ?1
-             ORDER BY account_uuid"
-        ))
-        .map_err(|e| format!("Prepare post-sync migration account query: {e}"))?;
-    let account_uuids = account_stmt
-        .query_map(params![network_name(network)], |row| {
-            row.get::<_, String>(0)
-        })
-        .map_err(|e| format!("Query post-sync migration accounts: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Read post-sync migration accounts: {e}"))?;
-    drop(account_stmt);
+    let active_runs =
+        with_migration_write_conn(db_path, "migration.reconcile_after_sync.accounts", |conn| {
+            let mut account_stmt = conn
+                .prepare_cached(&format!(
+                    "SELECT DISTINCT account_uuid
+                     FROM {RUNS_TABLE}
+                     WHERE network = ?1
+                     ORDER BY account_uuid"
+                ))
+                .map_err(|e| format!("Prepare post-sync migration account query: {e}"))?;
+            let account_uuids = account_stmt
+                .query_map(params![network_name(network)], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|e| format!("Query post-sync migration accounts: {e}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Read post-sync migration accounts: {e}"))?;
+            drop(account_stmt);
 
-    for account_uuid in &account_uuids {
-        adopt_configured_timing_policy_for_active_run(&conn, account_uuid, network)?;
-        recover_latest_idempotent_broadcast_failure(&conn, account_uuid, network)?;
-    }
-    let active_runs = account_uuids
-        .iter()
-        .map(|account_uuid| active_run(&conn, account_uuid, network))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    drop(conn);
+            for account_uuid in &account_uuids {
+                adopt_configured_timing_policy_for_active_run(conn, account_uuid, network)?;
+                recover_latest_idempotent_broadcast_failure(conn, account_uuid, network)?;
+            }
+            let active_runs = account_uuids
+                .iter()
+                .map(|account_uuid| active_run(conn, account_uuid, network))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            Ok(active_runs)
+        })?;
 
     for run in active_runs {
         reconcile_denomination_stage_chain_state(db_path, &run.run_id)?;
-        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-        ensure_schema(&conn)?;
-        let run = conn
-            .query_row(
-                &format!(
-                    "SELECT run_id, phase, target_values_json, last_error
-                     FROM {RUNS_TABLE}
-                     WHERE run_id = ?1"
-                ),
-                params![run.run_id],
-                |row| {
-                    let target_values_json: String = row.get(2)?;
-                    Ok(ActiveRun {
-                        run_id: row.get(0)?,
-                        phase: row.get(1)?,
-                        target_values_zatoshi: serde_json::from_str(&target_values_json)
-                            .unwrap_or_default(),
-                        last_error: row.get(3)?,
-                    })
-                },
-            )
-            .optional()
-            .map_err(|e| format!("Read post-sync migration run: {e}"))?;
-        if let Some(run) = run {
-            if !migration_phase_releases_wallet_locks(&run.phase) {
-                reconcile_denomination_confirmations(&conn, &run)?;
-                reconcile_run_confirmations(&conn, &run.run_id)?;
-                backfill_ready_migration_proof_retry_height(&conn, &run.run_id)?;
+        with_migration_write_conn(db_path, "migration.reconcile_after_sync.run", |conn| {
+            let run = conn
+                .query_row(
+                    &format!(
+                        "SELECT run_id, phase, target_values_json, last_error
+                         FROM {RUNS_TABLE}
+                         WHERE run_id = ?1"
+                    ),
+                    params![run.run_id],
+                    |row| {
+                        let target_values_json: String = row.get(2)?;
+                        Ok(ActiveRun {
+                            run_id: row.get(0)?,
+                            phase: row.get(1)?,
+                            target_values_zatoshi: serde_json::from_str(&target_values_json)
+                                .unwrap_or_default(),
+                            last_error: row.get(3)?,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|e| format!("Read post-sync migration run: {e}"))?;
+            if let Some(run) = run {
+                if !migration_phase_releases_wallet_locks(&run.phase) {
+                    reconcile_denomination_confirmations(conn, &run)?;
+                    reconcile_run_confirmations(conn, &run.run_id)?;
+                    backfill_ready_migration_proof_retry_height(conn, &run.run_id)?;
+                }
             }
-        }
+            Ok(())
+        })?;
     }
 
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
@@ -1254,72 +1307,77 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    if let Some(run) = active_run(&conn, account_uuid, network)? {
-        return Err(format!("Migration already active: {}", run.run_id));
-    }
-
+    let has_denomination_stages = !denomination_stages.is_empty();
     let run_id = new_run_id(account_uuid);
-    let now = now_ms()?;
-    let target_values_json = serde_json::to_string(&plan.migration_outputs)
-        .map_err(|e| format!("Encode migration targets: {e}"))?;
-    let timing_policy = configured_timing_policy(network);
-    let initial_phase = if denomination_stages.is_empty() {
-        PHASE_READY_TO_MIGRATE
-    } else {
-        PHASE_WAITING_DENOM_CONFIRMATIONS
-    };
-    let schedule_json = match approved_schedule {
-        Some(schedule) => {
-            validate_schedule_with_policy(
-                schedule,
-                &plan.migration_outputs,
-                network,
-                timing_policy,
-            )?;
-            serde_json::to_string(schedule)
-                .map_err(|e| format!("Encode approved migration schedule: {e}"))?
+    let denomination_stages =
+        prepare_denomination_stage_inserts(&run_id, denomination_stages, password, salt_base64)?;
+    let signed_children = prepare_signed_child_pczts(signed_children, password, salt_base64)?;
+    let (conn, run_id) = with_wallet_db_write_lock("migration.create_staged_run", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        if let Some(run) = active_run(&conn, account_uuid, network)? {
+            return Err(format!("Migration already active: {}", run.run_id));
         }
-        None => "[]".to_string(),
-    };
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin staged migration run: {e}"))?;
-    tx.execute(
-        &format!(
-            "INSERT INTO {RUNS_TABLE}
-             (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
-              updated_at_ms, target_values_json, timing_policy, schedule_json,
-              preparation_timing_policy)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10)"
-        ),
-        params![
-            run_id,
-            account_uuid,
-            network_name(network),
-            db_path,
-            initial_phase,
-            now,
-            target_values_json,
-            timing_policy.as_str(),
-            schedule_json,
-            preparation_timing_policy.as_str(),
-        ],
-    )
-    .map_err(|e| format!("Create staged migration run: {e}"))?;
-    insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
-    insert_denomination_stages_with_tx(&tx, &run_id, denomination_stages, password, salt_base64)?;
-    insert_signed_child_pczts_with_tx(
-        &tx,
-        &run_id,
-        signed_children,
-        password,
-        salt_base64,
-        SignedChildInsertMode::Initial,
-    )?;
-    tx.commit()
-        .map_err(|e| format!("Commit staged migration run: {e}"))?;
+
+        let now = now_ms()?;
+        let target_values_json = serde_json::to_string(&plan.migration_outputs)
+            .map_err(|e| format!("Encode migration targets: {e}"))?;
+        let timing_policy = configured_timing_policy(network);
+        let initial_phase = if has_denomination_stages {
+            PHASE_WAITING_DENOM_CONFIRMATIONS
+        } else {
+            PHASE_READY_TO_MIGRATE
+        };
+        let schedule_json = match approved_schedule {
+            Some(schedule) => {
+                validate_schedule_with_policy(
+                    schedule,
+                    &plan.migration_outputs,
+                    network,
+                    timing_policy,
+                )?;
+                serde_json::to_string(schedule)
+                    .map_err(|e| format!("Encode approved migration schedule: {e}"))?
+            }
+            None => "[]".to_string(),
+        };
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin staged migration run: {e}"))?;
+        tx.execute(
+            &format!(
+                "INSERT INTO {RUNS_TABLE}
+                 (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
+                  updated_at_ms, target_values_json, timing_policy, schedule_json,
+                  preparation_timing_policy)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10)"
+            ),
+            params![
+                run_id,
+                account_uuid,
+                network_name(network),
+                db_path,
+                initial_phase,
+                now,
+                target_values_json,
+                timing_policy.as_str(),
+                schedule_json,
+                preparation_timing_policy.as_str(),
+            ],
+        )
+        .map_err(|e| format!("Create staged migration run: {e}"))?;
+        insert_prepared_notes_with_tx(&tx, &run_id, prepared_notes, true)?;
+        insert_prepared_denomination_stages_with_tx(&tx, &run_id, denomination_stages)?;
+        insert_signed_child_pczts_with_tx(
+            &tx,
+            &run_id,
+            signed_children,
+            SignedChildInsertMode::Initial,
+        )?;
+        tx.commit()
+            .map_err(|e| format!("Commit staged migration run: {e}"))?;
+        Ok::<_, String>((conn, run_id))
+    })?;
     if let Err(error) = reconcile_wallet_locks_for_run(db_path, network, &run_id) {
         return Err(cleanup_failed_created_run(
             error,
@@ -1332,12 +1390,14 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
                 )
             },
             || {
-                conn.execute(
-                    &format!("DELETE FROM {RUNS_TABLE} WHERE run_id = ?1"),
-                    params![run_id],
-                )
-                .map(|_| ())
-                .map_err(|e| format!("Delete unlocked migration run: {e}"))
+                with_wallet_db_write_lock("migration.delete_unlocked_run", || {
+                    conn.execute(
+                        &format!("DELETE FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                        params![run_id],
+                    )
+                    .map(|_| ())
+                    .map_err(|e| format!("Delete unlocked migration run: {e}"))
+                })
             },
         ));
     }
@@ -1345,6 +1405,26 @@ pub(crate) fn create_run_with_staged_denominations_and_signed_children(
 }
 
 pub(crate) fn create_or_resume_private_migration_draft(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    target_values_zatoshi: &[u64],
+    approved_schedule: &[MigrationScheduleEntry],
+    preparation_timing_policy: PreparationTimingPolicy,
+) -> Result<String, String> {
+    with_wallet_db_write_lock("migration.create_or_resume_private_draft", || {
+        create_or_resume_private_migration_draft_locked(
+            db_path,
+            account_uuid,
+            network,
+            target_values_zatoshi,
+            approved_schedule,
+            preparation_timing_policy,
+        )
+    })
+}
+
+fn create_or_resume_private_migration_draft_locked(
     db_path: &str,
     account_uuid: &str,
     network: WalletNetwork,
@@ -1388,10 +1468,10 @@ pub(crate) fn create_or_resume_private_migration_draft(
     tx.execute(
         &format!(
             "INSERT INTO {RUNS_TABLE}
-             (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
-              updated_at_ms, target_values_json, timing_policy, schedule_json,
-              preparation_timing_policy)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10)"
+                 (run_id, account_uuid, network, db_fingerprint, phase, created_at_ms,
+                  updated_at_ms, target_values_json, timing_policy, schedule_json,
+                  preparation_timing_policy)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10)"
         ),
         params![
             run_id,
@@ -1435,6 +1515,38 @@ pub(crate) fn finalize_private_migration_draft(
     if denomination_stages.is_empty() && prepared_notes.is_empty() {
         return Err("Migration run has no prepared funding notes".to_string());
     }
+    let has_denomination_stages = !denomination_stages.is_empty();
+    let denomination_stages =
+        prepare_denomination_stage_inserts(run_id, denomination_stages, password, salt_base64)?;
+    let signed_children = prepare_signed_child_pczts(signed_children, password, salt_base64)?;
+    with_wallet_db_write_lock("migration.finalize_private_draft", || {
+        finalize_private_migration_draft_locked(
+            db_path,
+            run_id,
+            account_uuid,
+            network,
+            plan,
+            prepared_notes,
+            signed_children,
+            denomination_stages,
+            has_denomination_stages,
+        )
+    })?;
+    reconcile_wallet_locks_for_run(db_path, network, run_id)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finalize_private_migration_draft_locked(
+    db_path: &str,
+    run_id: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    plan: &DenominationPlan,
+    prepared_notes: &[PreparedOrchardNoteRef],
+    signed_children: Vec<PreparedSignedMigrationPcztInsert>,
+    denomination_stages: Vec<PreparedDenominationStageInsert>,
+    has_denomination_stages: bool,
+) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let run = active_run(&conn, account_uuid, network)?
@@ -1445,29 +1557,27 @@ pub(crate) fn finalize_private_migration_draft(
     if run.target_values_zatoshi != plan.migration_outputs {
         return Err("Prepared transactions do not match the saved migration plan".to_string());
     }
-    let initial_phase = if denomination_stages.is_empty() {
-        PHASE_READY_TO_MIGRATE
-    } else {
+    let initial_phase = if has_denomination_stages {
         PHASE_WAITING_DENOM_CONFIRMATIONS
+    } else {
+        PHASE_READY_TO_MIGRATE
     };
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin private migration draft finalization: {e}"))?;
     insert_prepared_notes_with_tx(&tx, run_id, prepared_notes, true)?;
-    insert_denomination_stages_with_tx(&tx, run_id, denomination_stages, password, salt_base64)?;
+    insert_prepared_denomination_stages_with_tx(&tx, run_id, denomination_stages)?;
     insert_signed_child_pczts_with_tx(
         &tx,
         run_id,
         signed_children,
-        password,
-        salt_base64,
         SignedChildInsertMode::Initial,
     )?;
     tx.execute(
         &format!(
             "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = NULL
-             WHERE run_id = ?3 AND phase IN (?4, ?5)"
+                 SET phase = ?1, updated_at_ms = ?2, last_error = NULL
+                 WHERE run_id = ?3 AND phase IN (?4, ?5)"
         ),
         params![
             initial_phase,
@@ -1479,9 +1589,7 @@ pub(crate) fn finalize_private_migration_draft(
     )
     .map_err(|e| format!("Activate private migration draft: {e}"))?;
     tx.commit()
-        .map_err(|e| format!("Commit private migration draft: {e}"))?;
-    drop(conn);
-    reconcile_wallet_locks_for_run(db_path, network, run_id)
+        .map_err(|e| format!("Commit private migration draft: {e}"))
 }
 
 fn cleanup_failed_created_run(
@@ -1514,19 +1622,19 @@ pub(crate) fn mark_run_phase(
     phase: &str,
     message: Option<&str>,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let now = now_ms()?;
-    conn.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-             WHERE run_id = ?4"
-        ),
-        params![phase, now, message, run_id],
-    )
-    .map_err(|e| format!("Update migration run phase: {e}"))?;
-    Ok(())
+    with_migration_write_conn(db_path, "migration.mark_run_phase", |conn| {
+        let now = now_ms()?;
+        conn.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                 WHERE run_id = ?4"
+            ),
+            params![phase, now, message, run_id],
+        )
+        .map_err(|e| format!("Update migration run phase: {e}"))?;
+        Ok(())
+    })
 }
 
 pub(crate) fn run_phase(db_path: &str, run_id: &str) -> Result<String, String> {
@@ -1723,15 +1831,29 @@ pub(crate) fn stage_migration_anchor_retention_references(
     desired: &BTreeSet<(String, u32)>,
     retained_before_maintenance: &BTreeSet<u32>,
 ) -> Result<Vec<u32>, String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
+    with_migration_write_conn(db_path, "migration.stage_anchor_retention", |conn| {
+        stage_migration_anchor_retention_references_locked(
+            conn,
+            network,
+            desired,
+            retained_before_maintenance,
+        )
+    })
+}
+
+fn stage_migration_anchor_retention_references_locked(
+    conn: &rusqlite::Connection,
+    network: WalletNetwork,
+    desired: &BTreeSet<(String, u32)>,
+    retained_before_maintenance: &BTreeSet<u32>,
+) -> Result<Vec<u32>, String> {
     let network_name = network_name(network);
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT run_id, checkpoint_height, owns_retention
-             FROM {RETAINED_ANCHORS_TABLE}
-             WHERE network = ?1
-             ORDER BY checkpoint_height, run_id"
+                 FROM {RETAINED_ANCHORS_TABLE}
+                 WHERE network = ?1
+                 ORDER BY checkpoint_height, run_id"
         ))
         .map_err(|e| format!("Prepare migration anchor retention references: {e}"))?;
     let current = stmt
@@ -1778,18 +1900,18 @@ pub(crate) fn stage_migration_anchor_retention_references(
     let mut owner_assigned = BTreeSet::new();
     for (run_id, checkpoint_height) in desired {
         let migration_owns = currently_owned.contains(checkpoint_height)
-            || !retained_before_maintenance.contains(checkpoint_height)
-            // Builds before the ownership table retained migration
-            // checkpoints directly. Adopt those legacy non-durable pins so
-            // they can be released when the run no longer needs them, while
-            // leaving librustzcash's independently durable anchors alone.
-            || !is_wallet_durable_anchor(*checkpoint_height, anchor_retention_floor);
+                || !retained_before_maintenance.contains(checkpoint_height)
+                // Builds before the ownership table retained migration
+                // checkpoints directly. Adopt those legacy non-durable pins so
+                // they can be released when the run no longer needs them, while
+                // leaving librustzcash's independently durable anchors alone.
+                || !is_wallet_durable_anchor(*checkpoint_height, anchor_retention_floor);
         let owns_retention = migration_owns && owner_assigned.insert(*checkpoint_height);
         tx.execute(
             &format!(
                 "INSERT INTO {RETAINED_ANCHORS_TABLE}
-                 (network, run_id, checkpoint_height, owns_retention)
-                 VALUES (?1, ?2, ?3, ?4)"
+                     (network, run_id, checkpoint_height, owns_retention)
+                     VALUES (?1, ?2, ?3, ?4)"
             ),
             params![network_name, run_id, checkpoint_height, owns_retention,],
         )
@@ -1799,8 +1921,8 @@ pub(crate) fn stage_migration_anchor_retention_references(
         tx.execute(
             &format!(
                 "INSERT INTO {RETAINED_ANCHORS_TABLE}
-                 (network, run_id, checkpoint_height, owns_retention)
-                 VALUES (?1, ?2, ?3, 1)"
+                     (network, run_id, checkpoint_height, owns_retention)
+                     VALUES (?1, ?2, ?3, 1)"
             ),
             params![
                 network_name,
@@ -1823,28 +1945,28 @@ pub(crate) fn finish_migration_anchor_retention_releases(
     if released.is_empty() {
         return Ok(());
     }
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let network_name = network_name(network);
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin migration anchor retention release cleanup: {e}"))?;
-    for checkpoint_height in released {
-        tx.execute(
-            &format!(
-                "DELETE FROM {RETAINED_ANCHORS_TABLE}
-                 WHERE network = ?1 AND run_id = ?2 AND checkpoint_height = ?3"
-            ),
-            params![
-                network_name,
-                RETENTION_RELEASE_SENTINEL_RUN_ID,
-                checkpoint_height,
-            ],
-        )
-        .map_err(|e| format!("Finish migration anchor retention release: {e}"))?;
-    }
-    tx.commit()
-        .map_err(|e| format!("Commit migration anchor retention release cleanup: {e}"))
+    with_migration_write_conn(db_path, "migration.finish_anchor_retention", |conn| {
+        let network_name = network_name(network);
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin migration anchor retention release cleanup: {e}"))?;
+        for checkpoint_height in released {
+            tx.execute(
+                &format!(
+                    "DELETE FROM {RETAINED_ANCHORS_TABLE}
+                     WHERE network = ?1 AND run_id = ?2 AND checkpoint_height = ?3"
+                ),
+                params![
+                    network_name,
+                    RETENTION_RELEASE_SENTINEL_RUN_ID,
+                    checkpoint_height,
+                ],
+            )
+            .map_err(|e| format!("Finish migration anchor retention release: {e}"))?;
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit migration anchor retention release cleanup: {e}"))
+    })
 }
 
 fn insert_prepared_notes_with_tx(
@@ -1887,6 +2009,7 @@ pub(crate) fn insert_pending_txs(
     if pending_txs.is_empty() {
         return Ok(());
     }
+    let pending_txs = prepare_pending_txs(pending_txs, password, salt_base64)?;
 
     with_wallet_db_write_lock("migration.insert_pending_txs", || {
         let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
@@ -1894,7 +2017,7 @@ pub(crate) fn insert_pending_txs(
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| format!("Begin migration pending insert: {e}"))?;
-        insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+        insert_pending_txs_with_tx(&tx, run_id, pending_txs)?;
         tx.commit()
             .map_err(|e| format!("Commit migration pending insert: {e}"))?;
         Ok(())
@@ -1912,6 +2035,7 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     if pending_txs.is_empty() {
         return Ok(());
     }
+    let pending_txs = prepare_pending_txs(pending_txs, password, salt_base64)?;
 
     with_wallet_db_write_lock(
         "migration.promote_signed_child_pczts_to_pending_txs",
@@ -1921,7 +2045,7 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
             let tx = conn
                 .unchecked_transaction()
                 .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
-            insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
+            insert_pending_txs_with_tx(&tx, run_id, pending_txs)?;
             tx.execute(
                 &format!(
                     "UPDATE {RUNS_TABLE}
@@ -1966,25 +2090,25 @@ pub(crate) fn set_run_approved_schedule(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let timing_policy = timing_policy_for_run_with_conn(&conn, run_id, network)?;
-    validate_schedule_with_policy(schedule, target_values, network, timing_policy)?;
-    let schedule_json = serde_json::to_string(schedule)
-        .map_err(|e| format!("Encode approved migration schedule: {e}"))?;
-    let updated = conn
-        .execute(
-            &format!(
-                "UPDATE {RUNS_TABLE} SET schedule_json = ?1
-                 WHERE run_id = ?2 AND network = ?3"
-            ),
-            params![schedule_json, run_id, network_name(network)],
-        )
-        .map_err(|e| format!("Save approved migration schedule: {e}"))?;
-    if updated != 1 {
-        return Err("Migration run disappeared before schedule approval".to_string());
-    }
-    Ok(())
+    with_migration_write_conn(db_path, "migration.set_approved_schedule", |conn| {
+        let timing_policy = timing_policy_for_run_with_conn(conn, run_id, network)?;
+        validate_schedule_with_policy(schedule, target_values, network, timing_policy)?;
+        let schedule_json = serde_json::to_string(schedule)
+            .map_err(|e| format!("Encode approved migration schedule: {e}"))?;
+        let updated = conn
+            .execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE} SET schedule_json = ?1
+                     WHERE run_id = ?2 AND network = ?3"
+                ),
+                params![schedule_json, run_id, network_name(network)],
+            )
+            .map_err(|e| format!("Save approved migration schedule: {e}"))?;
+        if updated != 1 {
+            return Err("Migration run disappeared before schedule approval".to_string());
+        }
+        Ok(())
+    })
 }
 
 pub(crate) fn approved_schedule_for_run(
@@ -2067,12 +2191,40 @@ pub(crate) fn schedule_block_offset_for_part(
         .map(|entry| entry.block_offset)
 }
 
-fn insert_pending_txs_with_tx(
-    tx: &rusqlite::Transaction<'_>,
-    run_id: &str,
+fn prepare_pending_txs(
     pending_txs: Vec<PendingMigrationTxInsert>,
     password: &[u8],
     salt_base64: &str,
+) -> Result<Vec<PreparedPendingMigrationTxInsert>, String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
+    pending_txs
+        .into_iter()
+        .map(|pending| {
+            let encrypted_raw_tx = payload_key.encrypt(Zeroizing::new(pending.raw_tx))?;
+            let metadata_json = serde_json::to_string(&pending.metadata)
+                .map_err(|e| format!("Encode migration pending metadata: {e}"))?;
+            Ok(PreparedPendingMigrationTxInsert {
+                part_index: pending.part_index,
+                txid_hex: pending.txid_hex,
+                encrypted_raw_tx,
+                target_height: pending.target_height,
+                anchor_boundary_height: pending.anchor_boundary_height,
+                expiry_height: pending.expiry_height,
+                scheduled_height: pending.scheduled_height,
+                value_zatoshi: pending.value_zatoshi,
+                fee_zatoshi: pending.fee_zatoshi,
+                selected_note: pending.selected_note,
+                metadata_json,
+            })
+        })
+        .collect()
+}
+
+fn insert_pending_txs_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    pending_txs: Vec<PreparedPendingMigrationTxInsert>,
 ) -> Result<(), String> {
     let (network, timing_policy, target_values_json) = tx
         .query_row(
@@ -2139,8 +2291,13 @@ fn insert_pending_txs_with_tx(
         if !pending_part_indexes.insert(pending.part_index) {
             return Err("Migration pending part index is duplicated".to_string());
         }
-        let entry = schedule_entry_for_pending(&schedule, &target_values, &pending)
-            .ok_or("Approved migration schedule no longer matches prepared values")?;
+        let entry = schedule_entry_for_pending(
+            &schedule,
+            &target_values,
+            pending.part_index,
+            pending.value_zatoshi,
+        )
+        .ok_or("Approved migration schedule no longer matches prepared values")?;
         // Rows created before signed children persisted their absolute
         // schedule used target_height as the compatibility marker. Recover
         // the original shared schedule origin when doing so does not change
@@ -2226,13 +2383,7 @@ fn insert_pending_txs_with_tx(
             .map_err(|e| format!("Save signed migration schedule origin: {e}"))?;
         }
     }
-    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
-    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
-
     for (pending, block_offset, schedule_origin) in scheduled_pending {
-        let encrypted_raw_tx = payload_key.encrypt(Zeroizing::new(pending.raw_tx))?;
-        let metadata_json = serde_json::to_string(&pending.metadata)
-            .map_err(|e| format!("Encode migration pending metadata: {e}"))?;
         let scheduled_at_ms = scheduled_start_ms
             .checked_add(i64::from(block_offset).saturating_mul(1000))
             .ok_or("Migration scheduled time overflow")?;
@@ -2254,7 +2405,7 @@ fn insert_pending_txs_with_tx(
                     run_id,
                     pending.txid_hex,
                     pending.part_index,
-                    encrypted_raw_tx,
+                    pending.encrypted_raw_tx,
                     pending.target_height,
                     pending.expiry_height,
                     pending.anchor_boundary_height,
@@ -2266,7 +2417,7 @@ fn insert_pending_txs_with_tx(
                     scheduled_at_ms,
                     schedule_origin,
                     scheduled_height,
-                    metadata_json,
+                    pending.metadata_json,
                 ],
             )
             .map_err(|e| format!("Insert pending migration tx: {e}"))?;
@@ -2291,30 +2442,30 @@ fn insert_pending_txs_with_tx(
 fn schedule_entry_for_pending<'a>(
     schedule: &'a [MigrationScheduleEntry],
     target_values: &[u64],
-    pending: &PendingMigrationTxInsert,
+    part_index: u32,
+    value_zatoshi: u64,
 ) -> Option<&'a MigrationScheduleEntry> {
     if schedule.iter().all(|entry| entry.part_index.is_some()) {
         return schedule.iter().find(|entry| {
-            entry.part_index == Some(pending.part_index)
-                && entry.value_zatoshi == pending.value_zatoshi
+            entry.part_index == Some(part_index) && entry.value_zatoshi == value_zatoshi
         });
     }
 
     // Legacy schedules did not persist part indexes. Equal-value parts are
     // mapped by their stable rank in the original plan so incremental proof
     // persistence cannot reuse the same schedule entry.
-    let part_index = usize::try_from(pending.part_index).ok()?;
-    if target_values.get(part_index) != Some(&pending.value_zatoshi) {
+    let part_index = usize::try_from(part_index).ok()?;
+    if target_values.get(part_index) != Some(&value_zatoshi) {
         return None;
     }
     let equal_value_rank = target_values
         .iter()
         .take(part_index)
-        .filter(|value| **value == pending.value_zatoshi)
+        .filter(|value| **value == value_zatoshi)
         .count();
     schedule
         .iter()
-        .filter(|entry| entry.value_zatoshi == pending.value_zatoshi)
+        .filter(|entry| entry.value_zatoshi == value_zatoshi)
         .nth(equal_value_rank)
 }
 
@@ -2324,12 +2475,46 @@ enum SignedChildInsertMode {
     Replacement,
 }
 
-fn insert_signed_child_pczts_with_tx(
-    tx: &rusqlite::Transaction<'_>,
-    run_id: &str,
+fn prepare_signed_child_pczts(
     signed_children: Vec<SignedMigrationPcztInsert>,
     password: &[u8],
     salt_base64: &str,
+) -> Result<Vec<PreparedSignedMigrationPcztInsert>, String> {
+    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration PCZT salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
+    signed_children
+        .into_iter()
+        .map(|child| {
+            let encrypted_base_pczt = payload_key.encrypt(Zeroizing::new(child.base_pczt))?;
+            let encrypted_compact_sigs = payload_key.encrypt(Zeroizing::new(
+                crate::wallet::keystone::encode_compact_action_sigs(&child.sigs)?,
+            ))?;
+            let selected_note_json = serde_json::to_string(&child.selected_note)
+                .map_err(|e| format!("Encode migration signed PCZT note: {e}"))?;
+            let metadata_json = serde_json::to_string(&child.metadata)
+                .map_err(|e| format!("Encode migration signed PCZT metadata: {e}"))?;
+            Ok(PreparedSignedMigrationPcztInsert {
+                message_id: child.message_id,
+                child_index: child.child_index,
+                encrypted_base_pczt,
+                encrypted_compact_sigs,
+                target_height: child.target_height,
+                anchor_boundary_height: child.anchor_boundary_height,
+                expiry_height: child.expiry_height,
+                scheduled_height: child.scheduled_height,
+                value_zatoshi: child.value_zatoshi,
+                fee_zatoshi: child.fee_zatoshi,
+                selected_note_json,
+                metadata_json,
+            })
+        })
+        .collect()
+}
+
+fn insert_signed_child_pczts_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    signed_children: Vec<PreparedSignedMigrationPcztInsert>,
     mode: SignedChildInsertMode,
 ) -> Result<(), String> {
     if signed_children.is_empty() {
@@ -2362,8 +2547,6 @@ fn insert_signed_child_pczts_with_tx(
         SignedChildInsertMode::Initial => persisted_signed_schedule_origin,
         SignedChildInsertMode::Replacement => None,
     };
-    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration PCZT salt")?;
-    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     for child in signed_children {
         let canonical_expiry = zip318_canonical_migration_expiry_height(child.scheduled_height)?;
         if child.expiry_height != canonical_expiry {
@@ -2405,15 +2588,6 @@ fn insert_signed_child_pczts_with_tx(
                 .checked_sub(recovery_origin)
                 .ok_or("Signed migration schedule starts below zero")?;
         }
-        let encrypted_base_pczt = payload_key.encrypt(Zeroizing::new(child.base_pczt))?;
-        let encrypted_compact_sigs = payload_key.encrypt(Zeroizing::new(
-            crate::wallet::keystone::encode_compact_action_sigs(&child.sigs)?,
-        ))?;
-        let selected_note_json = serde_json::to_string(&child.selected_note)
-            .map_err(|e| format!("Encode migration signed PCZT note: {e}"))?;
-        let metadata_json = serde_json::to_string(&child.metadata)
-            .map_err(|e| format!("Encode migration signed PCZT metadata: {e}"))?;
-
         tx.execute(
             &format!(
                 "INSERT OR REPLACE INTO {SIGNED_CHILD_PCZTS_TABLE}
@@ -2427,16 +2601,16 @@ fn insert_signed_child_pczts_with_tx(
                 run_id,
                 child.message_id,
                 child.child_index,
-                encrypted_base_pczt,
-                encrypted_compact_sigs,
+                child.encrypted_base_pczt,
+                child.encrypted_compact_sigs,
                 child.target_height,
                 child.expiry_height,
                 child.scheduled_height,
                 child.anchor_boundary_height,
                 child.value_zatoshi,
                 child.fee_zatoshi,
-                selected_note_json,
-                metadata_json,
+                child.selected_note_json,
+                child.metadata_json,
             ],
         )
         .map_err(|e| format!("Insert signed migration PCZT: {e}"))?;
@@ -2468,34 +2642,33 @@ pub(crate) fn persist_signed_child_pczts_for_run(
     if signed_children.is_empty() {
         return Err("Keystone migration returned no signed children".to_string());
     }
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin signed migration handoff: {e}"))?;
-    insert_signed_child_pczts_with_tx(
-        &tx,
-        run_id,
-        signed_children,
-        password,
-        salt_base64,
-        SignedChildInsertMode::Initial,
-    )?;
-    let updated = tx
-        .execute(
-            &format!(
-                "UPDATE {RUNS_TABLE}
-             SET updated_at_ms = ?1, last_error = NULL
-             WHERE run_id = ?2 AND phase = ?3"
-            ),
-            params![now_ms()?, run_id, PHASE_READY_TO_MIGRATE],
-        )
-        .map_err(|e| format!("Update presigned migration run: {e}"))?;
-    if updated != 1 {
-        return Err("Migration run is no longer ready for Keystone signatures".to_string());
-    }
-    tx.commit()
-        .map_err(|e| format!("Commit signed migration handoff: {e}"))
+    let signed_children = prepare_signed_child_pczts(signed_children, password, salt_base64)?;
+    with_migration_write_conn(db_path, "migration.persist_signed_children", |conn| {
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin signed migration handoff: {e}"))?;
+        insert_signed_child_pczts_with_tx(
+            &tx,
+            run_id,
+            signed_children,
+            SignedChildInsertMode::Initial,
+        )?;
+        let updated = tx
+            .execute(
+                &format!(
+                    "UPDATE {RUNS_TABLE}
+                     SET updated_at_ms = ?1, last_error = NULL
+                     WHERE run_id = ?2 AND phase = ?3"
+                ),
+                params![now_ms()?, run_id, PHASE_READY_TO_MIGRATE],
+            )
+            .map_err(|e| format!("Update presigned migration run: {e}"))?;
+        if updated != 1 {
+            return Err("Migration run is no longer ready for Keystone signatures".to_string());
+        }
+        tx.commit()
+            .map_err(|e| format!("Commit signed migration handoff: {e}"))
+    })
 }
 
 pub(crate) fn signed_child_pczts_for_run(
@@ -2765,8 +2938,16 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
     if denomination_txids.is_empty() {
         return Ok(false);
     }
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
+    with_migration_write_conn(db_path, "migration.reset_reorged_children", |conn| {
+        reset_migration_children_for_reorged_denominations_locked(conn, run_id, denomination_txids)
+    })
+}
+
+fn reset_migration_children_for_reorged_denominations_locked(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+    denomination_txids: &BTreeSet<String>,
+) -> Result<bool, String> {
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin denomination reorg child reset: {e}"))?;
@@ -2786,8 +2967,8 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
         let mut child_stmt = tx
             .prepare_cached(&format!(
                 "SELECT txid_hex, selected_note_output_index
-                 FROM {PENDING_TXS_TABLE}
-                 WHERE run_id = ?1 AND lower(selected_note_txid) = ?2"
+                     FROM {PENDING_TXS_TABLE}
+                     WHERE run_id = ?1 AND lower(selected_note_txid) = ?2"
             ))
             .map_err(|e| format!("Prepare reorged migration child query: {e}"))?;
         let child_rows = child_stmt
@@ -2808,7 +2989,7 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
             tx.execute(
                 &format!(
                     "DELETE FROM {PENDING_TXS_TABLE}
-                     WHERE run_id = ?1 AND txid_hex = ?2"
+                         WHERE run_id = ?1 AND txid_hex = ?2"
                 ),
                 params![run_id, child_txid],
             )
@@ -2819,8 +3000,8 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
         let mut note_stmt = tx
             .prepare_cached(&format!(
                 "SELECT output_index
-                 FROM {PREPARED_NOTES_TABLE}
-                 WHERE run_id = ?1 AND lower(txid_hex) = ?2"
+                     FROM {PREPARED_NOTES_TABLE}
+                     WHERE run_id = ?1 AND lower(txid_hex) = ?2"
             ))
             .map_err(|e| format!("Prepare reorged migration note query: {e}"))?;
         let output_indices = note_stmt
@@ -2838,9 +3019,9 @@ pub(crate) fn reset_migration_children_for_reorged_denominations(
             tx.execute(
                 &format!(
                     "UPDATE {PREPARED_NOTES_TABLE}
-                     SET nullifier_hex = NULL, lock_state = 'locked'
-                     WHERE run_id = ?1 AND lower(txid_hex) = ?2
-                       AND output_index = ?3"
+                         SET nullifier_hex = NULL, lock_state = 'locked'
+                         WHERE run_id = ?1 AND lower(txid_hex) = ?2
+                           AND output_index = ?3"
                 ),
                 params![run_id, denomination_txid, output_index],
             )
@@ -3004,71 +3185,74 @@ fn reconcile_denomination_stage_chain_state_with_rng<R: RngCore + CryptoRng + ?S
     }
 
     if !invalid_stages.is_empty() || !identities_to_record.is_empty() {
-        // This reconciliation records canonical-chain identities and commits
-        // stage resets, so it must tolerate the foreground scanner finishing
-        // a concurrent wallet write. The read timeout can expire first on
-        // mobile and strand an otherwise completed preparation run.
-        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
-        let tx = conn
-            .unchecked_transaction()
-            .map_err(|e| format!("Begin denomination chain-state reconciliation: {e}"))?;
-        if migration_phase_releases_wallet_locks(
-            &tx.query_row(
-                &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
-                params![run_id],
-                |row| row.get::<_, String>(0),
-            )
-            .map_err(|e| format!("Read migration phase before chain-state reconciliation: {e}"))?,
-        ) {
-            return Ok(());
-        }
-        let mut recovered_pending_stage = false;
-        for txid in &recovered_pending_txids {
-            let still_pending = tx
-                .query_row(
-                    &format!(
-                        "SELECT status = 'pending' FROM {STAGES_TABLE}
-                         WHERE run_id = ?1 AND expected_txid_hex = ?2"
-                    ),
-                    params![run_id, txid],
-                    |row| row.get::<_, bool>(0),
+        with_wallet_db_write_lock("migration.reconcile_stage_chain_state", || {
+            // Keep main's longer SQLite wait for this reconciliation while
+            // serializing the actual mutation with foreground wallet writers.
+            let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+            ensure_schema(&conn)?;
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| format!("Begin denomination chain-state reconciliation: {e}"))?;
+            if migration_phase_releases_wallet_locks(
+                &tx.query_row(
+                    &format!("SELECT phase FROM {RUNS_TABLE} WHERE run_id = ?1"),
+                    params![run_id],
+                    |row| row.get::<_, String>(0),
                 )
-                .map_err(|e| format!("Check recovered denomination stage state: {e}"))?;
-            recovered_pending_stage |= still_pending;
-        }
-        for txid in &invalid_stages {
-            reset_denomination_stage_exact(&tx, run_id, txid)?;
-        }
-        for (txid, identity) in identities_to_record {
-            if invalid_stages.contains(&txid) {
-                continue;
+                .map_err(|e| {
+                    format!("Read migration phase before chain-state reconciliation: {e}")
+                })?,
+            ) {
+                return Ok(());
             }
-            replace_denomination_stage_confirmation_identity(
-                &tx,
-                run_id,
-                &txid,
-                identity.mined_height,
-                &identity.block_hash,
-            )?;
-        }
-        if let (true, Some((network, chain_tip_height))) =
-            (recovered_pending_stage, recovery_context)
-        {
-            let rerandomized = rerandomize_remaining_preparation_broadcast_heights(
-                &tx,
-                run_id,
-                network,
-                chain_tip_height,
-                rng,
-            )?;
-            if rerandomized > 0 {
-                log::info!(
-                    "migration: re-randomized {rerandomized} preparation stage(s) after recovering an on-chain pending stage"
-                );
+            let mut recovered_pending_stage = false;
+            for txid in &recovered_pending_txids {
+                let still_pending = tx
+                    .query_row(
+                        &format!(
+                            "SELECT status = 'pending' FROM {STAGES_TABLE}
+                             WHERE run_id = ?1 AND expected_txid_hex = ?2"
+                        ),
+                        params![run_id, txid],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .map_err(|e| format!("Check recovered denomination stage state: {e}"))?;
+                recovered_pending_stage |= still_pending;
             }
-        }
-        tx.commit()
-            .map_err(|e| format!("Commit denomination chain-state reconciliation: {e}"))?;
+            for txid in &invalid_stages {
+                reset_denomination_stage_exact(&tx, run_id, txid)?;
+            }
+            for (txid, identity) in identities_to_record {
+                if invalid_stages.contains(&txid) {
+                    continue;
+                }
+                replace_denomination_stage_confirmation_identity(
+                    &tx,
+                    run_id,
+                    &txid,
+                    identity.mined_height,
+                    &identity.block_hash,
+                )?;
+            }
+            if let (true, Some((network, chain_tip_height))) =
+                (recovered_pending_stage, recovery_context)
+            {
+                let rerandomized = rerandomize_remaining_preparation_broadcast_heights(
+                    &tx,
+                    run_id,
+                    network,
+                    chain_tip_height,
+                    rng,
+                )?;
+                if rerandomized > 0 {
+                    log::info!(
+                        "migration: re-randomized {rerandomized} preparation stage(s) after recovering an on-chain pending stage"
+                    );
+                }
+            }
+            tx.commit()
+                .map_err(|e| format!("Commit denomination chain-state reconciliation: {e}"))
+        })?;
     }
 
     if !affected.is_empty() {
@@ -3594,14 +3778,20 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
-    // Outbox export and broadcast advance call this before due selection.
-    // Reconcile and the needs_resign flip share one IMMEDIATE transaction so a
-    // mined-but-still-`scheduled` part whose tip crossed a ZIP 318 expiry
-    // window is promoted to `confirmed` instead of `needs_resign`, and
-    // foreground sync cannot commit that chain identity between the check and
-    // the status update.
-    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
+    with_migration_write_conn(db_path, "migration.validate_broadcast_height", |conn| {
+        mark_due_parts_with_noncanonical_broadcast_height_for_resign_locked(
+            conn,
+            run_id,
+            chain_tip_height,
+        )
+    })
+}
+
+fn mark_due_parts_with_noncanonical_broadcast_height_for_resign_locked(
+    conn: &mut rusqlite::Connection,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<u32, String> {
     let canonical_expiry = zip318_canonical_migration_expiry_height(chain_tip_height)?;
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -3611,9 +3801,9 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
         .execute(
             &format!(
                 "UPDATE {PENDING_TXS_TABLE}
-                 SET status = 'needs_resign'
-                 WHERE run_id = ?1 AND status = 'scheduled'
-                   AND scheduled_height <= ?2 AND expiry_height != ?3"
+                     SET status = 'needs_resign'
+                     WHERE run_id = ?1 AND status = 'scheduled'
+                       AND scheduled_height <= ?2 AND expiry_height != ?3"
             ),
             params![run_id, chain_tip_height, canonical_expiry],
         )
@@ -3622,9 +3812,9 @@ pub(crate) fn mark_due_parts_with_noncanonical_broadcast_height_for_resign(
         tx.execute(
             &format!(
                 "UPDATE {RUNS_TABLE}
-                 SET phase = ?1, updated_at_ms = ?2,
-                     last_error = 'Migration broadcast height crossed a ZIP 318 expiry boundary'
-                 WHERE run_id = ?3"
+                     SET phase = ?1, updated_at_ms = ?2,
+                         last_error = 'Migration broadcast height crossed a ZIP 318 expiry boundary'
+                     WHERE run_id = ?3"
             ),
             params![PHASE_READY_TO_MIGRATE, now_ms()?, run_id],
         )
@@ -3688,18 +3878,18 @@ pub(crate) fn set_proof_retry_height(
     run_id: &str,
     retry_height: u32,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    conn.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET proof_retry_height = ?1, updated_at_ms = ?2
-             WHERE run_id = ?3"
-        ),
-        params![retry_height, now_ms()?, run_id],
-    )
-    .map_err(|e| format!("Set migration proof retry height: {e}"))?;
-    Ok(())
+    with_migration_write_conn(db_path, "migration.set_proof_retry_height", |conn| {
+        conn.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET proof_retry_height = ?1, updated_at_ms = ?2
+                 WHERE run_id = ?3"
+            ),
+            params![retry_height, now_ms()?, run_id],
+        )
+        .map_err(|e| format!("Set migration proof retry height: {e}"))?;
+        Ok(())
+    })
 }
 
 /// Whether a past-expiry pending row should flip to `needs_resign`.
@@ -3786,13 +3976,16 @@ pub(crate) fn mark_expired_pending_parts_for_resign(
     run_id: &str,
     chain_tip_height: u32,
 ) -> Result<u32, String> {
-    // Resume (`migrate_orchard_to_ironwood`) and outbox export call this before
-    // `due_pending_txs`. Reconcile and the needs_resign flip share one IMMEDIATE
-    // transaction so a mined-but-still-`scheduled` part past its expiry height
-    // is promoted to `confirmed` instead of `needs_resign`, and foreground sync
-    // cannot commit that chain identity between the check and the status update.
-    let mut conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
+    with_migration_write_conn(db_path, "migration.mark_expired_parts", |conn| {
+        mark_expired_pending_parts_for_resign_locked(conn, run_id, chain_tip_height)
+    })
+}
+
+fn mark_expired_pending_parts_for_resign_locked(
+    conn: &mut rusqlite::Connection,
+    run_id: &str,
+    chain_tip_height: u32,
+) -> Result<u32, String> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| format!("Begin expired migration recovery: {e}"))?;
@@ -3817,8 +4010,8 @@ pub(crate) fn mark_expired_pending_parts_for_resign(
         tx.execute(
             &format!(
                 "UPDATE {RUNS_TABLE}
-                 SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-                 WHERE run_id = ?4"
+                     SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                     WHERE run_id = ?4"
             ),
             params![
                 PHASE_READY_TO_MIGRATE,
@@ -3881,7 +4074,7 @@ pub(crate) fn replace_resigned_pending_parts(
     run_id: &str,
     _network: WalletNetwork,
     chain_tip_height: u32,
-    mut replacements: Vec<PendingMigrationTxReplacement>,
+    replacements: Vec<PendingMigrationTxReplacement>,
     signed_children: Vec<SignedMigrationPcztInsert>,
     password: &[u8],
     salt_base64: &str,
@@ -3889,6 +4082,48 @@ pub(crate) fn replace_resigned_pending_parts(
     if replacements.is_empty() {
         return Ok(());
     }
+    let replacements = prepare_pending_replacements(replacements, password, salt_base64)?;
+    let signed_children = prepare_signed_child_pczts(signed_children, password, salt_base64)?;
+    with_wallet_db_write_lock("migration.replace_resigned_parts", || {
+        replace_resigned_pending_parts_locked(
+            db_path,
+            run_id,
+            chain_tip_height,
+            replacements,
+            signed_children,
+        )
+    })
+}
+
+fn prepare_pending_replacements(
+    replacements: Vec<PendingMigrationTxReplacement>,
+    password: &[u8],
+    salt_base64: &str,
+) -> Result<Vec<PreparedPendingMigrationTxReplacement>, String> {
+    let (old_txids, pending): (Vec<_>, Vec<_>) = replacements
+        .into_iter()
+        .map(|replacement| (replacement.old_txid_hex, replacement.replacement))
+        .unzip();
+    let pending = prepare_pending_txs(pending, password, salt_base64)?;
+    Ok(old_txids
+        .into_iter()
+        .zip(pending)
+        .map(
+            |(old_txid_hex, replacement)| PreparedPendingMigrationTxReplacement {
+                old_txid_hex,
+                replacement,
+            },
+        )
+        .collect())
+}
+
+fn replace_resigned_pending_parts_locked(
+    db_path: &str,
+    run_id: &str,
+    chain_tip_height: u32,
+    mut replacements: Vec<PreparedPendingMigrationTxReplacement>,
+    signed_children: Vec<PreparedSignedMigrationPcztInsert>,
+) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let (schedule_json, recovery_origin) = conn
@@ -3904,8 +4139,6 @@ pub(crate) fn replace_resigned_pending_parts(
     let schedule: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
         .map_err(|e| format!("Decode replacement migration schedule: {e}"))?;
     let scheduled_start_ms = now_ms()?;
-    let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
-    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin migration part replacement: {e}"))?;
@@ -3998,9 +4231,6 @@ pub(crate) fn replace_resigned_pending_parts(
             .scheduled_height
             .checked_sub(schedule_start_height)
             .ok_or("Replacement migration schedule starts below zero")?;
-        let encrypted_raw_tx = payload_key.encrypt(Zeroizing::new(pending.raw_tx))?;
-        let metadata_json = serde_json::to_string(&pending.metadata)
-            .map_err(|e| format!("Encode replacement migration metadata: {e}"))?;
         // `rebuild_block_offset` counts from the generation origin and so
         // includes blocks that already elapsed for later waves; the time hint
         // uses only the portion still ahead of the chain tip.
@@ -4031,7 +4261,7 @@ pub(crate) fn replace_resigned_pending_parts(
                 run_id,
                 pending.txid_hex,
                 pending.part_index,
-                encrypted_raw_tx,
+                pending.encrypted_raw_tx,
                 pending.target_height,
                 pending.expiry_height,
                 pending.anchor_boundary_height,
@@ -4044,7 +4274,7 @@ pub(crate) fn replace_resigned_pending_parts(
                 schedule_start_height,
                 scheduled_height,
                 original_scheduled_height,
-                metadata_json,
+                pending.metadata_json,
             ],
         )
         .map_err(|e| format!("Insert replacement migration part: {e}"))?;
@@ -4054,8 +4284,6 @@ pub(crate) fn replace_resigned_pending_parts(
         &tx,
         run_id,
         signed_children,
-        password,
-        salt_base64,
         SignedChildInsertMode::Replacement,
     )?;
     let now = now_ms()?;
@@ -4180,33 +4408,32 @@ pub(crate) fn retire_run_for_rebuild(
     run_id: &str,
     message: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let now = now_ms()?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin migration rebuild transition: {e}"))?;
-    tx.execute(
-        &format!(
-            "UPDATE {RUNS_TABLE}
-             SET phase = ?1, updated_at_ms = ?2, last_error = ?3
-             WHERE run_id = ?4"
-        ),
-        params![PHASE_FAILED_TERMINAL, now, message, run_id],
-    )
-    .map_err(|e| format!("Mark migration run for rebuild: {e}"))?;
-    tx.execute(
-        &format!(
-            "UPDATE {PREPARED_NOTES_TABLE}
-             SET lock_state = 'unlocked'
-             WHERE run_id = ?1"
-        ),
-        params![run_id],
-    )
-    .map_err(|e| format!("Release expired migration note locks: {e}"))?;
-    tx.commit()
-        .map_err(|e| format!("Commit migration rebuild transition: {e}"))?;
-    drop(conn);
+    with_migration_write_conn(db_path, "migration.retire_run_for_rebuild", |conn| {
+        let now = now_ms()?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin migration rebuild transition: {e}"))?;
+        tx.execute(
+            &format!(
+                "UPDATE {RUNS_TABLE}
+                 SET phase = ?1, updated_at_ms = ?2, last_error = ?3
+                 WHERE run_id = ?4"
+            ),
+            params![PHASE_FAILED_TERMINAL, now, message, run_id],
+        )
+        .map_err(|e| format!("Mark migration run for rebuild: {e}"))?;
+        tx.execute(
+            &format!(
+                "UPDATE {PREPARED_NOTES_TABLE}
+                 SET lock_state = 'unlocked'
+                 WHERE run_id = ?1"
+            ),
+            params![run_id],
+        )
+        .map_err(|e| format!("Release expired migration note locks: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("Commit migration rebuild transition: {e}"))
+    })?;
     reconcile_wallet_locks_for_run(db_path, network, run_id)
 }
 
@@ -4572,6 +4799,26 @@ fn reschedule_overdue_pending_txs_with_options(
     minimum_delay_blocks: u32,
     excluded_txid: Option<&str>,
 ) -> Result<(), String> {
+    with_wallet_db_write_lock("migration.reschedule_overdue_pending", || {
+        reschedule_overdue_pending_txs_locked(
+            db_path,
+            run_id,
+            network,
+            chain_tip_height,
+            minimum_delay_blocks,
+            excluded_txid,
+        )
+    })
+}
+
+fn reschedule_overdue_pending_txs_locked(
+    db_path: &str,
+    run_id: &str,
+    network: WalletNetwork,
+    chain_tip_height: u32,
+    minimum_delay_blocks: u32,
+    excluded_txid: Option<&str>,
+) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
@@ -4742,24 +4989,24 @@ pub(crate) fn mark_pending_broadcasted(
     run_id: &str,
     txid_hex: &str,
 ) -> Result<(), String> {
-    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
-    ensure_schema(&conn)?;
-    let now = now_ms()?;
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| format!("Begin pending migration broadcast update: {e}"))?;
-    tx.execute(
-        &format!(
-            "UPDATE {PENDING_TXS_TABLE}
-             SET status = 'broadcasted'
-             WHERE run_id = ?1 AND txid_hex = ?2"
-        ),
-        params![run_id, txid_hex],
-    )
-    .map_err(|e| format!("Mark pending migration tx broadcasted: {e}"))?;
-    update_run_after_pending_broadcast(&tx, run_id, now)?;
-    tx.commit()
-        .map_err(|e| format!("Commit pending migration broadcast update: {e}"))
+    with_migration_write_conn(db_path, "migration.mark_pending_broadcasted", |conn| {
+        let now = now_ms()?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin pending migration broadcast update: {e}"))?;
+        tx.execute(
+            &format!(
+                "UPDATE {PENDING_TXS_TABLE}
+                 SET status = 'broadcasted'
+                 WHERE run_id = ?1 AND txid_hex = ?2"
+            ),
+            params![run_id, txid_hex],
+        )
+        .map_err(|e| format!("Mark pending migration tx broadcasted: {e}"))?;
+        update_run_after_pending_broadcast(&tx, run_id, now)?;
+        tx.commit()
+            .map_err(|e| format!("Commit pending migration broadcast update: {e}"))
+    })
 }
 
 /// Pending rows already accepted on the network (`broadcasted`) whose raw tx is
@@ -4851,6 +5098,29 @@ fn update_run_after_pending_broadcast(
 }
 
 pub(crate) fn apply_accepted_migration_outbox_receipt(
+    db_path: &str,
+    account_uuid: &str,
+    network: WalletNetwork,
+    run_id: &str,
+    txid_hex: &str,
+    remote_height: u32,
+    schedule_updates: &[MigrationOutboxScheduleUpdate],
+) -> Result<(), String> {
+    with_wallet_db_write_lock("migration.apply_outbox_receipt", || {
+        apply_accepted_migration_outbox_receipt_locked(
+            db_path,
+            account_uuid,
+            network,
+            run_id,
+            txid_hex,
+            remote_height,
+            schedule_updates,
+        )
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_accepted_migration_outbox_receipt_locked(
     db_path: &str,
     account_uuid: &str,
     network: WalletNetwork,
