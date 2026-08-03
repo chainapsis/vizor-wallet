@@ -196,7 +196,7 @@ class _KeystoneScanHelpTooltip extends StatelessWidget {
                     ),
                     children: [
                       const TextSpan(
-                        text: 'Check Keystone firmware version at ',
+                        text: 'Update to the latest Keystone firmware at ',
                       ),
                       WidgetSpan(
                         alignment: PlaceholderAlignment.baseline,

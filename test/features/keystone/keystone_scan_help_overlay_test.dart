@@ -31,7 +31,6 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(1080, 720));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-
     await tester.pumpWidget(_app(visible: true));
     await tester.pump();
 
@@ -73,6 +72,20 @@ void main() {
         tester.element(find.text('Scanning issues?')),
       ).style.decoration,
       TextDecoration.none,
+    );
+    expect(
+      find.textContaining(
+        'Update to the latest Keystone firmware at',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'Check Keystone firmware version at',
+        findRichText: true,
+      ),
+      findsNothing,
     );
     expect(
       find.textContaining('keyst.one/firmware', findRichText: true),
