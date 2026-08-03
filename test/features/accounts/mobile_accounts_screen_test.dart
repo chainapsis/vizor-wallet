@@ -350,11 +350,11 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
-      const Size(232, 207),
+      const Size(176, 207),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_copy'))),
-      const Size(224, 26),
+      const Size(168, 26),
     );
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
@@ -367,7 +367,7 @@ void main() {
     expect(find.text('Remove account'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile_account_menu_card'))),
-      const Size(232, 173),
+      const Size(176, 173),
     );
   });
 
@@ -390,7 +390,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret passphrase'), findsOneWidget);
+    expect(find.text('View secret phrase'), findsOneWidget);
     final shortcutIcon = tester.widget<AppIcon>(
       find.descendant(
         of: find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
@@ -426,7 +426,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mobile_accounts_menu_b')));
     await tester.pumpAndSettle();
 
-    expect(find.text('View secret passphrase'), findsNothing);
+    expect(find.text('View secret phrase'), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile_account_menu_secret_passphrase')),
       findsNothing,

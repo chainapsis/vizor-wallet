@@ -87,6 +87,7 @@ class _FakeBiometricController {
 
   BiometricUnlockState initialState;
   String? passcode;
+  Future<String?>? readResult;
   var reads = 0;
   String? lastReason;
 }
@@ -103,6 +104,8 @@ class _FakeBiometricNotifier extends BiometricUnlockNotifier {
   Future<String?> readPasscode({required String reason}) async {
     controller.reads += 1;
     controller.lastReason = reason;
+    final result = controller.readResult;
+    if (result != null) return result;
     return controller.passcode;
   }
 }
@@ -359,6 +362,41 @@ void main() {
     expect(find.bySemanticsLabel('Sign in with fingerprint'), findsOneWidget);
     expect(find.bySemanticsLabel('Sign in with Face ID'), findsNothing);
     expect(find.byIcon(Icons.fingerprint), findsOneWidget);
+  });
+
+  testWidgets('biometric confirmation rejects an account change', (
+    tester,
+  ) async {
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    final biometricResult = Completer<String?>();
+    final biometric = _FakeBiometricController(
+      initialState: _faceBiometricState,
+    )..readResult = biometricResult.future;
+
+    await tester.pumpWidget(
+      _app(biometric: biometric, accountNotifier: () => accountNotifier),
+    );
+    await tester.pumpAndSettle();
+    expect(biometric.reads, 1);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    biometricResult.complete('111111');
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.requestedMnemonicUuids, isEmpty);
+    expect(find.text('abandon'), findsNothing);
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('shows the screenshot warning after the phrase is revealed', (

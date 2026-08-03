@@ -126,7 +126,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     );
     final anchorRect = anchorTopLeft & anchorRenderObject.size;
     final overlaySize = overlayRenderObject.size;
-    final menuWidth = account.isHardware ? 173.0 : 232.0;
+    const menuWidth = 176.0;
     const menuPadding = EdgeInsets.symmetric(
       horizontal: AppSpacing.xxs,
       vertical: AppSpacing.sm,
@@ -182,9 +182,22 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
       required _AccountAction action,
       Color? textColor,
       Color? iconColor,
+      bool scaleLabelToFit = false,
     }) {
       final itemTextColor = textColor ?? colors.text.inverse;
       final itemIconColor = iconColor ?? colors.icon.inverse;
+      final labelText = Text(
+        label,
+        maxLines: 1,
+        softWrap: false,
+        overflow: scaleLabelToFit
+            ? TextOverflow.visible
+            : TextOverflow.ellipsis,
+        style: AppTypography.labelLarge.copyWith(
+          color: itemTextColor,
+          fontWeight: FontWeight.w400,
+        ),
+      );
       return Semantics(
         button: true,
         label: label,
@@ -208,15 +221,13 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                 ),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: itemTextColor,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
+                  child: scaleLabelToFit
+                      ? FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: labelText,
+                        )
+                      : labelText,
                 ),
               ],
             ),
@@ -230,8 +241,9 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
         item(
           key: const ValueKey('mobile_account_menu_secret_passphrase'),
           iconName: AppIcons.key,
-          label: 'View secret passphrase',
+          label: 'View secret phrase',
           action: _AccountAction.viewSecretPassphrase,
+          scaleLabelToFit: true,
         ),
       item(
         key: const ValueKey('mobile_account_menu_copy'),

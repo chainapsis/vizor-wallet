@@ -127,13 +127,24 @@ class _MobileSeedPhraseScreenState
 
   Future<void> _tryBiometricGate() async {
     if (_checking || _stage != _SeedStage.confirmAccess) return;
+    final expectedAccountUuid = _targetAccount(
+      ref.read(accountProvider).value,
+    )?.uuid;
+    final accessCheckGeneration = ++_accessCheckGeneration;
     final biometric = await ref.read(biometricUnlockProvider.future);
-    if (!mounted || !biometric.usable) return;
+    if (!mounted) return;
+    if (accessCheckGeneration != _accessCheckGeneration ||
+        _targetAccountChanged(expectedAccountUuid)) {
+      _showTargetAccountChangedError();
+      return;
+    }
+    if (!biometric.usable) return;
     final wasEnabled = biometric.enabled;
     // The biometric sheet pushes the app to `inactive`; suppress the privacy
     // shield for its duration so the phrase revealed on success doesn't flash
     // the blur cover during the inactive→resumed transition. The environment
     // controller releases the suppression on resume.
+    setState(() => _checking = true);
     _privacyController.beginAuthPrompt();
     String? readResult;
     try {
@@ -144,15 +155,21 @@ class _MobileSeedPhraseScreenState
       _privacyController.endAuthPrompt();
     }
     if (!mounted) return;
+    if (accessCheckGeneration != _accessCheckGeneration ||
+        _targetAccountChanged(expectedAccountUuid)) {
+      _showTargetAccountChangedError();
+      return;
+    }
     final passcode = readResult;
     if (passcode == null) {
       final now = ref.read(biometricUnlockProvider).value;
-      if (wasEnabled && now != null && !now.enabled) {
-        setState(() {
-          _entry = '';
+      setState(() {
+        _entry = '';
+        _checking = false;
+        if (wasEnabled && now != null && !now.enabled) {
           _gateError = biometric.availability.kind.changedMessage;
-        });
-      }
+        }
+      });
       return;
     }
     setState(() {
@@ -285,11 +302,15 @@ class _MobileSeedPhraseScreenState
   }
 
   void _handleTargetAccountChanged() {
+    _accessCheckGeneration += 1;
+    _birthdayLoadGeneration += 1;
     if (_stage == _SeedStage.confirmAccess && !_checking && _mnemonic == null) {
       return;
     }
-    _accessCheckGeneration += 1;
-    _birthdayLoadGeneration += 1;
+    _showTargetAccountChangedError();
+  }
+
+  void _showTargetAccountChangedError() {
     setState(() {
       _stage = _SeedStage.confirmAccess;
       _entry = '';
