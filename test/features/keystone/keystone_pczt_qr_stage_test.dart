@@ -5,12 +5,14 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_pczt_qr_stage.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 
-Widget _app(Widget child) {
+Widget _app(Widget content) {
   return AppTheme(
     data: AppThemeData.light,
     child: Directionality(
       textDirection: TextDirection.ltr,
-      child: Center(child: child),
+      child: Overlay(
+        initialEntries: [OverlayEntry(builder: (_) => Center(child: content))],
+      ),
     ),
   );
 }
@@ -107,11 +109,13 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
 
     expect(tester.getSize(find.byType(PrettyQrView)), const Size(264, 264));
     final qrView = tester.widget<PrettyQrView>(find.byType(PrettyQrView));
     final decoration = (qrView as dynamic).decoration as PrettyQrDecoration;
     expect(decoration.quietZone, const PrettyQrQuietZone.modules(3));
     expect(find.byType(CustomPaint), findsNothing);
+    expect(find.text('Scanning issues?'), findsOneWidget);
   });
 }
