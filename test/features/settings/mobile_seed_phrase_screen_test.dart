@@ -61,6 +61,10 @@ class _FakeAccountNotifier extends AccountNotifier {
     requestedMnemonicUuids.add(uuid);
     return _mnemonic;
   }
+
+  void setActiveAccount(String uuid) {
+    state = AsyncData(state.requireValue.copyWith(activeAccountUuid: uuid));
+  }
 }
 
 class _FakeBiometricUnlock extends BiometricUnlock {
@@ -118,6 +122,8 @@ Widget _app({
   _FakeBiometricController? biometric,
   String? accountUuid,
   AccountNotifier Function()? accountNotifier,
+  Future<int> Function(String accountUuid)? birthdayHeightLoader,
+  Future<int> Function(int height)? birthdayBlockTimeLoader,
 }) {
   return ProviderScope(
     overrides: [
@@ -137,7 +143,9 @@ Widget _app({
         accountUuid: accountUuid,
         screenshotStream: screenshotStream,
         privacyOverlayController: privacyOverlayController,
-        loadBirthday: false,
+        loadBirthday: birthdayHeightLoader != null,
+        birthdayHeightLoader: birthdayHeightLoader,
+        birthdayBlockTimeLoader: birthdayBlockTimeLoader,
       ),
     ),
   );
@@ -217,6 +225,56 @@ void main() {
     expect(accountNotifier.requestedMnemonicUuids, ['account-2']);
     expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
     expect(find.text('abandon'), findsOneWidget);
+  });
+
+  testWidgets('ignores a stale birthday load after the account changes', (
+    tester,
+  ) async {
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(uuid: 'account-1', name: 'Current', order: 0),
+        AccountInfo(uuid: 'account-2', name: 'Other', order: 1),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    final birthdayLoads = <String, Completer<int>>{
+      'account-1': Completer<int>(),
+      'account-2': Completer<int>(),
+    };
+    final requestedBlockTimes = <int>[];
+
+    await tester.pumpWidget(
+      _app(
+        accountNotifier: () => accountNotifier,
+        birthdayHeightLoader: (uuid) => birthdayLoads[uuid]!.future,
+        birthdayBlockTimeLoader: (height) async {
+          requestedBlockTimes.add(height);
+          return 0;
+        },
+      ),
+    );
+    await _revealSecret(tester);
+
+    accountNotifier.setActiveAccount('account-2');
+    await tester.pump();
+    expect(
+      find.text('Selected account changed. Enter your passcode again.'),
+      findsOneWidget,
+    );
+
+    await _revealSecret(tester);
+    birthdayLoads['account-1']!.complete(111);
+    await tester.pump();
+
+    expect(find.text('111'), findsNothing);
+    expect(requestedBlockTimes, isEmpty);
+
+    birthdayLoads['account-2']!.complete(222);
+    await tester.pumpAndSettle();
+
+    expect(find.text('222'), findsOneWidget);
+    expect(requestedBlockTimes, [222]);
   });
 
   testWidgets('confirm gate keeps biometric retry after prompt cancel', (

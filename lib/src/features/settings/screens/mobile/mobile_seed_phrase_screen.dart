@@ -47,6 +47,8 @@ class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
     this.screenshotStream,
     this.privacyOverlayController,
     this.loadBirthday = true,
+    this.birthdayHeightLoader,
+    this.birthdayBlockTimeLoader,
     super.key,
   });
 
@@ -61,6 +63,12 @@ class MobileSeedPhraseScreen extends ConsumerStatefulWidget {
 
   @visibleForTesting
   final bool loadBirthday;
+
+  @visibleForTesting
+  final Future<int> Function(String accountUuid)? birthdayHeightLoader;
+
+  @visibleForTesting
+  final Future<int> Function(int height)? birthdayBlockTimeLoader;
 
   @override
   ConsumerState<MobileSeedPhraseScreen> createState() =>
@@ -79,6 +87,7 @@ class _MobileSeedPhraseScreenState
   int? _birthdayHeight;
   int? _birthdayBlockTime;
   bool _birthdayLoading = false;
+  int _birthdayLoadGeneration = 0;
 
   StreamSubscription<void>? _screenshotSub;
   bool _screenshotSheetShowing = false;
@@ -269,6 +278,7 @@ class _MobileSeedPhraseScreenState
     if (_stage == _SeedStage.confirmAccess && !_checking && _mnemonic == null) {
       return;
     }
+    _birthdayLoadGeneration += 1;
     setState(() {
       _stage = _SeedStage.confirmAccess;
       _entry = '';
@@ -306,48 +316,73 @@ class _MobileSeedPhraseScreenState
       _handleTargetAccountChanged();
       return;
     }
+    final birthdayLoadGeneration = ++_birthdayLoadGeneration;
     setState(() {
       _mnemonic = mnemonic;
       _revealError = revealError;
       _stage = _SeedStage.reveal;
       _checking = false;
-      _birthdayLoading = mnemonic != null;
+      _birthdayLoading = mnemonic != null && widget.loadBirthday;
     });
     if (mnemonic != null && account != null && widget.loadBirthday) {
-      unawaited(_loadBirthday(account.uuid));
+      unawaited(_loadBirthday(account.uuid, birthdayLoadGeneration));
     }
   }
 
-  Future<void> _loadBirthday(String accountUuid) async {
-    try {
-      final dbPath = await getWalletDbPath();
-      final endpoint = ref.read(rpcEndpointProvider);
-      final height = await rust_sync.getExportBirthdayHeight(
-        dbPath: dbPath,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-      );
-      if (!mounted) return;
-      setState(() => _birthdayHeight = height.toInt());
+  bool _canApplyBirthdayLoad(String accountUuid, int generation) {
+    return mounted &&
+        generation == _birthdayLoadGeneration &&
+        _stage == _SeedStage.reveal &&
+        _mnemonic != null &&
+        !_targetAccountChanged(accountUuid);
+  }
 
-      final blockTime = await ref
-          .read(rpcEndpointFailoverProvider.notifier)
-          .runWithEndpointFallback(
-            operation: 'birthday block time',
-            action: (endpoint) => rust_sync.getBlockTime(
-              lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-              height: height,
-            ),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (!mounted) return;
+  Future<int> _fetchBirthdayHeight(String accountUuid) async {
+    final loader = widget.birthdayHeightLoader;
+    if (loader != null) return loader(accountUuid);
+
+    final dbPath = await getWalletDbPath();
+    final endpoint = ref.read(rpcEndpointProvider);
+    final height = await rust_sync.getExportBirthdayHeight(
+      dbPath: dbPath,
+      network: endpoint.networkName,
+      accountUuid: accountUuid,
+    );
+    return height.toInt();
+  }
+
+  Future<int> _fetchBirthdayBlockTime(int height) async {
+    final loader = widget.birthdayBlockTimeLoader;
+    if (loader != null) return loader(height);
+
+    final blockTime = await ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .runWithEndpointFallback(
+          operation: 'birthday block time',
+          action: (endpoint) => rust_sync.getBlockTime(
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            height: BigInt.from(height),
+          ),
+        )
+        .timeout(const Duration(seconds: 10));
+    return blockTime.toInt();
+  }
+
+  Future<void> _loadBirthday(String accountUuid, int generation) async {
+    try {
+      final height = await _fetchBirthdayHeight(accountUuid);
+      if (!_canApplyBirthdayLoad(accountUuid, generation)) return;
+      setState(() => _birthdayHeight = height);
+
+      final blockTime = await _fetchBirthdayBlockTime(height);
+      if (!_canApplyBirthdayLoad(accountUuid, generation)) return;
       setState(() {
-        _birthdayBlockTime = blockTime.toInt() > 0 ? blockTime.toInt() : null;
+        _birthdayBlockTime = blockTime > 0 ? blockTime : null;
         _birthdayLoading = false;
       });
     } catch (e, st) {
       log('MobileSeedPhrase: birthday load failed: $e\n$st');
-      if (!mounted) return;
+      if (!_canApplyBirthdayLoad(accountUuid, generation)) return;
       setState(() => _birthdayLoading = false);
     }
   }
