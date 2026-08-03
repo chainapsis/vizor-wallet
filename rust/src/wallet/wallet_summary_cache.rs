@@ -54,6 +54,20 @@ fn slot_for(key: CacheKey) -> Arc<Mutex<EntrySlot>> {
         .clone()
 }
 
+/// Drops every cached summary for a wallet DB, regardless of network.
+///
+/// Wallet reset replaces the randomized DB path, so retaining the old key
+/// would otherwise keep its last account balances alive until process exit.
+/// Account deletion also uses path-wide eviction so the next read rebuilds a
+/// summary containing only the remaining accounts.
+pub(crate) fn evict_db(db_path: &str) {
+    let mut map = match entry_map().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    map.retain(|key, _| key.db_path != db_path);
+}
+
 /// Cached `get_wallet_summary` for the default confirmation policy.
 pub(crate) fn get_wallet_summary_cached(
     db_path: &str,
@@ -372,6 +386,53 @@ mod tests {
         });
         assert_eq!(result.unwrap_err(), "file gone");
         assert_eq!(loads.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn explicit_db_eviction_removes_all_networks_and_preserves_other_paths() {
+        let evicted_path = unique_path("explicit-evict");
+        let retained_path = unique_path("explicit-retain");
+        touch_file(&evicted_path);
+        touch_file(&retained_path);
+        let epoch = AtomicU64::new(0);
+        let evicted_loads = AtomicUsize::new(0);
+        let retained_loads = AtomicUsize::new(0);
+
+        for network in [WalletNetwork::Main, WalletNetwork::Test] {
+            load_with_local_epoch(&evicted_path, network, &epoch, || {
+                evicted_loads.fetch_add(1, Ordering::SeqCst);
+                Ok(Some(summary_with_tip(10)))
+            })
+            .unwrap();
+        }
+        load_with_local_epoch(&retained_path, WalletNetwork::Main, &epoch, || {
+            retained_loads.fetch_add(1, Ordering::SeqCst);
+            Ok(Some(summary_with_tip(20)))
+        })
+        .unwrap();
+
+        evict_db(&evicted_path);
+
+        for network in [WalletNetwork::Main, WalletNetwork::Test] {
+            let summary = load_with_local_epoch(&evicted_path, network, &epoch, || {
+                evicted_loads.fetch_add(1, Ordering::SeqCst);
+                Ok(Some(summary_with_tip(11)))
+            })
+            .unwrap();
+            assert_eq!(u32::from(summary.unwrap().chain_tip_height()), 11);
+        }
+        let retained = load_with_local_epoch(&retained_path, WalletNetwork::Main, &epoch, || {
+            retained_loads.fetch_add(1, Ordering::SeqCst);
+            Ok(Some(summary_with_tip(21)))
+        })
+        .unwrap();
+
+        assert_eq!(evicted_loads.load(Ordering::SeqCst), 4);
+        assert_eq!(retained_loads.load(Ordering::SeqCst), 1);
+        assert_eq!(u32::from(retained.unwrap().chain_tip_height()), 20);
+
+        remove_file(&evicted_path);
+        remove_file(&retained_path);
     }
 
     #[test]
