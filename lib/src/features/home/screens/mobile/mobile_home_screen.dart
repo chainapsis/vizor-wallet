@@ -994,6 +994,10 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
         : fiatBalanceText;
     final priceChange24hPct = ref.watch(zecPriceChange24hPctProvider);
     final payEnabled = ref.watch(swapFeatureEnabledProvider);
+    final showPayEntry =
+        payEnabled &&
+        !migrationRequired &&
+        (!migrationInProgress || sync.ironwoodBalance > BigInt.zero);
     final payIntroductionClicked = ref
         .watch(payIntroductionBadgeClickedProvider)
         .value;
@@ -1148,7 +1152,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                       // rides the swap engine, so a server-side swap disable
                       // hides the button and its callout, mirroring desktop's
                       // `onPay == null` gating.
-                      if (payEnabled && !migrationRequired) ...[
+                      if (showPayEntry) ...[
                         const SizedBox(width: AppSpacing.xs),
                         DecoratedBox(
                           key: const ValueKey('mobile_home_pay_glow'),
@@ -1230,7 +1234,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                 ],
               ],
             ),
-            if (hasBalance && showPayIntroduction && !migrationRequired) ...[
+            if (hasBalance && showPayEntry && showPayIntroduction) ...[
               Positioned(
                 right: 41,
                 top: 172,
@@ -1270,7 +1274,7 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                   ],
                 ),
               ),
-            if (hasBalance && showPayIntroduction)
+            if (hasBalance && showPayEntry && showPayIntroduction)
               Positioned(
                 right: 43,
                 top: -35,

@@ -612,6 +612,14 @@ class _HomePaneState extends ConsumerState<_HomePane> {
               BigInt.zero
         : widget.sync.displayTotalBalance > BigInt.zero;
     final swapFeatureEnabled = ref.watch(swapFeatureEnabledProvider);
+    final migrationInProgress =
+        widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.resume;
+    final migrationRequired =
+        widget.ironwoodMigrationCta.mode == IronwoodHomeMigrationCtaMode.start;
+    final payAvailable =
+        swapFeatureEnabled &&
+        !migrationRequired &&
+        (!migrationInProgress || widget.sync.ironwoodBalance > BigInt.zero);
     final animateMigrationCta = ref.watch(
       homeMigrationCtaPulseMotionEnabledProvider,
     );
@@ -639,7 +647,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       onShieldBalancePressed: widget.onShieldBalancePressed,
       onSend: () => context.push('/send'),
       onReceive: () => context.push('/receive'),
-      onPay: swapFeatureEnabled ? _openPay : null,
+      onPay: payAvailable ? _openPay : null,
       onActivity: () => context.push('/activity'),
       ironwoodMigrationCta: widget.ironwoodMigrationCta,
       animateMigrationCta: animateMigrationCta,
@@ -1714,6 +1722,22 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
                     primary: false,
                   ),
                 ),
+                if (widget.onPay != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  SizedBox(
+                    width: 60,
+                    child: PayIntroductionBadgeTarget(
+                      child: _HomeDesktopActionButton(
+                        key: const ValueKey('home_desktop_pay_button'),
+                        icon: AppIcons.paid,
+                        label: 'Pay in USDC',
+                        compact: true,
+                        onTap: widget.onPay!,
+                        primary: false,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: AppSpacing.s),

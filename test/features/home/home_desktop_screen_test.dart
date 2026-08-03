@@ -539,6 +539,7 @@ void main() {
       await tester.pumpWidget(
         _appHarness(
           '/home',
+          swapEnabled: true,
           ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
             network: 'main',
             accountUuid: 'account-1',
@@ -601,6 +602,10 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.byKey(const ValueKey('home_desktop_pay_button')),
+        findsOneWidget,
+      );
+      expect(
         tester
             .widget<Semantics>(
               find.byKey(const ValueKey('home_shield_balance_button')),
@@ -627,6 +632,7 @@ void main() {
     await tester.pumpWidget(
       _appHarness(
         '/home',
+        swapEnabled: true,
         ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
           network: 'main',
           accountUuid: 'account-1',
@@ -670,6 +676,7 @@ void main() {
       find.byKey(const ValueKey('home_desktop_send_button')),
       findsOneWidget,
     );
+    expect(find.byKey(const ValueKey('home_desktop_pay_button')), findsNothing);
     expect(find.text('0'), findsNothing);
   });
 

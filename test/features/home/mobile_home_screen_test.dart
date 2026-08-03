@@ -1009,6 +1009,7 @@ void main() {
           accountUuid: 'account-1',
           status: status,
         ),
+        swapEnabled: true,
       ),
     );
     await tester.pump();
@@ -1034,6 +1035,7 @@ void main() {
           .onPressed,
       isNotNull,
     );
+    expect(find.byKey(const ValueKey('mobile_home_pay')), findsOneWidget);
   });
 
   testWidgets('includes locked Orchard holdings in the migrating amount', (
@@ -1130,6 +1132,7 @@ void main() {
             accountUuid: 'account-1',
             status: status,
           ),
+          swapEnabled: true,
         ),
       );
       await tester.pump();
@@ -1152,6 +1155,12 @@ void main() {
             .onPressed,
         isNull,
       );
+      expect(find.byKey(const ValueKey('mobile_home_pay')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('mobile_home_pay_badges')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('mobile_home_pay_coin')), findsNothing);
     },
   );
 
