@@ -349,7 +349,7 @@ void main() {
         of: find.text('View secret phrase'),
         matching: find.byType(FittedBox),
       ),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       tester

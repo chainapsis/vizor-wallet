@@ -1291,7 +1291,6 @@ class _AccountContextMenu extends StatelessWidget {
           AppContextMenuItem(
             iconName: AppIcons.key,
             label: 'View secret phrase',
-            scaleLabelToFit: true,
             onTap: onViewSecretPassphrase!,
           ),
           const SizedBox(height: AppSpacing.xxs),

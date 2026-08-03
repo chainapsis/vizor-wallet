@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
@@ -93,39 +94,45 @@ void main() {
     await gesture.removePointer();
   });
 
-  testWidgets('AppContextMenuItem can scale a long label to fit', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MediaQuery(
-        data: const MediaQueryData(textScaler: TextScaler.linear(2)),
-        child: _ThemedHarness(
-          theme: AppThemeData.light,
-          child: AppContextMenu(
-            width: 176,
-            children: [
-              AppContextMenuItem(
-                iconName: AppIcons.key,
-                label: 'View secret phrase',
-                scaleLabelToFit: true,
-                onTap: () {},
-              ),
-            ],
+  testWidgets(
+    'AppContextMenuItem ellipsizes a scaled label without shrinking',
+    (tester) async {
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: _ThemedHarness(
+            theme: AppThemeData.light,
+            child: AppContextMenu(
+              width: 176,
+              children: [
+                AppContextMenuItem(
+                  iconName: AppIcons.key,
+                  label: 'View secret phrase',
+                  onTap: () {},
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.text('View secret phrase'), findsOneWidget);
-    expect(
-      find.ancestor(
-        of: find.text('View secret phrase'),
-        matching: find.byType(FittedBox),
-      ),
-      findsOneWidget,
-    );
-    expect(tester.takeException(), isNull);
-  });
+      expect(find.text('View secret phrase'), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.text('View secret phrase'),
+          matching: find.byType(FittedBox),
+        ),
+        findsNothing,
+      );
+      expect(
+        tester
+            .renderObject<RenderParagraph>(find.text('View secret phrase'))
+            .didExceedMaxLines,
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('AppContextMenuItem can be removed while hovered', (
     tester,
