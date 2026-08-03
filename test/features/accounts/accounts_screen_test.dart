@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +30,13 @@ const _validDeletePassword = 'Correct123!';
 const _invalidDeletePassword = 'Wrong123!';
 
 void main() {
+  setUpAll(() async {
+    final geist = FontLoader('Geist')
+      ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+      ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+    await geist.load();
+  });
+
   testWidgets('accounts screen renders active account and other accounts', (
     tester,
   ) async {
@@ -335,7 +343,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View secret passphrase'), findsOneWidget);
-    expect(tester.getSize(find.byType(AppContextMenu)).width, 232);
+    expect(tester.getSize(find.byType(AppContextMenu)).width, 208);
+    expect(
+      tester
+          .renderObject<RenderParagraph>(find.text('View secret passphrase'))
+          .didExceedMaxLines,
+      isFalse,
+    );
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);
     expect(find.text('Edit account'), findsOneWidget);
@@ -1298,9 +1312,8 @@ Widget _accountsHarness({
       ),
       GoRoute(
         path: '/settings/secret-passphrase',
-        builder: (_, state) => Text(
-          'secret passphrase route ${state.extra as String?}',
-        ),
+        builder: (_, state) =>
+            Text('secret passphrase route ${state.extra as String?}'),
       ),
       GoRoute(path: '/about', builder: (_, _) => const Text('about route')),
     ],
