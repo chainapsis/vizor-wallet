@@ -8495,11 +8495,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   KeystoneMigrationMessage dco_decode_keystone_migration_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return KeystoneMigrationMessage(
       id: dco_decode_String(arr[0]),
       redactedPczt: dco_decode_list_prim_u_8_strict(arr[1]),
+      normalizedPcztSize: dco_decode_u_32(arr[2]),
     );
   }
 
@@ -10903,7 +10904,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
     var var_redactedPczt = sse_decode_list_prim_u_8_strict(deserializer);
-    return KeystoneMigrationMessage(id: var_id, redactedPczt: var_redactedPczt);
+    var var_normalizedPcztSize = sse_decode_u_32(deserializer);
+    return KeystoneMigrationMessage(
+      id: var_id,
+      redactedPczt: var_redactedPczt,
+      normalizedPcztSize: var_normalizedPcztSize,
+    );
   }
 
   @protected
@@ -13836,6 +13842,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
     sse_encode_list_prim_u_8_strict(self.redactedPczt, serializer);
+    sse_encode_u_32(self.normalizedPcztSize, serializer);
   }
 
   @protected

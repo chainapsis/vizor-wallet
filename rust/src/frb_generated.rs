@@ -7237,9 +7237,11 @@ impl SseDecode for crate::api::sync::KeystoneMigrationMessage {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_id = <String>::sse_decode(deserializer);
         let mut var_redactedPczt = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_normalizedPcztSize = <u32>::sse_decode(deserializer);
         return crate::api::sync::KeystoneMigrationMessage {
             id: var_id,
             redacted_pczt: var_redactedPczt,
+            normalized_pczt_size: var_normalizedPcztSize,
         };
     }
 }
@@ -10431,6 +10433,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::KeystoneMigrationMessag
         [
             self.id.into_into_dart().into_dart(),
             self.redacted_pczt.into_into_dart().into_dart(),
+            self.normalized_pczt_size.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12667,6 +12670,7 @@ impl SseEncode for crate::api::sync::KeystoneMigrationMessage {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.id, serializer);
         <Vec<u8>>::sse_encode(self.redacted_pczt, serializer);
+        <u32>::sse_encode(self.normalized_pczt_size, serializer);
     }
 }
 

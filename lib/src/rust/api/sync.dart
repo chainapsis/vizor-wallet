@@ -7,7 +7,7 @@ import '../frb_generated.dart';
 import 'keystone.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
+// These functions are ignored because they are not marked as `pub`: `catch`, `fetch_block_time`, `migration_status_from_balance`, `parse_network_and_migrate`, `run_full_sync_internal`, `to_api_keystone_migration_request`, `to_wallet_migration_schedule`, `to_wallet_signed_messages`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `MempoolObserverState`
 
 /// Set the desired sync mode. 0=none, 1=foreground, 2=background.
@@ -1229,13 +1229,18 @@ class KeystoneMigrationMessage {
   final String id;
   final Uint8List redactedPczt;
 
+  /// Standalone PCZT size after Keystone restores compact fields.
+  final int normalizedPcztSize;
+
   const KeystoneMigrationMessage({
     required this.id,
     required this.redactedPczt,
+    required this.normalizedPcztSize,
   });
 
   @override
-  int get hashCode => id.hashCode ^ redactedPczt.hashCode;
+  int get hashCode =>
+      id.hashCode ^ redactedPczt.hashCode ^ normalizedPcztSize.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1243,7 +1248,8 @@ class KeystoneMigrationMessage {
       other is KeystoneMigrationMessage &&
           runtimeType == other.runtimeType &&
           id == other.id &&
-          redactedPczt == other.redactedPczt;
+          redactedPczt == other.redactedPczt &&
+          normalizedPcztSize == other.normalizedPcztSize;
 }
 
 class KeystoneMigrationProofStatus {

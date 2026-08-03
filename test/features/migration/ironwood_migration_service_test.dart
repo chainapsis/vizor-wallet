@@ -5448,6 +5448,7 @@ rust_sync.KeystoneMigrationSigningRequest _keystoneSigningRequest() {
       rust_sync.KeystoneMigrationMessage(
         id: 'message-1',
         redactedPczt: Uint8List.fromList([1, 2, 3]),
+        normalizedPcztSize: 3,
       ),
     ],
     signingBatchLimit: 35,

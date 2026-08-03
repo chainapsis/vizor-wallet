@@ -688,12 +688,33 @@ pub struct IronwoodMigrationResult {
 pub struct KeystoneMigrationMessage {
     pub id: String,
     pub redacted_pczt: Vec<u8>,
+    /// Standalone PCZT size after Keystone restores compact fields.
+    pub normalized_pczt_size: u32,
 }
 
 pub struct KeystoneMigrationSigningRequest {
     pub request_id: String,
     pub messages: Vec<KeystoneMigrationMessage>,
     pub signing_batch_limit: u32,
+}
+
+fn to_api_keystone_migration_request(
+    request: wallet_sync::KeystoneMigrationSigningRequest,
+) -> KeystoneMigrationSigningRequest {
+    let messages = request
+        .messages
+        .into_iter()
+        .map(|message| KeystoneMigrationMessage {
+            id: message.id,
+            redacted_pczt: message.redacted_pczt,
+            normalized_pczt_size: message.normalized_pczt_size,
+        })
+        .collect();
+    KeystoneMigrationSigningRequest {
+        request_id: request.request_id,
+        messages,
+        signing_batch_limit: request.signing_batch_limit,
+    }
 }
 
 /// One signed message in the compact "signatures-only" Keystone response: the
@@ -1218,18 +1239,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
                 input_note_count: approved_input_note_count,
             },
         )?;
-        Ok(KeystoneMigrationSigningRequest {
-            request_id: request.request_id,
-            signing_batch_limit: request.signing_batch_limit,
-            messages: request
-                .messages
-                .into_iter()
-                .map(|message| KeystoneMigrationMessage {
-                    id: message.id,
-                    redacted_pczt: message.redacted_pczt,
-                })
-                .collect(),
-        })
+        Ok(to_api_keystone_migration_request(request))
     })
 }
 
@@ -1790,18 +1800,7 @@ pub fn prepare_orchard_migration_denominations_pczt(
                 space_preparation_broadcasts,
             ),
         )?;
-        Ok(KeystoneMigrationSigningRequest {
-            request_id: request.request_id,
-            signing_batch_limit: request.signing_batch_limit,
-            messages: request
-                .messages
-                .into_iter()
-                .map(|message| KeystoneMigrationMessage {
-                    id: message.id,
-                    redacted_pczt: message.redacted_pczt,
-                })
-                .collect(),
-        })
+        Ok(to_api_keystone_migration_request(request))
     })
 }
 
@@ -1937,18 +1936,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
                 space_preparation_broadcasts,
             ),
         )?;
-        Ok(KeystoneMigrationSigningRequest {
-            request_id: request.request_id,
-            signing_batch_limit: request.signing_batch_limit,
-            messages: request
-                .messages
-                .into_iter()
-                .map(|message| KeystoneMigrationMessage {
-                    id: message.id,
-                    redacted_pczt: message.redacted_pczt,
-                })
-                .collect(),
-        })
+        Ok(to_api_keystone_migration_request(request))
     })
 }
 
@@ -1996,18 +1984,7 @@ pub fn prepare_orchard_migration_batch_pczt(
         let network = parse_network_and_migrate(&db_path, &network)?;
         let request =
             wallet_sync::prepare_orchard_migration_batch_pczt(&db_path, network, &account_uuid)?;
-        Ok(KeystoneMigrationSigningRequest {
-            request_id: request.request_id,
-            signing_batch_limit: request.signing_batch_limit,
-            messages: request
-                .messages
-                .into_iter()
-                .map(|message| KeystoneMigrationMessage {
-                    id: message.id,
-                    redacted_pczt: message.redacted_pczt,
-                })
-                .collect(),
-        })
+        Ok(to_api_keystone_migration_request(request))
     })
 }
 

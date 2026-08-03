@@ -524,6 +524,32 @@ pub(crate) struct OrchardMigrationPrivatePlan {
 pub(crate) struct KeystoneMigrationMessage {
     pub id: String,
     pub redacted_pczt: Vec<u8>,
+    pub normalized_pczt_size: u32,
+}
+
+impl KeystoneMigrationMessage {
+    fn new(id: String, redacted_pczt: Vec<u8>) -> Result<Self, String> {
+        // Keystone restores each compact empty memo to a 580-byte ciphertext,
+        // along with the derived commitments, before retaining the checked
+        // batch. Budget the resulting standalone PCZT.
+        let mut normalized = pczt::Pczt::parse(&redacted_pczt)
+            .map_err(|e| format!("Parse compact Zcash batch PCZT: {e:?}"))?;
+        normalized
+            .resolve_fields()
+            .map_err(|e| format!("Resolve compact Zcash batch PCZT fields: {e:?}"))?;
+        let normalized_pczt_size = u32::try_from(
+            normalized
+                .serialize()
+                .map_err(|e| format!("Serialize normalized Zcash batch PCZT: {e:?}"))?
+                .len(),
+        )
+        .map_err(|_| "Normalized Zcash batch PCZT size exceeds u32".to_string())?;
+        Ok(Self {
+            id,
+            redacted_pczt,
+            normalized_pczt_size,
+        })
+    }
 }
 
 pub(crate) struct KeystoneMigrationSigningRequest {

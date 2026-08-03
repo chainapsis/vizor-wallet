@@ -467,6 +467,7 @@ fn keystone_migration_signing_accepts_multiple_firmware_rounds() {
         .map(|index| KeystoneMigrationMessage {
             id: format!("message-{index}"),
             redacted_pczt: vec![index as u8, 1],
+            normalized_pczt_size: 2,
         })
         .collect::<Vec<_>>();
 
@@ -2450,6 +2451,13 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
     );
     assert_eq!(built.orchard_spend_action_indices.len(), 11);
 
+    let compact = crate::wallet::sync::pczt::redact_pczt_for_batch_signer(&built.bytes).unwrap();
+    let normalized_size = KeystoneMigrationMessage::new("size-test".to_string(), compact.clone())
+        .unwrap()
+        .normalized_pczt_size;
+    assert_eq!(compact.len(), 7_113);
+    assert_eq!(normalized_size, 17_423);
+
     let signed = sign_orchard_migration_pczt_with_usk(
         &built.bytes,
         &built.orchard_spend_action_indices,
@@ -2616,10 +2624,10 @@ fn batch_signer_redaction_compacts_and_preserves_signable_spends() {
     );
     // The v6 sighash does not commit to anchors.
     assert!(batch_parsed.orchard().anchor().is_none());
-    // Every action sheds `cv_net`. A ciphertext rides as stripped memo
-    // plaintext whenever the wire note fields can decrypt it; only a
-    // dummy output's randomized ciphertext may fail that swap and stay
-    // encrypted on the wire.
+    // Every action sheds `cv_net`. An empty memo replaces a 580-byte ciphertext
+    // with an empty plaintext representation; `resolve_fields` also restores
+    // the 32-byte `cv_net` and `cmx` fields. Only a dummy output's randomized
+    // ciphertext may fail that swap and stay encrypted on the wire.
     for action in batch_parsed.orchard().actions() {
         assert!(action.cv_net().is_none());
         assert!(action.output().cmx().is_none());
@@ -2644,6 +2652,14 @@ fn batch_signer_redaction_compacts_and_preserves_signable_spends() {
     // the original values byte-identically.
     let mut refilled = batch_parsed;
     refilled.resolve_fields().unwrap();
+    let normalized_size = KeystoneMigrationMessage::new("size-test".to_string(), batch.clone())
+        .unwrap()
+        .normalized_pczt_size;
+    assert_eq!(
+        normalized_size as usize,
+        refilled.clone().serialize().unwrap().len()
+    );
+    assert!(normalized_size as usize > batch.len());
     for (reb, orig) in refilled
         .orchard()
         .actions()

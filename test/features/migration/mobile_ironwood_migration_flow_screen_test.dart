@@ -1231,6 +1231,7 @@ rust_sync.KeystoneMigrationSigningRequest _keystoneDenominationRequest() {
       rust_sync.KeystoneMigrationMessage(
         id: 'split-1',
         redactedPczt: Uint8List.fromList([1, 2, 3]),
+        normalizedPcztSize: 3,
       ),
     ],
     signingBatchLimit: 50,
@@ -3429,10 +3430,12 @@ void main() {
         rust_sync.KeystoneMigrationMessage(
           id: 'split-1',
           redactedPczt: Uint8List.fromList([1]),
+          normalizedPcztSize: 1,
         ),
         rust_sync.KeystoneMigrationMessage(
           id: 'split-2',
           redactedPczt: Uint8List.fromList([2]),
+          normalizedPcztSize: 1,
         ),
       ],
       signingBatchLimit: 1,
@@ -3514,6 +3517,7 @@ void main() {
         rust_sync.KeystoneMigrationMessage(
           id: 'immediate-transaction',
           redactedPczt: Uint8List.fromList([1]),
+          normalizedPcztSize: 1,
         ),
       ],
       signingBatchLimit: 1,
@@ -3604,6 +3608,7 @@ void main() {
                 rust_sync.KeystoneMigrationMessage(
                   id: 'split-1',
                   redactedPczt: Uint8List.fromList([1]),
+                  normalizedPcztSize: 1,
                 ),
               ],
               signingBatchLimit: 40,
@@ -3728,6 +3733,7 @@ void main() {
                     rust_sync.KeystoneMigrationMessage(
                       id: 'child-1',
                       redactedPczt: Uint8List.fromList([1]),
+                      normalizedPcztSize: 1,
                     ),
                   ],
                   signingBatchLimit: 40,
@@ -3971,6 +3977,7 @@ void main() {
                   rust_sync.KeystoneMigrationMessage(
                     id: 'message-$prepareCount',
                     redactedPczt: Uint8List.fromList([prepareCount]),
+                    normalizedPcztSize: 1,
                   ),
                 ],
                 signingBatchLimit: 50,

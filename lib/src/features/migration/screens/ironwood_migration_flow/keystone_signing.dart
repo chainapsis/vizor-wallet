@@ -1810,14 +1810,12 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
 // The Keystone firmware enforces two independent caps on one signing round:
 // the message count (`signingBatchLimit`) and a 512 KiB ceiling that covers
 // both the canonical PCZT byte total and the request-id + Postcard envelope
-// (`ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES` in rust/src/wallet/keystone.rs). Rounds
-// must stay under both, or QR encoding rejects the round after the user has
-// already approved the migration.
-const _keystoneSigningRoundMaxTotalBytes = 512 * 1024;
-// Headroom for the request id and per-message Postcard framing, which the
-// firmware counts against the same ceiling as the raw PCZT payloads.
-const _keystoneSigningRoundByteBudget =
-    _keystoneSigningRoundMaxTotalBytes - 16 * 1024;
+// (`ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES` in rust/src/wallet/keystone.rs). For each
+// action with an empty memo, Keystone restores a 580-byte ciphertext plus two
+// 32-byte derived fields before retaining the checked batch. Keep that
+// normalized payload at or below 490 KiB so the retained envelope has
+// sufficient headroom.
+const _keystoneSigningRoundByteBudget = 490 * 1024;
 
 @visibleForTesting
 List<List<rust_sync.KeystoneMigrationMessage>> keystoneSigningRoundsForTest(
@@ -1837,7 +1835,7 @@ List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRounds(
   var round = <rust_sync.KeystoneMigrationMessage>[];
   var roundBytes = 0;
   for (final message in messages) {
-    final messageBytes = message.redactedPczt.length + message.id.length;
+    final messageBytes = message.normalizedPcztSize;
     // A round cannot be split below one message, so a transaction that alone
     // exceeds the budget can never be encoded. Fail here rather than let the
     // firmware limit reject the request after the user approves the migration.

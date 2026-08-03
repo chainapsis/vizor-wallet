@@ -107,11 +107,10 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     let messages = split
         .stages
         .iter()
-        .map(|stage| KeystoneMigrationMessage {
-            id: stage.id.clone(),
-            redacted_pczt: stage.redacted_pczt.clone(),
+        .map(|stage| {
+            KeystoneMigrationMessage::new(stage.id.clone(), stage.redacted_pczt.clone())
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, String>>()?;
     if !messages.is_empty() {
         validate_keystone_migration_messages(&messages)?;
     }
@@ -416,17 +415,25 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
 
     let request_id = new_keystone_migration_request_id("single");
     let mut messages = Vec::with_capacity(total_messages);
-    messages.extend(split.stages.iter().map(|stage| KeystoneMigrationMessage {
-        id: stage.id.clone(),
-        redacted_pczt: stage.redacted_pczt.clone(),
-    }));
+    messages.extend(
+        split
+            .stages
+            .iter()
+            .map(|stage| {
+                KeystoneMigrationMessage::new(stage.id.clone(), stage.redacted_pczt.clone())
+            })
+            .collect::<Result<Vec<_>, String>>()?,
+    );
     messages.extend(
         child_messages
             .iter()
-            .map(|message| KeystoneMigrationMessage {
-                id: message.id.clone(),
-                redacted_pczt: message.redacted_pczt.clone(),
-            }),
+            .map(|message| {
+                KeystoneMigrationMessage::new(
+                    message.id.clone(),
+                    message.redacted_pczt.clone(),
+                )
+            })
+            .collect::<Result<Vec<_>, String>>()?,
     );
     validate_keystone_migration_messages(&messages)?;
 
@@ -708,10 +715,10 @@ pub(crate) fn prepare_orchard_migration_immediate_pczt(
     let redacted_pczt = super::pczt::redact_pczt_for_batch_signer(&built.base_pczt)?;
     let request_id = new_keystone_migration_request_id("immediate");
     let message_id = format!("{request_id}-transaction");
-    let messages = vec![KeystoneMigrationMessage {
-        id: message_id.clone(),
+    let messages = vec![KeystoneMigrationMessage::new(
+        message_id.clone(),
         redacted_pczt,
-    }];
+    )?];
     validate_keystone_migration_messages(&messages)?;
     let base_pczt = built.base_pczt.clone();
     let mut store = keystone_immediate_migration_requests()
@@ -1094,11 +1101,10 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let request_id = new_keystone_migration_request_id("batch");
     let messages = created
         .iter()
-        .map(|message| KeystoneMigrationMessage {
-            id: message.id.clone(),
-            redacted_pczt: message.redacted_pczt.clone(),
+        .map(|message| {
+            KeystoneMigrationMessage::new(message.id.clone(), message.redacted_pczt.clone())
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, String>>()?;
     validate_keystone_migration_messages(&messages)?;
     let proof_worker_messages = created
         .iter()

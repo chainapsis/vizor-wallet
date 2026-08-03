@@ -1042,10 +1042,12 @@ void main() {
           rust_sync.KeystoneMigrationMessage(
             id: 'split-1',
             redactedPczt: Uint8List.fromList([1]),
+            normalizedPcztSize: 1,
           ),
           rust_sync.KeystoneMigrationMessage(
             id: 'split-2',
             redactedPczt: Uint8List.fromList([2]),
+            normalizedPcztSize: 1,
           ),
         ],
         signingBatchLimit: 1,
@@ -1177,6 +1179,7 @@ void main() {
         rust_sync.KeystoneMigrationMessage(
           id: id,
           redactedPczt: Uint8List(bytes),
+          normalizedPcztSize: bytes,
         );
 
     test('chunks by the signing batch limit', () {
@@ -1186,39 +1189,71 @@ void main() {
       expect(rounds.map((round) => round.length), [2, 2, 1]);
     });
 
-    test('splits the first message beyond the 40-message firmware cap', () {
-      final messages = [for (var i = 0; i < 41; i++) message('m$i', 10)];
+    test('splits the first message beyond the 35-message product cap', () {
+      final messages = [for (var i = 0; i < 36; i++) message('m$i', 10)];
       expect(
         keystoneSigningRoundsForTest(
-          messages.take(40).toList(),
-          40,
+          messages.take(35).toList(),
+          35,
         ).map((round) => round.length),
-        [40],
+        [35],
       );
       expect(
-        keystoneSigningRoundsForTest(messages, 40).map((round) => round.length),
-        [40, 1],
+        keystoneSigningRoundsForTest(messages, 35).map((round) => round.length),
+        [35, 1],
       );
     });
 
-    test('splits a round that would exceed the firmware byte ceiling', () {
-      // 40 messages of 26 KiB total over 1 MiB — the count fits in one round
-      // but the firmware rejects anything over 512 KiB per round.
+    test('splits a round whose normalized size exceeds 490 KiB', () {
+      // The count fits in one round, but Keystone's restored PCZTs do not fit
+      // within the retained batch budget.
       final rounds = keystoneSigningRoundsForTest([
-        for (var i = 0; i < 40; i++) message('m$i', 26 * 1024),
-      ], 40);
+        for (var i = 0; i < 35; i++) message('m$i', 26 * 1024),
+      ], 35);
       expect(rounds.length, greaterThan(1));
       for (final round in rounds) {
         final bytes = round.fold<int>(
           0,
-          (total, item) => total + item.redactedPczt.length + item.id.length,
+          (total, item) => total + item.normalizedPcztSize,
         );
-        expect(bytes, lessThanOrEqualTo(512 * 1024 - 16 * 1024));
+        expect(bytes, lessThanOrEqualTo(490 * 1024));
       }
       expect(rounds.expand((round) => round).map((item) => item.id).toList(), [
-        for (var i = 0; i < 40; i++) 'm$i',
+        for (var i = 0; i < 35; i++) 'm$i',
       ]);
     });
+
+    test(
+      'splits 16-action PCZTs before Keystone expands them past 512 KiB',
+      () {
+        // These sizes are pinned by the Rust production-builder redaction test.
+        const compactSize = 7113;
+        const normalizedSize = 17423;
+        final messages = [
+          for (var i = 0; i < 30; i++)
+            rust_sync.KeystoneMigrationMessage(
+              id: 'split-$i',
+              redactedPczt: Uint8List(compactSize),
+              normalizedPcztSize: normalizedSize,
+            ),
+        ];
+
+        expect(
+          messages.fold<int>(
+            0,
+            (total, message) => total + message.redactedPczt.length,
+          ),
+          lessThan(490 * 1024),
+        );
+        expect(
+          keystoneSigningRoundsForTest(
+            messages,
+            35,
+          ).map((round) => round.length),
+          [28, 2],
+        );
+      },
+    );
 
     test('rejects a message no round could ever carry', () {
       // Giving it its own round does not help: the firmware rejects the round
@@ -1228,17 +1263,17 @@ void main() {
         () => keystoneSigningRoundsForTest([
           message('big', 600 * 1024),
           message('small', 10),
-        ], 40),
+        ], 35),
         throwsA(isA<StateError>()),
       );
     });
 
     test('still packs a message that only just fits', () {
-      const budget = 512 * 1024 - 16 * 1024;
+      const budget = 490 * 1024;
       final rounds = keystoneSigningRoundsForTest([
-        message('big', budget - 'big'.length),
+        message('big', budget),
         message('small', 10),
-      ], 40);
+      ], 35);
       expect(
         rounds.map((round) => round.map((item) => item.id).toList()).toList(),
         [
