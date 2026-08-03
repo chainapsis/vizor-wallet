@@ -14,6 +14,7 @@ import '../../../providers/voting/voting_state.dart';
 import '../../../rust/third_party/zcash_voting/delegate.dart' as rust_delegate;
 import '../../../services/voting/pir_snapshot_resolver.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
+import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../voting_error_messages.dart';
 import '../voting_flow_models.dart';
 import '../voting_formatters.dart';
@@ -979,10 +980,15 @@ class _KeystoneSigningPanelState extends State<_KeystoneSigningPanel> {
               _KeystoneSigningMemo(displayMemo: request.displayMemo),
             ],
             const SizedBox(height: AppSpacing.sm),
-            KeystonePcztQrStage(
-              phase: qrPhase,
-              urParts: urParts,
-              error: qrError,
+            KeystoneScanHelpOverlay(
+              visible:
+                  qrPhase == KeystonePcztQrStagePhase.ready &&
+                  urParts.isNotEmpty,
+              child: KeystonePcztQrStage(
+                phase: qrPhase,
+                urParts: urParts,
+                error: qrError,
+              ),
             ),
             if (scanError != null) ...[
               const SizedBox(height: AppSpacing.xs),

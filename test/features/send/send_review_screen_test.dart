@@ -387,6 +387,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Get signature'), findsOneWidget);
+    expect(find.text('Scanning issues?'), findsOneWidget);
     expect(find.text('status-route'), findsNothing);
     expect(rustApi.createPcztCalls, 1);
   });

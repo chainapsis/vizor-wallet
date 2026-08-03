@@ -5,6 +5,7 @@ import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_modal_card.dart'
     show AppModalActions, appModalShadow;
 import 'keystone_pczt_qr_stage.dart';
+import 'keystone_scan_help_overlay.dart';
 
 enum KeystoneSigningModalPhase { preparing, ready, failed }
 
@@ -95,18 +96,23 @@ class KeystoneSigningModal extends StatelessWidget {
             ),
             child: Column(
               children: [
-                KeystonePcztQrStage(
-                  phase: switch (phase) {
-                    KeystoneSigningModalPhase.preparing =>
-                      KeystonePcztQrStagePhase.preparing,
-                    KeystoneSigningModalPhase.ready =>
-                      KeystonePcztQrStagePhase.ready,
-                    KeystoneSigningModalPhase.failed =>
-                      KeystonePcztQrStagePhase.failed,
-                  },
-                  urParts: urParts,
-                  error: error,
-                  size: qrSize,
+                KeystoneScanHelpOverlay(
+                  visible:
+                      phase == KeystoneSigningModalPhase.ready &&
+                      urParts.isNotEmpty,
+                  child: KeystonePcztQrStage(
+                    phase: switch (phase) {
+                      KeystoneSigningModalPhase.preparing =>
+                        KeystonePcztQrStagePhase.preparing,
+                      KeystoneSigningModalPhase.ready =>
+                        KeystonePcztQrStagePhase.ready,
+                      KeystoneSigningModalPhase.failed =>
+                        KeystonePcztQrStagePhase.failed,
+                    },
+                    urParts: urParts,
+                    error: error,
+                    size: qrSize,
+                  ),
                 ),
                 if (instruction != null && instruction.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.sm),

@@ -3057,6 +3057,8 @@ void main() {
     expect(find.text('Memo'), findsOneWidget);
     expect(find.textContaining('Amount: 0.00000100 ZEC'), findsOneWidget);
     expect(find.text('Scan signature'), findsOneWidget);
+    await tester.pump();
+    expect(find.text('Scanning issues?'), findsOneWidget);
     expect(find.text('Software account required'), findsNothing);
     await tester.tap(find.text('Scan signature'));
     await tester.pumpAndSettle();

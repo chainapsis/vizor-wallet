@@ -48,6 +48,7 @@ import '../../../rust/wallet/keystone.dart' as rust_keystone_wallet;
 import '../../../services/qr_scanner.dart';
 import '../../keystone/widgets/keystone_pczt_qr_stage.dart';
 import '../../keystone/widgets/keystone_qr_scanner_card.dart';
+import '../../keystone/widgets/keystone_scan_help_overlay.dart';
 import '../../keystone/widgets/keystone_signing_modal.dart';
 import '../models/ironwood_migration_presentation.dart';
 import '../models/mobile_ironwood_migration_status_entry.dart';
