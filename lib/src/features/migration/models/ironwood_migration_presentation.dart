@@ -40,6 +40,19 @@ bool migrationHasTransferProgress(rust_sync.MigrationStatus status) {
       status.signedChildPcztCount > 0;
 }
 
+bool migrationRequiresKeystoneSignature(rust_sync.MigrationStatus status) {
+  if (status.parts.any(
+    (part) => part.state == rust_sync.MigrationPartState.needsInput,
+  )) {
+    return true;
+  }
+  if (status.phase != kIronwoodMigrationReadyToMigratePhase) return false;
+  final signingPartIndices = status.currentSigningPartIndices;
+  return signingPartIndices == null
+      ? status.signedChildPcztCount <= 0
+      : signingPartIndices.isNotEmpty;
+}
+
 BigInt migrationCompletedValue(rust_sync.MigrationStatus status) {
   // Rust reuses completed part rows for denomination preparation. Until the
   // first migration transaction exists, those rows are not migrated value.

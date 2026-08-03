@@ -2697,6 +2697,53 @@ fn rebuilt_parts_fit_a_remaining_count_schedule() {
 }
 
 #[test]
+fn approved_schedule_restores_randomized_targets_in_part_order() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: Some(2),
+            value_zatoshi: 2_000,
+            block_offset: 4,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 5_000,
+            block_offset: 8,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 1_000,
+            block_offset: 12,
+        },
+    ];
+
+    assert_eq!(
+        target_values_from_schedule(&schedule).unwrap(),
+        vec![5_000, 1_000, 2_000]
+    );
+}
+
+#[test]
+fn unindexed_schedule_cannot_invent_randomized_target_order() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 2_000,
+            block_offset: 4,
+        },
+        MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 5_000,
+            block_offset: 8,
+        },
+    ];
+
+    assert_eq!(
+        target_values_from_schedule(&schedule).unwrap_err(),
+        "Approved migration schedule does not identify migration parts"
+    );
+}
+
+#[test]
 fn preparation_schedule_is_planned_across_dependency_layers() {
     assert_eq!(ZIP318_PREPARATION_MEAN_DELAY_BLOCKS, 16);
     assert_eq!(ZIP318_PREPARATION_MAX_DELAY_BLOCKS, 96);
@@ -4984,7 +5031,9 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
     let db_path = db_path.to_string_lossy().to_string();
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
     ensure_schema(&conn).unwrap();
-    let schedule_json = (0..10u32)
+    let part_count = MIGRATION_KEYSTONE_BATCH_MAX_PARTS + 2;
+    let batch_limit = MIGRATION_KEYSTONE_BATCH_MAX_PARTS as usize;
+    let schedule_json = (0..part_count)
         .map(|part_index| {
             format!(
                 "{{\"part_index\":{part_index},\"value_zatoshi\":100,\"block_offset\":{}}}",
@@ -4999,16 +5048,17 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
              (run_id, account_uuid, network, db_fingerprint, phase,
               created_at_ms, updated_at_ms, target_values_json, schedule_json)
              VALUES ('gen-run', 'account-1', 'main', ?1, ?2, 1, 1,
-                     '[100,100,100,100,100,100,100,100,100,100]', ?3)"
+                     ?3, ?4)"
         ),
         params![
             db_path,
             PHASE_READY_TO_MIGRATE,
+            serde_json::to_string(&vec![100u64; part_count as usize]).unwrap(),
             format!("[{schedule_json}]")
         ],
     )
     .unwrap();
-    let rows = insert_needs_resign_fixture_rows(&conn, "gen-run", 0..10);
+    let rows = insert_needs_resign_fixture_rows(&conn, "gen-run", 0..part_count);
     drop(conn);
 
     let generation =
@@ -5016,7 +5066,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             .unwrap()
             .unwrap();
     assert_eq!(generation.origin_height, 5_000);
-    assert_eq!(generation.offsets_by_txid.len(), 10);
+    assert_eq!(generation.offsets_by_txid.len(), part_count as usize);
     let (_, max_delay_blocks) =
         schedule_parameters_with_policy(WalletNetwork::Main, MigrationTimingPolicy::Standard);
     let mut ladder = generation
@@ -5026,7 +5076,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         .collect::<Vec<_>>();
     ladder.sort_unstable();
     let generation_max_offset = *ladder.last().unwrap();
-    assert!(generation_max_offset <= max_delay_blocks * 10);
+    assert!(generation_max_offset <= max_delay_blocks * part_count);
     assert!(ladder.windows(2).all(|w| w[1] - w[0] <= max_delay_blocks));
 
     // A later call (for example the next QR session) reuses the persisted
@@ -5049,9 +5099,16 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
 
     // The replacement boundary enforces the exact persisted offset, not only
     // the generation origin.
-    let persisted_offset = generation.offsets_by_txid[&rows[9].0.to_ascii_lowercase()];
-    let (wrong_offset_replacement, wrong_offset_child) =
-        rebuild_replacement_for(&rows[9].0, &rows[9].1, 9, 5_001, 5_001 + persisted_offset);
+    let last_part_index = part_count - 1;
+    let last_row = rows.last().unwrap();
+    let persisted_offset = generation.offsets_by_txid[&last_row.0.to_ascii_lowercase()];
+    let (wrong_offset_replacement, wrong_offset_child) = rebuild_replacement_for(
+        &last_row.0,
+        &last_row.1,
+        last_part_index,
+        5_001,
+        5_001 + persisted_offset,
+    );
     assert_eq!(
         replace_resigned_pending_parts(
             &db_path,
@@ -5069,7 +5126,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
 
     // A live construction target may differ from the generation origin, but
     // the signed child's scheduled height cannot precede that origin.
-    let (stray_replacement, mut stray_child) = replacement_for(&rows[9], 9, 6_001);
+    let (stray_replacement, mut stray_child) = replacement_for(last_row, last_part_index, 6_001);
     stray_child.scheduled_height = 4_999;
     stray_child.expiry_height =
         zip318_canonical_migration_expiry_height(stray_child.scheduled_height).unwrap();
@@ -5088,8 +5145,9 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
         "Signed migration schedule starts below zero"
     );
 
-    // First signing batch covers eight parts; the generation survives it.
-    let (batch_one, batch_one_children): (Vec<_>, Vec<_>) = rows[..8]
+    // The first full signing batch leaves the generation available to the
+    // remaining parts.
+    let (batch_one, batch_one_children): (Vec<_>, Vec<_>) = rows[..batch_limit]
         .iter()
         .enumerate()
         .map(|(part_index, row)| replacement_for(row, part_index as u32, 5_001))
@@ -5133,8 +5191,8 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             .unwrap()
             .unwrap();
     assert_eq!(late_return.origin_height, 5_000);
-    assert_eq!(late_return.offsets_by_txid.len(), 2);
-    for row in &rows[8..] {
+    assert_eq!(late_return.offsets_by_txid.len(), rows.len() - batch_limit);
+    for row in &rows[batch_limit..] {
         let redrawn = late_return.offsets_by_txid[&row.0.to_ascii_lowercase()];
         assert!(
             redrawn > persisted_generation_max + 500,
@@ -5144,7 +5202,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
 
     // The second batch consumes the redrawn generation. Its cursor remains
     // for later recovery waves in the active run.
-    let (batch_two, batch_two_children): (Vec<_>, Vec<_>) = rows[8..]
+    let (batch_two, batch_two_children): (Vec<_>, Vec<_>) = rows[batch_limit..]
         .iter()
         .enumerate()
         .map(|(offset, row)| {
@@ -5152,7 +5210,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             rebuild_replacement_for(
                 &row.0,
                 &row.1,
-                8 + offset as u32,
+                MIGRATION_KEYSTONE_BATCH_MAX_PARTS + offset as u32,
                 late_tip + 1,
                 5_000 + assigned,
             )
@@ -5183,7 +5241,7 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
-    let late_generation_max = rows[8..]
+    let late_generation_max = rows[batch_limit..]
         .iter()
         .map(|row| late_return.offsets_by_txid[&row.0.to_ascii_lowercase()])
         .max()
@@ -5209,21 +5267,26 @@ fn rebuild_generation_spans_batches_with_one_ladder() {
             .unwrap();
         rows.collect::<Result<Vec<_>, _>>().unwrap()
     };
-    assert_eq!(rebuilt.len(), 10);
+    assert_eq!(rebuilt.len(), part_count as usize);
     assert!(rebuilt.iter().all(|(_, _, start, _)| *start == 5_000));
     assert!(rebuilt.iter().all(|(part_index, target, _, _)| {
-        *target == if *part_index < 8 { 5_001 } else { late_tip + 1 }
+        *target
+            == if *part_index < MIGRATION_KEYSTONE_BATCH_MAX_PARTS {
+                5_001
+            } else {
+                late_tip + 1
+            }
     }));
     rebuilt.sort_by_key(|(_, _, _, scheduled)| *scheduled);
     let rebuilt_ladder = rebuilt
         .iter()
         .map(|(_, _, _, scheduled)| scheduled - 5_000)
         .collect::<Vec<_>>();
-    let mut expected_ladder = rows[..8]
+    let mut expected_ladder = rows[..batch_limit]
         .iter()
         .map(|row| generation.offsets_by_txid[&row.0.to_ascii_lowercase()])
         .chain(
-            rows[8..]
+            rows[batch_limit..]
                 .iter()
                 .map(|row| late_return.offsets_by_txid[&row.0.to_ascii_lowercase()]),
         )
@@ -6925,7 +6988,12 @@ fn ready_to_migrate_does_not_report_denomination_parts_as_completed_transfers() 
 }
 
 #[test]
-fn migration_batch_signing_selector_reports_initial_and_resign_requests_exactly() {
+fn migration_batch_signing_selector_uses_the_keystone_message_limit() {
+    assert_eq!(crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES, 40);
+    assert_eq!(
+        MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
+        crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES as u32
+    );
     assert_eq!(
         select_migration_batch_signing_part_indices(3, 0, 0, &[]).unwrap(),
         vec![0, 1, 2]
@@ -6934,23 +7002,18 @@ fn migration_batch_signing_selector_reports_initial_and_resign_requests_exactly(
         select_migration_batch_signing_part_indices(2, 2, 2, &[1, 10]).unwrap(),
         vec![1, 10]
     );
+    let forty_five_parts = (0..45).collect::<Vec<_>>();
     assert_eq!(
-        select_migration_batch_signing_part_indices(
-            12,
-            12,
-            0,
-            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-        )
-        .unwrap(),
-        vec![0, 1, 2, 3, 4, 5, 6, 7]
+        select_migration_batch_signing_part_indices(45, 45, 0, &forty_five_parts).unwrap(),
+        (0..40).collect::<Vec<_>>()
     );
     assert_eq!(
-        select_migration_batch_signing_part_indices(12, 0, 0, &[]).unwrap(),
-        vec![0, 1, 2, 3, 4, 5, 6, 7]
+        select_migration_batch_signing_part_indices(45, 0, 0, &[]).unwrap(),
+        (0..40).collect::<Vec<_>>()
     );
     assert_eq!(
-        select_migration_batch_signing_part_indices(12, 8, 0, &[]).unwrap(),
-        vec![8, 9, 10, 11]
+        select_migration_batch_signing_part_indices(45, 40, 0, &[]).unwrap(),
+        vec![40, 41, 42, 43, 44]
     );
     assert_eq!(
         select_migration_batch_signing_part_indices(0, 0, 0, &[]).unwrap_err(),

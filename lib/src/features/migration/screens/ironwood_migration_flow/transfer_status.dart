@@ -362,12 +362,23 @@ class _MigrationLiveStatusContent extends StatelessWidget {
     final signIndex = signingSegmentIndices.isNotEmpty
         ? signingSegmentIndices.first
         : statuses.indexOf(_MigrationBatchStatus.needsInput);
-    final batchIndex = signIndex < 0 ? 0 : signIndex;
+    final signingPartIndices = status.currentSigningPartIndices;
+    final batchPartIndex =
+        signingPartIndices != null && signingPartIndices.isNotEmpty
+        ? signingPartIndices.reduce(
+            (left, right) => left < right ? left : right,
+          )
+        : signIndex >= 0 && signIndex < parts.length
+        ? parts[signIndex].partIndex
+        : math.max(0, signIndex);
     final batchValue = signingSegmentIndices.fold<BigInt>(
       BigInt.zero,
       (sum, index) => index < values.length ? sum + values[index] : sum,
     );
-    final batchNumber = (batchIndex ~/ 8) + 1;
+    final signingBatchLimit = status.signingBatchLimit > 0
+        ? status.signingBatchLimit
+        : 1;
+    final batchNumber = (batchPartIndex ~/ signingBatchLimit) + 1;
     final percentage = _migrationPercentage(batchValue, totalZatoshi);
 
     return SizedBox(

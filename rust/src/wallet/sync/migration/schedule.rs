@@ -158,6 +158,45 @@ pub(crate) fn validate_schedule(
     )
 }
 
+pub(crate) fn target_values_from_schedule(
+    schedule: &[MigrationScheduleEntry],
+) -> Result<Vec<u64>, String> {
+    if schedule.is_empty() {
+        return Ok(Vec::new());
+    }
+    if schedule.iter().all(|entry| entry.part_index.is_none()) {
+        return Err("Approved migration schedule does not identify migration parts".to_string());
+    }
+    if schedule.iter().any(|entry| entry.part_index.is_none()) {
+        return Err("Approved migration schedule part indexes are incomplete".to_string());
+    }
+
+    let mut target_values = vec![None; schedule.len()];
+    for entry in schedule {
+        let part_index = usize::try_from(
+            entry
+                .part_index
+                .expect("all schedule entries were checked above"),
+        )
+        .map_err(|_| "Approved migration schedule part index is outside the plan".to_string())?;
+        let slot = target_values
+            .get_mut(part_index)
+            .ok_or("Approved migration schedule part index is outside the plan")?;
+        if slot.replace(entry.value_zatoshi).is_some() {
+            return Err("Approved migration schedule part index is duplicated".to_string());
+        }
+    }
+
+    target_values
+        .into_iter()
+        .map(|value| {
+            value.ok_or_else(|| {
+                "Approved migration schedule part indexes are incomplete".to_string()
+            })
+        })
+        .collect()
+}
+
 fn validate_schedule_with_policy(
     schedule: &[MigrationScheduleEntry],
     target_values: &[u64],

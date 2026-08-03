@@ -36,6 +36,7 @@ class _MobileMigrationRedesignedStatus extends ConsumerStatefulWidget {
 
 class _MobileMigrationRedesignedStatusState
     extends ConsumerState<_MobileMigrationRedesignedStatus> {
+  static const _softwarePartsPerBatch = 8;
   static const _syncSurfaceRevealDelay = Duration(milliseconds: 800);
   static const _syncSurfaceMinimumDuration = Duration(milliseconds: 500);
   static const _advancingLabelRevealDelay = Duration(milliseconds: 800);
@@ -735,7 +736,7 @@ class _MobileMigrationRedesignedStatusState
       final needsKeystoneResign =
           !needsHardwareCredentialAttention &&
           widget.isHardware &&
-          _requiresKeystoneSignature(widget.status);
+          migrationRequiresKeystoneSignature(widget.status);
       final keystoneResignLabel =
           widget.status.parts.any(
             (part) => part.state == rust_sync.MigrationPartState.needsInput,
@@ -1016,9 +1017,7 @@ class _MobileMigrationRedesignedStatusState
     )) {
       return true;
     }
-    if (widget.isHardware &&
-        status.phase == kIronwoodMigrationReadyToMigratePhase &&
-        status.signedChildPcztCount <= 0) {
+    if (widget.isHardware && migrationRequiresKeystoneSignature(status)) {
       return true;
     }
     if (_hasDueProofBatch(status)) return !hasChildProofBatchPermit;
@@ -1168,7 +1167,8 @@ class _MobileMigrationRedesignedStatusState
   /// Runs the required action for [accountUuid]. Only a tap reaches here.
   Future<void> _performRequiredAction(String accountUuid) async {
     if (_actionRunning) return;
-    if (widget.isHardware && _requiresKeystoneSignature(widget.status)) {
+    if (widget.isHardware &&
+        migrationRequiresKeystoneSignature(widget.status)) {
       context.push('/migration/private/keystone/batch/sign');
       return;
     }
@@ -1189,16 +1189,6 @@ class _MobileMigrationRedesignedStatusState
     }
   }
 
-  bool _requiresKeystoneSignature(rust_sync.MigrationStatus status) {
-    if (status.parts.any(
-      (part) => part.state == rust_sync.MigrationPartState.needsInput,
-    )) {
-      return true;
-    }
-    return status.phase == kIronwoodMigrationReadyToMigratePhase &&
-        status.signedChildPcztCount <= 0;
-  }
-
   String _requiredActionLabel(
     rust_sync.MigrationStatus status, {
     required int batchNumber,
@@ -1212,7 +1202,7 @@ class _MobileMigrationRedesignedStatusState
     }
     if (hasLateScheduledBroadcast) return 'Submit scheduled transaction';
     if (!widget.isHardware) return 'Prepare batch #$batchNumber';
-    if (_requiresKeystoneSignature(status)) {
+    if (migrationRequiresKeystoneSignature(status)) {
       final isResigning = status.parts.any(
         (part) => part.state == rust_sync.MigrationPartState.needsInput,
       );
@@ -1224,11 +1214,14 @@ class _MobileMigrationRedesignedStatusState
   }
 
   bool _isInitialKeystoneSigning(rust_sync.MigrationStatus status) {
+    final signingPartIndices = status.currentSigningPartIndices;
     return status.phase == kIronwoodMigrationReadyToMigratePhase &&
         status.signedChildPcztCount <= 0 &&
         !status.parts.any(
           (part) => part.state == rust_sync.MigrationPartState.needsInput,
-        );
+        ) &&
+        (signingPartIndices == null ||
+            signingPartIndices.toSet().length == _totalParts(status));
   }
 
   int _currentHeight() {
@@ -1383,6 +1376,12 @@ class _MobileMigrationRedesignedStatusState
     for (final part in ordered) {
       if (part.state == rust_sync.MigrationPartState.needsInput) return part;
     }
+    final signingPartIndices = status.currentSigningPartIndices?.toSet();
+    if (signingPartIndices != null && signingPartIndices.isNotEmpty) {
+      for (final part in ordered) {
+        if (signingPartIndices.contains(part.partIndex)) return part;
+      }
+    }
     final nextActionPartIndex = status.nextActionPartIndex;
     if (_hasDueProofBatch(status) && nextActionPartIndex != null) {
       for (final part in ordered) {
@@ -1421,9 +1420,15 @@ class _MobileMigrationRedesignedStatusState
     rust_sync.MigrationPartStatus? actionPart,
   }) {
     final totalParts = _totalParts(status);
+    final keystonePartsPerBatch = status.signingBatchLimit > 0
+        ? status.signingBatchLimit
+        : 1;
+    final partsPerBatch = widget.isHardware
+        ? keystonePartsPerBatch
+        : _softwarePartsPerBatch;
     final totalBatches = math.max(
       1,
-      (totalParts + _migrationPartsPerBatch - 1) ~/ _migrationPartsPerBatch,
+      (totalParts + partsPerBatch - 1) ~/ partsPerBatch,
     );
     final ordered = [...status.parts]
       ..sort((left, right) => left.partIndex.compareTo(right.partIndex));
@@ -1433,29 +1438,31 @@ class _MobileMigrationRedesignedStatusState
         (part) => part.partIndex == actionPart.partIndex,
       );
       if (actionIndex >= 0) {
-        currentBatchIndex = actionIndex ~/ _migrationPartsPerBatch;
+        currentBatchIndex = actionIndex ~/ partsPerBatch;
       }
     } else {
       final firstIncompleteIndex = ordered.indexWhere(
         (part) => part.state != rust_sync.MigrationPartState.completed,
       );
       if (firstIncompleteIndex >= 0) {
-        currentBatchIndex = firstIncompleteIndex ~/ _migrationPartsPerBatch;
+        currentBatchIndex = firstIncompleteIndex ~/ partsPerBatch;
       } else if (ordered.isNotEmpty) {
         currentBatchIndex = totalBatches - 1;
       } else {
-        currentBatchIndex = (_completedParts(status) ~/ _migrationPartsPerBatch)
-            .clamp(0, totalBatches - 1);
+        currentBatchIndex = (_completedParts(status) ~/ partsPerBatch).clamp(
+          0,
+          totalBatches - 1,
+        );
       }
     }
     currentBatchIndex = currentBatchIndex.clamp(0, totalBatches - 1);
-    final currentBatchStart = currentBatchIndex * _migrationPartsPerBatch;
+    final currentBatchStart = currentBatchIndex * partsPerBatch;
     final currentBatchParts = ordered
         .skip(currentBatchStart)
-        .take(_migrationPartsPerBatch)
+        .take(partsPerBatch)
         .toList(growable: false);
     final inferredCurrentBatchPartCount = math.min(
-      _migrationPartsPerBatch,
+      partsPerBatch,
       math.max(0, totalParts - currentBatchStart),
     );
     final currentBatchPartCount = currentBatchParts.isEmpty
@@ -1466,21 +1473,14 @@ class _MobileMigrationRedesignedStatusState
       final completedParts = _completedParts(status).clamp(0, totalParts);
       completedBatches = completedParts >= totalParts
           ? totalBatches
-          : completedParts ~/ _migrationPartsPerBatch;
+          : completedParts ~/ partsPerBatch;
     } else {
-      for (
-        var start = 0;
-        start < ordered.length;
-        start += _migrationPartsPerBatch
-      ) {
+      for (var start = 0; start < ordered.length; start += partsPerBatch) {
         final parts = ordered
             .skip(start)
-            .take(_migrationPartsPerBatch)
+            .take(partsPerBatch)
             .toList(growable: false);
-        final expectedCount = math.min(
-          _migrationPartsPerBatch,
-          totalParts - start,
-        );
+        final expectedCount = math.min(partsPerBatch, totalParts - start);
         if (parts.length == expectedCount &&
             parts.every(
               (part) => part.state == rust_sync.MigrationPartState.completed,

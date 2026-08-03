@@ -14,6 +14,64 @@ const MIGRATION_TEST_PASSWORD: &[u8] = b"correct horse battery staple";
 const MIGRATION_TEST_SALT: &str = "AQIDBAUGBwgJCgsMDQ4PEA==";
 
 #[test]
+fn draftless_denomination_request_replays_approved_targets() {
+    let approved_schedule = vec![
+        migration::MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 5_000,
+            block_offset: 4,
+        },
+        migration::MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 5_000,
+            block_offset: 8,
+        },
+    ];
+
+    assert_eq!(
+        migration_target_values_for_request(None, Some(&approved_schedule)).unwrap(),
+        Some(vec![5_000, 5_000]),
+    );
+}
+
+#[test]
+fn draft_replay_uses_persisted_targets_instead_of_legacy_schedule_order() {
+    let draft = migration::ActiveRun {
+        run_id: "run-1".to_string(),
+        phase: migration::PHASE_AWAITING_PREPARATION.to_string(),
+        target_values_zatoshi: vec![5_000, 2_000, 2_000, 1_000],
+        last_error: None,
+    };
+    let legacy_schedule = vec![
+        migration::MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 2_000,
+            block_offset: 4,
+        },
+        migration::MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 5_000,
+            block_offset: 8,
+        },
+        migration::MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 2_000,
+            block_offset: 12,
+        },
+        migration::MigrationScheduleEntry {
+            part_index: None,
+            value_zatoshi: 1_000,
+            block_offset: 16,
+        },
+    ];
+
+    assert_eq!(
+        migration_target_values_for_request(Some(&draft), Some(&legacy_schedule)).unwrap(),
+        Some(draft.target_values_zatoshi)
+    );
+}
+
+#[test]
 fn migration_stop_preserves_zero_as_the_no_expiry_sentinel() {
     assert!(!migration_stop_candidate_is_expired(0, u32::MAX));
     assert!(!migration_stop_candidate_is_expired(200, 199));
@@ -405,7 +463,7 @@ fn migration_anchor_counts_empty_buckets_with_the_same_root_once() {
 
 #[test]
 fn keystone_migration_signing_accepts_multiple_firmware_rounds() {
-    let messages = (0..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
+    let messages = (0..=crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES)
         .map(|index| KeystoneMigrationMessage {
             id: format!("message-{index}"),
             redacted_pczt: vec![index as u8, 1],

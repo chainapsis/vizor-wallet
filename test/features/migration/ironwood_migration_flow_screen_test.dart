@@ -3450,6 +3450,45 @@ void main() {
     expect(ringPainter.reduceMotion, isTrue);
   });
 
+  testWidgets('Keystone status groups part 41 into signing batch two', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _privateStatusHarness(
+        status: _migrationStatus(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          activeRunId: 'run-keystone-batch-two',
+          targetValuesZatoshi: List<int>.filled(41, 100_000_000),
+          totalCount: 41,
+          signedChildPcztCount: 40,
+          currentSigningPartIndices: const [40],
+          parts: [
+            for (var index = 0; index < 41; index++)
+              _migrationPart(
+                index,
+                100_000_000,
+                index < 40
+                    ? rust_sync.MigrationPartState.completed
+                    : rust_sync.MigrationPartState.scheduled,
+                scheduleOrder: index == 40 ? 0 : index + 1,
+              ),
+          ],
+        ),
+        activeAccountIsHardware: true,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Sign Batch #2'), findsOneWidget);
+    expect(find.text('Sign Batch #5'), findsNothing);
+  });
+
   testWidgets('private status routes Keystone ready state to batch signing', (
     tester,
   ) async {
@@ -6201,7 +6240,7 @@ rust_sync.OrchardMigrationPrivatePlan _privatePlan({
     plannedBatchCount: 1,
     denominationSplitStageCount: denominationSplitStageCount,
     denominationSplitLayerCount: denominationSplitStageCount,
-    signingBatchLimit: 35,
+    signingBatchLimit: 40,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     proofReadinessDelayBlocks: 146,
@@ -6301,7 +6340,7 @@ rust_sync.MigrationStatus _migrationStatus({
     signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: canAbandon,
-    signingBatchLimit: 35,
+    signingBatchLimit: 40,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
@@ -6397,7 +6436,7 @@ rust_sync.MigrationStatus _status() {
     signedChildPcztCount: 0,
     pendingSplitStageCount: 0,
     canAbandon: false,
-    signingBatchLimit: 35,
+    signingBatchLimit: 40,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     scheduledBroadcasts: const [],

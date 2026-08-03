@@ -308,6 +308,7 @@ fn prepare_software_migration_run(
     account_uuid: &str,
     seed: SecretVec<u8>,
     approved_schedule: &[super::migration::MigrationScheduleEntry],
+    target_values_zatoshi: Option<&[u64]>,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
     migration_timing_policy: super::migration::MigrationTimingPolicy,
 ) -> Result<Option<PreparedSoftwareMigrationRun>, String> {
@@ -318,6 +319,7 @@ fn prepare_software_migration_run(
         account_uuid,
         preparation_timing_policy,
         migration_timing_policy,
+        target_values_zatoshi,
     )?
     else {
         return Ok(None);

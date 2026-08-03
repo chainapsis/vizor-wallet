@@ -61,10 +61,16 @@ MobileIronwoodMigrationAttention? mobileIronwoodMigrationAttention(
     );
   }
   if (status.phase == kIronwoodMigrationReadyToMigratePhase) {
-    if (isHardware && status.signedChildPcztCount <= 0) {
+    if (isHardware && migrationRequiresKeystoneSignature(status)) {
+      final signingPartIndices = status.currentSigningPartIndices;
       return MobileIronwoodMigrationAttention(
         kind: MobileIronwoodMigrationAttentionKind.signature,
-        count: math.max(1, status.totalCount),
+        count: math.max(
+          1,
+          signingPartIndices == null
+              ? status.totalCount
+              : signingPartIndices.length,
+        ),
       );
     }
     final nextActionHeight = status.nextActionHeight;
@@ -106,16 +112,22 @@ String mobileIronwoodMigrationAttentionFingerprint({
   required rust_sync.MigrationStatus status,
   required MobileIronwoodMigrationAttention attention,
 }) {
-  final actionIdentity = switch (attention.kind) {
-    MobileIronwoodMigrationAttentionKind.signature ||
-    MobileIronwoodMigrationAttentionKind.continueMigration =>
+  final needsInputPartIndices =
       status.parts
           .where(
             (part) => part.state == rust_sync.MigrationPartState.needsInput,
           )
           .map((part) => part.partIndex)
           .toList()
-        ..sort(),
+        ..sort();
+  final signingPartIndices = status.currentSigningPartIndices?.toList() ?? []
+    ..sort();
+  final actionIdentity = switch (attention.kind) {
+    MobileIronwoodMigrationAttentionKind.signature ||
+    MobileIronwoodMigrationAttentionKind.continueMigration =>
+      needsInputPartIndices.isNotEmpty
+          ? needsInputPartIndices
+          : signingPartIndices,
     MobileIronwoodMigrationAttentionKind.proof => [
       status.nextActionPartIndex,
       status.nextActionHeight,

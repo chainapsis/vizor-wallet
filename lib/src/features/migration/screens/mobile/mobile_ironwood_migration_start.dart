@@ -96,6 +96,7 @@ _continuePrivateMigrationAfterNotificationGate(
     if (!_privatePlanUsesCombinedKeystoneSigning(plan)) {
       final request = await service.prepareKeystoneDenominationPrivateMigration(
         accountUuid: accountUuid,
+        approvedSchedule: plan.scheduledTransfers,
       );
       if (request.messages.isEmpty) {
         await service.completeKeystoneDenominationPrivateMigration(

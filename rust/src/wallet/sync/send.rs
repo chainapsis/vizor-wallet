@@ -99,7 +99,6 @@ use crate::wallet::db::{
     with_wallet_db_write_lock, READ_DB_BUSY_TIMEOUT,
 };
 use crate::wallet::keys::parse_account_uuid;
-use crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_MESSAGES;
 use crate::wallet::network::WalletNetwork;
 use crate::wallet::sync_engine;
 
@@ -1526,6 +1525,8 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             super::migration::configured_timing_policy(network),
         ),
     };
+    let target_values_zatoshi =
+        migration_target_values_for_request(draft_run.as_ref(), Some(&signing_schedule))?;
     let prepared = with_wallet_db_write_lock("send.migration.create_denominations", move || {
         prepare_software_migration_run(
             db_path,
@@ -1533,6 +1534,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             account_uuid,
             seed,
             &signing_schedule,
+            target_values_zatoshi.as_deref(),
             preparation_policy_for_build,
             migration_policy_for_build,
         )

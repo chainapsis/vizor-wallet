@@ -1769,20 +1769,23 @@ pub fn broadcast_one_due_orchard_migration_transaction(
     })
 }
 
-/// Prepares denomination PCZTs with expiry heights derived from their planned
-/// broadcast heights.
+/// Prepares denomination PCZTs for the approved schedule, with expiry heights
+/// derived from their planned broadcast heights.
 pub fn prepare_orchard_migration_denominations_pczt(
     db_path: String,
     network: String,
     account_uuid: String,
+    approved_schedule: Vec<MigrationScheduledTransfer>,
     space_preparation_broadcasts: bool,
 ) -> Result<KeystoneMigrationSigningRequest, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
+        let approved_schedule = to_wallet_migration_schedule(approved_schedule);
         let request = wallet_sync::prepare_orchard_migration_denominations_pczt(
             &db_path,
             network,
             &account_uuid,
+            (!approved_schedule.is_empty()).then_some(approved_schedule.as_slice()),
             wallet_sync::PreparationTimingPolicy::from_spacing_enabled(
                 space_preparation_broadcasts,
             ),

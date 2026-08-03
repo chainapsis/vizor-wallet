@@ -1,7 +1,8 @@
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DenominationPlan {
-    /// Canonical ZIP 318 denominations to be emitted as Ironwood outputs.
-    /// The note-preparation outputs that fund these are `denomination + fee`.
+    /// Canonical ZIP 318 denominations in non-increasing migration part order.
+    /// This matches prepared funding notes reloaded in descending value order.
+    /// Each funding note is `denomination + fee`.
     pub migration_outputs: Vec<u64>,
     pub orchard_change: Option<u64>,
     pub split_fee_zatoshi: u64,

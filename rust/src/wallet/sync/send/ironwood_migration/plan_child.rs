@@ -4,6 +4,22 @@ pub(crate) fn get_orchard_migration_private_plan(
     account_uuid: &str,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
 ) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
+    get_orchard_migration_private_plan_for_targets(
+        db_path,
+        network,
+        account_uuid,
+        preparation_timing_policy,
+        None,
+    )
+}
+
+fn get_orchard_migration_private_plan_for_targets(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    preparation_timing_policy: super::migration::PreparationTimingPolicy,
+    target_values_zatoshi: Option<&[u64]>,
+) -> Result<Option<OrchardMigrationPrivatePlan>, String> {
     let db = open_wallet_db_for_read(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
     let account_id = parse_account_uuid(account_uuid)?;
@@ -59,12 +75,21 @@ pub(crate) fn get_orchard_migration_private_plan(
             0,
         )
         .map_err(|e| format!("Failed to estimate padded denomination fee: {e}"))?;
-    let padded_plan = super::migration::plan_padded_denominations(
-        &input_values,
-        u64::from(split_fee),
-        u64::from(migration_fee_estimate),
-        MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-    )?;
+    let padded_plan = match target_values_zatoshi {
+        Some(target_values) => super::migration::plan_padded_denominations_for_targets(
+            &input_values,
+            target_values,
+            u64::from(split_fee),
+            u64::from(migration_fee_estimate),
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        )?,
+        None => super::migration::plan_padded_denominations(
+            &input_values,
+            u64::from(split_fee),
+            u64::from(migration_fee_estimate),
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        )?,
+    };
     let Some(padded_plan) = padded_plan else {
         return Ok(None);
     };
@@ -122,7 +147,7 @@ pub(crate) fn get_orchard_migration_private_plan(
         planned_batch_count,
         denomination_split_stage_count,
         denomination_split_layer_count,
-        signing_batch_limit: ZCASH_SIGN_BATCH_MAX_MESSAGES as u32,
+        signing_batch_limit: super::migration::MIGRATION_KEYSTONE_BATCH_MAX_PARTS,
         schedule_mean_delay_blocks:
             super::migration::schedule_parameters_for_part_count(
                 network,

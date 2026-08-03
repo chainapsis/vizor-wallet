@@ -537,6 +537,7 @@ rust_sync.MigrationStatus _status({
   int confirmedTxCount = 1,
   int signedChildPcztCount = 0,
   int pendingSplitStageCount = 2,
+  int signingBatchLimit = 12,
   String? message,
   List<rust_sync.MigrationScheduledBroadcast>? scheduledBroadcasts,
 }) {
@@ -556,7 +557,7 @@ rust_sync.MigrationStatus _status({
     signedChildPcztCount: signedChildPcztCount,
     pendingSplitStageCount: pendingSplitStageCount,
     canAbandon: false,
-    signingBatchLimit: 12,
+    signingBatchLimit: signingBatchLimit,
     scheduleMeanDelayBlocks: 144,
     scheduleMaxDelayBlocks: 576,
     nextActionHeight: nextActionHeight,
@@ -1144,7 +1145,12 @@ IronwoodMigrationService _migrationService({
             onStartImmediate?.call(accountUuid) ??
             Future.value(_migrationResult()),
     prepareKeystoneDenominationMigration:
-        ({required dbPath, required network, required accountUuid}) =>
+        ({
+          required dbPath,
+          required network,
+          required accountUuid,
+          required approvedSchedule,
+        }) =>
             onPrepareKeystoneDenominations?.call(accountUuid) ??
             Future.value(_keystoneDenominationRequest()),
     completeKeystoneDenominationMigration:
@@ -3587,17 +3593,21 @@ void main() {
         getSessionPassword: () => 'test-password',
         isMobile: () => true,
         prepareKeystoneDenominationMigration:
-            ({required dbPath, required network, required accountUuid}) async =>
-                rust_sync.KeystoneMigrationSigningRequest(
-                  requestId: 'partial-success-request',
-                  messages: [
-                    rust_sync.KeystoneMigrationMessage(
-                      id: 'split-1',
-                      redactedPczt: Uint8List.fromList([1]),
-                    ),
-                  ],
-                  signingBatchLimit: 35,
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+            }) async => rust_sync.KeystoneMigrationSigningRequest(
+              requestId: 'partial-success-request',
+              messages: [
+                rust_sync.KeystoneMigrationMessage(
+                  id: 'split-1',
+                  redactedPczt: Uint8List.fromList([1]),
                 ),
+              ],
+              signingBatchLimit: 40,
+            ),
         completeKeystoneDenominationMigration:
             ({
               required dbPath,
@@ -3720,7 +3730,7 @@ void main() {
                       redactedPczt: Uint8List.fromList([1]),
                     ),
                   ],
-                  signingBatchLimit: 35,
+                  signingBatchLimit: 40,
                 ),
         completeKeystoneBatchMigration:
             ({
@@ -3948,7 +3958,12 @@ void main() {
         ),
         getEndpoint: () => defaultRpcEndpointConfig('main'),
         prepareKeystoneDenominationMigration:
-            ({required dbPath, required network, required accountUuid}) async {
+            ({
+              required dbPath,
+              required network,
+              required accountUuid,
+              required approvedSchedule,
+            }) async {
               prepareCount += 1;
               return rust_sync.KeystoneMigrationSigningRequest(
                 requestId: 'request-$prepareCount',
@@ -4260,20 +4275,18 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('groups migration parts into eight-part action batches', (
+  testWidgets('continues Keystone signing with part 41 in batch two', (
     tester,
   ) async {
     _useMobileViewport(tester);
     final parts = [
-      for (var index = 0; index < 10; index++)
+      for (var index = 0; index < 41; index++)
         rust_sync.MigrationPartStatus(
           partIndex: index,
-          scheduleOrder: index == 8 ? 0 : index + 1,
+          scheduleOrder: index,
           valueZatoshi: BigInt.from(100_000_000),
-          state: index < 8
-              ? rust_sync.MigrationPartState.completed
-              : rust_sync.MigrationPartState.needsInput,
-          confirmationCount: index < 8 ? 3 : 0,
+          state: rust_sync.MigrationPartState.preparing,
+          confirmationCount: 0,
           confirmationTarget: 3,
         ),
     ];
@@ -4281,19 +4294,24 @@ void main() {
       _productionApp(
         initialLocation: '/migration/private/status',
         migrationService: _migrationService(),
+        hardware: true,
         status: _status(
           phase: kIronwoodMigrationReadyToMigratePhase,
           parts: parts,
-          targetValues: List<int>.filled(10, 100_000_000),
-          currentSigningPartIndices: const [8, 9],
+          targetValues: List<int>.filled(41, 100_000_000),
+          pendingTxCount: 0,
+          confirmedTxCount: 0,
+          signedChildPcztCount: 40,
+          currentSigningPartIndices: const [40],
+          signingBatchLimit: 40,
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.text('Ready to sign'), findsOneWidget);
     expect(find.text('Batch #2'), findsOneWidget);
-    expect(find.text('2 ZEC (20%)'), findsOneWidget);
-    expect(find.text('Prepare batch #2'), findsOneWidget);
+    expect(find.text('1 ZEC (2%)'), findsOneWidget);
+    expect(find.text('Sign migration transactions'), findsOneWidget);
     final ring = tester.widget<CustomPaint>(
       find.byWidgetPredicate(
         (widget) =>
@@ -4302,16 +4320,119 @@ void main() {
       ),
     );
     final painter = ring.painter as dynamic;
-    expect(painter.segments, 10);
-    expect(painter.completedSegments, {
-      for (var index = 1; index <= 8; index++) index,
-    });
-    expect(painter.highlightedSegments, {0, 9});
+    expect(painter.segments, 41);
+    expect(painter.completedSegments, isEmpty);
+    expect(painter.highlightedSegments, {40});
     expect(painter.visibleSegmentGap, 4);
     expect(painter.highlightedSegmentOffset, 3.5);
     expect(painter.highlightedOuterOutlineWidth, 18);
     expect(painter.highlightedOutlineWidth, 16);
-    expect(tester.getCenter(find.text('2 ZEC (20%)')).dx, greaterThan(250));
+    expect(tester.getCenter(find.text('1 ZEC (2%)')).dx, greaterThan(250));
+    expect(
+      mobileIronwoodMigrationAttention(
+        _status(
+          phase: kIronwoodMigrationReadyToMigratePhase,
+          parts: parts,
+          targetValues: List<int>.filled(41, 100_000_000),
+          pendingTxCount: 0,
+          confirmedTxCount: 0,
+          signedChildPcztCount: 40,
+          currentSigningPartIndices: const [40],
+          signingBatchLimit: 40,
+        ),
+        currentHeight: 3_000_000,
+        broadcastHeight: 3_000_000,
+        isHardware: true,
+      )?.count,
+      1,
+    );
+  });
+
+  testWidgets(
+    'labels a partial initial Keystone signing request as batch one',
+    (tester) async {
+      _useMobileViewport(tester);
+      final parts = [
+        for (var index = 0; index < 80; index++)
+          rust_sync.MigrationPartStatus(
+            partIndex: index,
+            scheduleOrder: index,
+            valueZatoshi: BigInt.from(100_000_000),
+            state: rust_sync.MigrationPartState.preparing,
+            confirmationCount: 0,
+            confirmationTarget: 3,
+          ),
+      ];
+      await tester.pumpWidget(
+        _productionApp(
+          initialLocation: '/migration/private/status',
+          migrationService: _migrationService(),
+          hardware: true,
+          status: _status(
+            phase: kIronwoodMigrationReadyToMigratePhase,
+            parts: parts,
+            targetValues: List<int>.filled(80, 100_000_000),
+            pendingTxCount: 0,
+            confirmedTxCount: 0,
+            currentSigningPartIndices: List<int>.generate(40, (index) => index),
+            signingBatchLimit: 40,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('All transactions'), findsNothing);
+      expect(find.text('Batch #1'), findsOneWidget);
+      expect(find.text('40 ZEC (50%)'), findsOneWidget);
+      expect(find.text('Sign migration transactions'), findsOneWidget);
+    },
+  );
+
+  test('distinguishes equal-sized Keystone signing batches', () {
+    final parts = [
+      for (var index = 0; index < 80; index++)
+        rust_sync.MigrationPartStatus(
+          partIndex: index,
+          scheduleOrder: index,
+          valueZatoshi: BigInt.from(100_000_000),
+          state: rust_sync.MigrationPartState.preparing,
+          confirmationCount: 0,
+          confirmationTarget: 3,
+        ),
+    ];
+    String fingerprintFor(List<int> signingPartIndices, int signedCount) {
+      final status = _status(
+        phase: kIronwoodMigrationReadyToMigratePhase,
+        parts: parts,
+        targetValues: List<int>.filled(80, 100_000_000),
+        pendingTxCount: 0,
+        confirmedTxCount: 0,
+        signedChildPcztCount: signedCount,
+        currentSigningPartIndices: signingPartIndices,
+        signingBatchLimit: 40,
+      );
+      final attention = mobileIronwoodMigrationAttention(
+        status,
+        currentHeight: 3_000_000,
+        broadcastHeight: 3_000_000,
+        isHardware: true,
+      )!;
+      expect(attention.count, 40);
+      return mobileIronwoodMigrationAttentionFingerprint(
+        accountUuid: 'account-1',
+        runId: status.activeRunId!,
+        status: status,
+        attention: attention,
+      );
+    }
+
+    final first = fingerprintFor(List<int>.generate(40, (index) => index), 0);
+    final second = fingerprintFor(
+      List<int>.generate(40, (index) => index + 40),
+      40,
+    );
+
+    expect(first, isNot(second));
   });
 
   testWidgets('keeps action batch selection in part-index order', (
@@ -4340,6 +4461,7 @@ void main() {
           parts: parts,
           targetValues: List<int>.filled(10, 100_000_000),
           currentSigningPartIndices: const [2, 8],
+          signingBatchLimit: 40,
         ),
       ),
     );
@@ -4989,6 +5111,7 @@ void main() {
             signedChildPcztCount: 9,
             nextActionHeight: 3_000_100,
             nextActionPartIndex: 8,
+            signingBatchLimit: 8,
             scheduledBroadcasts: [
               rust_sync.MigrationScheduledBroadcast(
                 txidHex: 'tx-0',

@@ -245,6 +245,7 @@ fn create_padded_orchard_denomination_pczts(
     account_uuid: &str,
     preparation_timing_policy: super::migration::PreparationTimingPolicy,
     migration_timing_policy: super::migration::MigrationTimingPolicy,
+    target_values_zatoshi: Option<&[u64]>,
 ) -> Result<Option<CreatedPaddedDenominationPczts>, String> {
     let mut db = open_wallet_db(db_path, network)?;
     let fee_rule = ConservativeZip317FeeRule;
@@ -321,12 +322,21 @@ fn create_padded_orchard_denomination_pczts(
             0,
         )
         .map_err(|e| format!("Failed to estimate padded denomination fee: {e}"))?;
-    let padded_plan = super::migration::plan_padded_denominations(
-        &input_values,
-        u64::from(split_fee),
-        u64::from(migration_fee_estimate),
-        MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
-    )?
+    let padded_plan = match target_values_zatoshi {
+        Some(target_values) => super::migration::plan_padded_denominations_for_targets(
+            &input_values,
+            target_values,
+            u64::from(split_fee),
+            u64::from(migration_fee_estimate),
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        )?,
+        None => super::migration::plan_padded_denominations_without_refinement(
+            &input_values,
+            u64::from(split_fee),
+            u64::from(migration_fee_estimate),
+            MIN_IRONWOOD_MIGRATION_OUTPUT_ZATOSHI,
+        )?,
+    }
     .ok_or("Insufficient spendable Orchard funds for denomination split")?;
     let stage_layers = padded_plan
         .stages
