@@ -2227,13 +2227,10 @@ fn insert_pending_txs_with_tx(
         }
     }
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
 
     for (pending, block_offset, schedule_origin) in scheduled_pending {
-        let encrypted_raw_tx = secret_payload::encrypt_payload(
-            Zeroizing::new(pending.raw_tx),
-            password,
-            salt.as_slice(),
-        )?;
+        let encrypted_raw_tx = payload_key.encrypt(Zeroizing::new(pending.raw_tx))?;
         let metadata_json = serde_json::to_string(&pending.metadata)
             .map_err(|e| format!("Encode migration pending metadata: {e}"))?;
         let scheduled_at_ms = scheduled_start_ms
@@ -2366,6 +2363,7 @@ fn insert_signed_child_pczts_with_tx(
         SignedChildInsertMode::Replacement => None,
     };
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration PCZT salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     for child in signed_children {
         let canonical_expiry = zip318_canonical_migration_expiry_height(child.scheduled_height)?;
         if child.expiry_height != canonical_expiry {
@@ -2400,25 +2398,17 @@ fn insert_signed_child_pczts_with_tx(
             }
         }
         if matches!(mode, SignedChildInsertMode::Replacement) {
-            let recovery_origin = recovery_origin
-                .ok_or("Migration recovery schedule origin is missing")?;
+            let recovery_origin =
+                recovery_origin.ok_or("Migration recovery schedule origin is missing")?;
             child
                 .scheduled_height
                 .checked_sub(recovery_origin)
                 .ok_or("Signed migration schedule starts below zero")?;
         }
-        let encrypted_base_pczt = secret_payload::encrypt_payload(
-            Zeroizing::new(child.base_pczt),
-            password,
-            salt.as_slice(),
-        )?;
-        let encrypted_compact_sigs = secret_payload::encrypt_payload(
-            Zeroizing::new(crate::wallet::keystone::encode_compact_action_sigs(
-                &child.sigs,
-            )?),
-            password,
-            salt.as_slice(),
-        )?;
+        let encrypted_base_pczt = payload_key.encrypt(Zeroizing::new(child.base_pczt))?;
+        let encrypted_compact_sigs = payload_key.encrypt(Zeroizing::new(
+            crate::wallet::keystone::encode_compact_action_sigs(&child.sigs)?,
+        ))?;
         let selected_note_json = serde_json::to_string(&child.selected_note)
             .map_err(|e| format!("Encode migration signed PCZT note: {e}"))?;
         let metadata_json = serde_json::to_string(&child.metadata)
@@ -2515,6 +2505,7 @@ pub(crate) fn signed_child_pczts_for_run(
     salt_base64: &str,
 ) -> Result<Vec<SignedMigrationPczt>, String> {
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration PCZT salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
@@ -2575,16 +2566,8 @@ pub(crate) fn signed_child_pczts_for_run(
                 "Signed migration child {message_id} expiry is not canonical for scheduled height {scheduled_height}"
             ));
         }
-        let base_pczt = secret_payload::decrypt_payload(
-            encrypted_base_pczt.as_bytes(),
-            password,
-            salt.as_slice(),
-        )?;
-        let sigs_blob = secret_payload::decrypt_payload(
-            encrypted_compact_sigs.as_bytes(),
-            password,
-            salt.as_slice(),
-        )?;
+        let base_pczt = payload_key.decrypt(encrypted_base_pczt.as_bytes())?;
+        let sigs_blob = payload_key.decrypt(encrypted_compact_sigs.as_bytes())?;
         let sigs = crate::wallet::keystone::decode_compact_action_sigs(sigs_blob.as_slice())?;
         let selected_note = serde_json::from_str::<PreparedOrchardNoteRef>(&selected_note_json)
             .map_err(|e| format!("Decode signed migration PCZT note: {e}"))?;
@@ -3160,6 +3143,7 @@ pub(crate) fn export_scheduled_migration_outbox(
             .map(|ready_height| persisted.unwrap_or(ready_height).max(ready_height))
     };
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     let mut stmt = conn
         .prepare_cached(&format!(
             "SELECT part_index, txid_hex, encrypted_raw_tx,
@@ -3215,11 +3199,7 @@ pub(crate) fn export_scheduled_migration_outbox(
                 "Migration outbox transaction {txid_hex} expiry is not canonical for scheduled height {scheduled_height}"
             ));
         }
-        let raw_tx = secret_payload::decrypt_payload(
-            encrypted_raw_tx.as_bytes(),
-            password,
-            salt.as_slice(),
-        )?;
+        let raw_tx = payload_key.decrypt(encrypted_raw_tx.as_bytes())?;
         let item_id = txid_hex.to_ascii_lowercase();
         items.push(MigrationOutboxItem {
             item_id,
@@ -3925,6 +3905,7 @@ pub(crate) fn replace_resigned_pending_parts(
         .map_err(|e| format!("Decode replacement migration schedule: {e}"))?;
     let scheduled_start_ms = now_ms()?;
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin migration part replacement: {e}"))?;
@@ -4017,11 +3998,7 @@ pub(crate) fn replace_resigned_pending_parts(
             .scheduled_height
             .checked_sub(schedule_start_height)
             .ok_or("Replacement migration schedule starts below zero")?;
-        let encrypted_raw_tx = secret_payload::encrypt_payload(
-            Zeroizing::new(pending.raw_tx),
-            password,
-            salt.as_slice(),
-        )?;
+        let encrypted_raw_tx = payload_key.encrypt(Zeroizing::new(pending.raw_tx))?;
         let metadata_json = serde_json::to_string(&pending.metadata)
             .map_err(|e| format!("Encode replacement migration metadata: {e}"))?;
         // `rebuild_block_offset` counts from the generation origin and so
@@ -4795,6 +4772,7 @@ pub(crate) fn broadcasted_pending_txs_missing_local_identity(
     salt_base64: &str,
 ) -> Result<Vec<DuePendingMigrationTx>, String> {
     let salt = secret_payload::decode_base64(salt_base64.as_bytes(), "migration pending salt")?;
+    let payload_key = secret_payload::PayloadKey::new(password, salt.as_slice());
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let mut stmt = conn
@@ -4820,11 +4798,7 @@ pub(crate) fn broadcasted_pending_txs_missing_local_identity(
         if local_transaction_raw(&conn, &txid_hex)?.is_some() {
             continue;
         }
-        let raw_tx = secret_payload::decrypt_payload(
-            encrypted_raw_tx.as_bytes(),
-            password,
-            salt.as_slice(),
-        )?;
+        let raw_tx = payload_key.decrypt(encrypted_raw_tx.as_bytes())?;
         missing.push(DuePendingMigrationTx {
             txid_hex,
             raw_tx: raw_tx.to_vec(),

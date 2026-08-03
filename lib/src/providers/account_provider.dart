@@ -737,6 +737,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     // no-ops the next, already-satisfied DB delete).
     if (dbDeleted) {
       try {
+        await rust_wallet.evictWalletSummaryCache(dbPath: dbPath);
+      } catch (e, st) {
+        // The durable reset already succeeded. Cache cleanup is best-effort
+        // and must not prevent the secure-storage wipe from completing.
+        log('resetWallet: failed to evict wallet summary cache: $e\n$st');
+      }
+      try {
         await _storage.deleteAll();
       } catch (e, st) {
         recordError('secure storage wipe', e, st);

@@ -229,6 +229,10 @@ Future<void> deleteAccount({
   accountUuid: accountUuid,
 );
 
+/// Drop process-local wallet summary data after the wallet DB is deleted.
+Future<void> evictWalletSummaryCache({required String dbPath}) =>
+    RustLib.instance.api.crateApiWalletEvictWalletSummaryCache(dbPath: dbPath);
+
 /// Get the Unified Address for a specific account (or first account if uuid is None).
 Future<String> getUnifiedAddress({
   required String dbPath,
