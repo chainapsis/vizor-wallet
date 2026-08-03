@@ -416,8 +416,7 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                         status: migrationStatus!,
                         isHardware: activeAccount?.isHardware ?? false,
                         orchardBalance:
-                            accountSync.displayOrchardBalance +
-                            accountSync.displayOrchardPendingBalance,
+                            accountSync.displayOrchardHoldingsBalance,
                         ironwoodBalance:
                             accountSync.displayIronwoodBalance +
                             accountSync.displayIronwoodPendingBalance,

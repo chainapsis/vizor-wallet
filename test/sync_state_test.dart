@@ -188,6 +188,8 @@ void main() {
     expect(merged.scannedHeight, 75);
     expect(merged.chainTipHeight, 100);
     expect(merged.spendableBalance, BigInt.from(5));
+    expect(merged.orchardLockedBalance, BigInt.from(10));
+    expect(merged.displayOrchardLockedBalance, BigInt.zero);
     expect(merged.displaySpendableBalance, BigInt.from(50));
     expect(merged.displayIronwoodBalance, BigInt.zero);
     expect(
@@ -213,6 +215,8 @@ void main() {
       displayOrchardBalance: BigInt.from(45),
       orchardPendingBalance: BigInt.zero,
       displayOrchardPendingBalance: BigInt.from(5),
+      orchardLockedBalance: BigInt.zero,
+      displayOrchardLockedBalance: BigInt.from(5),
       totalBalance: BigInt.zero,
       displayTotalBalance: BigInt.from(100),
       displayShieldedBalance: BigInt.from(95),
@@ -232,6 +236,7 @@ void main() {
     final completed = syncing.withFetchedAccountData(
       balance: _balance(
         orchard: BigInt.from(3),
+        orchardLocked: BigInt.from(7),
         ironwood: BigInt.from(42),
         spendable: BigInt.from(45),
         total: BigInt.from(45),
@@ -244,6 +249,8 @@ void main() {
     expect(syncing.displayIronwoodPendingBalance, BigInt.from(5));
     expect(syncing.displayOrchardBalance, BigInt.from(45));
     expect(syncing.displayOrchardPendingBalance, BigInt.from(5));
+    expect(syncing.displayOrchardLockedBalance, BigInt.from(5));
+    expect(syncing.displayOrchardHoldingsBalance, BigInt.from(55));
     expect(syncing.displaySpendableBalance, BigInt.from(90));
     expect(syncing.displayShieldedBalance, BigInt.from(95));
     expect(syncing.displayTotalBalance, BigInt.from(100));
@@ -256,6 +263,8 @@ void main() {
     expect(completed.displayIronwoodPendingBalance, BigInt.zero);
     expect(completed.displayOrchardBalance, BigInt.from(3));
     expect(completed.displayOrchardPendingBalance, BigInt.zero);
+    expect(completed.displayOrchardLockedBalance, BigInt.from(7));
+    expect(completed.displayOrchardHoldingsBalance, BigInt.from(10));
     expect(completed.displaySpendableBalance, BigInt.from(45));
     expect(completed.displayShieldedBalance, BigInt.from(45));
     expect(completed.displayTotalBalance, BigInt.from(45));
@@ -598,6 +607,7 @@ void main() {
 
 rust_sync.WalletBalance _balance({
   required BigInt orchard,
+  BigInt? orchardLocked,
   required BigInt ironwood,
   required BigInt spendable,
   required BigInt total,
@@ -610,7 +620,7 @@ rust_sync.WalletBalance _balance({
     ironwood: ironwood,
     transparentLocked: BigInt.zero,
     saplingLocked: BigInt.zero,
-    orchardLocked: BigInt.zero,
+    orchardLocked: orchardLocked ?? BigInt.zero,
     ironwoodLocked: BigInt.zero,
     transparentPending: BigInt.zero,
     saplingPending: BigInt.zero,

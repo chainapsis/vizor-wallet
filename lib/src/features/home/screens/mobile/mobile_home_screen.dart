@@ -1212,11 +1212,14 @@ class _HomeContentState extends ConsumerState<_HomeContent> {
                     preparing: isIronwoodMigrationPreparingPhase(
                       widget.ironwoodMigrationCta.status?.phase,
                     ),
+                    waitingForConfirmation:
+                        sync.displayOrchardHoldingsBalance == BigInt.zero &&
+                        isIronwoodMigrationWaitingForConfirmation(
+                          widget.ironwoodMigrationCta.status,
+                        ),
                     attentionKind: migrationAttention?.kind,
                     actionNeededCount: migrationAttention?.count ?? 0,
-                    remainingText: _mobileIronwoodRemainingAmountText(
-                      widget.ironwoodMigrationCta.status,
-                    ),
+                    remainingText: _mobileIronwoodRemainingAmountText(sync),
                     onTap: () {
                       final target = migrationRequired
                           ? '/migration/intro'
@@ -1509,17 +1512,8 @@ class _BalanceCard extends StatelessWidget {
   }
 }
 
-String? _mobileIronwoodRemainingAmountText(rust_sync.MigrationStatus? status) {
-  if (status == null) return null;
-  final remaining = status.parts.isNotEmpty
-      ? status.parts
-            .where(
-              (part) => part.state != rust_sync.MigrationPartState.completed,
-            )
-            .fold<BigInt>(BigInt.zero, (sum, part) => sum + part.valueZatoshi)
-      : status.scheduledBroadcasts
-            .where((item) => item.status.toLowerCase() != 'confirmed')
-            .fold<BigInt>(BigInt.zero, (sum, item) => sum + item.valueZatoshi);
+String? _mobileIronwoodRemainingAmountText(SyncState sync) {
+  final remaining = sync.displayOrchardHoldingsBalance;
   if (remaining == BigInt.zero) return null;
   return ZecAmount.fromZatoshi(remaining).compactBalance.amountText;
 }

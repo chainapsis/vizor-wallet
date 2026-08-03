@@ -296,10 +296,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final displayedShieldedBalance = showsIronwoodOnlyBalance
         ? ironwoodBalance
         : totalShieldedBalance;
-    final migratingBalance = _remainingMigrationBalance(
-      ironwoodHomeMigrationCta,
-      fallback: sync.displayOrchardBalance + sync.displayOrchardPendingBalance,
-    );
+    final migratingBalance = sync.displayOrchardHoldingsBalance;
+    final waitingForMigrationConfirmation =
+        migratingBalance == BigInt.zero &&
+        isIronwoodMigrationWaitingForConfirmation(
+          ironwoodHomeMigrationCta.status,
+        );
     final zecUsdUnitPrice = ref.watch(zecHomeUsdUnitPriceProvider);
     final shieldedFiatBalanceText = _formatFiatBalance(
       displayedShieldedBalance,
@@ -387,6 +389,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 shieldedFiatBalanceText: shieldedFiatBalanceText,
                 priceChange24hPct: priceChange24hPct,
                 migratingBalanceText: formatZecAmount(migratingBalance),
+                waitingForMigrationConfirmation:
+                    waitingForMigrationConfirmation,
                 transparentBalanceText: _formatZec(transparentBalance),
                 hasTransparentBalance: transparentBalance > BigInt.zero,
                 canShieldBalance: canShieldTransparentBalance,
@@ -440,17 +444,6 @@ String? _ironwoodMigrationTargetForCta(IronwoodHomeMigrationCtaState cta) {
   };
 }
 
-BigInt _remainingMigrationBalance(
-  IronwoodHomeMigrationCtaState cta, {
-  required BigInt fallback,
-}) {
-  final parts = cta.status?.parts ?? const <rust_sync.MigrationPartStatus>[];
-  if (parts.isEmpty) return fallback;
-  return parts
-      .where((part) => part.state != rust_sync.MigrationPartState.completed)
-      .fold(BigInt.zero, (sum, part) => sum + part.valueZatoshi);
-}
-
 class _HomePane extends ConsumerStatefulWidget {
   const _HomePane({
     required this.sync,
@@ -463,6 +456,7 @@ class _HomePane extends ConsumerStatefulWidget {
     required this.shieldedFiatBalanceText,
     required this.priceChange24hPct,
     required this.migratingBalanceText,
+    required this.waitingForMigrationConfirmation,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
@@ -487,6 +481,7 @@ class _HomePane extends ConsumerStatefulWidget {
   final String? shieldedFiatBalanceText;
   final double? priceChange24hPct;
   final String migratingBalanceText;
+  final bool waitingForMigrationConfirmation;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
@@ -631,6 +626,7 @@ class _HomePaneState extends ConsumerState<_HomePane> {
       shieldedFiatBalanceText: widget.shieldedFiatBalanceText,
       priceChange24hPct: widget.priceChange24hPct,
       migratingBalanceText: widget.migratingBalanceText,
+      waitingForMigrationConfirmation: widget.waitingForMigrationConfirmation,
       transparentBalanceText: widget.transparentBalanceText,
       hasTransparentBalance: widget.hasTransparentBalance,
       canShieldBalance: widget.canShieldBalance,
@@ -1122,6 +1118,7 @@ class _HomeDesktopPane extends StatelessWidget {
     required this.shieldedFiatBalanceText,
     required this.priceChange24hPct,
     required this.migratingBalanceText,
+    required this.waitingForMigrationConfirmation,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
@@ -1150,6 +1147,7 @@ class _HomeDesktopPane extends StatelessWidget {
   final String? shieldedFiatBalanceText;
   final double? priceChange24hPct;
   final String migratingBalanceText;
+  final bool waitingForMigrationConfirmation;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
@@ -1208,6 +1206,8 @@ class _HomeDesktopPane extends StatelessWidget {
                       shieldedFiatBalanceText: shieldedFiatBalanceText,
                       priceChange24hPct: priceChange24hPct,
                       migratingBalanceText: migratingBalanceText,
+                      waitingForMigrationConfirmation:
+                          waitingForMigrationConfirmation,
                       transparentBalanceText: transparentBalanceText,
                       hasTransparentBalance: hasTransparentBalance,
                       canShieldBalance: canShieldBalance,
@@ -1413,6 +1413,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
     required this.shieldedFiatBalanceText,
     required this.priceChange24hPct,
     required this.migratingBalanceText,
+    required this.waitingForMigrationConfirmation,
     required this.transparentBalanceText,
     required this.hasTransparentBalance,
     required this.canShieldBalance,
@@ -1434,6 +1435,7 @@ class _HomeDesktopBalanceCard extends StatefulWidget {
   final String? shieldedFiatBalanceText;
   final double? priceChange24hPct;
   final String migratingBalanceText;
+  final bool waitingForMigrationConfirmation;
   final String transparentBalanceText;
   final bool hasTransparentBalance;
   final bool canShieldBalance;
@@ -1718,6 +1720,8 @@ class _HomeDesktopBalanceCardState extends State<_HomeDesktopBalanceCard> {
             _HomeDesktopMigrationCtaButton(
               label: migrationRequired
                   ? 'Migrate to Ironwood'
+                  : widget.waitingForMigrationConfirmation
+                  ? 'Waiting for confirmation...'
                   : '${hideAmountIfPrivacyMode('${widget.migratingBalanceText} ZEC', privacyModeEnabled: widget.privacyModeEnabled)} still migrating',
               animateIndicator: widget.animateMigrationCta,
               onTap: widget.onIronwoodMigrationCta,

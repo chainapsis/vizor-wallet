@@ -32,6 +32,19 @@ final kIronwoodMigrationMinimumStartableZatoshi =
     BigInt.from(80000) + // denomination split fee
     BigInt.from(15000); // migration fee
 
+bool isIronwoodMigrationWaitingForConfirmation(
+  rust_sync.MigrationStatus? status,
+) {
+  if (status == null) return false;
+  if (status.parts.any(
+    (part) => part.state == rust_sync.MigrationPartState.confirming,
+  )) {
+    return true;
+  }
+  return status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase ||
+      status.phase == kIronwoodMigrationWaitingConfirmationsPhase;
+}
+
 String ironwoodMigrationAnnouncementSeenStorageKey({
   required String network,
   required String accountUuid,

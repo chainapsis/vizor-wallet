@@ -349,6 +349,7 @@ Widget _app(
 
 SyncState _syncedState({
   BigInt? orchardBalance,
+  BigInt? orchardLockedBalance,
   BigInt? ironwoodBalance,
   BigInt? ironwoodPendingBalance,
   BigInt? transparentBalance,
@@ -361,6 +362,7 @@ SyncState _syncedState({
   percentage: 1.0,
   displayPercentage: 1.0,
   orchardBalance: orchardBalance ?? BigInt.zero,
+  orchardLockedBalance: orchardLockedBalance ?? BigInt.zero,
   ironwoodBalance: ironwoodBalance ?? BigInt.zero,
   ironwoodPendingBalance: ironwoodPendingBalance ?? BigInt.zero,
   transparentBalance: transparentBalance ?? BigInt.zero,
@@ -368,6 +370,31 @@ SyncState _syncedState({
   chainTipHeight: chainTipHeight,
   canShieldTransparentBalance: canShieldTransparentBalance,
 );
+
+rust_sync.MigrationStatus _migrationStatusForPhase(String phase) {
+  return rust_sync.MigrationStatus(
+    phase: phase,
+    activeRunId: 'run-1',
+    targetValuesZatoshi: frb.Uint64List.fromList([200_000_000]),
+    preparedNoteCount: 1,
+    denominationConfirmationCount: 3,
+    denominationConfirmationTarget: 3,
+    denominationSplitCompletedCount: 1,
+    denominationSplitTotalCount: 1,
+    pendingTxCount: 1,
+    broadcastedTxCount: 1,
+    confirmedTxCount: 0,
+    totalCount: 1,
+    signedChildPcztCount: 0,
+    pendingSplitStageCount: 0,
+    canAbandon: false,
+    signingBatchLimit: 50,
+    scheduleMeanDelayBlocks: 144,
+    scheduleMaxDelayBlocks: 576,
+    scheduledBroadcasts: const [],
+    parts: const [],
+  );
+}
 
 rust_sync.MigrationStatus _lateMigrationStatus() {
   return rust_sync.MigrationStatus(
@@ -1009,6 +1036,51 @@ void main() {
     );
   });
 
+  testWidgets('includes locked Orchard holdings in the migrating amount', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(
+          orchardBalance: BigInt.from(50_000_000),
+          orchardLockedBalance: BigInt.from(150_000_000),
+          ironwoodBalance: BigInt.from(200_000_000),
+        ),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(
+            kIronwoodMigrationBroadcastScheduledPhase,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('2 ZEC still migrating'), findsOneWidget);
+  });
+
+  testWidgets('waits for confirmation after Orchard holdings reach zero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        _syncedState(ironwoodBalance: BigInt.from(200_000_000)),
+        migrationCta: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatusForPhase(
+            kIronwoodMigrationWaitingConfirmationsPhase,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Waiting for confirmation...'), findsOneWidget);
+    expect(find.text('Migration in progress'), findsNothing);
+  });
+
   testWidgets(
     'keeps the Orchard balance visible before any Ironwood funds arrive',
     (tester) async {
@@ -1142,7 +1214,7 @@ void main() {
     expect(find.text('7 ZEC still migrating'), findsOneWidget);
   });
 
-  testWidgets('uses every incomplete part for the remaining amount', (
+  testWidgets('uses Orchard holdings instead of incomplete part amounts', (
     tester,
   ) async {
     final now = DateTime.now().millisecondsSinceEpoch;

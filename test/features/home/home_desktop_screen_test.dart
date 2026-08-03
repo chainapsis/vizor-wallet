@@ -563,7 +563,8 @@ void main() {
           syncState: SyncState(
             accountUuid: 'account-1',
             hasAccountScopedData: true,
-            orchardBalance: BigInt.from(10_221_000_000),
+            orchardBalance: BigInt.from(221_000_000),
+            orchardLockedBalance: BigInt.from(9_779_000_000),
             ironwoodBalance: BigInt.from(4_011_000_000),
             transparentBalance: BigInt.from(1_412_000_000),
             canShieldTransparentBalance: true,
@@ -643,7 +644,8 @@ void main() {
           hasAccountScopedData: true,
           isSyncing: true,
           orchardBalance: BigInt.zero,
-          displayOrchardBalance: BigInt.from(1_000_000_000),
+          displayOrchardBalance: BigInt.from(200_000_000),
+          displayOrchardLockedBalance: BigInt.from(800_000_000),
           ironwoodBalance: BigInt.zero,
           displayIronwoodBalance: BigInt.from(4_011_000_000),
           spendableBalance: BigInt.zero,
@@ -669,6 +671,35 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('0'), findsNothing);
+  });
+
+  testWidgets('home waits for confirmation after Orchard holdings reach zero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _appHarness(
+        '/home',
+        ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _migrationStatus(
+            kIronwoodMigrationWaitingConfirmationsPhase,
+            activeRunId: 'run-1',
+          ),
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          ironwoodBalance: BigInt.from(4_011_000_000),
+          spendableBalance: BigInt.from(4_011_000_000),
+          totalBalance: BigInt.from(4_011_000_000),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Waiting for confirmation...'), findsOneWidget);
+    expect(find.text('0 ZEC still migrating'), findsNothing);
   });
 
   testWidgets('home desktop shielded balance includes Ironwood funds', (

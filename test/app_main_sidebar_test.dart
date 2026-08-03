@@ -81,7 +81,8 @@ void main() {
           spendableBalance: BigInt.zero,
           displaySpendableBalance: BigInt.from(4_200_000_000),
           orchardBalance: BigInt.zero,
-          displayOrchardBalance: BigInt.from(3_000_000_000),
+          displayOrchardBalance: BigInt.from(2_500_000_000),
+          displayOrchardLockedBalance: BigInt.from(500_000_000),
           ironwoodBalance: BigInt.zero,
           displayIronwoodBalance: BigInt.from(1_200_000_000),
           displaySpendableFreshness:

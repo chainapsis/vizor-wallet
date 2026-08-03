@@ -84,11 +84,13 @@ class MobileIronwoodMigrationBanner extends StatefulWidget {
     required this.remainingText,
     required this.onTap,
     this.preparing = false,
+    this.waitingForConfirmation = false,
     super.key,
   });
 
   final bool inProgress;
   final bool preparing;
+  final bool waitingForConfirmation;
   final MobileIronwoodMigrationAttentionKind? attentionKind;
   final int actionNeededCount;
   final String? remainingText;
@@ -170,6 +172,8 @@ class _MobileIronwoodMigrationBannerState
         : widget.inProgress
         ? widget.preparing
               ? 'Preparing migration'
+              : widget.waitingForConfirmation
+              ? 'Waiting for confirmation...'
               : widget.remainingText == null
               ? 'Migration in progress'
               : '${widget.remainingText} ZEC still migrating'
