@@ -978,6 +978,12 @@ class _AccountRowState extends State<_AccountRow> {
             _AccountRowMenuButton(
               key: ValueKey('accounts_row_menu_button_${widget.account.uuid}'),
               showSendZec: widget.showSendZec,
+              onViewSecretPassphrase: widget.account.isHardware
+                  ? null
+                  : () => context.push(
+                      '/settings/secret-passphrase',
+                      extra: widget.account.uuid,
+                    ),
               onCopyAddress: () => widget.onCopyAddress(widget.account),
               onSendZec: () => widget.onSendZec(widget.account),
               onEditAccount: () => widget.onEditAccount(widget.account),
@@ -1067,6 +1073,7 @@ class _AccountRowAvatar extends StatelessWidget {
 class _AccountRowMenuButton extends StatefulWidget {
   const _AccountRowMenuButton({
     required this.showSendZec,
+    required this.onViewSecretPassphrase,
     required this.onCopyAddress,
     required this.onSendZec,
     required this.onEditAccount,
@@ -1077,6 +1084,7 @@ class _AccountRowMenuButton extends StatefulWidget {
   });
 
   final bool showSendZec;
+  final VoidCallback? onViewSecretPassphrase;
   final VoidCallback onCopyAddress;
   final VoidCallback onSendZec;
   final VoidCallback onEditAccount;
@@ -1143,6 +1151,9 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
                 data: appTheme,
                 child: _AccountContextMenu(
                   showSendZec: widget.showSendZec,
+                  onViewSecretPassphrase: widget.onViewSecretPassphrase == null
+                      ? null
+                      : _handleViewSecretPassphrase,
                   onCopyAddress: _handleCopyAddress,
                   onSendZec: _handleSendZec,
                   onEditAccount: _handleEditAccount,
@@ -1171,6 +1182,11 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
   void _handleEditAccount() {
     _hideMenu();
     widget.onEditAccount();
+  }
+
+  void _handleViewSecretPassphrase() {
+    _hideMenu();
+    widget.onViewSecretPassphrase?.call();
   }
 
   void _handleCopyAddress() {
@@ -1242,6 +1258,7 @@ class _AccountRowMenuButtonState extends State<_AccountRowMenuButton> {
 class _AccountContextMenu extends StatelessWidget {
   const _AccountContextMenu({
     required this.showSendZec,
+    required this.onViewSecretPassphrase,
     required this.onCopyAddress,
     required this.onSendZec,
     required this.onEditAccount,
@@ -1250,9 +1267,10 @@ class _AccountContextMenu extends StatelessWidget {
     required this.onDismiss,
   });
 
-  static const _width = 160.0;
+  static const _width = 192.0;
 
   final bool showSendZec;
+  final VoidCallback? onViewSecretPassphrase;
   final VoidCallback onCopyAddress;
   final VoidCallback onSendZec;
   final VoidCallback onEditAccount;
@@ -1262,12 +1280,21 @@ class _AccountContextMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Figma: the current account's menu is Edit account / Copy address;
-    // other accounts get Copy address / Send ZEC / Edit account. Remove is
-    // shown for every account and becomes reset when it is the last one.
+    // Every software account starts with the secret-passphrase shortcut.
+    // The remaining order follows Figma: current accounts get Edit account /
+    // Copy address; other accounts get Copy address / Send ZEC / Edit account.
+    // Remove is shown for every account and becomes reset for the last one.
     return AppContextMenu(
       width: _width,
       children: [
+        if (onViewSecretPassphrase != null) ...[
+          AppContextMenuItem(
+            iconName: AppIcons.key,
+            label: 'View secret passphrase',
+            onTap: onViewSecretPassphrase!,
+          ),
+          const SizedBox(height: AppSpacing.xxs),
+        ],
         if (!showSendZec) ...[
           AppContextMenuItem(
             iconName: AppIcons.edit,

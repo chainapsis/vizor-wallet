@@ -427,7 +427,7 @@ Widget buildAccountsManyUseCase(BuildContext context) {
 Widget buildAccountsOtherMenuUseCase(BuildContext context) {
   return _buildAccountsUseCase(
     _accountsDesignState,
-    initialOpenMenuAccountUuid: 'preview-account-2',
+    initialOpenMenuAccountUuid: 'preview-account-3',
   );
 }
 
@@ -1839,6 +1839,14 @@ class _AccountsHarnessState extends State<_AccountsHarness> {
         GoRoute(
           path: '/settings',
           builder: (_, _) => const _PreviewRoutePlaceholder(label: '/settings'),
+        ),
+        GoRoute(
+          path: '/settings/secret-passphrase',
+          builder: (_, state) => _PreviewRoutePlaceholder(
+            label:
+                '/settings/secret-passphrase '
+                '(${state.extra as String? ?? 'active account'})',
+          ),
         ),
         GoRoute(
           path: '/about',

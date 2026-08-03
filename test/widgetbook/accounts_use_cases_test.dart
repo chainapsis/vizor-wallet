@@ -16,6 +16,7 @@ void main() {
     expect(find.text('Send ZEC'), findsOneWidget);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Remove account'), findsOneWidget);
+    expect(find.text('View secret passphrase'), findsOneWidget);
   });
 
   testWidgets('accounts current menu use case renders account actions', (
@@ -24,6 +25,7 @@ void main() {
     await _pumpAccountsUseCase(tester, buildAccountsCurrentMenuUseCase);
 
     expect(tester.takeException(), isNull);
+    expect(find.text('View secret passphrase'), findsOneWidget);
     expect(find.text('Edit account'), findsOneWidget);
     expect(find.text('Copy address'), findsOneWidget);
     expect(find.text('Send ZEC'), findsNothing);

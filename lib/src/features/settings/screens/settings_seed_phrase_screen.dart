@@ -25,8 +25,13 @@ import '../widgets/confirm_access_card.dart';
 import '../widgets/settings_pane_backdrop.dart';
 
 class SettingsSeedPhraseScreen extends ConsumerStatefulWidget {
-  const SettingsSeedPhraseScreen({this.privacyOverlayController, super.key});
+  const SettingsSeedPhraseScreen({
+    this.accountUuid,
+    this.privacyOverlayController,
+    super.key,
+  });
 
+  final String? accountUuid;
   final SensitivePrivacyOverlayController? privacyOverlayController;
 
   @override
@@ -89,7 +94,7 @@ class _SettingsSeedPhraseScreenState
     _copiedTarget = null;
   }
 
-  void _handleActiveAccountChanged() {
+  void _handleTargetAccountChanged() {
     if (_stage == _SettingsSeedPhraseStage.password &&
         !_isSubmitting &&
         _mnemonic == null) {
@@ -103,12 +108,20 @@ class _SettingsSeedPhraseScreenState
     });
   }
 
-  bool _activeAccountChanged(String expectedAccountUuid) {
-    final currentAccountUuid = ref
-        .read(accountProvider)
-        .value
-        ?.activeAccountUuid;
-    return currentAccountUuid != expectedAccountUuid;
+  AccountInfo? _targetAccount(AccountState? accountState) {
+    if (accountState == null) return null;
+    final requestedUuid = widget.accountUuid;
+    if (requestedUuid == null) return accountState.activeAccount;
+    for (final account in accountState.accounts) {
+      if (account.uuid == requestedUuid) return account;
+    }
+    return null;
+  }
+
+  bool _targetAccountChanged(String expectedAccountUuid) {
+    final accountState = ref.read(accountProvider).value;
+    final targetAccount = _targetAccount(accountState);
+    return targetAccount?.uuid != expectedAccountUuid;
   }
 
   void _handlePasswordChanged() {
@@ -140,13 +153,13 @@ class _SettingsSeedPhraseScreenState
 
     try {
       final accountState = ref.read(accountProvider).value;
-      final activeAccount = accountState?.activeAccount;
-      if (activeAccount == null) {
+      final targetAccount = _targetAccount(accountState);
+      if (targetAccount == null) {
         throw const _SeedPhraseUnavailableException(
-          'No active account is selected.',
+          'The selected account is no longer available.',
         );
       }
-      final activeAccountUuid = activeAccount.uuid;
+      final targetAccountUuid = targetAccount.uuid;
 
       final isValid = await ref
           .read(appSecurityProvider.notifier)
@@ -160,17 +173,18 @@ class _SettingsSeedPhraseScreenState
         return;
       }
 
-      if (_activeAccountChanged(activeAccountUuid)) {
+      if (_targetAccountChanged(targetAccountUuid)) {
         if (!mounted) return;
         setState(() {
           _clearSensitiveState(
-            passwordError: 'Active account changed. Enter your password again.',
+            passwordError:
+                'Selected account changed. Enter your password again.',
           );
         });
         return;
       }
 
-      if (activeAccount.isHardware) {
+      if (targetAccount.isHardware) {
         throw const _SeedPhraseUnavailableException(
           'Secret passphrase is not available for hardware accounts.',
         );
@@ -178,7 +192,7 @@ class _SettingsSeedPhraseScreenState
 
       final mnemonic = await ref
           .read(accountProvider.notifier)
-          .getMnemonicForAccount(activeAccountUuid);
+          .getMnemonicForAccount(targetAccountUuid);
       if (mnemonic == null || mnemonic.isEmpty) {
         throw const _SeedPhraseUnavailableException(
           'Secret passphrase is not available for this account.',
@@ -186,10 +200,11 @@ class _SettingsSeedPhraseScreenState
       }
 
       if (!mounted) return;
-      if (_activeAccountChanged(activeAccountUuid)) {
+      if (_targetAccountChanged(targetAccountUuid)) {
         setState(() {
           _clearSensitiveState(
-            passwordError: 'Active account changed. Enter your password again.',
+            passwordError:
+                'Selected account changed. Enter your password again.',
           );
         });
         return;
@@ -208,7 +223,7 @@ class _SettingsSeedPhraseScreenState
         _copiedTarget = null;
       });
       unawaited(
-        _loadBirthdayHeightForReveal(activeAccountUuid, birthdayLoadGeneration),
+        _loadBirthdayHeightForReveal(targetAccountUuid, birthdayLoadGeneration),
       );
     } on _SeedPhraseUnavailableException catch (e) {
       if (!mounted) return;
@@ -229,33 +244,33 @@ class _SettingsSeedPhraseScreenState
     }
   }
 
-  bool _canApplyBirthdayLoad(String activeAccountUuid, int generation) {
+  bool _canApplyBirthdayLoad(String targetAccountUuid, int generation) {
     if (!mounted) return false;
     if (_birthdayLoadGeneration != generation) return false;
     if (_stage != _SettingsSeedPhraseStage.reveal || _mnemonic == null) {
       return false;
     }
-    return !_activeAccountChanged(activeAccountUuid);
+    return !_targetAccountChanged(targetAccountUuid);
   }
 
   Future<void> _loadBirthdayHeightForReveal(
-    String activeAccountUuid,
+    String targetAccountUuid,
     int generation,
   ) async {
     try {
-      final height = await _loadBirthdayHeight(activeAccountUuid);
-      if (!_canApplyBirthdayLoad(activeAccountUuid, generation)) return;
+      final height = await _loadBirthdayHeight(targetAccountUuid);
+      if (!_canApplyBirthdayLoad(targetAccountUuid, generation)) return;
       setState(() {
         _birthdayHeight = height;
         _isBirthdayHeightLoading = false;
         _isBirthdayDateLoading = true;
       });
       unawaited(
-        _loadBirthdayDateForReveal(activeAccountUuid, generation, height),
+        _loadBirthdayDateForReveal(targetAccountUuid, generation, height),
       );
     } catch (e, st) {
       log('SettingsSeedPhraseScreen._loadBirthdayHeight: ERROR: $e\n$st');
-      if (!_canApplyBirthdayLoad(activeAccountUuid, generation)) return;
+      if (!_canApplyBirthdayLoad(targetAccountUuid, generation)) return;
       setState(() {
         _birthdayHeight = null;
         _birthdayBlockTime = null;
@@ -266,7 +281,7 @@ class _SettingsSeedPhraseScreenState
   }
 
   Future<void> _loadBirthdayDateForReveal(
-    String activeAccountUuid,
+    String targetAccountUuid,
     int generation,
     int height,
   ) async {
@@ -274,14 +289,14 @@ class _SettingsSeedPhraseScreenState
       final blockTime = await _loadBirthdayBlockTime(
         height,
       ).timeout(const Duration(seconds: 10));
-      if (!_canApplyBirthdayLoad(activeAccountUuid, generation)) return;
+      if (!_canApplyBirthdayLoad(targetAccountUuid, generation)) return;
       setState(() {
         _birthdayBlockTime = blockTime > 0 ? blockTime : null;
         _isBirthdayDateLoading = false;
       });
     } catch (e, st) {
       log('SettingsSeedPhraseScreen._loadBirthdayDate: ERROR: $e\n$st');
-      if (!_canApplyBirthdayLoad(activeAccountUuid, generation)) return;
+      if (!_canApplyBirthdayLoad(targetAccountUuid, generation)) return;
       setState(() {
         _birthdayBlockTime = null;
         _isBirthdayDateLoading = false;
@@ -289,13 +304,13 @@ class _SettingsSeedPhraseScreenState
     }
   }
 
-  Future<int> _loadBirthdayHeight(String activeAccountUuid) async {
+  Future<int> _loadBirthdayHeight(String targetAccountUuid) async {
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointProvider);
     final height = await rust_sync.getExportBirthdayHeight(
       dbPath: dbPath,
       network: endpoint.networkName,
-      accountUuid: activeAccountUuid,
+      accountUuid: targetAccountUuid,
     );
     return height.toInt();
   }
@@ -352,11 +367,11 @@ class _SettingsSeedPhraseScreenState
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<String?>(
-      accountProvider.select((state) => state.value?.activeAccountUuid),
+    ref.listen<AccountInfo?>(
+      accountProvider.select((state) => _targetAccount(state.value)),
       (previous, next) {
-        if (previous == next) return;
-        _handleActiveAccountChanged();
+        if (previous?.uuid == next?.uuid) return;
+        _handleTargetAccountChanged();
       },
     );
 
