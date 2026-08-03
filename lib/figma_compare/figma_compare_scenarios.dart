@@ -34,6 +34,31 @@ class FigmaCompareScenario {
 /// because they are already used to review the same UI states.
 const figmaCompareScenarios = <FigmaCompareScenario>[
   FigmaCompareScenario(
+    id: 'settings-secret-passphrase-reveal',
+    description: 'Desktop secret passphrase recovery with BIP39 passphrase',
+    builder: buildSettingsSecretPassphraseRevealUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-secret-passphrase-reveal-without-bip39',
+    description: 'Desktop secret passphrase recovery without BIP39 section',
+    builder: buildSettingsSecretPassphraseRevealWithoutBip39UseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'import-secret-passphrase-empty',
+    description: 'Desktop wallet import with empty mnemonic fields',
+    builder: buildImportSecretPassphraseUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'import-secret-passphrase-populated',
+    description: 'Desktop wallet import with mnemonic and BIP39 passphrase',
+    builder: buildImportSecretPassphrasePopulatedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'import-secret-passphrase-modal',
+    description: 'Desktop wallet import BIP39 passphrase modal',
+    builder: buildImportSecretPassphraseModalUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'app-carousel-preparation-card-1',
     description: 'Preparation information carousel with card 1 selected',
     builder: buildCarouselPreparationCardOneUseCase,

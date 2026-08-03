@@ -4,10 +4,10 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use ::transparent::keys::{IncomingViewingKey as _, NonHardenedChildIndex};
 use bip0039::{Count, English, Language, Mnemonic};
 use rusqlite::{named_params, OptionalExtension};
 use secrecy::{ExposeSecret, SecretVec};
+use transparent::keys::{IncomingViewingKey as _, NonHardenedChildIndex};
 use zcash_client_backend::data_api::{
     chain::ChainState, Account as _, AccountBirthday, AccountPurpose, AccountSource, WalletRead,
     WalletWrite, Zip32Derivation,
@@ -19,7 +19,7 @@ use zcash_keys::{
 };
 use zcash_primitives::block::BlockHash;
 use zcash_protocol::consensus::{BlockHeight, NetworkConstants, NetworkUpgrade, Parameters};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 use zip32::fingerprint::SeedFingerprint;
 
 use crate::wallet::{
@@ -98,9 +98,12 @@ fn is_supported_mnemonic_word_count(count: usize) -> bool {
         && count % MNEMONIC_WORD_COUNT_STEP == 0
 }
 
-/// Convert a mnemonic phrase to a 64-byte seed wrapped in SecretVec.
+/// Convert a mnemonic phrase and optional BIP39 passphrase to a 64-byte seed.
 /// The seed is zeroized from memory when the SecretVec is dropped.
-pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
+pub fn mnemonic_to_seed_with_passphrase(
+    phrase: &str,
+    bip39_passphrase: &str,
+) -> Result<SecretVec<u8>, String> {
     let word_count = phrase.split_whitespace().count();
     if !is_supported_mnemonic_word_count(word_count) {
         return Err(
@@ -110,17 +113,47 @@ pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
 
     let mnemonic =
         Mnemonic::<English>::from_phrase(phrase).map_err(|e| format!("Invalid mnemonic: {e}"))?;
-    let seed = Zeroizing::new(mnemonic.to_seed(""));
+    let seed = Zeroizing::new(mnemonic.to_seed(bip39_passphrase));
     drop(mnemonic);
     let secret_seed = SecretVec::new(seed.to_vec());
     drop(seed);
     Ok(secret_seed)
 }
 
+/// Convert a mnemonic without a BIP39 passphrase.
+pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
+    mnemonic_to_seed_with_passphrase(phrase, "")
+}
+
 /// Convert UTF-8 mnemonic bytes to a 64-byte seed wrapped in SecretVec.
 /// The caller remains responsible for zeroizing the input bytes.
 pub fn mnemonic_bytes_to_seed(phrase: &[u8]) -> Result<SecretVec<u8>, String> {
     let phrase = std::str::from_utf8(phrase).map_err(|_| "Mnemonic must be valid UTF-8")?;
+    let envelope = phrase.trim_start();
+    if envelope.starts_with('{') {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct StoredSoftwareWalletSecret {
+            version: u8,
+            mnemonic: String,
+            bip39_passphrase: String,
+        }
+
+        let mut secret = serde_json::from_str::<StoredSoftwareWalletSecret>(envelope)
+            .map_err(|_| "Stored software wallet secret is malformed".to_string())?;
+        if secret.version != 1 {
+            secret.mnemonic.zeroize();
+            secret.bip39_passphrase.zeroize();
+            return Err(format!(
+                "Unsupported software wallet secret version: {}",
+                secret.version
+            ));
+        }
+        let seed = mnemonic_to_seed_with_passphrase(&secret.mnemonic, &secret.bip39_passphrase);
+        secret.mnemonic.zeroize();
+        secret.bip39_passphrase.zeroize();
+        return seed;
+    }
     mnemonic_to_seed(phrase)
 }
 
@@ -1203,6 +1236,61 @@ mod tests {
         let phrase = generate_mnemonic();
         let seed = mnemonic_to_seed(&phrase).unwrap();
         assert_eq!(seed.expose_secret().len(), 64);
+    }
+
+    #[test]
+    fn test_mnemonic_to_seed_with_passphrase_matches_bip39_vector() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let seed = mnemonic_to_seed_with_passphrase(phrase, "TREZOR").unwrap();
+        assert_eq!(
+            hex::encode(seed.expose_secret()),
+            "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
+        );
+    }
+
+    #[test]
+    fn test_mnemonic_bytes_to_seed_decodes_versioned_secret() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let stored = serde_json::json!({
+            "version": 1,
+            "mnemonic": phrase,
+            "bip39Passphrase": "TREZOR",
+        })
+        .to_string();
+        let decoded = mnemonic_bytes_to_seed(stored.as_bytes()).unwrap();
+        let direct = mnemonic_to_seed_with_passphrase(phrase, "TREZOR").unwrap();
+        assert_eq!(decoded.expose_secret(), direct.expose_secret());
+        assert_ne!(
+            decoded.expose_secret(),
+            mnemonic_to_seed(phrase).unwrap().expose_secret()
+        );
+    }
+
+    #[test]
+    fn test_mnemonic_bytes_to_seed_rejects_malformed_secret_envelopes() {
+        for stored in [r#"{"version":1"#, r#"{"version":1,"mnemonic":"abandon"}"#] {
+            let error = match mnemonic_bytes_to_seed(stored.as_bytes()) {
+                Ok(_) => panic!("malformed software wallet secret was accepted"),
+                Err(error) => error,
+            };
+            assert_eq!(error, "Stored software wallet secret is malformed");
+        }
+    }
+
+    #[test]
+    fn test_mnemonic_bytes_to_seed_rejects_unsupported_secret_version() {
+        let stored = serde_json::json!({
+            "version": 2,
+            "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            "bip39Passphrase": "secret",
+        })
+        .to_string();
+
+        let error = match mnemonic_bytes_to_seed(stored.as_bytes()) {
+            Ok(_) => panic!("unsupported software wallet secret was accepted"),
+            Err(error) => error,
+        };
+        assert_eq!(error, "Unsupported software wallet secret version: 2");
     }
 
     #[test]

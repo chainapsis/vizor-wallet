@@ -272,6 +272,7 @@ pub fn create_wallet(
 /// Import an existing wallet from a mnemonic phrase.
 pub fn import_wallet(
     mnemonic: String,
+    bip39_passphrase: String,
     birthday_height: Option<u64>,
     network: String,
     db_path: String,
@@ -279,7 +280,7 @@ pub fn import_wallet(
 ) -> Result<WalletImportResult, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let name = account_name.as_deref().unwrap_or("Account 1");
 
         let (account_uuid, unified_address) =
@@ -298,11 +299,12 @@ pub fn add_account(
     network: String,
     name: String,
     mnemonic: String,
+    bip39_passphrase: String,
     birthday_height: Option<u64>,
 ) -> Result<AccountCreationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
 
         // DB is already initialized by the first account — do not call ensure_db_initialized
         // with a different seed (seed fingerprint mismatch would cause an error).
@@ -320,6 +322,7 @@ pub fn add_account(
 /// not already present in the wallet DB for this mnemonic.
 pub fn discover_software_wallet_import_accounts(
     mnemonic: String,
+    bip39_passphrase: String,
     birthday_height: Option<u64>,
     network: String,
     db_path: String,
@@ -332,7 +335,7 @@ pub fn discover_software_wallet_import_accounts(
         } else {
             parse_network_and_migrate(&db_path, &network)?
         };
-        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let existing_seed_accounts = if is_first_wallet_account {
             None
         } else {
@@ -375,13 +378,14 @@ pub fn discover_software_wallet_import_accounts(
 /// balance rows after discovery has already returned.
 pub fn preview_software_account_transparent_balance(
     mnemonic: String,
+    bip39_passphrase: String,
     network: String,
     lightwalletd_url: String,
     zip32_account_index: u32,
 ) -> Result<u64, String> {
     catch(|| {
         let network = keys::parse_network(&network)?;
-        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let addresses = keys::software_account_transparent_addresses(
             network,
             &seed,
@@ -401,6 +405,7 @@ pub fn preview_software_account_transparent_balance(
 /// higher account indices are imported only when selected by the caller.
 pub fn import_software_wallet_with_account_discovery(
     mnemonic: String,
+    bip39_passphrase: String,
     birthday_height: Option<u64>,
     network: String,
     db_path: String,
@@ -415,7 +420,7 @@ pub fn import_software_wallet_with_account_discovery(
         } else {
             parse_network_and_migrate(&db_path, &network)?
         };
-        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let first_account_number = next_account_number.max(1);
         let first_name = first_account_name
             .filter(|name| !name.trim().is_empty())
@@ -447,6 +452,7 @@ pub fn import_software_wallet_with_account_discovery(
 /// account 0.
 pub fn import_software_account_at_index(
     mnemonic: String,
+    bip39_passphrase: String,
     birthday_height: Option<u64>,
     network: String,
     db_path: String,
@@ -460,7 +466,7 @@ pub fn import_software_account_at_index(
         } else {
             parse_network_and_migrate(&db_path, &network)?
         };
-        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
 
         let (account_uuid, unified_address, is_seed_anchor) = if is_first_wallet_account {
             if zip32_account_index == 0 {
@@ -524,6 +530,7 @@ pub fn import_software_account_at_index(
 
 pub fn is_software_wallet_link_account_imported(
     mnemonic: String,
+    bip39_passphrase: String,
     network: String,
     db_path: String,
     zip32_account_index: u32,
@@ -533,7 +540,7 @@ pub fn is_software_wallet_link_account_imported(
             return Ok(false);
         }
         let network = parse_network_and_migrate(&db_path, &network)?;
-        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let existing_seed_accounts =
             keys::existing_software_seed_account_state(&db_path, network, &seed)?;
         Ok(existing_seed_accounts.contains(zip32_account_index))
@@ -1200,6 +1207,7 @@ mod tests {
 
         assert!(is_software_wallet_link_account_imported(
             mnemonic.clone(),
+            String::new(),
             "main".to_string(),
             db_path_str.to_string(),
             0,
@@ -1207,6 +1215,7 @@ mod tests {
         .unwrap());
         assert!(!is_software_wallet_link_account_imported(
             mnemonic,
+            String::new(),
             "main".to_string(),
             db_path_str.to_string(),
             1,

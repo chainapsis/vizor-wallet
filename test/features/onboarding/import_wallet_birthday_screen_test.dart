@@ -474,6 +474,7 @@ class _FailingImportAccountNotifier extends AccountNotifier {
   Future<rust_wallet.SoftwareWalletImportDiscoveryResult>
   discoverAdditionalSoftwareAccounts({
     required String mnemonic,
+    String bip39Passphrase = '',
     int? birthdayHeight,
   }) async {
     return const rust_wallet.SoftwareWalletImportDiscoveryResult(
@@ -485,6 +486,7 @@ class _FailingImportAccountNotifier extends AccountNotifier {
   @override
   Future<void> importAccount({
     required String mnemonic,
+    String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
     List<int> additionalAccountIndices = const [],

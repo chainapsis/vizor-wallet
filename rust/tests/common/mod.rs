@@ -102,6 +102,7 @@ pub fn import_wallet_with_birthday(
     let db_path = tempdir.path().join("zcash_wallet.db");
     let result = wallet_api::import_wallet(
         mnemonic.into(),
+        String::new(),
         birthday_height,
         REGTEST_NETWORK.into(),
         path_str(&db_path),
@@ -122,6 +123,7 @@ pub fn add_account_with_birthday(
         REGTEST_NETWORK.into(),
         account_name.into(),
         mnemonic.into(),
+        String::new(),
         birthday_height,
     )
     .expect("add_account")

@@ -116,6 +116,7 @@ fn wire__crate__api__wallet__add_account_impl(
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_name = <String>::sse_decode(&mut deserializer);
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
+            let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_birthday_height = <Option<u64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -125,6 +126,7 @@ fn wire__crate__api__wallet__add_account_impl(
                         api_network,
                         api_name,
                         api_mnemonic,
+                        api_bip39_passphrase,
                         api_birthday_height,
                     )?;
                     Ok(output_ok)
@@ -1782,6 +1784,7 @@ fn wire__crate__api__wallet__discover_software_wallet_import_accounts_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
+            let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_birthday_height = <Option<u64>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_db_path = <String>::sse_decode(&mut deserializer);
@@ -1792,6 +1795,7 @@ fn wire__crate__api__wallet__discover_software_wallet_import_accounts_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::wallet::discover_software_wallet_import_accounts(
                         api_mnemonic,
+                        api_bip39_passphrase,
                         api_birthday_height,
                         api_network,
                         api_db_path,
@@ -3561,6 +3565,7 @@ fn wire__crate__api__wallet__import_software_account_at_index_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
+            let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_birthday_height = <Option<u64>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_db_path = <String>::sse_decode(&mut deserializer);
@@ -3572,6 +3577,7 @@ fn wire__crate__api__wallet__import_software_account_at_index_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::wallet::import_software_account_at_index(
                         api_mnemonic,
+                        api_bip39_passphrase,
                         api_birthday_height,
                         api_network,
                         api_db_path,
@@ -3608,6 +3614,7 @@ fn wire__crate__api__wallet__import_software_wallet_with_account_discovery_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
+            let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_birthday_height = <Option<u64>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_db_path = <String>::sse_decode(&mut deserializer);
@@ -3621,6 +3628,7 @@ fn wire__crate__api__wallet__import_software_wallet_with_account_discovery_impl(
                     let output_ok =
                         crate::api::wallet::import_software_wallet_with_account_discovery(
                             api_mnemonic,
+                            api_bip39_passphrase,
                             api_birthday_height,
                             api_network,
                             api_db_path,
@@ -3658,6 +3666,7 @@ fn wire__crate__api__wallet__import_wallet_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
+            let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_birthday_height = <Option<u64>>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_db_path = <String>::sse_decode(&mut deserializer);
@@ -3667,6 +3676,7 @@ fn wire__crate__api__wallet__import_wallet_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::wallet::import_wallet(
                         api_mnemonic,
+                        api_bip39_passphrase,
                         api_birthday_height,
                         api_network,
                         api_db_path,
@@ -3801,6 +3811,7 @@ fn wire__crate__api__wallet__is_software_wallet_link_account_imported_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
+            let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_zip32_account_index = <u32>::sse_decode(&mut deserializer);
@@ -3809,6 +3820,7 @@ fn wire__crate__api__wallet__is_software_wallet_link_account_imported_impl(
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::wallet::is_software_wallet_link_account_imported(
                         api_mnemonic,
+                        api_bip39_passphrase,
                         api_network,
                         api_db_path,
                         api_zip32_account_index,
@@ -4737,6 +4749,7 @@ fn wire__crate__api__wallet__preview_software_account_transparent_balance_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_mnemonic = <String>::sse_decode(&mut deserializer);
+            let api_bip39_passphrase = <String>::sse_decode(&mut deserializer);
             let api_network = <String>::sse_decode(&mut deserializer);
             let api_lightwalletd_url = <String>::sse_decode(&mut deserializer);
             let api_zip32_account_index = <u32>::sse_decode(&mut deserializer);
@@ -4746,6 +4759,7 @@ fn wire__crate__api__wallet__preview_software_account_transparent_balance_impl(
                     let output_ok =
                         crate::api::wallet::preview_software_account_transparent_balance(
                             api_mnemonic,
+                            api_bip39_passphrase,
                             api_network,
                             api_lightwalletd_url,
                             api_zip32_account_index,

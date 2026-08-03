@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
@@ -15,6 +16,7 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _mnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse access accident';
+const _bip39Passphrase = 'correct horse battery staple with extra words';
 
 const _accountState = AccountState(
   accounts: [
@@ -55,6 +57,35 @@ void main() {
     expect(accountNotifier.requestedMnemonicUuids, ['account-2']);
     expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
     expect(find.text('abandon'), findsOneWidget);
+    expect(find.text('BIP39 Passphrase'), findsOneWidget);
+    expect(find.text('correct ho ... xtra words'), findsOneWidget);
+  });
+
+  testWidgets('hides the BIP39 section when the account has no passphrase', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async => tester.binding.setSurfaceSize(null));
+    final privacyController = SensitivePrivacyOverlayController(
+      initiallySafe: true,
+    );
+    addTearDown(privacyController.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        privacyController: privacyController,
+        accountNotifier: () => _FakeAccountNotifier(bip39Passphrase: ''),
+      ),
+    );
+    await tester.pump();
+    await tester.enterText(find.byType(EditableText), 'Correct123!');
+    await tester.pump();
+    await tester.tap(find.bySemanticsLabel('Confirm password'));
+    await tester.pump();
+
+    expect(find.text('abandon'), findsOneWidget);
+    expect(find.text('BIP39 Passphrase'), findsNothing);
+    expect(find.bySemanticsLabel('Copy BIP39 passphrase'), findsNothing);
   });
 
   testWidgets('describes removal of the requested account accurately', (
@@ -141,15 +172,23 @@ AppBootstrapState _bootstrap() => AppBootstrapState(
 );
 
 class _FakeAccountNotifier extends AccountNotifier {
+  _FakeAccountNotifier({this.bip39Passphrase = _bip39Passphrase});
+
+  final String bip39Passphrase;
   final requestedMnemonicUuids = <String>[];
 
   @override
   FutureOr<AccountState> build() => _accountState;
 
   @override
-  Future<String?> getMnemonicForAccount(String uuid) async {
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
+    String uuid,
+  ) async {
     requestedMnemonicUuids.add(uuid);
-    return _mnemonic;
+    return SoftwareWalletSecret(
+      mnemonic: _mnemonic,
+      bip39Passphrase: bip39Passphrase,
+    );
   }
 
   void removeRequestedAccount() {

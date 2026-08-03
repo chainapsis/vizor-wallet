@@ -11,6 +11,7 @@ import '../app_bootstrap.dart';
 import '../core/account_name_policy.dart';
 import '../core/config/network_config.dart';
 import '../core/profile_pictures.dart';
+import '../core/security/software_wallet_secret.dart';
 import '../core/storage/app_secure_store.dart';
 import '../core/storage/wallet_paths.dart';
 import '../features/swap/providers/swap_activity_store.dart';
@@ -73,6 +74,7 @@ class LinkedWalletAccountImport {
     required this.isHardware,
     required this.isSeedAnchor,
     this.mnemonic,
+    this.bip39Passphrase = '',
     this.ufvk,
     this.seedFingerprint,
     this.profilePictureId,
@@ -85,6 +87,7 @@ class LinkedWalletAccountImport {
   final bool isHardware;
   final bool isSeedAnchor;
   final String? mnemonic;
+  final String bip39Passphrase;
   final String? ufvk;
   final List<int>? seedFingerprint;
   final String? profilePictureId;
@@ -151,6 +154,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           network: network,
           name: accountName,
           mnemonic: mnemonic,
+          bip39Passphrase: '',
           birthdayHeight: birthday,
         );
         accountUuid = result.accountUuid;
@@ -228,6 +232,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         await _deleteExistingDb(dbPath);
         final result = await rust_wallet.importWallet(
           mnemonic: mnemonic,
+          bip39Passphrase: '',
           birthdayHeight: birthday,
           network: network,
           dbPath: dbPath,
@@ -242,6 +247,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           network: network,
           name: accountName,
           mnemonic: mnemonic,
+          bip39Passphrase: '',
           birthdayHeight: birthday,
         );
         accountUuid = result.accountUuid;
@@ -279,6 +285,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Import a wallet from mnemonic.
   Future<void> importAccount({
     required String mnemonic,
+    String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
     List<int> additionalAccountIndices = const [],
@@ -286,10 +293,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     try {
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
-      final network =
-          (state.value?.accounts ?? const <AccountInfo>[]).isEmpty
-              ? endpoint.networkName
-              : await _getNetwork();
+      final network = (state.value?.accounts ?? const <AccountInfo>[]).isEmpty
+          ? endpoint.networkName
+          : await _getNetwork();
       final accounts = state.value?.accounts ?? [];
       final accountName = name ?? 'Account ${accounts.length + 1}';
       final isFirstWalletAccount = accounts.isEmpty;
@@ -302,8 +308,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       final result = await rust_wallet.importSoftwareWalletWithAccountDiscovery(
         mnemonic: mnemonic,
-        birthdayHeight:
-            birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
+        bip39Passphrase: bip39Passphrase,
+        birthdayHeight: birthdayHeight != null
+            ? BigInt.from(birthdayHeight)
+            : null,
         network: network,
         dbPath: dbPath,
         firstAccountName: accountName,
@@ -319,7 +327,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
 
       for (final account in result.accounts) {
-        await _storage.writeAccountMnemonic(account.accountUuid, mnemonic);
+        await _storage.writeAccountMnemonic(
+          account.accountUuid,
+          mnemonic,
+          bip39Passphrase: bip39Passphrase,
+        );
       }
 
       final importedAccounts = [
@@ -333,14 +345,12 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       ];
       final updatedAccounts = [...accounts, ...importedAccounts];
       await _saveAccounts(updatedAccounts);
-      final activeAccountUuid =
-          result.didImportPrimaryAccount
-              ? result.accounts.first.accountUuid
-              : previousActiveAccountUuid;
-      final activeAddress =
-          result.didImportPrimaryAccount
-              ? result.accounts.first.unifiedAddress
-              : previousActiveAddress;
+      final activeAccountUuid = result.didImportPrimaryAccount
+          ? result.accounts.first.accountUuid
+          : previousActiveAccountUuid;
+      final activeAddress = result.didImportPrimaryAccount
+          ? result.accounts.first.unifiedAddress
+          : previousActiveAddress;
       if (activeAccountUuid == null) {
         await _storage.delete(_activeAccountKey);
       } else if (result.didImportPrimaryAccount) {
@@ -368,6 +378,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<rust_wallet.SoftwareWalletImportDiscoveryResult>
   discoverAdditionalSoftwareAccounts({
     required String mnemonic,
+    String bip39Passphrase = '',
     int? birthdayHeight,
   }) async {
     try {
@@ -375,13 +386,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
-      final network =
-          isFirstWalletAccount ? endpoint.networkName : await _getNetwork();
+      final network = isFirstWalletAccount
+          ? endpoint.networkName
+          : await _getNetwork();
 
       return rust_wallet.discoverSoftwareWalletImportAccounts(
         mnemonic: mnemonic,
-        birthdayHeight:
-            birthdayHeight != null ? BigInt.from(birthdayHeight) : null,
+        bip39Passphrase: bip39Passphrase,
+        birthdayHeight: birthdayHeight != null
+            ? BigInt.from(birthdayHeight)
+            : null,
         network: network,
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
@@ -395,17 +409,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
   Future<BigInt> previewSoftwareAccountTransparentBalance({
     required String mnemonic,
+    String bip39Passphrase = '',
     required int accountIndex,
   }) async {
     try {
       final endpoint = ref.read(rpcEndpointProvider);
       final accounts = state.value?.accounts ?? const <AccountInfo>[];
       final isFirstWalletAccount = accounts.isEmpty;
-      final network =
-          isFirstWalletAccount ? endpoint.networkName : await _getNetwork();
+      final network = isFirstWalletAccount
+          ? endpoint.networkName
+          : await _getNetwork();
 
       return rust_wallet.previewSoftwareAccountTransparentBalance(
         mnemonic: mnemonic,
+        bip39Passphrase: bip39Passphrase,
         network: network,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         zip32AccountIndex: accountIndex,
@@ -455,10 +472,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     validateAccountName(newName);
     final normalizedName = normalizeAccountName(newName);
     final prev = state.value ?? const AccountState();
-    final updated =
-        prev.accounts
-            .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
-            .toList();
+    final updated = prev.accounts
+        .map((a) => a.uuid == uuid ? a.copyWith(name: normalizedName) : a)
+        .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('renameAccount: $uuid → $normalizedName');
@@ -481,15 +497,13 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     }
 
     final prev = state.value ?? const AccountState();
-    final updated =
-        prev.accounts
-            .map(
-              (a) =>
-                  a.uuid == uuid
-                      ? a.copyWith(profilePictureId: normalizedProfilePictureId)
-                      : a,
-            )
-            .toList();
+    final updated = prev.accounts
+        .map(
+          (a) => a.uuid == uuid
+              ? a.copyWith(profilePictureId: normalizedProfilePictureId)
+              : a,
+        )
+        .toList();
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('updateProfilePicture: $uuid → $normalizedProfilePictureId');
@@ -987,6 +1001,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           } else {
             final result = await rust_wallet.importSoftwareAccountAtIndex(
               mnemonic: input.mnemonic ?? '',
+              bip39Passphrase: input.bip39Passphrase,
               birthdayHeight: BigInt.from(input.birthdayHeight),
               network: normalizedNetwork,
               dbPath: dbPath,
@@ -1015,6 +1030,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           await _storage.writeAccountMnemonic(
             accountUuid,
             input.mnemonic ?? '',
+            bip39Passphrase: input.bip39Passphrase,
           );
         }
         firstImportedUuid ??= accountUuid;
@@ -1039,10 +1055,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       final updated = [...prev.accounts, ...importedAccounts];
       final activeAccountUuid = prev.activeAccountUuid ?? firstImportedUuid;
-      final activeAddress =
-          prev.activeAccountUuid == null
-              ? firstImportedAddress
-              : prev.activeAddress;
+      final activeAddress = prev.activeAccountUuid == null
+          ? firstImportedAddress
+          : prev.activeAddress;
       await _saveAccounts(updated);
       if (activeAccountUuid == null) {
         await _storage.delete(_activeAccountKey);
@@ -1116,6 +1131,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         final isImported = await rust_wallet
             .isSoftwareWalletLinkAccountImported(
               mnemonic: mnemonic,
+              bip39Passphrase: input.bip39Passphrase,
               network: normalizedNetwork,
               dbPath: dbPath,
               zip32AccountIndex: input.zip32AccountIndex,
@@ -1157,6 +1173,15 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Get the mnemonic for a specific account.
   Future<String?> getMnemonicForAccount(String uuid) async {
     return _storage.readAccountMnemonic(uuid, requireUnlockedSession: true);
+  }
+
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
+    String uuid,
+  ) async {
+    return _storage.readAccountSoftwareWalletSecret(
+      uuid,
+      requireUnlockedSession: true,
+    );
   }
 
   Future<Uint8List?> getMnemonicBytesForAccount(String uuid) async {
@@ -1305,8 +1330,9 @@ String? resolveNextActiveAccountUuidAfterRemoval({
       remainingAccounts.any((a) => a.uuid == previousState.activeAccountUuid)) {
     return previousState.activeAccountUuid;
   }
-  final nextIndex =
-      removedAccount.order.clamp(0, remainingAccounts.length - 1).toInt();
+  final nextIndex = removedAccount.order
+      .clamp(0, remainingAccounts.length - 1)
+      .toInt();
   return remainingAccounts[nextIndex].uuid;
 }
 

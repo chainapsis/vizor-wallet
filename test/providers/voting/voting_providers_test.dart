@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_job_provider.dart';
@@ -2581,6 +2582,7 @@ void main() {
         rust: rust,
         recoveryApi: recoveryApi,
         draftPersistence: draftPersistence,
+        accountBip39Passphrase: '  My TREZOR phrase  ',
       );
       addTearDown(container.dispose);
 
@@ -2603,6 +2605,12 @@ void main() {
       expect(completed.errorMessage, isNull);
       expect(rust.setupCalls, 1);
       expect(rust.delegationBundleCalls, [0]);
+      expect(rust.delegationMnemonics, [
+        const SoftwareWalletSecret(
+          mnemonic: kTestMnemonic,
+          bip39Passphrase: '  My TREZOR phrase  ',
+        ).encodeForStorage(),
+      ]);
       expect(rust.storedDelegationTxHashes, ['0:delegation-tx']);
       expect(recoveryApi.ballotIntents, ['7:2:false:1']);
       expect(rust.voteCommitmentKeys, ['0:7']);
@@ -4983,6 +4991,7 @@ ProviderContainer _sessionContainer({
   bool accountIsHardware = false,
   Set<String>? hardwareAccountUuids,
   String? accountMnemonic = kTestMnemonic,
+  String accountBip39Passphrase = '',
   List<ProviderObserver>? observers,
   VotingTxConfirmationPolling? txConfirmationPolling,
   VotingWalletSyncReadinessChecker? walletSyncReadinessChecker,
@@ -5052,7 +5061,10 @@ ProviderContainer _sessionContainer({
         ),
       ),
       accountProvider.overrideWith(
-        () => _FakeVotingAccountNotifier(mnemonic: accountMnemonic),
+        () => _FakeVotingAccountNotifier(
+          mnemonic: accountMnemonic,
+          bip39Passphrase: accountBip39Passphrase,
+        ),
       ),
       votingDraftPersistenceProvider.overrideWithValue(
         draftPersistence ?? FakeVotingDraftPersistence(),
@@ -5965,9 +5977,17 @@ class _ActiveVotingAccountNotifier extends Notifier<String?> {
 }
 
 class _FakeVotingAccountNotifier extends AccountNotifier {
-  _FakeVotingAccountNotifier({required this.mnemonic});
+  _FakeVotingAccountNotifier({
+    required String? mnemonic,
+    required String bip39Passphrase,
+  }) : softwareSecret = mnemonic == null
+           ? null
+           : SoftwareWalletSecret(
+               mnemonic: mnemonic,
+               bip39Passphrase: bip39Passphrase,
+             );
 
-  final String? mnemonic;
+  final SoftwareWalletSecret? softwareSecret;
 
   @override
   FutureOr<AccountState> build() {
@@ -5986,7 +6006,14 @@ class _FakeVotingAccountNotifier extends AccountNotifier {
 
   @override
   Future<String?> getMnemonicForAccount(String uuid) async {
-    return mnemonic;
+    return softwareSecret?.mnemonic;
+  }
+
+  @override
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
+    String uuid,
+  ) async {
+    return softwareSecret;
   }
 }
 
@@ -6209,6 +6236,7 @@ class FakeVotingRustApi implements VotingRustApi {
   int _activeSetups = 0;
   int maxConcurrentSetups = 0;
   final delegationBundleCalls = <int>[];
+  final delegationMnemonics = <String>[];
   final voteCommitBundleCalls = <int>[];
   final voteCommitmentKeys = <String>[];
   final recoveredVoteCommitmentKeys = <String>[];
@@ -6324,6 +6352,7 @@ class FakeVotingRustApi implements VotingRustApi {
   }) async* {
     accountUuids.add(ctx.accountUuid);
     delegationBundleCalls.add(bundleIndex);
+    delegationMnemonics.add(mnemonic);
     delegationStoredHotkeySecrets.add(List<int>.from(storedHotkeySecret));
     final error = delegationStreamError;
     if (error != null) throw error;

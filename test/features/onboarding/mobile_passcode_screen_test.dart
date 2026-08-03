@@ -237,6 +237,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
   @override
   Future<void> importAccount({
     required String mnemonic,
+    String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
     List<int> additionalAccountIndices = const [],

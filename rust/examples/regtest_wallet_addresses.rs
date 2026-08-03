@@ -37,6 +37,7 @@ fn main() {
 
     let result = wallet::import_wallet(
         mnemonic,
+        String::new(),
         Some(1),
         "regtest".to_string(),
         db_path.clone(),

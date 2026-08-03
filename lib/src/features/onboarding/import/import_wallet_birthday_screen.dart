@@ -331,6 +331,7 @@ class _ImportWalletBirthdayScreenState
           '/import/set-password',
           extra: SetPasswordScreenArgs.importWallet(
             mnemonic: mnemonic,
+            bip39Passphrase: widget.args.bip39Passphrase,
             birthdayHeight: birthdayHeight,
             selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
           ),
@@ -357,6 +358,7 @@ class _ImportWalletBirthdayScreenState
             });
             await accountNotifier.importAccount(
               mnemonic: mnemonic,
+              bip39Passphrase: widget.args.bip39Passphrase,
               birthdayHeight: birthdayHeight,
               additionalAccountIndices: selectedAdditionalAccountIndices,
             );
@@ -401,6 +403,7 @@ class _ImportWalletBirthdayScreenState
         .read(accountProvider.notifier)
         .discoverAdditionalSoftwareAccounts(
           mnemonic: mnemonic,
+          bip39Passphrase: widget.args.bip39Passphrase,
           birthdayHeight: birthdayHeight,
         );
     if (!mounted) return null;
@@ -489,7 +492,10 @@ class _ImportWalletBirthdayScreenState
         label: ImportOnboardingStep.secretPassphrase.label,
         onTap: () => context.go(
           '/import',
-          extra: ImportSecretPassphraseArgs(mnemonic: widget.args.mnemonic),
+          extra: ImportSecretPassphraseArgs(
+            mnemonic: widget.args.mnemonic,
+            bip39Passphrase: widget.args.bip39Passphrase,
+          ),
         ),
       ),
       overlay: _accountDiscoveryCandidates != null
@@ -651,6 +657,7 @@ class _ImportWalletBirthdayScreenState
         .read(accountProvider.notifier)
         .previewSoftwareAccountTransparentBalance(
           mnemonic: widget.args.mnemonic,
+          bip39Passphrase: widget.args.bip39Passphrase,
           accountIndex: account.zip32AccountIndex,
         );
   }

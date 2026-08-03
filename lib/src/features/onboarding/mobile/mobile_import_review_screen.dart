@@ -108,7 +108,10 @@ class _MobileImportReviewScreenState extends State<MobileImportReviewScreen> {
   void _continue(BuildContext context) {
     context.push(
       '/import/birthday',
-      extra: ImportBirthdayArgs(mnemonic: widget.args.mnemonic),
+      extra: ImportBirthdayArgs(
+        mnemonic: widget.args.mnemonic,
+        bip39Passphrase: widget.args.bip39Passphrase,
+      ),
     );
   }
 

@@ -38,6 +38,7 @@ import '../src/features/migration/widgets/ironwood_migration_privacy_lock_host.d
 import '../src/features/migration/widgets/mobile/mobile_ironwood_keystone_signing_view.dart';
 import '../src/features/migration/widgets/mobile/mobile_ironwood_migration_announcement_sheet.dart';
 import '../src/features/onboarding/lost_password_screen.dart';
+import '../src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import '../src/features/onboarding/mobile/forgot_passcode_sheet.dart';
 import '../src/features/onboarding/mobile/mobile_biometrics_screen.dart';
 import '../src/features/onboarding/mobile/mobile_customise_account_screen.dart';
@@ -77,6 +78,9 @@ const _previewMnemonic =
 const _previewLongWordMnemonic =
     'business question physical security language purchase abstract accident '
     'distance elephant hospital umbrella';
+final _previewImportWordList = _previewMnemonic.split(' ');
+
+bool _previewMnemonicValidator(String mnemonic) => mnemonic.isNotEmpty;
 
 const _previewImportReviewMnemonic =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
@@ -225,6 +229,63 @@ Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
       ),
       random: Random(1234),
       onFinish: (_, _) async {},
+    ),
+  );
+}
+
+Widget buildImportSecretPassphraseUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.background.window,
+    child: ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ],
+      child: ImportSecretPassphraseScreen(
+        wordListOverride: _previewImportWordList,
+        mnemonicValidatorOverride: _previewMnemonicValidator,
+        useEnvironmentPrivacySignals: false,
+      ),
+    ),
+  );
+}
+
+Widget buildImportSecretPassphrasePopulatedUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.background.window,
+    child: ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ],
+      child: ImportSecretPassphraseScreen(
+        args: const ImportSecretPassphraseArgs(
+          mnemonic: _previewMnemonic,
+          bip39Passphrase: 'My BIP39 passphrase',
+        ),
+        wordListOverride: _previewImportWordList,
+        mnemonicValidatorOverride: _previewMnemonicValidator,
+        useEnvironmentPrivacySignals: false,
+      ),
+    ),
+  );
+}
+
+Widget buildImportSecretPassphraseModalUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.background.window,
+    child: ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ],
+      child: ImportSecretPassphraseScreen(
+        args: const ImportSecretPassphraseArgs(
+          mnemonic: _previewMnemonic,
+          bip39Passphrase: 'My BIP39 passphrase',
+        ),
+        wordListOverride: _previewImportWordList,
+        mnemonicValidatorOverride: _previewMnemonicValidator,
+        initialBip39PassphraseModalOpen: true,
+        useEnvironmentPrivacySignals: false,
+      ),
     ),
   );
 }
@@ -490,6 +551,27 @@ Widget buildSettingsSecretPassphraseGateUseCase(BuildContext context) {
   return _buildSettingsSubScreenUseCase(
     '/settings/secret-passphrase',
     const SettingsSeedPhraseScreen(),
+  );
+}
+
+Widget buildSettingsSecretPassphraseRevealUseCase(BuildContext context) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/secret-passphrase',
+    const SettingsSeedPhraseRevealPreview(
+      mnemonic: _previewImportReviewMnemonic,
+      bip39Passphrase: '123CAsd#41 recovery phrase 123CAsd#41',
+    ),
+  );
+}
+
+Widget buildSettingsSecretPassphraseRevealWithoutBip39UseCase(
+  BuildContext context,
+) {
+  return _buildSettingsSubScreenUseCase(
+    '/settings/secret-passphrase',
+    const SettingsSeedPhraseRevealPreview(
+      mnemonic: _previewImportReviewMnemonic,
+    ),
   );
 }
 

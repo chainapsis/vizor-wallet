@@ -553,10 +553,11 @@ class VotingSubmissionJobNotifier extends Notifier<VotingSubmissionJobState> {
       }
       String? softwareMnemonic;
       if (!activeSession.isHardwareAccount && needsDelegationSigning) {
-        softwareMnemonic = await ref
+        final softwareSecret = await ref
             .read(accountProvider.notifier)
-            .getMnemonicForAccount(key.accountUuid);
+            .getSoftwareWalletSecretForAccount(key.accountUuid);
         if (!_isCurrentJob(key: key, generation: generation)) return;
+        softwareMnemonic = softwareSecret?.encodeForStorage();
         if (softwareMnemonic == null || softwareMnemonic.isEmpty) {
           _failJob(
             key: key,

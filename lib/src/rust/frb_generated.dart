@@ -104,6 +104,7 @@ abstract class RustLibApi extends BaseApi {
     required String network,
     required String name,
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
   });
 
@@ -382,6 +383,7 @@ abstract class RustLibApi extends BaseApi {
   Future<SoftwareWalletImportDiscoveryResult>
   crateApiWalletDiscoverSoftwareWalletImportAccounts({
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
@@ -661,6 +663,7 @@ abstract class RustLibApi extends BaseApi {
   Future<SoftwareWalletImportAccount>
   crateApiWalletImportSoftwareAccountAtIndex({
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
@@ -672,6 +675,7 @@ abstract class RustLibApi extends BaseApi {
   Future<SoftwareWalletImportWithDiscoveryResult>
   crateApiWalletImportSoftwareWalletWithAccountDiscovery({
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
@@ -683,6 +687,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<WalletImportResult> crateApiWalletImportWallet({
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
@@ -701,6 +706,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<bool> crateApiWalletIsSoftwareWalletLinkAccountImported({
     required String mnemonic,
+    required String bip39Passphrase,
     required String network,
     required String dbPath,
     required int zip32AccountIndex,
@@ -866,6 +872,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<BigInt> crateApiWalletPreviewSoftwareAccountTransparentBalance({
     required String mnemonic,
+    required String bip39Passphrase,
     required String network,
     required String lightwalletdUrl,
     required int zip32AccountIndex,
@@ -1195,6 +1202,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String network,
     required String name,
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
   }) {
     return handler.executeNormal(
@@ -1205,6 +1213,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(network, serializer);
           sse_encode_String(name, serializer);
           sse_encode_String(mnemonic, serializer);
+          sse_encode_String(bip39Passphrase, serializer);
           sse_encode_opt_box_autoadd_u_64(birthdayHeight, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -1218,7 +1227,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiWalletAddAccountConstMeta,
-        argValues: [dbPath, network, name, mnemonic, birthdayHeight],
+        argValues: [
+          dbPath,
+          network,
+          name,
+          mnemonic,
+          bip39Passphrase,
+          birthdayHeight,
+        ],
         apiImpl: this,
       ),
     );
@@ -1226,7 +1242,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiWalletAddAccountConstMeta => const TaskConstMeta(
     debugName: "add_account",
-    argNames: ["dbPath", "network", "name", "mnemonic", "birthdayHeight"],
+    argNames: [
+      "dbPath",
+      "network",
+      "name",
+      "mnemonic",
+      "bip39Passphrase",
+      "birthdayHeight",
+    ],
   );
 
   @override
@@ -3057,6 +3080,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<SoftwareWalletImportDiscoveryResult>
   crateApiWalletDiscoverSoftwareWalletImportAccounts({
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
@@ -3068,6 +3092,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(mnemonic, serializer);
+          sse_encode_String(bip39Passphrase, serializer);
           sse_encode_opt_box_autoadd_u_64(birthdayHeight, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(dbPath, serializer);
@@ -3087,6 +3112,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         constMeta: kCrateApiWalletDiscoverSoftwareWalletImportAccountsConstMeta,
         argValues: [
           mnemonic,
+          bip39Passphrase,
           birthdayHeight,
           network,
           dbPath,
@@ -3104,6 +3130,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "discover_software_wallet_import_accounts",
         argNames: [
           "mnemonic",
+          "bip39Passphrase",
           "birthdayHeight",
           "network",
           "dbPath",
@@ -4850,6 +4877,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<SoftwareWalletImportAccount>
   crateApiWalletImportSoftwareAccountAtIndex({
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
@@ -4862,6 +4890,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(mnemonic, serializer);
+          sse_encode_String(bip39Passphrase, serializer);
           sse_encode_opt_box_autoadd_u_64(birthdayHeight, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(dbPath, serializer);
@@ -4882,6 +4911,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         constMeta: kCrateApiWalletImportSoftwareAccountAtIndexConstMeta,
         argValues: [
           mnemonic,
+          bip39Passphrase,
           birthdayHeight,
           network,
           dbPath,
@@ -4899,6 +4929,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "import_software_account_at_index",
         argNames: [
           "mnemonic",
+          "bip39Passphrase",
           "birthdayHeight",
           "network",
           "dbPath",
@@ -4912,6 +4943,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<SoftwareWalletImportWithDiscoveryResult>
   crateApiWalletImportSoftwareWalletWithAccountDiscovery({
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
@@ -4925,6 +4957,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(mnemonic, serializer);
+          sse_encode_String(bip39Passphrase, serializer);
           sse_encode_opt_box_autoadd_u_64(birthdayHeight, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(dbPath, serializer);
@@ -4948,6 +4981,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             kCrateApiWalletImportSoftwareWalletWithAccountDiscoveryConstMeta,
         argValues: [
           mnemonic,
+          bip39Passphrase,
           birthdayHeight,
           network,
           dbPath,
@@ -4967,6 +5001,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "import_software_wallet_with_account_discovery",
         argNames: [
           "mnemonic",
+          "bip39Passphrase",
           "birthdayHeight",
           "network",
           "dbPath",
@@ -4980,6 +5015,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<WalletImportResult> crateApiWalletImportWallet({
     required String mnemonic,
+    required String bip39Passphrase,
     BigInt? birthdayHeight,
     required String network,
     required String dbPath,
@@ -4990,6 +5026,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(mnemonic, serializer);
+          sse_encode_String(bip39Passphrase, serializer);
           sse_encode_opt_box_autoadd_u_64(birthdayHeight, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(dbPath, serializer);
@@ -5006,7 +5043,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiWalletImportWalletConstMeta,
-        argValues: [mnemonic, birthdayHeight, network, dbPath, accountName],
+        argValues: [
+          mnemonic,
+          bip39Passphrase,
+          birthdayHeight,
+          network,
+          dbPath,
+          accountName,
+        ],
         apiImpl: this,
       ),
     );
@@ -5016,6 +5060,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     debugName: "import_wallet",
     argNames: [
       "mnemonic",
+      "bip39Passphrase",
       "birthdayHeight",
       "network",
       "dbPath",
@@ -5109,6 +5154,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<bool> crateApiWalletIsSoftwareWalletLinkAccountImported({
     required String mnemonic,
+    required String bip39Passphrase,
     required String network,
     required String dbPath,
     required int zip32AccountIndex,
@@ -5118,6 +5164,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(mnemonic, serializer);
+          sse_encode_String(bip39Passphrase, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(dbPath, serializer);
           sse_encode_u_32(zip32AccountIndex, serializer);
@@ -5133,7 +5180,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiWalletIsSoftwareWalletLinkAccountImportedConstMeta,
-        argValues: [mnemonic, network, dbPath, zip32AccountIndex],
+        argValues: [
+          mnemonic,
+          bip39Passphrase,
+          network,
+          dbPath,
+          zip32AccountIndex,
+        ],
         apiImpl: this,
       ),
     );
@@ -5143,7 +5196,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   get kCrateApiWalletIsSoftwareWalletLinkAccountImportedConstMeta =>
       const TaskConstMeta(
         debugName: "is_software_wallet_link_account_imported",
-        argNames: ["mnemonic", "network", "dbPath", "zip32AccountIndex"],
+        argNames: [
+          "mnemonic",
+          "bip39Passphrase",
+          "network",
+          "dbPath",
+          "zip32AccountIndex",
+        ],
       );
 
   @override
@@ -6161,6 +6220,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   Future<BigInt> crateApiWalletPreviewSoftwareAccountTransparentBalance({
     required String mnemonic,
+    required String bip39Passphrase,
     required String network,
     required String lightwalletdUrl,
     required int zip32AccountIndex,
@@ -6170,6 +6230,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(mnemonic, serializer);
+          sse_encode_String(bip39Passphrase, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
           sse_encode_u_32(zip32AccountIndex, serializer);
@@ -6186,7 +6247,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         ),
         constMeta:
             kCrateApiWalletPreviewSoftwareAccountTransparentBalanceConstMeta,
-        argValues: [mnemonic, network, lightwalletdUrl, zip32AccountIndex],
+        argValues: [
+          mnemonic,
+          bip39Passphrase,
+          network,
+          lightwalletdUrl,
+          zip32AccountIndex,
+        ],
         apiImpl: this,
       ),
     );
@@ -6198,6 +6265,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "preview_software_account_transparent_balance",
         argNames: [
           "mnemonic",
+          "bip39Passphrase",
           "network",
           "lightwalletdUrl",
           "zip32AccountIndex",

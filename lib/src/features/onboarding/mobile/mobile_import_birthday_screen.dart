@@ -331,6 +331,7 @@ class _MobileImportBirthdayScreenState
           '/onboarding/set-passcode',
           extra: SetPasswordScreenArgs.importWallet(
             mnemonic: widget.args.mnemonic,
+            bip39Passphrase: widget.args.bip39Passphrase,
             birthdayHeight: height,
             selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
           ),
@@ -370,6 +371,7 @@ class _MobileImportBirthdayScreenState
             });
             await accountNotifier.importAccount(
               mnemonic: widget.args.mnemonic,
+              bip39Passphrase: widget.args.bip39Passphrase,
               birthdayHeight: height,
               additionalAccountIndices: selectedAdditionalAccountIndices,
             );
@@ -423,6 +425,7 @@ class _MobileImportBirthdayScreenState
         .read(accountProvider.notifier)
         .discoverAdditionalSoftwareAccounts(
           mnemonic: mnemonic,
+          bip39Passphrase: widget.args.bip39Passphrase,
           birthdayHeight: birthdayHeight,
         );
     if (!mounted) return null;
@@ -453,6 +456,7 @@ class _MobileImportBirthdayScreenState
         .read(accountProvider.notifier)
         .previewSoftwareAccountTransparentBalance(
           mnemonic: widget.args.mnemonic,
+          bip39Passphrase: widget.args.bip39Passphrase,
           accountIndex: account.zip32AccountIndex,
         );
   }

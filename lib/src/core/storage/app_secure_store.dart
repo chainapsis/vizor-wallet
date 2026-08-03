@@ -16,6 +16,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config/network_config.dart';
 import '../security/password_policy.dart';
+import '../security/software_wallet_secret.dart';
 import '../../rust/api/secret.dart' as rust_secret;
 
 const kWalletDbNameKey = 'zcash_wallet_db_name';
@@ -198,11 +199,36 @@ class AppSecureStore {
         'read account mnemonic "$accountUuid"',
         () => _mnemonicStorage.read(key: key),
       );
-      return _decryptStoredSecretString(
+      final storedValue = await _decryptStoredSecretString(
         raw,
         key: key,
         requireUnlockedSession: requireUnlockedSession,
       );
+      return storedValue == null
+          ? null
+          : SoftwareWalletSecret.decode(storedValue).mnemonic;
+    });
+  }
+
+  Future<SoftwareWalletSecret?> readAccountSoftwareWalletSecret(
+    String accountUuid, {
+    bool requireUnlockedSession = false,
+  }) {
+    return _secretMutationLock.run(() async {
+      if (_shouldSkipLockedSecretRead(requireUnlockedSession)) return null;
+      final key = _accountMnemonicKey(accountUuid);
+      final raw = await _runStorageOperation(
+        'read account software wallet secret "$accountUuid"',
+        () => _mnemonicStorage.read(key: key),
+      );
+      final storedValue = await _decryptStoredSecretString(
+        raw,
+        key: key,
+        requireUnlockedSession: requireUnlockedSession,
+      );
+      return storedValue == null
+          ? null
+          : SoftwareWalletSecret.decode(storedValue);
     });
   }
 
@@ -259,13 +285,21 @@ class AppSecureStore {
     });
   }
 
-  Future<void> writeAccountMnemonic(String accountUuid, String mnemonic) {
+  Future<void> writeAccountMnemonic(
+    String accountUuid,
+    String mnemonic, {
+    String bip39Passphrase = '',
+  }) {
     return _secretMutationLock.run(() async {
+      final storedValue = SoftwareWalletSecret(
+        mnemonic: mnemonic,
+        bip39Passphrase: bip39Passphrase,
+      ).encodeForStorage();
       await _runStorageOperation(
         'write account mnemonic "$accountUuid"',
         () async => _mnemonicStorage.write(
           key: _accountMnemonicKey(accountUuid),
-          value: await _encryptSecretString(mnemonic),
+          value: await _encryptSecretString(storedValue),
         ),
       );
     });

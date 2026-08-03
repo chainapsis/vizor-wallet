@@ -534,6 +534,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
   Future<rust_wallet.SoftwareWalletImportDiscoveryResult>
   discoverAdditionalSoftwareAccounts({
     required String mnemonic,
+    String bip39Passphrase = '',
     int? birthdayHeight,
   }) async {
     return discovery;
@@ -543,6 +544,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
   Future<BigInt> previewSoftwareAccountTransparentBalance({
     required String mnemonic,
     required int accountIndex,
+    String bip39Passphrase = '',
   }) async {
     return BigInt.zero;
   }
@@ -550,6 +552,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
   @override
   Future<void> importAccount({
     required String mnemonic,
+    String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
     List<int> additionalAccountIndices = const [],

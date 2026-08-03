@@ -73,6 +73,7 @@ fn create_fixture(scenario: &str, db_path: &str, manifest_path: &str) {
 
     let primary = wallet::import_wallet(
         PRIMARY_MNEMONIC.to_string(),
+        String::new(),
         Some(1),
         NETWORK.to_string(),
         db_path.to_string(),
@@ -88,6 +89,7 @@ fn create_fixture(scenario: &str, db_path: &str, manifest_path: &str) {
                 NETWORK.to_string(),
                 "Secondary".to_string(),
                 SECONDARY_MNEMONIC.to_string(),
+                String::new(),
                 Some(1),
             )
             .expect("add secondary imported account");
