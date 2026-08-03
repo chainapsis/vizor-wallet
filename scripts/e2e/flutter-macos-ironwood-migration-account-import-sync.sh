@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+export E2E_TEST_FILE="${E2E_TEST_FILE:-integration_test/regtest_ironwood_migration_account_import_sync_test.dart}"
+export IRONWOOD_ACTIVATION_HEIGHT="${IRONWOOD_ACTIVATION_HEIGHT:-1200}"
+export E2E_ORCHARD_PREFUND_BLOCKS="${E2E_ORCHARD_PREFUND_BLOCKS:-700}"
+export ZCASH_E2E_SYNC_BATCH_SIZE="${ZCASH_E2E_SYNC_BATCH_SIZE:-25}"
+export ZCASH_E2E_SYNC_BATCH_DELAY_MS="${ZCASH_E2E_SYNC_BATCH_DELAY_MS:-300}"
+export ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN="${ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN:-true}"
+
+exec "$ROOT_DIR/scripts/e2e/flutter-macos-ironwood-migration.sh"

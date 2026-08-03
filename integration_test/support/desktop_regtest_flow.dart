@@ -142,7 +142,10 @@ Future<void> dismissIronwoodAnnouncement(WidgetTester tester) async {
   );
 }
 
-Future<void> openPrivateMigrationReview(WidgetTester tester) async {
+Future<void> openPrivateMigrationReview(
+  WidgetTester tester, {
+  Duration reviewTimeout = const Duration(seconds: 30),
+}) async {
   await tapAppButton(
     tester,
     const ValueKey('home_desktop_ironwood_migration_cta_button'),
@@ -175,6 +178,7 @@ Future<void> openPrivateMigrationReview(WidgetTester tester) async {
       find.byKey(const ValueKey('ironwood_migration_review_screen')),
     ),
     description: 'private migration review',
+    timeout: reviewTimeout,
   );
 }
 

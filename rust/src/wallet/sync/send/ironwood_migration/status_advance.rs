@@ -69,6 +69,23 @@ fn cancelled_migration_result(run: &super::migration::ActiveRun) -> IronwoodMigr
     }
 }
 
+fn account_growth_catchup_waiting_result(
+    run: &super::migration::ActiveRun,
+) -> IronwoodMigrationResult {
+    IronwoodMigrationResult {
+        txids: String::new(),
+        status: run.phase.clone(),
+        broadcasted_count: 0,
+        total_count: run.target_values_zatoshi.len() as u32,
+        message: Some(
+            "Waiting for the imported account's historical sync before continuing migration."
+                .to_string(),
+        ),
+        fee_zatoshi: 0,
+        migrated_zatoshi: run.target_values_zatoshi.iter().sum(),
+    }
+}
+
 enum StagedDenominationAdvance {
     Waiting(IronwoodMigrationResult),
     Ready,
@@ -202,6 +219,11 @@ async fn advance_staged_denomination_run(
     pending_salt_base64: &str,
     policy: MigrationBroadcastPolicy<'_>,
 ) -> Result<StagedDenominationAdvance, String> {
+    if sync_engine::account_growth_catchup_pending(db_path)? {
+        return Ok(StagedDenominationAdvance::Waiting(
+            account_growth_catchup_waiting_result(run),
+        ));
+    }
     let stages = reconcile_mined_denomination_stages(
         db_path,
         &run.run_id,
