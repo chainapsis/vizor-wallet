@@ -775,7 +775,7 @@ fn mark_sync_completed(db_data_path: &str, completed_tip_height: u64) -> Result<
 }
 
 fn ensure_complete_scan_state(
-    db: &WalletDatabase,
+    db: &mut WalletDatabase,
     current_tip_height: u64,
 ) -> Result<(u64, u64), SyncError> {
     let ranges = db
@@ -1881,7 +1881,7 @@ async fn run_sync_impl(
                     prefetch = None;
                     continue;
                 } else {
-                    ensure_complete_scan_state(&db, current_tip_height)?;
+                    ensure_complete_scan_state(&mut db, current_tip_height)?;
                     break;
                 }
             }
@@ -2254,7 +2254,7 @@ async fn run_sync_impl(
                     let post_rewind_pending = pending_scan_blocks(&post_rewind_ranges);
                     let first_pending = first_pending_scan_range(&post_rewind_ranges)
                         .unwrap_or_else(|| "none".into());
-                    let summary = sync::wallet_scan_heights(&db).map_err(SyncError::db)?;
+                    let summary = sync::wallet_scan_heights(&mut db).map_err(SyncError::db)?;
                     let actual_rewind_height_u64 = u32::from(actual_rewind_height) as u64;
                     log::info!(
                         "[{}] sync: {phase_name} rewound to {actual_rewind_height} \
@@ -2587,7 +2587,7 @@ async fn run_sync_impl(
     }
 
     let (final_scanned_height, final_tip_height) =
-        ensure_complete_scan_state(&db, current_tip_height)?;
+        ensure_complete_scan_state(&mut db, current_tip_height)?;
     // Reconcile migration chain state only after the scan queue is fully
     // drained, then update generic wallet locks for denomination outputs that
     // became visible in this run. This is intentionally repeated after every

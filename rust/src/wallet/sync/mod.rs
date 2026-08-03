@@ -387,27 +387,43 @@ fn is_completed_sync_status(
 ///
 /// `WalletSummary` uses `birthday - 1` before the first block has been fully
 /// scanned, so preserve that behavior when `block_fully_scanned` has no value.
-pub(crate) fn wallet_scan_heights(db: &WalletDatabase) -> Result<Option<(u64, u64)>, String> {
-    let Some(chain_tip_height) = db.chain_height().map_err(|e| format!("{e}"))? else {
-        return Ok(None);
-    };
-    let scanned_height = match db.block_fully_scanned().map_err(|e| format!("{e}"))? {
-        Some(block) => u32::from(block.block_height()) as u64,
-        None => {
-            let Some(birthday_height) = db.get_wallet_birthday().map_err(|e| format!("{e}"))?
-            else {
-                return Ok(None);
-            };
-            u32::from(birthday_height).saturating_sub(1) as u64
-        }
-    };
+pub(crate) fn wallet_scan_heights(db: &mut WalletDatabase) -> Result<Option<(u64, u64)>, String> {
+    wallet_scan_heights_in_snapshot(db, || {})
+}
 
-    Ok(Some((scanned_height, u32::from(chain_tip_height) as u64)))
+fn wallet_scan_heights_in_snapshot(
+    db: &mut WalletDatabase,
+    after_chain_height: impl FnOnce(),
+) -> Result<Option<(u64, u64)>, String> {
+    // The callback is a deterministic test seam: the first SELECT has fixed
+    // the SQLite snapshot before a concurrent writer is allowed to commit.
+    // Production callers always pass a no-op.
+    let mut after_chain_height = Some(after_chain_height);
+    db.transactionally(|db| {
+        let Some(chain_tip_height) = db.chain_height()? else {
+            return Ok(None);
+        };
+        if let Some(after_chain_height) = after_chain_height.take() {
+            after_chain_height();
+        }
+        let scanned_height = match db.block_fully_scanned()? {
+            Some(block) => u32::from(block.block_height()) as u64,
+            None => {
+                let Some(birthday_height) = db.get_wallet_birthday()? else {
+                    return Ok(None);
+                };
+                u32::from(birthday_height).saturating_sub(1) as u64
+            }
+        };
+
+        Ok(Some((scanned_height, u32::from(chain_tip_height) as u64)))
+    })
+    .map_err(|e: zcash_client_sqlite::error::SqliteClientError| format!("{e}"))
 }
 
 pub fn get_sync_progress(db_path: &str, network: WalletNetwork) -> Result<SyncProgress, String> {
-    let db = open_wallet_db_for_read(db_path, network)?;
-    match wallet_scan_heights(&db)? {
+    let mut db = open_wallet_db_for_read(db_path, network)?;
+    match wallet_scan_heights(&mut db)? {
         Some((scanned_height, chain_tip_height)) => {
             let last_completed_height = super::sync_engine::completed_sync_height_for_status(
                 db_path,
@@ -752,6 +768,43 @@ mod tests {
         assert_eq!(progress.chain_tip_height, 1_100);
         assert!(progress.is_syncing);
         assert!(!progress.is_complete);
+    }
+
+    #[test]
+    fn wallet_scan_heights_uses_one_sqlite_snapshot() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let phrase = crate::wallet::keys::generate_mnemonic();
+        let seed = crate::wallet::keys::mnemonic_to_seed(&phrase).unwrap();
+
+        crate::wallet::keys::init_db_and_create_account(
+            db_path,
+            WalletNetwork::Regtest,
+            &seed,
+            Some(1_000),
+            "test",
+        )
+        .unwrap();
+        update_chain_tip(db_path, WalletNetwork::Regtest, 1_100).unwrap();
+
+        let mut db = open_wallet_db_for_read(db_path, WalletNetwork::Regtest).unwrap();
+        let heights = wallet_scan_heights_in_snapshot(&mut db, || {
+            let writer = rusqlite::Connection::open(db_path).unwrap();
+            writer
+                .execute("UPDATE accounts SET birthday_height = 500", [])
+                .unwrap();
+        })
+        .unwrap();
+
+        assert_eq!(heights, Some((999, 1_100)));
+        let updated_birthday: u32 = rusqlite::Connection::open(db_path)
+            .unwrap()
+            .query_row("SELECT MIN(birthday_height) FROM accounts", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(updated_birthday, 500);
     }
 
     /// Pull a proposal ID that is guaranteed not to collide with anything a

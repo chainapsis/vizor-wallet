@@ -2396,8 +2396,8 @@ fn migration_scanned_height_read_only(
     network: WalletNetwork,
 ) -> Result<u32, String> {
     // Height-only: do not pay for a full WalletSummary here.
-    let db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
-    Ok(super::wallet_scan_heights(&db)?
+    let mut db = open_wallet_db_readonly_with_timeout(db_path, network, READ_DB_BUSY_TIMEOUT)?;
+    Ok(super::wallet_scan_heights(&mut db)?
         .map(|(scanned_height, _)| scanned_height as u32)
         .unwrap_or(0))
 }
