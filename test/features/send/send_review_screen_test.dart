@@ -21,6 +21,11 @@ import 'package:zcash_wallet/src/features/address_book/models/address_book_conta
 import 'package:zcash_wallet/src/features/address_book/providers/address_book_provider.dart';
 import 'package:zcash_wallet/src/features/keystone/widgets/keystone_signing_modal.dart';
 import 'package:zcash_wallet/src/features/send/screens/send_review_screen.dart';
+import 'package:zcash_wallet/src/features/send/services/send_flow.dart'
+    show
+        resolveSendStatusRoutePayload,
+        SendStatusRoutePayloadObserver,
+        sendStatusRoutePayloadProvider;
 import 'package:zcash_wallet/src/features/send/widgets/send_review_content_view.dart';
 import 'package:zcash_wallet/src/features/send/widgets/verify_address_modal.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -430,6 +435,93 @@ void main() {
     expect(rustApi.discardCalls, isEmpty);
   });
 
+  testWidgets('Keystone status survives a router refresh after handoff', (
+    tester,
+  ) async {
+    final routerRefresh = ChangeNotifier();
+    addTearDown(routerRefresh.dispose);
+    final statusExtras = <Object?>[];
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _harness(
+        _reviewArgs(addressType: 'unified'),
+        bootstrap: _bootstrap(isHardware: true),
+        statusExtras: statusExtras,
+        routerRefresh: routerRefresh,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Confirm with Keystone'));
+    await _flushRealAsync(tester);
+    await tester.tap(find.text('Get signature'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('keystone-scan-route'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('status-route'), findsOneWidget);
+    expect(statusExtras.last, isA<KeystoneBroadcastArgs>());
+
+    routerRefresh.notifyListeners();
+    await tester.pumpAndSettle();
+
+    expect(find.text('status-route'), findsOneWidget);
+    expect(find.text('send-route'), findsNothing);
+    expect(statusExtras.last, isA<KeystoneBroadcastArgs>());
+  });
+
+  test('retained status payload cannot restore a different send flow', () {
+    final reviewArgs = _reviewArgs(addressType: 'unified');
+    final retained = KeystoneBroadcastArgs(
+      reviewArgs: reviewArgs,
+      pcztWithProofsBytes: _fakeProofsBytes,
+      pcztWithSignaturesBytes: _fakeSignatureBytes,
+    );
+
+    expect(
+      resolveSendStatusRoutePayload(
+        routePayload: null,
+        retainedPayload: retained,
+        sendFlowId: 'different-send-flow',
+      ),
+      isNull,
+    );
+  });
+
+  test('status route observer clears payload when the route is removed', () {
+    var clearCount = 0;
+    final observer = SendStatusRoutePayloadObserver(
+      onLeaveStatus: () => clearCount++,
+    );
+    final statusRoute = MaterialPageRoute<void>(
+      settings: const RouteSettings(name: '/send/status'),
+      builder: (_) => const SizedBox.shrink(),
+    );
+
+    observer.didRemove(statusRoute, null);
+
+    expect(clearCount, 1);
+  });
+
+  test(
+    'status route observer preserves payload for same-route replacement',
+    () {
+      var clearCount = 0;
+      final observer = SendStatusRoutePayloadObserver(
+        onLeaveStatus: () => clearCount++,
+      );
+      MaterialPageRoute<void> statusRoute() => MaterialPageRoute<void>(
+        settings: const RouteSettings(name: '/send/status'),
+        builder: (_) => const SizedBox.shrink(),
+      );
+
+      observer.didReplace(oldRoute: statusRoute(), newRoute: statusRoute());
+
+      expect(clearCount, 0);
+    },
+  );
+
   testWidgets('Keystone reject while preparing discards the proposal', (
     tester,
   ) async {
@@ -518,9 +610,11 @@ Widget _harness(
   AppBootstrapState? bootstrap,
   AddressBookRepository? addressBookRepository,
   List<Object?>? statusExtras,
+  Listenable? routerRefresh,
 }) {
   final router = GoRouter(
     initialLocation: '/send/review',
+    refreshListenable: routerRefresh,
     routes: [
       GoRoute(path: '/send', builder: (_, _) => const Text('send-route')),
       GoRoute(
@@ -536,8 +630,19 @@ Widget _harness(
       ),
       GoRoute(
         path: '/send/status',
-        builder: (_, state) {
-          statusExtras?.add(state.extra);
+        builder: (context, state) {
+          final resolved = resolveSendStatusRoutePayload(
+            routePayload: state.extra,
+            retainedPayload: ProviderScope.containerOf(
+              context,
+            ).read(sendStatusRoutePayloadProvider),
+            sendFlowId: state.uri.queryParameters['flow'],
+          );
+          statusExtras?.add(resolved);
+          if (resolved is! SendReviewArgs &&
+              resolved is! KeystoneBroadcastArgs) {
+            return const Text('send-route');
+          }
           return const Text('status-route');
         },
       ),

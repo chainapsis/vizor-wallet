@@ -65,6 +65,11 @@ import 'src/features/send/screens/keystone_send_scan_screen.dart';
 import 'src/features/send/screens/send_review_screen.dart';
 import 'src/features/send/screens/send_screen.dart';
 import 'src/features/send/screens/send_status_screen.dart';
+import 'src/features/send/services/send_flow.dart'
+    show
+        resolveSendStatusRoutePayload,
+        SendStatusRoutePayloadObserver,
+        sendStatusRoutePayloadProvider;
 import 'src/features/settings/screens/settings_screen.dart';
 import 'src/features/settings/screens/settings_change_password_screen.dart';
 import 'src/features/settings/screens/settings_endpoint_screen.dart';
@@ -241,6 +246,14 @@ final _routerProvider = Provider<_AppRouter>((ref) {
 
   router = GoRouter(
     navigatorKey: navigatorKey,
+    observers: kAppFormFactor == AppFormFactor.desktop
+        ? [
+            SendStatusRoutePayloadObserver(
+              onLeaveStatus: () =>
+                  ref.read(sendStatusRoutePayloadProvider.notifier).clear(),
+            ),
+          ]
+        : const [],
     initialLocation: bootstrap.initialLocation,
     refreshListenable: refresh,
     redirect: (context, state) =>
@@ -272,7 +285,7 @@ final _routerProvider = Provider<_AppRouter>((ref) {
               unlockScreen: const UnlockScreen(),
             ),
             ...appDesktopOnboardingRoutes(ref),
-            ..._desktopRoutes(),
+            ..._desktopRoutes(ref),
           ],
   );
 
@@ -737,7 +750,7 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
 ];
 
 /// Main application routes for the desktop (large-form-factor) tree.
-List<RouteBase> _desktopRoutes() => [
+List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
   GoRoute(
     path: '/migration',
@@ -923,7 +936,16 @@ List<RouteBase> _desktopRoutes() => [
   GoRoute(
     path: '/send/status',
     builder: (_, state) {
-      final args = state.extra;
+      final routeArgs = state.extra;
+      final retainedArgs = ref.read(sendStatusRoutePayloadProvider);
+      final args = resolveSendStatusRoutePayload(
+        routePayload: routeArgs,
+        retainedPayload: retainedArgs,
+        sendFlowId: state.uri.queryParameters['flow'],
+      );
+      if (routeArgs == null && args != null) {
+        log('Send status: restored route payload after router refresh');
+      }
       if (args is KeystoneBroadcastArgs) {
         return SendStatusScreen(args: args.reviewArgs, keystone: args);
       }
