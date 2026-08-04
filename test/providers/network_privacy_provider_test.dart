@@ -13,6 +13,14 @@ void main() {
       );
 
       expect(events, ['store:read', 'begin-enable', 'native:true']);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(
+        container.read(networkPrivacyProvider).startupNotice,
+        kTorStartupFailureNotice,
+      );
+      container.read(networkPrivacyProvider.notifier).clearStartupNotice();
+      expect(container.read(networkPrivacyProvider).startupNotice, isNull);
     } finally {
       await initializeNetworkPrivacyRuntime(
         store: _FakeStore(<String>[]),

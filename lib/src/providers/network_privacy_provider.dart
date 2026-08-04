@@ -11,6 +11,8 @@ import '../services/windows_update_service.dart';
 import 'sync_provider.dart';
 
 const kTorEnabledPreferenceKey = 'zcash_tor_enabled';
+const kTorStartupFailureNotice =
+    "Couldn't connect to Tor. Network requests are paused.";
 
 enum NetworkPrivacyConnectionStatus { off, connecting, connected, failed }
 
@@ -19,16 +21,19 @@ class NetworkPrivacyState {
     required this.torEnabled,
     required this.status,
     this.error,
+    this.startupNotice,
   });
 
   const NetworkPrivacyState.off()
     : torEnabled = false,
       status = NetworkPrivacyConnectionStatus.off,
-      error = null;
+      error = null,
+      startupNotice = null;
 
   final bool torEnabled;
   final NetworkPrivacyConnectionStatus status;
   final String? error;
+  final String? startupNotice;
 
   bool get isBusy => status == NetworkPrivacyConnectionStatus.connecting;
 }
@@ -151,6 +156,7 @@ Future<void> initializeNetworkPrivacyRuntime({
       torEnabled: true,
       status: NetworkPrivacyConnectionStatus.failed,
       error: 'Could not read the saved Tor preference: $error',
+      startupNotice: kTorStartupFailureNotice,
     );
     return;
   }
@@ -178,6 +184,7 @@ Future<void> initializeNetworkPrivacyRuntime({
       torEnabled: true,
       status: NetworkPrivacyConnectionStatus.failed,
       error: error.toString(),
+      startupNotice: kTorStartupFailureNotice,
     );
   }
 }
@@ -211,6 +218,15 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
 
   @override
   NetworkPrivacyState build() => _initialNetworkPrivacyState;
+
+  void clearStartupNotice() {
+    if (state.startupNotice == null) return;
+    state = NetworkPrivacyState(
+      torEnabled: state.torEnabled,
+      status: state.status,
+      error: state.error,
+    );
+  }
 
   Future<void> setTorEnabled(bool enabled) async {
     final generation = ++_generation;
