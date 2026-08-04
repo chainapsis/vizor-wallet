@@ -52,6 +52,16 @@ import UIKit
 
     let messenger = engineBridge.applicationRegistrar.messenger()
 
+    let keychainAccessibilityMigrationHandler =
+      KeychainAccessibilityMigrationChannel()
+    let keychainAccessibilityMigrationChannel = FlutterMethodChannel(
+      name: keychainAccessibilityMigrationChannelName,
+      binaryMessenger: messenger
+    )
+    keychainAccessibilityMigrationChannel.setMethodCallHandler { call, result in
+      keychainAccessibilityMigrationHandler.handle(call, result: result)
+    }
+
     let backgroundMigrationChannel = FlutterMethodChannel(
       name: "com.zcash.wallet/background_migration",
       binaryMessenger: messenger

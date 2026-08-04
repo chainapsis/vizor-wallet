@@ -215,6 +215,7 @@ Future<AppBootstrapState> loadAppBootstrap() async {
 
   try {
     log('bootstrap: loading startup snapshot');
+    await ensureIosSecureStoreAccessibilityMigrated();
     await storage.ensureWalletDbName();
     await _applyE2eBootstrapOverrides(storage);
     var passwordRotationRecoveryFailed = false;

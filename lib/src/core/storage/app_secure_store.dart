@@ -11,7 +11,7 @@ import 'package:flutter/foundation.dart'
         kDebugMode,
         kIsWeb,
         visibleForTesting;
-import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/services.dart' show MethodChannel, PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../config/network_config.dart';
@@ -40,6 +40,27 @@ const _votingHotkeyKeyPrefix = 'zcash_account_voting_hotkey_';
 const _e2eUseFirstUnlockMnemonicKeychain = bool.fromEnvironment(
   'ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN',
 );
+const _iosKeychainAccessibilityMigrationChannel = MethodChannel(
+  'com.zcash.wallet/keychain_accessibility_migration',
+);
+
+Future<void> ensureIosSecureStoreAccessibilityMigrated({
+  MethodChannel channel = _iosKeychainAccessibilityMigrationChannel,
+}) async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+  final service = secureStoreServiceForNetwork(kZcashDefaultNetworkName);
+  try {
+    await channel.invokeMethod<Object?>(
+      'ensureFirstUnlockThisDeviceOnly',
+      <String, Object?>{'service': service},
+    );
+  } catch (error) {
+    throw SecureStorageUnavailableException(
+      operation: 'iOS Keychain accessibility migration',
+      cause: error,
+    );
+  }
+}
 
 class PasswordRotationRecoveryFailedException implements Exception {
   const PasswordRotationRecoveryFailedException();
@@ -83,7 +104,7 @@ class AppSecureStore {
     return FlutterSecureStorage(
       iOptions: IOSOptions(
         accountName: service,
-        accessibility: KeychainAccessibility.first_unlock,
+        accessibility: KeychainAccessibility.first_unlock_this_device,
       ),
       aOptions: kZcashDefaultNetworkName == 'main'
           ? AndroidOptions.defaultOptions
@@ -104,7 +125,7 @@ class AppSecureStore {
     return FlutterSecureStorage(
       iOptions: IOSOptions(
         accountName: service,
-        accessibility: KeychainAccessibility.first_unlock,
+        accessibility: KeychainAccessibility.first_unlock_this_device,
       ),
       aOptions: kZcashDefaultNetworkName == 'main'
           ? AndroidOptions.defaultOptions
