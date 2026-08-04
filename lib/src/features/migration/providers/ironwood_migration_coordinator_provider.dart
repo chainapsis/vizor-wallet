@@ -1122,12 +1122,17 @@ class IronwoodMigrationCoordinator
         kAppFormFactor != AppFormFactor.mobile ||
         state.childProofBatchPermits.contains(accountUuid);
     final canPrepareNextProof = _canPrepareNextProof(status);
+    // A finalized due transaction is independent of whether the next signed
+    // child has reached its proof window.
+    final canBroadcastDueTransaction =
+        !usesNativeOutbox && _hasDueScheduledBroadcast(status);
     final phaseCanAdvance =
         (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0) ||
         (status.phase == kIronwoodMigrationReadyToMigratePhase &&
-            hasChildProofBatchPermit &&
-            (!isHardware || canPrepareNextProof)) ||
+            (canBroadcastDueTransaction ||
+                (hasChildProofBatchPermit &&
+                    (!isHardware || canPrepareNextProof)))) ||
         (kAppFormFactor == AppFormFactor.mobile &&
             ((status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
                     ((usesNativeOutbox &&
