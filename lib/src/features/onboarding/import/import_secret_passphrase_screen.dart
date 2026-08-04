@@ -849,28 +849,26 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Column(
                         children: [
-                          for (
-                            var columnIndex = 0;
-                            columnIndex < 3;
-                            columnIndex++
-                          ) ...[
-                            Expanded(
-                              child: Column(
-                                children: List.generate(8, (rowIndex) {
-                                  final index = columnIndex * 8 + rowIndex;
-                                  return Padding(
-                                    padding: EdgeInsets.only(
-                                      bottom: rowIndex == 7 ? 0 : 4,
+                          for (var rowIndex = 0; rowIndex < 8; rowIndex++) ...[
+                            Row(
+                              children: [
+                                for (
+                                  var columnIndex = 0;
+                                  columnIndex < 3;
+                                  columnIndex++
+                                ) ...[
+                                  Expanded(
+                                    child: buildCell(
+                                      rowIndex * 3 + columnIndex,
                                     ),
-                                    child: buildCell(index),
-                                  );
-                                }),
-                              ),
+                                  ),
+                                  if (columnIndex < 2) const SizedBox(width: 8),
+                                ],
+                              ],
                             ),
-                            if (columnIndex < 2) const SizedBox(width: 8),
+                            if (rowIndex < 7) const SizedBox(height: 4),
                           ],
                         ],
                       ),

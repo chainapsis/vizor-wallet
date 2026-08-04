@@ -49,6 +49,25 @@ void main() {
     expect(find.text('cactus'), findsOneWidget);
   });
 
+  testWidgets('lays out mnemonic fields from left to right by word number', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    final first = tester.getTopLeft(_wordField(0));
+    final second = tester.getTopLeft(_wordField(1));
+    final third = tester.getTopLeft(_wordField(2));
+    final fourth = tester.getTopLeft(_wordField(3));
+
+    expect(second.dy, first.dy);
+    expect(third.dy, first.dy);
+    expect(second.dx, greaterThan(first.dx));
+    expect(third.dx, greaterThan(second.dx));
+    expect(fourth.dx, first.dx);
+    expect(fourth.dy, greaterThan(first.dy));
+  });
+
   testWidgets('moves to the next field for a uniquely completed BIP39 word', (
     tester,
   ) async {
