@@ -94,7 +94,7 @@ void main() {
     expect(find.text('Direct'), findsOneWidget);
     expect(
       find.text(
-        'Tor is off. Requests to the Zcash network and in-app services connect directly.',
+        'Tor is off. Requests to the Zcash network, in-app services, and software updates connect directly.',
       ),
       findsOneWidget,
     );
@@ -164,7 +164,9 @@ void main() {
 
     expect(find.text('Switching to direct…'), findsOneWidget);
     expect(
-      find.text('Vizor is switching future requests to a direct connection.'),
+      find.text(
+        'Vizor is switching network requests and software updates to a direct connection.',
+      ),
       findsOneWidget,
     );
   });

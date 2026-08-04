@@ -198,7 +198,7 @@ class _BootstrappedZcashWalletAppState
         appBootstrapRetryProvider.overrideWithValue(_reloadBootstrap),
         ...widget.overrides,
       ],
-      child: const ZcashWalletApp(),
+      child: const _MacOSUpdatePrivacyChoiceHost(child: ZcashWalletApp()),
     );
   }
 }
@@ -1139,6 +1139,45 @@ class ZcashWalletApp extends ConsumerWidget {
   }
 }
 
+class _MacOSUpdatePrivacyChoiceHost extends ConsumerStatefulWidget {
+  const _MacOSUpdatePrivacyChoiceHost({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_MacOSUpdatePrivacyChoiceHost> createState() =>
+      _MacOSUpdatePrivacyChoiceHostState();
+}
+
+class _MacOSUpdatePrivacyChoiceHostState
+    extends ConsumerState<_MacOSUpdatePrivacyChoiceHost> {
+  @override
+  void initState() {
+    super.initState();
+    if (!Platform.isMacOS) return;
+    PlatformNetworkPrivacyNativeUpdateCoordinator.registerDisableTorForUpdateHandler(
+      () async {
+        final notifier = ref.read(networkPrivacyProvider.notifier);
+        await notifier.setTorEnabled(false);
+        final state = ref.read(networkPrivacyProvider);
+        return !state.torEnabled &&
+            state.status == NetworkPrivacyConnectionStatus.off;
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    if (Platform.isMacOS) {
+      PlatformNetworkPrivacyNativeUpdateCoordinator.clearDisableTorForUpdateHandler();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
   const _WindowsUpdateStartupCheck({required this.child});
 
@@ -1590,7 +1629,7 @@ class _LinuxUpdateNoticeListener extends ConsumerWidget {
             content: Text('Vizor ${update.assetVersion} is available.'),
             duration: const Duration(seconds: 8),
             action: SnackBarAction(
-              label: 'View Release',
+              label: 'View release',
               onPressed: () => unawaited(_openLinuxUpdateRelease(update)),
             ),
           ),

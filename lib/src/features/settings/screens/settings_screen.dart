@@ -142,8 +142,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
-    final updateState =
-        Platform.isWindows ? ref.watch(windowsUpdateProvider) : null;
+    final updateState = Platform.isWindows
+        ? ref.watch(windowsUpdateProvider)
+        : null;
     final showUninstall = settingsUninstallSupported();
 
     return AppDesktopShell(
@@ -168,32 +169,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
-                updateLabel:
-                    updateState == null ? null : _updateLabel(updateState),
+                updateLabel: updateState == null
+                    ? null
+                    : _updateLabel(updateState),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
-                onChangePassword:
-                    () => context.push('/settings/change-password'),
+                onChangePassword: () =>
+                    context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
-                onAccountName:
-                    hasActiveAccount
-                        ? () => _showModal(_SettingsModalType.accountName)
-                        : null,
-                onProfilePicture:
-                    hasActiveAccount
-                        ? () => _showModal(_SettingsModalType.profilePicture)
-                        : null,
+                onAccountName: hasActiveAccount
+                    ? () => _showModal(_SettingsModalType.accountName)
+                    : null,
+                onProfilePicture: hasActiveAccount
+                    ? () => _showModal(_SettingsModalType.profilePicture)
+                    : null,
                 onAddressBook: () => context.push('/address-book'),
                 onLinkMobile: () => context.push('/settings/link-mobile'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
-                onUpdates:
-                    updateState == null
-                        ? null
-                        : () => _showModal(_SettingsModalType.updates),
+                onUpdates: updateState == null
+                    ? null
+                    : () => _showModal(_SettingsModalType.updates),
                 onAbout: () => context.push('/about'),
-                onUninstall:
-                    showUninstall
-                        ? () => context.go('/settings/uninstall')
-                        : null,
+                onUninstall: showUninstall
+                    ? () => context.go('/settings/uninstall')
+                    : null,
               ),
             ),
             if (_activeModal != null)
@@ -217,15 +215,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   _SettingsModalType.profilePicture =>
                     AccountProfilePictureModal(
-                      currentProfilePictureId:
-                          _pfpPickerFromEdit
-                              ? (_editDraftProfilePictureId ??
-                                  activeProfilePictureId)
-                              : activeProfilePictureId,
-                      onCancel:
-                          _pfpPickerFromEdit
-                              ? () => _returnToEditAccountModal()
-                              : _closeModal,
+                      currentProfilePictureId: _pfpPickerFromEdit
+                          ? (_editDraftProfilePictureId ??
+                                activeProfilePictureId)
+                          : activeProfilePictureId,
+                      onCancel: _pfpPickerFromEdit
+                          ? () => _returnToEditAccountModal()
+                          : _closeModal,
                       onUpdate: (profilePictureId) async {
                         if (_pfpPickerFromEdit) {
                           _returnToEditAccountModal(
@@ -669,10 +665,9 @@ class _WindowsUpdateModal extends ConsumerWidget {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyMedium.copyWith(
-              color:
-                  state.status == WindowsUpdateStatus.failed
-                      ? context.colors.text.destructive
-                      : context.colors.text.secondary,
+              color: state.status == WindowsUpdateStatus.failed
+                  ? context.colors.text.destructive
+                  : context.colors.text.secondary,
             ),
           ),
           if (state.status == WindowsUpdateStatus.downloading) ...[
@@ -699,13 +694,13 @@ class _WindowsUpdateModal extends ConsumerWidget {
     }
     return switch (state.status) {
       WindowsUpdateStatus.checking => const _UpdatePrimaryAction(
-        label: 'Checking...',
+        label: 'Checking…',
       ),
       WindowsUpdateStatus.downloading => const _UpdatePrimaryAction(
-        label: 'Downloading...',
+        label: 'Downloading…',
       ),
       WindowsUpdateStatus.applying => const _UpdatePrimaryAction(
-        label: 'Restarting...',
+        label: 'Restarting…',
       ),
       WindowsUpdateStatus.available => _UpdatePrimaryAction(
         label: 'Download update',
@@ -750,8 +745,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
       WindowsUpdateStatus.ready =>
         'Version ${state.availableVersion} is ready.',
       WindowsUpdateStatus.applying => 'Restarting Vizor.',
-      WindowsUpdateStatus.failed =>
-        state.message.isEmpty ? "Couldn't check for updates." : state.message,
+      WindowsUpdateStatus.failed => "Couldn't complete the update. Try again.",
       _ => 'Ready to check for updates.',
     };
   }
@@ -862,17 +856,16 @@ class _ThemeOptionCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadii.medium),
             boxShadow: _settingsSurfaceShadow(colors),
           ),
-          foregroundDecoration:
-              selected
-                  ? BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppRadii.medium),
-                    border: Border.all(
-                      color: colors.border.strong,
-                      width: 2,
-                      strokeAlign: BorderSide.strokeAlignInside,
-                    ),
-                  )
-                  : null,
+          foregroundDecoration: selected
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadii.medium),
+                  border: Border.all(
+                    color: colors.border.strong,
+                    width: 2,
+                    strokeAlign: BorderSide.strokeAlignInside,
+                  ),
+                )
+              : null,
           child: Row(
             children: [
               SizedBox(
@@ -882,10 +875,9 @@ class _ThemeOptionCard extends StatelessWidget {
                   child: AppIcon(
                     iconName,
                     size: 18,
-                    color:
-                        selected
-                            ? colors.icon.accent
-                            : colors.icon.accent.withValues(alpha: 0.5),
+                    color: selected
+                        ? colors.icon.accent
+                        : colors.icon.accent.withValues(alpha: 0.5),
                   ),
                 ),
               ),
@@ -921,22 +913,20 @@ class _ThemeOptionIndicator extends StatelessWidget {
       width: 16,
       height: 16,
       decoration: BoxDecoration(
-        color:
-            selected
-                ? colors.background.inverse
-                : colors.background.neutralSubtleOpacity,
+        color: selected
+            ? colors.background.inverse
+            : colors.background.neutralSubtleOpacity,
         shape: BoxShape.circle,
       ),
-      child:
-          selected
-              ? Center(
-                child: AppIcon(
-                  AppIcons.check,
-                  size: 12,
-                  color: colors.background.ground,
-                ),
-              )
-              : null,
+      child: selected
+          ? Center(
+              child: AppIcon(
+                AppIcons.check,
+                size: 12,
+                color: colors.background.ground,
+              ),
+            )
+          : null,
     );
   }
 }
@@ -1042,12 +1032,15 @@ class _SettingsRowState extends State<_SettingsRow> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isInteractive = widget.onTap != null;
-    final contentColor =
-        widget.destructive ? colors.text.destructive : colors.text.accent;
-    final iconColor =
-        widget.destructive ? colors.text.destructive : colors.icon.muted;
-    final chevronColor =
-        widget.destructive ? colors.text.destructive : colors.icon.accent;
+    final contentColor = widget.destructive
+        ? colors.text.destructive
+        : colors.text.accent;
+    final iconColor = widget.destructive
+        ? colors.text.destructive
+        : colors.icon.muted;
+    final chevronColor = widget.destructive
+        ? colors.text.destructive
+        : colors.icon.accent;
 
     Widget content = Row(
       children: [
@@ -1091,10 +1084,9 @@ class _SettingsRowState extends State<_SettingsRow> {
           height: 44,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           decoration: BoxDecoration(
-            color:
-                isInteractive && _hovered
-                    ? _settingsRowHoverBackgroundColor(context)
-                    : null,
+            color: isInteractive && _hovered
+                ? _settingsRowHoverBackgroundColor(context)
+                : null,
             borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: content,

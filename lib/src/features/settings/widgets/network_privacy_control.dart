@@ -349,7 +349,7 @@ _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
     (NetworkPrivacyConnectionStatus.off, _) => _NetworkPrivacyPresentation(
       statusLabel: 'Direct',
       description:
-          'Tor is off. Requests to the Zcash network and in-app services connect directly.',
+          'Tor is off. Requests to the Zcash network, in-app services, and software updates connect directly.',
       statusColor: (colors) => colors.text.secondary,
     ),
     (NetworkPrivacyConnectionStatus.connecting, true) =>
@@ -363,7 +363,7 @@ _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
       _NetworkPrivacyPresentation(
         statusLabel: 'Switching to direct…',
         description:
-            'Vizor is switching future requests to a direct connection.',
+            'Vizor is switching network requests and software updates to a direct connection.',
         iconName: AppIcons.loader,
         statusColor: (colors) => colors.text.secondary,
       ),
