@@ -459,7 +459,7 @@ void main() {
   );
 
   test(
-    'due software migration broadcasts without preparing the next proof',
+    'due software broadcast retains a blocked proof permit',
     () async {
       final statuses = {
         _softwareUuid: _status(
@@ -492,11 +492,17 @@ void main() {
       final coordinator = container.read(
         ironwoodMigrationCoordinatorProvider.notifier,
       );
-      coordinator.grantForegroundProgressPermit(_softwareUuid);
+      coordinator.grantChildProofBatchPermit(_softwareUuid);
       await coordinator.refreshNow();
 
       expect(broadcasts, [_softwareUuid]);
       expect(softwareStarts, isEmpty);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .childProofBatchPermits,
+        contains(_softwareUuid),
+      );
     },
   );
 

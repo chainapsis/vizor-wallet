@@ -1288,6 +1288,8 @@ class IronwoodMigrationCoordinator
         status != null &&
         hasChildProofBatchPermit &&
         _isChildProofBatchAdvance(status);
+    final prepareNextProof =
+        kAppFormFactor != AppFormFactor.mobile || consumesProofBatchPermit;
     if (consumesProofBatchPermit) {
       state = state.copyWith(
         childProofBatchPermits: {...state.childProofBatchPermits}
@@ -1306,7 +1308,7 @@ class IronwoodMigrationCoordinator
           .read(ironwoodMigrationServiceProvider)
           .continueSoftwarePrivateMigration(
             accountUuid: accountUuid,
-            prepareNextProof: hasChildProofBatchPermit,
+            prepareNextProof: prepareNextProof,
           );
     } finally {
       if (ref.mounted) {
