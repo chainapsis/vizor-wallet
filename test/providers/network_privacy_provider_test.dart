@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
+import 'package:zcash_wallet/src/rust/network_privacy.dart' as rust_types;
 
 void main() {
   test('preference read failure pauses native updates before launch', () async {
@@ -15,10 +18,10 @@ void main() {
 
       expect(events, [
         'store:read',
+        'native:force-pause',
         'begin-enable',
         'runtime-quiesce',
         'direct-quiesce',
-        'native:true',
       ]);
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -37,6 +40,67 @@ void main() {
       );
     }
   });
+
+  test('direct runtime configuration skips Tor directory lookup', () async {
+    var directoryLookups = 0;
+    String? configuredDirectory;
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async {
+        directoryLookups++;
+        throw StateError('application support unavailable');
+      },
+      configureRuntime: ({required enabled, required torDirectory}) async {
+        configuredDirectory = torDirectory;
+        return rust_types.NetworkPrivacyStatus.direct;
+      },
+    );
+
+    final status = await runtime.configure(enabled: false);
+
+    expect(status, NetworkPrivacyConnectionStatus.off);
+    expect(directoryLookups, 0);
+    expect(configuredDirectory, isEmpty);
+  });
+
+  test(
+    'preference failure waits for an active native update to quiesce',
+    () async {
+      final events = <String>[];
+      final nativeUpdates = _DeferredPauseNativeUpdateCoordinator(events);
+      try {
+        final initialization = initializeNetworkPrivacyRuntime(
+          store: _ThrowingReadStore(events),
+          runtime: _FakeRuntime(
+            events,
+            NetworkPrivacyConnectionStatus.connected,
+          ),
+          nativeUpdates: nativeUpdates,
+          directRequests: _FakeDirectRequestGate(events),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(events, ['store:read', 'native:force-pause']);
+
+        nativeUpdates.completePause();
+        await initialization;
+        expect(events, [
+          'store:read',
+          'native:force-pause',
+          'native:paused',
+          'begin-enable',
+          'runtime-quiesce',
+          'direct-quiesce',
+        ]);
+      } finally {
+        await initializeNetworkPrivacyRuntime(
+          store: _FakeStore(<String>[]),
+          runtime: _FakeRuntime(<String>[], NetworkPrivacyConnectionStatus.off),
+          nativeUpdates: _FakeNativeUpdateCoordinator(<String>[]),
+          directRequests: _FakeDirectRequestGate(<String>[]),
+        );
+      }
+    },
+  );
 
   test('enabling quiesces direct traffic before persistence', () async {
     final events = <String>[];
@@ -541,6 +605,11 @@ class _FakeNativeUpdateCoordinator
   }
 
   @override
+  Future<void> pauseForFailClosedStartup() async {
+    events.add('native:force-pause');
+  }
+
+  @override
   Future<void> resumeTorUpdates() async {
     events.add('native-resume');
   }
@@ -559,8 +628,29 @@ class _RejectingNativeUpdateCoordinator
   }
 
   @override
+  Future<void> pauseForFailClosedStartup() async {
+    events.add('native:force-pause');
+  }
+
+  @override
   Future<void> resumeTorUpdates() async {
     throw UnimplementedError();
+  }
+}
+
+class _DeferredPauseNativeUpdateCoordinator
+    extends _FakeNativeUpdateCoordinator {
+  _DeferredPauseNativeUpdateCoordinator(super.events);
+
+  final _pause = Completer<void>();
+
+  void completePause() => _pause.complete();
+
+  @override
+  Future<void> pauseForFailClosedStartup() async {
+    events.add('native:force-pause');
+    await _pause.future;
+    events.add('native:paused');
   }
 }
 
