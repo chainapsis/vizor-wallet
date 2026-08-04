@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -187,6 +188,35 @@ void main() {
           'suspension and must recapture the epoch entry height',
     );
   });
+
+  test(
+    'a Windows sleep that begins mid-sweep preserves the activity gap',
+    () async {
+      final previousPlatformOverride = debugDefaultTargetPlatformOverride;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(
+        () => debugDefaultTargetPlatformOverride = previousPlatformOverride,
+      );
+      final harness = await _startCoordinator();
+
+      harness.onStatusSweep = () {
+        // QueryPerformanceCounter advances through Windows sleep, so both
+        // clocks move together and wall/monotonic divergence stays zero.
+        harness.run(kDesktopMigrationEpochSuspensionGap);
+        harness.onStatusSweep = null;
+      };
+      await harness.coordinator.refreshNow();
+      await harness.coordinator.refreshNow();
+
+      expect(
+        harness.authoritativeHeightReads,
+        2,
+        reason:
+            'the first post-sleep observation must restart the epoch before '
+            'overwriting the pre-sleep activity baseline',
+      );
+    },
+  );
 
   test('a long awake refresh gap (locked wallet) restarts the epoch', () async {
     final harness = await _startCoordinator();

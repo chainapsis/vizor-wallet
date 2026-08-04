@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -760,16 +761,16 @@ class IronwoodMigrationCoordinator
   ///   suspension exactly — regardless of whether the sleep began between
   ///   sweeps or mid-sweep, and immune to wall-clock corrections shrinking
   ///   real gaps. On Windows both clocks advance through sleep, so this
-  ///   signal stays silent and the idle gap below catches the sleep at the
-  ///   next sweep start instead.
-  /// - Idle gap ([idleGapCounts] callers only): monotonic time since the last
-  ///   observation. Observations bound every sweep, so while the process is
-  ///   alive and unlocked they arrive at least every
-  ///   [_migrationStatusPollInterval]; a large gap means refreshes themselves
-  ///   stopped for a stretch — a wallet locked long enough that accrued
-  ///   transfers must be treated as overdue-at-open. Only the start-of-sweep
-  ///   caller sets [idleGapCounts]: measured mid- or end-of-sweep the gap is
-  ///   the sweep's own duration, which is activity, not suspension.
+  ///   signal stays silent, so every Windows observation also treats a large
+  ///   monotonic gap as suspension before updating the activity baseline.
+  /// - Idle gap ([idleGapCounts] callers, plus every Windows observation):
+  ///   monotonic time since the last observation. Observations bound every
+  ///   sweep, so while the process is alive and unlocked they arrive at least
+  ///   every [_migrationStatusPollInterval]; a large gap means refreshes
+  ///   themselves stopped for a stretch — a wallet locked long enough that
+  ///   accrued transfers must be treated as overdue-at-open. Non-Windows
+  ///   platforms count this only at sweep start; Windows must also count it
+  ///   mid- and end-sweep because its monotonic clock cannot distinguish sleep.
   void _observeDesktopEpochActivity({required bool idleGapCounts}) {
     if (kAppFormFactor != AppFormFactor.desktop) return;
     final wallNow = _now();
@@ -781,9 +782,11 @@ class IronwoodMigrationCoordinator
     if (lastWall == null || lastMonotonic == null) return;
     final monotonicGap = monotonicNow - lastMonotonic;
     final sleepGap = wallNow.difference(lastWall) - monotonicGap;
+    final idleGapDetected =
+        (idleGapCounts || defaultTargetPlatform == TargetPlatform.windows) &&
+        monotonicGap >= kDesktopMigrationEpochSuspensionGap;
     final suspended =
-        sleepGap >= kDesktopMigrationEpochSuspensionGap ||
-        (idleGapCounts && monotonicGap >= kDesktopMigrationEpochSuspensionGap);
+        sleepGap >= kDesktopMigrationEpochSuspensionGap || idleGapDetected;
     if (suspended) {
       _desktopOpenFallbackGate.restartEpoch();
     }
