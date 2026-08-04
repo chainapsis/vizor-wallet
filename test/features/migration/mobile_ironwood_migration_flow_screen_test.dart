@@ -1232,6 +1232,7 @@ IronwoodMigrationService _migrationService({
           required accountUuid,
           required password,
           required saltBase64,
+          int? walletOpenTipHeight,
         }) => onContinue?.call(accountUuid) ?? Future.value(_migrationResult()),
     scheduleBackgroundMigration: () async => true,
   );

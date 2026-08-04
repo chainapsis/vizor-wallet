@@ -2382,6 +2382,7 @@ ProviderContainer _container({
           required accountUuid,
           required password,
           required saltBase64,
+          int? walletOpenTipHeight,
         }) async {
           broadcasts.add(accountUuid);
           if (broadcast != null) return broadcast(accountUuid);

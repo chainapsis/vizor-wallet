@@ -540,6 +540,12 @@ Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
   saltBase64: saltBase64,
 );
 
+/// `wallet_open_tip_height` is the authoritative chain tip observed when the
+/// desktop wallet-open epoch began. It floors the post-accept wallet-overdue
+/// redraw so on-open overdue parts scheduled between the locally synced tip
+/// and the network tip are redrawn by the single fallback acceptance instead
+/// of staying wedged behind the consumed on-open allowance. Pass `None` when
+/// no authoritative open tip is known.
 Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
   required String dbPath,
   required String lightwalletdUrl,
@@ -547,6 +553,7 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
   required String accountUuid,
   required String password,
   required String saltBase64,
+  int? walletOpenTipHeight,
 }) =>
     RustLib.instance.api.crateApiSyncBroadcastOneDueOrchardMigrationTransaction(
       dbPath: dbPath,
@@ -555,6 +562,7 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
       accountUuid: accountUuid,
       password: password,
       saltBase64: saltBase64,
+      walletOpenTipHeight: walletOpenTipHeight,
     );
 
 /// Prepares denomination PCZTs for the approved schedule, with expiry heights

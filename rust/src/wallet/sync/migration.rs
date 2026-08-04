@@ -4950,10 +4950,12 @@ fn reschedule_overdue_pending_txs_with_options(
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("Begin overdue migration reschedule: {e}"))?;
+    let redraw_start_ms = now_ms()?;
     let mut needs_resign = false;
     for ((txid, expiry_height), offset) in txids.into_iter().zip(offsets) {
+        let effective_offset = offset.max(minimum_delay_blocks);
         let scheduled_height = chain_tip_height
-            .checked_add(offset.max(minimum_delay_blocks))
+            .checked_add(effective_offset)
             .ok_or("Migration rescheduled height overflow")?;
         if zip318_canonical_migration_expiry_height(scheduled_height)? != expiry_height {
             tx.execute(
@@ -4968,13 +4970,27 @@ fn reschedule_overdue_pending_txs_with_options(
             needs_resign = true;
             continue;
         }
+        // Keep `scheduled_at_ms` in step with the redrawn height using the
+        // same convention the initial insert uses (`now + offset * 1000`).
+        // Listings order by this column; leaving the original timestamp
+        // behind made redrawn parts sort — and read — as still overdue.
+        let scheduled_at_ms = redraw_start_ms
+            .checked_add(i64::from(effective_offset).saturating_mul(1000))
+            .ok_or("Migration rescheduled time overflow")?;
         tx.execute(
             &format!(
                 "UPDATE {PENDING_TXS_TABLE}
-                 SET scheduled_height = ?1, schedule_start_height = ?2
-                 WHERE run_id = ?3 AND txid_hex = ?4 AND status = 'scheduled'"
+                 SET scheduled_height = ?1, schedule_start_height = ?2,
+                     scheduled_at_ms = ?3
+                 WHERE run_id = ?4 AND txid_hex = ?5 AND status = 'scheduled'"
             ),
-            params![scheduled_height, chain_tip_height, run_id, txid],
+            params![
+                scheduled_height,
+                chain_tip_height,
+                scheduled_at_ms,
+                run_id,
+                txid
+            ],
         )
         .map_err(|e| format!("Reschedule overdue migration transaction: {e}"))?;
     }

@@ -3576,6 +3576,7 @@ void main() {
             required accountUuid,
             required password,
             required saltBase64,
+            int? walletOpenTipHeight,
           }) {
             softwareContinued = true;
             return Future.value(_migrationResult());
@@ -6162,6 +6163,7 @@ IronwoodMigrationService _migrationServiceForContinue({
           required accountUuid,
           required password,
           required saltBase64,
+          int? walletOpenTipHeight,
         }) {
           return onContinue(accountUuid: accountUuid);
         },

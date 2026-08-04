@@ -1504,6 +1504,60 @@ fn on_open_reschedule_redraws_overdue_transfers_across_wallet_runs() {
 }
 
 #[test]
+fn on_open_reschedule_refreshes_scheduled_at_ms_with_the_redrawn_height() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_outbox_test_run(&db_path, "run-1", &[100, 200], &[Some(90), Some(90)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET scheduled_height = 503, schedule_start_height = 502,
+                 scheduled_at_ms = 1
+             WHERE status = 'scheduled'"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let before_ms = now_ms().unwrap();
+    reschedule_wallet_overdue_pending_txs(&db_path, WalletNetwork::Regtest, 503).unwrap();
+    let after_ms = now_ms().unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let redrawn = conn
+        .prepare(&format!(
+            "SELECT scheduled_height, scheduled_at_ms FROM {PENDING_TXS_TABLE}
+             WHERE status = 'scheduled'"
+        ))
+        .unwrap()
+        .query_map([], |row| Ok((row.get::<_, u32>(0)?, row.get::<_, i64>(1)?)))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(redrawn.len(), 2);
+    for (scheduled_height, scheduled_at_ms) in redrawn {
+        // The redraw recomputes the timestamp with the insert convention
+        // (`redraw_start + offset * 1000`), so recovering the redraw start
+        // from the stored pair must land inside the call window. A stale
+        // timestamp left behind would fail this by ~redraw_start ms.
+        let offset_ms = i64::from(scheduled_height - 503) * 1000;
+        let implied_redraw_start_ms = scheduled_at_ms - offset_ms;
+        assert!(
+            (before_ms..=after_ms).contains(&implied_redraw_start_ms),
+            "scheduled_at_ms {scheduled_at_ms} for height {scheduled_height} \
+             implies redraw start {implied_redraw_start_ms}, outside \
+             [{before_ms}, {after_ms}]"
+        );
+    }
+}
+
+#[test]
 fn on_open_storage_recovery_keeps_accepted_tx_and_redraws_every_other_run() {
     let temp_dir = tempfile::tempdir().unwrap();
     let db_path = temp_dir

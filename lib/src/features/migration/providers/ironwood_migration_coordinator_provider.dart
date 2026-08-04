@@ -18,6 +18,15 @@ import '../services/ironwood_migration_service.dart';
 import 'ironwood_migration_announcement_provider.dart';
 
 const _migrationStatusPollInterval = Duration(seconds: 15);
+
+/// Suspension threshold for the desktop ZIP 318 wallet-open epoch. The epoch
+/// restarts when either wall time outruns the monotonic clock by this much
+/// (machine sleep — the monotonic clock pauses while asleep) or refresh
+/// activity itself gaps past it with the process awake (wallet locked for a
+/// long stretch). Must stay well above [_migrationStatusPollInterval] so
+/// occlusion alone can never restart the epoch; sweep duration is exempt from
+/// the activity-gap signal, so a slow sweep needs no headroom here.
+const kDesktopMigrationEpochSuspensionGap = Duration(minutes: 3);
 const _migrationAdvanceInterval = Duration(
   seconds: String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
       ? 1
@@ -27,74 +36,82 @@ const _migrationAdvanceInterval = Duration(
 );
 
 /// Enforces ZIP 318's wallet-global, one-transfer fallback allowance for
-/// transfers that were already overdue when a desktop foreground epoch began.
+/// transfers that were already overdue when a desktop wallet-open epoch began.
+///
+/// An epoch is continuous process activity, not window visibility. Desktop
+/// keeps sync and migration polling alive while every window is hidden
+/// (`canRunAppProcessWork`), so a transfer that becomes due while the app runs
+/// occluded or minimized must still broadcast at its scheduled height — it was
+/// not "overdue at open". The coordinator restarts the epoch only when process
+/// activity genuinely gapped (machine sleep, suspension, a long-locked wallet)
+/// or the wallet was reset; a restart re-arms the single on-open allowance and
+/// recaptures the wallet-wide overdue set.
 class DesktopOpenMigrationFallbackGate {
   bool _available = true;
-  bool _foreground = true;
-  int? _foregroundEntryHeight;
-  bool _openStatusSnapshotReady = false;
+  int? _epochEntryHeight;
+  final Set<String> _capturedAccounts = {};
   final Map<String, int> _openOverdueScheduleByTxid = {};
 
-  bool get needsAuthoritativeEntryHeight =>
-      _foreground && _foregroundEntryHeight == null;
-  bool get needsOpenStatusSnapshot =>
-      _foreground &&
-      _foregroundEntryHeight != null &&
-      !_openStatusSnapshotReady;
+  bool get needsAuthoritativeEntryHeight => _epochEntryHeight == null;
 
-  void enterForeground() {
-    if (_foreground) return;
-    _foreground = true;
+  /// The authoritative tip observed when this epoch began, or null while the
+  /// on-open height lookup has not succeeded yet. Threaded into the Rust
+  /// one-due broadcast so the post-accept wallet-overdue redraw covers the
+  /// whole snapshot window even while the local tip is still catching up.
+  int? get epochEntryHeight => _epochEntryHeight;
+
+  bool needsOpenStatusSnapshotFor(String accountUuid) =>
+      _epochEntryHeight != null && !_capturedAccounts.contains(accountUuid);
+
+  void restartEpoch() {
     _available = true;
-    _foregroundEntryHeight = null;
-    _openStatusSnapshotReady = false;
+    _epochEntryHeight = null;
+    _capturedAccounts.clear();
     _openOverdueScheduleByTxid.clear();
   }
 
-  void leaveForeground() {
-    _foreground = false;
-    _available = false;
-    _foregroundEntryHeight = null;
-    _openStatusSnapshotReady = false;
-    _openOverdueScheduleByTxid.clear();
-  }
-
-  void observeForegroundEntryHeight(int height) {
+  void observeEpochEntryHeight(int height) {
     if (height > 0) {
-      _foregroundEntryHeight ??= height;
+      _epochEntryHeight ??= height;
     }
   }
 
-  void captureOpenStatuses(Iterable<rust_sync.MigrationStatus> statuses) {
-    final entryHeight = _foregroundEntryHeight;
+  /// Records [accountUuid]'s overdue-at-open set from its first successful
+  /// status read of the epoch. Capture is per account so one persistently
+  /// failing account read blocks only that account's scheduled transfers, not
+  /// the whole wallet; later calls for an already-captured account are no-ops
+  /// to keep the epoch snapshot frozen.
+  void captureOpenStatus(String accountUuid, rust_sync.MigrationStatus status) {
+    final entryHeight = _epochEntryHeight;
     if (entryHeight == null || entryHeight <= 0) return;
-    _openOverdueScheduleByTxid.clear();
-    for (final status in statuses) {
-      for (final broadcast in status.scheduledBroadcasts) {
-        if (broadcast.status.toLowerCase() == 'scheduled' &&
-            broadcast.scheduledHeight > 0 &&
-            broadcast.scheduledHeight <= entryHeight) {
-          _openOverdueScheduleByTxid[broadcast.txidHex] =
-              broadcast.scheduledHeight;
-        }
+    if (!_capturedAccounts.add(accountUuid)) return;
+    for (final broadcast in status.scheduledBroadcasts) {
+      if (broadcast.status.toLowerCase() == 'scheduled' &&
+          broadcast.scheduledHeight > 0 &&
+          broadcast.scheduledHeight <= entryHeight) {
+        _openOverdueScheduleByTxid[broadcast.txidHex] =
+            broadcast.scheduledHeight;
       }
     }
-    _openStatusSnapshotReady = true;
   }
 
-  bool allows(rust_sync.MigrationStatus status) {
-    if ((_foregroundEntryHeight == null || !_openStatusSnapshotReady) &&
+  bool allows(String accountUuid, rust_sync.MigrationStatus status) {
+    if ((_epochEntryHeight == null ||
+            !_capturedAccounts.contains(accountUuid)) &&
         _hasScheduledTransfer(status)) {
-      // Neither a cached wallet height nor a partial account snapshot can
-      // establish the wallet-wide set that was overdue when the app opened.
-      // Fail closed until lightwalletd and every account status are available.
+      // Without an authoritative epoch-entry height and this account's own
+      // open snapshot, its overdue-at-open set is unknown. Fail closed for
+      // this account until both are available.
       return false;
     }
     return !isOpenOverdue(status) || _available;
   }
 
-  bool tryAcquireForAdvance(rust_sync.MigrationStatus status) {
-    if (!allows(status)) return false;
+  bool tryAcquireForAdvance(
+    String accountUuid,
+    rust_sync.MigrationStatus status,
+  ) {
+    if (!allows(accountUuid, status)) return false;
     consumeIfOpenOverdue(status);
     return true;
   }
@@ -125,13 +142,13 @@ class DesktopOpenMigrationFallbackGate {
               broadcast.scheduledHeight &&
           resultTxids.contains(broadcast.txidHex.toLowerCase()),
     );
-    if (!acceptedOpenOverdueTx && _foreground) {
+    if (!acceptedOpenOverdueTx) {
       _available = true;
     }
   }
 
   void failAdvance(rust_sync.MigrationStatus before) {
-    if (isOpenOverdue(before) && _foreground) {
+    if (isOpenOverdue(before)) {
       _available = true;
     }
   }
@@ -203,12 +220,33 @@ class IronwoodMigrationCoordinatorState {
 
 class IronwoodMigrationCoordinator
     extends Notifier<IronwoodMigrationCoordinatorState> {
+  IronwoodMigrationCoordinator({
+    DateTime Function()? now,
+    Duration Function()? monotonicNow,
+  }) : _now = now ?? DateTime.now,
+       _monotonicNow = monotonicNow ?? _defaultMonotonicNow;
+
+  static final Stopwatch _processStopwatch = Stopwatch()..start();
+  static Duration _defaultMonotonicNow() => _processStopwatch.elapsed;
+
+  final DateTime Function() _now;
+
+  /// Monotonic process clock. On macOS (mach_absolute_time) and Linux
+  /// (CLOCK_MONOTONIC) this pauses while the machine sleeps, so wall time
+  /// outrunning it is direct evidence of suspension — even when the sleep
+  /// began while a refresh sweep was in flight. On Windows the underlying
+  /// counter keeps running through sleep, so the divergence signal stays
+  /// silent there and a sleep is detected one sweep later by the idle-gap
+  /// signal instead (see `_observeDesktopEpochActivity`).
+  final Duration Function() _monotonicNow;
   Future<void>? _refreshOperation;
   bool _refreshPending = false;
   bool _forceAdvancePending = false;
   bool _foreground = true;
   int _accountStateEpoch = 0;
   final _desktopOpenFallbackGate = DesktopOpenMigrationFallbackGate();
+  DateTime? _lastDesktopActivityWallTime;
+  Duration? _lastDesktopActivityMonotonicTime;
   bool _hasObservedInitialAccountList = false;
   Future<void>? _backgroundPreparationRecovery;
   final Map<String, DateTime> _lastAdvanceAt = {};
@@ -256,26 +294,23 @@ class IronwoodMigrationCoordinator
   }
 
   void setForeground(bool foreground) {
-    final wasForeground = _foreground;
     _foreground = foreground;
     if (foreground) {
-      if (kAppFormFactor == AppFormFactor.desktop && !wasForeground) {
-        _desktopOpenFallbackGate.enterForeground();
-      }
+      // Desktop window visibility does not open or close the ZIP 318 epoch:
+      // process work (sync, status polling, scheduled broadcasts) continues
+      // while hidden, so the epoch only restarts on a genuine activity gap —
+      // see the suspension check in `_refreshOnce`.
       unawaited(resumeBackgroundPreparations());
       unawaited(
         refreshNow(forceAdvance: kAppFormFactor == AppFormFactor.desktop),
       );
-    } else {
-      if (kAppFormFactor == AppFormFactor.desktop) {
-        _desktopOpenFallbackGate.leaveForeground();
-      } else if (state.foregroundProgressPermits.isNotEmpty ||
-          state.childProofBatchPermits.isNotEmpty) {
-        state = state.copyWith(
-          foregroundProgressPermits: const {},
-          childProofBatchPermits: const {},
-        );
-      }
+    } else if (kAppFormFactor != AppFormFactor.desktop &&
+        (state.foregroundProgressPermits.isNotEmpty ||
+            state.childProofBatchPermits.isNotEmpty)) {
+      state = state.copyWith(
+        foregroundProgressPermits: const {},
+        childProofBatchPermits: const {},
+      );
     }
   }
 
@@ -700,7 +735,57 @@ class IronwoodMigrationCoordinator
       final forceAdvance = _forceAdvancePending;
       _refreshPending = false;
       _forceAdvancePending = false;
-      await _refreshOnce(forceAdvance: forceAdvance);
+      try {
+        await _refreshOnce(forceAdvance: forceAdvance);
+      } finally {
+        // A sweep can legitimately run for minutes (slow endpoint, many
+        // accounts, an in-flight advance). Record the end of every pass —
+        // including one that threw — as activity so its duration is never
+        // read as an idle gap, while the wall/monotonic divergence check
+        // still catches a sleep that interrupted it.
+        _observeDesktopEpochActivity(idleGapCounts: false);
+      }
+    }
+  }
+
+  /// Records a desktop process-activity observation and restarts the ZIP 318
+  /// wallet-open epoch when the observations prove a genuine suspension.
+  ///
+  /// Two independent signals are compared against
+  /// [kDesktopMigrationEpochSuspensionGap]:
+  ///
+  /// - Sleep: wall time advancing further than the monotonic clock since the
+  ///   last observation. Where the monotonic clock pauses across machine
+  ///   sleep (macOS, Linux — see [_monotonicNow]) the divergence measures
+  ///   suspension exactly — regardless of whether the sleep began between
+  ///   sweeps or mid-sweep, and immune to wall-clock corrections shrinking
+  ///   real gaps. On Windows both clocks advance through sleep, so this
+  ///   signal stays silent and the idle gap below catches the sleep at the
+  ///   next sweep start instead.
+  /// - Idle gap ([idleGapCounts] callers only): monotonic time since the last
+  ///   observation. Observations bound every sweep, so while the process is
+  ///   alive and unlocked they arrive at least every
+  ///   [_migrationStatusPollInterval]; a large gap means refreshes themselves
+  ///   stopped for a stretch — a wallet locked long enough that accrued
+  ///   transfers must be treated as overdue-at-open. Only the start-of-sweep
+  ///   caller sets [idleGapCounts]: measured mid- or end-of-sweep the gap is
+  ///   the sweep's own duration, which is activity, not suspension.
+  void _observeDesktopEpochActivity({required bool idleGapCounts}) {
+    if (kAppFormFactor != AppFormFactor.desktop) return;
+    final wallNow = _now();
+    final monotonicNow = _monotonicNow();
+    final lastWall = _lastDesktopActivityWallTime;
+    final lastMonotonic = _lastDesktopActivityMonotonicTime;
+    _lastDesktopActivityWallTime = wallNow;
+    _lastDesktopActivityMonotonicTime = monotonicNow;
+    if (lastWall == null || lastMonotonic == null) return;
+    final monotonicGap = monotonicNow - lastMonotonic;
+    final sleepGap = wallNow.difference(lastWall) - monotonicGap;
+    final suspended =
+        sleepGap >= kDesktopMigrationEpochSuspensionGap ||
+        (idleGapCounts && monotonicGap >= kDesktopMigrationEpochSuspensionGap);
+    if (suspended) {
+      _desktopOpenFallbackGate.restartEpoch();
     }
   }
 
@@ -712,6 +797,10 @@ class IronwoodMigrationCoordinator
     final accountState = ref.read(accountProvider).value;
     if (accountState == null || accountState.accounts.isEmpty) return;
     final accountStateEpoch = _accountStateEpoch;
+    // Transfers that became due during a genuine suspension (machine sleep,
+    // or a wallet locked for a long stretch) are "overdue at open" and must
+    // go through a fresh one-transfer ZIP 318 allowance.
+    _observeDesktopEpochActivity(idleGapCounts: true);
     if (kAppFormFactor == AppFormFactor.desktop &&
         _desktopOpenFallbackGate.needsAuthoritativeEntryHeight) {
       try {
@@ -719,13 +808,11 @@ class IronwoodMigrationCoordinator
             .read(rpcEndpointFailoverProvider.notifier)
             .getLatestBlockHeight();
         if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
-        _desktopOpenFallbackGate.observeForegroundEntryHeight(
-          entryHeight.toInt(),
-        );
+        _desktopOpenFallbackGate.observeEpochEntryHeight(entryHeight.toInt());
       } catch (error) {
         // Status reconciliation and non-broadcast migration work may continue,
         // but the gate remains fail-closed for scheduled transfers until an
-        // authoritative foreground-entry height can be read.
+        // authoritative epoch-entry height can be read.
         log(
           'Ironwood migration on-open height lookup failed; '
           'scheduled fallback remains paused: $error',
@@ -777,27 +864,25 @@ class IronwoodMigrationCoordinator
     }
     if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
 
-    final desktopOpenStatuses = <String, rust_sync.MigrationStatus>{};
-    if (kAppFormFactor == AppFormFactor.desktop &&
-        _desktopOpenFallbackGate.needsOpenStatusSnapshot) {
-      var snapshotComplete = true;
+    if (kAppFormFactor == AppFormFactor.desktop) {
       for (final account in accountState.accounts) {
+        if (!_desktopOpenFallbackGate.needsOpenStatusSnapshotFor(
+          account.uuid,
+        )) {
+          continue;
+        }
         final status = sweptStatuses[account.uuid];
         if (status == null) {
-          snapshotComplete = false;
+          // Capture is per account: only this account's scheduled transfers
+          // stay paused, and the next sweep retries its snapshot.
           log(
             'Ironwood migration on-open status snapshot failed for '
-            '${account.uuid}; scheduled fallback remains paused: '
+            '${account.uuid}; its scheduled fallback remains paused: '
             '${sweepErrors[account.uuid]}',
           );
           continue;
         }
-        desktopOpenStatuses[account.uuid] = status;
-      }
-      if (snapshotComplete) {
-        _desktopOpenFallbackGate.captureOpenStatuses(
-          desktopOpenStatuses.values,
-        );
+        _desktopOpenFallbackGate.captureOpenStatus(account.uuid, status);
       }
     }
     final nextStatuses = Map<String, rust_sync.MigrationStatus>.from(
@@ -816,7 +901,7 @@ class IronwoodMigrationCoordinator
           throw sweepErrors[account.uuid] ??
               StateError('migration status unavailable for ${account.uuid}');
         }
-        var status = desktopOpenStatuses[account.uuid] ?? sweptStatus;
+        var status = sweptStatus;
         if (!_canApplyRefreshForAccountEpoch(accountStateEpoch)) return;
         nextStatuses[account.uuid] = status;
         nextErrors.remove(account.uuid);
@@ -934,10 +1019,9 @@ class IronwoodMigrationCoordinator
     _lastAdvanceAt.clear();
     _outboxRecoveryWindows.clear();
     _lastAdvanceProgressKeys.clear();
-    _desktopOpenFallbackGate.leaveForeground();
-    if (_foreground) {
-      _desktopOpenFallbackGate.enterForeground();
-    }
+    _lastDesktopActivityWallTime = null;
+    _lastDesktopActivityMonotonicTime = null;
+    _desktopOpenFallbackGate.restartEpoch();
     state = const IronwoodMigrationCoordinatorState();
     _invalidateMigrationProviders(null);
   }
@@ -1111,7 +1195,7 @@ class IronwoodMigrationCoordinator
     if (_stoppingAccounts.contains(accountUuid)) return false;
     if (status.activeRunId == null) return false;
     if (kAppFormFactor == AppFormFactor.desktop &&
-        !_desktopOpenFallbackGate.allows(status)) {
+        !_desktopOpenFallbackGate.allows(accountUuid, status)) {
       return false;
     }
     if (kAppFormFactor == AppFormFactor.mobile &&
@@ -1234,13 +1318,21 @@ class IronwoodMigrationCoordinator
   }) {
     final existing = _advanceOperations[accountUuid];
     if (existing != null) return existing;
+    // A machine sleep can end while a sweep is mid-flight; check for it before
+    // every advance so the accounts still ahead in the sweep go through the
+    // restarted epoch's fresh overdue-at-open gate instead of broadcasting on
+    // the pre-sleep epoch's terms.
+    _observeDesktopEpochActivity(idleGapCounts: false);
     final reservesOpenOverdueAllowance =
         kAppFormFactor == AppFormFactor.desktop &&
         status != null &&
         _desktopOpenFallbackGate.isOpenOverdue(status);
     if (kAppFormFactor == AppFormFactor.desktop &&
         (status == null ||
-            !_desktopOpenFallbackGate.tryAcquireForAdvance(status))) {
+            !_desktopOpenFallbackGate.tryAcquireForAdvance(
+              accountUuid,
+              status,
+            ))) {
       // `_advance` is also called by manual retry, which bypasses
       // `_shouldAdvance`. Keep the ZIP 318 on-open allowance centralized at
       // this last coordinator boundary so no UI or polling entry point can
@@ -1309,6 +1401,14 @@ class IronwoodMigrationCoordinator
           .continueSoftwarePrivateMigration(
             accountUuid: accountUuid,
             prepareNextProof: prepareNextProof,
+            // Floors the Rust post-accept wallet-overdue redraw at the epoch
+            // entry tip so on-open overdue parts above the locally synced tip
+            // are redrawn by the single fallback acceptance instead of
+            // wedging behind the consumed allowance. Null (mobile, or before
+            // the on-open lookup succeeds) preserves local-tip behavior.
+            walletOpenTipHeight: kAppFormFactor == AppFormFactor.desktop
+                ? _desktopOpenFallbackGate.epochEntryHeight
+                : null,
           );
     } finally {
       if (ref.mounted) {

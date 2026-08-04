@@ -142,6 +142,7 @@ abstract class RustLibApi extends BaseApi {
     required String accountUuid,
     required String password,
     required String saltBase64,
+    int? walletOpenTipHeight,
   });
 
   Future<KeystoneSigningRequest> crateApiVotingBuildKeystoneDelegationRequest({
@@ -1425,6 +1426,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String accountUuid,
     required String password,
     required String saltBase64,
+    int? walletOpenTipHeight,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1436,6 +1438,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
           sse_encode_String(saltBase64, serializer);
+          sse_encode_opt_box_autoadd_u_32(walletOpenTipHeight, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -1456,6 +1459,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           accountUuid,
           password,
           saltBase64,
+          walletOpenTipHeight,
         ],
         apiImpl: this,
       ),
@@ -1473,6 +1477,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "accountUuid",
           "password",
           "saltBase64",
+          "walletOpenTipHeight",
         ],
       );
 

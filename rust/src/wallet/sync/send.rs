@@ -264,6 +264,16 @@ struct MigrationBroadcastPolicy<'a> {
     max_proofs_per_step: Option<usize>,
     defer_broadcast_after_proving: bool,
     reschedule_wallet_overdue: bool,
+    /// Minimum tip used when redrawing wallet-overdue transfers after an
+    /// accepted broadcast. The desktop wallet-open snapshot is taken against
+    /// lightwalletd's authoritative tip, which can be ahead of the locally
+    /// synced tip during early-epoch catch-up. Redrawing only up to the local
+    /// tip would leave snapshot parts in that window scheduled at their
+    /// original heights; once the on-open allowance is consumed they could
+    /// never broadcast until the next epoch. Flooring the redraw at the
+    /// wallet-open tip guarantees every part of the on-open overdue set is
+    /// redrawn by the single fallback acceptance.
+    wallet_overdue_redraw_floor: Option<u32>,
     cancel: Option<&'a AtomicBool>,
 }
 
@@ -273,6 +283,7 @@ impl MigrationBroadcastPolicy<'_> {
         max_proofs_per_step: None,
         defer_broadcast_after_proving: false,
         reschedule_wallet_overdue: false,
+        wallet_overdue_redraw_floor: None,
         cancel: None,
     };
 
@@ -281,8 +292,16 @@ impl MigrationBroadcastPolicy<'_> {
         max_proofs_per_step: None,
         defer_broadcast_after_proving: false,
         reschedule_wallet_overdue: true,
+        wallet_overdue_redraw_floor: None,
         cancel: None,
     };
+
+    fn with_wallet_overdue_redraw_floor(self, floor: Option<u32>) -> Self {
+        Self {
+            wallet_overdue_redraw_floor: floor,
+            ..self
+        }
+    }
 
     fn background_preparation(cancel: &AtomicBool) -> MigrationBroadcastPolicy<'_> {
         MigrationBroadcastPolicy {
@@ -290,6 +309,7 @@ impl MigrationBroadcastPolicy<'_> {
             max_proofs_per_step: None,
             defer_broadcast_after_proving: false,
             reschedule_wallet_overdue: false,
+            wallet_overdue_redraw_floor: None,
             cancel: Some(cancel),
         }
     }
@@ -2533,6 +2553,7 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
     account_uuid: &str,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
     pending_salt_base64: &str,
+    wallet_open_tip_height: Option<u32>,
 ) -> Result<IronwoodMigrationResult, String> {
     let advance = broadcast_due_orchard_migration_transactions_inner(
         db_path,
@@ -2541,7 +2562,8 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
         account_uuid,
         pending_password,
         pending_salt_base64,
-        MigrationBroadcastPolicy::ONE_FOREGROUND,
+        MigrationBroadcastPolicy::ONE_FOREGROUND
+            .with_wallet_overdue_redraw_floor(wallet_open_tip_height),
     )
     .await?;
     Ok(one_due_migration_result(advance))
@@ -5296,13 +5318,16 @@ async fn broadcast_due_scheduled_migration_txs(
                 ));
             }
         };
+        let wallet_overdue_redraw_tip = policy
+            .wallet_overdue_redraw_floor
+            .map_or(chain_tip_height, |floor| chain_tip_height.max(floor));
         if let Some(mut result) = recorded {
             if policy.reschedule_wallet_overdue {
                 if let Err(error) =
                     super::migration::reschedule_wallet_overdue_pending_txs_after_accepted(
                         db_path,
                         network,
-                        chain_tip_height,
+                        wallet_overdue_redraw_tip,
                         run_id,
                         &pending.txid_hex,
                     )
@@ -5324,7 +5349,7 @@ async fn broadcast_due_scheduled_migration_txs(
             super::migration::reschedule_wallet_overdue_pending_txs(
                 db_path,
                 network,
-                chain_tip_height,
+                wallet_overdue_redraw_tip,
             )
         } else {
             super::migration::reschedule_overdue_pending_txs(

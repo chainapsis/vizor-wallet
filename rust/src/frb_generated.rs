@@ -294,6 +294,7 @@ fn wire__crate__api__sync__broadcast_one_due_orchard_migration_transaction_impl(
             let api_account_uuid = <String>::sse_decode(&mut deserializer);
             let api_password = <String>::sse_decode(&mut deserializer);
             let api_salt_base64 = <String>::sse_decode(&mut deserializer);
+            let api_wallet_open_tip_height = <Option<u32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -305,6 +306,7 @@ fn wire__crate__api__sync__broadcast_one_due_orchard_migration_transaction_impl(
                             api_account_uuid,
                             api_password,
                             api_salt_base64,
+                            api_wallet_open_tip_height,
                         )?;
                     Ok(output_ok)
                 })())

@@ -1738,6 +1738,12 @@ pub fn broadcast_due_orchard_migration_transactions(
     })
 }
 
+/// `wallet_open_tip_height` is the authoritative chain tip observed when the
+/// desktop wallet-open epoch began. It floors the post-accept wallet-overdue
+/// redraw so on-open overdue parts scheduled between the locally synced tip
+/// and the network tip are redrawn by the single fallback acceptance instead
+/// of staying wedged behind the consumed on-open allowance. Pass `None` when
+/// no authoritative open tip is known.
 pub fn broadcast_one_due_orchard_migration_transaction(
     db_path: String,
     lightwalletd_url: String,
@@ -1745,6 +1751,7 @@ pub fn broadcast_one_due_orchard_migration_transaction(
     account_uuid: String,
     password: String,
     salt_base64: String,
+    wallet_open_tip_height: Option<u32>,
 ) -> Result<IronwoodMigrationResult, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
@@ -1758,6 +1765,7 @@ pub fn broadcast_one_due_orchard_migration_transaction(
                 &account_uuid,
                 password,
                 &salt_base64,
+                wallet_open_tip_height,
             ),
         )?;
         Ok(IronwoodMigrationResult {

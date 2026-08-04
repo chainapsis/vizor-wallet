@@ -271,8 +271,17 @@ typedef IronwoodMigrationDueBroadcaster =
       required String accountUuid,
       required String password,
       required String saltBase64,
+      int? walletOpenTipHeight,
     });
-typedef IronwoodMigrationOutboxPreparer = IronwoodMigrationDueBroadcaster;
+typedef IronwoodMigrationOutboxPreparer =
+    Future<rust_sync.IronwoodMigrationResult> Function({
+      required String dbPath,
+      required String lightwalletdUrl,
+      required String network,
+      required String accountUuid,
+      required String password,
+      required String saltBase64,
+    });
 typedef IronwoodMigrationOutboxExporter =
     Future<rust_sync.MigrationOutboxBatch?> Function({
       required String dbPath,
@@ -1593,9 +1602,13 @@ class IronwoodMigrationService {
     }
   }
 
+  /// [walletOpenTipHeight] is the authoritative tip observed at desktop
+  /// wallet-open epoch entry; it floors the Rust post-accept wallet-overdue
+  /// redraw (see `broadcast_one_due_orchard_migration_transaction`).
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
     required String accountUuid,
     bool prepareNextProof = true,
+    int? walletOpenTipHeight,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -1635,6 +1648,7 @@ class IronwoodMigrationService {
           accountUuid: accountUuid,
           password: credential.password,
           saltBase64: credential.saltBase64,
+          walletOpenTipHeight: walletOpenTipHeight,
         ),
       );
     }
