@@ -524,6 +524,22 @@ pub(crate) struct OrchardMigrationPrivatePlan {
 pub(crate) struct KeystoneMigrationMessage {
     pub id: String,
     pub redacted_pczt: Vec<u8>,
+    /// Wallet-owned actions that still require external authorization.
+    pub expected_signature_count: u32,
+}
+
+fn keystone_migration_message(
+    id: &str,
+    redacted_pczt: &[u8],
+    expected_signature_count: usize,
+) -> KeystoneMigrationMessage {
+    KeystoneMigrationMessage {
+        id: id.to_string(),
+        redacted_pczt: redacted_pczt.to_vec(),
+        // Any value that cannot fit in u32 is already far above the per-round
+        // limit and will be rejected by the partitioner.
+        expected_signature_count: u32::try_from(expected_signature_count).unwrap_or(u32::MAX),
+    }
 }
 
 pub(crate) struct KeystoneMigrationSigningRequest {

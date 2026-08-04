@@ -1042,10 +1042,12 @@ void main() {
           rust_sync.KeystoneMigrationMessage(
             id: 'split-1',
             redactedPczt: Uint8List.fromList([1]),
+            expectedSignatureCount: 0,
           ),
           rust_sync.KeystoneMigrationMessage(
             id: 'split-2',
             redactedPczt: Uint8List.fromList([2]),
+            expectedSignatureCount: 0,
           ),
         ],
         signingBatchLimit: 1,
@@ -1059,6 +1061,25 @@ void main() {
         ),
       );
       await tester.pump();
+
+      expect(
+        find.byKey(
+          const ValueKey('keystone_migration_signing_plan_confirmation'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('2 QR signing rounds'), findsOneWidget);
+      expect(find.text('2 transactions total'), findsOneWidget);
+      expect(
+        find.text(
+          'Each round uses one animated request QR and one signed response QR.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('keystone_migration_begin_signing')),
+      );
+      await tester.pumpAndSettle();
 
       expect(find.text('Step 1 of 2'), findsNothing);
       expect(find.text('Round 1 of 2'), findsOneWidget);
@@ -1177,6 +1198,7 @@ void main() {
         rust_sync.KeystoneMigrationMessage(
           id: id,
           redactedPczt: Uint8List(bytes),
+          expectedSignatureCount: 0,
         );
 
     test('chunks by the signing batch limit', () {
@@ -1186,7 +1208,33 @@ void main() {
       expect(rounds.map((round) => round.length), [2, 2, 1]);
     });
 
-    test('splits the first message beyond the 40-message firmware cap', () {
+    test('applies Rust post-resolution round counts without reordering', () {
+      final rounds = keystoneSigningRoundsFromCountsForTest(
+        [for (var i = 0; i < 5; i++) message('m$i', 10)],
+        [2, 1, 2],
+      );
+
+      expect(rounds.map((round) => round.length), [2, 1, 2]);
+      expect(rounds.expand((round) => round).map((item) => item.id), [
+        'm0',
+        'm1',
+        'm2',
+        'm3',
+        'm4',
+      ]);
+    });
+
+    test('rejects an incomplete Rust round partition', () {
+      expect(
+        () => keystoneSigningRoundsFromCountsForTest(
+          [for (var i = 0; i < 3; i++) message('m$i', 10)],
+          [2],
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('splits the first message beyond the 40-message supported cap', () {
       final messages = [for (var i = 0; i < 41; i++) message('m$i', 10)];
       expect(
         keystoneSigningRoundsForTest(
@@ -1196,16 +1244,16 @@ void main() {
         [40],
       );
       expect(
-        keystoneSigningRoundsForTest(messages, 40).map((round) => round.length),
+        keystoneSigningRoundsForTest(messages, 50).map((round) => round.length),
         [40, 1],
       );
     });
 
-    test('splits a round that would exceed the firmware byte ceiling', () {
-      // 40 messages of 26 KiB total over 1 MiB — the count fits in one round
-      // but the firmware rejects anything over 512 KiB per round.
+    test('moves a transaction when a preview round would exceed 64 KiB', () {
+      // The preview partitioner reserves 16 KiB of the 80-KiB QR ceiling for
+      // request framing. Production uses Rust's exact encoded size.
       final rounds = keystoneSigningRoundsForTest([
-        for (var i = 0; i < 40; i++) message('m$i', 26 * 1024),
+        for (var i = 0; i < 40; i++) message('m$i', 4 * 1024),
       ], 40);
       expect(rounds.length, greaterThan(1));
       for (final round in rounds) {
@@ -1213,11 +1261,21 @@ void main() {
           0,
           (total, item) => total + item.redactedPczt.length + item.id.length,
         );
-        expect(bytes, lessThanOrEqualTo(512 * 1024 - 16 * 1024));
+        expect(bytes, lessThanOrEqualTo(64 * 1024));
       }
       expect(rounds.expand((round) => round).map((item) => item.id).toList(), [
         for (var i = 0; i < 40; i++) 'm$i',
       ]);
+    });
+
+    test('splits large synthetic PCZTs at the byte budget', () {
+      // Use 14-KiB payloads to make the preview byte ceiling override the
+      // 40-message count limit.
+      final rounds = keystoneSigningRoundsForTest([
+        for (var i = 0; i < 11; i++) message('m$i', 14 * 1024),
+      ], 40);
+
+      expect(rounds.map((round) => round.length), [4, 4, 3]);
     });
 
     test('rejects a message no round could ever carry', () {
@@ -1234,7 +1292,7 @@ void main() {
     });
 
     test('still packs a message that only just fits', () {
-      const budget = 512 * 1024 - 16 * 1024;
+      const budget = 64 * 1024;
       final rounds = keystoneSigningRoundsForTest([
         message('big', budget - 'big'.length),
         message('small', 10),

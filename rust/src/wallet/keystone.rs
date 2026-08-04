@@ -28,6 +28,9 @@ pub struct KeystoneAccountInfo {
 pub struct ZcashBatchMessageInput {
     pub id: String,
     pub pczt_bytes: Vec<u8>,
+    /// Number of spend authorization signatures the wallet expects the signer
+    /// to return for this PCZT.
+    pub expected_signature_count: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -119,12 +122,20 @@ const ZCASH_SIGN_BATCH_TYPE: &str = "zcash-sign-batch";
 const ZCASH_SIGN_BATCH_VERSION: u32 = 1;
 pub(crate) const ZCASH_SIGN_MESSAGE_KIND_PCZT_V1: u32 = 1;
 const ZCASH_SIGN_STATUS_SIGNED: u32 = 0;
-// Must match the signer's `ZCASH_BATCH_MAX_PCZTS`; the device rejects any larger
-// batch before checking or signing it.
+// The firmware supports at most 40 PCZTs per signing request.
 pub(crate) const ZCASH_SIGN_BATCH_MAX_MESSAGES: usize = 40;
-// Must match the signer's `ZCASH_BATCH_MAX_TOTAL_BYTES`. The firmware applies
-// this to both the canonical PCZT byte total and request-id + Postcard envelope.
-const ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES: usize = 512 * 1024;
+// Keep the displayed QR short enough to scan comfortably in both directions.
+pub(crate) const ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES: usize = 80 * 1024;
+// Keep the signature-only response small enough to scan comfortably.
+pub(crate) const ZCASH_SIGN_BATCH_MAX_SIGNATURES: usize = 96;
+// Keep the resolved firmware representation 46 KiB below the signer's
+// 512-KiB limit.
+const ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES: usize = 466 * 1024;
+// Keystone retains a normalized batch after resolving compact PCZT fields and
+// applies its request limit to that larger representation. Calculate that size
+// before displaying a round instead of reserving a fixed expansion estimate.
+pub(crate) const ZCASH_SIGN_BATCH_MAX_RESOLVED_TOTAL_BYTES: usize =
+    ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES;
 
 const ZCASH_SIG_POOL_ORCHARD: u32 = 0;
 const ZCASH_SIG_POOL_IRONWOOD: u32 = 1;
@@ -456,6 +467,7 @@ pub(crate) fn encode_zcash_sign_batch_postcard(
     let mut payloads = std::collections::HashSet::new();
     let mut pczts = Vec::with_capacity(messages.len());
     let mut total_payload_bytes = 0usize;
+    let mut total_signature_count = 0usize;
     for message in messages {
         if message.id.is_empty() {
             return Err("Zcash batch message id must not be empty".to_string());
@@ -480,15 +492,231 @@ pub(crate) fn encode_zcash_sign_batch_postcard(
                 "Zcash batch PCZTs exceed {ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES} bytes"
             ));
         }
-        pczts.push(
-            pczt::Pczt::parse(&message.pczt_bytes)
-                .map_err(|e| format!("Invalid PCZT for batch message {}: {e:?}", message.id))?,
-        );
+        let pczt = pczt::Pczt::parse(&message.pczt_bytes)
+            .map_err(|e| format!("Invalid PCZT for batch message {}: {e:?}", message.id))?;
+        total_signature_count = total_signature_count
+            .checked_add(
+                usize::try_from(message.expected_signature_count)
+                    .map_err(|_| "Zcash batch signature count exceeds usize")?,
+            )
+            .ok_or("Zcash batch signature count overflow")?;
+        if total_signature_count > ZCASH_SIGN_BATCH_MAX_SIGNATURES {
+            return Err(format!(
+                "Zcash batch expects more than {ZCASH_SIGN_BATCH_MAX_SIGNATURES} spend signatures"
+            ));
+        }
+        pczts.push(pczt);
     }
 
     BatchSignRequest::new(pczts)
         .serialize()
         .map_err(|e| format!("Encode PCZT batch signing request: {e:?}"))
+}
+
+#[derive(Clone)]
+struct PreparedZcashBatchMessage {
+    compact_pczt: pczt::Pczt,
+    resolved_pczt: pczt::Pczt,
+    compact_payload_len: usize,
+    expected_signature_count: usize,
+}
+
+struct ZcashSignBatchRoundSize {
+    compact_payload_bytes: usize,
+    compact_request_bytes: usize,
+    compact_cbor_bytes: usize,
+    resolved_request_bytes: usize,
+    expected_signature_count: usize,
+}
+
+impl ZcashSignBatchRoundSize {
+    fn fits(&self, request_id_len: usize) -> bool {
+        self.compact_payload_bytes <= ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES
+            && request_id_len.saturating_add(self.compact_request_bytes)
+                <= ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES
+            && self.compact_cbor_bytes <= ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES
+            && request_id_len.saturating_add(self.resolved_request_bytes)
+                <= ZCASH_SIGN_BATCH_MAX_RESOLVED_TOTAL_BYTES
+            && self.expected_signature_count <= ZCASH_SIGN_BATCH_MAX_SIGNATURES
+    }
+}
+
+fn prepare_zcash_batch_messages(
+    messages: &[ZcashBatchMessageInput],
+) -> Result<Vec<PreparedZcashBatchMessage>, String> {
+    let mut ids = std::collections::HashSet::with_capacity(messages.len());
+    let mut payloads = std::collections::HashSet::with_capacity(messages.len());
+    let mut prepared = Vec::with_capacity(messages.len());
+    for message in messages {
+        if message.id.is_empty() {
+            return Err("Zcash batch message id must not be empty".to_string());
+        }
+        if !ids.insert(message.id.as_str()) {
+            return Err(format!("Duplicate Zcash batch message id {}", message.id));
+        }
+        if message.pczt_bytes.is_empty() {
+            return Err(format!(
+                "Zcash batch message {} has an empty payload",
+                message.id
+            ));
+        }
+        if !payloads.insert(message.pczt_bytes.as_slice()) {
+            return Err("Duplicate Zcash batch payload".to_string());
+        }
+
+        let compact_pczt = pczt::Pczt::parse(&message.pczt_bytes)
+            .map_err(|e| format!("Invalid PCZT for batch message {}: {e:?}", message.id))?;
+        let mut resolved_pczt = compact_pczt.clone();
+        resolved_pczt.resolve_fields().map_err(|e| {
+            format!(
+                "Resolve PCZT fields for batch message {}: {e:?}",
+                message.id
+            )
+        })?;
+        prepared.push(PreparedZcashBatchMessage {
+            expected_signature_count: usize::try_from(message.expected_signature_count)
+                .map_err(|_| "Zcash batch signature count exceeds usize")?,
+            compact_pczt,
+            resolved_pczt,
+            compact_payload_len: message.pczt_bytes.len(),
+        });
+    }
+    Ok(prepared)
+}
+
+fn zcash_sign_batch_round_size(
+    messages: &[PreparedZcashBatchMessage],
+    request_id_len: usize,
+) -> Result<ZcashSignBatchRoundSize, String> {
+    let compact_payload_bytes = messages.iter().try_fold(0usize, |total, message| {
+        total
+            .checked_add(message.compact_payload_len)
+            .ok_or("Zcash batch payload byte count overflow")
+    })?;
+    let expected_signature_count = messages.iter().try_fold(0usize, |total, message| {
+        total
+            .checked_add(message.expected_signature_count)
+            .ok_or("Zcash batch signature count overflow")
+    })?;
+    let compact_request = BatchSignRequest::new(
+        messages
+            .iter()
+            .map(|message| message.compact_pczt.clone())
+            .collect(),
+    )
+    .serialize()
+    .map_err(|e| format!("Encode compact PCZT batch signing request: {e:?}"))?;
+    let compact_request_bytes = compact_request.len();
+    let compact_cbor: Vec<u8> = ZcashSignBatch::new(vec![b'r'; request_id_len], compact_request)
+        .try_into()
+        .map_err(|e: ur_registry::error::URError| {
+            format!("Encode compact zcash-sign-batch envelope: {e:?}")
+        })?;
+    let resolved_request_bytes = BatchSignRequest::new(
+        messages
+            .iter()
+            .map(|message| message.resolved_pczt.clone())
+            .collect(),
+    )
+    .serialize()
+    .map_err(|e| format!("Encode resolved PCZT batch signing request: {e:?}"))?
+    .len();
+
+    Ok(ZcashSignBatchRoundSize {
+        compact_payload_bytes,
+        compact_request_bytes,
+        compact_cbor_bytes: compact_cbor.len(),
+        resolved_request_bytes,
+        expected_signature_count,
+    })
+}
+
+/// Partitions ordered PCZTs into signing rounds that fit both the compact QR
+/// request and Keystone's larger post-`resolve_fields` retained request.
+pub fn zcash_sign_batch_round_message_counts(
+    request_id: &str,
+    messages: &[ZcashBatchMessageInput],
+    max_messages: usize,
+) -> Result<Vec<u32>, String> {
+    if request_id.is_empty() {
+        return Err("Zcash batch request id must not be empty".to_string());
+    }
+    if messages.is_empty() {
+        return Ok(Vec::new());
+    }
+    if max_messages == 0 {
+        return Err("Zcash signing round message limit must be positive".to_string());
+    }
+
+    let prepared = prepare_zcash_batch_messages(messages)?;
+    let round_limit = max_messages.min(ZCASH_SIGN_BATCH_MAX_MESSAGES);
+    // This is an upper bound for every actual `round-X-of-Y` request id because
+    // a request cannot have more rounds than messages.
+    let max_round_request_id_len = format!(
+        "{request_id}-round-{}-of-{}",
+        messages.len(),
+        messages.len()
+    )
+    .len();
+    let mut counts = Vec::new();
+    let mut start = 0usize;
+    let mut largest_compact_cbor = 0usize;
+    let mut largest_resolved_request = 0usize;
+    let mut largest_signature_count = 0usize;
+
+    while start < prepared.len() {
+        let remaining = prepared.len() - start;
+        let max_count = remaining.min(round_limit);
+        let mut low = 1usize;
+        let mut high = max_count;
+        let mut best: Option<(usize, ZcashSignBatchRoundSize)> = None;
+        while low <= high {
+            let candidate_count = low + (high - low) / 2;
+            let size = zcash_sign_batch_round_size(
+                &prepared[start..start + candidate_count],
+                max_round_request_id_len,
+            )?;
+            if size.fits(max_round_request_id_len) {
+                best = Some((candidate_count, size));
+                low = candidate_count + 1;
+            } else {
+                high = candidate_count - 1;
+            }
+        }
+
+        let Some((count, size)) = best else {
+            return Err(format!(
+                "Zcash batch message {} exceeds Keystone's signing round limits",
+                messages[start].id
+            ));
+        };
+        largest_compact_cbor = largest_compact_cbor.max(size.compact_cbor_bytes);
+        largest_resolved_request = largest_resolved_request.max(size.resolved_request_bytes);
+        largest_signature_count = largest_signature_count.max(size.expected_signature_count);
+        counts.push(
+            u32::try_from(count)
+                .map_err(|_| "Zcash signing round message count exceeds u32".to_string())?,
+        );
+        start += count;
+    }
+
+    log::info!(
+        "keystone: partitioned Zcash sign batch: messages={} rounds={} largest_compact_cbor_bytes={} largest_resolved_request_bytes={} largest_expected_signatures={}",
+        messages.len(),
+        counts.len(),
+        largest_compact_cbor,
+        largest_resolved_request,
+        largest_signature_count,
+    );
+    Ok(counts)
+}
+
+#[cfg(test)]
+pub(crate) fn resolved_zcash_sign_batch_request_len(
+    messages: &[ZcashBatchMessageInput],
+) -> Result<usize, String> {
+    let prepared = prepare_zcash_batch_messages(messages)?;
+    Ok(zcash_sign_batch_round_size(&prepared, 1)?.resolved_request_bytes)
 }
 
 /// Encode several redacted PCZTs into the `zcash-sign-batch` outer CBOR
@@ -518,6 +746,11 @@ pub fn encode_zcash_sign_batch_ur_parts(
             format!("Encode zcash-sign-batch CBOR envelope: {e:?}")
         })?;
     let cbor_len = cbor.len();
+    if cbor_len > ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES {
+        return Err(format!(
+            "Zcash batch QR request exceeds {ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES} bytes"
+        ));
+    }
     let mut ur_encoder = ur::Encoder::new(&cbor, max_fragment_len, ZCASH_SIGN_BATCH_TYPE)
         .map_err(|e| format!("UR encoder: {e}"))?;
     let count = ur_part_count(ur_encoder.fragment_count());
@@ -809,10 +1042,12 @@ mod tests {
                 ZcashBatchMessageInput {
                     id: "tx-1".to_string(),
                     pczt_bytes: test_pczt_bytes(1),
+                    expected_signature_count: 0,
                 },
                 ZcashBatchMessageInput {
                     id: "tx-2".to_string(),
                     pczt_bytes: test_pczt_bytes(2),
+                    expected_signature_count: 0,
                 },
             ],
             10_000,
@@ -839,18 +1074,19 @@ mod tests {
     }
 
     #[test]
-    fn encodes_forty_zcash_sign_batch_messages() {
+    fn encodes_maximum_supported_zcash_sign_batch_messages() {
         let messages = (1..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
             .map(|index| ZcashBatchMessageInput {
                 id: format!("tx-{index}"),
                 pczt_bytes: test_pczt_bytes(index as u32),
+                expected_signature_count: 0,
             })
             .collect::<Vec<_>>();
 
-        let parts = encode_zcash_sign_batch_ur_parts("request-40", &messages, 1_000_000)
-            .expect("40-message batch should encode");
+        let parts = encode_zcash_sign_batch_ur_parts("request-max", &messages, 1_000_000)
+            .expect("maximum supported message batch should encode");
         let envelope = ZcashSignBatch::try_from(decode_test_ur_parts(&parts))
-            .expect("40-message zcash-sign-batch CBOR should decode");
+            .expect("maximum supported zcash-sign-batch CBOR should decode");
         let request =
             BatchSignRequest::parse(envelope.get_data()).expect("Postcard request should decode");
 
@@ -858,11 +1094,72 @@ mod tests {
     }
 
     #[test]
-    fn rejects_maximum_valid_pczts_above_firmware_byte_limit() {
+    fn partitions_zcash_sign_batch_by_requested_message_limit() {
+        let messages = (1..=5)
+            .map(|index| ZcashBatchMessageInput {
+                id: format!("tx-{index}"),
+                pczt_bytes: test_pczt_bytes(index),
+                expected_signature_count: 0,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            zcash_sign_batch_round_message_counts("request-rounds", &messages, 2).unwrap(),
+            vec![2, 2, 1]
+        );
+    }
+
+    #[test]
+    fn partitions_zcash_sign_batch_by_expected_returned_signatures() {
+        let messages = [
+            ZcashBatchMessageInput {
+                id: "tx-1".to_string(),
+                pczt_bytes: test_pczt_bytes(1),
+                expected_signature_count: 64,
+            },
+            ZcashBatchMessageInput {
+                id: "tx-2".to_string(),
+                pczt_bytes: test_pczt_bytes(2),
+                expected_signature_count: 64,
+            },
+            ZcashBatchMessageInput {
+                id: "tx-3".to_string(),
+                pczt_bytes: test_pczt_bytes(3),
+                expected_signature_count: 1,
+            },
+        ];
+
+        assert_eq!(
+            zcash_sign_batch_round_message_counts("request-signatures", &messages, 40).unwrap(),
+            vec![1, 2]
+        );
+        assert_eq!(
+            encode_zcash_sign_batch_postcard(&messages).unwrap_err(),
+            "Zcash batch expects more than 96 spend signatures"
+        );
+    }
+
+    #[test]
+    fn rejects_zero_zcash_sign_batch_round_limit() {
+        let messages = [ZcashBatchMessageInput {
+            id: "tx-1".to_string(),
+            pczt_bytes: test_pczt_bytes(1),
+            expected_signature_count: 0,
+        }];
+
+        assert_eq!(
+            zcash_sign_batch_round_message_counts("request-rounds", &messages, 0).unwrap_err(),
+            "Zcash signing round message limit must be positive"
+        );
+    }
+
+    #[test]
+    fn rejects_maximum_valid_pczts_above_supported_byte_limit() {
         let messages = (1..=ZCASH_SIGN_BATCH_MAX_MESSAGES)
             .map(|index| ZcashBatchMessageInput {
                 id: format!("tx-{index}"),
                 pczt_bytes: test_pczt_bytes_with_padding(index as u32, 15 * 1024),
+                expected_signature_count: 0,
             })
             .collect::<Vec<_>>();
 
@@ -882,6 +1179,7 @@ mod tests {
             &[ZcashBatchMessageInput {
                 id: "tx-1".to_string(),
                 pczt_bytes: test_pczt_bytes(1),
+                expected_signature_count: 0,
             }],
             20,
         )
@@ -902,6 +1200,25 @@ mod tests {
     }
 
     #[test]
+    fn rejects_zcash_sign_batch_above_compact_qr_limit() {
+        let messages = [ZcashBatchMessageInput {
+            id: "tx-1".to_string(),
+            pczt_bytes: test_pczt_bytes_with_padding(1, ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES),
+            expected_signature_count: 0,
+        }];
+
+        let err = encode_zcash_sign_batch_ur_parts("request-large-qr", &messages, 10_000)
+            .expect_err("oversized compact QR request should fail");
+
+        assert_eq!(
+            err,
+            format!(
+                "Zcash batch QR request exceeds {ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES} bytes"
+            )
+        );
+    }
+
+    #[test]
     fn ur_part_count_adds_small_redundancy_tail() {
         assert_eq!(ur_part_count(0), 0);
         assert_eq!(ur_part_count(1), 1);
@@ -918,10 +1235,12 @@ mod tests {
                 ZcashBatchMessageInput {
                     id: "tx-1".to_string(),
                     pczt_bytes: test_pczt_bytes(1),
+                    expected_signature_count: 0,
                 },
                 ZcashBatchMessageInput {
                     id: "tx-1".to_string(),
                     pczt_bytes: test_pczt_bytes(2),
+                    expected_signature_count: 0,
                 },
             ],
             10_000,
@@ -938,6 +1257,7 @@ mod tests {
             &[ZcashBatchMessageInput {
                 id: "tx-1".to_string(),
                 pczt_bytes: test_pczt_bytes(1),
+                expected_signature_count: 0,
             }],
             10_000,
         )
@@ -947,13 +1267,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_zcash_batch_envelope_above_firmware_limit() {
+    fn rejects_zcash_batch_envelope_above_supported_limit() {
         let request_id = "r".repeat(ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES);
         let err = encode_zcash_sign_batch_ur_parts(
             &request_id,
             &[ZcashBatchMessageInput {
                 id: "tx-1".to_string(),
                 pczt_bytes: test_pczt_bytes(1),
+                expected_signature_count: 0,
             }],
             10_000,
         )
@@ -962,6 +1283,28 @@ mod tests {
         assert_eq!(
             err,
             format!("Zcash batch request exceeds {ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES} bytes")
+        );
+    }
+
+    #[test]
+    fn rejects_final_cbor_envelope_above_compact_limit() {
+        let messages = [ZcashBatchMessageInput {
+            id: "tx-1".to_string(),
+            pczt_bytes: test_pczt_bytes(1),
+            expected_signature_count: 0,
+        }];
+        let postcard = encode_zcash_sign_batch_postcard(&messages)
+            .expect("test signing request should serialize");
+        let request_id = "r".repeat(ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES - postcard.len());
+
+        let err = encode_zcash_sign_batch_ur_parts(&request_id, &messages, 10_000)
+            .expect_err("outer CBOR framing should push the request over the limit");
+
+        assert_eq!(
+            err,
+            format!(
+                "Zcash batch QR request exceeds {ZCASH_SIGN_BATCH_MAX_COMPACT_CBOR_BYTES} bytes"
+            )
         );
     }
 

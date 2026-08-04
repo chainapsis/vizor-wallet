@@ -49,6 +49,18 @@ Future<List<String>> encodeZcashSignBatchUrParts({
   maxFragmentLen: maxFragmentLen,
 );
 
+/// Return the ordered message count for each Keystone signing round after
+/// accounting for compact fields that expand inside the firmware.
+Future<Uint32List> zcashSignBatchRoundMessageCounts({
+  required String requestId,
+  required List<ZcashBatchMessageInput> messages,
+  required int maxMessages,
+}) => RustLib.instance.api.crateApiKeystoneZcashSignBatchRoundMessageCounts(
+  requestId: requestId,
+  messages: messages,
+  maxMessages: maxMessages,
+);
+
 /// Decode the CBOR payload returned from a `zcash-sign-result` UR.
 Future<ZcashBatchSignResult> decodeZcashSignResultCbor({
   required List<int> cbor,
