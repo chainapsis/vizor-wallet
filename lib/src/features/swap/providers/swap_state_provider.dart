@@ -655,8 +655,7 @@ class SwapNotifier extends Notifier<SwapState> {
         SwapFailureOperation.tokenList,
         error,
       );
-      if (!_hasResolvedSupportedAssets ||
-          category == SwapFailureCategory.torBlocked) {
+      if (category == SwapFailureCategory.torBlocked) {
         state = state.copyWith(supportedAssetsError: message);
       }
       log(

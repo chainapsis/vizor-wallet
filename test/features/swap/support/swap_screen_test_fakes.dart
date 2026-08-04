@@ -468,6 +468,14 @@ class _TorBlockedPricingSwapProvider extends _FakeSwapProvider
   }
 }
 
+class _InitialPricingFailureSwapProvider extends _FakeSwapProvider
+    implements SwapPricingProvider {
+  @override
+  Future<SwapPricingSnapshot> loadPricingSnapshot({bool forceRefresh = false}) {
+    throw StateError('temporary token list failure');
+  }
+}
+
 class _TorThenPricingSwapProvider extends _FakeSwapProvider
     implements SwapPricingProvider {
   var pricingRequests = 0;
