@@ -27,20 +27,26 @@ const double _welcomeLegalFooterHeight = 36;
 /// [AppLayoutMode.large] so a user who had previously toggled the window
 /// into small can still come back through onboarding.
 class WelcomeScreen extends ConsumerStatefulWidget {
-  const WelcomeScreen({super.key, this.showBackButton = false});
+  const WelcomeScreen({
+    super.key,
+    this.showBackButton = false,
+    this.showNetworkSettingsInitially = false,
+  });
 
   final bool showBackButton;
+  final bool showNetworkSettingsInitially;
 
   @override
   ConsumerState<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
-  bool _showEndpointSettings = false;
+  late bool _showEndpointSettings;
 
   @override
   void initState() {
     super.initState();
+    _showEndpointSettings = widget.showNetworkSettingsInitially;
     // Post-frame so the provider mutation doesn't clash with the current
     // build (Riverpod forbids state writes during build). `setMode` is
     // idempotent when the mode already matches.
@@ -134,8 +140,8 @@ class _Pane extends StatelessWidget {
                         child: _WelcomeIconButton(
                           key: ValueKey('welcome_endpoint_settings_button'),
                           icon: AppIcons.cog,
-                          tooltip: 'Endpoint settings',
-                          semanticLabel: 'Endpoint settings',
+                          tooltip: 'Network settings',
+                          semanticLabel: 'Network settings',
                           onTap: onShowEndpointSettings,
                         ),
                       ),
@@ -182,9 +188,10 @@ class _WelcomeHeroPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = AppTheme.of(context) == AppThemeData.dark;
-    final asset = isDark
-        ? 'assets/illustrations/welcome_hero_dark.png'
-        : 'assets/illustrations/welcome_hero_light.png';
+    final asset =
+        isDark
+            ? 'assets/illustrations/welcome_hero_dark.png'
+            : 'assets/illustrations/welcome_hero_light.png';
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadii.large),
@@ -287,9 +294,10 @@ class _WelcomeIconButtonState extends State<_WelcomeIconButton> {
               onTap: widget.onTap,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: _hovered
-                      ? colors.button.ghost.bgHover
-                      : colors.background.ground.withValues(alpha: 0),
+                  color:
+                      _hovered
+                          ? colors.button.ghost.bgHover
+                          : colors.background.ground.withValues(alpha: 0),
                   shape: BoxShape.circle,
                 ),
                 child: SizedBox(

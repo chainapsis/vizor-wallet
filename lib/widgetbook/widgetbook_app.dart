@@ -63,8 +63,8 @@ class WidgetbookApp extends StatelessWidget {
             WidgetbookTheme(name: 'Dark', data: AppThemeData.dark),
             WidgetbookTheme(name: 'Light', data: AppThemeData.light),
           ],
-          themeBuilder: (context, theme, child) =>
-              AppTheme(data: theme, child: child),
+          themeBuilder:
+              (context, theme, child) => AppTheme(data: theme, child: child),
           initialTheme: const WidgetbookTheme(
             name: 'Dark',
             data: AppThemeData.dark,
@@ -84,6 +84,10 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Large',
                       builder: buildWelcomeLargeUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Network settings',
+                      builder: buildWelcomeNetworkSettingsUseCase,
                     ),
                   ],
                 ),
@@ -621,6 +625,18 @@ class WidgetbookApp extends StatelessWidget {
                     WidgetbookUseCase(
                       name: 'Main',
                       builder: buildSettingsMainUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor connecting',
+                      builder: buildSettingsTorConnectingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor connected',
+                      builder: buildSettingsTorConnectedUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Tor failed',
+                      builder: buildSettingsTorFailedUseCase,
                     ),
                     WidgetbookUseCase(
                       name: 'Endpoint',

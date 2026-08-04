@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
@@ -89,15 +90,78 @@ void main() {
     expect(find.text('About Vizor'), findsOneWidget);
     expect(find.text('Privacy policy'), findsNothing);
     expect(find.text('Terms of usage'), findsNothing);
-    expect(find.text('Tor for in-app requests'), findsOneWidget);
+    expect(find.text('Use Tor'), findsOneWidget);
+    expect(find.text('Direct'), findsOneWidget);
     expect(
       find.text(
-        'Routes Vizor’s in-app network requests through Tor. Links opened in '
-        'other apps use those apps’ network settings. Software update checks '
-        'pause while Tor is on.',
+        'Tor is off. Requests to the Zcash network and in-app services connect directly.',
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('settings Tor control explains transitions and toggles once', (
+    tester,
+  ) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _settingsHarness(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connecting,
+        ),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Connecting…'), findsOneWidget);
+    expect(
+      find.text('New requests wait until the Tor connection is ready.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('network_privacy_toggle')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    expect(calls, isEmpty);
+  });
+
+  testWidgets('failed Tor state offers retry and direct connection', (
+    tester,
+  ) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _settingsHarness(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.failed,
+          error: 'bootstrap failed',
+        ),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Connection failed'), findsOneWidget);
+    expect(
+      find.text('Direct requests remain blocked. Try again or turn off Tor.'),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(find.text('Try again'));
+    await tester.tap(find.text('Try again'));
+    await tester.pump();
+    expect(calls, [true]);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('network_privacy_toggle')),
+    );
+    await tester.tap(find.byKey(const ValueKey('network_privacy_toggle')));
+    await tester.pump();
+    expect(calls, [true, false]);
   });
 
   testWidgets('uninstall setting is shown on macOS and Linux', (tester) async {
@@ -125,7 +189,10 @@ void _resetPlatformOverride() {
   debugDefaultTargetPlatformOverride = null;
 }
 
-Widget _settingsHarness() {
+Widget _settingsHarness({
+  NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
+  List<bool>? networkPrivacyCalls,
+}) {
   final router = GoRouter(
     initialLocation: '/settings',
     routes: [
@@ -144,12 +211,33 @@ Widget _settingsHarness() {
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap),
       syncProvider.overrideWith(FakeSyncNotifier.new),
+      networkPrivacyProvider.overrideWith(
+        () => _FakeNetworkPrivacyNotifier(
+          networkPrivacyState,
+          networkPrivacyCalls ?? <bool>[],
+        ),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,
       builder: (_, child) => AppTheme(data: AppThemeData.light, child: child!),
     ),
   );
+}
+
+class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _FakeNetworkPrivacyNotifier(this.initialState, this.calls);
+
+  final NetworkPrivacyState initialState;
+  final List<bool> calls;
+
+  @override
+  NetworkPrivacyState build() => initialState;
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    calls.add(enabled);
+  }
 }
 
 final _bootstrap = AppBootstrapState(

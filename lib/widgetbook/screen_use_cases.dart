@@ -64,6 +64,7 @@ import '../src/features/onboarding/welcome.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
+import '../src/providers/network_privacy_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
 import '../src/providers/receive_address_provider.dart';
 import '../src/providers/sync_provider.dart';
@@ -122,8 +123,27 @@ const _previewManualWordList = [..._previewManualAcceptedWords, 'age', 'agent'];
 /// preview.
 Widget buildWelcomeLargeUseCase(BuildContext context) {
   return ProviderScope(
-    overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+    ],
     child: _WelcomeHarness(),
+  );
+}
+
+Widget buildWelcomeNetworkSettingsUseCase(BuildContext context) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+    ],
+    child: const _WelcomeHarness(showNetworkSettingsInitially: true),
   );
 }
 
@@ -537,6 +557,38 @@ Widget buildAccountsRemoveUseCase(BuildContext context) {
 }
 
 Widget buildSettingsMainUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(const NetworkPrivacyState.off());
+}
+
+Widget buildSettingsTorConnectingUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connecting,
+    ),
+  );
+}
+
+Widget buildSettingsTorConnectedUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connected,
+    ),
+  );
+}
+
+Widget buildSettingsTorFailedUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.failed,
+      error: 'Preview Tor bootstrap failure',
+    ),
+  );
+}
+
+Widget _buildSettingsMainUseCase(NetworkPrivacyState networkPrivacyState) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -547,6 +599,9 @@ Widget buildSettingsMainUseCase(BuildContext context) {
       ),
       syncProvider.overrideWith(
         () => _PreviewSyncNotifier(_accountsDesignState.activeAccountUuid),
+      ),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
       ),
     ],
     child: _SettingsHarness(),
@@ -2711,6 +2766,10 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
 }
 
 class _WelcomeHarness extends StatefulWidget {
+  const _WelcomeHarness({this.showNetworkSettingsInitially = false});
+
+  final bool showNetworkSettingsInitially;
+
   @override
   State<_WelcomeHarness> createState() => _WelcomeHarnessState();
 }
@@ -2724,7 +2783,12 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
     _router = GoRouter(
       initialLocation: '/welcome',
       routes: [
-        GoRoute(path: '/welcome', builder: (_, _) => const WelcomeScreen()),
+        GoRoute(
+          path: '/welcome',
+          builder: (_, _) => WelcomeScreen(
+            showNetworkSettingsInitially: widget.showNetworkSettingsInitially,
+          ),
+        ),
         // Stub destinations so buttons in the preview don't throw when
         // tapped. They render nothing meaningful — the point is just to
         // satisfy the router.
@@ -4128,6 +4192,18 @@ rust_sync.MigrationPartStatus _previewMigrationPart(
         (state == rust_sync.MigrationPartState.completed ? 3 : 0),
     confirmationTarget: 3,
   );
+}
+
+class _PreviewNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _PreviewNetworkPrivacyNotifier(this.initialState);
+
+  final NetworkPrivacyState initialState;
+
+  @override
+  NetworkPrivacyState build() => initialState;
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {}
 }
 
 class _PreviewAccountNotifier extends AccountNotifier {
