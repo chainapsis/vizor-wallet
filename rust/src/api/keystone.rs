@@ -44,6 +44,21 @@ pub fn encode_zcash_sign_batch_ur_parts(
     keystone::encode_zcash_sign_batch_ur_parts(&request_id, &messages, max_fragment_len)
 }
 
+/// Return the ordered message count for each Keystone signing round after
+/// accounting for compact fields that expand inside the firmware.
+pub fn zcash_sign_batch_round_message_counts(
+    request_id: String,
+    messages: Vec<ZcashBatchMessageInput>,
+    max_messages: u32,
+) -> Result<Vec<u32>, String> {
+    keystone::zcash_sign_batch_round_message_counts(
+        &request_id,
+        &messages,
+        usize::try_from(max_messages)
+            .map_err(|_| "Zcash signing round message limit exceeds usize".to_string())?,
+    )
+}
+
 /// Decode the CBOR payload returned from a `zcash-sign-result` UR.
 pub fn decode_zcash_sign_result_cbor(cbor: Vec<u8>) -> Result<ZcashBatchSignResult, String> {
     keystone::decode_zcash_sign_result_cbor(&cbor)

@@ -75,6 +75,19 @@ class _RustApiFake implements RustLibApi {
   }
 
   @override
+  Future<Uint32List> crateApiKeystoneZcashSignBatchRoundMessageCounts({
+    required String requestId,
+    required List<rust_keystone_wallet.ZcashBatchMessageInput> messages,
+    required int maxMessages,
+  }) async {
+    final limit = math.min(maxMessages, 40);
+    return Uint32List.fromList([
+      for (var remaining = messages.length; remaining > 0; remaining -= limit)
+        math.min(remaining, limit),
+    ]);
+  }
+
+  @override
   Future<rust_keystone.KeystoneSigResult>
   crateApiKeystoneDecodeZcashBatchSignResponse({
     required List<int> cbor,
@@ -1231,6 +1244,7 @@ rust_sync.KeystoneMigrationSigningRequest _keystoneDenominationRequest() {
       rust_sync.KeystoneMigrationMessage(
         id: 'split-1',
         redactedPczt: Uint8List.fromList([1, 2, 3]),
+        expectedSignatureCount: 0,
       ),
     ],
     signingBatchLimit: 50,
@@ -3429,10 +3443,12 @@ void main() {
         rust_sync.KeystoneMigrationMessage(
           id: 'split-1',
           redactedPczt: Uint8List.fromList([1]),
+          expectedSignatureCount: 0,
         ),
         rust_sync.KeystoneMigrationMessage(
           id: 'split-2',
           redactedPczt: Uint8List.fromList([2]),
+          expectedSignatureCount: 0,
         ),
       ],
       signingBatchLimit: 1,
@@ -3514,6 +3530,7 @@ void main() {
         rust_sync.KeystoneMigrationMessage(
           id: 'immediate-transaction',
           redactedPczt: Uint8List.fromList([1]),
+          expectedSignatureCount: 0,
         ),
       ],
       signingBatchLimit: 1,
@@ -3604,6 +3621,7 @@ void main() {
                 rust_sync.KeystoneMigrationMessage(
                   id: 'split-1',
                   redactedPczt: Uint8List.fromList([1]),
+                  expectedSignatureCount: 0,
                 ),
               ],
               signingBatchLimit: 40,
@@ -3728,6 +3746,7 @@ void main() {
                     rust_sync.KeystoneMigrationMessage(
                       id: 'child-1',
                       redactedPczt: Uint8List.fromList([1]),
+                      expectedSignatureCount: 0,
                     ),
                   ],
                   signingBatchLimit: 40,
@@ -3971,6 +3990,7 @@ void main() {
                   rust_sync.KeystoneMigrationMessage(
                     id: 'message-$prepareCount',
                     redactedPczt: Uint8List.fromList([prepareCount]),
+                    expectedSignatureCount: 0,
                   ),
                 ],
                 signingBatchLimit: 50,

@@ -1229,13 +1229,18 @@ class KeystoneMigrationMessage {
   final String id;
   final Uint8List redactedPczt;
 
+  /// Number of spend authorization signatures expected from Keystone.
+  final int expectedSignatureCount;
+
   const KeystoneMigrationMessage({
     required this.id,
     required this.redactedPczt,
+    required this.expectedSignatureCount,
   });
 
   @override
-  int get hashCode => id.hashCode ^ redactedPczt.hashCode;
+  int get hashCode =>
+      id.hashCode ^ redactedPczt.hashCode ^ expectedSignatureCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1243,7 +1248,8 @@ class KeystoneMigrationMessage {
       other is KeystoneMigrationMessage &&
           runtimeType == other.runtimeType &&
           id == other.id &&
-          redactedPczt == other.redactedPczt;
+          redactedPczt == other.redactedPczt &&
+          expectedSignatureCount == other.expectedSignatureCount;
 }
 
 class KeystoneMigrationProofStatus {

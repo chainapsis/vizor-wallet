@@ -457,6 +457,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
   List<rust_sync.KeystoneSignedMigrationMessage>? _pendingSignedMessages;
   KeystoneQrScannerControls? _scannerControls;
   bool _decoding = false;
+  bool _signingPlanConfirmed = false;
   // Multi-part UR scan progress (0-100) for the mobile scanner chrome. The
   // scanner card reports it; the mobile view renders it under the viewfinder.
   int _scanProgress = 0;
@@ -495,6 +496,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _stage = widget.previewStartScanning
           ? _KeystoneDenominationSignStage.scanning
           : _KeystoneDenominationSignStage.showQr;
+      _signingPlanConfirmed = widget.previewStartScanning;
       _requestCompleted = true;
       return;
     }
@@ -550,6 +552,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       _pendingSignedMessages = null;
       _scannerControls = null;
       _decoding = false;
+      _signingPlanConfirmed = false;
       _scanProgress = 0;
     });
 
@@ -586,10 +589,17 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
       }
       _request = request;
       _accountUuid = accountUuid;
-      final signingRounds = _keystoneSigningRounds(
-        request.messages,
-        request.signingBatchLimit,
-      );
+      final signingRounds = request.messages.isEmpty
+          ? const <List<rust_sync.KeystoneMigrationMessage>>[]
+          : _keystoneSigningRoundsFromCounts(
+              request.messages,
+              await rust_keystone.zcashSignBatchRoundMessageCounts(
+                requestId: request.requestId,
+                messages: _zcashBatchMessageInputs(request.messages),
+                maxMessages: request.signingBatchLimit,
+              ),
+            );
+      if (!mounted) return;
       _signingRounds = signingRounds;
       if (request.messages.isEmpty) {
         if (widget.step != _KeystonePrivateSignStep.denominations) {
@@ -609,14 +619,7 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
               index,
               signingRounds.length,
             ),
-            messages: signingRounds[index]
-                .map(
-                  (message) => rust_keystone_wallet.ZcashBatchMessageInput(
-                    id: message.id,
-                    pcztBytes: message.redactedPczt,
-                  ),
-                )
-                .toList(),
+            messages: _zcashBatchMessageInputs(signingRounds[index]),
             maxFragmentLen: BigInt.from(_keystoneMigrationQrMaxFragmentLen),
           ),
         );
@@ -666,11 +669,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   /// How many transactions the QR currently on screen signs.
   ///
-  /// `_signingRounds` is the exact partition of `request.messages` that the
-  /// QR encoder consumes (`_keystoneSigningRounds`, capped by
-  /// `signingBatchLimit` and the Keystone byte budget), so the current round's
-  /// length is the real message count for this QR and the flattened total is
-  /// the request's message count.
+  /// `_signingRounds` is the ordered partition returned by Rust's exact
+  /// compact and resolved request sizing and consumed by the QR encoder, so
+  /// the current round's length is the real message count for this QR and the
+  /// flattened total is the request's message count.
   String? get _signingMessageCountLabel {
     final round = _currentSigningRound;
     if (round == null || round.isEmpty) return null;
@@ -683,6 +685,22 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
 
   String _transactionCountText(int count) =>
       count == 1 ? '1 transaction' : '$count transactions';
+
+  bool get _requiresSigningPlanConfirmation =>
+      !widget.mobileLayout && widget.step == _KeystonePrivateSignStep.combined;
+
+  bool get _showsSigningPlanConfirmation =>
+      _requiresSigningPlanConfirmation && !_signingPlanConfirmed;
+
+  void _beginSigning() {
+    if (_urParts.isEmpty ||
+        ironwoodMigrationKeystoneProofFailed(_proofStatus)) {
+      return;
+    }
+    setState(() {
+      _signingPlanConfirmed = true;
+    });
+  }
 
   Future<void> _handleScanComplete(ScanResult result) async {
     if (_decoding ||
@@ -1117,7 +1135,10 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             height: 560,
             child: Center(child: CircularProgressIndicator()),
           ),
-          _KeystoneDenominationSignStage.showQr => _buildQrContent(context),
+          _KeystoneDenominationSignStage.showQr =>
+            _showsSigningPlanConfirmation
+                ? _buildSigningPlanConfirmation(context)
+                : _buildQrContent(context),
           _KeystoneDenominationSignStage.scanning ||
           _KeystoneDenominationSignStage.waitingForProofs ||
           _KeystoneDenominationSignStage.completing => _buildScannerContent(
@@ -1454,6 +1475,134 @@ class _IronwoodMigrationKeystonePrivateSignScreenState
             expand: true,
             variant: AppButtonVariant.ghost,
             onPressed: () => unawaited(_returnToReview()),
+            child: Text(widget.step.previousButtonLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSigningPlanConfirmation(BuildContext context) {
+    final colors = context.colors;
+    final signingRoundCount = _signingRounds.length;
+    final transactionCount = _request?.messages.length ?? 0;
+    final proofStatusText = _proofStatusText;
+    final proofFailed = ironwoodMigrationKeystoneProofFailed(_proofStatus);
+    final qrPayloadsReady = _urParts.isNotEmpty;
+    final roundLabel = signingRoundCount == 1
+        ? '1 QR signing round'
+        : '$signingRoundCount QR signing rounds';
+    final transactionLabel = transactionCount == 1
+        ? '1 transaction total'
+        : '$transactionCount transactions total';
+
+    return Padding(
+      key: const ValueKey('keystone_migration_signing_plan_confirmation'),
+      padding: const EdgeInsets.only(top: AppSpacing.xl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: colors.background.raised,
+              border: Border.all(color: colors.border.subtle),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Center(
+              child: AppIcon(AppIcons.qr, size: 28, color: colors.icon.accent),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.base),
+          Text(
+            'Keystone signing plan',
+            textAlign: TextAlign.center,
+            style: AppTypography.headlineLarge.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          Container(
+            width: 360,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.base,
+              vertical: AppSpacing.base,
+            ),
+            decoration: BoxDecoration(
+              color: colors.background.raised,
+              border: Border.all(color: colors.border.subtle),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  roundLabel,
+                  key: const ValueKey(
+                    'keystone_migration_exact_signing_round_count',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: AppTypography.headlineSmall.copyWith(
+                    color: colors.text.accent,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  transactionLabel,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: colors.text.secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.base),
+          SizedBox(
+            width: 360,
+            child: Text(
+              'Each round uses one animated request QR and one signed '
+              'response QR.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: colors.text.secondary,
+              ),
+            ),
+          ),
+          if (proofStatusText != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            SizedBox(
+              width: 360,
+              child: Text(
+                proofStatusText,
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall.copyWith(
+                  color: proofFailed
+                      ? colors.text.destructive
+                      : colors.text.secondary,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+          AppButton(
+            key: const ValueKey('keystone_migration_begin_signing'),
+            onPressed: qrPayloadsReady && !proofFailed ? _beginSigning : null,
+            height: 44,
+            minWidth: 230,
+            trailing: qrPayloadsReady
+                ? const AppIcon(AppIcons.chevronForward, size: 20)
+                : null,
+            child: Text(
+              qrPayloadsReady ? 'Begin signing' : 'Preparing QR codes...',
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          AppButton(
+            onPressed: () => unawaited(_returnToReview()),
+            variant: AppButtonVariant.ghost,
+            height: 44,
+            minWidth: 230,
             child: Text(widget.step.previousButtonLabel),
           ),
         ],
@@ -1807,15 +1956,12 @@ List<rust_sync.KeystoneSignedMigrationMessage> _signedMigrationMessagesFor(
   ];
 }
 
-// The Keystone firmware enforces two independent caps on one signing round:
-// the message count (`signingBatchLimit`) and a 512 KiB ceiling that covers
-// both the canonical PCZT byte total and the request-id + Postcard envelope
-// (`ZCASH_SIGN_BATCH_MAX_TOTAL_BYTES` in rust/src/wallet/keystone.rs). Rounds
-// must stay under both, or QR encoding rejects the round after the user has
-// already approved the migration.
-const _keystoneSigningRoundMaxTotalBytes = 512 * 1024;
-// Headroom for the request id and per-message Postcard framing, which the
-// firmware counts against the same ceiling as the raw PCZT payloads.
+// This local partitioner is used by deterministic previews and helper tests.
+// Production requests use Rust's post-resolution size-aware partitioner.
+const _keystoneSigningRoundMaxMessages = 40;
+const _keystoneSigningRoundMaxTotalBytes = 80 * 1024;
+// Reserve 16 KiB for the request id, per-message Postcard framing, and the
+// outer CBOR envelope.
 const _keystoneSigningRoundByteBudget =
     _keystoneSigningRoundMaxTotalBytes - 16 * 1024;
 
@@ -1833,6 +1979,7 @@ List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRounds(
   if (limit <= 0) {
     throw StateError('Keystone signing batch limit must be positive.');
   }
+  final roundLimit = math.min(limit, _keystoneSigningRoundMaxMessages);
   final rounds = <List<rust_sync.KeystoneMigrationMessage>>[];
   var round = <rust_sync.KeystoneMigrationMessage>[];
   var roundBytes = 0;
@@ -1850,7 +1997,7 @@ List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRounds(
     final overflowsByteBudget =
         round.isNotEmpty &&
         roundBytes + messageBytes > _keystoneSigningRoundByteBudget;
-    if (round.length >= limit || overflowsByteBudget) {
+    if (round.length >= roundLimit || overflowsByteBudget) {
       rounds.add(round);
       round = <rust_sync.KeystoneMigrationMessage>[];
       roundBytes = 0;
@@ -1859,6 +2006,44 @@ List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRounds(
     roundBytes += messageBytes;
   }
   if (round.isNotEmpty) rounds.add(round);
+  return rounds;
+}
+
+List<rust_keystone_wallet.ZcashBatchMessageInput> _zcashBatchMessageInputs(
+  List<rust_sync.KeystoneMigrationMessage> messages,
+) => [
+  for (final message in messages)
+    rust_keystone_wallet.ZcashBatchMessageInput(
+      id: message.id,
+      pcztBytes: message.redactedPczt,
+      expectedSignatureCount: message.expectedSignatureCount,
+    ),
+];
+
+@visibleForTesting
+List<List<rust_sync.KeystoneMigrationMessage>>
+keystoneSigningRoundsFromCountsForTest(
+  List<rust_sync.KeystoneMigrationMessage> messages,
+  List<int> counts,
+) => _keystoneSigningRoundsFromCounts(messages, counts);
+
+List<List<rust_sync.KeystoneMigrationMessage>> _keystoneSigningRoundsFromCounts(
+  List<rust_sync.KeystoneMigrationMessage> messages,
+  List<int> counts,
+) {
+  if (messages.isEmpty && counts.isEmpty) return const [];
+  final rounds = <List<rust_sync.KeystoneMigrationMessage>>[];
+  var offset = 0;
+  for (final count in counts) {
+    if (count <= 0 || offset + count > messages.length) {
+      throw StateError('Keystone signing round partition is invalid.');
+    }
+    rounds.add(messages.sublist(offset, offset + count));
+    offset += count;
+  }
+  if (offset != messages.length) {
+    throw StateError('Keystone signing round partition is incomplete.');
+  }
   return rounds;
 }
 

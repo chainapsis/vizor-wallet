@@ -66,10 +66,19 @@ class ZcashBatchMessageInput {
   final String id;
   final Uint8List pcztBytes;
 
-  const ZcashBatchMessageInput({required this.id, required this.pcztBytes});
+  /// Number of spend authorization signatures the wallet expects the signer
+  /// to return for this PCZT.
+  final int expectedSignatureCount;
+
+  const ZcashBatchMessageInput({
+    required this.id,
+    required this.pcztBytes,
+    required this.expectedSignatureCount,
+  });
 
   @override
-  int get hashCode => id.hashCode ^ pcztBytes.hashCode;
+  int get hashCode =>
+      id.hashCode ^ pcztBytes.hashCode ^ expectedSignatureCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -77,7 +86,8 @@ class ZcashBatchMessageInput {
       other is ZcashBatchMessageInput &&
           runtimeType == other.runtimeType &&
           id == other.id &&
-          pcztBytes == other.pcztBytes;
+          pcztBytes == other.pcztBytes &&
+          expectedSignatureCount == other.expectedSignatureCount;
 }
 
 class ZcashBatchSignResult {

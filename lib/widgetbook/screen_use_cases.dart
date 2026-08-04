@@ -2642,6 +2642,7 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                   rust_sync.KeystoneMigrationMessage(
                     id: 'preview-immediate-transaction',
                     redactedPczt: Uint8List.fromList(const [1, 2, 3]),
+                    expectedSignatureCount: 0,
                   ),
                 ],
                 signingBatchLimit: 1,
@@ -2663,10 +2664,12 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
                 rust_sync.KeystoneMigrationMessage(
                   id: 'preview-private-split-1',
                   redactedPczt: Uint8List.fromList(const [1, 2, 3]),
+                  expectedSignatureCount: 0,
                 ),
                 rust_sync.KeystoneMigrationMessage(
                   id: 'preview-private-split-2',
                   redactedPczt: Uint8List.fromList(const [4, 5, 6]),
+                  expectedSignatureCount: 0,
                 ),
               ],
               signingBatchLimit: 1,

@@ -79,7 +79,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -521113960;
+  int get rustContentHash => -1527177591;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1128,6 +1128,12 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSyncWriteBlockMetadata({
     required String cachePath,
     required List<BlockMetaInfo> blocks,
+  });
+
+  Future<Uint32List> crateApiKeystoneZcashSignBatchRoundMessageCounts({
+    required String requestId,
+    required List<ZcashBatchMessageInput> messages,
+    required int maxMessages,
   });
 }
 
@@ -7928,6 +7934,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: ["cachePath", "blocks"],
       );
 
+  @override
+  Future<Uint32List> crateApiKeystoneZcashSignBatchRoundMessageCounts({
+    required String requestId,
+    required List<ZcashBatchMessageInput> messages,
+    required int maxMessages,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(requestId, serializer);
+          sse_encode_list_zcash_batch_message_input(messages, serializer);
+          sse_encode_u_32(maxMessages, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 158,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_prim_u_32_strict,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiKeystoneZcashSignBatchRoundMessageCountsConstMeta,
+        argValues: [requestId, messages, maxMessages],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta
+  get kCrateApiKeystoneZcashSignBatchRoundMessageCountsConstMeta =>
+      const TaskConstMeta(
+        debugName: "zcash_sign_batch_round_message_counts",
+        argNames: ["requestId", "messages", "maxMessages"],
+      );
+
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -8563,11 +8607,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   KeystoneMigrationMessage dco_decode_keystone_migration_message(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return KeystoneMigrationMessage(
       id: dco_decode_String(arr[0]),
       redactedPczt: dco_decode_list_prim_u_8_strict(arr[1]),
+      expectedSignatureCount: dco_decode_u_32(arr[2]),
     );
   }
 
@@ -10192,11 +10237,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ZcashBatchMessageInput dco_decode_zcash_batch_message_input(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return ZcashBatchMessageInput(
       id: dco_decode_String(arr[0]),
       pcztBytes: dco_decode_list_prim_u_8_strict(arr[1]),
+      expectedSignatureCount: dco_decode_u_32(arr[2]),
     );
   }
 
@@ -10971,7 +11017,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
     var var_redactedPczt = sse_decode_list_prim_u_8_strict(deserializer);
-    return KeystoneMigrationMessage(id: var_id, redactedPczt: var_redactedPczt);
+    var var_expectedSignatureCount = sse_decode_u_32(deserializer);
+    return KeystoneMigrationMessage(
+      id: var_id,
+      redactedPczt: var_redactedPczt,
+      expectedSignatureCount: var_expectedSignatureCount,
+    );
   }
 
   @protected
@@ -13228,7 +13279,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
     var var_pcztBytes = sse_decode_list_prim_u_8_strict(deserializer);
-    return ZcashBatchMessageInput(id: var_id, pcztBytes: var_pcztBytes);
+    var var_expectedSignatureCount = sse_decode_u_32(deserializer);
+    return ZcashBatchMessageInput(
+      id: var_id,
+      pcztBytes: var_pcztBytes,
+      expectedSignatureCount: var_expectedSignatureCount,
+    );
   }
 
   @protected
@@ -13904,6 +13960,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
     sse_encode_list_prim_u_8_strict(self.redactedPczt, serializer);
+    sse_encode_u_32(self.expectedSignatureCount, serializer);
   }
 
   @protected
@@ -15662,6 +15719,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
     sse_encode_list_prim_u_8_strict(self.pcztBytes, serializer);
+    sse_encode_u_32(self.expectedSignatureCount, serializer);
   }
 
   @protected

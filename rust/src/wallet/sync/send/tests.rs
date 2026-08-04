@@ -467,6 +467,7 @@ fn keystone_migration_signing_accepts_multiple_firmware_rounds() {
         .map(|index| KeystoneMigrationMessage {
             id: format!("message-{index}"),
             redacted_pczt: vec![index as u8, 1],
+            expected_signature_count: 0,
         })
         .collect::<Vec<_>>();
 
@@ -2365,8 +2366,7 @@ fn orchard_denomination_split_pczt_uses_v6_for_change_outputs() {
     crate::wallet::sync::pczt::redact_pczt_for_signer(&built_pczt.bytes).unwrap();
 }
 
-#[test]
-fn padded_denomination_split_builds_exactly_sixteen_actions() {
+fn built_padded_v6_split_pczt() -> (BuiltPczt, UnifiedSpendingKey) {
     crate::wallet::network::configure_regtest_nu6_3_activation_height(2).unwrap();
     let network = WalletNetwork::Regtest;
     let target_height = 120;
@@ -2440,6 +2440,12 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
         16
     );
     let built = pczt_from_build_result(build_result, network, None, 1, outputs.len()).unwrap();
+    (built, usk)
+}
+
+#[test]
+fn padded_denomination_split_builds_exactly_sixteen_actions() {
+    let (built, usk) = built_padded_v6_split_pczt();
     assert_eq!(
         pczt::Pczt::parse(&built.bytes)
             .unwrap()
@@ -2464,6 +2470,64 @@ fn padded_denomination_split_builds_exactly_sixteen_actions() {
     assert_eq!(sigs.len(), 11);
     crate::wallet::sync::pczt::preflight_orchard_spend_auth_signatures(&built.bytes, &sigs)
         .unwrap();
+}
+
+#[test]
+fn keystone_round_partition_bounds_resolved_padded_splits() {
+    let messages = (0..40)
+        .map(|index| {
+            let (built, _) = built_padded_v6_split_pczt();
+            crate::wallet::keystone::ZcashBatchMessageInput {
+                id: format!("split-{index}"),
+                pczt_bytes: built.redacted_bytes,
+                expected_signature_count: built.orchard_spend_action_indices.len() as u32,
+            }
+        })
+        .collect::<Vec<_>>();
+    let request_id = "migration-request";
+    let unsplit_resolved =
+        crate::wallet::keystone::resolved_zcash_sign_batch_request_len(&messages).unwrap();
+    assert!(
+        request_id.len() + unsplit_resolved > 512 * 1024,
+        "fixture must reproduce the firmware's post-resolution overflow"
+    );
+
+    let counts =
+        crate::wallet::keystone::zcash_sign_batch_round_message_counts(request_id, &messages, 40)
+            .unwrap();
+    assert!(counts.len() > 1);
+    assert_eq!(
+        counts.iter().map(|count| *count as usize).sum::<usize>(),
+        messages.len()
+    );
+
+    let mut offset = 0usize;
+    for (round_index, count) in counts.iter().enumerate() {
+        let count = *count as usize;
+        let round_request_id =
+            format!("{request_id}-round-{}-of-{}", round_index + 1, counts.len());
+        let resolved = crate::wallet::keystone::resolved_zcash_sign_batch_request_len(
+            &messages[offset..offset + count],
+        )
+        .unwrap();
+        assert!(
+            round_request_id.len() + resolved
+                <= crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_RESOLVED_TOTAL_BYTES
+        );
+        let round = &messages[offset..offset + count];
+        let expected_signatures = round
+            .iter()
+            .map(|message| message.expected_signature_count as usize)
+            .sum::<usize>();
+        assert!(expected_signatures <= crate::wallet::keystone::ZCASH_SIGN_BATCH_MAX_SIGNATURES);
+        crate::wallet::keystone::encode_zcash_sign_batch_ur_parts(
+            &round_request_id,
+            round,
+            1_000_000,
+        )
+        .unwrap();
+        offset += count;
+    }
 }
 
 #[test]

@@ -688,6 +688,8 @@ pub struct IronwoodMigrationResult {
 pub struct KeystoneMigrationMessage {
     pub id: String,
     pub redacted_pczt: Vec<u8>,
+    /// Number of spend authorization signatures expected from Keystone.
+    pub expected_signature_count: u32,
 }
 
 pub struct KeystoneMigrationSigningRequest {
@@ -1227,6 +1229,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
                 .map(|message| KeystoneMigrationMessage {
                     id: message.id,
                     redacted_pczt: message.redacted_pczt,
+                    expected_signature_count: message.expected_signature_count,
                 })
                 .collect(),
         })
@@ -1799,6 +1802,7 @@ pub fn prepare_orchard_migration_denominations_pczt(
                 .map(|message| KeystoneMigrationMessage {
                     id: message.id,
                     redacted_pczt: message.redacted_pczt,
+                    expected_signature_count: message.expected_signature_count,
                 })
                 .collect(),
         })
@@ -1946,6 +1950,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
                 .map(|message| KeystoneMigrationMessage {
                     id: message.id,
                     redacted_pczt: message.redacted_pczt,
+                    expected_signature_count: message.expected_signature_count,
                 })
                 .collect(),
         })
@@ -2005,6 +2010,7 @@ pub fn prepare_orchard_migration_batch_pczt(
                 .map(|message| KeystoneMigrationMessage {
                     id: message.id,
                     redacted_pczt: message.redacted_pczt,
+                    expected_signature_count: message.expected_signature_count,
                 })
                 .collect(),
         })
