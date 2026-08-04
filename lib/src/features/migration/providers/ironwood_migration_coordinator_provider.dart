@@ -1122,12 +1122,18 @@ class IronwoodMigrationCoordinator
         kAppFormFactor != AppFormFactor.mobile ||
         state.childProofBatchPermits.contains(accountUuid);
     final canPrepareNextProof = _canPrepareNextProof(status);
+    // Broadcasting a finalized due transaction is independent of whether the
+    // next signed child has reached its proof window. `_runAdvance` separately
+    // keeps software proof preparation behind the one-shot proof permit.
+    final canBroadcastDueTransaction =
+        !usesNativeOutbox && _hasDueScheduledBroadcast(status);
     final phaseCanAdvance =
         (status.phase == kIronwoodMigrationWaitingDenomConfirmationsPhase &&
             status.pendingSplitStageCount > 0) ||
         (status.phase == kIronwoodMigrationReadyToMigratePhase &&
-            hasChildProofBatchPermit &&
-            (!isHardware || canPrepareNextProof)) ||
+            (canBroadcastDueTransaction ||
+                (hasChildProofBatchPermit &&
+                    (!isHardware || canPrepareNextProof)))) ||
         (kAppFormFactor == AppFormFactor.mobile &&
             ((status.phase == kIronwoodMigrationBroadcastScheduledPhase &&
                     ((usesNativeOutbox &&
@@ -1274,11 +1280,16 @@ class IronwoodMigrationCoordinator
     String accountUuid, {
     rust_sync.MigrationStatus? status,
   }) async {
+    final hasChildProofBatchPermit =
+        kAppFormFactor != AppFormFactor.mobile ||
+        state.childProofBatchPermits.contains(accountUuid);
     final consumesProofBatchPermit =
         kAppFormFactor == AppFormFactor.mobile &&
         status != null &&
-        state.childProofBatchPermits.contains(accountUuid) &&
+        hasChildProofBatchPermit &&
         _isChildProofBatchAdvance(status);
+    final prepareNextProof =
+        kAppFormFactor != AppFormFactor.mobile || consumesProofBatchPermit;
     if (consumesProofBatchPermit) {
       state = state.copyWith(
         childProofBatchPermits: {...state.childProofBatchPermits}
@@ -1295,7 +1306,10 @@ class IronwoodMigrationCoordinator
     try {
       return await ref
           .read(ironwoodMigrationServiceProvider)
-          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+          .continueSoftwarePrivateMigration(
+            accountUuid: accountUuid,
+            prepareNextProof: prepareNextProof,
+          );
     } finally {
       if (ref.mounted) {
         state = state.copyWith(

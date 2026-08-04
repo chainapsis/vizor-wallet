@@ -1595,6 +1595,7 @@ class IronwoodMigrationService {
 
   Future<rust_sync.IronwoodMigrationResult> continueSoftwarePrivateMigration({
     required String accountUuid,
+    bool prepareNextProof = true,
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
@@ -1638,7 +1639,8 @@ class IronwoodMigrationService {
       );
     }
     final isHardware = isHardwareAccount(accountUuid);
-    if (isHardware ||
+    if (!prepareNextProof ||
+        isHardware ||
         broadcastResult.status != kIronwoodMigrationReadyToMigratePhase) {
       return broadcastResult;
     }

@@ -419,6 +419,94 @@ void main() {
   });
 
   test(
+    'due Keystone migration broadcasts while the next proof is not ready',
+    () async {
+      final statuses = {
+        _softwareUuid: _status('complete', activeRunId: null),
+        _hardwareUuid: _status(
+          'ready_to_migrate',
+          scheduledHeight: 1_000,
+          signedChildPcztCount: 1,
+          nextActionHeight: 1_000,
+          proofReady: false,
+        ),
+      };
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: [],
+        broadcasts: broadcasts,
+        usesNativeOutbox: false,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantForegroundProgressPermit(_hardwareUuid);
+      await coordinator.refreshNow();
+
+      expect(broadcasts, [_hardwareUuid]);
+    },
+  );
+
+  test(
+    'due software broadcast retains a blocked proof permit',
+    () async {
+      final statuses = {
+        _softwareUuid: _status(
+          'ready_to_migrate',
+          scheduledHeight: 1_000,
+          signedChildPcztCount: 1,
+          nextActionHeight: 1_000,
+          proofReady: false,
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final softwareStarts = <String>[];
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: softwareStarts,
+        broadcasts: broadcasts,
+        usesNativeOutbox: false,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantChildProofBatchPermit(_softwareUuid);
+      await coordinator.refreshNow();
+
+      expect(broadcasts, [_softwareUuid]);
+      expect(softwareStarts, isEmpty);
+      expect(
+        container
+            .read(ironwoodMigrationCoordinatorProvider)
+            .childProofBatchPermits,
+        contains(_softwareUuid),
+      );
+    },
+  );
+
+  test(
     'manual retry runs again after an automatic attempt in flight',
     () async {
       final statuses = {
