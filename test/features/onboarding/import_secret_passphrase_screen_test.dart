@@ -68,6 +68,25 @@ void main() {
     expect(fourth.dy, greaterThan(first.dy));
   });
 
+  testWidgets('centers the BIP39 action in the visible footer area', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    final visibleTop = tester
+        .getBottomLeft(find.byKey(const ValueKey('import_mnemonic_card')))
+        .dy;
+    final visibleBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('bip39_passphrase_action')))
+        .dy;
+    final textCenter = tester
+        .getCenter(find.text('Add BIP39 Passphrase (Optional)'))
+        .dy;
+
+    expect(textCenter, closeTo((visibleTop + visibleBottom) / 2, 0.1));
+  });
+
   testWidgets('moves to the next field for a uniquely completed BIP39 word', (
     tester,
   ) async {

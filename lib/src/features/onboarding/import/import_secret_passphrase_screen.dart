@@ -62,6 +62,10 @@ class _ImportSecretPassphraseScreenState
   static const _wordCount = 24;
   static const _contentWidth = 396.0;
   static const _passphraseHeight = 428.0;
+  static const _mnemonicCardHeight = 376.0;
+  static const _passphraseFooterHeight = 96.0;
+  static const _visiblePassphraseFooterHeight =
+      _passphraseHeight - _mnemonicCardHeight;
   static const _contentToButtonGap = AppSpacing.md;
   static const _titleTop = 17.0;
   static const _passphraseTop = 128.0;
@@ -780,7 +784,7 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
             left: 0,
             right: 0,
             bottom: 0,
-            height: 96,
+            height: _ImportSecretPassphraseScreenState._passphraseFooterHeight,
             child: hasBip39Passphrase
                 ? _SavedBip39PassphraseFooter(
                     passphrase: bip39Passphrase,
@@ -801,11 +805,17 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                           behavior: HitTestBehavior.opaque,
                           onTap: onOpenBip39Passphrase,
                           child: Align(
-                            alignment: const Alignment(0, 0.42),
-                            child: Text(
-                              'Add BIP39 Passphrase (Optional)',
-                              style: AppTypography.labelLarge.copyWith(
-                                color: colors.text.muted,
+                            alignment: Alignment.bottomCenter,
+                            child: SizedBox(
+                              height: _ImportSecretPassphraseScreenState
+                                  ._visiblePassphraseFooterHeight,
+                              child: Center(
+                                child: Text(
+                                  'Add BIP39 Passphrase (Optional)',
+                                  style: AppTypography.labelLarge.copyWith(
+                                    color: colors.text.muted,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -818,8 +828,9 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
             left: 0,
             right: 0,
             top: 0,
-            height: 376,
+            height: _ImportSecretPassphraseScreenState._mnemonicCardHeight,
             child: DecoratedBox(
+              key: const ValueKey('import_mnemonic_card'),
               decoration: BoxDecoration(
                 color: colors.background.homeCard,
                 borderRadius: BorderRadius.circular(AppRadii.large),
