@@ -1882,7 +1882,7 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
     let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
     let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
-    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+    let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
     // From this point a cancelled future or terminated process cannot prove
@@ -4961,7 +4961,7 @@ async fn broadcast_pending_denomination_stages(
             run_id,
             &stage.expected_txid_hex,
         )?;
-        if let Err(e) = broadcast_raw_transaction(&mut client, &stage.raw_tx).await {
+        if let Err(e) = broadcast_raw_transaction_isolated(lightwalletd_url, &stage.raw_tx).await {
             if migration_broadcast_failure_requires_rebuild(&e) {
                 super::migration::clear_denomination_broadcast_attempted(
                     db_path,
@@ -5189,30 +5189,6 @@ async fn broadcast_due_scheduled_migration_txs(
         ));
     }
 
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
-        Err(e) => {
-            let message = format!("Migration broadcast could not start: {e}");
-            super::migration::mark_run_phase(
-                db_path,
-                run_id,
-                super::migration::PHASE_FAILED_RECOVERABLE,
-                Some(&message),
-            )?;
-            return Ok(MigrationBroadcastAdvance::without_acceptance(
-                IronwoodMigrationResult {
-                    txids: String::new(),
-                    status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
-                    broadcasted_count: 0,
-                    total_count: fallback_total_count,
-                    message: Some(message),
-                    fee_zatoshi: 0,
-                    migrated_zatoshi: fallback_migrated_zatoshi,
-                },
-            ));
-        }
-    };
-
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
     let mut accepted_txids = Vec::new();
     for pending in due.into_iter().take(policy.limit(usize::MAX)) {
@@ -5226,7 +5202,8 @@ async fn broadcast_due_scheduled_migration_txs(
             break;
         }
         super::migration::mark_pending_broadcast_attempted(db_path, run_id, &pending.txid_hex)?;
-        if let Err(e) = broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
+        if let Err(e) = broadcast_raw_transaction_isolated(lightwalletd_url, &pending.raw_tx).await
+        {
             log::error!(
                 "migration: broadcast rejected for {}: {}",
                 pending.txid_hex,
@@ -5739,23 +5716,6 @@ async fn broadcast_created_transactions(
     let txids_joined = txid_strings.join(",");
     let total_count = txids.len() as u32;
 
-    // Connect to lightwalletd once for all broadcasts.
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
-        Err(e) => {
-            let message =
-                format!("Broadcast could not start after local transaction creation. Error: {e}");
-            log::warn!("{log_label}: {message}");
-            return CreatedBroadcastResult {
-                txids: txids_joined,
-                status: CreatedBroadcastResult::PENDING_BROADCAST,
-                broadcasted_count: 0,
-                total_count,
-                message: Some(message),
-            };
-        }
-    };
-
     let read_conn = match open_readonly_conn(db_path) {
         Ok(conn) => conn,
         Err(e) => {
@@ -5799,7 +5759,7 @@ async fn broadcast_created_transactions(
             }
         };
 
-        match broadcast_raw_transaction(&mut client, &raw_tx).await {
+        match broadcast_raw_transaction_isolated(lightwalletd_url, &raw_tx).await {
             Ok(()) => {
                 broadcast_ok.push(format!("{txid}"));
                 log::info!("{log_label}: broadcast {txid} ({} bytes)", raw_tx.len());
@@ -5850,6 +5810,20 @@ async fn broadcast_raw_transaction(
     }
 
     Ok(())
+}
+
+/// Broadcasts one transaction over a fresh isolated Tor handle when Tor is
+/// enabled. Reusing the base Tor client here would allow independent wallet or
+/// Ironwood transactions to share a circuit and become linkable by transport
+/// metadata.
+async fn broadcast_raw_transaction_isolated(
+    lightwalletd_url: &str,
+    raw_tx: &[u8],
+) -> Result<(), String> {
+    let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
+        .await
+        .map_err(|e| format!("Open isolated broadcast route: {e}"))?;
+    broadcast_raw_transaction(&mut client, raw_tx).await
 }
 
 // ======================== Auto-Resubmit ========================
@@ -5923,6 +5897,7 @@ pub(crate) struct ResubmitStats {
 /// wallet is doing without enabling DEBUG everywhere.
 pub(crate) async fn resubmit_pending_transactions<ShouldExit>(
     db_path: &str,
+    lightwalletd_url: &str,
     client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
     current_height: u32,
     excluded_txids: &HashSet<Vec<u8>>,
@@ -5981,7 +5956,12 @@ where
         }
 
         let txid_hex = hex::encode(&tx.txid_bytes);
-        match broadcast_raw_transaction(client, &tx.raw_tx).await {
+        let first_attempt = if crate::network_privacy::is_tor_desired() {
+            broadcast_raw_transaction_isolated(lightwalletd_url, &tx.raw_tx).await
+        } else {
+            broadcast_raw_transaction(client, &tx.raw_tx).await
+        };
+        match first_attempt {
             Ok(()) => {
                 log::info!(
                     "resubmit: {txid_hex} ok (expiry={}, bytes={})",
@@ -6006,7 +5986,12 @@ where
                     stats.failed += 1;
                     break;
                 }
-                match broadcast_raw_transaction(client, &tx.raw_tx).await {
+                let retry = if crate::network_privacy::is_tor_desired() {
+                    broadcast_raw_transaction_isolated(lightwalletd_url, &tx.raw_tx).await
+                } else {
+                    broadcast_raw_transaction(client, &tx.raw_tx).await
+                };
+                match retry {
                     Ok(()) => {
                         log::info!("resubmit: {txid_hex} ok on retry");
                         stats.succeeded += 1;

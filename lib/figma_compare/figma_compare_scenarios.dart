@@ -114,6 +114,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildCustomiseAccountUseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-main',
+    description: 'Desktop settings with Tor privacy control',
+    builder: buildSettingsMainUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-customise-account',
     description: 'Mobile account personalisation onboarding screen',
     builder: buildMobileCustomiseAccountUseCase,

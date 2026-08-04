@@ -53,8 +53,8 @@ pub(crate) use error::SyncError;
 use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{download_blocks, download_subtree_roots, get_address_utxos_stream, get_tree_state};
 pub(crate) use lwd::{
-    get_latest_block, get_taddress_txids, get_transaction, next_stream_message, open_lwd_channel,
-    send_transaction, send_transaction_with_status,
+    get_latest_block, get_taddress_txids, get_transaction, next_stream_message,
+    open_isolated_lwd_channel, open_lwd_channel, send_transaction, send_transaction_with_status,
 };
 
 /// Progress event sent to caller (Dart or Swift).
@@ -1644,6 +1644,7 @@ async fn run_sync_impl(
             recovery_resubmit_exclusions(db_data_path, &startup_ranges)?;
         let _ = crate::wallet::sync::resubmit_pending_transactions(
             db_data_path,
+            lightwalletd_url,
             &mut client,
             tip.height as u32,
             &startup_resubmit_exclusions,
@@ -2430,6 +2431,7 @@ async fn run_sync_impl(
                 if allow_resubmit {
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
+                        lightwalletd_url,
                         &mut client,
                         fresh_tip_height,
                         &resubmit_exclusions,

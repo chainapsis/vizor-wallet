@@ -824,7 +824,8 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
             return Err(error);
         }
     };
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
+    let mut client =
+        match crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url).await {
         Ok(client) => client,
         Err(error) => {
             if let Ok(mut store) = keystone_immediate_migration_requests().lock() {

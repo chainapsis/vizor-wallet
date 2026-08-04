@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../main.dart' show log;
 import '../core/config/swap_feature_config.dart';
 import '../core/formatting/zec_amount.dart';
+import '../core/network/network_http_client.dart';
 import '../features/swap/models/swap_fiat_value_formatting.dart';
 
 const kVizorCoinGeckoPriceBaseUrlEnvKey = 'VIZOR_COINGECKO_PRICE_BASE_URL';
@@ -35,12 +36,13 @@ abstract interface class ZecMarketDataSource {
 class CoinGeckoZecMarketDataSource implements ZecMarketDataSource {
   CoinGeckoZecMarketDataSource({
     HttpClient? client,
+    NetworkHttpClient? networkClient,
     Uri? baseUri,
     this.timeout = const Duration(seconds: 12),
-  }) : _client = client ?? HttpClient(),
+  }) : _client = networkClient ?? NetworkHttpClient(directClient: client),
        _baseUri = baseUri ?? Uri.parse(kVizorCoinGeckoPriceBaseUrl);
 
-  final HttpClient _client;
+  final NetworkHttpClient _client;
   final Uri _baseUri;
   final Duration timeout;
 
@@ -48,10 +50,13 @@ class CoinGeckoZecMarketDataSource implements ZecMarketDataSource {
   Future<ZecMarketData?> fetchMarketData() async {
     final endpoint = coinGeckoSimplePriceUri(_baseUri);
     try {
-      final request = await _client.getUrl(endpoint).timeout(timeout);
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      final response = await request.close().timeout(timeout);
-      final body = await utf8.decoder.bind(response).join();
+      final response = await _client.request(
+        'GET',
+        endpoint,
+        headers: const {HttpHeaders.acceptHeader: 'application/json'},
+        timeout: timeout,
+      );
+      final body = utf8.decode(response.bodyBytes);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         log('zecMarketData: CoinGecko returned ${response.statusCode}');
         return null;

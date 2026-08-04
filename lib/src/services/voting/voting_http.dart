@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../core/network/network_http_client.dart';
+
 /// Small HTTP abstraction for voting services.
 ///
 /// The voting clients are mostly protocol mappers; keeping transport injectable
@@ -51,10 +53,10 @@ class VotingHttpResponse {
 
 /// `dart:io` implementation used by app platforms that support [HttpClient].
 class DartIoVotingHttpClient implements VotingHttpClient {
-  DartIoVotingHttpClient({HttpClient? client})
-    : _client = client ?? HttpClient();
+  DartIoVotingHttpClient({HttpClient? client, NetworkHttpClient? networkClient})
+    : _client = networkClient ?? NetworkHttpClient(directClient: client);
 
-  final HttpClient _client;
+  final NetworkHttpClient _client;
 
   @override
   Future<VotingHttpResponse> get(
@@ -92,36 +94,22 @@ class DartIoVotingHttpClient implements VotingHttpClient {
     Map<String, String>? headers,
     Duration? timeout,
   }) async {
-    Future<VotingHttpResponse> run() async {
-      final request = await _client.openUrl(method, uri);
-      if (contentType != null) {
-        request.headers.contentType = contentType;
-      }
-      headers?.forEach(request.headers.set);
-      if (bodyBytes != null) {
-        request.add(bodyBytes);
-      }
-      final response = await request.close();
-      final bytes = await response.fold<List<int>>(
-        <int>[],
-        (buffer, chunk) => buffer..addAll(chunk),
-      );
-      return VotingHttpResponse(
-        statusCode: response.statusCode,
-        bodyBytes: Uint8List.fromList(bytes),
-        headers: _headersToMap(response.headers),
-      );
-    }
-
-    final future = run();
-    return timeout == null ? future : future.timeout(timeout);
-  }
-
-  static Map<String, List<String>> _headersToMap(HttpHeaders headers) {
-    final result = <String, List<String>>{};
-    headers.forEach((name, values) {
-      result[name] = List.unmodifiable(values);
-    });
-    return Map.unmodifiable(result);
+    final requestHeaders = <String, String>{
+      if (contentType != null)
+        HttpHeaders.contentTypeHeader: contentType.mimeType,
+      ...?headers,
+    };
+    final response = await _client.request(
+      method,
+      uri,
+      headers: requestHeaders,
+      bodyBytes: bodyBytes ?? const [],
+      timeout: timeout,
+    );
+    return VotingHttpResponse(
+      statusCode: response.statusCode,
+      bodyBytes: response.bodyBytes,
+      headers: response.headers,
+    );
   }
 }

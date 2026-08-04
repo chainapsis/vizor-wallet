@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import '../../../core/network/network_http_client.dart';
 import '../../../core/storage/wallet_paths.dart';
 
 const _saplingSpendHash = 'a15ab54c2888880e53c823a3063820c728444126';
@@ -69,18 +70,16 @@ Future<void> _downloadAndVerify(
   String expectedSha1, {
   required void Function(String message) log,
 }) async {
-  final client = HttpClient();
+  final client = NetworkHttpClient();
   try {
-    final request = await client.getUrl(Uri.parse(url));
-    final response = await request.close();
+    final response = await client.request('GET', Uri.parse(url));
     if (response.statusCode != 200) {
       throw Exception('Download failed: HTTP ${response.statusCode} for $url');
     }
 
     final tempPath = '${destPath}_tmp';
     final file = File(tempPath);
-    final sink = file.openWrite();
-    await response.pipe(sink);
+    await file.writeAsBytes(response.bodyBytes, flush: true);
 
     final bytes = await File(tempPath).readAsBytes();
     final digest = sha1.convert(bytes);

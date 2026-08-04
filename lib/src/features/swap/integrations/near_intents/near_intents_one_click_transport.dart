@@ -60,10 +60,11 @@ abstract interface class OneClickApiTransport {
 class HttpClientOneClickApiTransport implements OneClickApiTransport {
   HttpClientOneClickApiTransport({
     HttpClient? client,
+    NetworkHttpClient? networkClient,
     this.timeout = const Duration(seconds: 20),
-  }) : _client = client ?? HttpClient();
+  }) : _client = networkClient ?? NetworkHttpClient(directClient: client);
 
-  final HttpClient _client;
+  final NetworkHttpClient _client;
   final Duration timeout;
 
   @override
@@ -89,18 +90,24 @@ class HttpClientOneClickApiTransport implements OneClickApiTransport {
     Map<String, String> headers = const {},
     Map<String, Object?>? body,
   }) async {
-    final request = await _client.openUrl(method, uri).timeout(timeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    for (final entry in headers.entries) {
-      request.headers.set(entry.key, entry.value);
-    }
+    final requestHeaders = <String, String>{
+      HttpHeaders.acceptHeader: 'application/json',
+      ...headers,
+    };
+    List<int> bodyBytes = const [];
     if (body != null) {
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode(_withoutNulls(body)));
+      requestHeaders[HttpHeaders.contentTypeHeader] = ContentType.json.mimeType;
+      bodyBytes = utf8.encode(jsonEncode(_withoutNulls(body)));
     }
 
-    final response = await request.close().timeout(timeout);
-    final responseBody = await utf8.decoder.bind(response).join();
+    final response = await _client.request(
+      method,
+      uri,
+      headers: requestHeaders,
+      bodyBytes: bodyBytes,
+      timeout: timeout,
+    );
+    final responseBody = utf8.decode(response.bodyBytes);
     return OneClickHttpResponse(
       statusCode: response.statusCode,
       body: responseBody,

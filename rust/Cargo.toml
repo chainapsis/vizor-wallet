@@ -47,6 +47,10 @@ rand = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 futures = "0.3"
 tonic = { version = "0.14", features = ["channel", "tls-webpki-roots", "tls-ring"] }
+bytes = "1"
+http = "1"
+http-body-util = "0.1"
+hyper = "1"
 time = "0.3"
 # rustls is in the graph transitively via tonic; make it a direct dep
 # so we can explicitly install the ring CryptoProvider in `init_app`.
@@ -94,6 +98,7 @@ features = [
     "transparent-inputs",
     "lightwalletd-tonic",
     "lightwalletd-tonic-tls-webpki-roots",
+    "tor",
     "sync",
     "pczt",
 ]

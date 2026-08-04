@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../../core/network/network_http_client.dart';
 import '../models/wallet_link_models.dart';
 import '../wallet_link_config.dart';
 
@@ -18,27 +19,25 @@ class WalletLinkApiException implements Exception {
 class WalletLinkApiClient {
   WalletLinkApiClient({
     HttpClient? client,
+    NetworkHttpClient? networkClient,
     Uri? baseUri,
     this.timeout = const Duration(seconds: 12),
-  }) : _client = client ?? HttpClient(),
+  }) : _client = networkClient ?? NetworkHttpClient(directClient: client),
        _baseUri = baseUri ?? walletLinkBackendBaseUri();
 
-  final HttpClient _client;
+  final NetworkHttpClient _client;
   final Uri _baseUri;
   final Duration timeout;
 
   Future<WalletLinkCreatePackageResponse> createPackage(
     WalletLinkCreatePackageRequest input,
   ) async {
-    final request = await _client
-        .postUrl(walletLinkPackagesUri(_baseUri))
-        .timeout(timeout);
-    request.headers.contentType = ContentType.json;
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    request.write(jsonEncode(input.toJson()));
-
-    final response = await request.close().timeout(timeout);
-    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    final response = await _jsonRequest(
+      'POST',
+      walletLinkPackagesUri(_baseUri),
+      body: input.toJson(),
+    );
+    final body = utf8.decode(response.bodyBytes);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw WalletLinkApiException(response.statusCode, body.trim());
     }
@@ -50,13 +49,12 @@ class WalletLinkApiClient {
   }
 
   Future<void> deletePackage(String packageId) async {
-    final request = await _client
-        .deleteUrl(walletLinkPackagesUri(_baseUri, packageId: packageId))
-        .timeout(timeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-
-    final response = await request.close().timeout(timeout);
-    await response.drain<void>().timeout(timeout);
+    final response = await _client.request(
+      'DELETE',
+      walletLinkPackagesUri(_baseUri, packageId: packageId),
+      headers: const {HttpHeaders.acceptHeader: 'application/json'},
+      timeout: timeout,
+    );
     if (response.statusCode == 404 || response.statusCode == 410) return;
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw WalletLinkApiException(
@@ -67,13 +65,11 @@ class WalletLinkApiClient {
   }
 
   Future<WalletLinkPackageStatus> getPackageStatus(String packageId) async {
-    final request = await _client
-        .getUrl(walletLinkPackageStatusUri(_baseUri, packageId: packageId))
-        .timeout(timeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-
-    final response = await request.close().timeout(timeout);
-    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    final response = await _jsonRequest(
+      'GET',
+      walletLinkPackageStatusUri(_baseUri, packageId: packageId),
+    );
+    final body = utf8.decode(response.bodyBytes);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw WalletLinkApiException(response.statusCode, body.trim());
     }
@@ -89,21 +85,16 @@ class WalletLinkApiClient {
     required String completionToken,
     WalletLinkEnvelope? completionEnvelope,
   }) async {
-    final request = await _client
-        .postUrl(walletLinkPackageCompleteUri(_baseUri, packageId: packageId))
-        .timeout(timeout);
-    request.headers.contentType = ContentType.json;
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    request.write(
-      jsonEncode({
+    final response = await _jsonRequest(
+      'POST',
+      walletLinkPackageCompleteUri(_baseUri, packageId: packageId),
+      body: {
         'completionToken': completionToken,
         if (completionEnvelope != null)
           'completionEnvelope': completionEnvelope.toJson(),
-      }),
+      },
     );
-
-    final response = await request.close().timeout(timeout);
-    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    final body = utf8.decode(response.bodyBytes);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw WalletLinkApiException(response.statusCode, body.trim());
     }
@@ -115,13 +106,11 @@ class WalletLinkApiClient {
   }
 
   Future<WalletLinkPackageDownload> getPackage(String packageId) async {
-    final request = await _client
-        .getUrl(walletLinkPackagesUri(_baseUri, packageId: packageId))
-        .timeout(timeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-
-    final response = await request.close().timeout(timeout);
-    final body = await utf8.decoder.bind(response).join().timeout(timeout);
+    final response = await _jsonRequest(
+      'GET',
+      walletLinkPackagesUri(_baseUri, packageId: packageId),
+    );
+    final body = utf8.decode(response.bodyBytes);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw WalletLinkApiException(response.statusCode, body.trim());
     }
@@ -134,5 +123,23 @@ class WalletLinkApiClient {
 
   void close({bool force = false}) {
     _client.close(force: force);
+  }
+
+  Future<NetworkHttpResponse> _jsonRequest(
+    String method,
+    Uri uri, {
+    Map<String, Object?>? body,
+  }) {
+    return _client.request(
+      method,
+      uri,
+      headers: {
+        HttpHeaders.acceptHeader: 'application/json',
+        if (body != null)
+          HttpHeaders.contentTypeHeader: ContentType.json.mimeType,
+      },
+      bodyBytes: body == null ? const [] : utf8.encode(jsonEncode(body)),
+      timeout: timeout,
+    );
   }
 }

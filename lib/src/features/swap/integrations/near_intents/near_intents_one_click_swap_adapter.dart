@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../../../core/network/network_http_client.dart';
 import '../../domain/swap_contract.dart';
 import '../../models/swap_token_amount_formatting.dart';
 

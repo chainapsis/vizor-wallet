@@ -19,3 +19,8 @@ Future<String> getWalletDbPath() async {
   final dbName = await getWalletDbName();
   return '${dir.path}${Platform.pathSeparator}$dbName';
 }
+
+Future<String> getTorDataDirectoryPath() async {
+  final dir = await getWalletSupportDirectory();
+  return '${dir.path}${Platform.pathSeparator}tor';
+}

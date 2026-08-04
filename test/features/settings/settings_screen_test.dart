@@ -89,6 +89,14 @@ void main() {
     expect(find.text('About Vizor'), findsOneWidget);
     expect(find.text('Privacy policy'), findsNothing);
     expect(find.text('Terms of usage'), findsNothing);
+    expect(find.text('Tor for in-app requests'), findsOneWidget);
+    expect(
+      find.text(
+        'Routes Vizor’s in-app network requests through Tor. Links opened in '
+        'other apps use those apps’ network settings.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('uninstall setting is shown on macOS and Linux', (tester) async {
