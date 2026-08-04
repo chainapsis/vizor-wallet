@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/config/network_config.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
@@ -45,6 +46,46 @@ void main() {
   tearDown(() async {
     await store.deleteAll();
     debugDefaultTargetPlatformOverride = previousTargetPlatform;
+  });
+
+  test('iOS secure-store migration waits for the native migrator', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    const channel = MethodChannel('test/keychain_accessibility_migration');
+    MethodCall? received;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          received = call;
+          return <String, Object?>{'status': 'complete', 'migrated': 1};
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    await ensureIosSecureStoreAccessibilityMigrated(channel: channel);
+
+    expect(received?.method, 'ensureFirstUnlockThisDeviceOnly');
+    expect(received?.arguments, <String, Object?>{
+      'service': secureStoreServiceForNetwork(kZcashDefaultNetworkName),
+    });
+  });
+
+  test('iOS native migration errors fail closed as unavailable storage', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    const channel = MethodChannel('test/keychain_accessibility_failure');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async {
+          throw PlatformException(code: 'migration_conflict');
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    expect(
+      ensureIosSecureStoreAccessibilityMigrated(channel: channel),
+      throwsA(isA<SecureStorageUnavailableException>()),
+    );
   });
 
   test('changePassword rotates mnemonic payloads and verifier', () async {

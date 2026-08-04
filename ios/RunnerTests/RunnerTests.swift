@@ -2236,6 +2236,19 @@ class RunnerTests: XCTestCase {
     XCTAssertTrue(harness.deletedServices.isEmpty)
   }
 
+  func testFreshInstallCleanerPreservesStagingOnlyInterruptedMigration() {
+    let harness = FreshInstallCleanerHarness()
+    harness.lookup = .missing
+    harness.stagedLookup = .found("zcash_wallet_existing.db")
+    harness.walletDbExists = true
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertTrue(harness.deletedServices.isEmpty)
+  }
+
   func testFreshInstallCleanerClearsStaleKeychainWhenWalletDbIsGone() {
     let harness = FreshInstallCleanerHarness()
     harness.lookup = .found("zcash_wallet_deleted.db")
@@ -2249,6 +2262,57 @@ class RunnerTests: XCTestCase {
       harness.deletedServices,
       FreshInstallKeychainCleaner.servicesToClear
     )
+  }
+
+  func testFreshInstallCleanerClearsStagingOnlyStateAfterReinstall() {
+    let harness = FreshInstallCleanerHarness()
+    harness.lookup = .missing
+    harness.stagedLookup = .found("zcash_wallet_deleted.db")
+    harness.walletDbExists = false
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertEqual(
+      harness.deletedServices,
+      FreshInstallKeychainCleaner.servicesToClear
+    )
+  }
+
+  func testFreshInstallCleanerClearsNonMainStagingOnlyStateAfterReinstall() {
+    let harness = FreshInstallCleanerHarness()
+    harness.lookups = [
+      .missing,
+      .missing,
+      .missing,
+      .found("zcash_wallet_deleted.db"),
+    ]
+    harness.walletDbExists = false
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertEqual(
+      harness.deletedServices,
+      FreshInstallKeychainCleaner.servicesToClear
+    )
+  }
+
+  func testFreshInstallCleanerPreservesAnyExistingNetworkDatabase() {
+    let harness = FreshInstallCleanerHarness()
+    harness.lookups = [
+      .found("zcash_wallet_deleted.db"),
+      .found("zcash_wallet_existing.db"),
+    ]
+    harness.existingDbNames = ["zcash_wallet_existing.db"]
+
+    FreshInstallKeychainCleaner.runIfNeeded(dependencies: harness.dependencies())
+
+    XCTAssertTrue(harness.markedInstalled)
+    XCTAssertFalse(harness.cleanupPending)
+    XCTAssertTrue(harness.deletedServices.isEmpty)
   }
 
   func testFreshInstallCleanerDefersSentinelWhenKeychainReadFails() {
@@ -2382,6 +2446,284 @@ class RunnerTests: XCTestCase {
     XCTAssertFalse(harness.markedInstalled)
     XCTAssertTrue(harness.cleanupPending)
     XCTAssertTrue(harness.deletedServices.isEmpty)
+  }
+
+  func testKeychainAccessibilityMigrationMovesLegacyItemThroughStaging() throws {
+    let service = "com.keplr.vizor.secure_store"
+    let store = KeychainAccessibilityMigrationStoreHarness()
+    let completionStore = KeychainAccessibilityMigrationCompletionStoreHarness()
+    store.put(
+      service: service,
+      account: "zcash_account_mnemonic_test",
+      data: Data("ciphertext".utf8),
+      accessibility: kSecAttrAccessibleAfterFirstUnlock as String
+    )
+
+    let migrated = try KeychainAccessibilityMigrator(
+      store: store,
+      completionStore: completionStore
+    )
+      .ensureFirstUnlockThisDeviceOnly(service: service)
+
+    XCTAssertEqual(migrated, 1)
+    XCTAssertEqual(store.itemsByService[service]?.count, 1)
+    XCTAssertEqual(
+      store.itemsByService[service]?.first?.accessibility,
+      kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+    )
+    XCTAssertEqual(
+      store.itemsByService[service]?.first?.data,
+      Data("ciphertext".utf8)
+    )
+    XCTAssertNil(
+      store.itemsByService[
+        service + keychainAccessibilityMigrationStagingSuffix
+      ]
+    )
+    XCTAssertTrue(
+      completionStore.isComplete(
+        service: service,
+        version: keychainAccessibilityMigrationVersion
+      )
+    )
+  }
+
+  func testKeychainAccessibilityMigrationRecoversFromStagingOnly() throws {
+    let service = "com.keplr.vizor.secure_store"
+    let staging = service + keychainAccessibilityMigrationStagingSuffix
+    let store = KeychainAccessibilityMigrationStoreHarness()
+    let completionStore = KeychainAccessibilityMigrationCompletionStoreHarness()
+    store.put(
+      service: staging,
+      account: "zcash_wallet_db_name",
+      data: Data("wallet.db".utf8),
+      accessibility: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+    )
+
+    let migrated = try KeychainAccessibilityMigrator(
+      store: store,
+      completionStore: completionStore
+    )
+      .ensureFirstUnlockThisDeviceOnly(service: service)
+
+    XCTAssertEqual(migrated, 1)
+    XCTAssertEqual(
+      store.itemsByService[service]?.first?.data,
+      Data("wallet.db".utf8)
+    )
+    XCTAssertNil(store.itemsByService[staging])
+  }
+
+  func testKeychainAccessibilityMigrationPreservesConflictingCopies() {
+    let service = "com.keplr.vizor.secure_store"
+    let staging = service + keychainAccessibilityMigrationStagingSuffix
+    let store = KeychainAccessibilityMigrationStoreHarness()
+    let completionStore = KeychainAccessibilityMigrationCompletionStoreHarness()
+    store.put(
+      service: service,
+      account: "zcash_accounts",
+      data: Data("canonical".utf8),
+      accessibility: kSecAttrAccessibleAfterFirstUnlock as String
+    )
+    store.put(
+      service: staging,
+      account: "zcash_accounts",
+      data: Data("staged".utf8),
+      accessibility: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+    )
+
+    XCTAssertThrowsError(
+      try KeychainAccessibilityMigrator(
+        store: store,
+        completionStore: completionStore
+      )
+        .ensureFirstUnlockThisDeviceOnly(service: service)
+    ) { error in
+      XCTAssertEqual(
+        error as? KeychainAccessibilityMigrationError,
+        .conflictingCopies("zcash_accounts")
+      )
+    }
+    XCTAssertEqual(
+      store.itemsByService[service]?.first?.data,
+      Data("canonical".utf8)
+    )
+    XCTAssertEqual(
+      store.itemsByService[staging]?.first?.data,
+      Data("staged".utf8)
+    )
+    XCTAssertFalse(
+      completionStore.isComplete(
+        service: service,
+        version: keychainAccessibilityMigrationVersion
+      )
+    )
+  }
+
+  func testKeychainAccessibilityMigrationSkipsKeychainAfterCompletion() throws {
+    let service = "com.keplr.vizor.secure_store"
+    let store = KeychainAccessibilityMigrationStoreHarness()
+    let completionStore = KeychainAccessibilityMigrationCompletionStoreHarness()
+    completionStore.markComplete(
+      service: service,
+      version: keychainAccessibilityMigrationVersion
+    )
+
+    let migrated = try KeychainAccessibilityMigrator(
+      store: store,
+      completionStore: completionStore
+    ).ensureFirstUnlockThisDeviceOnly(service: service)
+
+    XCTAssertEqual(migrated, 0)
+    XCTAssertTrue(store.readServices.isEmpty)
+  }
+
+  func testKeychainAccessibilityMigrationCompletionIsServiceScoped() throws {
+    let completedService = "com.keplr.vizor.secure_store"
+    let pendingService = "com.keplr.vizor.test.secure_store"
+    let store = KeychainAccessibilityMigrationStoreHarness()
+    let completionStore = KeychainAccessibilityMigrationCompletionStoreHarness()
+    completionStore.markComplete(
+      service: completedService,
+      version: keychainAccessibilityMigrationVersion
+    )
+
+    let migrator = KeychainAccessibilityMigrator(
+      store: store,
+      completionStore: completionStore
+    )
+    XCTAssertEqual(
+      try migrator.ensureFirstUnlockThisDeviceOnly(service: completedService),
+      0
+    )
+    XCTAssertEqual(
+      try migrator.ensureFirstUnlockThisDeviceOnly(service: pendingService),
+      0
+    )
+
+    XCTAssertEqual(
+      store.readServices,
+      [
+        pendingService,
+        pendingService + keychainAccessibilityMigrationStagingSuffix,
+      ]
+    )
+    XCTAssertTrue(
+      completionStore.isComplete(
+        service: pendingService,
+        version: keychainAccessibilityMigrationVersion
+      )
+    )
+  }
+
+  func testKeychainAccessibilityMigrationCompletionIsVersionScoped() throws {
+    let suiteName = "KeychainAccessibilityMigration.\(UUID().uuidString)"
+    let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+    let completionStore =
+      UserDefaultsKeychainAccessibilityMigrationCompletionStore(
+        userDefaults: userDefaults
+      )
+    let service = "com.keplr.vizor.secure_store"
+
+    completionStore.markComplete(service: service, version: 1)
+
+    XCTAssertTrue(completionStore.isComplete(service: service, version: 1))
+    XCTAssertFalse(completionStore.isComplete(service: service, version: 2))
+  }
+
+  func testKeychainAccessibilityMigrationDoesNotCompleteAfterStoreFailure() {
+    let service = "com.keplr.vizor.secure_store"
+
+    for operation in ["read", "add", "delete"] {
+      let store = KeychainAccessibilityMigrationStoreHarness()
+      let completionStore = KeychainAccessibilityMigrationCompletionStoreHarness()
+      store.put(
+        service: service,
+        account: "zcash_accounts",
+        data: Data("ciphertext".utf8),
+        accessibility: kSecAttrAccessibleAfterFirstUnlock as String
+      )
+      store.failureOperation = operation
+
+      XCTAssertThrowsError(
+        try KeychainAccessibilityMigrator(
+          store: store,
+          completionStore: completionStore
+        ).ensureFirstUnlockThisDeviceOnly(service: service),
+        "Expected the \(operation) failure to abort migration"
+      )
+      XCTAssertFalse(
+        completionStore.isComplete(
+          service: service,
+          version: keychainAccessibilityMigrationVersion
+        )
+      )
+    }
+  }
+
+  func testFreshInstallCleanerIncludesAccessibilityMigrationStagingService() {
+    XCTAssertTrue(
+      FreshInstallKeychainCleaner.servicesToClear.contains(
+        "com.keplr.vizor.secure_store"
+          + keychainAccessibilityMigrationStagingSuffix
+      )
+    )
+  }
+
+  func testSecurityKeychainMigrationStoreWritesPluginCompatibleTargetClass() throws {
+    let service = "com.zcash.wallet.tests.keychain-migration.\(UUID().uuidString)"
+    let staging = service + keychainAccessibilityMigrationStagingSuffix
+    let account = "test-item"
+    defer {
+      for candidate in [service, staging] {
+        SecItemDelete(
+          [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: candidate,
+          ] as CFDictionary
+        )
+      }
+    }
+
+    var accessControlError: Unmanaged<CFError>?
+    let legacyAccessControl = try XCTUnwrap(
+      SecAccessControlCreateWithFlags(
+        nil,
+        kSecAttrAccessibleAfterFirstUnlock,
+        [],
+        &accessControlError
+      )
+    )
+    XCTAssertNil(accessControlError)
+    XCTAssertEqual(
+      SecItemAdd(
+        [
+          kSecClass: kSecClassGenericPassword,
+          kSecAttrService: service,
+          kSecAttrAccount: account,
+          kSecAttrAccessControl: legacyAccessControl,
+          kSecValueData: Data("secret".utf8),
+        ] as CFDictionary,
+        nil
+      ),
+      errSecSuccess
+    )
+
+    let store = SecurityKeychainMigrationStore()
+    let legacy = try XCTUnwrap(store.items(service: service).first)
+    XCTAssertEqual(
+      legacy.accessibility,
+      kSecAttrAccessibleAfterFirstUnlock as String
+    )
+
+    try store.add(legacy, service: staging)
+    let target = try XCTUnwrap(store.items(service: staging).first)
+    XCTAssertEqual(target.data, Data("secret".utf8))
+    XCTAssertEqual(
+      target.accessibility,
+      kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+    )
   }
 
 }
@@ -2577,7 +2919,10 @@ private final class FreshInstallCleanerHarness {
   var markedInstalled = false
   var cleanupPending = false
   var lookup: KeychainDbNameLookup = .missing
+  var stagedLookup: KeychainDbNameLookup = .missing
+  var lookups: [KeychainDbNameLookup]?
   var walletDbExists = false
+  var existingDbNames: Set<String>?
   var deleteStatuses: [String: OSStatus] = [:]
   var deletedServices: [String] = []
   var logs: [String] = []
@@ -2600,11 +2945,11 @@ private final class FreshInstallCleanerHarness {
       clearCleanupPending: {
         self.cleanupPending = false
       },
-      readWalletDbName: {
-        self.lookup
+      readWalletDbNames: {
+        self.lookups ?? [self.lookup, self.stagedLookup]
       },
-      walletDbExists: { _ in
-        self.walletDbExists
+      walletDbExists: { dbName in
+        self.existingDbNames?.contains(dbName) ?? self.walletDbExists
       },
       deleteKeychainService: { service in
         self.deletedServices.append(service)
@@ -2614,5 +2959,95 @@ private final class FreshInstallCleanerHarness {
         self.logs.append(message)
       }
     )
+  }
+}
+
+private final class KeychainAccessibilityMigrationStoreHarness:
+  KeychainAccessibilityMigrationStore
+{
+  var itemsByService: [String: [KeychainAccessibilityMigrationItem]] = [:]
+  private(set) var readServices: [String] = []
+  var failureOperation: String?
+
+  func put(
+    service: String,
+    account: String,
+    data: Data,
+    accessibility: String
+  ) {
+    itemsByService[service, default: []].append(
+      KeychainAccessibilityMigrationItem(
+        account: account,
+        data: data,
+        accessibility: accessibility,
+        attributes: [:]
+      )
+    )
+  }
+
+  func items(service: String) throws -> [KeychainAccessibilityMigrationItem] {
+    readServices.append(service)
+    if failureOperation == "read" {
+      throw KeychainAccessibilityMigrationError.keychain(
+        operation: "read",
+        status: errSecAuthFailed
+      )
+    }
+    return itemsByService[service] ?? []
+  }
+
+  func add(
+    _ item: KeychainAccessibilityMigrationItem,
+    service: String
+  ) throws {
+    if failureOperation == "add" {
+      throw KeychainAccessibilityMigrationError.keychain(
+        operation: "add",
+        status: errSecAuthFailed
+      )
+    }
+    if itemsByService[service]?.contains(where: { $0.account == item.account }) == true {
+      throw KeychainAccessibilityMigrationError.keychain(
+        operation: "add",
+        status: errSecDuplicateItem
+      )
+    }
+    put(
+      service: service,
+      account: item.account,
+      data: item.data,
+      accessibility: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+    )
+  }
+
+  func delete(service: String, account: String) throws {
+    if failureOperation == "delete" {
+      throw KeychainAccessibilityMigrationError.keychain(
+        operation: "delete",
+        status: errSecAuthFailed
+      )
+    }
+    itemsByService[service]?.removeAll { $0.account == account }
+    if itemsByService[service]?.isEmpty == true {
+      itemsByService.removeValue(forKey: service)
+    }
+  }
+}
+
+private final class KeychainAccessibilityMigrationCompletionStoreHarness:
+  KeychainAccessibilityMigrationCompletionStore
+{
+  private var completed: Set<String> = []
+
+  func isComplete(service: String, version: Int) -> Bool {
+    completed.contains(key(service: service, version: version))
+  }
+
+  func markComplete(service: String, version: Int) {
+    completed.insert(key(service: service, version: version))
+  }
+
+  private func key(service: String, version: Int) -> String {
+    "\(version):\(service)"
   }
 }

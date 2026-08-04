@@ -83,7 +83,7 @@ struct FreshInstallKeychainCleaner {
         var hasCleanupPending: () -> Bool
         var markCleanupPending: () -> Void
         var clearCleanupPending: () -> Void
-        var readWalletDbName: () -> KeychainDbNameLookup
+        var readWalletDbNames: () -> [KeychainDbNameLookup]
         var walletDbExists: (String) -> Bool
         var deleteKeychainService: (String) -> OSStatus
         var log: (String) -> Void
@@ -104,8 +104,12 @@ struct FreshInstallKeychainCleaner {
             clearCleanupPending: {
                 UserDefaults.standard.removeObject(forKey: cleanupPendingKey)
             },
-            readWalletDbName: {
-                FreshInstallKeychainCleaner.readWalletDbNameFromKeychain()
+            readWalletDbNames: {
+                FreshInstallKeychainCleaner.secureStoreServicesToClear.map { service in
+                    FreshInstallKeychainCleaner.readWalletDbNameFromKeychain(
+                        service: service
+                    )
+                }
             },
             walletDbExists: { dbName in
                 FreshInstallKeychainCleaner.walletDbExists(dbName)
@@ -119,13 +123,16 @@ struct FreshInstallKeychainCleaner {
         )
     }
 
+    static let secureStoreServicesToClear =
+        keychainAccessibilityMigrationAllowedServices.flatMap { service in
+            [service + keychainAccessibilityMigrationStagingSuffix, service]
+        }
+
     static let servicesToClear = [
         biometricUnlockService,
         ironwoodMigrationBackgroundCredentialService,
         ironwoodMigrationOutboxKeyService,
-        // Keep this last: it holds zcash_wallet_db_name, the stale-install anchor.
-        secureStoreService,
-    ]
+    ] + secureStoreServicesToClear
 
     static func runIfNeeded(dependencies: Dependencies = .live) {
         if dependencies.hasInstallSentinel() {
@@ -161,43 +168,52 @@ struct FreshInstallKeychainCleaner {
             return .sentinelPresent
         }
 
-        switch dependencies.readWalletDbName() {
-        case .missing:
-            return .markInstalled
-        case .invalid:
-            return .deferCleanupAfterInvalidWalletDbName
-        case .failed(let status):
-            return .deferCleanupAfterReadFailure(status)
-        case .found(let dbName):
-            // Existing users from before this install sentinel existed can have a
-            // Keychain wallet DB name without the sentinel. If the app-private DB
-            // still exists, preserve their Keychain values and write the sentinel.
-            return dependencies.walletDbExists(dbName)
-                ? .preserveExistingInstall
-                : .clearStaleKeychain
+        var dbNames: [String] = []
+        for lookup in dependencies.readWalletDbNames() {
+            switch lookup {
+            case .missing:
+                continue
+            case .invalid:
+                return .deferCleanupAfterInvalidWalletDbName
+            case .failed(let status):
+                return .deferCleanupAfterReadFailure(status)
+            case .found(let dbName):
+                dbNames.append(dbName)
+            }
         }
+
+        guard !dbNames.isEmpty else {
+            return .markInstalled
+        }
+
+        // Existing users from before this install sentinel existed can have a
+        // Keychain wallet DB name without the sentinel. Preserve every service
+        // when any referenced app-private DB still exists; only a true reinstall
+        // may clear all network-scoped Keychain values.
+        return dbNames.contains(where: dependencies.walletDbExists)
+            ? .preserveExistingInstall
+            : .clearStaleKeychain
     }
 
     private static func clearStaleKeychain(dependencies: Dependencies) {
         var nonAnchorFailure: OSStatus?
-        var anchorStatus: OSStatus?
+        var secureStoreFailure: OSStatus?
 
         for service in servicesToClear {
             let status = dependencies.deleteKeychainService(service)
-            if service == secureStoreService {
-                anchorStatus = status
+            if secureStoreServicesToClear.contains(service) {
+                if !isKeychainDeleteSuccess(status), secureStoreFailure == nil {
+                    secureStoreFailure = status
+                }
             } else if !isKeychainDeleteSuccess(status), nonAnchorFailure == nil {
                 nonAnchorFailure = status
             }
         }
 
-        guard let anchorStatus else {
-            dependencies.log("fresh install: deferred keychain cleanup; secure store was not attempted")
-            return
-        }
-
-        guard isKeychainDeleteSuccess(anchorStatus) else {
-            dependencies.log("fresh install: deferred keychain cleanup after delete status \(anchorStatus)")
+        if let secureStoreFailure {
+            dependencies.log(
+                "fresh install: deferred keychain cleanup after delete status \(secureStoreFailure)"
+            )
             return
         }
 
@@ -213,11 +229,13 @@ struct FreshInstallKeychainCleaner {
         }
     }
 
-    private static func readWalletDbNameFromKeychain() -> KeychainDbNameLookup {
+    private static func readWalletDbNameFromKeychain(
+        service: String = secureStoreService
+    ) -> KeychainDbNameLookup {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrAccount: walletDbNameKey,
-            kSecAttrService: secureStoreService,
+            kSecAttrService: service,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne,
         ]
