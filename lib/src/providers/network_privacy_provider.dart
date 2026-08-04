@@ -88,7 +88,17 @@ abstract interface class NetworkPrivacyRuntime {
 }
 
 class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
-  const RustNetworkPrivacyRuntime();
+  const RustNetworkPrivacyRuntime({
+    this.configureRuntime = rust_network_privacy.configureNetworkPrivacy,
+    this.resolveTorDirectory = getTorDataDirectoryPath,
+  });
+
+  final Future<rust_types.NetworkPrivacyStatus> Function({
+    required bool enabled,
+    required String torDirectory,
+  })
+  configureRuntime;
+  final Future<String> Function() resolveTorDirectory;
 
   @override
   void beginEnable() {
@@ -106,9 +116,9 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   Future<NetworkPrivacyConnectionStatus> configure({
     required bool enabled,
   }) async {
-    final status = await rust_network_privacy.configureNetworkPrivacy(
+    final status = await configureRuntime(
       enabled: enabled,
-      torDirectory: await getTorDataDirectoryPath(),
+      torDirectory: enabled ? await resolveTorDirectory() : '',
     );
     return _connectionStatus(status);
   }
@@ -116,6 +126,8 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
 
 abstract interface class NetworkPrivacyNativeUpdateCoordinator {
   Future<void> setTorEnabled(bool enabled);
+
+  Future<void> pauseForFailClosedStartup();
 
   Future<void> resumeTorUpdates();
 }
@@ -154,6 +166,22 @@ class PlatformNetworkPrivacyNativeUpdateCoordinator
       if (!enabled) await _torUpdateProxy.stop();
     } on MissingPluginException {
       // Development builds without Sparkle have no native updater to pause.
+    }
+  }
+
+  @override
+  Future<void> pauseForFailClosedStartup() async {
+    if (Platform.isWindows) {
+      // Windows update checks are started by Flutter after this bootstrap, so
+      // there cannot be an active native update session at this point.
+      await setTorEnabled(true);
+      return;
+    }
+    if (!Platform.isMacOS) return;
+    try {
+      await _macosChannel.invokeMethod<void>('pauseForFailClosedStartup');
+    } on MissingPluginException {
+      // Development builds without Sparkle have no native updater to stop.
     }
   }
 
@@ -262,14 +290,14 @@ Future<void> initializeNetworkPrivacyRuntime({
   try {
     enabled = await store.readTorEnabled();
   } catch (error) {
-    runtime.beginEnable();
-    final drainFailure = await _captureDirectDrain(runtime, directRequests);
     Object? nativeUpdateError;
     try {
-      await nativeUpdates.setTorEnabled(true);
+      await nativeUpdates.pauseForFailClosedStartup();
     } catch (nativeError) {
       nativeUpdateError = nativeError;
     }
+    runtime.beginEnable();
+    final drainFailure = await _captureDirectDrain(runtime, directRequests);
     final failureDetails = [
       'Could not read the saved Tor preference: $error',
       if (drainFailure != null)

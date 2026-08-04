@@ -6,6 +6,7 @@ import Sparkle
 private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
   var feedURL: String?
   var resourceProxyURL: URL?
+  private var failClosedPauseCompletions: [() -> Void] = []
 
   func feedURLString(for updater: SPUUpdater) -> String? {
     return feedURL
@@ -24,6 +25,27 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
     }
     components.queryItems = [URLQueryItem(name: "url", value: upstreamURL.absoluteString)]
     request.url = components.url ?? URL(string: "http://127.0.0.1:1/blocked")
+  }
+
+  func awaitCurrentUpdateCycleBeforeFailClosedPause(
+    updater: SPUUpdater,
+    completion: @escaping () -> Void
+  ) {
+    guard updater.sessionInProgress else {
+      completion()
+      return
+    }
+    failClosedPauseCompletions.append(completion)
+  }
+
+  func updater(
+    _ updater: SPUUpdater,
+    didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
+    error: Error?
+  ) {
+    let completions = failClosedPauseCompletions
+    failClosedPauseCompletions.removeAll()
+    completions.forEach { $0() }
   }
 }
 #endif
@@ -81,6 +103,25 @@ class AppDelegate: FlutterAppDelegate {
       configureUpdateMenu(enabled: true)
     }
     return true
+  }
+
+  func pauseUpdatesForFailClosedStartup(completion: @escaping () -> Void) {
+    updaterController?.updater.automaticallyChecksForUpdates = false
+    updateFeedDelegate.feedURL = nil
+    updateFeedDelegate.resourceProxyURL = nil
+    configureUpdateMenu(enabled: false)
+
+    guard let updater = updaterController?.updater else {
+      completion()
+      return
+    }
+    // An already-running Sparkle transfer cannot be rerouted. Delay the
+    // fail-closed startup result until that session has fully quiesced, so the
+    // Flutter layer cannot report paused traffic while Sparkle is still direct.
+    updateFeedDelegate.awaitCurrentUpdateCycleBeforeFailClosedPause(
+      updater: updater,
+      completion: completion
+    )
   }
 
   func resumeUpdatesThroughTor(feedURL: String, resourceURL: URL) {
@@ -164,6 +205,18 @@ final class NativeUpdatePrivacyChannel {
       case "getUpdateFeedUrl":
 #if SPARKLE_ENABLED
         result(AppDelegate.configuredUpdateFeedURL())
+#else
+        result(nil)
+#endif
+      case "pauseForFailClosedStartup":
+#if SPARKLE_ENABLED
+        guard let delegate = NSApp.delegate as? AppDelegate else {
+          result(nil)
+          return
+        }
+        delegate.pauseUpdatesForFailClosedStartup {
+          result(nil)
+        }
 #else
         result(nil)
 #endif
