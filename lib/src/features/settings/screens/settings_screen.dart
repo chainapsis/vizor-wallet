@@ -16,6 +16,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/windows_update_provider.dart';
@@ -140,6 +141,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
+    final networkPrivacy = ref.watch(networkPrivacyProvider);
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
     final updateState = Platform.isWindows
         ? ref.watch(windowsUpdateProvider)
@@ -168,6 +170,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
+                torStatusLabel: _torStatusLabel(networkPrivacy.status),
                 updateLabel: updateState == null
                     ? null
                     : _updateLabel(updateState),
@@ -184,6 +187,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onAddressBook: () => context.push('/address-book'),
                 onLinkMobile: () => context.push('/settings/link-mobile'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
+                onTorToggle: networkPrivacy.isBusy
+                    ? null
+                    : () => unawaited(
+                        ref
+                            .read(networkPrivacyProvider.notifier)
+                            .setTorEnabled(!networkPrivacy.torEnabled),
+                      ),
                 onUpdates: updateState == null
                     ? null
                     : () => _showModal(_SettingsModalType.updates),
@@ -272,6 +282,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _ => 'Check',
     };
   }
+
+  static String _torStatusLabel(NetworkPrivacyConnectionStatus status) =>
+      switch (status) {
+        NetworkPrivacyConnectionStatus.off => 'Off',
+        NetworkPrivacyConnectionStatus.connecting => 'Connecting…',
+        NetworkPrivacyConnectionStatus.connected => 'On',
+        NetworkPrivacyConnectionStatus.failed => 'Failed',
+      };
 }
 
 class _SettingsPane extends StatelessWidget {
@@ -282,6 +300,7 @@ class _SettingsPane extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.torStatusLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
@@ -291,6 +310,7 @@ class _SettingsPane extends StatelessWidget {
     required this.onAddressBook,
     required this.onLinkMobile,
     required this.onTheme,
+    required this.onTorToggle,
     required this.onUpdates,
     required this.onAbout,
     required this.onUninstall,
@@ -302,6 +322,7 @@ class _SettingsPane extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final String torStatusLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
@@ -311,6 +332,7 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onAddressBook;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
+  final VoidCallback? onTorToggle;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onUninstall;
@@ -345,6 +367,7 @@ class _SettingsPane extends StatelessWidget {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: themeLabel,
+                torStatusLabel: torStatusLabel,
                 updateLabel: updateLabel,
                 onSeedPhrase: onSeedPhrase,
                 onChangePassword: onChangePassword,
@@ -354,6 +377,7 @@ class _SettingsPane extends StatelessWidget {
                 onAddressBook: onAddressBook,
                 onLinkMobile: onLinkMobile,
                 onTheme: onTheme,
+                onTorToggle: onTorToggle,
                 onUpdates: onUpdates,
                 onAbout: onAbout,
                 onUninstall: onUninstall,
@@ -375,6 +399,7 @@ class _SettingsList extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
+    required this.torStatusLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
@@ -384,6 +409,7 @@ class _SettingsList extends StatelessWidget {
     required this.onAddressBook,
     required this.onLinkMobile,
     required this.onTheme,
+    required this.onTorToggle,
     required this.onUpdates,
     required this.onAbout,
     required this.onUninstall,
@@ -395,6 +421,7 @@ class _SettingsList extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
+  final String torStatusLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
@@ -404,6 +431,7 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback onAddressBook;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
+  final VoidCallback? onTorToggle;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onUninstall;
@@ -451,6 +479,22 @@ class _SettingsList extends StatelessWidget {
               iconName: AppIcons.link,
               label: 'Link mobile',
               onTap: onLinkMobile,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SettingsBlock(
+          title: 'Privacy',
+          description:
+              'Routes Vizor’s in-app network requests through Tor. Links '
+              'opened in other apps use those apps’ network settings.',
+          rows: [
+            _SettingsRow(
+              key: const ValueKey('settings_tor_row'),
+              iconName: AppIcons.shieldKeyholeOutline,
+              label: 'Tor for in-app requests',
+              value: torStatusLabel,
+              onTap: onTorToggle,
             ),
           ],
         ),
@@ -922,10 +966,15 @@ class _ThemeOptionIndicator extends StatelessWidget {
 }
 
 class _SettingsBlock extends StatelessWidget {
-  const _SettingsBlock({required this.title, required this.rows});
+  const _SettingsBlock({
+    required this.title,
+    required this.rows,
+    this.description,
+  });
 
   final String title;
   final List<Widget> rows;
+  final String? description;
 
   @override
   Widget build(BuildContext context) {
@@ -960,6 +1009,18 @@ class _SettingsBlock extends StatelessWidget {
             if (i > 0) const SizedBox(height: AppSpacing.xs),
             rows[i],
           ],
+          if (description != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+              child: Text(
+                description!,
+                style: AppTypography.bodySmall.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -974,6 +1035,7 @@ class _SettingsRow extends StatefulWidget {
     this.valueLeading,
     this.destructive = false,
     this.onTap,
+    super.key,
   });
 
   final String iconName;

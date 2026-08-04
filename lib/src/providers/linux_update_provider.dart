@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_version_config.dart';
+import '../core/network/network_http_client.dart';
 
 const _feedTimeout = Duration(seconds: 8);
 
@@ -28,16 +29,18 @@ final linuxUpdateProvider = FutureProvider<LinuxUpdateInfo?>((ref) async {
     '${_feedAssetName(flavor)}',
   );
 
-  final client = HttpClient()..connectionTimeout = _feedTimeout;
+  final client = NetworkHttpClient();
   try {
-    final request = await client.getUrl(feedUri).timeout(_feedTimeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-
-    final response = await request.close().timeout(_feedTimeout);
+    final response = await client.request(
+      'GET',
+      feedUri,
+      headers: const {HttpHeaders.acceptHeader: 'application/json'},
+      timeout: _feedTimeout,
+    );
     if (response.statusCode == HttpStatus.notFound) return null;
     if (response.statusCode != HttpStatus.ok) return null;
 
-    final body = await utf8.decodeStream(response).timeout(_feedTimeout);
+    final body = utf8.decode(response.bodyBytes);
     final decoded = jsonDecode(body);
     if (decoded is! Map<String, dynamic>) return null;
 

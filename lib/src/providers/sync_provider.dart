@@ -1654,6 +1654,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// silent for the rest of the session if the toggle fires while
   /// sync is already idle.
   Future<void> restartSync() async {
+    await restartSyncAfterTransportChange(() async {});
+  }
+
+  /// Quiesces every Rust network lane, applies one transport change, then
+  /// starts sync and polling again. The callback runs only after existing
+  /// direct or Tor channels have been asked to stop, which prevents a runtime
+  /// route toggle from overlapping a newly configured connection.
+  Future<void> restartSyncAfterTransportChange(
+    Future<void> Function() updateTransport,
+  ) async {
     ++_syncGen;
     ++_progressEventVersion;
     ++_balanceReadVersion;
@@ -1699,6 +1709,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
           'stop after 5s; the new observer start will skip and the new '
           'session runs without streaming',
     );
+    await updateTransport();
     startSync();
     _startPolling();
   }

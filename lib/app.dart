@@ -91,6 +91,7 @@ import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/linux_update_provider.dart';
+import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
@@ -105,6 +106,10 @@ Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   log('runtime: initializing RustLib');
   await RustLib.init();
+  if (kAppFormFactor == AppFormFactor.desktop) {
+    log('runtime: applying desktop network privacy policy');
+    await initializeNetworkPrivacyRuntime();
+  }
   await rust_simple.configureFastTestnetMigration(
     enabled: kZcashFastTestnetMigration,
   );

@@ -127,6 +127,22 @@ where
 pub(crate) async fn open_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_channel_for_route(lightwalletd_url, false).await
+}
+
+/// Opens an isolated Tor circuit when Tor is enabled. Direct mode retains its
+/// normal direct transport. Use this for transaction broadcasts that must not
+/// share a Tor circuit with other wallet activity.
+pub(crate) async fn open_isolated_lwd_channel(
+    lightwalletd_url: &str,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_channel_for_route(lightwalletd_url, true).await
+}
+
+async fn open_lwd_channel_for_route(
+    lightwalletd_url: &str,
+    isolated: bool,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -135,6 +151,14 @@ pub(crate) async fn open_lwd_channel(
     let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
         .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
         .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
+    if let Some(tor_client) = crate::network_privacy::tor_client_for_route(isolated)
+        .map_err(|e| SyncError::net(format!("network privacy blocked lightwalletd: {e}")))?
+    {
+        return tor_client
+            .connect_to_lightwalletd(endpoint.uri().clone(), false)
+            .await
+            .map_err(|e| SyncError::net(format!("Tor gRPC connect failed: {e}")));
+    }
     let channel = if lightwalletd_url.starts_with("https://") {
         endpoint
             .tls_config(ClientTlsConfig::new().with_webpki_roots())
