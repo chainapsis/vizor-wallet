@@ -39,6 +39,15 @@ NetworkPrivacyStatus getNetworkPrivacyStatus() =>
 bool isTorEnabled() =>
     RustLib.instance.api.crateApiNetworkPrivacyIsTorEnabled();
 
+/// Starts a token-protected loopback server that streams HTTPS update assets
+/// from the embedded Tor client directly to a native desktop updater.
+Future<String> startTorUpdateRelay() =>
+    RustLib.instance.api.crateApiNetworkPrivacyStartTorUpdateRelay();
+
+/// Stops the loopback update relay and cancels any active package transfer.
+Future<void> stopTorUpdateRelay() =>
+    RustLib.instance.api.crateApiNetworkPrivacyStopTorUpdateRelay();
+
 /// Makes a GET request on a fresh Tor circuit. Dart calls this only after its
 /// process-wide route check has selected Tor; direct requests stay in Dart so
 /// existing test injection and platform behaviour remain unchanged.

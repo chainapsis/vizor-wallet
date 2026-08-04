@@ -18,9 +18,9 @@ const kTorStartupFailureNotice =
 const kTorUpdateInProgressNotice =
     'Finish the current software update before turning on Tor.';
 const kTorUpdateUnavailableNotice =
-    'Tor is connected, but software updates are unavailable.';
+    'Tor is connected, but software updates are unavailable. Turn off Tor to update directly.';
 const kSoftwareUpdateUnavailableNotice =
-    'Software updates are unavailable. Network requests are still connected.';
+    'Software updates are unavailable. Other network requests still use a direct connection.';
 
 enum NetworkPrivacyConnectionStatus { off, connecting, connected, failed }
 
@@ -140,6 +140,21 @@ class PlatformNetworkPrivacyNativeUpdateCoordinator
     'com.zcash.wallet/update_network_privacy',
   );
   static final _torUpdateProxy = DesktopTorUpdateProxy();
+
+  static void registerDisableTorForUpdateHandler(
+    Future<bool> Function() handler,
+  ) {
+    _macosChannel.setMethodCallHandler((call) async {
+      if (call.method != 'disableTorForUpdate') {
+        throw MissingPluginException('Unknown update privacy method.');
+      }
+      return handler();
+    });
+  }
+
+  static void clearDisableTorForUpdateHandler() {
+    _macosChannel.setMethodCallHandler(null);
+  }
 
   @override
   Future<void> setTorEnabled(bool enabled) async {

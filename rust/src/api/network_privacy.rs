@@ -58,6 +58,17 @@ pub fn is_tor_enabled() -> bool {
     crate::network_privacy::is_tor_desired()
 }
 
+/// Starts a token-protected loopback server that streams HTTPS update assets
+/// from the embedded Tor client directly to a native desktop updater.
+pub async fn start_tor_update_relay() -> Result<String, String> {
+    crate::tor_update_relay::start().await
+}
+
+/// Stops the loopback update relay and cancels any active package transfer.
+pub async fn stop_tor_update_relay() {
+    crate::tor_update_relay::stop().await;
+}
+
 pub struct ImportBirthdayMetadata {
     pub sapling_activation_height: u64,
     pub sapling_activation_time: u32,

@@ -7,10 +7,9 @@ import 'package:zcash_wallet/src/core/network/network_http_client.dart';
 import 'package:zcash_wallet/src/services/desktop_tor_update_proxy.dart';
 
 void main() {
-  test(
-    'preserves signed Sparkle feed and proxies requested update resources',
-    () async {
-      const signedFeed = '''
+  test('preserves signed Sparkle feed and delegates update resources to the '
+      'streaming relay', () async {
+    const signedFeed = '''
 <?xml version="1.0" encoding="utf-8"?>
 <rss xmlns:sparkle="https://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
@@ -24,42 +23,62 @@ edSignature: signed-feed-value
 length: 321
 -->
 ''';
-      final bridge = _UpdateTorBridge(
-        bodies: {
-          'https://updates.example/appcast.xml': utf8.encode(signedFeed),
-          'https://cdn.example/Vizor.zip': [1, 2, 3, 4],
-        },
-      );
-      final proxy = DesktopTorUpdateProxy(
-        clientFactory: () =>
-            NetworkHttpClient(torDesired: () => true, torBridge: bridge),
-      );
-      addTearDown(proxy.stop);
+    final bridge = _UpdateTorBridge(
+      bodies: {'https://updates.example/appcast.xml': utf8.encode(signedFeed)},
+    );
+    final relayedUrls = <String>[];
+    final relay = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    relay.listen((request) async {
+      relayedUrls.add(request.uri.queryParameters['url']!);
+      request.response.add([1, 2]);
+      await request.response.flush();
+      request.response.add([3, 4]);
+      await request.response.close();
+    });
+    addTearDown(() => relay.close(force: true));
+    var relayStopped = false;
+    final proxy = DesktopTorUpdateProxy(
+      clientFactory: () =>
+          NetworkHttpClient(torDesired: () => true, torBridge: bridge),
+      torRelayStarter: () async => Uri(
+        scheme: 'http',
+        host: InternetAddress.loopbackIPv4.address,
+        port: relay.port,
+        path: '/resource',
+      ),
+      torRelayStopper: () async => relayStopped = true,
+    );
+    addTearDown(proxy.stop);
 
-      final configuration = await proxy.configureMacOS(
-        Uri.parse('https://updates.example/appcast.xml'),
-      );
-      final feedResponse = await _get(configuration.feedUrl);
-      expect(feedResponse.statusCode, HttpStatus.ok);
-      expect(feedResponse.bodyBytes, utf8.encode(signedFeed));
+    final configuration = await proxy.configureMacOS(
+      Uri.parse('https://updates.example/appcast.xml'),
+    );
+    final feedResponse = await _get(configuration.feedUrl);
+    expect(feedResponse.statusCode, HttpStatus.ok);
+    expect(feedResponse.bodyBytes, utf8.encode(signedFeed));
 
-      final packageUrl = configuration.resourceUrl.replace(
-        queryParameters: const {'url': 'https://cdn.example/Vizor.zip'},
-      );
-      expect(packageUrl.host, InternetAddress.loopbackIPv4.address);
+    final packageUrl = configuration.resourceUrl.replace(
+      queryParameters: const {'url': 'https://cdn.example/Vizor.zip'},
+    );
+    expect(packageUrl.host, InternetAddress.loopbackIPv4.address);
 
-      final packageResponse = await _get(packageUrl);
-      expect(packageResponse.bodyBytes, [1, 2, 3, 4]);
-      expect(bridge.downloads, ['https://cdn.example/Vizor.zip']);
-    },
-  );
+    final packageResponse = await _get(packageUrl);
+    expect(packageResponse.bodyBytes, [1, 2, 3, 4]);
+    expect(relayedUrls, ['https://cdn.example/Vizor.zip']);
+    expect(bridge.downloads, isEmpty);
+
+    await proxy.stop();
+    expect(relayStopped, isTrue);
+  });
 
   test('maps Velopack release assets to the configured Tor base', () async {
+    final packageBytes = List<int>.generate(1024, (index) => index % 251);
     final bridge = _UpdateTorBridge(
       bodies: {
         'https://updates.example/releases/releases.win.json': utf8.encode(
-          '{"assets":[]}',
+          '{"assets":[{"fileName":"Vizor-1.2.3-full.nupkg"}]}',
         ),
+        'https://updates.example/releases/Vizor-1.2.3-full.nupkg': packageBytes,
       },
     );
     final proxy = DesktopTorUpdateProxy(
@@ -71,12 +90,21 @@ length: 321
     final baseUrl = await proxy.configureWindows(
       Uri.parse('https://updates.example/releases'),
     );
-    final response = await _get(baseUrl.resolve('releases.win.json'));
+    final feedResponse = await _get(baseUrl.resolve('releases.win.json'));
+    final packageResponse = await _get(
+      baseUrl.resolve('Vizor-1.2.3-full.nupkg'),
+    );
 
-    expect(response.statusCode, HttpStatus.ok);
-    expect(utf8.decode(response.bodyBytes), '{"assets":[]}');
+    expect(feedResponse.statusCode, HttpStatus.ok);
+    expect(
+      utf8.decode(feedResponse.bodyBytes),
+      '{"assets":[{"fileName":"Vizor-1.2.3-full.nupkg"}]}',
+    );
+    expect(packageResponse.statusCode, HttpStatus.ok);
+    expect(packageResponse.bodyBytes, packageBytes);
     expect(bridge.downloads, [
       'https://updates.example/releases/releases.win.json',
+      'https://updates.example/releases/Vizor-1.2.3-full.nupkg',
     ]);
   });
 }

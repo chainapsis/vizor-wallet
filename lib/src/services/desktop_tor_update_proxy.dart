@@ -4,6 +4,10 @@ import 'dart:io';
 import 'dart:math';
 
 import '../core/network/network_http_client.dart';
+import '../rust/api/network_privacy.dart' as rust_network_privacy;
+
+typedef TorUpdateRelayStarter = Future<Uri> Function();
+typedef TorUpdateRelayStopper = Future<void> Function();
 
 class MacOSTorUpdateProxyConfiguration {
   const MacOSTorUpdateProxyConfiguration({
@@ -17,21 +21,30 @@ class MacOSTorUpdateProxyConfiguration {
 
 /// Loopback-only HTTP bridge for native desktop updaters.
 ///
-/// Sparkle and Velopack require HTTP URLs but cannot use the embedded Arti
-/// client directly. This server exposes only the configured update feed and
-/// assets on a random, process-local path; every upstream request still goes
-/// through [NetworkHttpClient], and therefore through Tor while Tor is desired.
+/// The signed Sparkle feed and Velopack resources use [NetworkHttpClient].
+/// Sparkle package bytes use a Rust loopback relay so the embedded Arti client
+/// can stream directly to the native updater without buffering the full
+/// archive on disk or copying chunks through Flutter Rust Bridge.
 class DesktopTorUpdateProxy {
-  DesktopTorUpdateProxy({NetworkHttpClient Function()? clientFactory})
-    : _clientFactory = clientFactory ?? NetworkHttpClient.new;
+  DesktopTorUpdateProxy({
+    NetworkHttpClient Function()? clientFactory,
+    TorUpdateRelayStarter? torRelayStarter,
+    TorUpdateRelayStopper? torRelayStopper,
+  }) : _clientFactory = clientFactory ?? NetworkHttpClient.new,
+       _torRelayStarter = torRelayStarter ?? _startTorUpdateRelay,
+       _torRelayStopper =
+           torRelayStopper ?? rust_network_privacy.stopTorUpdateRelay;
 
   final NetworkHttpClient Function() _clientFactory;
+  final TorUpdateRelayStarter _torRelayStarter;
+  final TorUpdateRelayStopper _torRelayStopper;
 
   HttpServer? _server;
   NetworkHttpClient? _client;
   String? _token;
   Uri? _macOSFeed;
   Uri? _windowsReleaseBase;
+  var _torRelayRunning = false;
 
   Future<MacOSTorUpdateProxyConfiguration> configureMacOS(
     Uri upstreamFeed,
@@ -39,9 +52,18 @@ class DesktopTorUpdateProxy {
     _requireHttps(upstreamFeed);
     await _ensureStarted();
     _macOSFeed = upstreamFeed;
+    final resourceUrl = await _torRelayStarter();
+    _torRelayRunning = true;
+    try {
+      _requireLoopbackHttp(resourceUrl);
+    } catch (_) {
+      _torRelayRunning = false;
+      await _torRelayStopper();
+      rethrow;
+    }
     return MacOSTorUpdateProxyConfiguration(
       feedUrl: _localUri('macos/appcast.xml'),
-      resourceUrl: _localUri('macos/resource'),
+      resourceUrl: resourceUrl,
     );
   }
 
@@ -63,6 +85,10 @@ class DesktopTorUpdateProxy {
     _client?.close(force: true);
     _client = null;
     await server?.close(force: true);
+    if (_torRelayRunning) {
+      _torRelayRunning = false;
+      await _torRelayStopper();
+    }
   }
 
   Future<void> _ensureStarted() async {
@@ -96,19 +122,6 @@ class DesktopTorUpdateProxy {
           segments[1] == 'macos' &&
           segments[2] == 'appcast.xml') {
         await _serveMacOSFeed(request.response);
-        return;
-      }
-      if (segments.length == 3 &&
-          segments[1] == 'macos' &&
-          segments[2] == 'resource') {
-        final rawUpstream = request.uri.queryParameters['url'];
-        if (rawUpstream == null) {
-          request.response.statusCode = HttpStatus.notFound;
-          return;
-        }
-        final upstream = Uri.parse(rawUpstream);
-        _requireHttps(upstream);
-        await _serveUpstreamFile(upstream, request.response);
         return;
       }
       if (segments.length == 3 && segments[1] == 'windows') {
@@ -208,6 +221,21 @@ class DesktopTorUpdateProxy {
       throw ArgumentError.value(uri, 'uri', 'Expected an HTTPS update URL.');
     }
   }
+
+  static void _requireLoopbackHttp(Uri uri) {
+    if (uri.scheme != 'http' ||
+        uri.host != InternetAddress.loopbackIPv4.address ||
+        uri.port == 0) {
+      throw ArgumentError.value(
+        uri,
+        'uri',
+        'Expected a loopback HTTP relay URL.',
+      );
+    }
+  }
+
+  static Future<Uri> _startTorUpdateRelay() async =>
+      Uri.parse(await rust_network_privacy.startTorUpdateRelay());
 
   static String _randomToken() {
     final random = Random.secure();

@@ -272,11 +272,11 @@ pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, St
         return Err(format!("Create Tor data directory: {error}"));
     }
 
-    // Sapling proving parameters are tens of megabytes and routinely take
-    // longer than the backend's one-minute HTTP body default over Tor. Keep
-    // connect/header deadlines strict, but allow streaming bodies enough time
-    // to complete without holding them in memory.
-    let timeouts = TorTimeouts::default().with_response_body(Duration::from_secs(15 * 60));
+    // Proving parameters and desktop updates can be tens or hundreds of
+    // megabytes. Keep connect/header deadlines strict, while allowing a Tor
+    // body that is actively streaming enough time to complete. Small app API
+    // responses retain their own shorter body deadline.
+    let timeouts = TorTimeouts::default().with_response_body(Duration::from_secs(2 * 60 * 60));
     let client = match TorClient::create_with_timeouts(tor_directory, |_| {}, timeouts).await {
         Ok(client) => client,
         Err(error) => {
