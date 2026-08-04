@@ -294,10 +294,9 @@ class _WelcomeIconButtonState extends State<_WelcomeIconButton> {
               onTap: widget.onTap,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color:
-                      _hovered
-                          ? colors.button.ghost.bgHover
-                          : colors.background.ground.withValues(alpha: 0),
+                  color: _hovered
+                      ? colors.background.neutralScrim.withValues(alpha: 0.7)
+                      : colors.background.neutralScrim,
                   shape: BoxShape.circle,
                 ),
                 child: SizedBox(
@@ -307,7 +306,7 @@ class _WelcomeIconButtonState extends State<_WelcomeIconButton> {
                     child: AppIcon(
                       widget.icon,
                       size: AppIconSize.medium,
-                      color: colors.icon.accent,
+                      color: AppIconColors.light.inverse,
                     ),
                   ),
                 ),
