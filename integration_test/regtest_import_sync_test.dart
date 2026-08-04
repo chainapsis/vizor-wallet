@@ -11,9 +11,9 @@ import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 const _mnemonic =
-    'winter shiver fetch refuse absurd mail pistol eight market lounge manual '
-    'roast miracle ethics found child scare curve congress renew salute pig '
-    'better used';
+    'abandon abandon abandon abandon abandon abandon abandon abandon abandon '
+    'abandon abandon about';
+const _bip39Passphrase = 'TREZOR';
 const _password = 'Vizor123!';
 final _currencyTicker = kZcashDefaultCurrencyTicker;
 
@@ -44,6 +44,20 @@ void main() {
         tester,
         const ValueKey('import_mnemonic_first_word_field'),
         _mnemonic,
+      );
+      _log('entering BIP39 passphrase');
+      await _tapButton(
+        tester,
+        const ValueKey('bip39_passphrase_action'),
+      );
+      await _enterText(
+        tester,
+        const ValueKey('bip39_passphrase_field'),
+        _bip39Passphrase,
+      );
+      await _tapButton(
+        tester,
+        const ValueKey('bip39_passphrase_save_button'),
       );
       await _tapButton(tester, const ValueKey('import_secret_submit_button'));
 
@@ -154,9 +168,11 @@ Future<void> _tapButton(WidgetTester tester, Key key) async {
   final finder = find.byKey(key);
   await _pumpUntil(
     tester,
-    () =>
-        tester.any(finder) &&
-        tester.widget<AppButton>(finder).onPressed != null,
+    () {
+      if (!tester.any(finder)) return false;
+      final widget = tester.widget(finder);
+      return widget is! AppButton || widget.onPressed != null;
+    },
     description: '$key button to be enabled',
   );
   await tester.ensureVisible(finder);

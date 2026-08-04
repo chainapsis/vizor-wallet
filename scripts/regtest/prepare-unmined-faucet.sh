@@ -6,7 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 requested_amount="${1:-0.35}"
 
 wait_for_zcashd
-wait_for_wallet_spend_ready
+assert_wallet_ready
 wait_for_lightwalletd
 ensure_faucet_state
 

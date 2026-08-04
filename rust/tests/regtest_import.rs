@@ -3,8 +3,61 @@ mod common;
 use common::{
     create_wallet, current_tip_height, ensure_regtest_up, exclusive_regtest, fund_wallet,
     get_balance, get_transaction_history, history_txids, import_wallet_with_birthday,
-    list_accounts, mine_blocks, positive_history_count, sync_wallet,
+    import_wallet_with_passphrase_and_birthday, list_accounts, mine_blocks, positive_history_count,
+    sync_wallet,
 };
+
+const BIP39_VECTOR_MNEMONIC: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const BIP39_VECTOR_PASSPHRASE: &str = "TREZOR";
+const BIP39_VECTOR_REGTEST_UA: &str =
+    "uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn";
+const BIP39_VECTOR_REGTEST_TADDR: &str = "tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM";
+
+#[test]
+#[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]
+fn bip39_passphrase_import_recovers_funds_sent_to_independently_derived_address() {
+    let _guard = exclusive_regtest();
+    ensure_regtest_up();
+
+    let historical_birthday = current_tip_height();
+    // Fund the independently derived shielded UA so compact-block scanning
+    // proves that the imported seed material decrypts the same account. The
+    // independently derived BIP44 transparent address is asserted below and
+    // exercised separately by the app-level E2E test.
+    fund_wallet(BIP39_VECTOR_REGTEST_UA, "1.0");
+
+    let (imported_dir, imported_wallet) = import_wallet_with_passphrase_and_birthday(
+        BIP39_VECTOR_MNEMONIC,
+        BIP39_VECTOR_PASSPHRASE,
+        "Independent BIP39 vector",
+        Some(historical_birthday),
+    );
+    let imported_db = imported_dir.path().join("zcash_wallet.db");
+
+    assert_eq!(imported_wallet.unified_address, BIP39_VECTOR_REGTEST_UA);
+    let transparent_address = rust_lib_zcash_wallet::api::wallet::get_transparent_receive_address(
+        imported_db.to_str().unwrap().to_string(),
+        "regtest".to_string(),
+        Some(imported_wallet.account_uuid.clone()),
+    )
+    .unwrap();
+    assert_eq!(transparent_address, BIP39_VECTOR_REGTEST_TADDR);
+
+    sync_wallet(&imported_db);
+
+    let balance = get_balance(&imported_db, &imported_wallet.account_uuid);
+    assert!(
+        balance.spendable >= 100_000_000,
+        "passphrase import should recover independently funded balance, got {}",
+        balance.spendable,
+    );
+    let history = get_transaction_history(&imported_db, &imported_wallet.account_uuid);
+    assert!(
+        history.iter().any(|tx| tx.account_balance_delta > 0),
+        "passphrase import should recover the independently funded transaction",
+    );
+}
 
 #[test]
 #[ignore = "requires Dockerized zcashd/lightwalletd regtest services"]

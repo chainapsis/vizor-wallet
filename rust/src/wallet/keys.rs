@@ -1249,6 +1249,19 @@ mod tests {
     }
 
     #[test]
+    fn test_bip39_passphrase_applies_nfkd_without_trimming_or_case_folding() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let composed = mnemonic_to_seed_with_passphrase(phrase, "caf\u{e9}").unwrap();
+        let decomposed = mnemonic_to_seed_with_passphrase(phrase, "cafe\u{301}").unwrap();
+        let leading_space = mnemonic_to_seed_with_passphrase(phrase, " caf\u{e9}").unwrap();
+        let different_case = mnemonic_to_seed_with_passphrase(phrase, "CAF\u{c9}").unwrap();
+
+        assert_eq!(composed.expose_secret(), decomposed.expose_secret());
+        assert_ne!(composed.expose_secret(), leading_space.expose_secret());
+        assert_ne!(composed.expose_secret(), different_case.expose_secret());
+    }
+
+    #[test]
     fn test_mnemonic_bytes_to_seed_decodes_versioned_secret() {
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let stored = serde_json::json!({

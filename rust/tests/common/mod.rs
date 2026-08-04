@@ -98,11 +98,20 @@ pub fn import_wallet_with_birthday(
     account_name: &str,
     birthday_height: Option<u64>,
 ) -> (TempDir, wallet_api::WalletImportResult) {
+    import_wallet_with_passphrase_and_birthday(mnemonic, "", account_name, birthday_height)
+}
+
+pub fn import_wallet_with_passphrase_and_birthday(
+    mnemonic: &str,
+    bip39_passphrase: &str,
+    account_name: &str,
+    birthday_height: Option<u64>,
+) -> (TempDir, wallet_api::WalletImportResult) {
     let tempdir = tempfile::tempdir().expect("tempdir");
     let db_path = tempdir.path().join("zcash_wallet.db");
     let result = wallet_api::import_wallet(
         mnemonic.into(),
-        String::new(),
+        bip39_passphrase.into(),
         birthday_height,
         REGTEST_NETWORK.into(),
         path_str(&db_path),

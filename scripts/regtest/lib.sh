@@ -2,9 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-COMPOSE_FILE="$ROOT_DIR/docker-compose.zcash-regtest.yml"
+COMPOSE_FILE="${REGTEST_COMPOSE_FILE:-$ROOT_DIR/docker-compose.zcash-regtest.yml}"
 STATE_DIR="$ROOT_DIR/.regtest"
 INITIALIZED_FILE="$STATE_DIR/initialized"
+RUNTIME_FINGERPRINT_FILE="$STATE_DIR/runtime-fingerprint"
+REGTEST_PRESERVE_STATE="${REGTEST_PRESERVE_STATE:-0}"
+REGTEST_STARTUP_TIMEOUT_SECONDS="${REGTEST_STARTUP_TIMEOUT_SECONDS:-60}"
 LIGHTWALLETD_HOST="${LIGHTWALLETD_HOST:-127.0.0.1}"
 LIGHTWALLETD_PORT="${LIGHTWALLETD_PORT:-9067}"
 
@@ -16,43 +19,108 @@ zcash_cli() {
   compose exec -T zcashd zcash-cli -conf=/etc/zcash/zcash.conf "$@"
 }
 
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "Neither shasum nor sha256sum is available" >&2
+    return 1
+  fi
+}
+
+regtest_runtime_fingerprint() {
+  local input
+  input="$(
+    for file in \
+      "$COMPOSE_FILE" \
+      "$ROOT_DIR/scripts/regtest/zcash.conf" \
+      "$ROOT_DIR/scripts/regtest/lightwalletd-zcash.conf"; do
+      sha256_file "$file"
+    done
+  )"
+
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$input" | shasum -a 256 | awk '{print $1}'
+  else
+    printf '%s' "$input" | sha256sum | awk '{print $1}'
+  fi
+}
+
+prepare_compatible_regtest_state() {
+  local expected_fingerprint existing_fingerprint=""
+  if [[ -z "$STATE_DIR" || "$STATE_DIR" == "/" || "$STATE_DIR" == "$ROOT_DIR" ]]; then
+    echo "Refusing unsafe regtest state directory: $STATE_DIR" >&2
+    return 1
+  fi
+  expected_fingerprint="$(regtest_runtime_fingerprint)"
+
+  if [[ -f "$RUNTIME_FINGERPRINT_FILE" ]]; then
+    existing_fingerprint="$(tr -d '[:space:]' <"$RUNTIME_FINGERPRINT_FILE")"
+  fi
+
+  local has_state=0
+  if [[ -d "$STATE_DIR" ]] && [[ -n "$(find "$STATE_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]]; then
+    has_state=1
+  fi
+
+  if [[ "$has_state" -eq 1 ]] && [[ "$existing_fingerprint" != "$expected_fingerprint" ]]; then
+    if [[ "$REGTEST_PRESERVE_STATE" == "1" ]]; then
+      echo "Regtest runtime changed while REGTEST_PRESERVE_STATE=1." >&2
+      echo "Refusing to reuse an incompatible datadir; run scripts/regtest/reset.sh." >&2
+      return 1
+    fi
+
+    echo "Regtest runtime changed; resetting disposable state instead of reindexing."
+    compose down -v --remove-orphans >/dev/null 2>&1 || true
+    rm -rf "$STATE_DIR"
+  fi
+
+  mkdir -p "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
+  chmod 0777 "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
+  printf '%s\n' "$expected_fingerprint" >"$RUNTIME_FINGERPRINT_FILE"
+}
+
 wait_for_zcashd() {
-  for _ in $(seq 1 120); do
-    if zcash_cli getblockcount >/dev/null 2>&1; then
+  local deadline=$((SECONDS + REGTEST_STARTUP_TIMEOUT_SECONDS)) logs
+  while ((SECONDS < deadline)); do
+    # zcashd begins accepting some RPCs before its wallet is loaded. Wait for
+    # the explicit initialization-complete event instead of polling a wallet
+    # method that may report the misleading transient "reindexing" error.
+    logs="$(compose logs zcashd 2>/dev/null || true)"
+    if zcash_cli getblockcount >/dev/null 2>&1 && \
+      [[ "$logs" == *"init message: Done loading"* ]]; then
       return 0
     fi
     sleep 1
   done
-  echo "Timed out waiting for zcashd RPC" >&2
+  echo "Timed out after ${REGTEST_STARTUP_TIMEOUT_SECONDS}s waiting for zcashd initialization" >&2
+  compose logs --tail=40 zcashd >&2 || true
   return 1
 }
 
-wait_for_wallet_ready() {
-  for _ in $(seq 1 120); do
-    if zcash_cli getwalletinfo >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  echo "Timed out waiting for zcashd wallet readiness" >&2
-  return 1
-}
+assert_wallet_ready() {
+  local output
+  if output="$(zcash_cli listunspent 1 9999999 "[]" false 2>&1)"; then
+    return 0
+  fi
 
-wait_for_wallet_spend_ready() {
-  for _ in $(seq 1 120); do
-    if zcash_cli listunspent 1 9999999 "[]" false >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  echo "Timed out waiting for zcashd wallet spend readiness" >&2
+  if [[ "$output" == *"reindexing"* ]]; then
+    echo "zcashd wallet is reindexing; refusing to wait on a nondeterministic E2E setup." >&2
+    echo "Run scripts/regtest/reset.sh, or unset REGTEST_PRESERVE_STATE so up.sh can reset stale state." >&2
+  else
+    echo "zcashd wallet is not ready: $output" >&2
+  fi
   return 1
 }
 
 wait_for_lightwalletd() {
+  local deadline=$((SECONDS + REGTEST_STARTUP_TIMEOUT_SECONDS))
   if command -v grpcurl >/dev/null 2>&1; then
-    for _ in $(seq 1 120); do
+    while ((SECONDS < deadline)); do
       if grpcurl \
+        -max-time 2 \
         -plaintext \
         -import-path "$ROOT_DIR/protos" \
         -proto service.proto \
@@ -67,7 +135,7 @@ wait_for_lightwalletd() {
     return 1
   fi
 
-  for _ in $(seq 1 120); do
+  while ((SECONDS < deadline)); do
     if python3 - "$LIGHTWALLETD_HOST" "$LIGHTWALLETD_PORT" <<'PY'
 import socket
 import sys
@@ -269,12 +337,20 @@ ensure_faucet_state() {
   chmod 0777 "$STATE_DIR/zcashd" "$STATE_DIR/lightwalletd"
 
   if faucet_coinbase_ready; then
+    assert_wallet_ready
     touch "$INITIALIZED_FILE"
     return 0
   fi
 
+  # A fresh v6.20 regtest chain reports the generic "wallet operation is
+  # disabled while reindexing" error until its first block is generated.
+  # `generate` is synchronous, so bootstrap the deterministic chain first and
+  # perform one wallet-readiness assertion afterwards instead of polling.
   zcash_cli generate 110 >/dev/null
-  wait_for_wallet_spend_ready
-  faucet_coinbase_ready
+  assert_wallet_ready
+  if ! faucet_coinbase_ready; then
+    echo "Faucet coinbase was not spendable immediately after synchronous block generation." >&2
+    return 1
+  fi
   touch "$INITIALIZED_FILE"
 }

@@ -1072,6 +1072,71 @@ pub fn get_recent_transparent_receive_addresses(
 mod tests {
     use super::*;
 
+    const BIP39_VECTOR_MNEMONIC: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const BIP39_VECTOR_PASSPHRASE: &str = "TREZOR";
+    const BIP39_VECTOR_MAINNET_UA: &str =
+        "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfgram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3nem8wwyen732wemtxcg6lxr4n2agm437m2";
+    const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
+
+    #[test]
+    fn bip39_passphrase_import_matches_independent_mainnet_address_vectors() {
+        // These expected addresses were generated outside this crate from the
+        // BIP39 TREZOR vector: bip_utils for m/44'/133'/0'/0/0, and the
+        // Python zcash-test-vectors implementation for the Orchard + Sapling
+        // default Unified Address. Keep them as fixed external oracles instead
+        // of deriving the expected values with the production Rust code.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap().to_string();
+
+        let imported = import_wallet(
+            BIP39_VECTOR_MNEMONIC.to_string(),
+            BIP39_VECTOR_PASSPHRASE.to_string(),
+            None,
+            "main".to_string(),
+            db_path.clone(),
+            Some("BIP39 vector".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(imported.unified_address, BIP39_VECTOR_MAINNET_UA);
+        assert_eq!(
+            get_transparent_receive_address(
+                db_path,
+                "main".to_string(),
+                Some(imported.account_uuid),
+            )
+            .unwrap(),
+            BIP39_VECTOR_MAINNET_TADDR,
+        );
+    }
+
+    #[test]
+    fn bip39_passphrase_changes_the_imported_wallet() {
+        fn import_with_passphrase(passphrase: &str) -> WalletImportResult {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let db_path = temp_dir.path().join("wallet.db");
+            import_wallet(
+                BIP39_VECTOR_MNEMONIC.to_string(),
+                passphrase.to_string(),
+                None,
+                "main".to_string(),
+                db_path.to_str().unwrap().to_string(),
+                Some("Passphrase isolation".to_string()),
+            )
+            .unwrap()
+        }
+
+        let expected = import_with_passphrase(BIP39_VECTOR_PASSPHRASE);
+        let empty = import_with_passphrase("");
+        let wrong_case = import_with_passphrase("trezor");
+
+        assert_ne!(expected.unified_address, empty.unified_address);
+        assert_ne!(expected.unified_address, wrong_case.unified_address);
+        assert_ne!(empty.unified_address, wrong_case.unified_address);
+    }
+
     #[test]
     fn ironwood_activation_status_follows_nu6_3_height() {
         for network in [WalletNetwork::Main, WalletNetwork::Test] {

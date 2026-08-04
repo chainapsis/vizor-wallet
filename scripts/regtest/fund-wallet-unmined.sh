@@ -7,7 +7,7 @@ destination="${1:?usage: fund-wallet-unmined.sh <destination-address> [zec-amoun
 requested_amount="${2:-0.25}"
 
 wait_for_zcashd
-wait_for_wallet_spend_ready
+assert_wallet_ready
 wait_for_lightwalletd
 ensure_faucet_state
 

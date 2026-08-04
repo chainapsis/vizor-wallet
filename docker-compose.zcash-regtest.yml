@@ -1,6 +1,8 @@
 services:
   zcashd:
-    image: electriccoinco/zcashd:latest
+    # Pin the exact runtime so a mutable `latest` tag cannot silently upgrade
+    # an existing datadir and trigger a long wallet reindex during E2E setup.
+    image: electriccoinco/zcashd@sha256:40cdcad6c32da8bedacf77caba149198c7674f79aeced4043128ffb3e967efba
     platform: linux/amd64
     entrypoint: ["zcashd"]
     command:
@@ -15,7 +17,7 @@ services:
       - ./scripts/regtest/zcash.conf:/etc/zcash/zcash.conf:ro
 
   lightwalletd:
-    image: electriccoinco/lightwalletd:latest
+    image: electriccoinco/lightwalletd@sha256:a3dfb04b4054b78ae3107dcc804c3a15a6e38d1f0dfcadeac48da482dd1d3448
     platform: linux/amd64
     entrypoint: ["lightwalletd"]
     command:

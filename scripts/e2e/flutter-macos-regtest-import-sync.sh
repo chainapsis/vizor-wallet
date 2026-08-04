@@ -2,7 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MNEMONIC="winter shiver fetch refuse absurd mail pistol eight market lounge manual roast miracle ethics found child scare curve congress renew salute pig better used"
+# Fixed external oracles generated with bip_utils and the Python
+# zcash-test-vectors implementation, not with the app's Rust code.
+UNIFIED_ADDRESS="uregtest1ykjd398elks624qyz0d0vffn6vpqkl6atp2wsr9795eql4kw47hwlffxyyfakv0l2twj635fpmxmeu3tzyrfhf5s9eg9ea8gsa0srdfwjudp3fs0qaaqxvkxr364a8vjy3y9vglm7lf8rs0vsev9p5mzky52rq4wkr5lhc842vuf5lhn"
+TRANSPARENT_ADDRESS="tmPTcChwqcza88W1mydzwkZ25C9qQm3ugiM"
 SHIELDED_AMOUNT="1.25"
 TRANSPARENT_AMOUNT="0.75"
 CONFIRMING_BLOCKS="${E2E_CONFIRMING_BLOCKS:-10}"
@@ -17,20 +20,8 @@ require_cmd() {
   fi
 }
 
-json_field() {
-  python3 - "$1" "$2" <<'PY'
-import json
-import sys
-
-data = json.loads(sys.argv[1])
-print(data[sys.argv[2]])
-PY
-}
-
-require_cmd cargo
 require_cmd docker
 require_cmd fvm
-require_cmd python3
 
 cd "$ROOT_DIR"
 
@@ -39,15 +30,11 @@ if [[ "$RESET_REGTEST" == "1" ]]; then
 fi
 scripts/regtest/up.sh
 
-addresses_json="$(cd rust && cargo run --quiet --example regtest_wallet_addresses -- "$MNEMONIC")"
-unified_address="$(json_field "$addresses_json" unifiedAddress)"
-transparent_address="$(json_field "$addresses_json" transparentAddress)"
-
 echo "funding shielded address with ${SHIELDED_AMOUNT} TAZ"
-scripts/regtest/fund-wallet.sh "$unified_address" "$SHIELDED_AMOUNT" "$CONFIRMING_BLOCKS" >/dev/null
+scripts/regtest/fund-wallet.sh "$UNIFIED_ADDRESS" "$SHIELDED_AMOUNT" "$CONFIRMING_BLOCKS" >/dev/null
 
 echo "funding transparent address with ${TRANSPARENT_AMOUNT} TAZ"
-scripts/regtest/fund-wallet.sh "$transparent_address" "$TRANSPARENT_AMOUNT" "$CONFIRMING_BLOCKS" >/dev/null
+scripts/regtest/fund-wallet.sh "$TRANSPARENT_ADDRESS" "$TRANSPARENT_AMOUNT" "$CONFIRMING_BLOCKS" >/dev/null
 
 echo "running Flutter macOS integration test"
 fvm flutter test \
@@ -55,4 +42,5 @@ fvm flutter test \
   -d "$FLUTTER_DEVICE" \
   --dart-define=ZCASH_DEFAULT_NETWORK=regtest \
   --dart-define=ZCASH_E2E_LIGHTWALLETD_URL="$LIGHTWALLETD_URL" \
+  --dart-define=ZCASH_E2E_FIRST_UNLOCK_MNEMONIC_KEYCHAIN=true \
   --dart-define=VIZOR_E2E_HIDDEN_WINDOW="${VIZOR_E2E_HIDDEN_WINDOW:-true}"

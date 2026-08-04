@@ -8,7 +8,7 @@ requested_amount="${2:-1.0}"
 confirming_blocks="${3:-10}"
 
 wait_for_zcashd
-wait_for_wallet_spend_ready
+assert_wallet_ready
 wait_for_lightwalletd
 ensure_faucet_state
 
