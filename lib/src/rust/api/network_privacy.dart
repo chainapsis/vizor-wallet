@@ -7,7 +7,13 @@ import '../frb_generated.dart';
 import '../network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_headers`, `block_at_height`, `collect_body`, `network_http_response`
+// These functions are ignored because they are not marked as `pub`: `apply_headers`, `block_at_height`, `collect_body`, `network_http_response`, `timed_birthday_request`, `write_body_to_file`
+
+/// Blocks new policy-aware direct requests immediately. Tor bootstrap is
+/// intentionally separate so the caller can first quiesce channels that were
+/// opened while direct mode was active.
+void beginNetworkPrivacyEnable() =>
+    RustLib.instance.api.crateApiNetworkPrivacyBeginNetworkPrivacyEnable();
 
 /// Configures the process-wide network route used by wallet gRPC and HTTP
 /// clients. Enabling is fail-closed: the desired route changes before Tor
@@ -49,6 +55,19 @@ Future<NetworkHttpResponse> torHttpPost({
   url: url,
   headers: headers,
   body: body,
+);
+
+/// Streams an HTTP GET response over an isolated Tor route directly to disk.
+/// This avoids moving large proving-parameter files through Rust and Dart
+/// whole-body buffers.
+Future<NetworkHttpResponse> torHttpDownload({
+  required String url,
+  required List<NetworkHttpHeader> headers,
+  required String destinationPath,
+}) => RustLib.instance.api.crateApiNetworkPrivacyTorHttpDownload(
+  url: url,
+  headers: headers,
+  destinationPath: destinationPath,
 );
 
 Future<ImportBirthdayMetadata> getImportBirthdayMetadata({

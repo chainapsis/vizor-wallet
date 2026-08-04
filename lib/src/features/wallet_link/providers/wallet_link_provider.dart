@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -63,6 +64,13 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     state = const WalletLinkState(phase: WalletLinkPhase.preparing);
 
     try {
+      if (ref.read(networkPrivacyProvider).torEnabled) {
+        throw StateError(
+          'Link mobile is unavailable while Tor is on because its temporary '
+          'package cannot be explicitly deleted over the current Tor '
+          'transport.',
+        );
+      }
       final upload = await _createUpload();
       if (epoch != _epoch) return;
 

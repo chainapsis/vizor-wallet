@@ -487,7 +487,8 @@ class _SettingsList extends StatelessWidget {
           title: 'Privacy',
           description:
               'Routes Vizor’s in-app network requests through Tor. Links '
-              'opened in other apps use those apps’ network settings.',
+              'opened in other apps use those apps’ network settings. '
+              'Software update checks pause while Tor is on.',
           rows: [
             _SettingsRow(
               key: const ValueKey('settings_tor_row'),

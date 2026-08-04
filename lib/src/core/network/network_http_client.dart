@@ -43,6 +43,12 @@ abstract interface class TorHttpBridge {
     required Map<String, String> headers,
     required List<int> bodyBytes,
   });
+
+  Future<NetworkHttpResponse> download(
+    Uri uri, {
+    required Map<String, String> headers,
+    required String destinationPath,
+  });
 }
 
 class RustTorHttpBridge implements TorHttpBridge {
@@ -57,7 +63,7 @@ class RustTorHttpBridge implements TorHttpBridge {
       url: uri.toString(),
       headers: _rustHeaders(headers),
     );
-    return _fromRust(response);
+    return networkHttpResponseFromRust(response);
   }
 
   @override
@@ -71,7 +77,21 @@ class RustTorHttpBridge implements TorHttpBridge {
       headers: _rustHeaders(headers),
       body: bodyBytes,
     );
-    return _fromRust(response);
+    return networkHttpResponseFromRust(response);
+  }
+
+  @override
+  Future<NetworkHttpResponse> download(
+    Uri uri, {
+    required Map<String, String> headers,
+    required String destinationPath,
+  }) async {
+    final response = await rust_network_privacy.torHttpDownload(
+      url: uri.toString(),
+      headers: _rustHeaders(headers),
+      destinationPath: destinationPath,
+    );
+    return networkHttpResponseFromRust(response);
   }
 
   static List<rust_network_privacy.NetworkHttpHeader> _rustHeaders(
@@ -83,23 +103,28 @@ class RustTorHttpBridge implements TorHttpBridge {
         value: entry.value,
       ),
   ];
+}
 
-  static NetworkHttpResponse _fromRust(
-    rust_network_privacy.NetworkHttpResponse response,
-  ) {
-    final headers = <String, List<String>>{};
-    for (final header in response.headers) {
-      (headers[header.name.toLowerCase()] ??= []).add(header.value);
-    }
-    return NetworkHttpResponse(
-      statusCode: response.statusCode,
-      bodyBytes: response.body,
-      headers: Map.unmodifiable({
-        for (final entry in headers.entries)
-          entry.key: List.unmodifiable(entry.value),
-      }),
-    );
+/// Converts the generated Rust response while preserving the concrete nested
+/// generic types. Leaving either collection inferred through `unmodifiable`
+/// produces `Map<dynamic, dynamic>` / `List<dynamic>` at runtime and breaks
+/// every successful Tor HTTP response when it is read as typed headers.
+NetworkHttpResponse networkHttpResponseFromRust(
+  rust_network_privacy.NetworkHttpResponse response,
+) {
+  final headers = <String, List<String>>{};
+  for (final header in response.headers) {
+    (headers[header.name.toLowerCase()] ??= <String>[]).add(header.value);
   }
+  final immutableHeaders = <String, List<String>>{
+    for (final entry in headers.entries)
+      entry.key: List<String>.unmodifiable(entry.value),
+  };
+  return NetworkHttpResponse(
+    statusCode: response.statusCode,
+    bodyBytes: response.body,
+    headers: Map<String, List<String>>.unmodifiable(immutableHeaders),
+  );
 }
 
 /// Routes app-owned HTTP traffic through the process-wide network privacy
@@ -140,6 +165,27 @@ class NetworkHttpClient {
     return timeout == null ? future : future.timeout(timeout);
   }
 
+  /// Streams a GET response to [destination] without retaining the response
+  /// body in Dart memory. Tor mode performs the file write inside Rust so large
+  /// downloads do not cross the FFI boundary as a whole-body byte array.
+  Future<NetworkHttpResponse> downloadToFile(
+    Uri uri,
+    File destination, {
+    Map<String, String> headers = const {},
+    Duration? timeout,
+  }) {
+    final future = _torDesired()
+        ? _requestViaTorWithRedirects(
+            'GET',
+            uri,
+            headers: headers,
+            bodyBytes: const [],
+            destinationPath: destination.path,
+          )
+        : _downloadDirect(uri, destination, headers: headers);
+    return timeout == null ? future : future.timeout(timeout);
+  }
+
   void close({bool force = false}) => _directClient.close(force: force);
 
   Future<NetworkHttpResponse> _requestViaTorWithRedirects(
@@ -147,26 +193,53 @@ class NetworkHttpClient {
     Uri initialUri, {
     required Map<String, String> headers,
     required List<int> bodyBytes,
+    String? destinationPath,
   }) async {
     if (method != 'GET' && method != 'POST') {
       throw TorUnsupportedHttpMethodException(method);
     }
 
-    var uri = initialUri;
+    var currentMethod = method;
+    var currentUri = initialUri;
+    var currentHeaders = Map<String, String>.of(headers);
+    var currentBody = bodyBytes;
     for (var redirectCount = 0; redirectCount <= 5; redirectCount++) {
-      final response = method == 'GET'
-          ? await _torBridge.get(uri, headers: headers)
-          : await _torBridge.post(uri, headers: headers, bodyBytes: bodyBytes);
+      final response = destinationPath != null
+          ? await _torBridge.download(
+              currentUri,
+              headers: currentHeaders,
+              destinationPath: destinationPath,
+            )
+          : currentMethod == 'GET'
+          ? await _torBridge.get(currentUri, headers: currentHeaders)
+          : await _torBridge.post(
+              currentUri,
+              headers: currentHeaders,
+              bodyBytes: currentBody,
+            );
       final location = response.header(HttpHeaders.locationHeader);
-      if (method != 'GET' ||
-          !_isRedirect(response.statusCode) ||
-          location == null) {
+      if (!_isRedirect(response.statusCode) || location == null) {
         return response;
       }
       if (redirectCount == 5) {
         throw const HttpException('Too many HTTP redirects');
       }
-      uri = uri.resolve(location);
+      final nextUri = currentUri.resolve(location);
+      if (currentUri.scheme == 'https' && nextUri.scheme != 'https') {
+        throw HttpException(
+          'Refusing HTTPS redirect to ${nextUri.scheme}',
+          uri: nextUri,
+        );
+      }
+      currentHeaders = _headersForRedirect(currentUri, nextUri, currentHeaders);
+      if (currentMethod == 'POST' &&
+          (response.statusCode == HttpStatus.movedPermanently ||
+              response.statusCode == HttpStatus.found ||
+              response.statusCode == HttpStatus.seeOther)) {
+        currentMethod = 'GET';
+        currentBody = const [];
+      }
+      currentUri = nextUri;
     }
     throw const HttpException('Too many HTTP redirects');
   }
@@ -195,6 +268,49 @@ class NetworkHttpClient {
       headers: Map.unmodifiable(responseHeaders),
     );
   }
+
+  Future<NetworkHttpResponse> _downloadDirect(
+    Uri uri,
+    File destination, {
+    required Map<String, String> headers,
+  }) async {
+    final request = await _directClient.getUrl(uri);
+    headers.forEach(request.headers.set);
+    final response = await request.close();
+    await response.pipe(destination.openWrite());
+    final responseHeaders = <String, List<String>>{};
+    response.headers.forEach((name, values) {
+      responseHeaders[name.toLowerCase()] = List.unmodifiable(values);
+    });
+    return NetworkHttpResponse(
+      statusCode: response.statusCode,
+      bodyBytes: Uint8List(0),
+      headers: Map.unmodifiable(responseHeaders),
+    );
+  }
+
+  static Map<String, String> _headersForRedirect(
+    Uri from,
+    Uri to,
+    Map<String, String> headers,
+  ) {
+    if (_sameOrigin(from, to)) return headers;
+    const sensitive = {
+      HttpHeaders.authorizationHeader,
+      HttpHeaders.cookieHeader,
+      HttpHeaders.proxyAuthorizationHeader,
+    };
+    return {
+      for (final entry in headers.entries)
+        if (!sensitive.contains(entry.key.toLowerCase()))
+          entry.key: entry.value,
+    };
+  }
+
+  static bool _sameOrigin(Uri left, Uri right) =>
+      left.scheme.toLowerCase() == right.scheme.toLowerCase() &&
+      left.host.toLowerCase() == right.host.toLowerCase() &&
+      left.port == right.port;
 
   static bool _isRedirect(int statusCode) =>
       statusCode == HttpStatus.movedPermanently ||

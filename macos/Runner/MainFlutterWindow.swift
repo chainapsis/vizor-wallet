@@ -990,6 +990,9 @@ class MainFlutterWindow: NSWindow {
     DeviceOwnerAuthChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
+    NativeUpdatePrivacyChannel.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()

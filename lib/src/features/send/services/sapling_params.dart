@@ -72,23 +72,21 @@ Future<void> _downloadAndVerify(
 }) async {
   final client = NetworkHttpClient();
   try {
-    final response = await client.request('GET', Uri.parse(url));
+    final tempPath = '${destPath}_tmp';
+    final file = File(tempPath);
+    final response = await client.downloadToFile(Uri.parse(url), file);
     if (response.statusCode != 200) {
+      if (await file.exists()) await file.delete();
       throw Exception('Download failed: HTTP ${response.statusCode} for $url');
     }
 
-    final tempPath = '${destPath}_tmp';
-    final file = File(tempPath);
-    await file.writeAsBytes(response.bodyBytes, flush: true);
-
-    final bytes = await File(tempPath).readAsBytes();
-    final digest = sha1.convert(bytes);
+    final digest = await sha1.bind(file.openRead()).first;
     if (digest.toString() != expectedSha1) {
-      await File(tempPath).delete();
+      await file.delete();
       throw Exception('SHA-1 mismatch: expected $expectedSha1, got $digest');
     }
 
-    await File(tempPath).rename(destPath);
+    await file.rename(destPath);
     log('downloaded and verified $destPath');
   } finally {
     client.close();

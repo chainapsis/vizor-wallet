@@ -1698,17 +1698,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // the sync loop's post-batch cancel check nor the observer's
     // 100ms cancel slice should take anywhere near that long,
     // but a network stall mid-broadcast can extend it.
-    await _waitForRustTasksToStop(
+    final stopped = await _waitForRustTasksToStop(
       timeoutMs: 5000,
       onSyncTimeout:
           'SyncNotifier: restartSync timed out waiting for Rust sync loop to '
-          'stop after 5s; starting anyway (the startSync guard will log if '
-          'the old run is still around)',
+          'stop after 5s; transport change blocked',
       onMempoolTimeout:
           'SyncNotifier: restartSync timed out waiting for mempool observer to '
-          'stop after 5s; the new observer start will skip and the new '
-          'session runs without streaming',
+          'stop after 5s; transport change blocked',
     );
+    if (!stopped) {
+      throw StateError(
+        'Network tasks did not stop before the transport change. Direct '
+        'traffic remains blocked; retry the Tor setting after sync stops.',
+      );
+    }
     await updateTransport();
     startSync();
     _startPolling();

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 
 void main() {
-  test('enabling persists Tor intent before transport configuration', () async {
+  test('enabling blocks direct traffic before the first await', () async {
     final events = <String>[];
     final container = ProviderContainer(
       overrides: [
@@ -12,6 +12,9 @@ void main() {
         ),
         networkPrivacyRuntimeProvider.overrideWithValue(
           _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+        ),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
         ),
         networkPrivacyTransportRestartProvider.overrideWithValue((
           update,
@@ -25,7 +28,13 @@ void main() {
 
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
-    expect(events, ['store:true', 'restart', 'configure:true']);
+    expect(events, [
+      'begin-enable',
+      'native:true',
+      'store:true',
+      'restart',
+      'configure:true',
+    ]);
     expect(
       container.read(networkPrivacyProvider).status,
       NetworkPrivacyConnectionStatus.connected,
@@ -43,6 +52,9 @@ void main() {
         networkPrivacyRuntimeProvider.overrideWithValue(
           _ThrowingRuntime(events),
         ),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
         networkPrivacyTransportRestartProvider.overrideWithValue((
           update,
         ) async {
@@ -56,7 +68,13 @@ void main() {
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
     final state = container.read(networkPrivacyProvider);
-    expect(events, ['store:true', 'restart', 'configure:true']);
+    expect(events, [
+      'begin-enable',
+      'native:true',
+      'store:true',
+      'restart',
+      'configure:true',
+    ]);
     expect(state.torEnabled, isTrue);
     expect(state.status, NetworkPrivacyConnectionStatus.failed);
     expect(state.error, contains('bootstrap failed'));
@@ -72,6 +90,9 @@ void main() {
         networkPrivacyRuntimeProvider.overrideWithValue(
           _FakeRuntime(events, NetworkPrivacyConnectionStatus.off),
         ),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
         networkPrivacyTransportRestartProvider.overrideWithValue((
           update,
         ) async {
@@ -84,7 +105,12 @@ void main() {
 
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
 
-    expect(events, ['store:false', 'restart', 'configure:false']);
+    expect(events, [
+      'store:false',
+      'restart',
+      'configure:false',
+      'native:false',
+    ]);
     expect(
       container.read(networkPrivacyProvider),
       isA<NetworkPrivacyState>()
@@ -96,6 +122,45 @@ void main() {
           ),
     );
   });
+
+  test(
+    'failed transport quiescence never configures Tor as connected',
+    () async {
+      final events = <String>[];
+      final container = ProviderContainer(
+        overrides: [
+          networkPrivacyPreferenceStoreProvider.overrideWithValue(
+            _FakeStore(events),
+          ),
+          networkPrivacyRuntimeProvider.overrideWithValue(
+            _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+          ),
+          networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+            _FakeNativeUpdateCoordinator(events),
+          ),
+          networkPrivacyTransportRestartProvider.overrideWithValue((_) async {
+            events.add('restart');
+            throw StateError('network tasks did not stop');
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+
+      expect(events, ['begin-enable', 'native:true', 'store:true', 'restart']);
+      expect(
+        container.read(networkPrivacyProvider),
+        isA<NetworkPrivacyState>()
+            .having((state) => state.torEnabled, 'torEnabled', isTrue)
+            .having(
+              (state) => state.status,
+              'status',
+              NetworkPrivacyConnectionStatus.failed,
+            ),
+      );
+    },
+  );
 }
 
 class _FakeStore implements NetworkPrivacyPreferenceStore {
@@ -119,6 +184,11 @@ class _FakeRuntime implements NetworkPrivacyRuntime {
   final NetworkPrivacyConnectionStatus result;
 
   @override
+  void beginEnable() {
+    events.add('begin-enable');
+  }
+
+  @override
   Future<NetworkPrivacyConnectionStatus> configure({
     required bool enabled,
   }) async {
@@ -133,10 +203,27 @@ class _ThrowingRuntime implements NetworkPrivacyRuntime {
   final List<String> events;
 
   @override
+  void beginEnable() {
+    events.add('begin-enable');
+  }
+
+  @override
   Future<NetworkPrivacyConnectionStatus> configure({
     required bool enabled,
   }) async {
     events.add('configure:$enabled');
     throw StateError('bootstrap failed');
+  }
+}
+
+class _FakeNativeUpdateCoordinator
+    implements NetworkPrivacyNativeUpdateCoordinator {
+  _FakeNativeUpdateCoordinator(this.events);
+
+  final List<String> events;
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    events.add('native:$enabled');
   }
 }

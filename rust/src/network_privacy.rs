@@ -10,9 +10,10 @@ use std::{
         atomic::{AtomicBool, AtomicU8, Ordering},
         OnceLock, RwLock,
     },
+    time::Duration,
 };
 
-use zcash_client_backend::tor::Client as TorClient;
+use zcash_client_backend::tor::{Client as TorClient, Timeouts as TorTimeouts};
 
 const STATUS_DIRECT: u8 = 0;
 const STATUS_BOOTSTRAPPING: u8 = 1;
@@ -60,6 +61,19 @@ pub fn status() -> NetworkPrivacyStatus {
     }
 }
 
+/// Immediately changes the process policy to fail-closed Tor mode without
+/// waiting for the previous transport to stop or for Tor to bootstrap.
+/// Runtime toggles call this synchronously before their first `await`, so no
+/// new policy-aware request can race onto clearnet during teardown.
+pub fn begin_tor_enable() {
+    TOR_DESIRED.store(true, Ordering::Release);
+    TOR_STATUS.store(STATUS_BOOTSTRAPPING, Ordering::Release);
+    *client_slot()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    log::info!("network privacy: Tor requested; direct requests blocked");
+}
+
 pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, String> {
     TOR_DESIRED.store(true, Ordering::Release);
 
@@ -82,7 +96,12 @@ pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, St
         return Err(format!("Create Tor data directory: {error}"));
     }
 
-    let client = match TorClient::create(tor_directory, |_| {}).await {
+    // Sapling proving parameters are tens of megabytes and routinely take
+    // longer than the backend's one-minute HTTP body default over Tor. Keep
+    // connect/header deadlines strict, but allow streaming bodies enough time
+    // to complete without holding them in memory.
+    let timeouts = TorTimeouts::default().with_response_body(Duration::from_secs(15 * 60));
+    let client = match TorClient::create_with_timeouts(tor_directory, |_| {}, timeouts).await {
         Ok(client) => client,
         Err(error) => {
             set_tor_failed();

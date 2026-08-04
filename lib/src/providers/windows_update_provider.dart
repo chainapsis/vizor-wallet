@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_version_config.dart';
+import '../rust/api/network_privacy.dart' as rust_network_privacy;
 import '../services/windows_update_service.dart';
 
 enum WindowsUpdateStatus {
@@ -123,7 +124,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   Future<void> checkOnStartup() async {
-    if (_startupCheckStarted || !Platform.isWindows) return;
+    if (_startupCheckStarted || !Platform.isWindows || _torEnabled) return;
     _startupCheckStarted = true;
     await checkForUpdates();
   }
@@ -133,11 +134,12 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   Future<void> checkForUpdates() async {
+    if (_torEnabled) return;
     await _runAndPoll(ref.read(windowsUpdateServiceProvider).checkForUpdates());
   }
 
   Future<void> downloadUpdate() async {
-    if (!state.canDownload) return;
+    if (!state.canDownload || _torEnabled) return;
     await _runAndPoll(ref.read(windowsUpdateServiceProvider).downloadUpdate());
   }
 
@@ -147,6 +149,8 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       ref.read(windowsUpdateServiceProvider).applyUpdateAndRestart(),
     );
   }
+
+  bool get _torEnabled => rust_network_privacy.isTorEnabled();
 
   Future<void> _runAndPoll(Future<WindowsUpdateSnapshot> action) async {
     _pollTimer?.cancel();

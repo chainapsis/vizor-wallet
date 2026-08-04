@@ -88,6 +88,22 @@ class SwapNotifier extends Notifier<SwapState> {
 
   @override
   SwapState build() {
+    ref.listen<NetworkPrivacyState>(networkPrivacyProvider, (previous, next) {
+      final becameDirect =
+          !next.torEnabled &&
+          next.status == NetworkPrivacyConnectionStatus.off &&
+          (previous?.torEnabled == true ||
+              previous?.status != NetworkPrivacyConnectionStatus.off);
+      final becameConnected =
+          previous?.status != NetworkPrivacyConnectionStatus.connected &&
+          next.status == NetworkPrivacyConnectionStatus.connected;
+      if (becameDirect) {
+        state = state.copyWith(clearSupportedAssetsError: true);
+        unawaited(_loadSupportedExternalAssets(forceRefreshPrices: true));
+      } else if (becameConnected) {
+        unawaited(_loadSupportedExternalAssets(forceRefreshPrices: true));
+      }
+    });
     ref.listen<String?>(
       accountProvider.select((value) => value.value?.activeAccountUuid),
       (previous, next) {
@@ -630,11 +646,19 @@ class SwapNotifier extends Notifier<SwapState> {
     } catch (error) {
       if (generation != _pricingLoadGeneration) return;
       final torEnabled = ref.read(networkPrivacyProvider).torEnabled;
+      final category = swapFailureCategory(
+        SwapFailureOperation.tokenList,
+        error,
+        torEnabled: torEnabled,
+      );
       final message = _providerFailureMessage(
         SwapFailureOperation.tokenList,
         error,
       );
-      state = state.copyWith(supportedAssetsError: message);
+      if (!_hasResolvedSupportedAssets ||
+          category == SwapFailureCategory.torBlocked) {
+        state = state.copyWith(supportedAssetsError: message);
+      }
       log(
         'Swap: supported assets load failed '
         'torEnabled=$torEnabled error=$error',
