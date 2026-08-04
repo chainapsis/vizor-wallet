@@ -21,6 +21,7 @@ void main() {
         'customise-account',
         'mobile-customise-account',
         'mobile-home-default',
+        'mobile-home-no-balance',
         'ironwood-migration-announcement-modal',
       ]),
     );
