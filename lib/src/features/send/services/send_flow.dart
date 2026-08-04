@@ -13,6 +13,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -404,6 +405,9 @@ Future<SendBroadcastOutcome> runSendBroadcast({
   try {
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final managedSubmissionRouting =
+        transactionSubmissionRoutingFor(endpoint) ==
+        TransactionSubmissionRouting.managedProviders;
     var saplingParams = await loadSaplingParamsStatus();
 
     if (args.needsSaplingParams) {
@@ -459,6 +463,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.networkName,
+          managedSubmissionRouting: managedSubmissionRouting,
           pcztWithProofsBytes: keystone.pcztWithProofsBytes,
           pcztWithSignaturesBytes: keystone.pcztWithSignaturesBytes,
           spendParamsPath: args.needsSaplingParams
@@ -510,6 +515,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           proposalId: args.proposalId,
           sendFlowId: args.sendFlowId,
           password: password,
+          managedSubmissionRouting: managedSubmissionRouting,
           spendParamsPath: args.needsSaplingParams
               ? saplingParams.spendPath
               : null,
@@ -538,6 +544,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
             proposalId: args.proposalId,
             sendFlowId: args.sendFlowId,
             mnemonicBytes: mnemonicBytes,
+            managedSubmissionRouting: managedSubmissionRouting,
             spendParamsPath: args.needsSaplingParams
                 ? saplingParams.spendPath
                 : null,

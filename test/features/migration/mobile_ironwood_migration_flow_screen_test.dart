@@ -152,6 +152,7 @@ class _FailingBindCredentialStore
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
+    bool managedSubmissionRouting = false,
   }) async {
     _manifest = _manifestFor(null);
     return _manifest;
@@ -1134,6 +1135,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required mnemonicBytes,
@@ -1147,6 +1149,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required mnemonicBytes,
@@ -1170,6 +1173,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required requestId,
@@ -1196,6 +1200,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required requestId,
@@ -1228,6 +1233,7 @@ IronwoodMigrationService _migrationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required password,
@@ -3630,6 +3636,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required requestId,

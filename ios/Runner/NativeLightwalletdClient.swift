@@ -55,6 +55,13 @@ enum NativeLightwalletdError: Error, Equatable {
 struct NativeLightwalletdSendResponse: Equatable {
   let errorCode: Int32
   let errorMessage: String
+  let accepted: Bool?
+
+  init(errorCode: Int32, errorMessage: String, accepted: Bool? = nil) {
+    self.errorCode = errorCode
+    self.errorMessage = errorMessage
+    self.accepted = accepted
+  }
 }
 
 enum NativeLightwalletdTransactionObservation: Equatable {
@@ -189,13 +196,16 @@ enum NativeLightwalletdClient {
 
   static func transaction(
     endpoint: String,
+    routingTransactionId: Data,
     transactionId: Data,
+    managedSubmissionRouting: Bool,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<
     NativeLightwalletdTransactionObservation,
     NativeLightwalletdError
   > {
-    guard transactionId.count == 32,
+    guard routingTransactionId.count == 32,
+      transactionId.count == 32,
       rpcURL(endpoint: endpoint, methodPath: getTransactionPath) != nil
     else {
       return .failure(.invalidEndpoint)
@@ -208,14 +218,19 @@ enum NativeLightwalletdClient {
       mined_height: 0
     )
     let code = endpoint.withCString { endpointPointer in
-      transactionId.withUnsafeBytes { transactionPointer in
-        zcash_lightwalletd_observe_transaction(
-          endpointPointer,
-          transactionPointer.bindMemory(to: UInt8.self).baseAddress,
-          UInt(transactionId.count),
-          &nativeObservation,
-          cancellation.lightwalletdCancellationHandle
-        )
+      routingTransactionId.withUnsafeBytes { routingTransactionPointer in
+        transactionId.withUnsafeBytes { transactionPointer in
+          zcash_lightwalletd_observe_transaction(
+            endpointPointer,
+            routingTransactionPointer.bindMemory(to: UInt8.self).baseAddress,
+            UInt(routingTransactionId.count),
+            transactionPointer.bindMemory(to: UInt8.self).baseAddress,
+            UInt(transactionId.count),
+            &nativeObservation,
+            managedSubmissionRouting,
+            cancellation.lightwalletdCancellationHandle
+          )
+        }
       }
     }
     guard code != ZCASH_LIGHTWALLETD_RESULT_CANCELLED,
@@ -238,6 +253,26 @@ enum NativeLightwalletdClient {
     default:
       return .failure(.malformedResponse)
     }
+  }
+
+  static func transactionIdByteOrders(
+    storedHex: String
+  ) -> (stored: Data, protocolOrder: Data)? {
+    guard storedHex.count == 64 else { return nil }
+    var bytes = [UInt8]()
+    bytes.reserveCapacity(32)
+    var index = storedHex.startIndex
+    while index < storedHex.endIndex {
+      let next = storedHex.index(index, offsetBy: 2)
+      guard let byte = UInt8(storedHex[index..<next], radix: 16) else {
+        return nil
+      }
+      bytes.append(byte)
+      index = next
+    }
+    guard bytes.count == 32 else { return nil }
+    let stored = Data(bytes)
+    return (stored, Data(stored.reversed()))
   }
 
   static func parseTransactionResponse(
@@ -263,10 +298,13 @@ enum NativeLightwalletdClient {
 
   static func sendTransaction(
     endpoint: String,
+    transactionId: Data,
     rawTransaction: Data,
+    managedSubmissionRouting: Bool,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError> {
-    guard !rawTransaction.isEmpty,
+    guard transactionId.count == 32,
+      !rawTransaction.isEmpty,
       rpcURL(endpoint: endpoint, methodPath: sendTransactionPath) != nil
     else {
       return .failure(.invalidEndpoint)
@@ -276,18 +314,25 @@ enum NativeLightwalletdClient {
     }
     var responseErrorCode: Int32 = 0
     var responseErrorMessage = [CChar](repeating: 0, count: 4096)
+    var responseAccepted = false
     let code = endpoint.withCString { endpointPointer in
-      rawTransaction.withUnsafeBytes { transactionPointer in
-        responseErrorMessage.withUnsafeMutableBufferPointer { messagePointer in
-          zcash_lightwalletd_send_transaction(
-            endpointPointer,
-            transactionPointer.bindMemory(to: UInt8.self).baseAddress,
-            UInt(rawTransaction.count),
-            &responseErrorCode,
-            messagePointer.baseAddress,
-            UInt(messagePointer.count),
-            cancellation.lightwalletdCancellationHandle
-          )
+      transactionId.withUnsafeBytes { transactionIdPointer in
+        rawTransaction.withUnsafeBytes { transactionPointer in
+          responseErrorMessage.withUnsafeMutableBufferPointer { messagePointer in
+            zcash_lightwalletd_send_transaction(
+              endpointPointer,
+              transactionIdPointer.bindMemory(to: UInt8.self).baseAddress,
+              UInt(transactionId.count),
+              transactionPointer.bindMemory(to: UInt8.self).baseAddress,
+              UInt(rawTransaction.count),
+              &responseErrorCode,
+              messagePointer.baseAddress,
+              UInt(messagePointer.count),
+              &responseAccepted,
+              managedSubmissionRouting,
+              cancellation.lightwalletdCancellationHandle
+            )
+          }
         }
       }
     }
@@ -302,7 +347,8 @@ enum NativeLightwalletdClient {
     return .success(
       NativeLightwalletdSendResponse(
         errorCode: responseErrorCode,
-        errorMessage: String(cString: responseErrorMessage)
+        errorMessage: String(cString: responseErrorMessage),
+        accepted: responseAccepted
       )
     )
   }

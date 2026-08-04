@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
+import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -109,6 +110,9 @@ class RustSwapDepositSender implements SwapDepositSender {
       final proposal = proposalContext.proposal;
       final dbPath = proposalContext.dbPath;
       final endpoint = proposalContext.endpoint;
+      final managedSubmissionRouting =
+          transactionSubmissionRoutingFor(endpoint) ==
+          TransactionSubmissionRouting.managedProviders;
       proposalId = proposal.proposalId;
       log(
         'SwapDepositSender: proposal ready flow=$sendFlowId '
@@ -138,6 +142,7 @@ class RustSwapDepositSender implements SwapDepositSender {
           proposalId: proposal.proposalId,
           sendFlowId: sendFlowId,
           password: password,
+          managedSubmissionRouting: managedSubmissionRouting,
         );
       } else {
         final mnemonicBytes = await _ref
@@ -155,6 +160,7 @@ class RustSwapDepositSender implements SwapDepositSender {
             proposalId: proposal.proposalId,
             sendFlowId: sendFlowId,
             mnemonicBytes: mnemonicBytes,
+            managedSubmissionRouting: managedSubmissionRouting,
           );
         } finally {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);

@@ -24,6 +24,7 @@ void main() {
       accountUuid: 'account-1',
       dbPath: '/tmp/wallet.db',
       lightwalletdUrl: 'https://lwd.example:443',
+      managedSubmissionRouting: true,
     );
 
     expect(
@@ -40,6 +41,7 @@ void main() {
       '101112131415161718191a1b1c1d1e1f',
     );
     expect(prepared.saltBase64, base64Encode(List<int>.generate(16, (i) => i)));
+    expect(prepared.managedSubmissionRouting, isTrue);
     expect(prepared.expectedRunId, isNull);
     expect(
       await store.read(network: 'test', accountUuid: 'account-1'),
@@ -79,6 +81,7 @@ void main() {
     expect(relocated.dbPath, '/new-container/wallet.db');
     expect(relocated.credentialHex, prepared.credentialHex);
     expect(relocated.saltBase64, prepared.saltBase64);
+    expect(relocated.managedSubmissionRouting, isTrue);
     expect(relocated.expectedRunId, 'run-1');
   });
 
@@ -89,6 +92,7 @@ void main() {
       'accountUuid': 'account-1',
       'dbPath': '/tmp/wallet.db',
       'lightwalletdUrl': 'https://lwd.example:443',
+      'managedSubmissionRouting': true,
       'credentialHex': List.filled(32, 'ab').join(),
       'saltBase64': base64Encode(List<int>.filled(16, 7)),
       'expectedRunId': null,
@@ -107,6 +111,8 @@ void main() {
       {...valid, 'version': '1'},
       {...valid, 'network': 'unknown'},
       {...valid, 'accountUuid': ''},
+      {...valid, 'managedSubmissionRouting': null},
+      {...valid, 'managedSubmissionRouting': 'true'},
       {...valid, 'credentialHex': List.filled(32, 'AB').join()},
       {...valid, 'credentialHex': List.filled(31, 'ab').join()},
       {...valid, 'saltBase64': base64Encode(List<int>.filled(15, 7))},
@@ -125,6 +131,30 @@ void main() {
         reason: '$invalid',
       );
     }
+  });
+
+  test('legacy manifest defaults to current-endpoint-only routing', () {
+    final legacy = <String, Object?>{
+      'version': 1,
+      'network': 'main',
+      'accountUuid': 'account-1',
+      'dbPath': '/tmp/wallet.db',
+      'lightwalletdUrl': 'https://us.zec.stardust.rest:443',
+      'credentialHex': List.filled(32, 'ab').join(),
+      'saltBase64': base64Encode(List<int>.filled(16, 7)),
+      'expectedRunId': 'run-1',
+    };
+
+    final decoded = IronwoodMigrationBackgroundCredentialManifest.decode(
+      jsonEncode(legacy),
+    );
+
+    expect(decoded.managedSubmissionRouting, isFalse);
+    expect(
+      (jsonDecode(decoded.encode())
+          as Map<String, dynamic>)['managedSubmissionRouting'],
+      isFalse,
+    );
   });
 
   test('stored manifest must match its network and account scope', () async {

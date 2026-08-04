@@ -1901,6 +1901,7 @@ final class BackgroundMigrationPreparationManager {
         switch transactionObservation(
           endpoint: manifest.lightwalletdUrl,
           transactionIdHex: transactionId,
+          managedSubmissionRouting: manifest.usesManagedSubmissionRouting,
           cancellation: cancellation
         ) {
         case .success(let observation):
@@ -1991,18 +1992,28 @@ final class BackgroundMigrationPreparationManager {
   private func transactionObservation(
     endpoint: String,
     transactionIdHex: String,
+    managedSubmissionRouting: Bool,
     cancellation: BackgroundMigrationCancellation
   ) -> Result<
     NativeLightwalletdTransactionObservation,
     NativeLightwalletdError
   > {
-    guard let storedOrder = Self.transactionIdData(transactionIdHex) else {
+    guard
+      let byteOrders = NativeLightwalletdClient.transactionIdByteOrders(
+        storedHex: transactionIdHex
+      )
+    else {
       return .failure(.malformedResponse)
     }
-    let protocolOrder = Data(storedOrder.reversed())
+    let storedOrder = byteOrders.stored
+    let protocolOrder = byteOrders.protocolOrder
+    // Both lookup byte orders keep the same endpoint, routing policy, and
+    // canonical routing key. Only the GetTransaction lookup bytes may change.
     let first = NativeLightwalletdClient.transaction(
       endpoint: endpoint,
+      routingTransactionId: protocolOrder,
       transactionId: protocolOrder,
+      managedSubmissionRouting: managedSubmissionRouting,
       cancellation: cancellation
     )
     guard protocolOrder != storedOrder,
@@ -2012,29 +2023,15 @@ final class BackgroundMigrationPreparationManager {
     }
     let second = NativeLightwalletdClient.transaction(
       endpoint: endpoint,
+      routingTransactionId: protocolOrder,
       transactionId: storedOrder,
+      managedSubmissionRouting: managedSubmissionRouting,
       cancellation: cancellation
     )
     return transactionObservationAfterStoredByteOrderFallback(
       first: first,
       second: second
     )
-  }
-
-  private static func transactionIdData(_ hex: String) -> Data? {
-    guard hex.count == 64 else { return nil }
-    var bytes = [UInt8]()
-    bytes.reserveCapacity(32)
-    var index = hex.startIndex
-    while index < hex.endIndex {
-      let next = hex.index(index, offsetBy: 2)
-      guard let byte = UInt8(hex[index..<next], radix: 16) else {
-        return nil
-      }
-      bytes.append(byte)
-      index = next
-    }
-    return Data(bytes)
   }
 
   private func waitForNextConfirmationQuery(

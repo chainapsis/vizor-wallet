@@ -13,9 +13,15 @@ struct IronwoodMigrationBackgroundManifest: Decodable {
   let accountUuid: String
   let dbPath: String
   let lightwalletdUrl: String
+  // Optional so manifests written before managed routing decode as disabled.
+  let managedSubmissionRouting: Bool?
   let credentialHex: String
   let saltBase64: String
   let expectedRunId: String?
+
+  var usesManagedSubmissionRouting: Bool {
+    managedSubmissionRouting ?? false
+  }
 }
 
 enum IronwoodMigrationBackgroundCredentialStore {

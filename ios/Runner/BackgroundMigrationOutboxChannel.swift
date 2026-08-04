@@ -53,6 +53,10 @@ enum BackgroundMigrationOutboxChannel {
         runId: string(arguments, "runId"),
         expectedTxids: Set(expectedTxids),
         lightwalletdUrl: string(arguments, "lightwalletdUrl"),
+        managedSubmissionRouting: try optionalBool(
+          arguments,
+          "managedSubmissionRouting"
+        ),
         at: Date()
       )
     }
@@ -243,6 +247,10 @@ enum BackgroundMigrationOutboxChannel {
       accountUuid: try string(arguments, "accountUuid"),
       runId: try string(arguments, "runId"),
       lightwalletdUrl: try string(arguments, "lightwalletdUrl"),
+      managedSubmissionRouting: try optionalBool(
+        arguments,
+        "managedSubmissionRouting"
+      ),
       timingMeanBlocks: try uint64(arguments, "timingMeanBlocks"),
       timingMaxBlocks: try uint64(arguments, "timingMaxBlocks"),
       createdAt: Date(
@@ -294,6 +302,17 @@ enum BackgroundMigrationOutboxChannel {
       throw BackgroundMigrationOutboxChannelError.invalidArguments(key)
     }
     return UInt64(number.int64Value)
+  }
+
+  private static func optionalBool(
+    _ values: [String: Any],
+    _ key: String
+  ) throws -> Bool? {
+    guard let rawValue = values[key], !(rawValue is NSNull) else { return nil }
+    guard let value = rawValue as? Bool else {
+      throw BackgroundMigrationOutboxChannelError.invalidArguments(key)
+    }
+    return value
   }
 
   private static func uint32(_ values: [String: Any], _ key: String) throws -> UInt32 {

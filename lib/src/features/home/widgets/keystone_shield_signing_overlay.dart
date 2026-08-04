@@ -200,11 +200,15 @@ class _KeystoneShieldSigningOverlayState
     try {
       final dbPath = await getWalletDbPath();
       final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+      final managedSubmissionRouting =
+          transactionSubmissionRoutingFor(endpoint) ==
+          TransactionSubmissionRouting.managedProviders;
       attemptedEndpoint = endpoint;
       final result = await rust_sync.extractAndBroadcastPczt(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
+        managedSubmissionRouting: managedSubmissionRouting,
         pcztWithProofsBytes: pcztWithProofs,
         pcztWithSignaturesBytes: signatures,
         spendParamsPath: _needsSaplingParams ? saplingParams.spendPath : null,

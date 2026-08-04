@@ -128,6 +128,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncBroadcastDueOrchardMigrationTransactions({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -138,6 +139,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncBroadcastOneDueOrchardMigrationTransaction({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -207,6 +209,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncCompleteOrchardMigrationDenominationsPczt({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String requestId,
@@ -220,6 +223,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncCompleteOrchardMigrationImmediatePczt({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String requestId,
@@ -230,6 +234,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncCompleteOrchardMigrationSingleQrPczt({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String requestId,
@@ -437,6 +442,7 @@ abstract class RustLibApi extends BaseApi {
   Future<ExecuteProposalResult> crateApiSyncExecuteProposal({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required BigInt proposalId,
     required String sendFlowId,
     required List<int> mnemonicBytes,
@@ -448,6 +454,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncExecuteProposalWithMacosStoredMnemonic({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required BigInt proposalId,
     required String sendFlowId,
     required String password,
@@ -466,6 +473,7 @@ abstract class RustLibApi extends BaseApi {
   Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
@@ -758,6 +766,7 @@ abstract class RustLibApi extends BaseApi {
   Future<IronwoodMigrationResult> crateApiSyncMigrateOrchardToIronwood({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required List<int> mnemonicBytes,
@@ -771,6 +780,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncMigrateOrchardToIronwoodImmediately({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required List<int> mnemonicBytes,
@@ -784,6 +794,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -855,6 +866,7 @@ abstract class RustLibApi extends BaseApi {
   Future<IronwoodMigrationResult> crateApiSyncPrepareOrchardMigrationOutbox({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -991,6 +1003,7 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiSyncRunFullSyncBlocking({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required int mode,
   });
@@ -1042,6 +1055,7 @@ abstract class RustLibApi extends BaseApi {
   Future<ShieldTransparentResult> crateApiSyncShieldTransparentBalance({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required List<int> mnemonicBytes,
@@ -1051,6 +1065,7 @@ abstract class RustLibApi extends BaseApi {
   crateApiSyncShieldTransparentBalanceWithMacosStoredMnemonic({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -1059,6 +1074,7 @@ abstract class RustLibApi extends BaseApi {
   Stream<ApiSyncProgressEvent> crateApiSyncStartFullSync({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required int mode,
   });
@@ -1361,6 +1377,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncBroadcastDueOrchardMigrationTransactions({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -1372,6 +1389,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
@@ -1392,6 +1410,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           password,
@@ -1409,6 +1428,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "password",
@@ -1421,6 +1441,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncBroadcastOneDueOrchardMigrationTransaction({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -1432,6 +1453,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
@@ -1452,6 +1474,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           password,
@@ -1469,6 +1492,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "password",
@@ -1884,6 +1908,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncCompleteOrchardMigrationDenominationsPczt({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String requestId,
@@ -1898,6 +1923,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(requestId, serializer);
@@ -1927,6 +1953,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           requestId,
@@ -1947,6 +1974,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "requestId",
@@ -1962,6 +1990,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncCompleteOrchardMigrationImmediatePczt({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String requestId,
@@ -1973,6 +2002,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(requestId, serializer);
@@ -1995,6 +2025,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           requestId,
@@ -2012,6 +2043,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "requestId",
@@ -2024,6 +2056,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncCompleteOrchardMigrationSingleQrPczt({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String requestId,
@@ -2037,6 +2070,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(requestId, serializer);
@@ -2061,6 +2095,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           requestId,
@@ -2080,6 +2115,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "requestId",
@@ -3454,6 +3490,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<ExecuteProposalResult> crateApiSyncExecuteProposal({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required BigInt proposalId,
     required String sendFlowId,
     required List<int> mnemonicBytes,
@@ -3466,6 +3503,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_u_64(proposalId, serializer);
           sse_encode_String(sendFlowId, serializer);
           sse_encode_list_prim_u_8_loose(mnemonicBytes, serializer);
@@ -3486,6 +3524,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           proposalId,
           sendFlowId,
           mnemonicBytes,
@@ -3503,6 +3542,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "proposalId",
           "sendFlowId",
           "mnemonicBytes",
@@ -3516,6 +3556,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncExecuteProposalWithMacosStoredMnemonic({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required BigInt proposalId,
     required String sendFlowId,
     required String password,
@@ -3528,6 +3569,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_u_64(proposalId, serializer);
           sse_encode_String(sendFlowId, serializer);
           sse_encode_String(password, serializer);
@@ -3548,6 +3590,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           proposalId,
           sendFlowId,
           password,
@@ -3566,6 +3609,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "proposalId",
           "sendFlowId",
           "password",
@@ -3625,6 +3669,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<ExtractAndBroadcastPcztResult> crateApiSyncExtractAndBroadcastPczt({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
@@ -3637,6 +3682,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_list_prim_u_8_loose(pcztWithProofsBytes, serializer);
           sse_encode_list_prim_u_8_loose(pcztWithSignaturesBytes, serializer);
@@ -3657,6 +3703,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           pcztWithProofsBytes,
           pcztWithSignaturesBytes,
@@ -3674,6 +3721,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "pcztWithProofsBytes",
           "pcztWithSignaturesBytes",
@@ -5514,6 +5562,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<IronwoodMigrationResult> crateApiSyncMigrateOrchardToIronwood({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required List<int> mnemonicBytes,
@@ -5528,6 +5577,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(mnemonicBytes, serializer);
@@ -5553,6 +5603,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           mnemonicBytes,
@@ -5572,6 +5623,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "mnemonicBytes",
@@ -5587,6 +5639,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncMigrateOrchardToIronwoodImmediately({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required List<int> mnemonicBytes,
@@ -5601,6 +5654,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(mnemonicBytes, serializer);
@@ -5623,6 +5677,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           mnemonicBytes,
@@ -5642,6 +5697,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "mnemonicBytes",
@@ -5657,6 +5713,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -5670,6 +5727,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
@@ -5695,6 +5753,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           password,
@@ -5714,6 +5773,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "password",
@@ -6113,6 +6173,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<IronwoodMigrationResult> crateApiSyncPrepareOrchardMigrationOutbox({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -6124,6 +6185,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
@@ -6143,6 +6205,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           password,
@@ -6159,6 +6222,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "password",
@@ -6986,6 +7050,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<void> crateApiSyncRunFullSyncBlocking({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required int mode,
   }) {
@@ -6995,6 +7060,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_u_8(mode, serializer);
           pdeCallFfi(
@@ -7009,7 +7075,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiSyncRunFullSyncBlockingConstMeta,
-        argValues: [dbPath, lightwalletdUrl, network, mode],
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          managedSubmissionRouting,
+          network,
+          mode,
+        ],
         apiImpl: this,
       ),
     );
@@ -7018,7 +7090,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSyncRunFullSyncBlockingConstMeta =>
       const TaskConstMeta(
         debugName: "run_full_sync_blocking",
-        argNames: ["dbPath", "lightwalletdUrl", "network", "mode"],
+        argNames: [
+          "dbPath",
+          "lightwalletdUrl",
+          "managedSubmissionRouting",
+          "network",
+          "mode",
+        ],
       );
 
   @override
@@ -7305,6 +7383,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<ShieldTransparentResult> crateApiSyncShieldTransparentBalance({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required List<int> mnemonicBytes,
@@ -7315,6 +7394,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_list_prim_u_8_loose(mnemonicBytes, serializer);
@@ -7333,6 +7413,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argValues: [
           dbPath,
           lightwalletdUrl,
+          managedSubmissionRouting,
           network,
           accountUuid,
           mnemonicBytes,
@@ -7348,6 +7429,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "mnemonicBytes",
@@ -7359,6 +7441,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   crateApiSyncShieldTransparentBalanceWithMacosStoredMnemonic({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required String accountUuid,
     required String password,
@@ -7369,6 +7452,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_String(lightwalletdUrl, serializer);
+          sse_encode_bool(managedSubmissionRouting, serializer);
           sse_encode_String(network, serializer);
           sse_encode_String(accountUuid, serializer);
           sse_encode_String(password, serializer);
@@ -7385,7 +7469,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         ),
         constMeta:
             kCrateApiSyncShieldTransparentBalanceWithMacosStoredMnemonicConstMeta,
-        argValues: [dbPath, lightwalletdUrl, network, accountUuid, password],
+        argValues: [
+          dbPath,
+          lightwalletdUrl,
+          managedSubmissionRouting,
+          network,
+          accountUuid,
+          password,
+        ],
         apiImpl: this,
       ),
     );
@@ -7398,6 +7489,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         argNames: [
           "dbPath",
           "lightwalletdUrl",
+          "managedSubmissionRouting",
           "network",
           "accountUuid",
           "password",
@@ -7408,6 +7500,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Stream<ApiSyncProgressEvent> crateApiSyncStartFullSync({
     required String dbPath,
     required String lightwalletdUrl,
+    required bool managedSubmissionRouting,
     required String network,
     required int mode,
   }) {
@@ -7419,6 +7512,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             final serializer = SseSerializer(generalizedFrbRustBinding);
             sse_encode_String(dbPath, serializer);
             sse_encode_String(lightwalletdUrl, serializer);
+            sse_encode_bool(managedSubmissionRouting, serializer);
             sse_encode_String(network, serializer);
             sse_encode_u_8(mode, serializer);
             sse_encode_StreamSink_api_sync_progress_event_Sse(sink, serializer);
@@ -7434,7 +7528,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             decodeErrorData: sse_decode_String,
           ),
           constMeta: kCrateApiSyncStartFullSyncConstMeta,
-          argValues: [dbPath, lightwalletdUrl, network, mode, sink],
+          argValues: [
+            dbPath,
+            lightwalletdUrl,
+            managedSubmissionRouting,
+            network,
+            mode,
+            sink,
+          ],
           apiImpl: this,
         ),
       ),
@@ -7444,7 +7545,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiSyncStartFullSyncConstMeta => const TaskConstMeta(
     debugName: "start_full_sync",
-    argNames: ["dbPath", "lightwalletdUrl", "network", "mode", "sink"],
+    argNames: [
+      "dbPath",
+      "lightwalletdUrl",
+      "managedSubmissionRouting",
+      "network",
+      "mode",
+      "sink",
+    ],
   );
 
   @override

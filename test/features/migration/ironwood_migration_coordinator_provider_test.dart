@@ -458,53 +458,50 @@ void main() {
     },
   );
 
-  test(
-    'due software broadcast retains a blocked proof permit',
-    () async {
-      final statuses = {
-        _softwareUuid: _status(
-          'ready_to_migrate',
-          scheduledHeight: 1_000,
-          signedChildPcztCount: 1,
-          nextActionHeight: 1_000,
-          proofReady: false,
-        ),
-        _hardwareUuid: _status('complete', activeRunId: null),
-      };
-      final softwareStarts = <String>[];
-      final broadcasts = <String>[];
-      final container = _container(
-        statuses: statuses,
-        softwareStarts: softwareStarts,
-        broadcasts: broadcasts,
-        usesNativeOutbox: false,
-        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
-      );
-      addTearDown(container.dispose);
-      final subscription = container.listen(
-        ironwoodMigrationCoordinatorProvider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(subscription.close);
-      await container.read(syncProvider.future);
+  test('due software broadcast retains a blocked proof permit', () async {
+    final statuses = {
+      _softwareUuid: _status(
+        'ready_to_migrate',
+        scheduledHeight: 1_000,
+        signedChildPcztCount: 1,
+        nextActionHeight: 1_000,
+        proofReady: false,
+      ),
+      _hardwareUuid: _status('complete', activeRunId: null),
+    };
+    final softwareStarts = <String>[];
+    final broadcasts = <String>[];
+    final container = _container(
+      statuses: statuses,
+      softwareStarts: softwareStarts,
+      broadcasts: broadcasts,
+      usesNativeOutbox: false,
+      syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      ironwoodMigrationCoordinatorProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await container.read(syncProvider.future);
 
-      final coordinator = container.read(
-        ironwoodMigrationCoordinatorProvider.notifier,
-      );
-      coordinator.grantChildProofBatchPermit(_softwareUuid);
-      await coordinator.refreshNow();
+    final coordinator = container.read(
+      ironwoodMigrationCoordinatorProvider.notifier,
+    );
+    coordinator.grantChildProofBatchPermit(_softwareUuid);
+    await coordinator.refreshNow();
 
-      expect(broadcasts, [_softwareUuid]);
-      expect(softwareStarts, isEmpty);
-      expect(
-        container
-            .read(ironwoodMigrationCoordinatorProvider)
-            .childProofBatchPermits,
-        contains(_softwareUuid),
-      );
-    },
-  );
+    expect(broadcasts, [_softwareUuid]);
+    expect(softwareStarts, isEmpty);
+    expect(
+      container
+          .read(ironwoodMigrationCoordinatorProvider)
+          .childProofBatchPermits,
+      contains(_softwareUuid),
+    );
+  });
 
   test(
     'manual retry runs again after an automatic attempt in flight',
@@ -2378,6 +2375,7 @@ ProviderContainer _container({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required password,
@@ -2396,6 +2394,7 @@ ProviderContainer _container({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required password,

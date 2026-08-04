@@ -146,6 +146,7 @@ pub fn sync_wallet(db_path: &Path) {
     sync_api::run_full_sync_blocking(
         path_str(db_path),
         LIGHTWALLETD_URL.into(),
+        false,
         REGTEST_NETWORK.into(),
         1,
     )
@@ -275,6 +276,7 @@ pub fn execute_send(
     sync_api::execute_proposal(
         path_str(db_path),
         LIGHTWALLETD_URL.into(),
+        false,
         proposal.proposal_id,
         send_flow_id.into(),
         sender_mnemonic.as_bytes().to_vec(),

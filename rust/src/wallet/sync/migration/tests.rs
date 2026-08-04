@@ -276,6 +276,20 @@ fn stop_candidates_track_attempts_for_children_and_denomination_stages() {
         candidate.kind == MigrationStopCandidateKind::DenominationStage
             && candidate.txid_hex == stage_txid
     }));
+
+    clear_pending_broadcast_attempted(&db_path, "run-attempts", &child_txids[0]).unwrap();
+    clear_denomination_broadcast_attempted(&db_path, "run-attempts", &stage_txid).unwrap();
+
+    let reset = scheduled_migration_stop_candidates(
+        &db_path,
+        "account-1",
+        WalletNetwork::Regtest,
+        "run-attempts",
+    )
+    .unwrap();
+    assert!(reset
+        .iter()
+        .all(|candidate| candidate.attempt_state == MigrationBroadcastAttemptState::NotAttempted));
 }
 
 #[test]

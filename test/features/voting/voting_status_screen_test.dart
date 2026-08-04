@@ -5180,6 +5180,7 @@ class _RustApiFake implements RustLibApi {
     required String lightwalletdUrl,
     required String network,
     required int mode,
+    required bool managedSubmissionRouting,
   }) {
     return const Stream.empty();
   }

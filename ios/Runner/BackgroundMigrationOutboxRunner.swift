@@ -10,6 +10,8 @@ struct BackgroundMigrationOutboxRunnerDependencies {
     (
       String,
       Data,
+      Data,
+      Bool,
       BackgroundMigrationCancellation
     ) -> Result<NativeLightwalletdSendResponse, NativeLightwalletdError>
 
@@ -20,10 +22,13 @@ struct BackgroundMigrationOutboxRunnerDependencies {
         cancellation: cancellation
       )
     },
-    sendTransaction: { endpoint, rawTransaction, cancellation in
+    sendTransaction: {
+      endpoint, transactionId, rawTransaction, managedSubmissionRouting, cancellation in
       NativeLightwalletdClient.sendTransaction(
         endpoint: endpoint,
+        transactionId: transactionId,
         rawTransaction: rawTransaction,
+        managedSubmissionRouting: managedSubmissionRouting,
         cancellation: cancellation
       )
     }
@@ -114,8 +119,10 @@ enum BackgroundMigrationOutboxRunner {
     var proofReady: BackgroundMigrationProofReadyMetadata?
     var attemptedAccountUuid: String?
     let selection: BackgroundMigrationOutboxSelection
+    let transactionId: Data
     do {
       var selected: BackgroundMigrationOutboxSelection?
+      var selectedTransactionId: Data?
       let snapshot = try store.update { snapshot in
         snapshot.expireItems(remoteHeight: remoteHeight, endpoint: endpoint, at: now)
         snapshot.markDueItemsNeedingResign(
@@ -143,6 +150,14 @@ enum BackgroundMigrationOutboxRunner {
         )
         if let selected {
           attemptedAccountUuid = selected.accountUuid
+          guard
+            let byteOrders = NativeLightwalletdClient.transactionIdByteOrders(
+              storedHex: selected.item.txidHex
+            )
+          else {
+            throw BackgroundMigrationOutboxError.invalidBatch
+          }
+          selectedTransactionId = byteOrders.protocolOrder
           try snapshot.validateReschedulingAfterAcceptance(
             itemId: selected.item.itemId,
             remoteHeight: remoteHeight
@@ -193,7 +208,11 @@ enum BackgroundMigrationOutboxRunner {
           }
         )
       }
+      guard let selectedTransactionId else {
+        throw BackgroundMigrationOutboxError.invalidBatch
+      }
       selection = selected
+      transactionId = selectedTransactionId
     } catch BackgroundMigrationOutboxError.invalidSchedule {
       return BackgroundMigrationOutboxRunResult(
         transport: .needsUserAction,
@@ -232,7 +251,9 @@ enum BackgroundMigrationOutboxRunner {
 
     switch dependencies.sendTransaction(
       selection.lightwalletdUrl,
+      transactionId,
       selection.item.rawTransaction,
+      selection.managedSubmissionRouting,
       cancellation
     ) {
     case .failure(let error):
@@ -250,7 +271,9 @@ enum BackgroundMigrationOutboxRunner {
       )
     case .success(let response):
       do {
-        if response.errorCode == 0 || isAcceptedEquivalent(response.errorMessage) {
+        let accepted = response.accepted
+          ?? (response.errorCode == 0 || isAcceptedEquivalent(response.errorMessage))
+        if accepted {
           var random = SystemRandomNumberGenerator()
           let snapshot = try store.update { snapshot in
             try snapshot.recordAccepted(

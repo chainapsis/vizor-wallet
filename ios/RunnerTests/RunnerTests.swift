@@ -2728,7 +2728,61 @@ class RunnerTests: XCTestCase {
 
 }
 
+final class IronwoodMigrationBackgroundManifestTests: XCTestCase {
+  func testManagedSubmissionRoutingIsOptionalAndDefaultsToFalse() throws {
+    var values: [String: Any] = [
+      "version": 1,
+      "network": "test",
+      "accountUuid": "account-a",
+      "dbPath": "/tmp/wallet.db",
+      "lightwalletdUrl": "https://testnet.zec.rocks:443",
+      "credentialHex": "00",
+      "saltBase64": "AA==",
+    ]
+    let legacy = try JSONDecoder().decode(
+      IronwoodMigrationBackgroundManifest.self,
+      from: JSONSerialization.data(withJSONObject: values)
+    )
+
+    XCTAssertFalse(legacy.usesManagedSubmissionRouting)
+
+    values["managedSubmissionRouting"] = true
+    let managed = try JSONDecoder().decode(
+      IronwoodMigrationBackgroundManifest.self,
+      from: JSONSerialization.data(withJSONObject: values)
+    )
+
+    XCTAssertTrue(managed.usesManagedSubmissionRouting)
+  }
+}
+
 final class NativeLightwalletdClientTests: XCTestCase {
+  func testTransactionIdByteOrdersRequireAndReverseExactly32Bytes() throws {
+    let storedHex = String(repeating: "00", count: 31) + "01"
+    let byteOrders = try XCTUnwrap(
+      NativeLightwalletdClient.transactionIdByteOrders(storedHex: storedHex)
+    )
+
+    XCTAssertEqual(
+      byteOrders.stored,
+      Data([UInt8](repeating: 0, count: 31) + [0x01])
+    )
+    XCTAssertEqual(
+      byteOrders.protocolOrder,
+      Data([0x01] + [UInt8](repeating: 0, count: 31))
+    )
+    XCTAssertNil(
+      NativeLightwalletdClient.transactionIdByteOrders(
+        storedHex: String(repeating: "00", count: 31)
+      )
+    )
+    XCTAssertNil(
+      NativeLightwalletdClient.transactionIdByteOrders(
+        storedHex: String(repeating: "zz", count: 32)
+      )
+    )
+  }
+
   func testBackgroundMigrationCancellationSignalsWaitingWork() {
     let cancellation = BackgroundMigrationCancellation()
     let cancelled = expectation(description: "cancelled")
