@@ -2,12 +2,14 @@ import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart' show MaterialApp, TextButton;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
-import 'package:flutter/widgets.dart' show Text, ValueKey, Widget;
+import 'package:flutter/widgets.dart'
+    show BoxDecoration, DecoratedBox, Text, ValueKey, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 
@@ -31,6 +33,31 @@ void main() {
       find.byKey(const ValueKey('welcome_endpoint_settings_button')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('keeps endpoint settings visible over the light hero', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    final button = find.byKey(
+      const ValueKey('welcome_endpoint_settings_button'),
+    );
+    expect(tester.getSize(button), const Size(32, 32));
+
+    final decoratedBox = tester.widget<DecoratedBox>(
+      find.descendant(of: button, matching: find.byType(DecoratedBox)),
+    );
+    final icon = tester.widget<AppIcon>(
+      find.descendant(of: button, matching: find.byType(AppIcon)),
+    );
+
+    expect(
+      (decoratedBox.decoration as BoxDecoration).color,
+      AppBackgroundColors.light.neutralScrim,
+    );
+    expect(icon.color, AppIconColors.light.inverse);
   });
 
   testWidgets('hides legal links while preserving footer space', (

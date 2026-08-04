@@ -135,6 +135,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsTorFailedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'welcome-large',
+    description: 'Desktop first-wallet welcome screen',
+    builder: buildWelcomeLargeUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'welcome-network-settings',
     description: 'Desktop first-wallet network settings with Tor control',
     builder: buildWelcomeNetworkSettingsUseCase,
