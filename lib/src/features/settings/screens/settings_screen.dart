@@ -16,7 +16,6 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_profile_picture.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/theme_mode_provider.dart';
 import '../../../providers/windows_update_provider.dart';
@@ -24,6 +23,7 @@ import '../../accounts/widgets/account_modal_card.dart';
 import '../../accounts/widgets/account_edit_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
 import '../settings_platform.dart';
+import '../widgets/network_privacy_control.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -141,11 +141,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final activeAccountIsHardware =
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
-    final networkPrivacy = ref.watch(networkPrivacyProvider);
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
-    final updateState = Platform.isWindows
-        ? ref.watch(windowsUpdateProvider)
-        : null;
+    final updateState =
+        Platform.isWindows ? ref.watch(windowsUpdateProvider) : null;
     final showUninstall = settingsUninstallSupported();
 
     return AppDesktopShell(
@@ -170,37 +168,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: _themeLabel(themeMode),
-                torStatusLabel: _torStatusLabel(networkPrivacy.status),
-                updateLabel: updateState == null
-                    ? null
-                    : _updateLabel(updateState),
+                updateLabel:
+                    updateState == null ? null : _updateLabel(updateState),
                 onSeedPhrase: () => context.push('/settings/secret-passphrase'),
-                onChangePassword: () =>
-                    context.push('/settings/change-password'),
+                onChangePassword:
+                    () => context.push('/settings/change-password'),
                 onEndpoint: () => context.push('/settings/endpoint'),
-                onAccountName: hasActiveAccount
-                    ? () => _showModal(_SettingsModalType.accountName)
-                    : null,
-                onProfilePicture: hasActiveAccount
-                    ? () => _showModal(_SettingsModalType.profilePicture)
-                    : null,
+                onAccountName:
+                    hasActiveAccount
+                        ? () => _showModal(_SettingsModalType.accountName)
+                        : null,
+                onProfilePicture:
+                    hasActiveAccount
+                        ? () => _showModal(_SettingsModalType.profilePicture)
+                        : null,
                 onAddressBook: () => context.push('/address-book'),
                 onLinkMobile: () => context.push('/settings/link-mobile'),
                 onTheme: () => _showModal(_SettingsModalType.theme),
-                onTorToggle: networkPrivacy.isBusy
-                    ? null
-                    : () => unawaited(
-                        ref
-                            .read(networkPrivacyProvider.notifier)
-                            .setTorEnabled(!networkPrivacy.torEnabled),
-                      ),
-                onUpdates: updateState == null
-                    ? null
-                    : () => _showModal(_SettingsModalType.updates),
+                onUpdates:
+                    updateState == null
+                        ? null
+                        : () => _showModal(_SettingsModalType.updates),
                 onAbout: () => context.push('/about'),
-                onUninstall: showUninstall
-                    ? () => context.go('/settings/uninstall')
-                    : null,
+                onUninstall:
+                    showUninstall
+                        ? () => context.go('/settings/uninstall')
+                        : null,
               ),
             ),
             if (_activeModal != null)
@@ -224,13 +217,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   _SettingsModalType.profilePicture =>
                     AccountProfilePictureModal(
-                      currentProfilePictureId: _pfpPickerFromEdit
-                          ? (_editDraftProfilePictureId ??
-                                activeProfilePictureId)
-                          : activeProfilePictureId,
-                      onCancel: _pfpPickerFromEdit
-                          ? () => _returnToEditAccountModal()
-                          : _closeModal,
+                      currentProfilePictureId:
+                          _pfpPickerFromEdit
+                              ? (_editDraftProfilePictureId ??
+                                  activeProfilePictureId)
+                              : activeProfilePictureId,
+                      onCancel:
+                          _pfpPickerFromEdit
+                              ? () => _returnToEditAccountModal()
+                              : _closeModal,
                       onUpdate: (profilePictureId) async {
                         if (_pfpPickerFromEdit) {
                           _returnToEditAccountModal(
@@ -282,14 +277,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _ => 'Check',
     };
   }
-
-  static String _torStatusLabel(NetworkPrivacyConnectionStatus status) =>
-      switch (status) {
-        NetworkPrivacyConnectionStatus.off => 'Off',
-        NetworkPrivacyConnectionStatus.connecting => 'Connecting…',
-        NetworkPrivacyConnectionStatus.connected => 'On',
-        NetworkPrivacyConnectionStatus.failed => 'Failed',
-      };
 }
 
 class _SettingsPane extends StatelessWidget {
@@ -300,7 +287,6 @@ class _SettingsPane extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
-    required this.torStatusLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
@@ -310,7 +296,6 @@ class _SettingsPane extends StatelessWidget {
     required this.onAddressBook,
     required this.onLinkMobile,
     required this.onTheme,
-    required this.onTorToggle,
     required this.onUpdates,
     required this.onAbout,
     required this.onUninstall,
@@ -322,7 +307,6 @@ class _SettingsPane extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
-  final String torStatusLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
@@ -332,7 +316,6 @@ class _SettingsPane extends StatelessWidget {
   final VoidCallback onAddressBook;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
-  final VoidCallback? onTorToggle;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onUninstall;
@@ -367,7 +350,6 @@ class _SettingsPane extends StatelessWidget {
                 activeAccountIsHardware: activeAccountIsHardware,
                 endpointLabel: endpointLabel,
                 themeLabel: themeLabel,
-                torStatusLabel: torStatusLabel,
                 updateLabel: updateLabel,
                 onSeedPhrase: onSeedPhrase,
                 onChangePassword: onChangePassword,
@@ -377,7 +359,6 @@ class _SettingsPane extends StatelessWidget {
                 onAddressBook: onAddressBook,
                 onLinkMobile: onLinkMobile,
                 onTheme: onTheme,
-                onTorToggle: onTorToggle,
                 onUpdates: onUpdates,
                 onAbout: onAbout,
                 onUninstall: onUninstall,
@@ -399,7 +380,6 @@ class _SettingsList extends StatelessWidget {
     required this.activeAccountIsHardware,
     required this.endpointLabel,
     required this.themeLabel,
-    required this.torStatusLabel,
     required this.updateLabel,
     required this.onSeedPhrase,
     required this.onChangePassword,
@@ -409,7 +389,6 @@ class _SettingsList extends StatelessWidget {
     required this.onAddressBook,
     required this.onLinkMobile,
     required this.onTheme,
-    required this.onTorToggle,
     required this.onUpdates,
     required this.onAbout,
     required this.onUninstall,
@@ -421,7 +400,6 @@ class _SettingsList extends StatelessWidget {
   final bool activeAccountIsHardware;
   final String endpointLabel;
   final String themeLabel;
-  final String torStatusLabel;
   final String? updateLabel;
   final VoidCallback onSeedPhrase;
   final VoidCallback onChangePassword;
@@ -431,7 +409,6 @@ class _SettingsList extends StatelessWidget {
   final VoidCallback onAddressBook;
   final VoidCallback onLinkMobile;
   final VoidCallback onTheme;
-  final VoidCallback? onTorToggle;
   final VoidCallback? onUpdates;
   final VoidCallback onAbout;
   final VoidCallback? onUninstall;
@@ -485,17 +462,10 @@ class _SettingsList extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
           title: 'Privacy',
-          description:
-              'Routes Vizor’s in-app network requests through Tor. Links '
-              'opened in other apps use those apps’ network settings. '
-              'Software update checks pause while Tor is on.',
-          rows: [
-            _SettingsRow(
-              key: const ValueKey('settings_tor_row'),
-              iconName: AppIcons.shieldKeyholeOutline,
-              label: 'Tor for in-app requests',
-              value: torStatusLabel,
-              onTap: onTorToggle,
+          rows: const [
+            NetworkPrivacyControl(
+              key: ValueKey('settings_tor_control'),
+              showSurface: false,
             ),
           ],
         ),
@@ -699,9 +669,10 @@ class _WindowsUpdateModal extends ConsumerWidget {
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.bodyMedium.copyWith(
-              color: state.status == WindowsUpdateStatus.failed
-                  ? context.colors.text.destructive
-                  : context.colors.text.secondary,
+              color:
+                  state.status == WindowsUpdateStatus.failed
+                      ? context.colors.text.destructive
+                      : context.colors.text.secondary,
             ),
           ),
           if (state.status == WindowsUpdateStatus.downloading) ...[
@@ -891,16 +862,17 @@ class _ThemeOptionCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadii.medium),
             boxShadow: _settingsSurfaceShadow(colors),
           ),
-          foregroundDecoration: selected
-              ? BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadii.medium),
-                  border: Border.all(
-                    color: colors.border.strong,
-                    width: 2,
-                    strokeAlign: BorderSide.strokeAlignInside,
-                  ),
-                )
-              : null,
+          foregroundDecoration:
+              selected
+                  ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppRadii.medium),
+                    border: Border.all(
+                      color: colors.border.strong,
+                      width: 2,
+                      strokeAlign: BorderSide.strokeAlignInside,
+                    ),
+                  )
+                  : null,
           child: Row(
             children: [
               SizedBox(
@@ -910,9 +882,10 @@ class _ThemeOptionCard extends StatelessWidget {
                   child: AppIcon(
                     iconName,
                     size: 18,
-                    color: selected
-                        ? colors.icon.accent
-                        : colors.icon.accent.withValues(alpha: 0.5),
+                    color:
+                        selected
+                            ? colors.icon.accent
+                            : colors.icon.accent.withValues(alpha: 0.5),
                   ),
                 ),
               ),
@@ -948,34 +921,31 @@ class _ThemeOptionIndicator extends StatelessWidget {
       width: 16,
       height: 16,
       decoration: BoxDecoration(
-        color: selected
-            ? colors.background.inverse
-            : colors.background.neutralSubtleOpacity,
+        color:
+            selected
+                ? colors.background.inverse
+                : colors.background.neutralSubtleOpacity,
         shape: BoxShape.circle,
       ),
-      child: selected
-          ? Center(
-              child: AppIcon(
-                AppIcons.check,
-                size: 12,
-                color: colors.background.ground,
-              ),
-            )
-          : null,
+      child:
+          selected
+              ? Center(
+                child: AppIcon(
+                  AppIcons.check,
+                  size: 12,
+                  color: colors.background.ground,
+                ),
+              )
+              : null,
     );
   }
 }
 
 class _SettingsBlock extends StatelessWidget {
-  const _SettingsBlock({
-    required this.title,
-    required this.rows,
-    this.description,
-  });
+  const _SettingsBlock({required this.title, required this.rows});
 
   final String title;
   final List<Widget> rows;
-  final String? description;
 
   @override
   Widget build(BuildContext context) {
@@ -1010,18 +980,6 @@ class _SettingsBlock extends StatelessWidget {
             if (i > 0) const SizedBox(height: AppSpacing.xs),
             rows[i],
           ],
-          if (description != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-              child: Text(
-                description!,
-                style: AppTypography.bodySmall.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1036,7 +994,6 @@ class _SettingsRow extends StatefulWidget {
     this.valueLeading,
     this.destructive = false,
     this.onTap,
-    super.key,
   });
 
   final String iconName;
@@ -1085,15 +1042,12 @@ class _SettingsRowState extends State<_SettingsRow> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isInteractive = widget.onTap != null;
-    final contentColor = widget.destructive
-        ? colors.text.destructive
-        : colors.text.accent;
-    final iconColor = widget.destructive
-        ? colors.text.destructive
-        : colors.icon.muted;
-    final chevronColor = widget.destructive
-        ? colors.text.destructive
-        : colors.icon.accent;
+    final contentColor =
+        widget.destructive ? colors.text.destructive : colors.text.accent;
+    final iconColor =
+        widget.destructive ? colors.text.destructive : colors.icon.muted;
+    final chevronColor =
+        widget.destructive ? colors.text.destructive : colors.icon.accent;
 
     Widget content = Row(
       children: [
@@ -1137,9 +1091,10 @@ class _SettingsRowState extends State<_SettingsRow> {
           height: 44,
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
           decoration: BoxDecoration(
-            color: isInteractive && _hovered
-                ? _settingsRowHoverBackgroundColor(context)
-                : null,
+            color:
+                isInteractive && _hovered
+                    ? _settingsRowHoverBackgroundColor(context)
+                    : null,
             borderRadius: BorderRadius.circular(AppRadii.small),
           ),
           child: content,
