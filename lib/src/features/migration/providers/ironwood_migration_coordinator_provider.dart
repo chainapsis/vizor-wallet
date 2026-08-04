@@ -1122,8 +1122,9 @@ class IronwoodMigrationCoordinator
         kAppFormFactor != AppFormFactor.mobile ||
         state.childProofBatchPermits.contains(accountUuid);
     final canPrepareNextProof = _canPrepareNextProof(status);
-    // A finalized due transaction is independent of whether the next signed
-    // child has reached its proof window.
+    // Broadcasting a finalized due transaction is independent of whether the
+    // next signed child has reached its proof window. `_runAdvance` separately
+    // keeps software proof preparation behind the one-shot proof permit.
     final canBroadcastDueTransaction =
         !usesNativeOutbox && _hasDueScheduledBroadcast(status);
     final phaseCanAdvance =
@@ -1279,10 +1280,13 @@ class IronwoodMigrationCoordinator
     String accountUuid, {
     rust_sync.MigrationStatus? status,
   }) async {
+    final hasChildProofBatchPermit =
+        kAppFormFactor != AppFormFactor.mobile ||
+        state.childProofBatchPermits.contains(accountUuid);
     final consumesProofBatchPermit =
         kAppFormFactor == AppFormFactor.mobile &&
         status != null &&
-        state.childProofBatchPermits.contains(accountUuid) &&
+        hasChildProofBatchPermit &&
         _isChildProofBatchAdvance(status);
     if (consumesProofBatchPermit) {
       state = state.copyWith(
@@ -1300,7 +1304,10 @@ class IronwoodMigrationCoordinator
     try {
       return await ref
           .read(ironwoodMigrationServiceProvider)
-          .continueSoftwarePrivateMigration(accountUuid: accountUuid);
+          .continueSoftwarePrivateMigration(
+            accountUuid: accountUuid,
+            prepareNextProof: hasChildProofBatchPermit,
+          );
     } finally {
       if (ref.mounted) {
         state = state.copyWith(

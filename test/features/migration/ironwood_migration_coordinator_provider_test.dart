@@ -459,6 +459,48 @@ void main() {
   );
 
   test(
+    'due software migration broadcasts without preparing the next proof',
+    () async {
+      final statuses = {
+        _softwareUuid: _status(
+          'ready_to_migrate',
+          scheduledHeight: 1_000,
+          signedChildPcztCount: 1,
+          nextActionHeight: 1_000,
+          proofReady: false,
+        ),
+        _hardwareUuid: _status('complete', activeRunId: null),
+      };
+      final softwareStarts = <String>[];
+      final broadcasts = <String>[];
+      final container = _container(
+        statuses: statuses,
+        softwareStarts: softwareStarts,
+        broadcasts: broadcasts,
+        usesNativeOutbox: false,
+        syncState: SyncState(scannedHeight: 1_000, chainTipHeight: 1_001),
+      );
+      addTearDown(container.dispose);
+      final subscription = container.listen(
+        ironwoodMigrationCoordinatorProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+      await container.read(syncProvider.future);
+
+      final coordinator = container.read(
+        ironwoodMigrationCoordinatorProvider.notifier,
+      );
+      coordinator.grantForegroundProgressPermit(_softwareUuid);
+      await coordinator.refreshNow();
+
+      expect(broadcasts, [_softwareUuid]);
+      expect(softwareStarts, isEmpty);
+    },
+  );
+
+  test(
     'manual retry runs again after an automatic attempt in flight',
     () async {
       final statuses = {
