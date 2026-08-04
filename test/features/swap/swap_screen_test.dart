@@ -4336,6 +4336,81 @@ void main() {
     expect(find.textContaining('is not currently supported'), findsNothing);
   });
 
+  testWidgets('turning Tor off retries after the direct route is ready', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _TorThenPricingSwapProvider();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connected,
+        ),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const ValueKey('swap_amount_field'))),
+    );
+    final privacyNotifier =
+        container.read(networkPrivacyProvider.notifier)
+            as _FakeNetworkPrivacyNotifier;
+    privacyNotifier.setStateForTest(
+      const NetworkPrivacyState(
+        torEnabled: false,
+        status: NetworkPrivacyConnectionStatus.connecting,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.pricingRequests, 1);
+    expect(find.textContaining('unavailable over Tor'), findsOneWidget);
+
+    privacyNotifier.setStateForTest(const NetworkPrivacyState.off());
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.pricingRequests, 2);
+    expect(find.textContaining('unavailable over Tor'), findsNothing);
+  });
+
+  testWidgets('a transient refresh failure keeps resolved swap assets usable', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingThenFailureSwapProvider();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        priceRefreshInterval: const Duration(seconds: 1),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(swapProvider.pricingRequests, greaterThanOrEqualTo(2));
+    expect(
+      find.textContaining('Swap tokens could not be loaded'),
+      findsNothing,
+    );
+  });
+
   testWidgets('direction toggle moves the output amount into the input', (
     tester,
   ) async {

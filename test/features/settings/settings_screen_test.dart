@@ -93,7 +93,8 @@ void main() {
     expect(
       find.text(
         'Routes Vizor’s in-app network requests through Tor. Links opened in '
-        'other apps use those apps’ network settings.',
+        'other apps use those apps’ network settings. Software update checks '
+        'pause while Tor is on.',
       ),
       findsOneWidget,
     );

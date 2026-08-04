@@ -1,9 +1,13 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/storage/wallet_paths.dart';
 import '../rust/api/network_privacy.dart' as rust_network_privacy;
 import '../rust/network_privacy.dart' as rust_types;
+import '../services/windows_update_service.dart';
 import 'sync_provider.dart';
 
 const kTorEnabledPreferenceKey = 'zcash_tor_enabled';
@@ -55,11 +59,18 @@ class SharedPreferencesNetworkPrivacyStore
 }
 
 abstract interface class NetworkPrivacyRuntime {
+  void beginEnable();
+
   Future<NetworkPrivacyConnectionStatus> configure({required bool enabled});
 }
 
 class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   const RustNetworkPrivacyRuntime();
+
+  @override
+  void beginEnable() {
+    rust_network_privacy.beginNetworkPrivacyEnable();
+  }
 
   @override
   Future<NetworkPrivacyConnectionStatus> configure({
@@ -70,6 +81,39 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
       torDirectory: await getTorDataDirectoryPath(),
     );
     return _connectionStatus(status);
+  }
+}
+
+abstract interface class NetworkPrivacyNativeUpdateCoordinator {
+  Future<void> setTorEnabled(bool enabled);
+}
+
+class PlatformNetworkPrivacyNativeUpdateCoordinator
+    implements NetworkPrivacyNativeUpdateCoordinator {
+  const PlatformNetworkPrivacyNativeUpdateCoordinator();
+
+  static const _macosChannel = MethodChannel(
+    'com.zcash.wallet/update_network_privacy',
+  );
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    if (Platform.isWindows && enabled) {
+      final update = await WindowsUpdateService().getState();
+      if (update.busy) {
+        throw StateError(
+          'Wait for the current software update operation to finish before '
+          'enabling Tor.',
+        );
+      }
+      return;
+    }
+    if (!Platform.isMacOS) return;
+    try {
+      await _macosChannel.invokeMethod<void>('setTorEnabled', enabled);
+    } on MissingPluginException {
+      // Development builds without Sparkle have no native updater to pause.
+    }
   }
 }
 
@@ -93,18 +137,33 @@ var _initialNetworkPrivacyState = const NetworkPrivacyState.off();
 Future<void> initializeNetworkPrivacyRuntime() async {
   const store = SharedPreferencesNetworkPrivacyStore();
   const runtime = RustNetworkPrivacyRuntime();
-  final enabled = await store.readTorEnabled();
+  const nativeUpdates = PlatformNetworkPrivacyNativeUpdateCoordinator();
+  late final bool enabled;
+  try {
+    enabled = await store.readTorEnabled();
+  } catch (error) {
+    runtime.beginEnable();
+    _initialNetworkPrivacyState = NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.failed,
+      error: 'Could not read the saved Tor preference: $error',
+    );
+    return;
+  }
   if (!enabled) {
     await runtime.configure(enabled: false);
+    await nativeUpdates.setTorEnabled(false);
     _initialNetworkPrivacyState = const NetworkPrivacyState.off();
     return;
   }
 
+  runtime.beginEnable();
   _initialNetworkPrivacyState = const NetworkPrivacyState(
     torEnabled: true,
     status: NetworkPrivacyConnectionStatus.connecting,
   );
   try {
+    await nativeUpdates.setTorEnabled(true);
     final status = await runtime.configure(enabled: true);
     _initialNetworkPrivacyState = NetworkPrivacyState(
       torEnabled: true,
@@ -128,6 +187,11 @@ final networkPrivacyRuntimeProvider = Provider<NetworkPrivacyRuntime>(
   (_) => const RustNetworkPrivacyRuntime(),
 );
 
+final networkPrivacyNativeUpdateCoordinatorProvider =
+    Provider<NetworkPrivacyNativeUpdateCoordinator>(
+      (_) => const PlatformNetworkPrivacyNativeUpdateCoordinator(),
+    );
+
 typedef NetworkPrivacyTransportRestart =
     Future<void> Function(Future<void> Function() updateTransport);
 
@@ -148,26 +212,31 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
     final generation = ++_generation;
     final store = ref.read(networkPrivacyPreferenceStoreProvider);
     final runtime = ref.read(networkPrivacyRuntimeProvider);
+    final nativeUpdates = ref.read(
+      networkPrivacyNativeUpdateCoordinatorProvider,
+    );
     final restartTransport = ref.read(networkPrivacyTransportRestartProvider);
 
-    // Persist intent before any runtime change. A crash or bootstrap failure
-    // must restart in Tor/fail-closed mode, not silently revert to direct.
-    await store.writeTorEnabled(enabled);
-    if (generation != _generation) return;
-
+    // Enabling blocks new direct requests synchronously, before persistence or
+    // channel teardown reaches its first await. Disabling keeps Tor desired
+    // until existing Tor work is quiescent and configure(false) runs.
+    if (enabled) runtime.beginEnable();
     state = NetworkPrivacyState(
       torEnabled: enabled,
-      status: enabled
-          ? NetworkPrivacyConnectionStatus.connecting
-          : NetworkPrivacyConnectionStatus.off,
+      status: NetworkPrivacyConnectionStatus.connecting,
     );
 
     try {
+      if (enabled) await nativeUpdates.setTorEnabled(true);
+      await store.writeTorEnabled(enabled);
+      if (generation != _generation) return;
+
       NetworkPrivacyConnectionStatus? nextStatus;
       await restartTransport(() async {
         nextStatus = await runtime.configure(enabled: enabled);
       });
       if (generation != _generation) return;
+      if (!enabled) await nativeUpdates.setTorEnabled(false);
       state = NetworkPrivacyState(
         torEnabled: enabled,
         status: nextStatus ?? NetworkPrivacyConnectionStatus.failed,

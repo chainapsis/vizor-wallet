@@ -1,7 +1,11 @@
-use std::path::Path;
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
+use tokio::io::AsyncWriteExt;
 use tonic::Request;
 use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
@@ -10,6 +14,14 @@ use zcash_client_backend::proto::{
 use zcash_client_backend::tor::http::HttpError;
 
 pub use crate::network_privacy::NetworkPrivacyStatus;
+
+/// Blocks new policy-aware direct requests immediately. Tor bootstrap is
+/// intentionally separate so the caller can first quiesce channels that were
+/// opened while direct mode was active.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_network_privacy_enable() {
+    crate::network_privacy::begin_tor_enable();
+}
 
 /// Configures the process-wide network route used by wallet gRPC and HTTP
 /// clients. Enabling is fail-closed: the desired route changes before Tor
@@ -107,6 +119,33 @@ pub async fn tor_http_post(
     network_http_response(response)
 }
 
+/// Streams an HTTP GET response over an isolated Tor route directly to disk.
+/// This avoids moving large proving-parameter files through Rust and Dart
+/// whole-body buffers.
+pub async fn tor_http_download(
+    url: String,
+    headers: Vec<NetworkHttpHeader>,
+    destination_path: String,
+) -> Result<NetworkHttpResponse, String> {
+    let client = crate::network_privacy::tor_client_for_route(true)?
+        .ok_or_else(|| "Tor is not enabled".to_string())?;
+    let uri = url
+        .parse()
+        .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
+    let destination = PathBuf::from(destination_path);
+    let response = client
+        .http_get(
+            uri,
+            |builder| apply_headers(builder, &headers),
+            move |body| write_body_to_file(body, destination),
+            0,
+            |_| None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    network_http_response(response.map(|_| Vec::new()))
+}
+
 fn apply_headers(
     mut builder: http::request::Builder,
     headers: &[NetworkHttpHeader],
@@ -126,6 +165,21 @@ async fn collect_body(
         .map_err(HttpError::from)?
         .to_bytes()
         .to_vec())
+}
+
+async fn write_body_to_file(
+    mut body: hyper::body::Incoming,
+    destination: PathBuf,
+) -> Result<(), zcash_client_backend::tor::Error> {
+    let mut file = tokio::fs::File::create(destination).await?;
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(HttpError::from)?;
+        if let Ok(data) = frame.into_data() {
+            file.write_all(&data).await?;
+        }
+    }
+    file.flush().await?;
+    Ok(())
 }
 
 fn network_http_response(response: http::Response<Vec<u8>>) -> Result<NetworkHttpResponse, String> {
@@ -157,12 +211,12 @@ pub async fn get_import_birthday_metadata(
         .await
         .map_err(|error| error.to_string())?;
     let info = client
-        .get_lightd_info(Request::new(Empty {}))
+        .get_lightd_info(timed_birthday_request(Empty {}))
         .await
         .map_err(|error| format!("GetLightdInfo: {error}"))?
         .into_inner();
     let tip = client
-        .get_latest_block(Request::new(ChainSpec {}))
+        .get_latest_block(timed_birthday_request(ChainSpec {}))
         .await
         .map_err(|error| format!("GetLatestBlock: {error}"))?
         .into_inner();
@@ -188,12 +242,12 @@ pub async fn estimate_import_birthday_height(
         .await
         .map_err(|error| error.to_string())?;
     let info = client
-        .get_lightd_info(Request::new(Empty {}))
+        .get_lightd_info(timed_birthday_request(Empty {}))
         .await
         .map_err(|error| format!("GetLightdInfo: {error}"))?
         .into_inner();
     let tip = client
-        .get_latest_block(Request::new(ChainSpec {}))
+        .get_latest_block(timed_birthday_request(ChainSpec {}))
         .await
         .map_err(|error| format!("GetLatestBlock: {error}"))?
         .into_inner();
@@ -226,11 +280,17 @@ async fn block_at_height(
     height: u64,
 ) -> Result<CompactBlock, String> {
     client
-        .get_block(Request::new(BlockId {
+        .get_block(timed_birthday_request(BlockId {
             height,
             hash: Vec::new(),
         }))
         .await
         .map_err(|error| format!("GetBlock({height}): {error}"))
         .map(|response| response.into_inner())
+}
+
+fn timed_birthday_request<T>(message: T) -> Request<T> {
+    let mut request = Request::new(message);
+    request.set_timeout(Duration::from_secs(10));
+    request
 }
