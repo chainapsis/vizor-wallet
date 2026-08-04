@@ -10,6 +10,7 @@ class AppTooltip extends StatelessWidget {
     this.richMessage,
     this.preferBelow = false,
     this.tapToShow = false,
+    this.excludeFromSemantics = false,
     super.key,
   }) : assert(
          (message == null) != (richMessage == null),
@@ -20,6 +21,7 @@ class AppTooltip extends StatelessWidget {
   final InlineSpan? richMessage;
   final bool preferBelow;
   final bool tapToShow;
+  final bool excludeFromSemantics;
   final Widget child;
 
   @override
@@ -41,6 +43,7 @@ class AppTooltip extends StatelessWidget {
       showDuration: const Duration(seconds: 8),
       triggerMode: tapToShow ? TooltipTriggerMode.tap : null,
       preferBelow: preferBelow,
+      excludeFromSemantics: excludeFromSemantics,
       constraints: const BoxConstraints(maxWidth: 340),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s,

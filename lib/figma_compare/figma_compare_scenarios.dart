@@ -184,6 +184,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildDesktopHomeSidebarCompactBalancesUseCase,
   ),
   FigmaCompareScenario(
+    id: 'desktop-home-sidebar-sync-network-error',
+    description: 'Desktop home sidebar with a network sync failure',
+    builder: buildDesktopHomeSidebarSyncNetworkErrorUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'ironwood-migration-intro',
     description: 'Ironwood migration intro screen',
     builder: buildIronwoodMigrationIntroUseCase,
