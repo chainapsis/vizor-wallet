@@ -941,6 +941,24 @@ void main() {
 
     final tooltip = tester.widget<Tooltip>(_syncTextTooltip());
     expect(tooltip.message, 'Syncing failed. Network error');
+    expect(tooltip.excludeFromSemantics, isTrue);
+  });
+
+  testWidgets('overflow error tooltip is excluded from row semantics', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _sidebarHarness(_networkFailureSyncState(), sidebarWidth: 180),
+    );
+    await tester.pump();
+
+    final syncSemantics = tester.getSemantics(
+      find.byKey(const ValueKey('sidebar_sync_text')),
+    );
+    expect(syncSemantics.label, contains('Syncing failed. Network error'));
+    expect(syncSemantics.tooltip, isEmpty);
+    semantics.dispose();
   });
 
   testWidgets('sidebar shows the full overflowed error label on hover', (

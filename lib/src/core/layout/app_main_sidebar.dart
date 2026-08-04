@@ -1674,7 +1674,11 @@ class _SidebarSyncStaticLabel extends StatelessWidget {
         final text = labelText();
         if (!painter.didExceedMaxLines) return text;
 
-        return AppTooltip(message: tooltipMessage, child: text);
+        return AppTooltip(
+          message: tooltipMessage,
+          excludeFromSemantics: true,
+          child: text,
+        );
       },
     );
   }
