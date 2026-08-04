@@ -1928,27 +1928,27 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
                     "Migration signing batches are incomplete before proof promotion".to_string(),
                 );
             }
-            let rebased = rebase_initial_signed_schedule_for_anchor_readiness_with_tx(
+            rebase_initial_signed_schedule_for_anchor_readiness_with_tx(
                 &tx,
                 run_id,
                 current_scanned_height,
             )?;
-            if rebased {
-                for pending in &mut pending_txs {
-                    pending.scheduled_height = tx
-                        .query_row(
-                            &format!(
-                                "SELECT scheduled_height
-                                 FROM {SIGNED_CHILD_PCZTS_TABLE}
-                                 WHERE run_id = ?1 AND child_index = ?2"
-                            ),
-                            params![run_id, pending.part_index],
-                            |row| row.get(0),
-                        )
-                        .map_err(|e| {
-                            format!("Read rebased signed migration child schedule: {e}")
-                        })?;
-                }
+            // The foreground finalizer loads every signed child before this
+            // per-child promotion loop begins. The first promotion can rebase
+            // all durable child rows, so every later promotion must refresh
+            // its height even though it did not perform the rebase itself.
+            for pending in &mut pending_txs {
+                pending.scheduled_height = tx
+                    .query_row(
+                        &format!(
+                            "SELECT scheduled_height
+                             FROM {SIGNED_CHILD_PCZTS_TABLE}
+                             WHERE run_id = ?1 AND child_index = ?2"
+                        ),
+                        params![run_id, pending.part_index],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| format!("Read current signed migration child schedule: {e}"))?;
             }
             insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
             tx.execute(

@@ -2785,6 +2785,20 @@ fn keystone_batches_finish_signing_before_atomic_rebase_promotion() {
     )
     .unwrap();
 
+    // The foreground finalizer loaded this child before the first promotion
+    // rebased every durable child row. Its stale caller-provided height must be
+    // refreshed from storage even though this second promotion does not rebase.
+    promote_signed_child_pczts_to_pending_txs(
+        &db_path,
+        "rebase-keystone-batch",
+        vec![rebase_fixture_pending(1, 101, 101)],
+        200,
+        250,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
     let (origin, rebased, children) =
         signed_child_schedule_snapshot(&db_path, "rebase-keystone-batch");
     assert_eq!(origin, Some(200));
@@ -2796,18 +2810,20 @@ fn keystone_batches_finish_signing_before_atomic_rebase_promotion() {
         Some(&(planned_part_count - 1, 200 + planned_part_count - 1, 69_120,))
     );
     let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
-    let stored_schedule: (u32, u32) = conn
-        .query_row(
-            &format!(
-                "SELECT schedule_start_height, scheduled_height
-                 FROM {PENDING_TXS_TABLE}
-                 WHERE run_id = 'rebase-keystone-batch' AND part_index = 0"
-            ),
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT part_index, schedule_start_height, scheduled_height
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = 'rebase-keystone-batch'
+             ORDER BY part_index"
+        ))
         .unwrap();
-    assert_eq!(stored_schedule, (200, 200));
+    let stored_schedules = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<Vec<(u32, u32, u32)>, _>>()
+        .unwrap();
+    assert_eq!(stored_schedules, vec![(0, 200, 200), (1, 200, 201)]);
 }
 
 #[test]
