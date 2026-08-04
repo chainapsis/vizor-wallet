@@ -2034,7 +2034,7 @@ class _EmptyActivity extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: SizedBox(
-          width: 340,
+          width: _MobileRestImage.canvasWidth,
           child: Column(
             children: [
               Text(
@@ -2064,27 +2064,42 @@ class _EmptyActivity extends StatelessWidget {
 class _MobileRestImage extends StatelessWidget {
   const _MobileRestImage();
 
+  static const canvasWidth = 340.0;
+  static const _canvasHeight = 220.0;
+  static const _imageLeft = 47.0;
+  static const _imageTop = 28.0;
+  static const _imageWidth = 246.0;
+  static const _imageHeight = 192.0;
+
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      key: const ValueKey('mobile_home_rest_canvas'),
-      width: 340,
-      height: 220,
-      child: Stack(
-        children: [
-          Positioned(
-            left: 47,
-            top: 28,
-            child: Image.asset(
-              'assets/illustrations/home_rest_character.png',
-              key: const ValueKey('mobile_home_rest_image'),
-              width: 246,
-              height: 192,
-              fit: BoxFit.contain,
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final scale =
+            constraints.hasBoundedWidth && constraints.maxWidth < canvasWidth
+            ? constraints.maxWidth / canvasWidth
+            : 1.0;
+        return SizedBox(
+          key: const ValueKey('mobile_home_rest_canvas'),
+          width: canvasWidth * scale,
+          height: _canvasHeight * scale,
+          child: Stack(
+            children: [
+              Positioned(
+                left: _imageLeft * scale,
+                top: _imageTop * scale,
+                child: Image.asset(
+                  'assets/illustrations/home_rest_character.png',
+                  key: const ValueKey('mobile_home_rest_image'),
+                  width: _imageWidth * scale,
+                  height: _imageHeight * scale,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

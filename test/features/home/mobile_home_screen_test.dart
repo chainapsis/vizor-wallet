@@ -716,6 +716,26 @@ void main() {
     );
   });
 
+  testWidgets('empty activity keeps its illustration visible at 320 width', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_app(_syncedState()));
+    await tester.pump();
+
+    final canvasRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_rest_canvas')),
+    );
+    final imageRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_rest_image')),
+    );
+
+    expect(imageRect.left, greaterThanOrEqualTo(canvasRect.left));
+    expect(imageRect.right, lessThanOrEqualTo(canvasRect.right));
+  });
+
   testWidgets('includes Ironwood funds in the mobile shielded balance', (
     tester,
   ) async {
