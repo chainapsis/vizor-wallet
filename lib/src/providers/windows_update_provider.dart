@@ -29,6 +29,7 @@ class WindowsUpdateState {
     required this.availableVersion,
     required this.downloadProgress,
     required this.pendingRestart,
+    required this.torProxyReady,
     required this.message,
   });
 
@@ -44,6 +45,7 @@ class WindowsUpdateState {
       availableVersion: '',
       downloadProgress: 0,
       pendingRestart: false,
+      torProxyReady: false,
       message: '',
     );
   }
@@ -60,6 +62,7 @@ class WindowsUpdateState {
       availableVersion: snapshot.availableVersion,
       downloadProgress: snapshot.downloadProgress,
       pendingRestart: snapshot.pendingRestart,
+      torProxyReady: snapshot.torProxyReady,
       message: snapshot.message,
     );
   }
@@ -72,6 +75,7 @@ class WindowsUpdateState {
   final String availableVersion;
   final int downloadProgress;
   final bool pendingRestart;
+  final bool torProxyReady;
   final String message;
 
   bool get isBusy => switch (status) {
@@ -124,7 +128,8 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   Future<void> checkOnStartup() async {
-    if (_startupCheckStarted || !Platform.isWindows || _torEnabled) return;
+    if (_startupCheckStarted || !Platform.isWindows) return;
+    if (!await _updateNetworkReady()) return;
     _startupCheckStarted = true;
     await checkForUpdates();
   }
@@ -134,12 +139,12 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   Future<void> checkForUpdates() async {
-    if (_torEnabled) return;
+    if (!await _updateNetworkReady()) return;
     await _runAndPoll(ref.read(windowsUpdateServiceProvider).checkForUpdates());
   }
 
   Future<void> downloadUpdate() async {
-    if (!state.canDownload || _torEnabled) return;
+    if (!state.canDownload || !await _updateNetworkReady()) return;
     await _runAndPoll(ref.read(windowsUpdateServiceProvider).downloadUpdate());
   }
 
@@ -151,6 +156,12 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   bool get _torEnabled => rust_network_privacy.isTorEnabled();
+
+  Future<bool> _updateNetworkReady() async {
+    if (!_torEnabled) return true;
+    final snapshot = await ref.read(windowsUpdateServiceProvider).getState();
+    return snapshot.torProxyReady;
+  }
 
   Future<void> _runAndPoll(Future<WindowsUpdateSnapshot> action) async {
     _pollTimer?.cancel();

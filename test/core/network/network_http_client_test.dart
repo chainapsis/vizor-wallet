@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -208,6 +209,48 @@ void main() {
     expect(response.bodyBytes, isEmpty);
     expect(await destination.readAsBytes(), [0, 1, 2, 3]);
   });
+
+  test(
+    'Tor activation drains in-flight direct requests after client disposal',
+    () async {
+      final requestReceived = Completer<void>();
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) {
+        if (!requestReceived.isCompleted) requestReceived.complete();
+      });
+      final client = NetworkHttpClient(torDesired: () => false);
+      final blockedClient = NetworkHttpClient(torDesired: () => false);
+      addTearDown(() async {
+        NetworkHttpClient.allowDirectRequests();
+        client.close(force: true);
+        blockedClient.close(force: true);
+        await server.close(force: true);
+      });
+
+      final pendingRequest = client.request(
+        'GET',
+        Uri(
+          scheme: 'http',
+          host: InternetAddress.loopbackIPv4.address,
+          port: server.port,
+          path: '/stalled',
+        ),
+      );
+      final pendingExpectation = expectLater(pendingRequest, throwsA(anything));
+      await requestReceived.future;
+      client.close();
+
+      await NetworkHttpClient.quiesceDirectRequests().timeout(
+        const Duration(seconds: 2),
+      );
+
+      await pendingExpectation;
+      await expectLater(
+        blockedClient.request('GET', Uri.parse('https://example.com/new')),
+        throwsA(isA<DirectNetworkRequestsBlockedException>()),
+      );
+    },
+  );
 }
 
 class _RecordingTorBridge implements TorHttpBridge {

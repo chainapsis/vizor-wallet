@@ -5,11 +5,15 @@
 //! after bootstrap failure instead of silently using a direct connection.
 
 use std::{
+    collections::HashMap,
+    io,
     path::Path,
+    pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
-        OnceLock, RwLock,
+        atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering},
+        Mutex, OnceLock, RwLock,
     },
+    task::{Context, Poll, Waker},
     time::Duration,
 };
 
@@ -24,6 +28,11 @@ static TOR_DESIRED: AtomicBool = AtomicBool::new(false);
 static TOR_STATUS: AtomicU8 = AtomicU8::new(STATUS_DIRECT);
 static TOR_CLIENT: OnceLock<RwLock<Option<TorClient>>> = OnceLock::new();
 static TOR_INIT_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+static DIRECT_ROUTE_EPOCH: AtomicU64 = AtomicU64::new(0);
+static NEXT_DIRECT_IO_ID: AtomicU64 = AtomicU64::new(1);
+static ACTIVE_DIRECT_IO: AtomicUsize = AtomicUsize::new(0);
+static DIRECT_IO_WAKERS: OnceLock<Mutex<HashMap<u64, Waker>>> = OnceLock::new();
+static DIRECT_IO_DRAINED: OnceLock<tokio::sync::Notify> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NetworkPrivacyStatus {
@@ -66,12 +75,179 @@ pub fn status() -> NetworkPrivacyStatus {
 /// Runtime toggles call this synchronously before their first `await`, so no
 /// new policy-aware request can race onto clearnet during teardown.
 pub fn begin_tor_enable() {
-    TOR_DESIRED.store(true, Ordering::Release);
-    TOR_STATUS.store(STATUS_BOOTSTRAPPING, Ordering::Release);
+    let wakers = {
+        let mut wakers = direct_io_wakers()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        TOR_DESIRED.store(true, Ordering::Release);
+        TOR_STATUS.store(STATUS_BOOTSTRAPPING, Ordering::Release);
+        DIRECT_ROUTE_EPOCH.fetch_add(1, Ordering::AcqRel);
+        wakers.drain().map(|(_, waker)| waker).collect::<Vec<_>>()
+    };
+    for waker in wakers {
+        waker.wake();
+    }
     *client_slot()
         .write()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     log::info!("network privacy: Tor requested; direct requests blocked");
+}
+
+#[cfg(test)]
+fn cancel_direct_connections() {
+    let wakers = {
+        let mut wakers = direct_io_wakers()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        DIRECT_ROUTE_EPOCH.fetch_add(1, Ordering::AcqRel);
+        wakers.drain().map(|(_, waker)| waker).collect::<Vec<_>>()
+    };
+    for waker in wakers {
+        waker.wake();
+    }
+}
+
+fn direct_io_wakers() -> &'static Mutex<HashMap<u64, Waker>> {
+    DIRECT_IO_WAKERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn direct_io_drained() -> &'static tokio::sync::Notify {
+    DIRECT_IO_DRAINED.get_or_init(tokio::sync::Notify::new)
+}
+
+pub(crate) async fn wait_for_direct_connections_to_close(timeout: Duration) -> Result<(), String> {
+    tokio::time::timeout(timeout, async {
+        loop {
+            let notified = direct_io_drained().notified();
+            if ACTIVE_DIRECT_IO.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            notified.await;
+        }
+    })
+    .await
+    .map_err(|_| "Timed out waiting for direct network connections to stop".to_string())
+}
+
+pub(crate) struct DirectRouteLease {
+    id: u64,
+    epoch: u64,
+}
+
+impl DirectRouteLease {
+    pub(crate) fn new() -> Self {
+        ACTIVE_DIRECT_IO.fetch_add(1, Ordering::AcqRel);
+        Self {
+            id: NEXT_DIRECT_IO_ID.fetch_add(1, Ordering::Relaxed),
+            epoch: DIRECT_ROUTE_EPOCH.load(Ordering::Acquire),
+        }
+    }
+
+    pub(crate) fn poll<R, E>(
+        &self,
+        cx: &mut Context<'_>,
+        poll_inner: impl FnOnce(&mut Context<'_>) -> Poll<Result<R, E>>,
+    ) -> Poll<Result<R, E>>
+    where
+        E: From<io::Error>,
+    {
+        let mut wakers = direct_io_wakers()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if is_tor_desired() || self.epoch != DIRECT_ROUTE_EPOCH.load(Ordering::Acquire) {
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "direct connection cancelled by Tor activation",
+            )
+            .into()));
+        }
+        wakers.insert(self.id, cx.waker().clone());
+        let result = poll_inner(cx);
+        drop(wakers);
+        result
+    }
+
+    pub(crate) fn into_io<T>(self, inner: T) -> DirectRouteIo<T> {
+        DirectRouteIo { inner, route: self }
+    }
+}
+
+impl Drop for DirectRouteLease {
+    fn drop(&mut self) {
+        direct_io_wakers()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&self.id);
+        if ACTIVE_DIRECT_IO.fetch_sub(1, Ordering::AcqRel) == 1 {
+            direct_io_drained().notify_waiters();
+        }
+    }
+}
+
+pub(crate) struct DirectRouteIo<T> {
+    inner: T,
+    route: DirectRouteLease,
+}
+
+impl<T> DirectRouteIo<T> {
+    #[cfg(test)]
+    fn new(inner: T) -> Self {
+        DirectRouteLease::new().into_io(inner)
+    }
+}
+
+impl<T: hyper::rt::Read + Unpin> hyper::rt::Read for DirectRouteIo<T> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> Poll<Result<(), io::Error>> {
+        let this = self.as_mut().get_mut();
+        this.route
+            .poll(cx, |cx| Pin::new(&mut this.inner).poll_read(cx, buf))
+    }
+}
+
+impl<T: hyper::rt::Write + Unpin> hyper::rt::Write for DirectRouteIo<T> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, io::Error>> {
+        let this = self.as_mut().get_mut();
+        this.route
+            .poll(cx, |cx| Pin::new(&mut this.inner).poll_write(cx, buf))
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        let this = self.as_mut().get_mut();
+        this.route
+            .poll(cx, |cx| Pin::new(&mut this.inner).poll_flush(cx))
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), io::Error>> {
+        let this = self.as_mut().get_mut();
+        this.route
+            .poll(cx, |cx| Pin::new(&mut this.inner).poll_shutdown(cx))
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<Result<usize, io::Error>> {
+        let this = self.as_mut().get_mut();
+        this.route.poll(cx, |cx| {
+            Pin::new(&mut this.inner).poll_write_vectored(cx, bufs)
+        })
+    }
 }
 
 pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, String> {
@@ -177,7 +353,12 @@ pub(crate) fn tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, 
 
 #[cfg(test)]
 mod tests {
-    use super::{route_decision, NetworkPrivacyStatus, RouteDecision};
+    use std::task::{Context, Poll, Waker};
+
+    use super::{
+        cancel_direct_connections, route_decision, DirectRouteIo, NetworkPrivacyStatus,
+        RouteDecision,
+    };
 
     #[test]
     fn direct_route_does_not_require_a_tor_client() {
@@ -217,5 +398,27 @@ mod tests {
             route_decision(true, NetworkPrivacyStatus::Ready, false, false),
             Err("Tor is enabled but unavailable")
         );
+    }
+
+    #[test]
+    fn direct_route_io_is_cancelled_when_tor_activation_advances_the_epoch() {
+        let io = DirectRouteIo::new(());
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+        assert!(io
+            .route
+            .poll(&mut context, |_| {
+                Poll::<Result<(), std::io::Error>>::Pending
+            })
+            .is_pending());
+
+        cancel_direct_connections();
+
+        let Poll::Ready(Err(error)) = io.route.poll(&mut context, |_| {
+            Poll::<Result<(), std::io::Error>>::Pending
+        }) else {
+            panic!("cancelled direct route remained pending");
+        };
+        assert_eq!(error.kind(), std::io::ErrorKind::ConnectionAborted);
     }
 }

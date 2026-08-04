@@ -10,9 +10,16 @@ void main() {
         store: _ThrowingReadStore(events),
         runtime: _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
         nativeUpdates: _FakeNativeUpdateCoordinator(events),
+        directRequests: _FakeDirectRequestGate(events),
       );
 
-      expect(events, ['store:read', 'begin-enable', 'native:true']);
+      expect(events, [
+        'store:read',
+        'begin-enable',
+        'runtime-quiesce',
+        'direct-quiesce',
+        'native:true',
+      ]);
       final container = ProviderContainer();
       addTearDown(container.dispose);
       expect(
@@ -26,6 +33,7 @@ void main() {
         store: _FakeStore(<String>[]),
         runtime: _FakeRuntime(<String>[], NetworkPrivacyConnectionStatus.off),
         nativeUpdates: _FakeNativeUpdateCoordinator(<String>[]),
+        directRequests: _FakeDirectRequestGate(<String>[]),
       );
     }
   });
@@ -43,6 +51,9 @@ void main() {
         networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
           _FakeNativeUpdateCoordinator(events),
         ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
         networkPrivacyTransportRestartProvider.overrideWithValue((
           update,
         ) async {
@@ -58,9 +69,12 @@ void main() {
     expect(events, [
       'native:true',
       'begin-enable',
+      'runtime-quiesce',
+      'direct-quiesce',
       'restart',
       'store:true',
       'configure:true',
+      'native-resume',
     ]);
     expect(
       container.read(networkPrivacyProvider).status,
@@ -82,6 +96,9 @@ void main() {
         networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
           _FakeNativeUpdateCoordinator(events),
         ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
         networkPrivacyTransportRestartProvider.overrideWithValue((
           update,
         ) async {
@@ -98,6 +115,8 @@ void main() {
     expect(events, [
       'native:true',
       'begin-enable',
+      'runtime-quiesce',
+      'direct-quiesce',
       'restart',
       'store:true',
       'configure:true',
@@ -120,6 +139,9 @@ void main() {
         networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
           _FakeNativeUpdateCoordinator(events),
         ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
         networkPrivacyTransportRestartProvider.overrideWithValue((
           update,
         ) async {
@@ -136,6 +158,7 @@ void main() {
       'restart',
       'store:false',
       'configure:false',
+      'direct-allow',
       'native:false',
     ]);
     expect(
@@ -165,6 +188,9 @@ void main() {
           networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
             _FakeNativeUpdateCoordinator(events),
           ),
+          networkPrivacyDirectRequestGateProvider.overrideWithValue(
+            _FakeDirectRequestGate(events),
+          ),
           networkPrivacyTransportRestartProvider.overrideWithValue((_) async {
             events.add('restart');
             throw StateError('network tasks did not stop');
@@ -175,7 +201,13 @@ void main() {
 
       await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
-      expect(events, ['native:true', 'begin-enable', 'restart']);
+      expect(events, [
+        'native:true',
+        'begin-enable',
+        'runtime-quiesce',
+        'direct-quiesce',
+        'restart',
+      ]);
       expect(
         container.read(networkPrivacyProvider),
         isA<NetworkPrivacyState>()
@@ -201,6 +233,9 @@ void main() {
         ),
         networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
           _RejectingNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
         ),
         networkPrivacyTransportRestartProvider.overrideWithValue((_) async {
           events.add('restart');
@@ -228,6 +263,177 @@ void main() {
           ),
     );
   });
+
+  test('failed Tor disable preserves the effective Tor route', () async {
+    final events = <String>[];
+    final runtime = _FakeRuntime(
+      events,
+      NetworkPrivacyConnectionStatus.connected,
+      throwOnDisable: true,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _FakeStore(events),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+    events.clear();
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+
+    expect(events, ['restart', 'store:false', 'configure:false']);
+    expect(
+      container.read(networkPrivacyProvider),
+      isA<NetworkPrivacyState>()
+          .having((state) => state.torEnabled, 'torEnabled', isTrue)
+          .having(
+            (state) => state.targetTorEnabled,
+            'targetTorEnabled',
+            isFalse,
+          )
+          .having(
+            (state) => state.status,
+            'status',
+            NetworkPrivacyConnectionStatus.failed,
+          ),
+    );
+
+    events.clear();
+    await container.read(networkPrivacyProvider.notifier).retry();
+    expect(events, ['restart', 'store:false', 'configure:false']);
+  });
+
+  test(
+    'native updater recovery failure keeps the direct route truthful',
+    () async {
+      final events = <String>[];
+      final container = ProviderContainer(
+        overrides: [
+          networkPrivacyPreferenceStoreProvider.overrideWithValue(
+            _FakeStore(events),
+          ),
+          networkPrivacyRuntimeProvider.overrideWithValue(
+            _FakeRuntime(events, NetworkPrivacyConnectionStatus.off),
+          ),
+          networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+            _DisableFailingNativeUpdateCoordinator(events),
+          ),
+          networkPrivacyDirectRequestGateProvider.overrideWithValue(
+            _FakeDirectRequestGate(events),
+          ),
+          networkPrivacyTransportRestartProvider.overrideWithValue((
+            update,
+          ) async {
+            events.add('restart');
+            await update();
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container
+          .read(networkPrivacyProvider.notifier)
+          .setTorEnabled(false);
+
+      expect(
+        container.read(networkPrivacyProvider),
+        isA<NetworkPrivacyState>()
+            .having((state) => state.torEnabled, 'torEnabled', isFalse)
+            .having(
+              (state) => state.status,
+              'status',
+              NetworkPrivacyConnectionStatus.off,
+            )
+            .having(
+              (state) => state.softwareUpdatesAvailable,
+              'softwareUpdatesAvailable',
+              isFalse,
+            )
+            .having(
+              (state) => state.startupNotice,
+              'startupNotice',
+              kSoftwareUpdateUnavailableNotice,
+            ),
+      );
+    },
+  );
+
+  test(
+    'updater resume failure keeps Tor connected and shows a notice',
+    () async {
+      final events = <String>[];
+      final container = ProviderContainer(
+        overrides: [
+          networkPrivacyPreferenceStoreProvider.overrideWithValue(
+            _FakeStore(events),
+          ),
+          networkPrivacyRuntimeProvider.overrideWithValue(
+            _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+          ),
+          networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+            _ResumeFailingNativeUpdateCoordinator(events),
+          ),
+          networkPrivacyDirectRequestGateProvider.overrideWithValue(
+            _FakeDirectRequestGate(events),
+          ),
+          networkPrivacyTransportRestartProvider.overrideWithValue((
+            update,
+          ) async {
+            events.add('restart');
+            await update();
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+
+      expect(
+        container.read(networkPrivacyProvider),
+        isA<NetworkPrivacyState>()
+            .having((state) => state.torEnabled, 'torEnabled', isTrue)
+            .having(
+              (state) => state.status,
+              'status',
+              NetworkPrivacyConnectionStatus.connected,
+            )
+            .having(
+              (state) => state.startupNotice,
+              'startupNotice',
+              kTorUpdateUnavailableNotice,
+            )
+            .having(
+              (state) => state.softwareUpdatesAvailable,
+              'softwareUpdatesAvailable',
+              isFalse,
+            ),
+      );
+
+      await container
+          .read(networkPrivacyProvider.notifier)
+          .retrySoftwareUpdates();
+      expect(
+        container.read(networkPrivacyProvider).softwareUpdatesAvailable,
+        isTrue,
+      );
+    },
+  );
 }
 
 class _FakeStore implements NetworkPrivacyPreferenceStore {
@@ -262,14 +468,25 @@ class _ThrowingReadStore implements NetworkPrivacyPreferenceStore {
 }
 
 class _FakeRuntime implements NetworkPrivacyRuntime {
-  _FakeRuntime(this.events, this.result);
+  _FakeRuntime(this.events, this.result, {this.throwOnDisable = false});
 
   final List<String> events;
   final NetworkPrivacyConnectionStatus result;
+  final bool throwOnDisable;
+  var _torEnabled = false;
 
   @override
   void beginEnable() {
+    _torEnabled = true;
     events.add('begin-enable');
+  }
+
+  @override
+  bool isTorEnabled() => _torEnabled;
+
+  @override
+  Future<void> quiesceDirectRequests() async {
+    events.add('runtime-quiesce');
   }
 
   @override
@@ -277,6 +494,10 @@ class _FakeRuntime implements NetworkPrivacyRuntime {
     required bool enabled,
   }) async {
     events.add('configure:$enabled');
+    if (!enabled && throwOnDisable) {
+      throw StateError('direct switch failed');
+    }
+    _torEnabled = enabled;
     return result;
   }
 }
@@ -289,6 +510,14 @@ class _ThrowingRuntime implements NetworkPrivacyRuntime {
   @override
   void beginEnable() {
     events.add('begin-enable');
+  }
+
+  @override
+  bool isTorEnabled() => true;
+
+  @override
+  Future<void> quiesceDirectRequests() async {
+    events.add('runtime-quiesce');
   }
 
   @override
@@ -310,6 +539,11 @@ class _FakeNativeUpdateCoordinator
   Future<void> setTorEnabled(bool enabled) async {
     events.add('native:$enabled');
   }
+
+  @override
+  Future<void> resumeTorUpdates() async {
+    events.add('native-resume');
+  }
 }
 
 class _RejectingNativeUpdateCoordinator
@@ -322,5 +556,51 @@ class _RejectingNativeUpdateCoordinator
   Future<void> setTorEnabled(bool enabled) async {
     events.add('native:$enabled');
     throw StateError('update in progress');
+  }
+
+  @override
+  Future<void> resumeTorUpdates() async {
+    throw UnimplementedError();
+  }
+}
+
+class _ResumeFailingNativeUpdateCoordinator
+    extends _FakeNativeUpdateCoordinator {
+  _ResumeFailingNativeUpdateCoordinator(super.events);
+
+  var attempts = 0;
+
+  @override
+  Future<void> resumeTorUpdates() async {
+    events.add('native-resume');
+    attempts++;
+    if (attempts == 1) throw StateError('updater proxy failed');
+  }
+}
+
+class _DisableFailingNativeUpdateCoordinator
+    extends _FakeNativeUpdateCoordinator {
+  _DisableFailingNativeUpdateCoordinator(super.events);
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    events.add('native:$enabled');
+    if (!enabled) throw StateError('native updater route failed');
+  }
+}
+
+class _FakeDirectRequestGate implements NetworkPrivacyDirectRequestGate {
+  _FakeDirectRequestGate(this.events);
+
+  final List<String> events;
+
+  @override
+  void allow() {
+    events.add('direct-allow');
+  }
+
+  @override
+  Future<void> quiesce() async {
+    events.add('direct-quiesce');
   }
 }

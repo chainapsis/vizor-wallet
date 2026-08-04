@@ -25,6 +25,12 @@ pub fn begin_network_privacy_enable() {
     crate::network_privacy::begin_tor_enable();
 }
 
+/// Waits until direct tonic connections cancelled by
+/// [begin_network_privacy_enable] have released their sockets.
+pub async fn quiesce_network_privacy_direct_requests() -> Result<(), String> {
+    crate::network_privacy::wait_for_direct_connections_to_close(Duration::from_secs(5)).await
+}
+
 /// Configures the process-wide network route used by wallet gRPC and HTTP
 /// clients. Enabling is fail-closed: the desired route changes before Tor
 /// bootstrapping starts, so a bootstrap failure cannot fall back to clearnet.

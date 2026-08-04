@@ -578,6 +578,26 @@ Widget buildSettingsTorConnectedUseCase(BuildContext context) {
   );
 }
 
+Widget buildSettingsTorSwitchingToDirectUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connecting,
+      targetTorEnabled: false,
+    ),
+  );
+}
+
+Widget buildSettingsTorUpdatesUnavailableUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connected,
+      softwareUpdatesAvailable: false,
+    ),
+  );
+}
+
 Widget buildSettingsTorFailedUseCase(BuildContext context) {
   return _buildSettingsMainUseCase(
     const NetworkPrivacyState(

@@ -32,6 +32,14 @@ class TorUnsupportedHttpMethodException implements Exception {
       'does not support this method.';
 }
 
+class DirectNetworkRequestsBlockedException implements Exception {
+  const DirectNetworkRequestsBlockedException();
+
+  @override
+  String toString() =>
+      'Direct network requests are blocked while the app switches to Tor.';
+}
+
 abstract interface class TorHttpBridge {
   Future<NetworkHttpResponse> get(
     Uri uri, {
@@ -136,11 +144,39 @@ class NetworkHttpClient {
     TorHttpBridge? torBridge,
   }) : _directClient = directClient ?? HttpClient(),
        _torDesired = torDesired ?? rust_network_privacy.isTorEnabled,
-       _torBridge = torBridge ?? const RustTorHttpBridge();
+       _torBridge = torBridge ?? const RustTorHttpBridge() {
+    _instances.add(this);
+  }
 
-  final HttpClient _directClient;
+  static final Set<NetworkHttpClient> _instances = {};
+  static bool _directRequestsBlocked = false;
+
+  HttpClient _directClient;
   final bool Function() _torDesired;
   final TorHttpBridge _torBridge;
+  var _activeDirectRequests = 0;
+  var _directClientNeedsReset = false;
+  var _closed = false;
+  Completer<void>? _directRequestsDrained;
+
+  /// Prevents new direct HTTP work, force-closes every app-owned direct
+  /// client, and waits until the interrupted operations have unwound.
+  static Future<void> quiesceDirectRequests() async {
+    _directRequestsBlocked = true;
+    await Future.wait([
+      for (final client in List<NetworkHttpClient>.of(_instances))
+        client._quiesceDirectRequests(),
+    ]);
+  }
+
+  /// Reopens direct HTTP routing only after Rust has confirmed the route
+  /// switch away from Tor.
+  static void allowDirectRequests() {
+    for (final client in List<NetworkHttpClient>.of(_instances)) {
+      client._resetDirectClientAfterQuiesce();
+    }
+    _directRequestsBlocked = false;
+  }
 
   Future<NetworkHttpResponse> request(
     String method,
@@ -156,11 +192,13 @@ class NetworkHttpClient {
             headers: headers,
             bodyBytes: bodyBytes,
           )
-        : _requestDirect(
-            method.toUpperCase(),
-            uri,
-            headers: headers,
-            bodyBytes: bodyBytes,
+        : _runDirectRequest(
+            () => _requestDirect(
+              method.toUpperCase(),
+              uri,
+              headers: headers,
+              bodyBytes: bodyBytes,
+            ),
           );
     return timeout == null ? future : future.timeout(timeout);
   }
@@ -182,11 +220,48 @@ class NetworkHttpClient {
             bodyBytes: const [],
             destinationPath: destination.path,
           )
-        : _downloadDirect(uri, destination, headers: headers);
+        : _runDirectRequest(
+            () => _downloadDirect(uri, destination, headers: headers),
+          );
     return timeout == null ? future : future.timeout(timeout);
   }
 
-  void close({bool force = false}) => _directClient.close(force: force);
+  void close({bool force = false}) {
+    if (_closed) return;
+    _closed = true;
+    _directClient.close(force: force);
+    if (_activeDirectRequests == 0) _instances.remove(this);
+  }
+
+  Future<T> _runDirectRequest<T>(Future<T> Function() request) async {
+    if (_directRequestsBlocked || _closed) {
+      throw const DirectNetworkRequestsBlockedException();
+    }
+    _activeDirectRequests++;
+    try {
+      return await request();
+    } finally {
+      _activeDirectRequests--;
+      if (_activeDirectRequests == 0) {
+        _directRequestsDrained?.complete();
+        _directRequestsDrained = null;
+        if (_closed) _instances.remove(this);
+      }
+    }
+  }
+
+  Future<void> _quiesceDirectRequests() {
+    _directClient.close(force: true);
+    if (!_closed) _directClientNeedsReset = true;
+    if (_activeDirectRequests == 0) return Future.value();
+    return (_directRequestsDrained ??= Completer<void>()).future;
+  }
+
+  void _resetDirectClientAfterQuiesce() {
+    if (_closed || !_directClientNeedsReset) return;
+    _directClient = HttpClient();
+    _directClientNeedsReset = false;
+  }
 
   Future<NetworkHttpResponse> _requestViaTorWithRedirects(
     String method,

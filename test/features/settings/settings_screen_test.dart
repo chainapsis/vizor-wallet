@@ -129,6 +129,70 @@ void main() {
     expect(calls, isEmpty);
   });
 
+  testWidgets('connected Tor state includes software updates', (tester) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connected,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Connected'), findsOneWidget);
+    expect(
+      find.text(
+        'Requests to the Zcash network, in-app services, and software updates '
+        'use Tor. Some services may be unavailable over Tor.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Tor stays effective while switching to direct', (tester) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connecting,
+          targetTorEnabled: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Switching to direct…'), findsOneWidget);
+    expect(
+      find.text('Vizor is switching future requests to a direct connection.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Tor update-route failure remains visible after the toast', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _settingsHarness(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connected,
+          softwareUpdatesAvailable: false,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.text(
+        'Zcash network and in-app service requests use Tor. Software updates '
+        'are unavailable.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Retry updates'), findsOneWidget);
+  });
+
   testWidgets('failed Tor state offers retry and direct connection', (
     tester,
   ) async {

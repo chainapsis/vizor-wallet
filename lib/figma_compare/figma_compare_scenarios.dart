@@ -130,6 +130,16 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildSettingsTorConnectedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'settings-tor-switching-direct',
+    description: 'Desktop settings while switching from Tor to direct',
+    builder: buildSettingsTorSwitchingToDirectUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-updates-unavailable',
+    description: 'Desktop settings when Tor updates are unavailable',
+    builder: buildSettingsTorUpdatesUnavailableUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'settings-tor-failed',
     description: 'Desktop settings after Tor connection failure',
     builder: buildSettingsTorFailedUseCase,

@@ -2,6 +2,30 @@ import Cocoa
 import FlutterMacOS
 #if SPARKLE_ENABLED
 import Sparkle
+
+private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
+  var feedURL: String?
+  var resourceProxyURL: URL?
+
+  func feedURLString(for updater: SPUUpdater) -> String? {
+    return feedURL
+  }
+
+  func updater(_ updater: SPUUpdater, shouldDownloadReleaseNotesForUpdate updateItem: SUAppcastItem) -> Bool {
+    return resourceProxyURL == nil
+  }
+
+  func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
+    guard let resourceProxyURL else { return }
+    guard let upstreamURL = request.url,
+          var components = URLComponents(url: resourceProxyURL, resolvingAgainstBaseURL: false) else {
+      request.url = URL(string: "http://127.0.0.1:1/blocked")
+      return
+    }
+    components.queryItems = [URLQueryItem(name: "url", value: upstreamURL.absoluteString)]
+    request.url = components.url ?? URL(string: "http://127.0.0.1:1/blocked")
+  }
+}
 #endif
 
 @main
@@ -10,6 +34,7 @@ class AppDelegate: FlutterAppDelegate {
 
 #if SPARKLE_ENABLED
   private var updaterController: SPUStandardUpdaterController?
+  private let updateFeedDelegate = TorUpdateFeedDelegate()
 #endif
 
   override init() {
@@ -23,7 +48,7 @@ class AppDelegate: FlutterAppDelegate {
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
 #if SPARKLE_ENABLED
-    configureUpdateMenu(torEnabled: Self.persistedTorEnabled())
+    configureUpdateMenu(enabled: !Self.persistedTorEnabled())
 #else
     checkForUpdatesMenuItem.isHidden = true
     checkForUpdatesMenuItem.isEnabled = false
@@ -45,12 +70,25 @@ class AppDelegate: FlutterAppDelegate {
     }
     if enabled {
       updaterController?.updater.automaticallyChecksForUpdates = false
+      updateFeedDelegate.feedURL = nil
+      updateFeedDelegate.resourceProxyURL = nil
+      configureUpdateMenu(enabled: false)
     } else {
+      updateFeedDelegate.feedURL = nil
+      updateFeedDelegate.resourceProxyURL = nil
       startUpdaterIfAvailable()
       updaterController?.updater.automaticallyChecksForUpdates = true
+      configureUpdateMenu(enabled: true)
     }
-    configureUpdateMenu(torEnabled: enabled)
     return true
+  }
+
+  func resumeUpdatesThroughTor(feedURL: String, resourceURL: URL) {
+    updateFeedDelegate.feedURL = feedURL
+    updateFeedDelegate.resourceProxyURL = resourceURL
+    startUpdaterIfAvailable()
+    updaterController?.updater.automaticallyChecksForUpdates = true
+    configureUpdateMenu(enabled: true)
   }
 
   private func startUpdaterIfAvailable() {
@@ -59,13 +97,13 @@ class AppDelegate: FlutterAppDelegate {
     }
     updaterController = SPUStandardUpdaterController(
       startingUpdater: true,
-      updaterDelegate: nil,
+      updaterDelegate: updateFeedDelegate,
       userDriverDelegate: nil
     )
   }
 
-  private func configureUpdateMenu(torEnabled: Bool) {
-    guard !torEnabled, let updaterController else {
+  private func configureUpdateMenu(enabled: Bool) {
+    guard enabled, let updaterController else {
       checkForUpdatesMenuItem.target = nil
       checkForUpdatesMenuItem.action = nil
       checkForUpdatesMenuItem.isEnabled = false
@@ -88,6 +126,11 @@ class AppDelegate: FlutterAppDelegate {
     return !(feedURL?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
       !(publicKey?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
   }
+
+  static func configuredUpdateFeedURL() -> String? {
+    guard sparkleConfigurationIsValid() else { return nil }
+    return Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+  }
 #endif
 }
 
@@ -101,21 +144,56 @@ final class NativeUpdatePrivacyChannel {
     )
     channel = methodChannel
     methodChannel.setMethodCallHandler { call, result in
-      guard call.method == "setTorEnabled", let enabled = call.arguments as? Bool else {
-        result(FlutterMethodNotImplemented)
-        return
-      }
+      switch call.method {
+      case "setTorEnabled":
+        guard let enabled = call.arguments as? Bool else {
+          result(FlutterError(code: "invalid_arguments", message: "Expected a Boolean.", details: nil))
+          return
+        }
 #if SPARKLE_ENABLED
-      if (NSApp.delegate as? AppDelegate)?.setTorEnabledForUpdates(enabled) == false {
-        result(FlutterError(
-          code: "update_in_progress",
-          message: "Wait for the current software update operation to finish before enabling Tor.",
-          details: nil
-        ))
-        return
-      }
+        if (NSApp.delegate as? AppDelegate)?.setTorEnabledForUpdates(enabled) == false {
+          result(FlutterError(
+            code: "update_in_progress",
+            message: "Wait for the current software update operation to finish before enabling Tor.",
+            details: nil
+          ))
+          return
+        }
 #endif
-      result(nil)
+        result(nil)
+      case "getUpdateFeedUrl":
+#if SPARKLE_ENABLED
+        result(AppDelegate.configuredUpdateFeedURL())
+#else
+        result(nil)
+#endif
+      case "resumeUpdatesThroughTor":
+        guard let arguments = call.arguments as? [String: Any],
+              let feedURL = arguments["feedUrl"] as? String,
+              let resourceURLString = arguments["resourceUrl"] as? String,
+              let url = URL(string: feedURL),
+              url.scheme == "http",
+              url.host == "127.0.0.1",
+              let resourceURL = URL(string: resourceURLString),
+              resourceURL.scheme == "http",
+              resourceURL.host == "127.0.0.1" else {
+          result(FlutterError(
+            code: "invalid_proxy_url",
+            message: "Expected a loopback HTTP update feed URL.",
+            details: nil
+          ))
+          return
+        }
+#if SPARKLE_ENABLED
+        (NSApp.delegate as? AppDelegate)?.resumeUpdatesThroughTor(
+          feedURL: feedURL,
+          resourceURL: resourceURL
+        )
+#endif
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
     }
   }
 }
