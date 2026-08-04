@@ -4431,6 +4431,12 @@ fn finalize_presigned_migration_children(
     if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
         return Ok(0);
     }
+    // Keystone persists one bounded QR batch at a time while the run remains
+    // ready_to_migrate. Do not promote the first batch and move the run to
+    // broadcast_scheduled before every remaining batch has been signed.
+    if !super::migration::migration_part_assignment_complete(db_path, run_id)? {
+        return Ok(0);
+    }
     if !prepared_note_spend_metadata_is_available(db_path, run_id)? {
         let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
         if let Some(retry_height) = super::migration::prepared_notes_proof_ready_height(
@@ -4458,11 +4464,6 @@ fn finalize_presigned_migration_children(
         }
     }
     let current_scanned_height = current_migration_scanned_height(db_path, network)?;
-    let _ = super::migration::rebase_initial_signed_schedule_for_anchor_readiness(
-        db_path,
-        run_id,
-        current_scanned_height,
-    )?;
 
     let signed_children = super::migration::signed_child_pczts_for_run(
         db_path,
@@ -4600,6 +4601,7 @@ fn finalize_presigned_migration_children(
             db_path,
             run_id,
             vec![pending_insert],
+            current_scanned_height,
             remaining_child_retry_height,
             pending_password,
             pending_salt_base64,

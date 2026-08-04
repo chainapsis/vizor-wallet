@@ -1905,7 +1905,8 @@ pub(crate) fn insert_pending_txs(
 pub(crate) fn promote_signed_child_pczts_to_pending_txs(
     db_path: &str,
     run_id: &str,
-    pending_txs: Vec<PendingMigrationTxInsert>,
+    mut pending_txs: Vec<PendingMigrationTxInsert>,
+    current_scanned_height: u32,
     remaining_child_retry_height: u32,
     password: &[u8],
     salt_base64: &str,
@@ -1922,6 +1923,33 @@ pub(crate) fn promote_signed_child_pczts_to_pending_txs(
             let tx = conn
                 .unchecked_transaction()
                 .map_err(|e| format!("Begin signed migration PCZT promotion: {e}"))?;
+            if !migration_part_assignment_complete_with_conn(&tx, run_id)? {
+                return Err(
+                    "Migration signing batches are incomplete before proof promotion".to_string(),
+                );
+            }
+            let rebased = rebase_initial_signed_schedule_for_anchor_readiness_with_tx(
+                &tx,
+                run_id,
+                current_scanned_height,
+            )?;
+            if rebased {
+                for pending in &mut pending_txs {
+                    pending.scheduled_height = tx
+                        .query_row(
+                            &format!(
+                                "SELECT scheduled_height
+                                 FROM {SIGNED_CHILD_PCZTS_TABLE}
+                                 WHERE run_id = ?1 AND child_index = ?2"
+                            ),
+                            params![run_id, pending.part_index],
+                            |row| row.get(0),
+                        )
+                        .map_err(|e| {
+                            format!("Read rebased signed migration child schedule: {e}")
+                        })?;
+                }
+            }
             insert_pending_txs_with_tx(&tx, run_id, pending_txs, password, salt_base64)?;
             tx.execute(
                 &format!(
@@ -2667,6 +2695,28 @@ pub(crate) fn signed_child_pczt_count(db_path: &str, run_id: &str) -> Result<u32
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     unpromoted_signed_child_pczt_count_with_conn(&conn, run_id)
+}
+
+pub(crate) fn migration_part_assignment_complete(
+    db_path: &str,
+    run_id: &str,
+) -> Result<bool, String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    migration_part_assignment_complete_with_conn(&conn, run_id)
+}
+
+fn migration_part_assignment_complete_with_conn(
+    conn: &rusqlite::Connection,
+    run_id: &str,
+) -> Result<bool, String> {
+    let planned_count = planned_part_count_with_conn(conn, run_id)?;
+    let pending_count = count_for_run(conn, PENDING_TXS_TABLE, run_id)?;
+    let signed_count = unpromoted_signed_child_pczt_count_with_conn(conn, run_id)?;
+    let assigned_count = pending_count
+        .checked_add(signed_count)
+        .ok_or("Migration assigned part count overflow")?;
+    Ok(planned_count > 0 && assigned_count == planned_count)
 }
 
 fn unpromoted_signed_child_pczt_count_with_conn(
@@ -3715,6 +3765,7 @@ pub(crate) fn set_proof_retry_height(
 ///
 /// Returns `true` only when child heights were rewritten. Idempotent once the
 /// durable `initial_schedule_rebased_origin_height` marker is set.
+#[cfg(test)]
 pub(crate) fn rebase_initial_signed_schedule_for_anchor_readiness(
     db_path: &str,
     run_id: &str,
@@ -3828,12 +3879,10 @@ fn rebase_initial_signed_schedule_for_anchor_readiness_with_tx(
     if children.is_empty() {
         return Ok(false);
     }
-    // A resumable Keystone request can retain unsigned children while older
-    // or partially committed siblings are already present. Rebasing that
-    // subset would make the outstanding request's original schedule origin
-    // impossible to insert. Wait until every planned initial part is durable;
-    // current requests commit all remaining parts atomically, so this only
-    // delays legacy/incremental recovery states.
+    // Keystone signs at most one message-count-limited batch per QR request.
+    // Finalization waits until every batch is durable, so reject any partial
+    // legacy/request state here: its missing siblings could otherwise arrive
+    // later with the old origin.
     let planned_part_count = u32::try_from(target_values.len())
         .map_err(|_| "Migration target count exceeds u32 during initial rebase")?;
     let committed_part_indices = children
