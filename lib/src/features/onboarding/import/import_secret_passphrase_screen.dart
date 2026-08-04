@@ -78,7 +78,9 @@ class _ImportSecretPassphraseScreenState
 
   late final List<TextEditingController> _controllers;
   late final List<FocusNode> _focusNodes;
+  late final List<String?> _pendingAutoAdvanceWords;
   late final List<String> _mnemonicWordList;
+  late final Set<String> _autoAdvanceMnemonicWords;
   late final TextEditingController _bip39PassphraseController;
   late SensitivePrivacyOverlayController _privacyOverlayController;
   late bool _ownsPrivacyOverlayController;
@@ -100,8 +102,17 @@ class _ImportSecretPassphraseScreenState
     super.initState();
     _mnemonicWordList =
         widget.wordListOverride ?? rust_wallet.mnemonicWordList();
+    _autoAdvanceMnemonicWords = _buildAutoAdvanceMnemonicWords(
+      _mnemonicWordList,
+    );
     _controllers = List.generate(_wordCount, (_) => TextEditingController());
     _focusNodes = List.generate(_wordCount, (_) => FocusNode());
+    _pendingAutoAdvanceWords = List.filled(_wordCount, null);
+    for (var index = 0; index < _controllers.length; index++) {
+      _controllers[index].addListener(
+        () => _handleMnemonicEditingValueChanged(index),
+      );
+    }
     _bip39Passphrase = widget.args?.bip39Passphrase ?? '';
     _bip39PassphraseController = TextEditingController(text: _bip39Passphrase);
     _isBip39PassphraseModalOpen = widget.initialBip39PassphraseModalOpen;
@@ -271,6 +282,7 @@ class _ImportSecretPassphraseScreenState
   }
 
   void _setControllerText(int index, String text) {
+    _pendingAutoAdvanceWords[index] = null;
     final controller = _controllers[index];
     controller.value = TextEditingValue(
       text: text,
@@ -293,6 +305,76 @@ class _ImportSecretPassphraseScreenState
     if (index <= 0) return false;
     _focusIndex(index - 1);
     return true;
+  }
+
+  Set<String> _buildAutoAdvanceMnemonicWords(List<String> words) {
+    final sortedWords =
+        words
+            .map((word) => word.trim().toLowerCase())
+            .where((word) => word.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+
+    return {
+      for (var index = 0; index < sortedWords.length; index++)
+        if (index == sortedWords.length - 1 ||
+            !sortedWords[index + 1].startsWith(sortedWords[index]))
+          sortedWords[index],
+    };
+  }
+
+  void _scheduleAutoAdvance(int index, String expectedWord) {
+    if (index >= _wordCount - 1) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_focusNodes[index].hasFocus) return;
+
+      final value = _controllers[index].value;
+      final isComposing =
+          value.composing.isValid && !value.composing.isCollapsed;
+      final caretIsAtEnd =
+          value.selection.isCollapsed &&
+          value.selection.baseOffset == value.text.length;
+      if (isComposing ||
+          !caretIsAtEnd ||
+          value.text.trim().toLowerCase() != expectedWord) {
+        return;
+      }
+
+      _moveToNextWord(index);
+    });
+  }
+
+  void _requestAutoAdvance(int index, String expectedWord) {
+    final value = _controllers[index].value;
+    final isComposing = value.composing.isValid && !value.composing.isCollapsed;
+    if (isComposing) {
+      _pendingAutoAdvanceWords[index] = expectedWord;
+      return;
+    }
+
+    _pendingAutoAdvanceWords[index] = null;
+    _scheduleAutoAdvance(index, expectedWord);
+  }
+
+  void _handleMnemonicEditingValueChanged(int index) {
+    if (_isApplyingProgrammaticChange) return;
+
+    final expectedWord = _pendingAutoAdvanceWords[index];
+    if (expectedWord == null) return;
+
+    final value = _controllers[index].value;
+    if (value.text.trim().toLowerCase() != expectedWord) {
+      _pendingAutoAdvanceWords[index] = null;
+      return;
+    }
+
+    final isComposing = value.composing.isValid && !value.composing.isCollapsed;
+    if (isComposing) return;
+
+    _pendingAutoAdvanceWords[index] = null;
+    _scheduleAutoAdvance(index, expectedWord);
   }
 
   void _handleSuggestionSelected(int index, String word) {
@@ -349,6 +431,9 @@ class _ImportSecretPassphraseScreenState
           trimmed.isNotEmpty &&
           index < _wordCount - 1) {
         _focusIndex(index + 1);
+      } else if (rawValue == rawValue.trim() &&
+          _autoAdvanceMnemonicWords.contains(trimmed)) {
+        _requestAutoAdvance(index, trimmed);
       }
     }
 

@@ -49,6 +49,86 @@ void main() {
     expect(find.text('cactus'), findsOneWidget);
   });
 
+  testWidgets('moves to the next field for a uniquely completed BIP39 word', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    await tester.enterText(_wordField(0), 'Abandon');
+    await tester.pump();
+
+    expect(_textField(tester, 0).controller!.text, 'abandon');
+    expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('keeps focus when a valid word has longer prefix candidates', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _importPassphraseScreen(wordListOverride: const ['act', 'action']),
+    );
+
+    await tester.enterText(_wordField(0), 'act');
+    await tester.pump();
+
+    expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+    expect(find.text('action'), findsOneWidget);
+  });
+
+  testWidgets('keeps focus for an invalid mnemonic word', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    await tester.enterText(_wordField(0), 'zzz');
+    await tester.pump();
+
+    expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('keeps focus on the last uniquely completed BIP39 word', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    await tester.enterText(_wordField(23), 'abandon');
+    await tester.pump();
+
+    expect(_textField(tester, 23).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('moves next after an IME commits a uniquely completed word', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.tap(_wordField(0));
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'abandon',
+        selection: TextSelection.collapsed(offset: 7),
+        composing: TextRange(start: 0, end: 7),
+      ),
+    );
+    await tester.pump();
+
+    expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'abandon',
+        selection: TextSelection.collapsed(offset: 7),
+      ),
+    );
+    await tester.pump();
+
+    expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
+  });
+
   testWidgets(
     'shows the body scrollbar only below the reference layout height',
     (tester) async {
@@ -704,9 +784,11 @@ Future<void> _setDesktopViewport(
 Widget _importPassphraseScreen({
   FocusNode? afterNode,
   SensitivePrivacyOverlayController? privacyOverlayController,
+  List<String>? wordListOverride,
 }) {
   Widget body = ImportSecretPassphraseScreen(
     privacyOverlayController: privacyOverlayController,
+    wordListOverride: wordListOverride,
   );
   if (afterNode != null) {
     body = Column(
