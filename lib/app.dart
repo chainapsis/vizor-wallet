@@ -254,10 +254,9 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     observers: kAppFormFactor == AppFormFactor.desktop
         ? [
             SendStatusRoutePayloadObserver(
-              onLeaveStatus: () =>
-                  ref
-                      .read(sendStatusRoutePayloadProvider.notifier)
-                      .clearAfterNavigation(),
+              onLeaveStatus: () => ref
+                  .read(sendStatusRoutePayloadProvider.notifier)
+                  .clearAfterNavigation(),
             ),
           ]
         : const [],
@@ -1159,9 +1158,13 @@ class _WindowsUpdateStartupCheckState
     super.initState();
     _torSubscription = ref.listenManual(
       networkPrivacyProvider.select(
-        (state) =>
-            !state.torEnabled &&
-            state.status == NetworkPrivacyConnectionStatus.off,
+        (state) => switch (state.status) {
+          NetworkPrivacyConnectionStatus.off =>
+            !state.torEnabled && state.softwareUpdatesAvailable,
+          NetworkPrivacyConnectionStatus.connected =>
+            state.torEnabled && state.softwareUpdatesAvailable,
+          _ => false,
+        },
       ),
       (previous, next) {
         if (previous == false && next) {

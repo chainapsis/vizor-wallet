@@ -51,6 +51,8 @@ bytes = "1"
 http = "1"
 http-body-util = "0.1"
 hyper = "1"
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "tokio"] }
+tower-service = "0.3"
 time = "0.3"
 # rustls is in the graph transitively via tonic; make it a direct dep
 # so we can explicitly install the ring CryptoProvider in `init_app`.

@@ -30,7 +30,35 @@ void main() {
     expect(find.text('Download now or keep working.'), findsOneWidget);
   });
 
-  testWidgets('turning Tor off resumes a deferred startup update check', (
+  testWidgets(
+    'Tor-connected startup checks once without route-switch duplication',
+    (tester) async {
+      final checks = <String>[];
+      await tester.pumpWidget(
+        _appHarness(
+          windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+            () => _TrackingWindowsUpdateNotifier(checks),
+          ),
+          extraOverrides: [
+            networkPrivacyProvider.overrideWith(_TorOnPrivacyNotifier.new),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(checks, ['check']);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(UnlockScreen)),
+      );
+      final notifier = container.read(networkPrivacyProvider.notifier);
+      (notifier as _TorOnPrivacyNotifier).setDirect();
+      await tester.pump();
+
+      expect(checks, ['check']);
+    },
+  );
+
+  testWidgets('restored Tor updater route retries the startup check', (
     tester,
   ) async {
     final checks = <String>[];
@@ -40,7 +68,9 @@ void main() {
           () => _TrackingWindowsUpdateNotifier(checks),
         ),
         extraOverrides: [
-          networkPrivacyProvider.overrideWith(_TorOnPrivacyNotifier.new),
+          networkPrivacyProvider.overrideWith(
+            _TorUpdatesUnavailablePrivacyNotifier.new,
+          ),
         ],
       ),
     );
@@ -51,7 +81,7 @@ void main() {
       tester.element(find.byType(UnlockScreen)),
     );
     final notifier = container.read(networkPrivacyProvider.notifier);
-    (notifier as _TorOnPrivacyNotifier).setDirect();
+    (notifier as _TorUpdatesUnavailablePrivacyNotifier).restoreUpdates();
     await tester.pump();
 
     expect(checks, ['check', 'check']);
@@ -104,6 +134,7 @@ class _AvailableWindowsUpdateNotifier extends WindowsUpdateNotifier {
       availableVersion: '9.9.9',
       downloadProgress: 0,
       pendingRestart: false,
+      torProxyReady: false,
       message: '',
     );
   }
@@ -132,5 +163,21 @@ class _TorOnPrivacyNotifier extends NetworkPrivacyNotifier {
 
   void setDirect() {
     state = const NetworkPrivacyState.off();
+  }
+}
+
+class _TorUpdatesUnavailablePrivacyNotifier extends NetworkPrivacyNotifier {
+  @override
+  NetworkPrivacyState build() => const NetworkPrivacyState(
+    torEnabled: true,
+    status: NetworkPrivacyConnectionStatus.connected,
+    softwareUpdatesAvailable: false,
+  );
+
+  void restoreUpdates() {
+    state = const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connected,
+    );
   }
 }

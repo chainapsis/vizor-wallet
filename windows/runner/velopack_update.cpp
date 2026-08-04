@@ -93,6 +93,9 @@ std::string g_available_version;
 std::string g_message;
 std::mutex g_source_error_mutex;
 std::string g_source_error;
+std::mutex g_update_route_mutex;
+bool g_tor_routing_required = false;
+std::string g_tor_proxy_base_url;
 
 void SetSourceError(std::string message) {
   std::lock_guard<std::mutex> lock(g_source_error_mutex);
@@ -178,7 +181,7 @@ std::string UrlEncodePathSegment(const std::string& value) {
   return out.str();
 }
 
-std::string ReleaseBaseUrl() {
+std::string DirectReleaseBaseUrl() {
   std::string base_url = VIZOR_UPDATE_RELEASE_BASE_URL;
   if (base_url.empty()) {
     base_url = std::string(VIZOR_UPDATE_GITHUB_REPO_URL) +
@@ -188,6 +191,31 @@ std::string ReleaseBaseUrl() {
     base_url.pop_back();
   }
   return base_url;
+}
+
+std::string ReleaseBaseUrl() {
+  std::lock_guard<std::mutex> lock(g_update_route_mutex);
+  if (!g_tor_routing_required) {
+    return DirectReleaseBaseUrl();
+  }
+  if (g_tor_proxy_base_url.empty()) {
+    SetSourceError("Tor update route is not ready.");
+  }
+  return g_tor_proxy_base_url;
+}
+
+void SetTorRouting(bool enabled, std::string proxy_base_url) {
+  while (!proxy_base_url.empty() && proxy_base_url.back() == '/') {
+    proxy_base_url.pop_back();
+  }
+  std::lock_guard<std::mutex> lock(g_update_route_mutex);
+  g_tor_routing_required = enabled;
+  g_tor_proxy_base_url = enabled ? std::move(proxy_base_url) : std::string();
+}
+
+bool TorProxyReady() {
+  std::lock_guard<std::mutex> lock(g_update_route_mutex);
+  return g_tor_routing_required && !g_tor_proxy_base_url.empty();
 }
 
 std::string ReleaseAssetUrl(const std::string& file_name) {
@@ -726,6 +754,8 @@ flutter::EncodableMap BuildStateMapLocked() {
       flutter::EncodableValue(g_download_progress);
   map[flutter::EncodableValue("pendingRestart")] =
       flutter::EncodableValue(g_pending_restart);
+  map[flutter::EncodableValue("torProxyReady")] =
+      flutter::EncodableValue(TorProxyReady());
   map[flutter::EncodableValue("message")] = flutter::EncodableValue(g_message);
   return map;
 }
@@ -908,6 +938,37 @@ CreateVelopackUpdateChannel(flutter::BinaryMessenger* messenger) {
 
   channel->SetMethodCallHandler([](const auto& call, auto result) {
     const std::string& method = call.method_name();
+    if (method == "getUpdateBaseUrl") {
+      result->Success(flutter::EncodableValue(DirectReleaseBaseUrl()));
+      return;
+    }
+    if (method == "setTorRouting") {
+      const auto* arguments = call.arguments();
+      if (arguments == nullptr ||
+          !std::holds_alternative<flutter::EncodableMap>(*arguments)) {
+        result->Error("invalid_arguments", "Expected Tor routing options.");
+        return;
+      }
+      const auto& map = std::get<flutter::EncodableMap>(*arguments);
+      const auto enabled_it =
+          map.find(flutter::EncodableValue(std::string("enabled")));
+      if (enabled_it == map.end() ||
+          !std::holds_alternative<bool>(enabled_it->second)) {
+        result->Error("invalid_arguments", "Expected enabled boolean.");
+        return;
+      }
+      std::string proxy_base_url;
+      const auto proxy_it =
+          map.find(flutter::EncodableValue(std::string("proxyBaseUrl")));
+      if (proxy_it != map.end() &&
+          std::holds_alternative<std::string>(proxy_it->second)) {
+        proxy_base_url = std::get<std::string>(proxy_it->second);
+      }
+      SetTorRouting(std::get<bool>(enabled_it->second),
+                    std::move(proxy_base_url));
+      result->Success();
+      return;
+    }
     if (method == "getState") {
       result->Success(BuildStateValue());
       return;
