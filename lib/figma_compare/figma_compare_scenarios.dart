@@ -7,6 +7,7 @@ import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
+import '../widgetbook/swap_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -117,6 +118,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'settings-main',
     description: 'Desktop settings with Tor privacy control',
     builder: buildSettingsMainUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-tor-blocked',
+    description: 'Desktop swap when the provider blocks a Tor exit',
+    builder: buildSwapPageTorBlockedUseCase,
   ),
   FigmaCompareScenario(
     id: 'mobile-customise-account',

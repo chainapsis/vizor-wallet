@@ -57,6 +57,7 @@ class SwapState {
     this.indicativeExternalPerZec = const {},
     this.indicativeUsdPrices = const {},
     this.pricingLoading = false,
+    this.supportedAssetsError,
     this.reviewQuote,
     this.reviewAddressPlan,
     this.reviewAccountUuid,
@@ -95,6 +96,7 @@ class SwapState {
   /// True only while the supported-asset/indicative-price snapshot is being
   /// loaded or refreshed. Live review quote submission uses [quoteLoading].
   final bool pricingLoading;
+  final String? supportedAssetsError;
   final SwapQuote? reviewQuote;
   final SwapAddressPlan? reviewAddressPlan;
   final String? reviewAccountUuid;
@@ -208,7 +210,9 @@ class SwapState {
   }
 
   String? get externalAssetSupportError {
-    if (pricingLoading || externalAssetIsSupported) return null;
+    if (pricingLoading) return null;
+    if (supportedAssetsError != null) return supportedAssetsError;
+    if (externalAssetIsSupported) return null;
     return '${externalAsset.symbol} on ${externalAsset.chainLabel} is not currently supported.';
   }
 
@@ -218,6 +222,7 @@ class SwapState {
       draftAddressPlan != null &&
       destinationAddressFormatError == null &&
       externalAssetIsSupported &&
+      supportedAssetsError == null &&
       !quoteLoading;
 
   bool get canSubmitDepositTx =>
@@ -289,6 +294,7 @@ class SwapState {
     Map<SwapAsset, double>? indicativeExternalPerZec,
     Map<SwapAsset, double>? indicativeUsdPrices,
     bool? pricingLoading,
+    String? supportedAssetsError,
     SwapQuote? reviewQuote,
     SwapAddressPlan? reviewAddressPlan,
     String? reviewAccountUuid,
@@ -306,6 +312,7 @@ class SwapState {
     bool? payMode,
     bool clearReview = false,
     bool clearQuoteError = false,
+    bool clearSupportedAssetsError = false,
     bool clearStatusError = false,
     bool clearMaxAmountError = false,
     bool clearSelectedIntent = false,
@@ -335,6 +342,9 @@ class SwapState {
           indicativeExternalPerZec ?? this.indicativeExternalPerZec,
       indicativeUsdPrices: indicativeUsdPrices ?? this.indicativeUsdPrices,
       pricingLoading: pricingLoading ?? this.pricingLoading,
+      supportedAssetsError: clearSupportedAssetsError
+          ? null
+          : supportedAssetsError ?? this.supportedAssetsError,
       reviewQuote: clearReview ? null : reviewQuote ?? this.reviewQuote,
       reviewAddressPlan: clearReview
           ? null

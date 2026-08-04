@@ -19,6 +19,7 @@ enum SwapFailureCategory {
   amountPrecision,
   invalidRouteOrAddress,
   noQuoteOrLiquidity,
+  torBlocked,
   serviceUnavailable,
   networkTimeout,
   unverifiedResponse,
@@ -34,15 +35,21 @@ String swapFailureMessage(
   SwapFailureOperation operation,
   Object error, {
   SwapFailureSurface surface = SwapFailureSurface.swap,
+  bool torEnabled = false,
 }) {
-  final category = swapFailureCategory(operation, error);
+  final category = swapFailureCategory(
+    operation,
+    error,
+    torEnabled: torEnabled,
+  );
   return _messageFor(operation, category, surface);
 }
 
 SwapFailureCategory swapFailureCategory(
   SwapFailureOperation operation,
-  Object error,
-) {
+  Object error, {
+  bool torEnabled = false,
+}) {
   if (error is TimeoutException) {
     return SwapFailureCategory.networkTimeout;
   }
@@ -50,7 +57,7 @@ SwapFailureCategory swapFailureCategory(
     return SwapFailureCategory.unverifiedResponse;
   }
   if (error is OneClickApiException) {
-    return _oneClickCategory(operation, error);
+    return _oneClickCategory(operation, error, torEnabled: torEnabled);
   }
 
   if (operation == SwapFailureOperation.sendZecDeposit &&
@@ -68,8 +75,9 @@ SwapFailureCategory swapFailureCategory(
 
 SwapFailureCategory _oneClickCategory(
   SwapFailureOperation operation,
-  OneClickApiException error,
-) {
+  OneClickApiException error, {
+  required bool torEnabled,
+}) {
   if (_isUnsupportedAssetError(error)) {
     return SwapFailureCategory.unsupportedAsset;
   }
@@ -88,6 +96,9 @@ SwapFailureCategory _oneClickCategory(
   }
 
   final statusCode = error.statusCode;
+  if (torEnabled && _isTorExitBlockedResponse(error)) {
+    return SwapFailureCategory.torBlocked;
+  }
   if (statusCode == 401 || statusCode == 403) {
     return SwapFailureCategory.serviceUnavailable;
   }
@@ -110,6 +121,14 @@ SwapFailureCategory _oneClickCategory(
   return SwapFailureCategory.unknown;
 }
 
+bool _isTorExitBlockedResponse(OneClickApiException error) {
+  if (error.statusCode != 403) return false;
+  final body = error.responseBody?.toLowerCase();
+  return body != null &&
+      body.contains('request blocked') &&
+      body.contains('cloudfront');
+}
+
 String _messageFor(
   SwapFailureOperation operation,
   SwapFailureCategory category,
@@ -128,6 +147,9 @@ String _messageFor(
     SwapFailureCategory.noQuoteOrLiquidity =>
       'No quote is available for this route or amount.\n'
           'Adjust the amount, slippage, or asset and try again.',
+    SwapFailureCategory.torBlocked =>
+      'Swap is unavailable over Tor because the service blocked this '
+          'connection.\nTurn off Tor in Settings to use swap.',
     SwapFailureCategory.serviceUnavailable => _serviceUnavailableMessage(
       operation,
     ),
