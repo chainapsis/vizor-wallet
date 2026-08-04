@@ -13,6 +13,8 @@ use std::time::Duration;
 
 use crate::migration_preparation::{self, MigrationPreparationProgress};
 use crate::wallet::keys;
+use crate::wallet::sync::submission_mode;
+use futures::{stream::FuturesUnordered, StreamExt};
 use tonic::Code;
 
 #[repr(C)]
@@ -74,6 +76,50 @@ fn transaction_observation_from_height(height: u64) -> CLightwalletdTransactionO
     }
 }
 
+async fn observe_transaction(
+    configured_url: &str,
+    mode: crate::wallet::sync::SubmissionMode,
+    routing_transaction_id: [u8; 32],
+    transaction_id: [u8; 32],
+) -> Result<Option<CLightwalletdTransactionObservation>, tonic::Status> {
+    let groups = crate::wallet::sync::resolve_submission_endpoint_groups(
+        configured_url,
+        mode,
+        routing_transaction_id,
+    );
+    let mut last_error = None;
+
+    for group in groups {
+        let mut attempts = FuturesUnordered::new();
+        for endpoint in group {
+            attempts.push(async move {
+                let mut client = crate::wallet::sync_engine::open_lwd_channel(&endpoint)
+                    .await
+                    .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
+                crate::wallet::sync_engine::get_transaction(&mut client, transaction_id.to_vec())
+                    .await
+            });
+        }
+
+        while let Some(result) = attempts.next().await {
+            match result {
+                Ok(transaction) => {
+                    return Ok(Some(transaction_observation_from_height(
+                        transaction.height,
+                    )));
+                }
+                Err(error) if error.code() == Code::NotFound => {}
+                Err(error) => last_error = Some(error),
+            }
+        }
+    }
+
+    match last_error {
+        Some(error) => Err(error),
+        None => Ok(None),
+    }
+}
+
 /// Safely convert a C string pointer to a `&str`. Returns `None` if
 /// the pointer is null, not valid UTF-8, or empty.
 unsafe fn c_str_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
@@ -84,6 +130,13 @@ unsafe fn c_str_to_str<'a>(ptr: *const c_char) -> Option<&'a str> {
         Ok(value) if !value.is_empty() => Some(value),
         _ => None,
     }
+}
+
+unsafe fn copy_c_string(value: &str, output: *mut c_char, capacity: usize) {
+    let bytes = value.as_bytes();
+    let copied_len = bytes.len().min(capacity.saturating_sub(1));
+    std::ptr::copy_nonoverlapping(bytes.as_ptr().cast::<c_char>(), output, copied_len);
+    *output.add(copied_len) = 0;
 }
 
 fn log_panic(context: &str, panic: Box<dyn std::any::Any + Send>) {
@@ -227,23 +280,37 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
 #[no_mangle]
 pub extern "C" fn zcash_lightwalletd_observe_transaction(
     lightwalletd_url: *const c_char,
+    routing_transaction_id: *const u8,
+    routing_transaction_id_len: usize,
     transaction_id: *const u8,
     transaction_id_len: usize,
     output: *mut CLightwalletdTransactionObservation,
+    managed_submission_routing: bool,
     cancellation: *const CLightwalletdCancellation,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
         let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
             return 1;
         };
+        if routing_transaction_id.is_null() || routing_transaction_id_len != 32 {
+            return 1;
+        }
         if transaction_id.is_null() || transaction_id_len != 32 {
             return 1;
         }
         let Some(output) = (unsafe { output.as_mut() }) else {
             return 1;
         };
-        let transaction_id =
-            unsafe { std::slice::from_raw_parts(transaction_id, transaction_id_len) }.to_vec();
+        let routing_transaction_id: [u8; 32] = unsafe {
+            std::slice::from_raw_parts(routing_transaction_id, routing_transaction_id_len)
+                .try_into()
+                .expect("routing transaction ID length was checked")
+        };
+        let transaction_id: [u8; 32] = unsafe {
+            std::slice::from_raw_parts(transaction_id, transaction_id_len)
+                .try_into()
+                .expect("transaction ID length was checked")
+        };
         let runtime = match lightwalletd_runtime() {
             Ok(runtime) => runtime,
             Err(error) => {
@@ -254,19 +321,19 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
         let cancellation = unsafe { cancellation.as_ref() };
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
-            async {
-                let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-                    .await
-                    .map_err(|error| tonic::Status::unavailable(error.to_string()))?;
-                crate::wallet::sync_engine::get_transaction(&mut client, transaction_id).await
-            },
+            observe_transaction(
+                lightwalletd_url,
+                submission_mode(managed_submission_routing),
+                routing_transaction_id,
+                transaction_id,
+            ),
         )) {
             Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
-            Ok(Ok(transaction)) => {
-                *output = transaction_observation_from_height(transaction.height);
+            Ok(Ok(Some(observation))) => {
+                *output = observation;
                 0
             }
-            Ok(Err(error)) if error.code() == Code::NotFound => {
+            Ok(Ok(None)) => {
                 *output = CLightwalletdTransactionObservation::not_found();
                 0
             }
@@ -291,17 +358,24 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
 #[no_mangle]
 pub extern "C" fn zcash_lightwalletd_send_transaction(
     lightwalletd_url: *const c_char,
+    transaction_id: *const u8,
+    transaction_id_len: usize,
     raw_transaction: *const u8,
     raw_transaction_len: usize,
     response_error_code: *mut i32,
     response_error_message: *mut c_char,
     response_error_message_capacity: usize,
+    response_accepted: *mut bool,
+    managed_submission_routing: bool,
     cancellation: *const CLightwalletdCancellation,
 ) -> i32 {
     let result = std::panic::catch_unwind(|| {
         let Some(lightwalletd_url) = (unsafe { c_str_to_str(lightwalletd_url) }) else {
             return 1;
         };
+        if transaction_id.is_null() || transaction_id_len != 32 {
+            return 1;
+        }
         if raw_transaction.is_null() || raw_transaction_len == 0 {
             return 1;
         }
@@ -311,6 +385,14 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
         if response_error_message.is_null() || response_error_message_capacity == 0 {
             return 1;
         }
+        let Some(response_accepted) = (unsafe { response_accepted.as_mut() }) else {
+            return 1;
+        };
+        let transaction_id: [u8; 32] = unsafe {
+            std::slice::from_raw_parts(transaction_id, transaction_id_len)
+                .try_into()
+                .expect("transaction ID length was checked")
+        };
         let raw_transaction =
             unsafe { std::slice::from_raw_parts(raw_transaction, raw_transaction_len) }.to_vec();
         let runtime = match lightwalletd_runtime() {
@@ -323,37 +405,44 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
         let cancellation = unsafe { cancellation.as_ref() };
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
-            async {
-                let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-                    .await
-                    .map_err(|error| error.to_string())?;
-                crate::wallet::sync_engine::send_transaction_with_status(
-                    &mut client,
-                    &raw_transaction,
-                )
-                .await
-                .map_err(|error| error.to_string())
-            },
+            crate::wallet::sync::submit_transaction(
+                lightwalletd_url,
+                submission_mode(managed_submission_routing),
+                transaction_id,
+                &raw_transaction,
+            ),
         )) {
             Err(()) => LIGHTWALLETD_RESULT_CANCELLED,
-            Ok(Ok(response)) => {
-                *response_error_code = response.error_code;
-                let bytes = response.error_message.as_bytes();
-                let copied_len = bytes
-                    .len()
-                    .min(response_error_message_capacity.saturating_sub(1));
+            Ok(crate::wallet::sync::SubmissionOutcome::Accepted { code, message, .. }) => {
+                *response_error_code = code;
+                *response_accepted = true;
                 unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        bytes.as_ptr().cast::<c_char>(),
+                    copy_c_string(
+                        &message,
                         response_error_message,
-                        copied_len,
-                    );
-                    *response_error_message.add(copied_len) = 0;
-                }
+                        response_error_message_capacity,
+                    )
+                };
                 0
             }
-            Ok(Err(error)) => {
-                log::error!("ffi: send lightwalletd transaction: {error}");
+            Ok(crate::wallet::sync::SubmissionOutcome::Rejected { code, message, .. }) => {
+                *response_error_code = code;
+                *response_accepted = false;
+                unsafe {
+                    copy_c_string(
+                        &message,
+                        response_error_message,
+                        response_error_message_capacity,
+                    )
+                };
+                0
+            }
+            Ok(crate::wallet::sync::SubmissionOutcome::NotSubmitted { failures })
+            | Ok(crate::wallet::sync::SubmissionOutcome::Indeterminate { failures }) => {
+                log::error!(
+                    "ffi: send lightwalletd transaction: {}",
+                    crate::wallet::sync::submission_failures_message(&failures)
+                );
                 1
             }
         }

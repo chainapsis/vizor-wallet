@@ -180,6 +180,7 @@ fn sync(db_path: &str) {
     sync_api::run_full_sync_blocking(
         db_path.to_string(),
         lightwalletd_url(),
+        false,
         NETWORK.to_string(),
         1,
     )
@@ -223,6 +224,7 @@ fn migrate(db_path: &str, account_uuid: &str) -> sync_api::IronwoodMigrationResu
     sync_api::migrate_orchard_to_ironwood(
         db_path.to_string(),
         lightwalletd_url(),
+        false,
         NETWORK.to_string(),
         account_uuid.to_string(),
         MNEMONIC.as_bytes().to_vec(),

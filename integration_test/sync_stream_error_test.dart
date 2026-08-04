@@ -22,6 +22,7 @@ void main() {
         lightwalletdUrl: 'http://127.0.0.1:1',
         network: 'invalid-test-network',
         mode: 1,
+        managedSubmissionRouting: false,
       );
 
       await expectLater(

@@ -228,6 +228,7 @@ class _Harness {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -298,7 +299,12 @@ AppBootstrapState _bootstrap() {
     initialLocation: '/home',
     initialAccountState: const AccountState(
       accounts: [
-        AccountInfo(uuid: _uuid, name: 'Software', order: 0, isSeedAnchor: true),
+        AccountInfo(
+          uuid: _uuid,
+          name: 'Software',
+          order: 0,
+          isSeedAnchor: true,
+        ),
       ],
       activeAccountUuid: _uuid,
       activeAddress: 'u1test',

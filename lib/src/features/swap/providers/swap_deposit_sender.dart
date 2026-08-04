@@ -109,6 +109,7 @@ class RustSwapDepositSender implements SwapDepositSender {
       final proposal = proposalContext.proposal;
       final dbPath = proposalContext.dbPath;
       final endpoint = proposalContext.endpoint;
+      final managedSubmissionRouting = endpoint.usesManagedSubmissionRouting;
       proposalId = proposal.proposalId;
       log(
         'SwapDepositSender: proposal ready flow=$sendFlowId '
@@ -138,6 +139,7 @@ class RustSwapDepositSender implements SwapDepositSender {
           proposalId: proposal.proposalId,
           sendFlowId: sendFlowId,
           password: password,
+          managedSubmissionRouting: managedSubmissionRouting,
         );
       } else {
         final mnemonicBytes = await _ref
@@ -155,6 +157,7 @@ class RustSwapDepositSender implements SwapDepositSender {
             proposalId: proposal.proposalId,
             sendFlowId: sendFlowId,
             mnemonicBytes: mnemonicBytes,
+            managedSubmissionRouting: managedSubmissionRouting,
           );
         } finally {
           mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);

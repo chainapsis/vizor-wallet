@@ -47,6 +47,7 @@ mod enhance;
 mod error;
 mod lwd;
 pub(crate) mod mempool;
+pub(crate) mod submission;
 
 use enhance::run_enhancement;
 pub(crate) use error::SyncError;
@@ -54,7 +55,6 @@ use error::{RecoveryStrategy, MAX_REWINDS_PER_RUN};
 use lwd::{download_blocks, download_subtree_roots, get_address_utxos_stream, get_tree_state};
 pub(crate) use lwd::{
     get_latest_block, get_taddress_txids, get_transaction, next_stream_message, open_lwd_channel,
-    send_transaction, send_transaction_with_status,
 };
 
 /// Progress event sent to caller (Dart or Swift).
@@ -1424,6 +1424,7 @@ async fn watch_for_exit(should_exit: &impl Fn() -> bool) {
 pub async fn run_sync_inner(
     db_data_path: &str,
     lightwalletd_url: &str,
+    submission_mode: crate::wallet::sync::SubmissionMode,
     network: WalletNetwork,
     cancel: Arc<AtomicBool>,
     running_mode: u8,
@@ -1464,6 +1465,7 @@ pub async fn run_sync_inner(
         match run_sync_impl(
             db_data_path,
             lightwalletd_url,
+            submission_mode,
             network,
             cancel.clone(),
             running_mode,
@@ -1521,6 +1523,7 @@ pub async fn run_sync_inner(
 async fn run_sync_impl(
     db_data_path: &str,
     lightwalletd_url: &str,
+    submission_mode: crate::wallet::sync::SubmissionMode,
     network: WalletNetwork,
     cancel: Arc<AtomicBool>,
     running_mode: u8,
@@ -1621,8 +1624,6 @@ async fn run_sync_impl(
     // `processNewBlocks` (line 551). Best-effort: failures are
     // logged inside the helper and must not abort the sync.
     //
-    // We reuse the same `client` instead of opening a fresh channel.
-    //
     // Pre-flight cancel/mode check: `update_chain_tip` and
     // `open_lwd_channel` can take a couple of seconds under a
     // slow connection, which is long enough for the user to hit
@@ -1644,7 +1645,8 @@ async fn run_sync_impl(
             recovery_resubmit_exclusions(db_data_path, &startup_ranges)?;
         let _ = crate::wallet::sync::resubmit_pending_transactions(
             db_data_path,
-            &mut client,
+            lightwalletd_url,
+            submission_mode,
             tip.height as u32,
             &startup_resubmit_exclusions,
             || {
@@ -2430,7 +2432,8 @@ async fn run_sync_impl(
                 if allow_resubmit {
                     let _ = crate::wallet::sync::resubmit_pending_transactions(
                         db_data_path,
-                        &mut client,
+                        lightwalletd_url,
+                        submission_mode,
                         fresh_tip_height,
                         &resubmit_exclusions,
                         || {

@@ -211,7 +211,7 @@ pub(crate) async fn get_transaction(
 }
 
 /// Submit a raw transaction with a bounded response wait.
-pub(crate) async fn send_transaction_with_status(
+pub(super) async fn send_transaction_with_status(
     client: &mut CompactTxStreamerClient<Channel>,
     data: &[u8],
 ) -> Result<SendResponse, Status> {
@@ -227,17 +227,6 @@ pub(crate) async fn send_transaction_with_status(
         )),
     )
     .await
-}
-
-/// Submit a raw transaction with a bounded response wait and map tonic
-/// errors into the sync error taxonomy.
-pub(crate) async fn send_transaction(
-    client: &mut CompactTxStreamerClient<Channel>,
-    data: &[u8],
-) -> Result<SendResponse, SyncError> {
-    send_transaction_with_status(client, data)
-        .await
-        .map_err(|e| status_to_network_error("send_transaction", e))
 }
 
 /// Open the deprecated transparent-address transaction stream with a

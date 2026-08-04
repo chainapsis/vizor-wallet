@@ -404,6 +404,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
   try {
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final managedSubmissionRouting = endpoint.usesManagedSubmissionRouting;
     var saplingParams = await loadSaplingParamsStatus();
 
     if (args.needsSaplingParams) {
@@ -459,6 +460,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           dbPath: dbPath,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
           network: endpoint.networkName,
+          managedSubmissionRouting: managedSubmissionRouting,
           pcztWithProofsBytes: keystone.pcztWithProofsBytes,
           pcztWithSignaturesBytes: keystone.pcztWithSignaturesBytes,
           spendParamsPath: args.needsSaplingParams
@@ -510,6 +512,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
           proposalId: args.proposalId,
           sendFlowId: args.sendFlowId,
           password: password,
+          managedSubmissionRouting: managedSubmissionRouting,
           spendParamsPath: args.needsSaplingParams
               ? saplingParams.spendPath
               : null,
@@ -538,6 +541,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
             proposalId: args.proposalId,
             sendFlowId: args.sendFlowId,
             mnemonicBytes: mnemonicBytes,
+            managedSubmissionRouting: managedSubmissionRouting,
             spendParamsPath: args.needsSaplingParams
                 ? saplingParams.spendPath
                 : null,

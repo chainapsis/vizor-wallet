@@ -88,6 +88,38 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     XCTAssertNil(snapshot.announcedBroadcastCompleteBatchIds)
   }
 
+  func testSnapshotPersistsManagedRoutingAndLegacyBatchDefaultsToFalse() throws {
+    var snapshot = BackgroundMigrationOutboxSnapshot()
+    snapshot.batches = [
+      makeBatch(
+        batchId: "batch-a",
+        account: "account-a",
+        managedSubmissionRouting: true
+      )
+    ]
+    let encoded = try JSONEncoder().encode(snapshot)
+    let decoded = try JSONDecoder().decode(
+      BackgroundMigrationOutboxSnapshot.self,
+      from: encoded
+    )
+
+    XCTAssertTrue(try XCTUnwrap(decoded.batches.first).usesManagedSubmissionRouting)
+
+    var legacyObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    var legacyBatches = try XCTUnwrap(legacyObject["batches"] as? [[String: Any]])
+    legacyBatches[0].removeValue(forKey: "managedSubmissionRouting")
+    legacyObject["batches"] = legacyBatches
+    let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+    let legacy = try JSONDecoder().decode(
+      BackgroundMigrationOutboxSnapshot.self,
+      from: legacyData
+    )
+
+    XCTAssertFalse(try XCTUnwrap(legacy.batches.first).usesManagedSubmissionRouting)
+  }
+
   func testDiscardBatchRemovesAnIdleRecordButKeepsTheAccountScope() throws {
     var snapshot = BackgroundMigrationOutboxSnapshot()
     let batch = makeBatch(batchId: "batch-a", account: "account-a")
@@ -193,11 +225,13 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       runId: batch.runId,
       expectedTxids: Set(batch.items.map(\.txidHex)),
       lightwalletdUrl: "https://updated.example:443",
+      managedSubmissionRouting: true,
       at: now
     )
 
     XCTAssertTrue(recovered)
     XCTAssertEqual(snapshot.batches[0].lightwalletdUrl, "https://updated.example:443")
+    XCTAssertTrue(snapshot.batches[0].usesManagedSubmissionRouting)
     XCTAssertEqual(snapshot.batches[0].armedAt, now)
     XCTAssertTrue(snapshot.batches[0].items.allSatisfy { $0.status == .armed })
   }
@@ -250,7 +284,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
-  func testRestagingMovesAnIdleBatchToTheCurrentEndpoint() throws {
+  func testRestagingMovesAnIdleBatchToTheCurrentSubmissionRoute() throws {
     let original = makeBatch(
       batchId: "batch-a",
       account: "account-a",
@@ -258,6 +292,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
     var replacement = original
     replacement.lightwalletdUrl = "https://replacement.example:443"
+    replacement.managedSubmissionRouting = true
     var snapshot = BackgroundMigrationOutboxSnapshot()
 
     try snapshot.stage(original)
@@ -272,6 +307,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       snapshot.batches.first?.lightwalletdUrl,
       replacement.lightwalletdUrl
     )
+    XCTAssertTrue(try XCTUnwrap(snapshot.batches.first).usesManagedSubmissionRouting)
   }
 
   func testRestagingUpdatesTimingCadenceOnAnIdleBatch() throws {
@@ -705,20 +741,32 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     )
   }
 
-  func testRunnerQueriesTipAndSubmitsOnlyOneDueTransaction() throws {
+  func testRunnerKeepsTipOnOriginalEndpointAndRoutesOneDueTransaction() throws {
     let harness = try makeStoreHarness()
     defer { harness.cleanup() }
     let batch = makeBatch(
       batchId: "batch-a",
       account: "account-a",
-      heights: [100, 101]
+      heights: [100, 101],
+      managedSubmissionRouting: true
     )
     try stageAndArm(batch, in: harness.store)
+    var heightEndpoints: [String] = []
+    var sendEndpoints: [String] = []
+    var sentTransactionIds: [Data] = []
     var sentPayloads: [Data] = []
+    var managedRoutingValues: [Bool] = []
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
-      latestBlockHeight: { _, _ in .success(200) },
-      sendTransaction: { _, payload, _ in
+      latestBlockHeight: { endpoint, _ in
+        heightEndpoints.append(endpoint)
+        return .success(200)
+      },
+      sendTransaction: {
+        endpoint, transactionId, payload, managedSubmissionRouting, _ in
+        sendEndpoints.append(endpoint)
+        sentTransactionIds.append(transactionId)
         sentPayloads.append(payload)
+        managedRoutingValues.append(managedSubmissionRouting)
         return .success(
           NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
         )
@@ -732,7 +780,14 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       dependencies: dependencies
     )
 
+    XCTAssertEqual(heightEndpoints, [batch.lightwalletdUrl])
+    XCTAssertEqual(sendEndpoints, [batch.lightwalletdUrl])
+    XCTAssertEqual(
+      sentTransactionIds,
+      [Data([0x01] + [UInt8](repeating: 0, count: 31))]
+    )
     XCTAssertEqual(sentPayloads, [batch.items[0].rawTransaction])
+    XCTAssertEqual(managedRoutingValues, [true])
     guard case .accepted(_, let observedHeight, _) = outcome.transport else {
       return XCTFail("Expected an accepted background submission, got \(outcome)")
     }
@@ -824,7 +879,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     try stageAndArm(batch, in: harness.store)
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(200) },
-      sendTransaction: { _, _, _ in
+      sendTransaction: { _, _, _, _, _ in
         .success(
           NativeLightwalletdSendResponse(
             errorCode: 1,
@@ -845,7 +900,84 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       result.broadcastComplete,
       BackgroundMigrationBroadcastCompleteMetadata(batchId: batch.batchId)
     )
-    XCTAssertEqual(try harness.store.read().receipts.first?.outcome, .acceptedEquivalent)
+    let receipt = try XCTUnwrap(harness.store.read().receipts.first)
+    XCTAssertEqual(receipt.outcome, .acceptedEquivalent)
+    XCTAssertEqual(receipt.responseCode, 1)
+    XCTAssertEqual(receipt.responseMessage, "already in mempool")
+  }
+
+  func testRunnerUsesNativeAcceptedClassification() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    try stageAndArm(batch, in: harness.store)
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in .success(200) },
+      sendTransaction: { _, _, _, _, _ in
+        .success(
+          NativeLightwalletdSendResponse(
+            errorCode: 1,
+            errorMessage: "classified as accepted by Rust",
+            accepted: true
+          )
+        )
+      }
+    )
+
+    let result = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+
+    guard case .accepted = result.transport else {
+      return XCTFail("Expected the native classification to be accepted")
+    }
+    let receipt = try XCTUnwrap(harness.store.read().receipts.first)
+    XCTAssertEqual(receipt.outcome, .acceptedEquivalent)
+    XCTAssertEqual(receipt.responseCode, 1)
+    XCTAssertEqual(receipt.responseMessage, "classified as accepted by Rust")
+  }
+
+  func testRunnerUsesNativeRejectedClassification() throws {
+    let harness = try makeStoreHarness()
+    defer { harness.cleanup() }
+    let batch = makeBatch(
+      batchId: "batch-a",
+      account: "account-a",
+      heights: [100]
+    )
+    try stageAndArm(batch, in: harness.store)
+    let dependencies = BackgroundMigrationOutboxRunnerDependencies(
+      latestBlockHeight: { _, _ in .success(200) },
+      sendTransaction: { _, _, _, _, _ in
+        .success(
+          NativeLightwalletdSendResponse(
+            errorCode: 1,
+            errorMessage: "already in mempool",
+            accepted: false
+          )
+        )
+      }
+    )
+
+    let result = BackgroundMigrationOutboxRunner.runOnce(
+      store: harness.store,
+      cancellation: BackgroundMigrationCancellation(),
+      now: now,
+      dependencies: dependencies
+    )
+
+    XCTAssertEqual(result.transport, .needsUserAction)
+    let receipt = try XCTUnwrap(harness.store.read().receipts.first)
+    XCTAssertEqual(receipt.outcome, .rejected)
+    XCTAssertEqual(receipt.responseCode, 1)
+    XCTAssertEqual(receipt.responseMessage, "already in mempool")
   }
 
   func testRunnerDoesNotReportBroadcastCompleteWhileBatchHasMoreWork() throws {
@@ -859,7 +991,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     try stageAndArm(batch, in: harness.store)
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(200) },
-      sendTransaction: { _, _, _ in
+      sendTransaction: { _, _, _, _, _ in
         .success(
           NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
         )
@@ -887,7 +1019,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     try stageAndArm(batch, in: harness.store)
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(200) },
-      sendTransaction: { _, _, _ in
+      sendTransaction: { _, _, _, _, _ in
         .success(
           NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
         )
@@ -948,7 +1080,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
         tipQueryCount += 1
         return .success(200)
       },
-      sendTransaction: { _, payload, _ in
+      sendTransaction: { _, _, payload, _, _ in
         sendCount += 1
         XCTAssertEqual(payload, batch.items[0].rawTransaction)
         return .success(
@@ -992,7 +1124,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     var sendCount = 0
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(200) },
-      sendTransaction: { _, _, _ in
+      sendTransaction: { _, _, _, _, _ in
         sendCount += 1
         return .success(
           NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
@@ -1040,7 +1172,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     var sendCount = 0
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(34_560) },
-      sendTransaction: { _, _, _ in
+      sendTransaction: { _, _, _, _, _ in
         sendCount += 1
         return .success(
           NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
@@ -1081,7 +1213,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     var sendCount = 0
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(288) },
-      sendTransaction: { _, _, _ in
+      sendTransaction: { _, _, _, _, _ in
         sendCount += 1
         return .success(
           NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
@@ -1154,7 +1286,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     try stageAndArm(batch, in: harness.store)
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(288) },
-      sendTransaction: { _, _, _ in
+      sendTransaction: { _, _, _, _, _ in
         XCTFail("A proof watch must not submit a transaction")
         return .success(
           NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
@@ -1219,7 +1351,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       store: harness.store,
       dependencies: BackgroundMigrationOutboxRunnerDependencies(
         latestBlockHeight: { _, _ in .success(288) },
-        sendTransaction: { _, _, _ in
+        sendTransaction: { _, _, _, _, _ in
           XCTFail("A proof watch must not submit a transaction")
           return .success(
             NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
@@ -1276,7 +1408,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     try stageAndArm(batch, in: harness.store)
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(200) },
-      sendTransaction: { _, _, _ in
+      sendTransaction: { _, _, _, _, _ in
         XCTFail("A proof watch must not submit a transaction")
         return .success(
           NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
@@ -1352,7 +1484,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     try stageAndArm(batch, in: harness.store)
     let dependencies = BackgroundMigrationOutboxRunnerDependencies(
       latestBlockHeight: { _, _ in .success(200) },
-      sendTransaction: { _, _, _ in .failure(.timedOut) }
+      sendTransaction: { _, _, _, _, _ in .failure(.timedOut) }
     )
 
     let outcome = BackgroundMigrationOutboxRunner.runOnce(
@@ -1583,7 +1715,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       requiresPreparationProofVerification: true,
       dependencies: BackgroundMigrationOutboxRunnerDependencies(
         latestBlockHeight: { _, _ in .success(288) },
-        sendTransaction: { _, _, _ in
+        sendTransaction: { _, _, _, _, _ in
           XCTFail("a proof watch must not submit a transaction")
           return .success(
             NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
@@ -1638,7 +1770,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       requiresPreparationProofVerification: true,
       dependencies: BackgroundMigrationOutboxRunnerDependencies(
         latestBlockHeight: { _, _ in .success(288) },
-        sendTransaction: { _, _, _ in
+        sendTransaction: { _, _, _, _, _ in
           XCTFail("a proof watch must not submit a transaction")
           return .success(
             NativeLightwalletdSendResponse(errorCode: 0, errorMessage: "")
@@ -1660,7 +1792,8 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
     batchId: String,
     account: String,
     heights: [UInt64] = [100, 101, 102],
-    nextProofHeight: UInt64? = nil
+    nextProofHeight: UInt64? = nil,
+    managedSubmissionRouting: Bool? = nil
   ) -> BackgroundMigrationOutboxBatch {
     BackgroundMigrationOutboxBatch(
       batchId: batchId,
@@ -1668,6 +1801,7 @@ final class BackgroundMigrationOutboxTests: XCTestCase {
       accountUuid: account,
       runId: "run-\(account)",
       lightwalletdUrl: "https://testnet.zec.rocks:443",
+      managedSubmissionRouting: managedSubmissionRouting,
       timingMeanBlocks: 144,
       timingMaxBlocks: 576,
       createdAt: now,

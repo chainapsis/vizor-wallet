@@ -239,10 +239,12 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     try {
       final dbPath = await getWalletDbPath();
       final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+      final managedSubmissionRouting = endpoint.usesManagedSubmissionRouting;
       result = await rust_sync.extractAndBroadcastPczt(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
         network: endpoint.networkName,
+        managedSubmissionRouting: managedSubmissionRouting,
         pcztWithProofsBytes: pcztWithProofsBytes,
         pcztWithSignaturesBytes: pcztWithSignaturesBytes,
         spendParamsPath: spendParamsPath,

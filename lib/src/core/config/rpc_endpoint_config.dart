@@ -22,6 +22,15 @@ class RpcEndpointConfig {
 
   ZcashNetwork get network => zcashNetworkFromName(networkName);
 
+  /// Whether transaction submission may use providers managed by Vizor.
+  ///
+  /// Custom endpoints, legacy endpoint records, non-mainnet networks, and
+  /// masquerade builds remain pinned to the configured endpoint.
+  bool get usesManagedSubmissionRouting =>
+      !kZcashIronwoodMasquerade &&
+      network == ZcashNetwork.mainnet &&
+      explicitRpcEndpointPresetFor(this) != null;
+
   String get normalizedLightwalletdUrl =>
       normalizeRpcEndpointUrl(lightwalletdUrl, allowDefaultPort: true);
 
@@ -63,6 +72,7 @@ class RpcEndpointPreset {
 
 // Public lightwalletd presets. Keep the mainnet default aligned with Zodl's
 // default endpoint while preserving zec.rocks as a selectable fallback.
+// Keep managed provider URLs aligned with Rust's submission provider catalog.
 const kIronwoodMasqueradeRpcEndpointPreset = RpcEndpointPreset(
   id: kIronwoodMasqueradeRpcEndpointPresetId,
   region: 'Ironwood',

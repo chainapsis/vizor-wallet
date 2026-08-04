@@ -35,6 +35,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
+    bool managedSubmissionRouting = false,
     required String credentialHex,
     required String saltBase64,
     required String? expectedRunId,
@@ -55,6 +56,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
       credentialHex: credentialHex,
       saltBase64: saltBase64,
       expectedRunId: expectedRunId,
@@ -67,6 +69,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
     required this.accountUuid,
     required this.dbPath,
     required this.lightwalletdUrl,
+    required this.managedSubmissionRouting,
     required this.credentialHex,
     required this.saltBase64,
     required this.expectedRunId,
@@ -84,8 +87,14 @@ class IronwoodMigrationBackgroundCredentialManifest {
         'Ironwood migration manifest must be a JSON object.',
       );
     }
-    if (decoded.length != _manifestKeys.length ||
-        !_manifestKeys.every(decoded.containsKey)) {
+    final hasManagedSubmissionRouting = decoded.containsKey(
+      'managedSubmissionRouting',
+    );
+    final expectedKeys = hasManagedSubmissionRouting
+        ? _manifestKeys
+        : _legacyManifestKeys;
+    if (decoded.length != expectedKeys.length ||
+        !expectedKeys.every(decoded.containsKey)) {
       throw const FormatException(
         'Ironwood migration manifest fields do not match version 1.',
       );
@@ -96,6 +105,9 @@ class IronwoodMigrationBackgroundCredentialManifest {
     final accountUuid = decoded['accountUuid'];
     final dbPath = decoded['dbPath'];
     final lightwalletdUrl = decoded['lightwalletdUrl'];
+    final managedSubmissionRouting = hasManagedSubmissionRouting
+        ? decoded['managedSubmissionRouting']
+        : false;
     final credentialHex = decoded['credentialHex'];
     final saltBase64 = decoded['saltBase64'];
     final expectedRunId = decoded['expectedRunId'];
@@ -104,6 +116,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
         accountUuid is! String ||
         dbPath is! String ||
         lightwalletdUrl is! String ||
+        managedSubmissionRouting is! bool ||
         credentialHex is! String ||
         saltBase64 is! String ||
         (expectedRunId != null && expectedRunId is! String)) {
@@ -119,6 +132,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
         accountUuid: accountUuid,
         dbPath: dbPath,
         lightwalletdUrl: lightwalletdUrl,
+        managedSubmissionRouting: managedSubmissionRouting,
         credentialHex: credentialHex,
         saltBase64: saltBase64,
         expectedRunId: expectedRunId as String?,
@@ -133,6 +147,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
   final String accountUuid;
   final String dbPath;
   final String lightwalletdUrl;
+  final bool managedSubmissionRouting;
   final String credentialHex;
   final String saltBase64;
   final String? expectedRunId;
@@ -143,6 +158,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
     'accountUuid': accountUuid,
     'dbPath': dbPath,
     'lightwalletdUrl': lightwalletdUrl,
+    'managedSubmissionRouting': managedSubmissionRouting,
     'credentialHex': credentialHex,
     'saltBase64': saltBase64,
     'expectedRunId': expectedRunId,
@@ -161,6 +177,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
       credentialHex: credentialHex,
       saltBase64: saltBase64,
       expectedRunId: runId,
@@ -174,6 +191,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
       accountUuid: accountUuid,
       dbPath: value,
       lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
       credentialHex: credentialHex,
       saltBase64: saltBase64,
       expectedRunId: expectedRunId,
@@ -189,6 +207,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
           accountUuid == other.accountUuid &&
           dbPath == other.dbPath &&
           lightwalletdUrl == other.lightwalletdUrl &&
+          managedSubmissionRouting == other.managedSubmissionRouting &&
           credentialHex == other.credentialHex &&
           saltBase64 == other.saltBase64 &&
           expectedRunId == other.expectedRunId;
@@ -200,6 +219,7 @@ class IronwoodMigrationBackgroundCredentialManifest {
     accountUuid,
     dbPath,
     lightwalletdUrl,
+    managedSubmissionRouting,
     credentialHex,
     saltBase64,
     expectedRunId,
@@ -287,6 +307,7 @@ class IronwoodMigrationBackgroundCredentialStore {
     required String accountUuid,
     required String dbPath,
     required String lightwalletdUrl,
+    bool managedSubmissionRouting = false,
   }) async {
     final credentialBytes = _randomBytes(32);
     final saltBytes = _randomBytes(16);
@@ -301,6 +322,7 @@ class IronwoodMigrationBackgroundCredentialStore {
       accountUuid: accountUuid,
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
       credentialHex: credentialBytes
           .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
           .join(),
@@ -609,6 +631,17 @@ class IronwoodMigrationBackgroundLifecycle {
 }
 
 const _manifestKeys = <String>{
+  'version',
+  'network',
+  'accountUuid',
+  'dbPath',
+  'lightwalletdUrl',
+  'managedSubmissionRouting',
+  'credentialHex',
+  'saltBase64',
+  'expectedRunId',
+};
+const _legacyManifestKeys = <String>{
   'version',
   'network',
   'accountUuid',

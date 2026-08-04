@@ -114,23 +114,35 @@ pub(super) fn remove(db_path: &str, owner: LockOwner) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn mark_retain_until_expiry(db_path: &str, owner: LockOwner) -> Result<(), String> {
+fn set_retain_until_expiry(
+    db_path: &str,
+    owner: LockOwner,
+    retain_until_expiry: bool,
+) -> Result<(), String> {
     let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
     ensure_schema(&conn)?;
     let updated = conn
         .execute(
             &format!(
                 "UPDATE {TABLE}
-             SET retain_until_expiry = 1
-             WHERE owner = ?1"
+                 SET retain_until_expiry = ?2
+                 WHERE owner = ?1"
             ),
-            params![owner.as_bytes().as_slice()],
+            params![owner.as_bytes().as_slice(), retain_until_expiry],
         )
-        .map_err(|e| format!("Retain send proposal lock until expiry: {e}"))?;
+        .map_err(|e| format!("Update send proposal lock restart policy: {e}"))?;
     if updated == 0 {
         return Err("Send proposal lock recovery row no longer exists".to_string());
     }
     Ok(())
+}
+
+pub(super) fn mark_retain_until_expiry(db_path: &str, owner: LockOwner) -> Result<(), String> {
+    set_retain_until_expiry(db_path, owner, true)
+}
+
+pub(super) fn clear_retain_until_expiry(db_path: &str, owner: LockOwner) -> Result<(), String> {
+    set_retain_until_expiry(db_path, owner, false)
 }
 
 pub(super) fn update_expiry(

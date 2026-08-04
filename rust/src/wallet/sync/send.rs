@@ -108,8 +108,8 @@ use super::migration_wallet_ops::{
 };
 use super::{
     consume_stored_proposal, finish_stored_proposal, open_readonly_conn, open_wallet_db,
-    open_wallet_db_for_read, stored_proposal_lock, StoredProposal, StoredProposalLock,
-    WalletDatabase, PROPOSAL_STORE,
+    open_wallet_db_for_read, stored_proposal_lock, submission_failures_message, StoredProposal,
+    StoredProposalLock, WalletDatabase, PROPOSAL_STORE,
 };
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
@@ -195,6 +195,12 @@ impl ImmediateMigrationInputLock {
     fn mark_broadcast_started(&mut self) -> Result<(), String> {
         super::proposal_locks::mark_retain_until_expiry(&self.db_path, self.owner)?;
         self.retain_on_drop = true;
+        Ok(())
+    }
+
+    fn reset_after_not_submitted(&mut self) -> Result<(), String> {
+        super::proposal_locks::clear_retain_until_expiry(&self.db_path, self.owner)?;
+        self.retain_on_drop = false;
         Ok(())
     }
 
@@ -408,6 +414,7 @@ impl IronwoodMigrationResult {
     pub(crate) async fn prepare_outbox(
         db_path: &str,
         lightwalletd_url: &str,
+        submission_mode: super::SubmissionMode,
         network: WalletNetwork,
         account_uuid: &str,
         pending_password: &[u8],
@@ -416,6 +423,7 @@ impl IronwoodMigrationResult {
         prepare_orchard_migration_outbox(
             db_path,
             lightwalletd_url,
+            submission_mode,
             network,
             account_uuid,
             pending_password,
@@ -1081,6 +1089,7 @@ fn create_shield_transparent_pczt_with_expiry(
 pub(crate) async fn shield_transparent_balance(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     seed: SecretVec<u8>,
@@ -1146,9 +1155,15 @@ pub(crate) async fn shield_transparent_balance(
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
     Ok(
-        broadcast_created_transactions(db_path, lightwalletd_url, &txids, "shield")
-            .await
-            .into_shield_transparent_result(fee_zatoshi, shielded_zatoshi),
+        broadcast_created_transactions(
+            db_path,
+            lightwalletd_url,
+            submission_mode,
+            &txids,
+            "shield",
+        )
+        .await
+        .into_shield_transparent_result(fee_zatoshi, shielded_zatoshi),
     )
 }
 
@@ -1162,6 +1177,7 @@ pub(crate) async fn shield_transparent_balance(
 pub async fn execute_proposal(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     proposal_id: u64,
     send_flow_id: &str,
     seed: SecretVec<u8>,
@@ -1176,6 +1192,7 @@ pub async fn execute_proposal(
     execute_stored_proposal(
         db_path,
         lightwalletd_url,
+        submission_mode,
         stored,
         seed,
         spend_params_path,
@@ -1187,6 +1204,7 @@ pub async fn execute_proposal(
 pub async fn execute_proposal_with_seed_loader<F>(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     proposal_id: u64,
     send_flow_id: &str,
     load_seed: F,
@@ -1215,6 +1233,7 @@ where
     execute_stored_proposal(
         db_path,
         lightwalletd_url,
+        submission_mode,
         stored,
         seed,
         spend_params_path,
@@ -1226,6 +1245,7 @@ where
 async fn execute_stored_proposal(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     stored: StoredProposal,
     seed: SecretVec<u8>,
     spend_params_path: Option<&str>,
@@ -1383,7 +1403,7 @@ async fn execute_stored_proposal(
 
     let txids: Vec<TxId> = txids.iter().cloned().collect();
     Ok(
-        broadcast_created_transactions(db_path, lightwalletd_url, &txids, "send")
+        broadcast_created_transactions(db_path, lightwalletd_url, submission_mode, &txids, "send")
             .await
             .into_execute_result(),
     )
@@ -1392,6 +1412,7 @@ async fn execute_stored_proposal(
 pub(crate) async fn migrate_orchard_to_ironwood(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     seed: SecretVec<u8>,
@@ -1417,6 +1438,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
             match advance_staged_denomination_run(
                 db_path,
                 lightwalletd_url,
+                submission_mode,
                 network,
                 account_uuid,
                 &run,
@@ -1509,6 +1531,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
                     let result = broadcast_due_scheduled_migration_txs(
                         db_path,
                         lightwalletd_url,
+                        submission_mode,
                         network,
                         &run.run_id,
                         pending_password.as_slice(),
@@ -1624,6 +1647,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
         let result = broadcast_due_scheduled_migration_txs(
             db_path,
             lightwalletd_url,
+            submission_mode,
             network,
             &run_id,
             pending_password.as_slice(),
@@ -1640,6 +1664,7 @@ pub(crate) async fn migrate_orchard_to_ironwood(
     let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         &run_id,
         pending_password.as_slice(),
@@ -1859,6 +1884,7 @@ fn build_orchard_migration_immediate_pczt(
 pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     seed: SecretVec<u8>,
@@ -1882,26 +1908,44 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
     super::pczt::preflight_orchard_spend_auth_signatures(&base_pczt, &sigs)?;
     let proofed = super::pczt::add_proofs_to_pczt(&base_pczt, None, None)?;
     let extracted = super::pczt::apply_sigs_and_extract(&proofed, &sigs, None, None)?;
-    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-        .await
-        .map_err(|e| format!("Connect to lightwalletd for Immediate migration failed: {e}"))?;
     // From this point a cancelled future or terminated process cannot prove
     // that lightwalletd rejected the transaction. Persist the conservative
     // restart policy before starting SendTransaction.
     input_lock.mark_broadcast_started()?;
-    let response = match crate::wallet::sync_engine::send_transaction_with_status(
-        &mut client,
+    let outcome = super::submit_transaction(
+        lightwalletd_url,
+        submission_mode,
+        txid_bytes(&extracted.txid),
         &extracted.raw_tx,
     )
-    .await
-    {
-        Ok(response) => response,
-        // A gRPC status after SendTransaction starts is ambiguous: the server
-        // may have accepted and relayed the transaction before the response
-        // was lost. Preserve the transaction locally, or retain the generic
-        // input lock when local storage also fails. Only an explicit
-        // SendResponse rejection below is a definite failure.
-        Err(status) => {
+    .await;
+    match outcome {
+        super::SubmissionOutcome::Rejected { code, message, .. } => {
+            let error = format!("Broadcast rejected: {message} (code {code})");
+            return match input_lock.release() {
+                Ok(()) => Err(error),
+                Err(release_error) => Err(format!(
+                    "{error}; additionally failed to release Immediate migration inputs: \
+                     {release_error}"
+                )),
+            };
+        }
+        super::SubmissionOutcome::NotSubmitted { failures } => {
+            let error = format!(
+                "Immediate migration broadcast could not start: {}",
+                submission_failures_message(&failures)
+            );
+            return match input_lock.release() {
+                Ok(()) => Err(error),
+                Err(release_error) => Err(format!(
+                    "{error}; additionally failed to release Immediate migration inputs: \
+                     {release_error}"
+                )),
+            };
+        }
+        // A transport failure after SendTransaction starts is ambiguous: a
+        // server may have accepted and relayed it before the response was lost.
+        super::SubmissionOutcome::Indeterminate { failures } => {
             let storage_message = match decrypt_and_store_migration_tx(
                 db_path,
                 network,
@@ -1928,22 +1972,15 @@ pub(crate) async fn migrate_orchard_to_ironwood_immediately(
                 broadcasted_count: 0,
                 total_count: 1,
                 message: Some(format!(
-                    "The Immediate migration broadcast response was unavailable ({status}) and \
-                     may already be on the network. {storage_message}"
+                    "The Immediate migration broadcast response was unavailable ({}) and may \
+                     already be on the network. {storage_message}",
+                    submission_failures_message(&failures)
                 )),
                 fee_zatoshi,
                 migrated_zatoshi,
             });
         }
-    };
-    if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
-        return match input_lock.release() {
-            Ok(()) => Err(error),
-            Err(release_error) => Err(format!(
-                "{error}; additionally failed to release Immediate migration inputs: \
-                 {release_error}"
-            )),
-        };
+        super::SubmissionOutcome::Accepted { .. } => {}
     }
     let storage_error = decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx).err();
     if storage_error.is_some() {
@@ -2190,6 +2227,7 @@ pub(crate) async fn abandon_orchard_migration(
 async fn prepare_orchard_migration_outbox(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     pending_password: &[u8],
@@ -2211,6 +2249,7 @@ async fn prepare_orchard_migration_outbox(
     match advance_staged_denomination_run(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         account_uuid,
         &run,
@@ -2441,6 +2480,7 @@ fn any_migration_proof_candidate_ready<T>(
 pub(crate) async fn advance_orchard_migration_preparation_for_run(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     expected_run_id: &str,
@@ -2471,6 +2511,7 @@ pub(crate) async fn advance_orchard_migration_preparation_for_run(
     match advance_staged_denomination_run(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         account_uuid,
         &run,
@@ -2508,6 +2549,7 @@ pub(crate) async fn advance_orchard_migration_preparation_for_run(
 pub async fn broadcast_due_orchard_migration_transactions(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
@@ -2516,6 +2558,7 @@ pub async fn broadcast_due_orchard_migration_transactions(
     broadcast_due_orchard_migration_transactions_inner(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         account_uuid,
         pending_password,
@@ -2529,6 +2572,7 @@ pub async fn broadcast_due_orchard_migration_transactions(
 pub async fn broadcast_one_due_orchard_migration_transaction(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
@@ -2537,6 +2581,7 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
     let advance = broadcast_due_orchard_migration_transactions_inner(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         account_uuid,
         pending_password,
@@ -2550,6 +2595,7 @@ pub async fn broadcast_one_due_orchard_migration_transaction(
 async fn broadcast_due_orchard_migration_transactions_inner(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     pending_password: zeroize::Zeroizing<Vec<u8>>,
@@ -2589,6 +2635,7 @@ async fn broadcast_due_orchard_migration_transactions_inner(
         return broadcast_due_scheduled_migration_txs(
             db_path,
             lightwalletd_url,
+            submission_mode,
             network,
             &run.run_id,
             pending_password.as_slice(),
@@ -2603,6 +2650,7 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     match advance_staged_denomination_run(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         account_uuid,
         &run,
@@ -2650,6 +2698,7 @@ async fn broadcast_due_orchard_migration_transactions_inner(
     broadcast_due_scheduled_migration_txs(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         &run.run_id,
         pending_password.as_slice(),
@@ -4828,6 +4877,7 @@ fn denomination_expiry_scan_wait_result(txids: &str, total_count: u32) -> Create
 async fn broadcast_pending_denomination_stages(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     run_id: &str,
     pending_password: &[u8],
@@ -4961,8 +5011,12 @@ async fn broadcast_pending_denomination_stages(
             run_id,
             &stage.expected_txid_hex,
         )?;
-        if let Err(e) = broadcast_raw_transaction(&mut client, &stage.raw_tx).await {
-            if migration_broadcast_failure_requires_rebuild(&e) {
+        let stage_txid = txid_bytes(&parse_txid_hex(&stage.expected_txid_hex)?);
+        if let Err(e) =
+            broadcast_raw_transaction(lightwalletd_url, submission_mode, stage_txid, &stage.raw_tx)
+                .await
+        {
+            if e.is_definitely_not_accepted() {
                 super::migration::clear_denomination_broadcast_attempted(
                     db_path,
                     run_id,
@@ -5065,6 +5119,7 @@ async fn broadcast_pending_denomination_stages(
 async fn broadcast_due_scheduled_migration_txs(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     run_id: &str,
     pending_password: &[u8],
@@ -5189,30 +5244,6 @@ async fn broadcast_due_scheduled_migration_txs(
         ));
     }
 
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
-        Err(e) => {
-            let message = format!("Migration broadcast could not start: {e}");
-            super::migration::mark_run_phase(
-                db_path,
-                run_id,
-                super::migration::PHASE_FAILED_RECOVERABLE,
-                Some(&message),
-            )?;
-            return Ok(MigrationBroadcastAdvance::without_acceptance(
-                IronwoodMigrationResult {
-                    txids: String::new(),
-                    status: super::migration::PHASE_FAILED_RECOVERABLE.to_string(),
-                    broadcasted_count: 0,
-                    total_count: fallback_total_count,
-                    message: Some(message),
-                    fee_zatoshi: 0,
-                    migrated_zatoshi: fallback_migrated_zatoshi,
-                },
-            ));
-        }
-    };
-
     super::migration::mark_run_phase(db_path, run_id, super::migration::PHASE_BROADCASTING, None)?;
     let mut accepted_txids = Vec::new();
     for pending in due.into_iter().take(policy.limit(usize::MAX)) {
@@ -5226,7 +5257,22 @@ async fn broadcast_due_scheduled_migration_txs(
             break;
         }
         super::migration::mark_pending_broadcast_attempted(db_path, run_id, &pending.txid_hex)?;
-        if let Err(e) = broadcast_raw_transaction(&mut client, &pending.raw_tx).await {
+        let pending_txid = txid_bytes(&parse_txid_hex(&pending.txid_hex)?);
+        if let Err(e) = broadcast_raw_transaction(
+            lightwalletd_url,
+            submission_mode,
+            pending_txid,
+            &pending.raw_tx,
+        )
+        .await
+        {
+            if e.is_definitely_not_accepted() {
+                super::migration::clear_pending_broadcast_attempted(
+                    db_path,
+                    run_id,
+                    &pending.txid_hex,
+                )?;
+            }
             log::error!(
                 "migration: broadcast rejected for {}: {}",
                 pending.txid_hex,
@@ -5386,8 +5432,8 @@ async fn broadcast_due_scheduled_migration_txs(
     })
 }
 
-fn migration_broadcast_failure_requires_rebuild(error: &str) -> bool {
-    error.starts_with("Broadcast rejected:")
+fn migration_broadcast_failure_requires_rebuild(error: &BroadcastFailure) -> bool {
+    matches!(error, BroadcastFailure::Rejected { .. })
 }
 
 fn decrypt_and_store_migration_tx(
@@ -5732,29 +5778,13 @@ impl CreatedBroadcastResult {
 async fn broadcast_created_transactions(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     txids: &[TxId],
     log_label: &str,
 ) -> CreatedBroadcastResult {
     let txid_strings: Vec<String> = txids.iter().map(|id| format!("{id}")).collect();
     let txids_joined = txid_strings.join(",");
     let total_count = txids.len() as u32;
-
-    // Connect to lightwalletd once for all broadcasts.
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
-        Err(e) => {
-            let message =
-                format!("Broadcast could not start after local transaction creation. Error: {e}");
-            log::warn!("{log_label}: {message}");
-            return CreatedBroadcastResult {
-                txids: txids_joined,
-                status: CreatedBroadcastResult::PENDING_BROADCAST,
-                broadcasted_count: 0,
-                total_count,
-                message: Some(message),
-            };
-        }
-    };
 
     let read_conn = match open_readonly_conn(db_path) {
         Ok(conn) => conn,
@@ -5799,7 +5829,14 @@ async fn broadcast_created_transactions(
             }
         };
 
-        match broadcast_raw_transaction(&mut client, &raw_tx).await {
+        match broadcast_raw_transaction(
+            lightwalletd_url,
+            submission_mode,
+            txid_bytes(txid),
+            &raw_tx,
+        )
+        .await
+        {
             Ok(()) => {
                 broadcast_ok.push(format!("{txid}"));
                 log::info!("{log_label}: broadcast {txid} ({} bytes)", raw_tx.len());
@@ -5836,20 +5873,92 @@ async fn broadcast_created_transactions(
     }
 }
 
-/// Broadcast a raw transaction using an existing gRPC client.
-async fn broadcast_raw_transaction(
-    client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
-    raw_tx: &[u8],
-) -> Result<(), String> {
-    let resp = crate::wallet::sync_engine::send_transaction(client, raw_tx)
-        .await
-        .map_err(|e| format!("SendTransaction gRPC failed: {e}"))?;
+fn txid_bytes(txid: &TxId) -> [u8; 32] {
+    let mut bytes = [0; 32];
+    bytes.copy_from_slice(txid.as_ref());
+    bytes
+}
 
-    if let Some(error) = super::broadcast::send_response_rejection_error(&resp) {
-        return Err(error);
+#[derive(Debug)]
+enum BroadcastFailure {
+    Rejected { code: i32, message: String },
+    NotSubmitted { message: String },
+    Indeterminate { message: String },
+}
+
+impl BroadcastFailure {
+    fn is_definitely_not_accepted(&self) -> bool {
+        !matches!(self, Self::Indeterminate { .. })
     }
+}
 
-    Ok(())
+impl std::fmt::Display for BroadcastFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rejected { code, message } => {
+                write!(formatter, "Broadcast rejected: {message} (code {code})")
+            }
+            Self::NotSubmitted { message } => {
+                write!(formatter, "Broadcast could not start: {message}")
+            }
+            Self::Indeterminate { message } => {
+                write!(formatter, "Broadcast response was unavailable: {message}")
+            }
+        }
+    }
+}
+
+/// Broadcast a raw transaction through the configured submission policy.
+async fn broadcast_raw_transaction(
+    lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
+    transaction_id: [u8; 32],
+    raw_tx: &[u8],
+) -> Result<(), BroadcastFailure> {
+    broadcast_raw_transaction_while(
+        lightwalletd_url,
+        submission_mode,
+        transaction_id,
+        raw_tx,
+        || true,
+    )
+    .await
+}
+
+async fn broadcast_raw_transaction_while<ShouldContinue>(
+    lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
+    transaction_id: [u8; 32],
+    raw_tx: &[u8],
+    should_continue: ShouldContinue,
+) -> Result<(), BroadcastFailure>
+where
+    ShouldContinue: Fn() -> bool,
+{
+    match super::submit_transaction_while(
+        lightwalletd_url,
+        submission_mode,
+        transaction_id,
+        raw_tx,
+        should_continue,
+    )
+    .await
+    {
+        super::SubmissionOutcome::Accepted { .. } => Ok(()),
+        super::SubmissionOutcome::Rejected { code, message, .. } => {
+            Err(BroadcastFailure::Rejected { code, message })
+        }
+        super::SubmissionOutcome::NotSubmitted { failures } => {
+            Err(BroadcastFailure::NotSubmitted {
+                message: submission_failures_message(&failures),
+            })
+        }
+        super::SubmissionOutcome::Indeterminate { failures } => {
+            Err(BroadcastFailure::Indeterminate {
+                message: submission_failures_message(&failures),
+            })
+        }
+    }
 }
 
 // ======================== Auto-Resubmit ========================
@@ -5910,9 +6019,6 @@ pub(crate) struct ResubmitStats {
 /// without introducing an extra await point between the RPC
 /// response and the stats bump.
 ///
-/// The caller owns the gRPC client. In the sync loop the same
-/// client that downloaded the compact blocks is threaded straight
-/// through, so auto-resubmit reuses the same connection.
 /// `excluded_txids` are filtered before their raw bytes are loaded.
 /// Recovery uses this to avoid rebroadcasting transactions that
 /// compact scanning can restore as mined.
@@ -5923,7 +6029,8 @@ pub(crate) struct ResubmitStats {
 /// wallet is doing without enabling DEBUG everywhere.
 pub(crate) async fn resubmit_pending_transactions<ShouldExit>(
     db_path: &str,
-    client: &mut zcash_client_backend::proto::service::compact_tx_streamer_client::CompactTxStreamerClient<tonic::transport::Channel>,
+    lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     current_height: u32,
     excluded_txids: &HashSet<Vec<u8>>,
     should_exit: ShouldExit,
@@ -5981,7 +6088,23 @@ where
         }
 
         let txid_hex = hex::encode(&tx.txid_bytes);
-        match broadcast_raw_transaction(client, &tx.raw_tx).await {
+        let transaction_id: [u8; 32] = match tx.txid_bytes.as_slice().try_into() {
+            Ok(transaction_id) => transaction_id,
+            Err(_) => {
+                log::warn!("resubmit: {txid_hex} has an invalid transaction ID length");
+                stats.failed += 1;
+                continue;
+            }
+        };
+        match broadcast_raw_transaction_while(
+            lightwalletd_url,
+            submission_mode,
+            transaction_id,
+            &tx.raw_tx,
+            || !should_exit(),
+        )
+        .await
+        {
             Ok(()) => {
                 log::info!(
                     "resubmit: {txid_hex} ok (expiry={}, bytes={})",
@@ -6006,7 +6129,15 @@ where
                     stats.failed += 1;
                     break;
                 }
-                match broadcast_raw_transaction(client, &tx.raw_tx).await {
+                match broadcast_raw_transaction_while(
+                    lightwalletd_url,
+                    submission_mode,
+                    transaction_id,
+                    &tx.raw_tx,
+                    || !should_exit(),
+                )
+                .await
+                {
                     Ok(()) => {
                         log::info!("resubmit: {txid_hex} ok on retry");
                         stats.succeeded += 1;

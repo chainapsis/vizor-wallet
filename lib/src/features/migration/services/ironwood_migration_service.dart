@@ -217,6 +217,7 @@ typedef IronwoodMigrationSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
       required String lightwalletdUrl,
+      required bool managedSubmissionRouting,
       required String network,
       required String accountUuid,
       required List<int> mnemonicBytes,
@@ -228,6 +229,7 @@ typedef IronwoodMigrationImmediateStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
       required String lightwalletdUrl,
+      required bool managedSubmissionRouting,
       required String network,
       required String accountUuid,
       required List<int> mnemonicBytes,
@@ -257,6 +259,7 @@ typedef IronwoodMigrationMacosSoftwareStarter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
       required String lightwalletdUrl,
+      required bool managedSubmissionRouting,
       required String network,
       required String accountUuid,
       required String password,
@@ -267,6 +270,7 @@ typedef IronwoodMigrationDueBroadcaster =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
       required String lightwalletdUrl,
+      required bool managedSubmissionRouting,
       required String network,
       required String accountUuid,
       required String password,
@@ -308,6 +312,7 @@ typedef IronwoodMigrationOutboxBatchRecoverer =
       required String accountUuid,
       required String runId,
       required String lightwalletdUrl,
+      required bool managedSubmissionRouting,
       required List<String> expectedTxids,
     });
 typedef IronwoodMigrationOutboxBatchChecker =
@@ -426,6 +431,7 @@ typedef IronwoodMigrationKeystoneImmediateCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
       required String lightwalletdUrl,
+      required bool managedSubmissionRouting,
       required String network,
       required String accountUuid,
       required String requestId,
@@ -442,6 +448,7 @@ typedef IronwoodMigrationKeystoneDenominationCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
       required String lightwalletdUrl,
+      required bool managedSubmissionRouting,
       required String network,
       required String accountUuid,
       required String requestId,
@@ -454,6 +461,7 @@ typedef IronwoodMigrationKeystoneSingleQrCompleter =
     Future<rust_sync.IronwoodMigrationResult> Function({
       required String dbPath,
       required String lightwalletdUrl,
+      required bool managedSubmissionRouting,
       required String network,
       required String accountUuid,
       required String requestId,
@@ -515,6 +523,7 @@ _defaultPrepareKeystoneSingleQrMigration({
 Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
@@ -524,6 +533,7 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
 }) => rust_sync.migrateOrchardToIronwood(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
@@ -536,6 +546,7 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartSoftwareMigration({
 Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String password,
@@ -544,6 +555,7 @@ Future<rust_sync.IronwoodMigrationResult> _defaultStartMacosSoftwareMigration({
 }) => rust_sync.migrateOrchardToIronwoodWithMacosStoredMnemonic(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -556,6 +568,7 @@ Future<rust_sync.IronwoodMigrationResult>
 _defaultCompleteKeystoneDenominationMigration({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -566,6 +579,7 @@ _defaultCompleteKeystoneDenominationMigration({
 }) => rust_sync.completeOrchardMigrationDenominationsPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   requestId: requestId,
@@ -579,6 +593,7 @@ Future<rust_sync.IronwoodMigrationResult>
 _defaultCompleteKeystoneSingleQrMigration({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -588,6 +603,7 @@ _defaultCompleteKeystoneSingleQrMigration({
 }) => rust_sync.completeOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   requestId: requestId,
@@ -1134,6 +1150,7 @@ class IronwoodMigrationService {
           network: endpoint.networkName,
           accountUuid: accountUuid,
           lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
         );
         await _serializeCredentialState(context, () async {
           var quiesceAttempted = false;
@@ -1333,9 +1350,14 @@ class IronwoodMigrationService {
                 password: resolvedManifest.credentialHex,
                 saltBase64: resolvedManifest.saltBase64,
               );
+              final outboxContext = _contextWithSubmissionRoute(
+                context,
+                resolvedManifest.lightwalletdUrl,
+                resolvedManifest.managedSubmissionRouting,
+              );
               final requiredTxids = _scheduledBroadcastTxids(status);
               final restored = await _stagePersistedMigrationOutbox(
-                context: context,
+                context: outboxContext,
                 credential: credential,
                 expectedRunId: status.activeRunId,
                 requiredTxids: requiredTxids,
@@ -1497,21 +1519,25 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
 
     if (isMacOS()) {
       return _runCredentialOperation(
         context: context,
         mayCreateRun: true,
-        operation: (credential) => startMacosSoftwareMigration(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          accountUuid: accountUuid,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
-          approvedSchedule: approvedSchedule,
-        ),
+        operation: (credential, submissionContext) =>
+            startMacosSoftwareMigration(
+              dbPath: dbPath,
+              lightwalletdUrl: submissionContext.lightwalletdUrl!,
+              managedSubmissionRouting:
+                  submissionContext.managedSubmissionRouting,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              password: credential.password,
+              saltBase64: credential.saltBase64,
+              approvedSchedule: approvedSchedule,
+            ),
       );
     }
 
@@ -1519,7 +1545,7 @@ class IronwoodMigrationService {
       context: context,
       mayCreateRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
-      operation: (credential) async {
+      operation: (credential, submissionContext) async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
           throw Exception('Mnemonic not found for the migration account.');
@@ -1529,7 +1555,9 @@ class IronwoodMigrationService {
         try {
           resultFuture = startSoftwareMigration(
             dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            lightwalletdUrl: submissionContext.lightwalletdUrl!,
+            managedSubmissionRouting:
+                submissionContext.managedSubmissionRouting,
             network: endpoint.networkName,
             accountUuid: accountUuid,
             mnemonicBytes: mnemonicBytes,
@@ -1560,6 +1588,7 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
 
     try {
@@ -1575,6 +1604,7 @@ class IronwoodMigrationService {
             return await startImmediateMigration(
               dbPath: dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              managedSubmissionRouting: context.managedSubmissionRouting,
               network: endpoint.networkName,
               accountUuid: accountUuid,
               mnemonicBytes: mnemonicBytes,
@@ -1604,6 +1634,7 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
 
     final rust_sync.IronwoodMigrationResult broadcastResult;
@@ -1615,9 +1646,10 @@ class IronwoodMigrationService {
         onCurrentStatus: isHardwareAccount(accountUuid)
             ? null
             : _reconcileBackgroundPreparationBestEffort,
-        operation: (credential) => prepareMigrationOutbox(
+        operation: (credential, submissionContext) => prepareMigrationOutbox(
           dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          lightwalletdUrl: submissionContext.lightwalletdUrl!,
+          managedSubmissionRouting: submissionContext.managedSubmissionRouting,
           network: endpoint.networkName,
           accountUuid: accountUuid,
           password: credential.password,
@@ -1628,9 +1660,10 @@ class IronwoodMigrationService {
       broadcastResult = await _runCredentialOperation(
         context: context,
         mayCreateRun: false,
-        operation: (credential) => broadcastDueMigration(
+        operation: (credential, submissionContext) => broadcastDueMigration(
           dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+          lightwalletdUrl: submissionContext.lightwalletdUrl!,
+          managedSubmissionRouting: submissionContext.managedSubmissionRouting,
           network: endpoint.networkName,
           accountUuid: accountUuid,
           password: credential.password,
@@ -1662,22 +1695,25 @@ class IronwoodMigrationService {
       return _runCredentialOperation(
         context: context,
         mayCreateRun: true,
-        operation: (credential) => startMacosSoftwareMigration(
-          dbPath: dbPath,
-          lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-          network: endpoint.networkName,
-          accountUuid: accountUuid,
-          password: credential.password,
-          saltBase64: credential.saltBase64,
-          approvedSchedule: const [],
-        ),
+        operation: (credential, submissionContext) =>
+            startMacosSoftwareMigration(
+              dbPath: dbPath,
+              lightwalletdUrl: submissionContext.lightwalletdUrl!,
+              managedSubmissionRouting:
+                  submissionContext.managedSubmissionRouting,
+              network: endpoint.networkName,
+              accountUuid: accountUuid,
+              password: credential.password,
+              saltBase64: credential.saltBase64,
+              approvedSchedule: const [],
+            ),
       );
     }
 
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
-      operation: (credential) async {
+      operation: (credential, submissionContext) async {
         final mnemonicBytes = await getMnemonicBytesForAccount(accountUuid);
         if (mnemonicBytes == null || mnemonicBytes.isEmpty) {
           throw Exception('Mnemonic not found for the migration account.');
@@ -1685,7 +1721,9 @@ class IronwoodMigrationService {
         try {
           return startSoftwareMigration(
             dbPath: dbPath,
-            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            lightwalletdUrl: submissionContext.lightwalletdUrl!,
+            managedSubmissionRouting:
+                submissionContext.managedSubmissionRouting,
             network: endpoint.networkName,
             accountUuid: accountUuid,
             mnemonicBytes: mnemonicBytes,
@@ -1712,6 +1750,7 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
     return operationRegistry.run(
       network: context.network,
@@ -1779,6 +1818,7 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
 
     await operationRegistry.run(
@@ -1798,6 +1838,7 @@ class IronwoodMigrationService {
         // inside the classifying `try`: the side effects below must never be
         // reinterpreted as a credential fault.
         _MigrationCredential? usableCredential;
+        bool? usableManagedSubmissionRouting;
         try {
           existingManifest = await backgroundCredentialStore.read(
             network: context.network,
@@ -1844,6 +1885,8 @@ class IronwoodMigrationService {
                 password: resolvedManifest.credentialHex,
                 saltBase64: resolvedManifest.saltBase64,
               );
+              usableManagedSubmissionRouting =
+                  resolvedManifest.managedSubmissionRouting;
             }
           }
         } catch (error) {
@@ -1866,8 +1909,13 @@ class IronwoodMigrationService {
           // revoking the account scope, which would delete the very credential
           // this restage depends on. A failed restage leaves the DB run intact
           // for the rebuild below.
+          final outboxContext = _contextWithSubmissionRoute(
+            context,
+            existingManifest!.lightwalletdUrl,
+            usableManagedSubmissionRouting!,
+          );
           final restored = await _stagePersistedMigrationOutbox(
-            context: context,
+            context: outboxContext,
             credential: usableCredential,
             expectedRunId: oldRunId,
             requiredTxids: requiredTxids,
@@ -1923,6 +1971,7 @@ class IronwoodMigrationService {
             accountUuid: context.accountUuid,
             dbPath: context.dbPath,
             lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            managedSubmissionRouting: context.managedSubmissionRouting,
           );
           final credential = _MigrationCredential(
             password: manifest.credentialHex,
@@ -1935,6 +1984,7 @@ class IronwoodMigrationService {
             await startSoftwareMigration(
               dbPath: context.dbPath,
               lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+              managedSubmissionRouting: context.managedSubmissionRouting,
               network: context.network,
               accountUuid: context.accountUuid,
               mnemonicBytes: mnemonicBytes,
@@ -2043,12 +2093,14 @@ class IronwoodMigrationService {
   }) async {
     final dbPath = await getWalletDbPath();
     final endpoint = getEndpoint();
+    final managedSubmissionRouting = _managedSubmissionRoutingFor(endpoint);
     return operationRegistry.run(
       network: endpoint.networkName,
       accountUuid: accountUuid,
       operation: () => completeKeystoneImmediateMigration(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        managedSubmissionRouting: managedSubmissionRouting,
         network: endpoint.networkName,
         accountUuid: accountUuid,
         requestId: requestId,
@@ -2068,12 +2120,13 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
       prepareOutboxAfterOperation: false,
-      operation: (_) => createPrivateMigrationDraft(
+      operation: (_, _) => createPrivateMigrationDraft(
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
@@ -2095,22 +2148,26 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
 
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
-      operation: (credential) => completeKeystoneSingleQrMigration(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        requestId: requestId,
-        signedMessages: signedMessages,
-        password: credential.password,
-        saltBase64: credential.saltBase64,
-      ),
+      operation: (credential, submissionContext) =>
+          completeKeystoneSingleQrMigration(
+            dbPath: dbPath,
+            lightwalletdUrl: submissionContext.lightwalletdUrl!,
+            managedSubmissionRouting:
+                submissionContext.managedSubmissionRouting,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            requestId: requestId,
+            signedMessages: signedMessages,
+            password: credential.password,
+            saltBase64: credential.saltBase64,
+          ),
     );
   }
 
@@ -2128,23 +2185,27 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
 
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
       onCurrentStatus: _reconcileBackgroundPreparationBestEffort,
-      operation: (credential) => completeKeystoneDenominationMigration(
-        dbPath: dbPath,
-        lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-        network: endpoint.networkName,
-        accountUuid: accountUuid,
-        requestId: requestId,
-        signedMessages: signedMessages,
-        password: credential.password,
-        saltBase64: credential.saltBase64,
-        approvedSchedule: approvedSchedule,
-      ),
+      operation: (credential, submissionContext) =>
+          completeKeystoneDenominationMigration(
+            dbPath: dbPath,
+            lightwalletdUrl: submissionContext.lightwalletdUrl!,
+            managedSubmissionRouting:
+                submissionContext.managedSubmissionRouting,
+            network: endpoint.networkName,
+            accountUuid: accountUuid,
+            requestId: requestId,
+            signedMessages: signedMessages,
+            password: credential.password,
+            saltBase64: credential.saltBase64,
+            approvedSchedule: approvedSchedule,
+          ),
     );
   }
 
@@ -2176,12 +2237,13 @@ class IronwoodMigrationService {
       network: endpoint.networkName,
       accountUuid: accountUuid,
       lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+      managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
     );
 
     return _runCredentialOperation(
       context: context,
       mayCreateRun: true,
-      operation: (credential) => completeKeystoneBatchMigration(
+      operation: (credential, _) => completeKeystoneBatchMigration(
         dbPath: dbPath,
         network: endpoint.networkName,
         accountUuid: accountUuid,
@@ -2196,7 +2258,11 @@ class IronwoodMigrationService {
   Future<T> _runCredentialOperation<T>({
     required _MigrationCredentialContext context,
     required bool mayCreateRun,
-    required Future<T> Function(_MigrationCredential credential) operation,
+    required Future<T> Function(
+      _MigrationCredential credential,
+      _MigrationCredentialContext submissionContext,
+    )
+    operation,
     bool prepareOutboxAfterOperation = true,
     Future<void> Function(rust_sync.MigrationStatus status)? onCurrentStatus,
   }) async {
@@ -2205,16 +2271,18 @@ class IronwoodMigrationService {
       accountUuid: context.accountUuid,
       operation: () async {
         if (!isMobile()) {
-          return operation(await _legacyCredential(context));
+          return operation(await _legacyCredential(context), context);
         }
 
         return _serializeCredentialState(context, () async {
           final initialStatus = await _getStatusForContext(context);
-          final credential = await _selectMobileCredential(
+          final selection = await _selectMobileCredential(
             context: context,
             status: initialStatus,
             mayCreateRun: mayCreateRun,
           );
+          final credential = selection.credential;
+          final submissionContext = selection.submissionContext;
           if (_usesNativeMigrationOutbox) {
             await _reconcileMigrationOutboxReceipts(context: context);
           }
@@ -2223,7 +2291,7 @@ class IronwoodMigrationService {
           Object? operationError;
           StackTrace? operationStackTrace;
           try {
-            result = await operation(credential);
+            result = await operation(credential, submissionContext);
           } catch (error, stackTrace) {
             operationError = error;
             operationStackTrace = stackTrace;
@@ -2274,7 +2342,7 @@ class IronwoodMigrationService {
               !waitingForDenominationConfirmations) {
             try {
               final outboxRefresh = await _refreshMigrationOutbox(
-                context: context,
+                context: submissionContext,
                 credential: credential,
                 prepare: prepareOutboxAfterOperation,
                 statusForStaleBatchDiscard: currentStatus,
@@ -2304,7 +2372,7 @@ class IronwoodMigrationService {
     );
   }
 
-  Future<_MigrationCredential> _selectMobileCredential({
+  Future<_MigrationCredentialSelection> _selectMobileCredential({
     required _MigrationCredentialContext context,
     required rust_sync.MigrationStatus status,
     required bool mayCreateRun,
@@ -2324,6 +2392,7 @@ class IronwoodMigrationService {
           accountUuid: context.accountUuid,
           dbPath: context.dbPath,
           lightwalletdUrl: context.lightwalletdUrl!,
+          managedSubmissionRouting: context.managedSubmissionRouting,
         );
       }
       if (manifest == null) {
@@ -2345,23 +2414,43 @@ class IronwoodMigrationService {
         accountUuid: context.accountUuid,
         expectedRunId: activeRunId,
       );
-      return _MigrationCredential(
-        password: resolvedManifest.credentialHex,
-        saltBase64: resolvedManifest.saltBase64,
+      return _MigrationCredentialSelection(
+        credential: _MigrationCredential(
+          password: resolvedManifest.credentialHex,
+          saltBase64: resolvedManifest.saltBase64,
+        ),
+        submissionContext: _contextWithSubmissionRoute(
+          context,
+          resolvedManifest.lightwalletdUrl,
+          resolvedManifest.managedSubmissionRouting,
+        ),
       );
     }
 
     await _reconcileBackgroundCredential(context: context, status: status);
-    if (!mayCreateRun) return _legacyCredential(context);
+    if (!mayCreateRun) {
+      return _MigrationCredentialSelection(
+        credential: await _legacyCredential(context),
+        submissionContext: context,
+      );
+    }
     final manifest = await backgroundCredentialStore.prepare(
       network: context.network,
       accountUuid: context.accountUuid,
       dbPath: context.dbPath,
       lightwalletdUrl: context.lightwalletdUrl!,
+      managedSubmissionRouting: context.managedSubmissionRouting,
     );
-    return _MigrationCredential(
-      password: manifest.credentialHex,
-      saltBase64: manifest.saltBase64,
+    return _MigrationCredentialSelection(
+      credential: _MigrationCredential(
+        password: manifest.credentialHex,
+        saltBase64: manifest.saltBase64,
+      ),
+      submissionContext: _contextWithSubmissionRoute(
+        context,
+        manifest.lightwalletdUrl,
+        manifest.managedSubmissionRouting,
+      ),
     );
   }
 
@@ -2385,8 +2474,11 @@ class IronwoodMigrationService {
     required _MigrationCredentialContext context,
     required rust_sync.MigrationStatus status,
   }) async {
+    final outboxContext = await _contextWithBackgroundSubmissionRouting(
+      context,
+    );
     final runId = status.activeRunId;
-    final lightwalletdUrl = context.lightwalletdUrl;
+    final lightwalletdUrl = outboxContext.lightwalletdUrl;
     if (!_usesNativeMigrationOutbox ||
         runId == null ||
         lightwalletdUrl == null) {
@@ -2399,11 +2491,12 @@ class IronwoodMigrationService {
     bool recovered;
     try {
       recovered = await recoverMigrationOutboxBatch(
-        batchId: _migrationOutboxBatchId(context, runId),
-        network: context.network,
-        accountUuid: context.accountUuid,
+        batchId: _migrationOutboxBatchId(outboxContext, runId),
+        network: outboxContext.network,
+        accountUuid: outboxContext.accountUuid,
         runId: runId,
         lightwalletdUrl: lightwalletdUrl,
+        managedSubmissionRouting: outboxContext.managedSubmissionRouting,
         expectedTxids: expectedTxids,
       );
     } catch (error) {
@@ -2524,6 +2617,7 @@ class IronwoodMigrationService {
         network: context.network,
         accountUuid: context.accountUuid,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+        managedSubmissionRouting: _managedSubmissionRoutingFor(endpoint),
       );
     } catch (_) {
       return context;
@@ -2635,24 +2729,28 @@ class IronwoodMigrationService {
     required bool prepare,
     rust_sync.MigrationStatus? statusForStaleBatchDiscard,
   }) async {
-    final lightwalletdUrl = context.lightwalletdUrl;
+    final outboxContext = await _contextWithBackgroundSubmissionRouting(
+      context,
+    );
+    final lightwalletdUrl = outboxContext.lightwalletdUrl;
     if (lightwalletdUrl == null) {
       return const _MigrationOutboxRefreshResult();
     }
 
     if (prepare) {
       await prepareMigrationOutbox(
-        dbPath: context.dbPath,
+        dbPath: outboxContext.dbPath,
         lightwalletdUrl: lightwalletdUrl,
-        network: context.network,
-        accountUuid: context.accountUuid,
+        managedSubmissionRouting: outboxContext.managedSubmissionRouting,
+        network: outboxContext.network,
+        accountUuid: outboxContext.accountUuid,
         password: credential.password,
         saltBase64: credential.saltBase64,
       );
     }
 
     final batch = await _stagePersistedMigrationOutbox(
-      context: context,
+      context: outboxContext,
       credential: credential,
       statusForStaleBatchDiscard: statusForStaleBatchDiscard,
     );
@@ -2670,6 +2768,41 @@ class IronwoodMigrationService {
     return _MigrationOutboxRefreshResult(
       staged: true,
       reconciledReceipt: reconciledTxids.isNotEmpty,
+    );
+  }
+
+  Future<_MigrationCredentialContext> _contextWithBackgroundSubmissionRouting(
+    _MigrationCredentialContext context,
+  ) async {
+    final manifest = await backgroundCredentialStore.read(
+      network: context.network,
+      accountUuid: context.accountUuid,
+    );
+    if (manifest == null) return context;
+
+    final resolvedManifest = await _resolveManifestContext(manifest, context);
+    return _contextWithSubmissionRoute(
+      context,
+      resolvedManifest.lightwalletdUrl,
+      resolvedManifest.managedSubmissionRouting,
+    );
+  }
+
+  _MigrationCredentialContext _contextWithSubmissionRoute(
+    _MigrationCredentialContext context,
+    String lightwalletdUrl,
+    bool managedSubmissionRouting,
+  ) {
+    if (context.lightwalletdUrl == lightwalletdUrl &&
+        context.managedSubmissionRouting == managedSubmissionRouting) {
+      return context;
+    }
+    return _MigrationCredentialContext(
+      dbPath: context.dbPath,
+      network: context.network,
+      accountUuid: context.accountUuid,
+      lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
     );
   }
 
@@ -2721,6 +2854,7 @@ class IronwoodMigrationService {
       'accountUuid': context.accountUuid,
       'runId': batch.runId,
       'lightwalletdUrl': lightwalletdUrl,
+      'managedSubmissionRouting': context.managedSubmissionRouting,
       'timingMeanBlocks': batch.timingMeanBlocks,
       'timingMaxBlocks': batch.timingMaxBlocks,
       'createdAtMs': DateTime.now().millisecondsSinceEpoch,
@@ -2996,6 +3130,9 @@ RpcEndpointConfig _missingEndpoint() {
   throw StateError('Ironwood migration endpoint getter is not configured.');
 }
 
+bool _managedSubmissionRoutingFor(RpcEndpointConfig endpoint) =>
+    endpoint.usesManagedSubmissionRouting;
+
 String _missingSessionPassword() {
   throw StateError('Ironwood migration password getter is not configured.');
 }
@@ -3134,6 +3271,7 @@ Future<bool> _defaultRecoverMigrationOutboxBatch({
   required String accountUuid,
   required String runId,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required List<String> expectedTxids,
 }) async {
   return await _backgroundMigrationChannel
@@ -3143,6 +3281,7 @@ Future<bool> _defaultRecoverMigrationOutboxBatch({
             'accountUuid': accountUuid,
             'runId': runId,
             'lightwalletdUrl': lightwalletdUrl,
+            'managedSubmissionRouting': managedSubmissionRouting,
             'expectedTxids': expectedTxids,
           }) ??
       false;
@@ -3247,12 +3386,14 @@ class _MigrationCredentialContext {
     required this.network,
     required this.accountUuid,
     this.lightwalletdUrl,
+    this.managedSubmissionRouting = false,
   });
 
   final String dbPath;
   final String network;
   final String accountUuid;
   final String? lightwalletdUrl;
+  final bool managedSubmissionRouting;
 }
 
 String? _fileName(String path) {
@@ -3270,6 +3411,16 @@ class _MigrationCredential {
 
   final String password;
   final String saltBase64;
+}
+
+class _MigrationCredentialSelection {
+  const _MigrationCredentialSelection({
+    required this.credential,
+    required this.submissionContext,
+  });
+
+  final _MigrationCredential credential;
+  final _MigrationCredentialContext submissionContext;
 }
 
 class _MigrationOutboxRefreshResult {

@@ -32,19 +32,26 @@ int32_t zcash_lightwalletd_latest_block_height(
 
 int32_t zcash_lightwalletd_observe_transaction(
     const char* lightwalletd_url,
+    const uint8_t* routing_transaction_id,
+    uintptr_t routing_transaction_id_len,
     const uint8_t* transaction_id,
     uintptr_t transaction_id_len,
     CLightwalletdTransactionObservation* output,
+    bool managed_submission_routing,
     void* cancellation
 );
 
 int32_t zcash_lightwalletd_send_transaction(
     const char* lightwalletd_url,
+    const uint8_t* transaction_id,
+    uintptr_t transaction_id_len,
     const uint8_t* raw_transaction,
     uintptr_t raw_transaction_len,
     int32_t* response_error_code,
     char* response_error_message,
     uintptr_t response_error_message_capacity,
+    bool* response_accepted,
+    bool managed_submission_routing,
     void* cancellation
 );
 

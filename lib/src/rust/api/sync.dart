@@ -23,11 +23,13 @@ int getSyncMode() => RustLib.instance.api.crateApiSyncGetSyncMode();
 Stream<ApiSyncProgressEvent> startFullSync({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required int mode,
 }) => RustLib.instance.api.crateApiSyncStartFullSync(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   mode: mode,
 );
@@ -39,11 +41,13 @@ Stream<ApiSyncProgressEvent> startFullSync({
 Future<void> runFullSyncBlocking({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required int mode,
 }) => RustLib.instance.api.crateApiSyncRunFullSyncBlocking(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   mode: mode,
 );
@@ -263,6 +267,7 @@ Future<SendMaxEstimateResult> estimateSendMax({
 Future<ExecuteProposalResult> executeProposal({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required BigInt proposalId,
   required String sendFlowId,
   required List<int> mnemonicBytes,
@@ -271,6 +276,7 @@ Future<ExecuteProposalResult> executeProposal({
 }) => RustLib.instance.api.crateApiSyncExecuteProposal(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   proposalId: proposalId,
   sendFlowId: sendFlowId,
   mnemonicBytes: mnemonicBytes,
@@ -284,6 +290,7 @@ Future<ExecuteProposalResult> executeProposal({
 Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required BigInt proposalId,
   required String sendFlowId,
   required String password,
@@ -292,6 +299,7 @@ Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
 }) => RustLib.instance.api.crateApiSyncExecuteProposalWithMacosStoredMnemonic(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   proposalId: proposalId,
   sendFlowId: sendFlowId,
   password: password,
@@ -302,6 +310,7 @@ Future<ExecuteProposalResult> executeProposalWithMacosStoredMnemonic({
 Future<IronwoodMigrationResult> migrateOrchardToIronwood({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
@@ -312,6 +321,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
 }) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwood(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
@@ -326,6 +336,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwood({
 Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
@@ -336,6 +347,7 @@ Future<IronwoodMigrationResult> migrateOrchardToIronwoodImmediately({
 }) => RustLib.instance.api.crateApiSyncMigrateOrchardToIronwoodImmediately(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
@@ -366,6 +378,7 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationImmediatePczt({
 Future<IronwoodMigrationResult> completeOrchardMigrationImmediatePczt({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -373,6 +386,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationImmediatePczt({
 }) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationImmediatePczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   requestId: requestId,
@@ -473,6 +487,7 @@ Future<OrchardMigrationPrivatePlan?> getOrchardMigrationPrivatePlan({
 Future<IronwoodMigrationResult> prepareOrchardMigrationOutbox({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String password,
@@ -480,6 +495,7 @@ Future<IronwoodMigrationResult> prepareOrchardMigrationOutbox({
 }) => RustLib.instance.api.crateApiSyncPrepareOrchardMigrationOutbox(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -527,6 +543,7 @@ Future<void> reconcileOrchardMigrationOutboxReceipt({
 Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String password,
@@ -534,6 +551,7 @@ Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
 }) => RustLib.instance.api.crateApiSyncBroadcastDueOrchardMigrationTransactions(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   password: password,
@@ -543,6 +561,7 @@ Future<IronwoodMigrationResult> broadcastDueOrchardMigrationTransactions({
 Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String password,
@@ -551,6 +570,7 @@ Future<IronwoodMigrationResult> broadcastOneDueOrchardMigrationTransaction({
     RustLib.instance.api.crateApiSyncBroadcastOneDueOrchardMigrationTransaction(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
       network: network,
       accountUuid: accountUuid,
       password: password,
@@ -591,6 +611,7 @@ Future<String> createOrResumePrivateMigrationDraft({
 Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -602,6 +623,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationDenominationsPczt({
     RustLib.instance.api.crateApiSyncCompleteOrchardMigrationDenominationsPczt(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
       network: network,
       accountUuid: accountUuid,
       requestId: requestId,
@@ -632,6 +654,7 @@ Future<KeystoneMigrationSigningRequest> prepareOrchardMigrationSingleQrPczt({
 Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String requestId,
@@ -641,6 +664,7 @@ Future<IronwoodMigrationResult> completeOrchardMigrationSingleQrPczt({
 }) => RustLib.instance.api.crateApiSyncCompleteOrchardMigrationSingleQrPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   requestId: requestId,
@@ -695,6 +719,7 @@ Future<IronwoodMigrationResult>
 migrateOrchardToIronwoodWithMacosStoredMnemonic({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String password,
@@ -705,6 +730,7 @@ migrateOrchardToIronwoodWithMacosStoredMnemonic({
     .crateApiSyncMigrateOrchardToIronwoodWithMacosStoredMnemonic(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
       network: network,
       accountUuid: accountUuid,
       password: password,
@@ -742,12 +768,14 @@ Future<ShieldTransparentPcztResult> createShieldTransparentPczt({
 Future<ShieldTransparentResult> shieldTransparentBalance({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required List<int> mnemonicBytes,
 }) => RustLib.instance.api.crateApiSyncShieldTransparentBalance(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   accountUuid: accountUuid,
   mnemonicBytes: mnemonicBytes,
@@ -760,6 +788,7 @@ Future<ShieldTransparentResult>
 shieldTransparentBalanceWithMacosStoredMnemonic({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required String accountUuid,
   required String password,
@@ -767,6 +796,7 @@ shieldTransparentBalanceWithMacosStoredMnemonic({
     .crateApiSyncShieldTransparentBalanceWithMacosStoredMnemonic(
       dbPath: dbPath,
       lightwalletdUrl: lightwalletdUrl,
+      managedSubmissionRouting: managedSubmissionRouting,
       network: network,
       accountUuid: accountUuid,
       password: password,
@@ -953,6 +983,7 @@ Future<Uint8List> redactPcztForSigner({required List<int> pcztBytes}) =>
 Future<ExtractAndBroadcastPcztResult> extractAndBroadcastPczt({
   required String dbPath,
   required String lightwalletdUrl,
+  required bool managedSubmissionRouting,
   required String network,
   required List<int> pcztWithProofsBytes,
   required List<int> pcztWithSignaturesBytes,
@@ -961,6 +992,7 @@ Future<ExtractAndBroadcastPcztResult> extractAndBroadcastPczt({
 }) => RustLib.instance.api.crateApiSyncExtractAndBroadcastPczt(
   dbPath: dbPath,
   lightwalletdUrl: lightwalletdUrl,
+  managedSubmissionRouting: managedSubmissionRouting,
   network: network,
   pcztWithProofsBytes: pcztWithProofsBytes,
   pcztWithSignaturesBytes: pcztWithSignaturesBytes,

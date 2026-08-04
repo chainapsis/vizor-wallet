@@ -6,6 +6,7 @@ use flutter_rust_bridge::frb;
 use zeroize::Zeroizing;
 
 use crate::frb_generated::StreamSink;
+use crate::wallet::sync::submission_mode;
 use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_sync, sync_engine};
 
 // ======================== Sync Mode ========================
@@ -47,6 +48,7 @@ pub struct ApiSyncProgressEvent {
 fn run_full_sync_internal<F>(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     mode: u8,
     on_progress: F,
@@ -73,6 +75,7 @@ where
             sync_engine::run_sync_inner(
                 &db_path,
                 &lightwalletd_url,
+                submission_mode(managed_submission_routing),
                 network,
                 cancel,
                 mode,
@@ -93,31 +96,39 @@ where
 pub fn start_full_sync(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     mode: u8,
     sink: StreamSink<ApiSyncProgressEvent>,
 ) -> Result<(), String> {
-    let result = run_full_sync_internal(db_path, lightwalletd_url, network, mode, |progress| {
-        if sink
-            .add(ApiSyncProgressEvent {
-                scanned_height: progress.scanned_height,
-                chain_tip_height: progress.chain_tip_height,
-                percentage: progress.percentage,
-                display_target_percentage: progress.display_target_percentage,
-                display_target_blocks: progress.display_target_blocks,
-                is_syncing: progress.is_syncing,
-                is_complete: progress.is_complete,
-                has_new_tx: progress.has_new_tx,
-                phase: progress.phase.clone(),
-            })
-            .is_err()
-        {
-            log::warn!(
-                "[{}] sync: StreamSink closed, progress not delivered",
-                sync_engine::elapsed(),
-            );
-        }
-    });
+    let result = run_full_sync_internal(
+        db_path,
+        lightwalletd_url,
+        managed_submission_routing,
+        network,
+        mode,
+        |progress| {
+            if sink
+                .add(ApiSyncProgressEvent {
+                    scanned_height: progress.scanned_height,
+                    chain_tip_height: progress.chain_tip_height,
+                    percentage: progress.percentage,
+                    display_target_percentage: progress.display_target_percentage,
+                    display_target_blocks: progress.display_target_blocks,
+                    is_syncing: progress.is_syncing,
+                    is_complete: progress.is_complete,
+                    has_new_tx: progress.has_new_tx,
+                    phase: progress.phase.clone(),
+                })
+                .is_err()
+            {
+                log::warn!(
+                    "[{}] sync: StreamSink closed, progress not delivered",
+                    sync_engine::elapsed(),
+                );
+            }
+        },
+    );
 
     // Generated Dart exposes the sink stream, while the FRB task future is
     // detached. Forward terminal errors through the stream it actually reads.
@@ -140,10 +151,18 @@ pub fn start_full_sync(
 pub fn run_full_sync_blocking(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     mode: u8,
 ) -> Result<(), String> {
-    run_full_sync_internal(db_path, lightwalletd_url, network, mode, |_| {})
+    run_full_sync_internal(
+        db_path,
+        lightwalletd_url,
+        managed_submission_routing,
+        network,
+        mode,
+        |_| {},
+    )
 }
 
 /// Cancel a running full sync.
@@ -1039,6 +1058,7 @@ pub fn estimate_send_max(
 pub fn execute_proposal(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     proposal_id: u64,
     send_flow_id: String,
     mnemonic_bytes: Vec<u8>,
@@ -1054,6 +1074,7 @@ pub fn execute_proposal(
         let r = rt.block_on(wallet_sync::execute_proposal(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             proposal_id,
             &send_flow_id,
             seed,
@@ -1076,6 +1097,7 @@ pub fn execute_proposal(
 pub fn execute_proposal_with_macos_stored_mnemonic(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     proposal_id: u64,
     send_flow_id: String,
     password: String,
@@ -1088,6 +1110,7 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
         let r = rt.block_on(wallet_sync::execute_proposal_with_seed_loader(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             proposal_id,
             &send_flow_id,
             move |network, account_id| {
@@ -1113,6 +1136,7 @@ pub fn execute_proposal_with_macos_stored_mnemonic(
 pub fn migrate_orchard_to_ironwood(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     mnemonic_bytes: Vec<u8>,
@@ -1132,6 +1156,7 @@ pub fn migrate_orchard_to_ironwood(
         let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             network,
             &account_uuid,
             seed,
@@ -1159,6 +1184,7 @@ pub fn migrate_orchard_to_ironwood(
 pub fn migrate_orchard_to_ironwood_immediately(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     mnemonic_bytes: Vec<u8>,
@@ -1176,6 +1202,7 @@ pub fn migrate_orchard_to_ironwood_immediately(
         let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood_immediately(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             network,
             &account_uuid,
             seed,
@@ -1239,6 +1266,7 @@ pub fn prepare_orchard_migration_immediate_pczt(
 pub async fn complete_orchard_migration_immediate_pczt(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     request_id: String,
@@ -1248,6 +1276,7 @@ pub async fn complete_orchard_migration_immediate_pczt(
     let r = wallet_sync::complete_orchard_migration_immediate_pczt(
         &db_path,
         &lightwalletd_url,
+        submission_mode(managed_submission_routing),
         network,
         &account_uuid,
         &request_id,
@@ -1595,6 +1624,7 @@ pub fn get_orchard_migration_private_plan(
 pub fn prepare_orchard_migration_outbox(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     password: String,
@@ -1607,6 +1637,7 @@ pub fn prepare_orchard_migration_outbox(
         let result = rt.block_on(wallet_sync::IronwoodMigrationResult::prepare_outbox(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             network,
             &account_uuid,
             password.as_slice(),
@@ -1709,6 +1740,7 @@ pub fn reconcile_orchard_migration_outbox_receipt(
 pub fn broadcast_due_orchard_migration_transactions(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     password: String,
@@ -1721,6 +1753,7 @@ pub fn broadcast_due_orchard_migration_transactions(
         let r = rt.block_on(wallet_sync::broadcast_due_orchard_migration_transactions(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             network,
             &account_uuid,
             password,
@@ -1741,6 +1774,7 @@ pub fn broadcast_due_orchard_migration_transactions(
 pub fn broadcast_one_due_orchard_migration_transaction(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     password: String,
@@ -1754,6 +1788,7 @@ pub fn broadcast_one_due_orchard_migration_transaction(
             wallet_sync::broadcast_one_due_orchard_migration_transaction(
                 &db_path,
                 &lightwalletd_url,
+                submission_mode(managed_submission_routing),
                 network,
                 &account_uuid,
                 password,
@@ -1885,6 +1920,7 @@ fn to_wallet_signed_messages(
 pub async fn complete_orchard_migration_denominations_pczt(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     request_id: String,
@@ -1899,6 +1935,7 @@ pub async fn complete_orchard_migration_denominations_pczt(
     let r = wallet_sync::complete_orchard_migration_denominations_pczt(
         &db_path,
         &lightwalletd_url,
+        submission_mode(managed_submission_routing),
         network,
         &account_uuid,
         &request_id,
@@ -1960,6 +1997,7 @@ pub fn prepare_orchard_migration_single_qr_pczt(
 pub async fn complete_orchard_migration_single_qr_pczt(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     request_id: String,
@@ -1973,6 +2011,7 @@ pub async fn complete_orchard_migration_single_qr_pczt(
     let r = wallet_sync::complete_orchard_migration_single_qr_pczt(
         &db_path,
         &lightwalletd_url,
+        submission_mode(managed_submission_routing),
         network,
         &account_uuid,
         &request_id,
@@ -2077,6 +2116,7 @@ pub fn complete_orchard_migration_batch_pczt(
 pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     password: String,
@@ -2097,6 +2137,7 @@ pub fn migrate_orchard_to_ironwood_with_macos_stored_mnemonic(
         let r = rt.block_on(wallet_sync::migrate_orchard_to_ironwood(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             network,
             &account_uuid,
             seed,
@@ -2167,6 +2208,7 @@ pub fn create_shield_transparent_pczt(
 pub fn shield_transparent_balance(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     mnemonic_bytes: Vec<u8>,
@@ -2181,6 +2223,7 @@ pub fn shield_transparent_balance(
         let r = rt.block_on(wallet_sync::shield_transparent_balance(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             network,
             &account_uuid,
             seed,
@@ -2203,6 +2246,7 @@ pub fn shield_transparent_balance(
 pub fn shield_transparent_balance_with_macos_stored_mnemonic(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     account_uuid: String,
     password: String,
@@ -2216,6 +2260,7 @@ pub fn shield_transparent_balance_with_macos_stored_mnemonic(
         let r = rt.block_on(wallet_sync::shield_transparent_balance(
             &db_path,
             &lightwalletd_url,
+            submission_mode(managed_submission_routing),
             network,
             &account_uuid,
             seed,
@@ -2545,6 +2590,7 @@ pub fn redact_pczt_for_signer(pczt_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 pub async fn extract_and_broadcast_pczt(
     db_path: String,
     lightwalletd_url: String,
+    managed_submission_routing: bool,
     network: String,
     pczt_with_proofs_bytes: Vec<u8>,
     pczt_with_signatures_bytes: Vec<u8>,
@@ -2555,6 +2601,7 @@ pub async fn extract_and_broadcast_pczt(
     let result = wallet_sync::extract_and_broadcast_pczt(
         &db_path,
         &lightwalletd_url,
+        submission_mode(managed_submission_routing),
         network,
         &pczt_with_proofs_bytes,
         &pczt_with_signatures_bytes,

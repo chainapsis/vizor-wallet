@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -1878,6 +1879,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -1909,6 +1911,75 @@ void main() {
       expect(returnedMnemonicBytes, hasLength(2));
       for (final bytes in returnedMnemonicBytes) {
         expect(bytes, everyElement(0));
+      }
+    },
+  );
+
+  test(
+    'software migration routes managed presets but not custom URLs',
+    () async {
+      final managedEndpoint = defaultRpcEndpointConfig('main');
+      final cases = <({RpcEndpointConfig endpoint, bool expected})>[
+        (endpoint: managedEndpoint, expected: true),
+        (
+          endpoint: RpcEndpointConfig(
+            networkName: managedEndpoint.networkName,
+            lightwalletdUrl: managedEndpoint.lightwalletdUrl,
+            presetId: kCustomRpcEndpointPresetId,
+          ),
+          expected: false,
+        ),
+      ];
+
+      for (final testCase in cases) {
+        bool? seenManagedSubmissionRouting;
+        final service = IronwoodMigrationService(
+          getWalletDbPath: () async => '/tmp/wallet.db',
+          getStatus:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => _migrationStatus(),
+          getPrivatePlan:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => null,
+          secureStore: AppSecureStore.testing(
+            storage: const FlutterSecureStorage(),
+          ),
+          getEndpoint: () => testCase.endpoint,
+          getSessionPassword: () => 'test-password',
+          isMobile: () => false,
+          isMacOS: () => true,
+          startMacosSoftwareMigration:
+              ({
+                required dbPath,
+                required lightwalletdUrl,
+                required managedSubmissionRouting,
+                required network,
+                required accountUuid,
+                required approvedSchedule,
+                required password,
+                required saltBase64,
+              }) async {
+                seenManagedSubmissionRouting = managedSubmissionRouting;
+                return _migrationResult();
+              },
+        );
+
+        await service.startSoftwarePrivateMigration(
+          accountUuid: 'account-1',
+          approvedSchedule: const [],
+        );
+
+        expect(
+          seenManagedSubmissionRouting,
+          testCase.expected,
+          reason: 'preset ${testCase.endpoint.presetId}',
+        );
       }
     },
   );
@@ -1955,6 +2026,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -1975,6 +2047,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2062,6 +2135,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required requestId,
@@ -2121,6 +2195,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -2138,6 +2213,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2195,6 +2271,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -2630,6 +2707,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -2703,6 +2781,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2717,6 +2796,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -2761,6 +2841,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -2808,6 +2889,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -2819,6 +2901,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -2863,6 +2946,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -2872,6 +2956,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -2979,6 +3064,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required requestId,
@@ -3117,6 +3203,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required requestId,
@@ -3234,6 +3321,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required requestId,
@@ -3483,6 +3571,7 @@ void main() {
               required accountUuid,
               required runId,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required expectedTxids,
             }) async {
               recovery = {
@@ -3491,6 +3580,7 @@ void main() {
                 'accountUuid': accountUuid,
                 'runId': runId,
                 'lightwalletdUrl': lightwalletdUrl,
+                'managedSubmissionRouting': managedSubmissionRouting,
                 'expectedTxids': expectedTxids,
               };
               return true;
@@ -3515,8 +3605,135 @@ void main() {
         'accountUuid': 'account-1',
         'runId': 'legacy-run',
         'lightwalletdUrl': 'https://lwd.example:443',
+        'managedSubmissionRouting': false,
         'expectedTxids': ['persisted-tx'],
       });
+    },
+  );
+
+  test(
+    'active manifest keeps its endpoint and submission routing paired',
+    () async {
+      final managedEndpoint = defaultRpcEndpointConfig('main');
+      final customEndpoint = const RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://custom.example:443',
+        presetId: kCustomRpcEndpointPresetId,
+      );
+      final cases =
+          <
+            ({
+              RpcEndpointConfig currentEndpoint,
+              String manifestUrl,
+              bool? manifestRouting,
+              bool expectedRouting,
+            })
+          >[
+            (
+              currentEndpoint: managedEndpoint,
+              manifestUrl: managedEndpoint.normalizedLightwalletdUrl,
+              manifestRouting: null,
+              expectedRouting: false,
+            ),
+            (
+              currentEndpoint: customEndpoint,
+              manifestUrl: managedEndpoint.normalizedLightwalletdUrl,
+              manifestRouting: true,
+              expectedRouting: true,
+            ),
+            (
+              currentEndpoint: managedEndpoint,
+              manifestUrl: customEndpoint.normalizedLightwalletdUrl,
+              manifestRouting: false,
+              expectedRouting: false,
+            ),
+          ];
+
+      for (final testCase in cases) {
+        FlutterSecureStorage.setMockInitialValues({
+          'main:account-1': jsonEncode(<String, Object?>{
+            'version': 1,
+            'network': 'main',
+            'accountUuid': 'account-1',
+            'dbPath': '/tmp/wallet.db',
+            'lightwalletdUrl': testCase.manifestUrl,
+            'managedSubmissionRouting': ?testCase.manifestRouting,
+            'credentialHex': List.filled(32, '01').join(),
+            'saltBase64': base64Encode(List<int>.filled(16, 1)),
+            'expectedRunId': 'run-1',
+          }),
+        });
+        final store = _backgroundCredentialStore();
+        final rustRoutes = <(String, bool)>[];
+        Map<String, Object?>? stagedPayload;
+        final service = IronwoodMigrationService(
+          getWalletDbPath: () async => '/tmp/wallet.db',
+          getStatus:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => _migrationStatus(activeRunId: 'run-1'),
+          getPrivatePlan:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+              }) async => null,
+          secureStore: AppSecureStore.testing(
+            storage: const FlutterSecureStorage(),
+          ),
+          backgroundCredentialStore: store,
+          getEndpoint: () => testCase.currentEndpoint,
+          getSessionPassword: () => throw StateError('session password used'),
+          isMobile: () => true,
+          isIOS: () => true,
+          isMacOS: () => false,
+          listMigrationOutboxReceipts: () async => const [],
+          prepareMigrationOutbox:
+              ({
+                required dbPath,
+                required lightwalletdUrl,
+                required managedSubmissionRouting,
+                required network,
+                required accountUuid,
+                required password,
+                required saltBase64,
+              }) async {
+                rustRoutes.add((lightwalletdUrl, managedSubmissionRouting));
+                return _migrationResult();
+              },
+          exportMigrationOutbox:
+              ({
+                required dbPath,
+                required network,
+                required accountUuid,
+                required password,
+                required saltBase64,
+              }) async => _outboxBatch(),
+          stageMigrationOutboxBatch: (payload) async {
+            stagedPayload = payload;
+            return const {'txid-1': 'digest-1'};
+          },
+          armMigrationOutboxBatch:
+              ({required batchId, required expectedDigests}) async => true,
+          runMigrationOutboxOnceNow: () async =>
+              const IronwoodMigrationOutboxRunResult(
+                outcome: IronwoodMigrationOutboxRunOutcome.noWork,
+              ),
+        );
+
+        await service.continueSoftwarePrivateMigration(
+          accountUuid: 'account-1',
+        );
+
+        final expectedRoute = (testCase.manifestUrl, testCase.expectedRouting);
+        expect(rustRoutes, [expectedRoute]);
+        expect((
+          stagedPayload?['lightwalletdUrl'],
+          stagedPayload?['managedSubmissionRouting'],
+        ), expectedRoute);
+      }
     },
   );
 
@@ -3547,6 +3764,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -3667,6 +3885,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3749,6 +3968,7 @@ void main() {
               required accountUuid,
               required runId,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required expectedTxids,
             }) async => false,
         exportMigrationOutbox:
@@ -3778,6 +3998,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3856,6 +4077,7 @@ void main() {
               required accountUuid,
               required runId,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required expectedTxids,
             }) async => false,
         revokeMigrationAccount:
@@ -3872,6 +4094,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required mnemonicBytes,
@@ -3935,6 +4158,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -4001,6 +4225,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -4106,6 +4331,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -4238,6 +4464,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -4330,6 +4557,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -4347,6 +4575,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required approvedSchedule,
@@ -4409,6 +4638,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -4469,6 +4699,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -4537,6 +4768,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -4620,6 +4852,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -4644,6 +4877,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required requestId,
@@ -4768,6 +5002,7 @@ void main() {
               ({
                 required dbPath,
                 required lightwalletdUrl,
+                required managedSubmissionRouting,
                 required network,
                 required accountUuid,
                 required mnemonicBytes,
@@ -4782,6 +5017,7 @@ void main() {
               ({
                 required dbPath,
                 required lightwalletdUrl,
+                required managedSubmissionRouting,
                 required network,
                 required accountUuid,
                 required password,
@@ -4826,6 +5062,7 @@ void main() {
           'listOutboxReceipts',
         ]);
         expect(stagedPayload?['batchId'], 'test:account-1:run-1');
+        expect(stagedPayload?['managedSubmissionRouting'], isFalse);
         expect(stagedPayload?['nextProofHeight'], 576);
         final items = stagedPayload?['items'] as List<Object?>;
         final item = items.single as Map<Object?, Object?>;
@@ -4863,6 +5100,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -4957,6 +5195,7 @@ void main() {
             ({
               required dbPath,
               required lightwalletdUrl,
+              required managedSubmissionRouting,
               required network,
               required accountUuid,
               required password,
@@ -5013,6 +5252,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -5033,6 +5273,7 @@ void main() {
           ({
             required dbPath,
             required lightwalletdUrl,
+            required managedSubmissionRouting,
             required network,
             required accountUuid,
             required password,
@@ -5311,6 +5552,7 @@ IronwoodMigrationService _notificationAuthorizationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required password,
@@ -5328,6 +5570,7 @@ IronwoodMigrationService _notificationAuthorizationService({
         ({
           required dbPath,
           required lightwalletdUrl,
+          required managedSubmissionRouting,
           required network,
           required accountUuid,
           required approvedSchedule,

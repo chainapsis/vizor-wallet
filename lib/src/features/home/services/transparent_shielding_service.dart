@@ -69,6 +69,7 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
 
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
+    final managedSubmissionRouting = endpoint.usesManagedSubmissionRouting;
     attemptedEndpoint = endpoint;
 
     late final rust_sync.ShieldTransparentResult result;
@@ -84,6 +85,7 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
         network: endpoint.networkName,
         accountUuid: accountUuid,
         password: password,
+        managedSubmissionRouting: managedSubmissionRouting,
       );
     } else {
       final accountNotifier = ref.read(accountProvider.notifier);
@@ -101,6 +103,7 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
           network: endpoint.networkName,
           accountUuid: accountUuid,
           mnemonicBytes: mnemonicBytes,
+          managedSubmissionRouting: managedSubmissionRouting,
         );
       } finally {
         mnemonicBytes.fillRange(0, mnemonicBytes.length, 0);

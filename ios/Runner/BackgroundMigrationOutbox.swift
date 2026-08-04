@@ -84,6 +84,8 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   let accountUuid: String
   let runId: String
   var lightwalletdUrl: String
+  // Optional so persisted batches from older app versions remain readable.
+  var managedSubmissionRouting: Bool? = nil
   var timingMeanBlocks: UInt64
   var timingMaxBlocks: UInt64
   let createdAt: Date
@@ -104,6 +106,10 @@ struct BackgroundMigrationOutboxBatch: Codable, Equatable {
   var items: [BackgroundMigrationOutboxItem]
 
   var scopeKey: String { "\(network):\(accountUuid)" }
+
+  var usesManagedSubmissionRouting: Bool {
+    managedSubmissionRouting ?? false
+  }
 
   /// Whether this batch still owes the user a proof-ready announcement.
   ///
@@ -146,6 +152,7 @@ struct BackgroundMigrationOutboxSelection: Equatable {
   let accountUuid: String
   let scopeKey: String
   let lightwalletdUrl: String
+  let managedSubmissionRouting: Bool
   let item: BackgroundMigrationOutboxItem
 }
 
@@ -244,11 +251,14 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       else {
         throw BackgroundMigrationOutboxError.conflictingBatch
       }
-      if existing.lightwalletdUrl != batch.lightwalletdUrl {
+      if existing.lightwalletdUrl != batch.lightwalletdUrl
+        || existing.usesManagedSubmissionRouting != batch.usesManagedSubmissionRouting
+      {
         guard !existing.items.contains(where: { $0.status == .submitting }) else {
           throw BackgroundMigrationOutboxError.conflictingBatch
         }
         batches[batchIndex].lightwalletdUrl = batch.lightwalletdUrl
+        batches[batchIndex].managedSubmissionRouting = batch.managedSubmissionRouting
       }
       // The timing cadence is scheduling policy, not batch identity: a newer
       // app build may legitimately recompute it for the same run (e.g. the
@@ -337,6 +347,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
     runId: String,
     expectedTxids: Set<String>,
     lightwalletdUrl: String,
+    managedSubmissionRouting: Bool? = nil,
     at date: Date
   ) throws -> Bool {
     guard !expectedTxids.isEmpty, !lightwalletdUrl.isEmpty else {
@@ -374,6 +385,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       batches[batchIndex].items[itemIndex] = item
     }
     batches[batchIndex].lightwalletdUrl = lightwalletdUrl
+    batches[batchIndex].managedSubmissionRouting = managedSubmissionRouting
     if batches[batchIndex].items.contains(where: { $0.status == .armed }) {
       batches[batchIndex].armedAt = batches[batchIndex].armedAt ?? date
     }
@@ -833,6 +845,7 @@ struct BackgroundMigrationOutboxSnapshot: Codable, Equatable {
       accountUuid: batch.accountUuid,
       scopeKey: batch.scopeKey,
       lightwalletdUrl: batch.lightwalletdUrl,
+      managedSubmissionRouting: batch.usesManagedSubmissionRouting,
       item: item
     )
   }

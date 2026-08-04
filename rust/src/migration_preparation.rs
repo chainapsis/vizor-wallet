@@ -207,6 +207,7 @@ pub fn run_sync(
         .block_on(sync_engine::run_sync_inner(
             db_path,
             lightwalletd_url,
+            sync::SubmissionMode::CurrentOnly,
             network,
             control.cancel.clone(),
             MIGRATION_PREPARATION_SYNC_MODE,
@@ -294,6 +295,7 @@ pub fn inspect_proof_readiness(
 pub fn advance(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: sync::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     expected_run_id: &str,
@@ -311,6 +313,7 @@ pub fn advance(
         .block_on(sync::advance_orchard_migration_preparation_for_run(
             db_path,
             lightwalletd_url,
+            submission_mode,
             network,
             account_uuid,
             expected_run_id,

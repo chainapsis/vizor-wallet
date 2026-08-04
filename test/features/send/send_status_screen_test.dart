@@ -76,6 +76,7 @@ void main() {
     expect(find.text(r'$1.06K'), findsOneWidget);
     expect(find.text('0.00012 ZEC'), findsOneWidget);
     expect(find.text(truncatedAddress(_address)), findsOneWidget);
+    expect(rustApi.executeManagedSubmissionRoutingCalls, [true]);
     expect(rustApi.discardCalls, isEmpty);
   });
 
@@ -215,6 +216,7 @@ void main() {
     expect(rustApi.extractCalls.single.$2, const [9, 9]);
     // needsSaplingParams=false -> no Sapling params threaded to extraction.
     expect(rustApi.extractCalls.single.$3, isNull);
+    expect(rustApi.extractManagedSubmissionRoutingCalls, [true]);
     // The replayable proposal is already consumed, but discard also releases
     // the owner-scoped wallet-input lock retained for the hardware round trip.
     expect(rustApi.discardCalls, [(BigInt.one, 'test-send-flow')]);
@@ -510,6 +512,8 @@ class _RustApiFake implements RustLibApi {
   final discardCalls = <(BigInt, String)>[];
   final retainCalls = <(BigInt, String)>[];
   final extractCalls = <(List<int>, List<int>, String?)>[];
+  final executeManagedSubmissionRoutingCalls = <bool>[];
+  final extractManagedSubmissionRoutingCalls = <bool>[];
   ExecuteProposalResult? executeResult;
   Object? executeError;
   ExtractAndBroadcastPcztResult? extractResult;
@@ -521,6 +525,8 @@ class _RustApiFake implements RustLibApi {
     discardCalls.clear();
     retainCalls.clear();
     extractCalls.clear();
+    executeManagedSubmissionRoutingCalls.clear();
+    extractManagedSubmissionRoutingCalls.clear();
     executeResult = null;
     executeError = null;
     extractResult = null;
@@ -562,9 +568,11 @@ class _RustApiFake implements RustLibApi {
     required BigInt proposalId,
     required String sendFlowId,
     required List<int> mnemonicBytes,
+    required bool managedSubmissionRouting,
     String? spendParamsPath,
     String? outputParamsPath,
   }) {
+    executeManagedSubmissionRoutingCalls.add(managedSubmissionRouting);
     return _execute();
   }
 
@@ -576,9 +584,11 @@ class _RustApiFake implements RustLibApi {
     required BigInt proposalId,
     required String sendFlowId,
     required String password,
+    required bool managedSubmissionRouting,
     String? spendParamsPath,
     String? outputParamsPath,
   }) {
+    executeManagedSubmissionRoutingCalls.add(managedSubmissionRouting);
     return _execute();
   }
 
@@ -589,9 +599,11 @@ class _RustApiFake implements RustLibApi {
     required String network,
     required List<int> pcztWithProofsBytes,
     required List<int> pcztWithSignaturesBytes,
+    required bool managedSubmissionRouting,
     String? spendParamsPath,
     String? outputParamsPath,
   }) async {
+    extractManagedSubmissionRoutingCalls.add(managedSubmissionRouting);
     extractCalls.add((
       pcztWithProofsBytes,
       pcztWithSignaturesBytes,

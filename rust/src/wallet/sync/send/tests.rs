@@ -162,6 +162,44 @@ fn immediate_migration_marks_restart_retention_before_broadcast() {
 }
 
 #[test]
+fn immediate_migration_not_submitted_restores_restart_recovery() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("wallet.db");
+    let db_path = db_path.to_str().unwrap();
+    let owner = LockOwner::new([7; 32]);
+    let output = OutputRef::new(TxId::from_bytes([9; 32]), PoolType::ORCHARD, 0);
+    super::super::proposal_locks::persist(
+        db_path,
+        owner,
+        std::slice::from_ref(&output),
+        BlockHeight::from_u32(100),
+    )
+    .unwrap();
+
+    let mut input_lock =
+        ImmediateMigrationInputLock::new(db_path, WalletNetwork::Regtest, owner, vec![output]);
+    input_lock.mark_broadcast_started().unwrap();
+    input_lock.reset_after_not_submitted().unwrap();
+
+    assert!(!input_lock.retain_on_drop);
+    let conn = Connection::open(db_path).unwrap();
+    let retained: bool = conn
+        .query_row(
+            "SELECT retain_until_expiry
+             FROM vizor_send_proposal_locks
+             WHERE owner = ?1",
+            params![owner.as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!retained);
+
+    // The test database only contains the recovery side table, not a complete
+    // wallet schema. Disable Drop cleanup after checking the state Drop uses.
+    input_lock.active = false;
+}
+
+#[test]
 fn immediate_migration_plan_ignores_zero_value_orchard_notes() {
     let target_height = BlockHeight::from_u32(500);
     let with_padding = immediate_migration_plan_for_values(
@@ -981,12 +1019,27 @@ fn shield_result_preserves_pending_broadcast_status() {
 
 #[test]
 fn migration_rebuilds_only_after_explicit_server_rejection() {
-    assert!(migration_broadcast_failure_requires_rebuild(
-        "Broadcast rejected: bad-txns-inputs-spent (code 18)"
+    let rejected = BroadcastFailure::Rejected {
+        code: 18,
+        message: "bad-txns-inputs-spent".to_string(),
+    };
+    let not_submitted = BroadcastFailure::NotSubmitted {
+        message: "connection unavailable".to_string(),
+    };
+    let indeterminate = BroadcastFailure::Indeterminate {
+        message: "response timeout".to_string(),
+    };
+
+    assert!(migration_broadcast_failure_requires_rebuild(&rejected));
+    assert!(!migration_broadcast_failure_requires_rebuild(
+        &not_submitted
     ));
     assert!(!migration_broadcast_failure_requires_rebuild(
-        "SendTransaction gRPC failed: connection unavailable"
+        &indeterminate
     ));
+    assert!(rejected.is_definitely_not_accepted());
+    assert!(not_submitted.is_definitely_not_accepted());
+    assert!(!indeterminate.is_definitely_not_accepted());
 }
 
 #[test]

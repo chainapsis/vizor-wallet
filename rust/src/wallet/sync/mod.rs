@@ -30,6 +30,13 @@ mod proposal_locks;
 mod send;
 mod transactions;
 
+pub use crate::wallet::sync_engine::submission::SubmissionMode;
+pub(crate) use crate::wallet::sync_engine::submission::{
+    resolve_submission_endpoint_groups, submission_failures_message, submission_mode,
+    submit_transaction, submit_transaction_while, SubmissionOutcome,
+};
+pub(crate) use broadcast::send_rejection_is_already_accepted;
+
 // Re-export the split submodules at the `wallet::sync` path so every
 // `crate::wallet::sync::propose_send` / `::get_wallet_balance` /
 // `::extract_and_broadcast_pczt` etc. call path keeps resolving with

@@ -3533,6 +3533,25 @@ pub(crate) fn mark_pending_broadcast_attempted(
     }
 }
 
+pub(crate) fn clear_pending_broadcast_attempted(
+    db_path: &str,
+    run_id: &str,
+    txid_hex: &str,
+) -> Result<(), String> {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT)?;
+    ensure_schema(&conn)?;
+    conn.execute(
+        &format!(
+            "UPDATE {PENDING_TXS_TABLE}
+             SET broadcast_attempted = 0
+             WHERE run_id = ?1 AND txid_hex = ?2 AND status = 'scheduled'"
+        ),
+        params![run_id, txid_hex],
+    )
+    .map_err(|e| format!("Clear migration broadcast attempt: {e}"))?;
+    Ok(())
+}
+
 pub(crate) fn mark_denomination_broadcast_attempted(
     db_path: &str,
     run_id: &str,
@@ -3576,7 +3595,7 @@ pub(crate) fn clear_denomination_broadcast_attempted(
         ),
         params![run_id, txid_hex],
     )
-    .map_err(|e| format!("Clear rejected denomination broadcast attempt: {e}"))?;
+    .map_err(|e| format!("Clear denomination broadcast attempt: {e}"))?;
     Ok(())
 }
 

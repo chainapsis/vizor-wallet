@@ -912,6 +912,7 @@ pub(crate) fn extract_compact_sigs_from_pczt(
 pub async fn extract_and_broadcast_pczt(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     pczt_with_proofs_bytes: &[u8],
     pczt_with_signatures_bytes: &[u8],
@@ -1014,28 +1015,27 @@ pub async fn extract_and_broadcast_pczt(
         return Err(error);
     }
 
-    let resp = match crate::wallet::sync_engine::send_transaction_with_status(
-        &mut client,
-        &tx_bytes,
-    )
-    .await
+    let mut transaction_id = [0; 32];
+    transaction_id.copy_from_slice(txid.as_ref());
+    match super::submit_transaction(lightwalletd_url, submission_mode, transaction_id, &tx_bytes)
+        .await
     {
-        Ok(resp) => resp,
-        // Once SendTransaction has started, a gRPC status is not proof that
-        // the server rejected the transaction. The server may have accepted
-        // and relayed it before the response or connection was lost. Treat
-        // every transport status conservatively; explicit SendResponse
-        // rejection below remains the only definite rejection path.
-        Err(status) => {
-            return Ok(handle_pczt_transport_failure(
-                &txid.to_string(),
-                &status,
-                store_locally,
-            ));
+        super::SubmissionOutcome::Accepted { .. } => {
+            handle_pczt_accepted(&txid.to_string(), store_locally)
         }
-    };
-
-    handle_pczt_send_response(&txid.to_string(), &resp, store_locally)
+        super::SubmissionOutcome::Rejected { code, message, .. } => {
+            Err(format!("Broadcast rejected: {message} (code {code})"))
+        }
+        super::SubmissionOutcome::NotSubmitted { failures } => Err(format!(
+            "Broadcast could not start: {}",
+            super::submission_failures_message(&failures)
+        )),
+        super::SubmissionOutcome::Indeterminate { failures } => Ok(handle_pczt_transport_failure(
+            &txid.to_string(),
+            &super::submission_failures_message(&failures),
+            store_locally,
+        )),
+    }
 }
 
 fn pczt_broadcast_expiry_error(
@@ -1054,22 +1054,13 @@ fn pczt_broadcast_expiry_error(
     }
 }
 
-fn handle_pczt_send_response<F>(
+fn handle_pczt_accepted<F>(
     txid: &str,
-    resp: &zcash_client_backend::proto::service::SendResponse,
     store_locally: F,
 ) -> Result<ExtractAndBroadcastPcztResult, String>
 where
     F: FnOnce() -> Result<(), String>,
 {
-    // zebra-lightwalletd returns the txid in `error_message` on
-    // success, so the only reliable clean-success signal is
-    // `error_code`. Duplicate/already-known responses are also
-    // definite acceptance because the network already has the tx.
-    if let Some(error) = super::broadcast::send_response_rejection_error(resp) {
-        return Err(error);
-    }
-
     // Broadcast was accepted. Persist locally so the UI sees the tx
     // immediately and the spent notes stop showing up as spendable.
     if let Err(storage_err) = store_locally() {
@@ -1092,14 +1083,14 @@ where
 
 fn handle_pczt_transport_failure<F>(
     txid: &str,
-    status: &tonic::Status,
+    detail: &str,
     store_locally: F,
 ) -> ExtractAndBroadcastPcztResult
 where
     F: FnOnce() -> Result<(), String>,
 {
     let mut message = format!(
-        "Broadcast response was unavailable for txid={txid} ({status}). The transaction may \
+        "Broadcast response was unavailable for txid={txid} ({detail}). The transaction may \
          already be on the network. Do not send again until sync or an explorer confirms \
          whether this transaction was accepted."
     );
@@ -1129,20 +1120,12 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
-    use zcash_client_backend::proto::service::SendResponse;
-
-    fn send_response(error_code: i32, error_message: &str) -> SendResponse {
-        SendResponse {
-            error_code,
-            error_message: error_message.to_string(),
-        }
-    }
 
     #[test]
-    fn pczt_success_response_stores_locally_and_returns_broadcasted() {
+    fn pczt_accepted_submission_stores_locally_and_returns_broadcasted() {
         let store_calls = Cell::new(0);
 
-        let result = handle_pczt_send_response("txid", &send_response(0, "txid"), || {
+        let result = handle_pczt_accepted("txid", || {
             store_calls.set(store_calls.get() + 1);
             Ok(())
         })
@@ -1154,27 +1137,8 @@ mod tests {
     }
 
     #[test]
-    fn pczt_duplicate_response_stores_locally_and_returns_broadcasted() {
-        let store_calls = Cell::new(0);
-
-        let result =
-            handle_pczt_send_response("txid", &send_response(18, "txn-already-in-mempool"), || {
-                store_calls.set(store_calls.get() + 1);
-                Ok(())
-            })
-            .unwrap();
-
-        assert_eq!(result.status, ExtractAndBroadcastPcztResult::BROADCASTED);
-        assert_eq!(result.message, None);
-        assert_eq!(store_calls.get(), 1);
-    }
-
-    #[test]
-    fn pczt_duplicate_response_with_storage_failure_is_network_success() {
-        let result = handle_pczt_send_response("txid", &send_response(18, "already known"), || {
-            Err("database is busy".to_string())
-        })
-        .unwrap();
+    fn pczt_accepted_submission_with_storage_failure_is_network_success() {
+        let result = handle_pczt_accepted("txid", || Err("database is busy".to_string())).unwrap();
 
         assert_eq!(
             result.status,
@@ -1190,14 +1154,11 @@ mod tests {
     #[test]
     fn pczt_non_deadline_transport_failure_remains_ambiguous() {
         let store_calls = Cell::new(0);
-        let result = handle_pczt_transport_failure(
-            "txid",
-            &tonic::Status::unavailable("connection reset after request"),
-            || {
+        let result =
+            handle_pczt_transport_failure("txid", "connection reset after request", || {
                 store_calls.set(store_calls.get() + 1);
                 Ok(())
-            },
-        );
+            });
 
         assert_eq!(
             result.status,
@@ -1209,22 +1170,6 @@ mod tests {
             .unwrap_or_default()
             .contains("stored locally"));
         assert_eq!(store_calls.get(), 1);
-    }
-
-    #[test]
-    fn pczt_fatal_rejection_does_not_store_locally() {
-        let store_calls = Cell::new(0);
-
-        let err =
-            handle_pczt_send_response("txid", &send_response(18, "bad-txns-inputs-spent"), || {
-                store_calls.set(store_calls.get() + 1);
-                Ok(())
-            })
-            .err()
-            .unwrap();
-
-        assert_eq!(err, "Broadcast rejected: bad-txns-inputs-spent (code 18)");
-        assert_eq!(store_calls.get(), 0);
     }
 
     #[test]

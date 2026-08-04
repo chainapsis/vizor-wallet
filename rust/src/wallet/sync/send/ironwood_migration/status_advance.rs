@@ -138,6 +138,7 @@ fn reconcile_mined_denomination_stages(
 async fn advance_staged_denomination_run(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     run: &super::migration::ActiveRun,
@@ -167,6 +168,7 @@ async fn advance_staged_denomination_run(
     if let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         &run.run_id,
         pending_password,
@@ -215,6 +217,7 @@ async fn advance_staged_denomination_run(
             let broadcast = broadcast_pending_denomination_stages(
                 db_path,
                 lightwalletd_url,
+                submission_mode,
                 network,
                 &run.run_id,
                 pending_password,

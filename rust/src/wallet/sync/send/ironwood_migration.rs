@@ -42,11 +42,7 @@ pub(crate) fn prepare_orchard_migration_denominations_pczt(
     let _migration_guard = ActiveIronwoodMigration::acquire(db_path, account_uuid)?;
     let draft_run = super::migration::active_migration_run(db_path, account_uuid, network)?;
     if draft_run.is_none()
-        && super::migration::migration_reserves_orchard_inputs(
-            db_path,
-            account_uuid,
-            network,
-        )?
+        && super::migration::migration_reserves_orchard_inputs(db_path, account_uuid, network)?
     {
         return Err("Migration recovery must complete before preparing a new run".to_string());
     }
@@ -179,6 +175,7 @@ fn migration_target_values_for_request(
 pub(crate) async fn complete_orchard_migration_denominations_pczt(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     request_id: &str,
@@ -252,10 +249,8 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
             return Err(format!("Keystone result missing {}", stage.id));
         }
     }
-    let prepared_refs = prepared_refs_from_denomination_split(
-        &stored.direct_prepared_refs,
-        &stored.split_stages,
-    );
+    let prepared_refs =
+        prepared_refs_from_denomination_split(&stored.direct_prepared_refs, &stored.split_stages);
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
             signed_denomination_stage_inserts(&stored.split_stages, &signed_by_id)?;
@@ -317,6 +312,7 @@ pub(crate) async fn complete_orchard_migration_denominations_pczt(
     let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         &run_id,
         pending_password,
@@ -483,6 +479,7 @@ pub(crate) fn prepare_orchard_migration_single_qr_pczt(
 pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     request_id: &str,
@@ -567,10 +564,8 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         }
     }
 
-    let prepared_refs = prepared_refs_from_denomination_split(
-        &stored.direct_prepared_refs,
-        &stored.split_stages,
-    );
+    let prepared_refs =
+        prepared_refs_from_denomination_split(&stored.direct_prepared_refs, &stored.split_stages);
 
     let finalize_result = (|| -> Result<String, String> {
         let denomination_stages =
@@ -651,6 +646,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
         return broadcast_due_scheduled_migration_txs(
             db_path,
             lightwalletd_url,
+            submission_mode,
             network,
             &run_id,
             pending_password,
@@ -666,6 +662,7 @@ pub(crate) async fn complete_orchard_migration_single_qr_pczt(
     let Some(broadcast) = broadcast_pending_denomination_stages(
         db_path,
         lightwalletd_url,
+        submission_mode,
         network,
         &run_id,
         pending_password,
@@ -752,6 +749,7 @@ pub(crate) fn prepare_orchard_migration_immediate_pczt(
 pub(crate) async fn complete_orchard_migration_immediate_pczt(
     db_path: &str,
     lightwalletd_url: &str,
+    submission_mode: super::SubmissionMode,
     network: WalletNetwork,
     account_uuid: &str,
     request_id: &str,
@@ -789,7 +787,7 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
             }
             KeystoneMigrationRequestState::Completing => {
                 return Err(
-                    "Keystone Immediate migration request is already completing".to_string(),
+                    "Keystone Immediate migration request is already completing".to_string()
                 );
             }
             KeystoneMigrationRequestState::ProofReady => {}
@@ -805,12 +803,9 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
         .remove(&stored.message_id)
         .ok_or("Keystone Immediate migration signature is missing")?;
     let extraction_result = (|| {
-        super::pczt::preflight_orchard_spend_auth_signatures(
-            &stored.base_pczt,
-            &signatures,
-        )?;
+        super::pczt::preflight_orchard_spend_auth_signatures(&stored.base_pczt, &signatures)?;
         let proofed = stored
-        .pczt_with_proofs
+            .pczt_with_proofs
             .as_ref()
             .ok_or("Keystone Immediate migration proofs are not ready")?;
         super::pczt::apply_sigs_and_extract(proofed, &signatures, None, None)
@@ -824,17 +819,6 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
             return Err(error);
         }
     };
-    let mut client = match crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url).await {
-        Ok(client) => client,
-        Err(error) => {
-            if let Ok(mut store) = keystone_immediate_migration_requests().lock() {
-                store.insert(request_id.to_string(), stored);
-            }
-            return Err(format!(
-                "Connect to lightwalletd for Immediate migration failed: {error}"
-            ));
-        }
-    };
     let mut input_lock = stored
         .input_lock
         .take()
@@ -844,51 +828,77 @@ pub(crate) async fn complete_orchard_migration_immediate_pczt(
     // starting the RPC so restart recovery cannot release a possibly-spent
     // input.
     input_lock.mark_broadcast_started()?;
-    let response = match crate::wallet::sync_engine::send_transaction_with_status(
-        &mut client,
+    let outcome = super::submit_transaction(
+        lightwalletd_url,
+        submission_mode,
+        txid_bytes(&extracted.txid),
         &extracted.raw_tx,
     )
-    .await
-    {
-        Ok(response) => response,
-        Err(status) => {
-            let storage_message =
-                match decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx) {
-                    Ok(()) => {
-                        if let Err(error) = input_lock.release() {
-                            log::warn!(
+    .await;
+    match outcome {
+        super::SubmissionOutcome::Rejected { code, message, .. } => {
+            let error = format!("Broadcast rejected: {message} (code {code})");
+            return match input_lock.release() {
+                Ok(()) => Err(error),
+                Err(release_error) => Err(format!(
+                    "{error}; additionally failed to release Keystone Immediate migration \
+                     inputs: {release_error}"
+                )),
+            };
+        }
+        super::SubmissionOutcome::NotSubmitted { failures } => {
+            let reset_result = input_lock.reset_after_not_submitted();
+            stored.input_lock = Some(input_lock);
+            if let Ok(mut store) = keystone_immediate_migration_requests().lock() {
+                store.insert(request_id.to_string(), stored);
+            }
+            let error = format!(
+                "Immediate migration broadcast could not start: {}",
+                submission_failures_message(&failures)
+            );
+            return match reset_result {
+                Ok(()) => Err(error),
+                Err(reset_error) => Err(format!(
+                    "{error}; additionally failed to restore restart recovery for Keystone \
+                     Immediate migration inputs: {reset_error}"
+                )),
+            };
+        }
+        super::SubmissionOutcome::Indeterminate { failures } => {
+            let storage_message = match decrypt_and_store_migration_tx(
+                db_path,
+                network,
+                &extracted.raw_tx,
+            ) {
+                Ok(()) => {
+                    if let Err(error) = input_lock.release() {
+                        log::warn!(
                                 "Keystone Immediate migration stored after ambiguous broadcast but input unlock failed: {error}"
                             );
-                        }
-                        "The transaction was stored locally and will retry automatically during sync."
-                            .to_string()
                     }
-                    Err(error) => {
-                        input_lock.retain_until_expiry();
-                        format!("Local tracking also failed: {error}")
-                    }
-                };
+                    "The transaction was stored locally and will retry automatically during sync."
+                        .to_string()
+                }
+                Err(error) => {
+                    input_lock.retain_until_expiry();
+                    format!("Local tracking also failed: {error}")
+                }
+            };
             return Ok(IronwoodMigrationResult {
                 txids: extracted.txid.to_string(),
                 status: CreatedBroadcastResult::PENDING_BROADCAST.to_string(),
                 broadcasted_count: 0,
                 total_count: 1,
                 message: Some(format!(
-                    "The Immediate migration broadcast response was unavailable ({status}) and may already be on the network. {storage_message}"
+                    "The Immediate migration broadcast response was unavailable ({}) and may \
+                     already be on the network. {storage_message}",
+                    submission_failures_message(&failures)
                 )),
                 fee_zatoshi: stored.fee_zatoshi,
                 migrated_zatoshi: stored.migrated_zatoshi,
             });
         }
-    };
-    if let Some(error) = super::broadcast::send_response_rejection_error(&response) {
-        return match input_lock.release() {
-            Ok(()) => Err(error),
-            Err(release_error) => Err(format!(
-                "{error}; additionally failed to release Keystone Immediate migration inputs: \
-                 {release_error}"
-            )),
-        };
+        super::SubmissionOutcome::Accepted { .. } => {}
     }
     let storage_error = decrypt_and_store_migration_tx(db_path, network, &extracted.raw_tx).err();
     if storage_error.is_some() {
@@ -938,8 +948,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
     let initial_signing = recoveries.is_empty();
     let all_prepared_notes = super::migration::prepared_notes_for_run(db_path, &run.run_id)?;
     let pending_totals = super::migration::pending_totals_for_run(db_path, &run.run_id)?;
-    let signed_child_pczt_count =
-        super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
+    let signed_child_pczt_count = super::migration::signed_child_pczt_count(db_path, &run.run_id)?;
     let recovery_part_indices = recoveries
         .iter()
         .map(|recovery| recovery.part_index)
@@ -982,8 +991,7 @@ pub(crate) fn prepare_orchard_migration_batch_pczt(
 
     let mut created = Vec::with_capacity(prepared_notes.len());
     let timing_policy = super::migration::timing_policy_for_run(db_path, &run.run_id, network)?;
-    let approved_schedule =
-        super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
+    let approved_schedule = super::migration::approved_schedule_for_run(db_path, &run.run_id)?;
     let signed_schedule_origin =
         super::migration::signed_schedule_origin_for_run(db_path, &run.run_id)?;
     // Recovery batches consume the run's persisted recovery-schedule
