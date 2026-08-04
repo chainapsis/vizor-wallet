@@ -13,6 +13,8 @@ import 'sync_provider.dart';
 const kTorEnabledPreferenceKey = 'zcash_tor_enabled';
 const kTorStartupFailureNotice =
     "Couldn't connect to Tor. Network requests are paused.";
+const kTorUpdateInProgressNotice =
+    'Finish the current software update before turning on Tor.';
 
 enum NetworkPrivacyConnectionStatus { off, connecting, connected, failed }
 
@@ -230,6 +232,7 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
 
   Future<void> setTorEnabled(bool enabled) async {
     final generation = ++_generation;
+    final previousState = state;
     final store = ref.read(networkPrivacyPreferenceStoreProvider);
     final runtime = ref.read(networkPrivacyRuntimeProvider);
     final nativeUpdates = ref.read(
@@ -237,22 +240,41 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
     );
     final restartTransport = ref.read(networkPrivacyTransportRestartProvider);
 
-    // Enabling blocks new direct requests synchronously, before persistence or
-    // channel teardown reaches its first await. Disabling keeps Tor desired
+    // Native updaters do not use the embedded Tor client. Atomically reject an
+    // active update session and pause future checks before accepting the route
+    // change. Until this preflight succeeds, the previous privacy state stays
+    // authoritative.
+    if (enabled) {
+      try {
+        await nativeUpdates.setTorEnabled(true);
+      } catch (error) {
+        if (generation != _generation) return;
+        state = NetworkPrivacyState(
+          torEnabled: previousState.torEnabled,
+          status: previousState.status,
+          error: error.toString(),
+          startupNotice: kTorUpdateInProgressNotice,
+        );
+        return;
+      }
+      if (generation != _generation) return;
+      runtime.beginEnable();
+    }
+
+    // Enabling now blocks new direct requests synchronously. The transport
+    // restart below starts cancellation before its callback performs any
+    // preference write or Tor bootstrap await. Disabling keeps Tor desired
     // until existing Tor work is quiescent and configure(false) runs.
-    if (enabled) runtime.beginEnable();
     state = NetworkPrivacyState(
       torEnabled: enabled,
       status: NetworkPrivacyConnectionStatus.connecting,
     );
 
     try {
-      if (enabled) await nativeUpdates.setTorEnabled(true);
-      await store.writeTorEnabled(enabled);
-      if (generation != _generation) return;
-
       NetworkPrivacyConnectionStatus? nextStatus;
       await restartTransport(() async {
+        await store.writeTorEnabled(enabled);
+        if (generation != _generation) return;
         nextStatus = await runtime.configure(enabled: enabled);
       });
       if (generation != _generation) return;

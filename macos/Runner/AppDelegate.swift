@@ -54,7 +54,10 @@ class AppDelegate: FlutterAppDelegate {
   }
 
 #if SPARKLE_ENABLED
-  func setTorEnabledForUpdates(_ enabled: Bool) {
+  func setTorEnabledForUpdates(_ enabled: Bool) -> Bool {
+    if enabled, updaterController?.updater.sessionInProgress == true {
+      return false
+    }
     if enabled {
       updaterController?.updater.automaticallyChecksForUpdates = false
     } else {
@@ -62,6 +65,7 @@ class AppDelegate: FlutterAppDelegate {
       updaterController?.updater.automaticallyChecksForUpdates = true
     }
     configureUpdateMenu(torEnabled: enabled)
+    return true
   }
 
   private func startUpdaterIfAvailable() {
@@ -117,7 +121,14 @@ final class NativeUpdatePrivacyChannel {
         return
       }
 #if SPARKLE_ENABLED
-      (NSApp.delegate as? AppDelegate)?.setTorEnabledForUpdates(enabled)
+      if (NSApp.delegate as? AppDelegate)?.setTorEnabledForUpdates(enabled) == false {
+        result(FlutterError(
+          code: "update_in_progress",
+          message: "Wait for the current software update operation to finish before enabling Tor.",
+          details: nil
+        ))
+        return
+      }
 #endif
       result(nil)
     }

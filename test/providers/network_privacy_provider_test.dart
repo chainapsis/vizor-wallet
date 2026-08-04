@@ -30,7 +30,7 @@ void main() {
     }
   });
 
-  test('enabling blocks direct traffic before the first await', () async {
+  test('enabling quiesces direct traffic before persistence', () async {
     final events = <String>[];
     final container = ProviderContainer(
       overrides: [
@@ -56,10 +56,10 @@ void main() {
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
     expect(events, [
-      'begin-enable',
       'native:true',
-      'store:true',
+      'begin-enable',
       'restart',
+      'store:true',
       'configure:true',
     ]);
     expect(
@@ -96,10 +96,10 @@ void main() {
 
     final state = container.read(networkPrivacyProvider);
     expect(events, [
-      'begin-enable',
       'native:true',
-      'store:true',
+      'begin-enable',
       'restart',
+      'store:true',
       'configure:true',
     ]);
     expect(state.torEnabled, isTrue);
@@ -133,8 +133,8 @@ void main() {
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
 
     expect(events, [
-      'store:false',
       'restart',
+      'store:false',
       'configure:false',
       'native:false',
     ]);
@@ -175,7 +175,7 @@ void main() {
 
       await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
-      expect(events, ['begin-enable', 'native:true', 'store:true', 'restart']);
+      expect(events, ['native:true', 'begin-enable', 'restart']);
       expect(
         container.read(networkPrivacyProvider),
         isA<NetworkPrivacyState>()
@@ -188,6 +188,46 @@ void main() {
       );
     },
   );
+
+  test('active native update rejects Tor before route activation', () async {
+    final events = <String>[];
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _FakeStore(events),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(
+          _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+        ),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _RejectingNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((_) async {
+          events.add('restart');
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+
+    expect(events, ['native:true']);
+    expect(
+      container.read(networkPrivacyProvider),
+      isA<NetworkPrivacyState>()
+          .having((state) => state.torEnabled, 'torEnabled', isFalse)
+          .having(
+            (state) => state.status,
+            'status',
+            NetworkPrivacyConnectionStatus.off,
+          )
+          .having(
+            (state) => state.startupNotice,
+            'startupNotice',
+            kTorUpdateInProgressNotice,
+          ),
+    );
+  });
 }
 
 class _FakeStore implements NetworkPrivacyPreferenceStore {
@@ -269,5 +309,18 @@ class _FakeNativeUpdateCoordinator
   @override
   Future<void> setTorEnabled(bool enabled) async {
     events.add('native:$enabled');
+  }
+}
+
+class _RejectingNativeUpdateCoordinator
+    implements NetworkPrivacyNativeUpdateCoordinator {
+  _RejectingNativeUpdateCoordinator(this.events);
+
+  final List<String> events;
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    events.add('native:$enabled');
+    throw StateError('update in progress');
   }
 }
