@@ -84,6 +84,7 @@ class _MobileSeedPhraseScreenState
   int _accessCheckGeneration = 0;
 
   String? _mnemonic;
+  String? _bip39Passphrase;
   String? _revealError;
   int? _birthdayHeight;
   int? _birthdayBlockTime;
@@ -120,6 +121,7 @@ class _MobileSeedPhraseScreenState
     _screenshotSub?.cancel();
     if (_ownsPrivacyController) _privacyController.dispose();
     _mnemonic = null;
+    _bip39Passphrase = null;
     super.dispose();
   }
 
@@ -317,6 +319,7 @@ class _MobileSeedPhraseScreenState
       _checking = false;
       _gateError = 'Selected account changed. Enter your passcode again.';
       _mnemonic = null;
+      _bip39Passphrase = null;
       _revealError = null;
       _birthdayHeight = null;
       _birthdayBlockTime = null;
@@ -333,6 +336,7 @@ class _MobileSeedPhraseScreenState
     }
     String? revealError;
     String? mnemonic;
+    String? bip39Passphrase;
     if (account == null) {
       revealError = widget.accountUuid == null
           ? 'No active account is selected.'
@@ -340,9 +344,13 @@ class _MobileSeedPhraseScreenState
     } else if (account.isHardware) {
       revealError = 'Secret passphrase is not available for hardware accounts.';
     } else {
-      mnemonic = await ref
+      final secret = await ref
           .read(accountProvider.notifier)
-          .getMnemonicForAccount(account.uuid);
+          .getSoftwareWalletSecretForAccount(account.uuid);
+      mnemonic = secret?.mnemonic;
+      bip39Passphrase = secret?.hasBip39Passphrase == true
+          ? secret!.bip39Passphrase
+          : null;
       if (mnemonic == null || mnemonic.isEmpty) {
         revealError = 'Secret passphrase is not available for this account.';
       }
@@ -355,6 +363,7 @@ class _MobileSeedPhraseScreenState
     final birthdayLoadGeneration = ++_birthdayLoadGeneration;
     setState(() {
       _mnemonic = mnemonic;
+      _bip39Passphrase = bip39Passphrase;
       _revealError = revealError;
       _stage = _SeedStage.reveal;
       _checking = false;
@@ -436,6 +445,14 @@ class _MobileSeedPhraseScreenState
     await SensitiveClipboard.copyText(mnemonic);
     unawaited(AppHaptics.copy());
     if (mounted) showAppToast(context, 'Secret passphrase copied');
+  }
+
+  Future<void> _copyBip39Passphrase() async {
+    final passphrase = _bip39Passphrase;
+    if (passphrase == null || passphrase.isEmpty) return;
+    await SensitiveClipboard.copyText(passphrase);
+    unawaited(AppHaptics.copy());
+    if (mounted) showAppToast(context, 'BIP39 passphrase copied');
   }
 
   // ── Screenshot warning ─────────────────────────────────────────────
@@ -637,6 +654,15 @@ class _MobileSeedPhraseScreenState
                       ),
                       const SizedBox(height: AppSpacing.md),
                       _LightWordGrid(words: words),
+                      if (_bip39Passphrase case final passphrase?) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Container(height: 1, color: colors.border.subtle),
+                        const SizedBox(height: AppSpacing.s),
+                        _MobileBip39PassphraseRow(
+                          passphrase: passphrase,
+                          onCopy: _copyBip39Passphrase,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -790,6 +816,63 @@ class _LightWordGrid extends StatelessWidget {
               ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+class _MobileBip39PassphraseRow extends StatelessWidget {
+  const _MobileBip39PassphraseRow({
+    required this.passphrase,
+    required this.onCopy,
+  });
+
+  final String passphrase;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          'BIP39 Passphrase',
+          style: AppTypography.labelMedium.copyWith(color: colors.text.accent),
+        ),
+        const SizedBox(width: AppSpacing.s),
+        Expanded(
+          child: Text(
+            passphrase,
+            key: const ValueKey('mobile_bip39_passphrase_value'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.end,
+            style: AppTypography.labelMedium.copyWith(
+              color: colors.text.accent,
+            ),
+          ),
+        ),
+        Semantics(
+          button: true,
+          label: 'Copy BIP39 passphrase',
+          excludeSemantics: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onCopy,
+            child: SizedBox(
+              width: 32,
+              height: 40,
+              child: Center(
+                child: AppIcon(
+                  AppIcons.copy,
+                  size: AppIconSize.medium,
+                  color: colors.icon.muted,
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

@@ -10,6 +10,102 @@ String _base64UrlNoPadding(List<int> bytes) {
 }
 
 void main() {
+  test('wallet link preserves a versioned software secret exactly', () {
+    final recoveryFields = walletLinkSoftwareRecoveryFields(
+      mnemonic: 'abandon abandon abandon abandon abandon abandon',
+      bip39Passphrase: '  My TREZOR phrase  ',
+    );
+    final account = WalletLinkTransferAccount.fromJson({
+      'uuid': 'software',
+      'name': 'Software',
+      'order': 0,
+      'isHardware': false,
+      'isSeedAnchor': true,
+      'birthdayHeight': 100,
+      'zip32AccountIndex': 0,
+      ...recoveryFields,
+    });
+
+    expect(recoveryFields['mnemonic'], isNull);
+    expect(account.bip39Passphrase, '  My TREZOR phrase  ');
+    expect(account.toAccountImport().bip39Passphrase, '  My TREZOR phrase  ');
+  });
+
+  test('legacy mobile treats a passphrase account as non-importable', () {
+    final recoveryFields = walletLinkSoftwareRecoveryFields(
+      mnemonic: 'abandon abandon abandon abandon abandon abandon',
+      bip39Passphrase: 'secret',
+    );
+
+    // A pre-passphrase mobile build ignores softwareSecret and only reads the
+    // legacy mnemonic field when deciding whether a software account can be
+    // imported.
+    final legacyMnemonic = recoveryFields['mnemonic'] as String?;
+    expect(legacyMnemonic, isNull);
+    expect(legacyMnemonic?.isNotEmpty ?? false, isFalse);
+
+    final updatedAccount = WalletLinkTransferAccount.fromJson({
+      'uuid': 'software',
+      'name': 'Software',
+      'order': 0,
+      'isHardware': false,
+      'isSeedAnchor': true,
+      'birthdayHeight': 100,
+      'zip32AccountIndex': 0,
+      ...recoveryFields,
+    });
+    expect(updatedAccount.isImportable, isTrue);
+    expect(updatedAccount.mnemonic, isNotEmpty);
+    expect(updatedAccount.bip39Passphrase, 'secret');
+  });
+
+  test(
+    'wallet link keeps legacy mnemonic-only software accounts importable',
+    () {
+      final recoveryFields = walletLinkSoftwareRecoveryFields(
+        mnemonic: 'abandon abandon abandon abandon abandon abandon',
+        bip39Passphrase: '',
+      );
+      final account = WalletLinkTransferAccount.fromJson({
+        'uuid': 'software',
+        'name': 'Software',
+        'order': 0,
+        'isHardware': false,
+        'isSeedAnchor': true,
+        'birthdayHeight': 100,
+        'zip32AccountIndex': 0,
+        ...recoveryFields,
+      });
+
+      expect(recoveryFields['mnemonic'], isNotEmpty);
+      expect(recoveryFields.containsKey('softwareSecret'), isFalse);
+      expect(account.isImportable, isTrue);
+      expect(account.bip39Passphrase, isEmpty);
+    },
+  );
+
+  test('wallet link does not downgrade a malformed software secret', () {
+    final account = WalletLinkTransferAccount.fromJson({
+      'uuid': 'software',
+      'name': 'Software',
+      'order': 0,
+      'isHardware': false,
+      'isSeedAnchor': true,
+      'birthdayHeight': 100,
+      'zip32AccountIndex': 0,
+      'mnemonic': 'abandon abandon abandon abandon abandon abandon',
+      'softwareSecret': {
+        'version': 999,
+        'mnemonic': 'abandon abandon abandon abandon abandon abandon',
+        'bip39Passphrase': 'secret',
+      },
+    });
+
+    expect(account.isImportable, isFalse);
+    expect(account.mnemonic, isNull);
+    expect(account.bip39Passphrase, isEmpty);
+  });
+
   test(
     'wallet link QR parses id and key without accepting endpoint authority',
     () {

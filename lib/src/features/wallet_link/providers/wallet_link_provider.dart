@@ -181,9 +181,12 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       final zip32AccountIndex = exportMetadata.zip32AccountIndex;
       final hardwareUfvk = exportMetadata.hardwareUfvk;
       final seedFingerprint = exportMetadata.seedFingerprint;
-      final mnemonic = account.isHardware
+      final softwareSecret = account.isHardware
           ? null
-          : await accountNotifier.getMnemonicForAccount(account.uuid);
+          : await accountNotifier.getSoftwareWalletSecretForAccount(
+              account.uuid,
+            );
+      final mnemonic = softwareSecret?.mnemonic;
       if (!account.isHardware && (mnemonic == null || mnemonic.isEmpty)) {
         throw StateError('Unlock this wallet before linking mobile.');
       }
@@ -214,7 +217,13 @@ class WalletLinkController extends Notifier<WalletLinkState> {
         'seedFingerprint': account.isHardware
             ? seedFingerprint!.toList()
             : null,
-        'mnemonic': mnemonic,
+        if (softwareSecret != null)
+          ...walletLinkSoftwareRecoveryFields(
+            mnemonic: softwareSecret.mnemonic,
+            bip39Passphrase: softwareSecret.bip39Passphrase,
+          )
+        else
+          'mnemonic': null,
       });
     }
 

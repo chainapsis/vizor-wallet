@@ -55,12 +55,14 @@ Future<WalletCreationResult> createWallet({
 /// Import an existing wallet from a mnemonic phrase.
 Future<WalletImportResult> importWallet({
   required String mnemonic,
+  required String bip39Passphrase,
   BigInt? birthdayHeight,
   required String network,
   required String dbPath,
   String? accountName,
 }) => RustLib.instance.api.crateApiWalletImportWallet(
   mnemonic: mnemonic,
+  bip39Passphrase: bip39Passphrase,
   birthdayHeight: birthdayHeight,
   network: network,
   dbPath: dbPath,
@@ -73,12 +75,14 @@ Future<AccountCreationResult> addAccount({
   required String network,
   required String name,
   required String mnemonic,
+  required String bip39Passphrase,
   BigInt? birthdayHeight,
 }) => RustLib.instance.api.crateApiWalletAddAccount(
   dbPath: dbPath,
   network: network,
   name: name,
   mnemonic: mnemonic,
+  bip39Passphrase: bip39Passphrase,
   birthdayHeight: birthdayHeight,
 );
 
@@ -87,6 +91,7 @@ Future<AccountCreationResult> addAccount({
 Future<SoftwareWalletImportDiscoveryResult>
 discoverSoftwareWalletImportAccounts({
   required String mnemonic,
+  required String bip39Passphrase,
   BigInt? birthdayHeight,
   required String network,
   required String dbPath,
@@ -94,6 +99,7 @@ discoverSoftwareWalletImportAccounts({
   required bool isFirstWalletAccount,
 }) => RustLib.instance.api.crateApiWalletDiscoverSoftwareWalletImportAccounts(
   mnemonic: mnemonic,
+  bip39Passphrase: bip39Passphrase,
   birthdayHeight: birthdayHeight,
   network: network,
   dbPath: dbPath,
@@ -108,12 +114,14 @@ discoverSoftwareWalletImportAccounts({
 /// balance rows after discovery has already returned.
 Future<BigInt> previewSoftwareAccountTransparentBalance({
   required String mnemonic,
+  required String bip39Passphrase,
   required String network,
   required String lightwalletdUrl,
   required int zip32AccountIndex,
 }) =>
     RustLib.instance.api.crateApiWalletPreviewSoftwareAccountTransparentBalance(
       mnemonic: mnemonic,
+      bip39Passphrase: bip39Passphrase,
       network: network,
       lightwalletdUrl: lightwalletdUrl,
       zip32AccountIndex: zip32AccountIndex,
@@ -124,6 +132,7 @@ Future<BigInt> previewSoftwareAccountTransparentBalance({
 Future<SoftwareWalletImportWithDiscoveryResult>
 importSoftwareWalletWithAccountDiscovery({
   required String mnemonic,
+  required String bip39Passphrase,
   BigInt? birthdayHeight,
   required String network,
   required String dbPath,
@@ -134,6 +143,7 @@ importSoftwareWalletWithAccountDiscovery({
 }) =>
     RustLib.instance.api.crateApiWalletImportSoftwareWalletWithAccountDiscovery(
       mnemonic: mnemonic,
+      bip39Passphrase: bip39Passphrase,
       birthdayHeight: birthdayHeight,
       network: network,
       dbPath: dbPath,
@@ -152,6 +162,7 @@ importSoftwareWalletWithAccountDiscovery({
 /// account 0.
 Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
   required String mnemonic,
+  required String bip39Passphrase,
   BigInt? birthdayHeight,
   required String network,
   required String dbPath,
@@ -160,6 +171,7 @@ Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
   required bool isFirstWalletAccount,
 }) => RustLib.instance.api.crateApiWalletImportSoftwareAccountAtIndex(
   mnemonic: mnemonic,
+  bip39Passphrase: bip39Passphrase,
   birthdayHeight: birthdayHeight,
   network: network,
   dbPath: dbPath,
@@ -170,11 +182,13 @@ Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
 
 Future<bool> isSoftwareWalletLinkAccountImported({
   required String mnemonic,
+  required String bip39Passphrase,
   required String network,
   required String dbPath,
   required int zip32AccountIndex,
 }) => RustLib.instance.api.crateApiWalletIsSoftwareWalletLinkAccountImported(
   mnemonic: mnemonic,
+  bip39Passphrase: bip39Passphrase,
   network: network,
   dbPath: dbPath,
   zip32AccountIndex: zip32AccountIndex,

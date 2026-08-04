@@ -116,6 +116,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
               case SetPasswordFlow.importWallet:
                 await accountNotifier.importAccount(
                   mnemonic: args.requiredMnemonic,
+                  bip39Passphrase: args.bip39Passphrase,
                   birthdayHeight: args.importBirthdayHeight,
                   additionalAccountIndices:
                       args.selectedAdditionalAccountIndices,

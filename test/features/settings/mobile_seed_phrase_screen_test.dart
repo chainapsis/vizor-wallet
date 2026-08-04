@@ -12,6 +12,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/app_mobile_sheet.dart';
 import 'package:zcash_wallet/src/core/layout/mobile/mobile_top_nav.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
+import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/mobile/passcode_widgets.dart';
@@ -23,6 +24,7 @@ import 'package:zcash_wallet/src/services/biometric_unlock.dart';
 
 const _mnemonic =
     'abandon ability able about above absent absorb abstract absurd abuse access accident';
+const _bip39Passphrase = 'mobile recovery passphrase';
 
 const _accountState = AccountState(
   accounts: [AccountInfo(uuid: 'account-1', name: 'Knight', order: 0)],
@@ -57,18 +59,27 @@ class _ControlledSecurityNotifier extends AppSecurityNotifier {
 }
 
 class _FakeAccountNotifier extends AccountNotifier {
-  _FakeAccountNotifier([this.initialState = _accountState]);
+  _FakeAccountNotifier([
+    this.initialState = _accountState,
+    this.bip39Passphrase = _bip39Passphrase,
+  ]);
 
   final AccountState initialState;
+  final String bip39Passphrase;
   final requestedMnemonicUuids = <String>[];
 
   @override
   FutureOr<AccountState> build() => initialState;
 
   @override
-  Future<String?> getMnemonicForAccount(String uuid) async {
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
+    String uuid,
+  ) async {
     requestedMnemonicUuids.add(uuid);
-    return _mnemonic;
+    return SoftwareWalletSecret(
+      mnemonic: _mnemonic,
+      bip39Passphrase: bip39Passphrase,
+    );
   }
 
   void setActiveAccount(String uuid) {
@@ -240,6 +251,21 @@ void main() {
     expect(accountNotifier.requestedMnemonicUuids, ['account-2']);
     expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
     expect(find.text('abandon'), findsOneWidget);
+    expect(find.text('BIP39 Passphrase'), findsOneWidget);
+    expect(find.text(_bip39Passphrase), findsOneWidget);
+  });
+
+  testWidgets('hides the BIP39 section when no passphrase was stored', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(accountNotifier: () => _FakeAccountNotifier(_accountState, '')),
+    );
+    await _revealSecret(tester);
+
+    expect(find.text('abandon'), findsOneWidget);
+    expect(find.text('BIP39 Passphrase'), findsNothing);
+    expect(find.bySemanticsLabel('Copy BIP39 passphrase'), findsNothing);
   });
 
   testWidgets('ignores a stale birthday load after the account changes', (

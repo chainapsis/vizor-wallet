@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/security/password_policy.dart';
+import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -74,6 +75,39 @@ void main() {
     bytes.fillRange(0, bytes.length, 0);
     expect(bytes.every((byte) => byte == 0), isTrue);
     expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+  });
+
+  test('stores and reads BIP39 passphrase-backed recovery material', () async {
+    const passphrase = '  My TREZOR phrase  ';
+    await store.configurePassword(_oldPassword);
+    await store.writeAccountMnemonic(
+      _accountUuid,
+      _mnemonic,
+      bip39Passphrase: passphrase,
+    );
+
+    final secret = await store.readAccountSoftwareWalletSecret(_accountUuid);
+    final nativeBytes = await store.readAccountMnemonicBytes(_accountUuid);
+
+    expect(await store.readAccountMnemonic(_accountUuid), _mnemonic);
+    expect(secret?.mnemonic, _mnemonic);
+    expect(secret?.bip39Passphrase, passphrase);
+    expect(utf8.decode(nativeBytes!), contains('"bip39Passphrase"'));
+    expect(utf8.decode(nativeBytes), contains(passphrase));
+  });
+
+  test('rejects a malformed software wallet secret from storage', () async {
+    await store.configurePassword(_oldPassword);
+    await store.writeSecretString(_mnemonicKey, '{"version":1');
+
+    await expectLater(
+      store.readAccountMnemonic(_accountUuid),
+      throwsA(isA<SoftwareWalletSecretFormatException>()),
+    );
+    await expectLater(
+      store.readAccountSoftwareWalletSecret(_accountUuid),
+      throwsA(isA<SoftwareWalletSecretFormatException>()),
+    );
   });
 
   test('native secret use requires an unlocked session password', () async {

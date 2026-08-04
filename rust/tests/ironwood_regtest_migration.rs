@@ -28,6 +28,7 @@ fn orchard_funds_migrate_after_controlled_nu6_3_activation() {
     let db = path_string(&db_path);
     let wallet = wallet_api::import_wallet(
         MNEMONIC.to_string(),
+        String::new(),
         Some(pre_activation_tip),
         NETWORK.to_string(),
         db.clone(),

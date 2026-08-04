@@ -631,6 +631,15 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildSettingsSecretPassphraseGateUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Secret passphrase reveal',
+                      builder: buildSettingsSecretPassphraseRevealUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Secret passphrase reveal without BIP39',
+                      builder:
+                          buildSettingsSecretPassphraseRevealWithoutBip39UseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Change password gate',
                       builder: buildSettingsChangePasswordGateUseCase,
                     ),

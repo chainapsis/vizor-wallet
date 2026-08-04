@@ -6,6 +6,29 @@ import '../../../providers/account_provider.dart';
 import '../wallet_link_config.dart';
 
 const kWalletLinkHardwareKindKeystone = 'keystone';
+const kWalletLinkSoftwareSecretVersion = 1;
+
+Map<String, Object?> walletLinkSoftwareRecoveryFields({
+  required String mnemonic,
+  required String bip39Passphrase,
+}) {
+  if (bip39Passphrase.isEmpty) {
+    return {'mnemonic': mnemonic};
+  }
+
+  // Keep the legacy mnemonic field empty so mobile builds that predate BIP39
+  // passphrase support treat this account as non-importable instead of
+  // deriving a different wallet with an empty passphrase. Updated builds read
+  // the additive versioned envelope below.
+  return {
+    'mnemonic': null,
+    'softwareSecret': {
+      'version': kWalletLinkSoftwareSecretVersion,
+      'mnemonic': mnemonic,
+      'bip39Passphrase': bip39Passphrase,
+    },
+  };
+}
 
 class WalletLinkEnvelope {
   const WalletLinkEnvelope({
@@ -327,6 +350,7 @@ class WalletLinkTransferAccount {
     required this.ufvk,
     required this.seedFingerprint,
     required this.mnemonic,
+    this.bip39Passphrase = '',
   });
 
   final String uuid;
@@ -341,8 +365,10 @@ class WalletLinkTransferAccount {
   final String? ufvk;
   final List<int>? seedFingerprint;
   final String? mnemonic;
+  final String bip39Passphrase;
 
   factory WalletLinkTransferAccount.fromJson(Map<String, Object?> json) {
+    final recoveryMaterial = _walletLinkSoftwareRecoveryMaterial(json);
     return WalletLinkTransferAccount(
       uuid: ((json['uuid'] as String?) ?? '').trim(),
       name: ((json['name'] as String?) ?? '').trim(),
@@ -357,7 +383,8 @@ class WalletLinkTransferAccount {
       seedFingerprint: (json['seedFingerprint'] as List?)
           ?.map((value) => (value as num).toInt())
           .toList(),
-      mnemonic: (json['mnemonic'] as String?)?.trim(),
+      mnemonic: recoveryMaterial.mnemonic,
+      bip39Passphrase: recoveryMaterial.bip39Passphrase,
     );
   }
 
@@ -397,12 +424,37 @@ class WalletLinkTransferAccount {
       isHardware: isHardware,
       isSeedAnchor: isSeedAnchor,
       mnemonic: mnemonic,
+      bip39Passphrase: bip39Passphrase,
       ufvk: ufvk,
       seedFingerprint: seedFingerprint,
       profilePictureId: profilePictureId,
       sourceAccountUuid: uuid,
     );
   }
+}
+
+({String? mnemonic, String bip39Passphrase})
+_walletLinkSoftwareRecoveryMaterial(Map<String, Object?> json) {
+  if (!json.containsKey('softwareSecret')) {
+    return (
+      mnemonic: (json['mnemonic'] as String?)?.trim(),
+      bip39Passphrase: '',
+    );
+  }
+
+  final rawSecret = json['softwareSecret'];
+  if (rawSecret is! Map) {
+    return (mnemonic: null, bip39Passphrase: '');
+  }
+  final secret = Map<String, Object?>.from(rawSecret);
+  final mnemonic = secret['mnemonic'];
+  final bip39Passphrase = secret['bip39Passphrase'];
+  if (secret['version'] != kWalletLinkSoftwareSecretVersion ||
+      mnemonic is! String ||
+      bip39Passphrase is! String) {
+    return (mnemonic: null, bip39Passphrase: '');
+  }
+  return (mnemonic: mnemonic.trim(), bip39Passphrase: bip39Passphrase);
 }
 
 String? _normalizedOptionalString(Object? value) {

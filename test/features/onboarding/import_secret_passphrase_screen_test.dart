@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart'
-    show Color, Colors, MaterialApp, Scaffold, Scrollbar, TextField;
-import 'package:flutter/painting.dart' show Border, BoxDecoration, FontWeight;
-import 'package:flutter/rendering.dart' show RenderBox;
+    show Color, FontWeight, MaterialApp, Scaffold, Scrollbar, TextField;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
     show
         BackdropFilter,
         Column,
-        DecoratedBox,
         Expanded,
         Focus,
         FocusNode,
-        Offset,
         Scrollable,
         ScrollableState,
         SingleChildScrollView,
@@ -28,6 +24,7 @@ import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_secret_passphrase_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/import/import_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
@@ -52,6 +49,124 @@ void main() {
     expect(find.text('cactus'), findsOneWidget);
   });
 
+  testWidgets('lays out mnemonic fields from left to right by word number', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    final first = tester.getTopLeft(_wordField(0));
+    final second = tester.getTopLeft(_wordField(1));
+    final third = tester.getTopLeft(_wordField(2));
+    final fourth = tester.getTopLeft(_wordField(3));
+
+    expect(second.dy, first.dy);
+    expect(third.dy, first.dy);
+    expect(second.dx, greaterThan(first.dx));
+    expect(third.dx, greaterThan(second.dx));
+    expect(fourth.dx, first.dx);
+    expect(fourth.dy, greaterThan(first.dy));
+  });
+
+  testWidgets('centers the BIP39 action in the visible footer area', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    final visibleTop = tester
+        .getBottomLeft(find.byKey(const ValueKey('import_mnemonic_card')))
+        .dy;
+    final visibleBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('bip39_passphrase_action')))
+        .dy;
+    final textCenter = tester
+        .getCenter(find.text('Add BIP39 Passphrase (Optional)'))
+        .dy;
+
+    expect(textCenter, closeTo((visibleTop + visibleBottom) / 2, 0.1));
+  });
+
+  testWidgets('moves to the next field for a uniquely completed BIP39 word', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    await tester.enterText(_wordField(0), 'Abandon');
+    await tester.pump();
+
+    expect(_textField(tester, 0).controller!.text, 'abandon');
+    expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('keeps focus when a valid word has longer prefix candidates', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _importPassphraseScreen(wordListOverride: const ['act', 'action']),
+    );
+
+    await tester.enterText(_wordField(0), 'act');
+    await tester.pump();
+
+    expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+    expect(find.text('action'), findsOneWidget);
+  });
+
+  testWidgets('keeps focus for an invalid mnemonic word', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    await tester.enterText(_wordField(0), 'zzz');
+    await tester.pump();
+
+    expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('keeps focus on the last uniquely completed BIP39 word', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    await tester.enterText(_wordField(23), 'abandon');
+    await tester.pump();
+
+    expect(_textField(tester, 23).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('moves next after an IME commits a uniquely completed word', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.tap(_wordField(0));
+    await tester.pump();
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'abandon',
+        selection: TextSelection.collapsed(offset: 7),
+        composing: TextRange(start: 0, end: 7),
+      ),
+    );
+    await tester.pump();
+
+    expect(_textField(tester, 0).focusNode!.hasFocus, isTrue);
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: 'abandon',
+        selection: TextSelection.collapsed(offset: 7),
+      ),
+    );
+    await tester.pump();
+
+    expect(_textField(tester, 1).focusNode!.hasFocus, isTrue);
+  });
+
   testWidgets(
     'shows the body scrollbar only below the reference layout height',
     (tester) async {
@@ -68,6 +183,10 @@ void main() {
       final referenceButtonTop = tester
           .getTopLeft(find.byKey(_submitButtonKey))
           .dy;
+      final referencePassphraseBottom = tester
+          .getBottomLeft(find.byKey(const ValueKey('bip39_passphrase_action')))
+          .dy;
+      expect(referenceButtonTop - referencePassphraseBottom, closeTo(24, 0.1));
 
       await tester.binding.setSurfaceSize(const Size(1080, 560));
       await tester.pump();
@@ -129,66 +248,182 @@ void main() {
     },
   );
 
-  testWidgets('matches mnemonic word field visual states', (tester) async {
+  testWidgets('fits the production onboarding shell without scrolling', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester, const Size(1080, 720));
+    await tester.pumpWidget(_importPassphraseShell());
+    await tester.pump();
+
+    expect(
+      tester.widget<Scrollbar>(find.byType(Scrollbar)).thumbVisibility,
+      isFalse,
+    );
+    final bodyScrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable).first,
+    );
+    expect(bodyScrollable.position.maxScrollExtent, 0);
+
+    final passphraseBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('bip39_passphrase_action')))
+        .dy;
+    final buttonTop = tester.getTopLeft(find.byKey(_submitButtonKey)).dy;
+    expect(buttonTop - passphraseBottom, closeTo(24, 0.1));
+  });
+
+  testWidgets('uses home-card colors for mnemonic word field states', (
+    tester,
+  ) async {
     await _setDesktopViewport(tester);
     await tester.pumpWidget(_importPassphraseScreen());
 
     final colors = AppThemeData.light.colors;
 
-    final emptyDecoration = _fieldShellDecoration(tester, 1);
-    expect(_fieldBorder(emptyDecoration).top.color, Colors.transparent);
-    expect(_fieldBorder(emptyDecoration).top.width, 1.5);
-    expect(emptyDecoration.color, colors.surface.input.primary);
-    expect(emptyDecoration.boxShadow, isNotEmpty);
-    expect(_fieldNumberColor(tester, '02'), colors.text.secondary);
+    expect(
+      _fieldNumberColor(tester, '02'),
+      colors.text.homeCard.withValues(alpha: 0.4),
+    );
     expect(
       _textField(tester, 1).decoration?.hintStyle?.fontWeight,
-      FontWeight.w400,
+      FontWeight.w500,
+    );
+    expect(
+      _textField(tester, 1).decoration?.hintStyle?.color,
+      colors.text.homeCard.withValues(alpha: 0.2),
     );
 
     await tester.enterText(_wordField(0), 'zzz');
     await tester.pump();
 
-    final focusedInvalidPrefixDecoration = _fieldShellDecoration(tester, 0);
     expect(
-      _fieldBorder(focusedInvalidPrefixDecoration).top.color,
-      colors.background.inverse,
+      _fieldNumberColor(tester, '01'),
+      colors.text.homeCard.withValues(alpha: 0.72),
     );
-    expect(focusedInvalidPrefixDecoration.color, colors.surface.input.primary);
-    expect(focusedInvalidPrefixDecoration.boxShadow, isNotEmpty);
-    expect(_fieldNumberColor(tester, '01'), colors.text.accent);
 
     _textField(tester, 1).focusNode!.requestFocus();
     await tester.pump();
 
-    final invalidUnfocusedDecoration = _fieldShellDecoration(tester, 0);
-    expect(
-      _fieldBorder(invalidUnfocusedDecoration).top.color,
-      colors.border.utilityDestructiveSubtle,
-    );
-    expect(
-      invalidUnfocusedDecoration.color,
-      Color.alphaBlend(
-        colors.background.utilityDestructiveAlphaSubtle,
-        colors.surface.input.primary,
-      ),
-    );
-    expect(invalidUnfocusedDecoration.boxShadow, isEmpty);
     expect(_fieldNumberColor(tester, '01'), colors.text.destructive);
+    expect(_textField(tester, 0).style?.color, colors.text.destructive);
 
     await tester.enterText(_wordField(2), 'abandon');
     _textField(tester, 3).focusNode!.requestFocus();
     await tester.pump();
 
-    final validUnfocusedDecoration = _fieldShellDecoration(tester, 2);
     expect(
-      _fieldBorder(validUnfocusedDecoration).top.color,
-      Colors.transparent,
+      _fieldNumberColor(tester, '03'),
+      colors.text.homeCard.withValues(alpha: 0.72),
     );
-    expect(validUnfocusedDecoration.color, colors.surface.input.primary);
-    expect(validUnfocusedDecoration.boxShadow, isNotEmpty);
-    expect(_fieldNumberColor(tester, '03'), colors.text.accent);
-    expect(_textField(tester, 2).style?.fontWeight, FontWeight.w400);
+    expect(_textField(tester, 2).style?.color, colors.text.homeCard);
+    expect(_textField(tester, 2).style?.fontWeight, FontWeight.w500);
+  });
+
+  testWidgets('adds a BIP39 passphrase and submits it unchanged', (
+    tester,
+  ) async {
+    ImportBirthdayArgs? submittedArgs;
+    final router = _importPassphraseRouter((args) => submittedArgs = args);
+    addTearDown(router.dispose);
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_routerHarness(router));
+    await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('BIP39 Passphrase (Optional)'), findsOneWidget);
+    expect(find.textContaining('“25th word”'), findsOneWidget);
+    expect(find.text('Add'), findsOneWidget);
+    await tester.enterText(_bip39PassphraseField, '  My TREZOR phrase  ');
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('bip39_passphrase_save_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit'), findsOneWidget);
+    expect(find.textContaining('BIP39 Passphrase:'), findsOneWidget);
+    await _enterWords(tester, 12);
+    await tester.tap(find.byKey(_submitButtonKey));
+    await tester.pumpAndSettle();
+
+    expect(submittedArgs?.bip39Passphrase, '  My TREZOR phrase  ');
+  });
+
+  testWidgets('limits BIP39 passphrases to 100 user-perceived characters', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1–100 characters'), findsOneWidget);
+
+    const grapheme = '👍🏽';
+    final hundredGraphemes = List.filled(100, grapheme).join();
+    await tester.enterText(_bip39PassphraseField, hundredGraphemes);
+    await tester.pump();
+
+    final saveButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('bip39_passphrase_save_button')),
+    );
+    expect(saveButton.onPressed, isNotNull);
+    expect(
+      tester.widget<TextField>(_bip39PassphraseField).controller?.text,
+      hundredGraphemes,
+    );
+
+    await tester.enterText(_bip39PassphraseField, '$hundredGraphemes$grapheme');
+    await tester.pump();
+
+    expect(
+      tester.widget<TextField>(_bip39PassphraseField).controller?.text,
+      hundredGraphemes,
+    );
+  });
+
+  testWidgets('Clear resets mnemonic words and the BIP39 passphrase', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.enterText(_wordField(0), 'abandon');
+    await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_bip39PassphraseField, 'secret');
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('bip39_passphrase_save_button')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('import_mnemonic_clear_button')),
+    );
+    await tester.pump();
+
+    expect(_textField(tester, 0).controller!.text, isEmpty);
+    expect(find.text('Add BIP39 Passphrase (Optional)'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('import_mnemonic_clear_button')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Clear button responds to a pointer tap', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.enterText(_wordField(0), 'abandon');
+    await tester.pump();
+
+    await tester.tapAt(
+      tester.getCenter(
+        find.byKey(const ValueKey('import_mnemonic_clear_button')),
+      ),
+    );
+    await tester.pump();
+
+    expect(_textField(tester, 0).controller!.text, isEmpty);
   });
 
   testWidgets('keeps autocomplete overlay stable while resizing the body', (
@@ -371,13 +606,15 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
 
       expect(scrollable.position.pixels, greaterThan(0));
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pump();
 
-      expect(_textField(tester, 23).controller!.text, 'cactus');
+      expect(_textField(tester, 23).controller!.text, 'cage');
     },
   );
 
@@ -495,6 +732,35 @@ void main() {
     expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsNothing);
   });
 
+  testWidgets('privacy shield covers the open BIP39 passphrase modal', (
+    tester,
+  ) async {
+    final controller = SensitivePrivacyOverlayController();
+    addTearDown(controller.dispose);
+
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _importPassphraseScreen(privacyOverlayController: controller),
+    );
+    await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_bip39PassphraseField, 'secret');
+    await tester.pump();
+
+    expect(
+      find.ancestor(
+        of: _bip39PassphraseField,
+        matching: find.byType(SensitivePrivacyOverlay),
+      ),
+      findsOneWidget,
+    );
+
+    controller.markUnsafe();
+    await tester.pump();
+
+    expect(find.byKey(SensitivePrivacyOverlay.shieldKey), findsOneWidget);
+  });
+
   testWidgets('privacy shield hides active autocomplete suggestions', (
     tester,
   ) async {
@@ -556,9 +822,11 @@ Future<void> _setDesktopViewport(
 Widget _importPassphraseScreen({
   FocusNode? afterNode,
   SensitivePrivacyOverlayController? privacyOverlayController,
+  List<String>? wordListOverride,
 }) {
   Widget body = ImportSecretPassphraseScreen(
     privacyOverlayController: privacyOverlayController,
+    wordListOverride: wordListOverride,
   );
   if (afterNode != null) {
     body = Column(
@@ -577,6 +845,26 @@ Widget _importPassphraseScreen({
       home: AppTheme(
         data: AppThemeData.light,
         child: Scaffold(body: body),
+      ),
+    ),
+  );
+}
+
+Widget _importPassphraseShell() {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+    ],
+    child: MaterialApp(
+      home: AppTheme(
+        data: AppThemeData.light,
+        child: Scaffold(
+          body: ImportOnboardingShell(
+            activeStep: ImportOnboardingStep.secretPassphrase,
+            showPasswordStep: false,
+            child: const ImportSecretPassphraseScreen(),
+          ),
+        ),
       ),
     ),
   );
@@ -621,6 +909,11 @@ Widget _routerHarness(GoRouter router) {
 
 Finder _wordField(int index) => find.byType(TextField).at(index);
 
+Finder get _bip39PassphraseField => find.descendant(
+  of: find.byKey(const ValueKey('bip39_passphrase_field')),
+  matching: find.byType(TextField),
+);
+
 TextField _textField(WidgetTester tester, int index) {
   return tester.widget<TextField>(_wordField(index));
 }
@@ -629,39 +922,6 @@ const _submitButtonKey = ValueKey('import_secret_submit_button');
 
 AppButton _submitButton(WidgetTester tester) {
   return tester.widget<AppButton>(find.byKey(_submitButtonKey));
-}
-
-BoxDecoration _fieldShellDecoration(WidgetTester tester, int index) {
-  final fieldCenter = tester.getCenter(_wordField(index));
-  final candidates = <BoxDecoration>[];
-
-  for (final element in find.byType(DecoratedBox).evaluate()) {
-    final widget = element.widget as DecoratedBox;
-    final decoration = widget.decoration;
-    final renderObject = element.renderObject;
-    if (decoration is! BoxDecoration ||
-        decoration.border is! Border ||
-        renderObject is! RenderBox ||
-        !renderObject.attached) {
-      continue;
-    }
-
-    final size = renderObject.size;
-    if ((size.width - 120).abs() > 0.1 || (size.height - 36).abs() > 0.1) {
-      continue;
-    }
-
-    final topLeft = renderObject.localToGlobal(Offset.zero);
-    if (!(topLeft & size).contains(fieldCenter)) continue;
-    candidates.add(decoration);
-  }
-
-  expect(candidates, hasLength(1));
-  return candidates.single;
-}
-
-Border _fieldBorder(BoxDecoration decoration) {
-  return decoration.border! as Border;
 }
 
 Color? _fieldNumberColor(WidgetTester tester, String label) {

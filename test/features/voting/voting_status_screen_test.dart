@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
@@ -3840,6 +3841,11 @@ class _NoMnemonicAccountNotifier extends AccountNotifier {
 
   @override
   Future<String?> getMnemonicForAccount(String uuid) async => null;
+
+  @override
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
+    String uuid,
+  ) async => null;
 }
 
 class _MnemonicAccountNotifier extends AccountNotifier {
@@ -3852,6 +3858,15 @@ class _MnemonicAccountNotifier extends AccountNotifier {
   @override
   Future<String?> getMnemonicForAccount(String uuid) async {
     return uuid == 'account-1' ? 'abandon abandon abandon' : null;
+  }
+
+  @override
+  Future<SoftwareWalletSecret?> getSoftwareWalletSecretForAccount(
+    String uuid,
+  ) async {
+    return uuid == 'account-1'
+        ? const SoftwareWalletSecret(mnemonic: 'abandon abandon abandon')
+        : null;
   }
 }
 

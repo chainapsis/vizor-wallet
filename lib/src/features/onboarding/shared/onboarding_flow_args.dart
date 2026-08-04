@@ -24,19 +24,25 @@ class CustomiseAccountArgs {
 }
 
 class ImportSecretPassphraseArgs {
-  const ImportSecretPassphraseArgs({required this.mnemonic});
+  const ImportSecretPassphraseArgs({
+    required this.mnemonic,
+    this.bip39Passphrase = '',
+  });
 
   final String mnemonic;
+  final String bip39Passphrase;
 }
 
 class ImportBirthdayArgs {
   const ImportBirthdayArgs({
     required this.mnemonic,
+    this.bip39Passphrase = '',
     this.initialBirthdayHeight,
     this.selectedAdditionalAccountIndices = const [],
   });
 
   final String mnemonic;
+  final String bip39Passphrase;
   final int? initialBirthdayHeight;
   final List<int> selectedAdditionalAccountIndices;
 }
@@ -45,6 +51,7 @@ class SetPasswordScreenArgs {
   const SetPasswordScreenArgs._({
     required this.flow,
     this.mnemonic,
+    this.bip39Passphrase = '',
     this.birthdayHeight,
     this.selectedAdditionalAccountIndices = const [],
     this.keystoneAccountName,
@@ -64,11 +71,13 @@ class SetPasswordScreenArgs {
 
   const SetPasswordScreenArgs.importWallet({
     required String mnemonic,
+    String bip39Passphrase = '',
     required int birthdayHeight,
     List<int> selectedAdditionalAccountIndices = const [],
   }) : this._(
          flow: SetPasswordFlow.importWallet,
          mnemonic: mnemonic,
+         bip39Passphrase: bip39Passphrase,
          birthdayHeight: birthdayHeight,
          selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
        );
@@ -107,6 +116,7 @@ class SetPasswordScreenArgs {
 
   final SetPasswordFlow flow;
   final String? mnemonic;
+  final String bip39Passphrase;
   final int? birthdayHeight;
   final List<int> selectedAdditionalAccountIndices;
   final String? keystoneAccountName;
@@ -147,6 +157,7 @@ class SetPasswordScreenArgs {
     ),
     SetPasswordFlow.importWallet => ImportBirthdayArgs(
       mnemonic: requiredMnemonic,
+      bip39Passphrase: bip39Passphrase,
       initialBirthdayHeight: importBirthdayHeight,
       selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
     ),
