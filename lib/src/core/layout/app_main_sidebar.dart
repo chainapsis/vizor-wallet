@@ -30,6 +30,7 @@ import '../widgets/app_copy_feedback.dart';
 import '../widgets/app_icon.dart';
 import '../widgets/app_profile_picture.dart';
 import '../widgets/app_tappable.dart';
+import '../widgets/app_tooltip.dart';
 import '../widgets/app_toast.dart';
 import 'app_desktop_shell.dart';
 import 'desktop_sidebar_spacing.dart';
@@ -1547,11 +1548,10 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
             indicatorColor: indicatorColor,
             glow: _SidebarSyncMotion.staticGlow,
             syncedHeight: syncedHeight,
-            text: Text(
-              label,
-              key: const ValueKey('sidebar_sync_text'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            text: _SidebarSyncStaticLabel(
+              label: label,
+              tooltipMessage: status.semanticsLabel,
+              showTooltipOnOverflow: status.kind == SyncStatusKind.failed,
               style: AppTypography.labelLarge.copyWith(color: textColor),
             ),
           );
@@ -1630,6 +1630,52 @@ class _SidebarSyncStatusState extends State<_SidebarSyncStatus>
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SidebarSyncStaticLabel extends StatelessWidget {
+  const _SidebarSyncStaticLabel({
+    required this.label,
+    required this.tooltipMessage,
+    required this.showTooltipOnOverflow,
+    required this.style,
+  });
+
+  final String label;
+  final String tooltipMessage;
+  final bool showTooltipOnOverflow;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget labelText() => Text(
+      label,
+      key: const ValueKey('sidebar_sync_text'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+    );
+
+    if (!showTooltipOnOverflow) return labelText();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.maxWidth.isFinite) return labelText();
+
+        final painter = TextPainter(
+          text: TextSpan(text: label, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          ellipsis: '...',
+          maxLines: 1,
+        )..layout(maxWidth: constraints.maxWidth);
+
+        final text = labelText();
+        if (!painter.didExceedMaxLines) return text;
+
+        return AppTooltip(message: tooltipMessage, child: text);
+      },
     );
   }
 }

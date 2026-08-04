@@ -66,6 +66,7 @@ import '../src/providers/account_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
 import '../src/providers/receive_address_provider.dart';
+import '../src/providers/sync_failure.dart';
 import '../src/providers/sync_provider.dart';
 import '../src/providers/zec_price_change_provider.dart';
 import '../src/rust/api/sync.dart' as rust_sync;
@@ -917,6 +918,23 @@ Widget buildDesktopHomeSidebarCompactBalancesUseCase(BuildContext context) {
       accountUuid: _accountsDesignState.activeAccountUuid!,
       status: status,
     ),
+  );
+}
+
+Widget buildDesktopHomeSidebarSyncNetworkErrorUseCase(BuildContext context) {
+  return _buildDesktopHomeUseCase(
+    accountState: _accountsDesignState,
+    syncState: SyncState(
+      accountUuid: _accountsDesignState.activeAccountUuid,
+      hasAccountScopedData: true,
+      failure: const SyncFailure(
+        kind: SyncFailureKind.network,
+        rawMessage: 'network failed',
+        userMessage: 'Network connection lost.',
+        showSettingsAction: false,
+      ),
+    ),
+    migrationCta: const IronwoodHomeMigrationCtaState.hidden(),
   );
 }
 

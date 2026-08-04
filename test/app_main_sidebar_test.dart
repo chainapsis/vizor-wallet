@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -920,6 +922,60 @@ void main() {
     _expectSyncIndicatorGlow(tester, blurRadius: 12);
   });
 
+  testWidgets('sidebar omits the error tooltip when the label fits', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sidebarHarness(_networkFailureSyncState()));
+    await tester.pump();
+
+    expect(_syncTextTooltip(), findsNothing);
+  });
+
+  testWidgets('sidebar adds the error tooltip only after actual overflow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_networkFailureSyncState(), sidebarWidth: 180),
+    );
+    await tester.pump();
+
+    final tooltip = tester.widget<Tooltip>(_syncTextTooltip());
+    expect(tooltip.message, 'Syncing failed. Network error');
+  });
+
+  testWidgets('sidebar shows the full overflowed error label on hover', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(_networkFailureSyncState(), sidebarWidth: 180),
+    );
+    await tester.pump();
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer();
+    await gesture.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('sidebar_sync_text'))),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Syncing failed. Network error'), findsOneWidget);
+  });
+
+  testWidgets('sidebar does not add an overflow tooltip for syncing status', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _sidebarHarness(
+        SyncState(isSyncing: true, displayPercentage: 0.34),
+        sidebarWidth: 180,
+      ),
+    );
+    await tester.pump();
+
+    expect(_syncTextTooltip(), findsNothing);
+  });
+
   testWidgets('sidebar uses dark success sync indicator color from Figma', (
     tester,
   ) async {
@@ -1047,6 +1103,7 @@ Widget _sidebarHarness(
   AccountState? accountState,
   String initialLocation = '/home',
   bool disableAnimations = true,
+  double sidebarWidth = 256,
   IronwoodHomeMigrationCtaState ironwoodHomeMigrationCtaState =
       const IronwoodHomeMigrationCtaState.hidden(),
   IronwoodPostMigrationState ironwoodPostMigrationState =
@@ -1060,9 +1117,10 @@ Widget _sidebarHarness(
     routes: [
       GoRoute(
         path: '/home',
-        builder: (_, _) => const AppDesktopShell(
-          sidebar: AppMainSidebar(),
-          pane: AppDesktopPane(child: Text('home route')),
+        builder: (_, _) => AppDesktopShell(
+          sidebarWidth: sidebarWidth,
+          sidebar: const AppMainSidebar(),
+          pane: const AppDesktopPane(child: Text('home route')),
         ),
       ),
       GoRoute(path: '/accounts', builder: (_, _) => const Text('accounts')),
@@ -1164,6 +1222,24 @@ Widget _sidebarHarness(
         child: AppTheme(data: themeData, child: child!),
       ),
     ),
+  );
+}
+
+SyncState _networkFailureSyncState() {
+  return SyncState(
+    failure: const SyncFailure(
+      kind: SyncFailureKind.network,
+      rawMessage: 'network failed',
+      userMessage: 'Network connection lost.',
+      showSettingsAction: false,
+    ),
+  );
+}
+
+Finder _syncTextTooltip() {
+  return find.ancestor(
+    of: find.byKey(const ValueKey('sidebar_sync_text')),
+    matching: find.byType(Tooltip),
   );
 }
 
