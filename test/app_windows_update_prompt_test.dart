@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/app.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/features/onboarding/unlock_screen.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 
@@ -27,14 +29,48 @@ void main() {
     expect(find.text('Update 9.9.9 available'), findsOneWidget);
     expect(find.text('Download now or keep working.'), findsOneWidget);
   });
+
+  testWidgets('turning Tor off resumes a deferred startup update check', (
+    tester,
+  ) async {
+    final checks = <String>[];
+    await tester.pumpWidget(
+      _appHarness(
+        windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+          () => _TrackingWindowsUpdateNotifier(checks),
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(_TorOnPrivacyNotifier.new),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(checks, ['check']);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(UnlockScreen)),
+    );
+    final notifier = container.read(networkPrivacyProvider.notifier);
+    (notifier as _TorOnPrivacyNotifier).setDirect();
+    await tester.pump();
+
+    expect(checks, ['check', 'check']);
+  });
 }
 
-Widget _appHarness() {
+Widget _appHarness({
+  Override? windowsUpdateOverride,
+  List<Override> extraOverrides = const [],
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(_lockedBootstrap),
       syncProvider.overrideWith(FakeSyncNotifier.new),
-      windowsUpdateProvider.overrideWith(_AvailableWindowsUpdateNotifier.new),
+      windowsUpdateOverride ??
+          windowsUpdateProvider.overrideWith(
+            _AvailableWindowsUpdateNotifier.new,
+          ),
+      ...extraOverrides,
     ],
     child: const ZcashWalletApp(),
   );
@@ -70,5 +106,31 @@ class _AvailableWindowsUpdateNotifier extends WindowsUpdateNotifier {
       pendingRestart: false,
       message: '',
     );
+  }
+}
+
+class _TrackingWindowsUpdateNotifier extends WindowsUpdateNotifier {
+  _TrackingWindowsUpdateNotifier(this.checks);
+
+  final List<String> checks;
+
+  @override
+  WindowsUpdateState build() => WindowsUpdateState.initial();
+
+  @override
+  Future<void> checkOnStartup() async {
+    checks.add('check');
+  }
+}
+
+class _TorOnPrivacyNotifier extends NetworkPrivacyNotifier {
+  @override
+  NetworkPrivacyState build() => const NetworkPrivacyState(
+    torEnabled: true,
+    status: NetworkPrivacyConnectionStatus.connected,
+  );
+
+  void setDirect() {
+    state = const NetworkPrivacyState.off();
   }
 }

@@ -1152,13 +1152,33 @@ class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
 
 class _WindowsUpdateStartupCheckState
     extends ConsumerState<_WindowsUpdateStartupCheck> {
+  ProviderSubscription<bool>? _torSubscription;
+
   @override
   void initState() {
     super.initState();
+    _torSubscription = ref.listenManual(
+      networkPrivacyProvider.select(
+        (state) =>
+            !state.torEnabled &&
+            state.status == NetworkPrivacyConnectionStatus.off,
+      ),
+      (previous, next) {
+        if (previous == false && next) {
+          unawaited(ref.read(windowsUpdateProvider.notifier).checkOnStartup());
+        }
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(ref.read(windowsUpdateProvider.notifier).checkOnStartup());
     });
+  }
+
+  @override
+  void dispose() {
+    _torSubscription?.close();
+    super.dispose();
   }
 
   @override
