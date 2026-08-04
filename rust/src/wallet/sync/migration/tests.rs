@@ -2484,8 +2484,8 @@ fn initial_schedule_rebase_starts_at_finalization_and_preserves_approved_offsets
     .unwrap();
     assert_eq!(projection.next_action_height, Some(340));
     assert_eq!(projection.next_action_part_index, Some(0));
-    assert_eq!(projection.next_proof_window_height, None);
-    assert!(projection.next_proof_window_part_indices.is_empty());
+    assert_eq!(projection.next_proof_window_height, Some(340));
+    assert_eq!(projection.next_proof_window_part_indices, vec![0, 1, 2]);
     assert_eq!(
         projection.projected_signed_parts,
         vec![
@@ -2503,6 +2503,69 @@ fn initial_schedule_rebase_starts_at_finalization_and_preserves_approved_offsets
                 part_index: 2,
                 schedule_start_height: 340,
                 scheduled_height: 436,
+            },
+        ]
+    );
+}
+
+#[test]
+fn timing_projection_keeps_due_proof_retry_after_rebase_before_promotion() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100,
+            block_offset: 48,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 200,
+            block_offset: 96,
+        },
+    ];
+    let signed_children = vec![
+        MigrationTimingSignedChild {
+            part_index: 0,
+            target_height: 101,
+            scheduled_height: Some(248),
+        },
+        MigrationTimingSignedChild {
+            part_index: 1,
+            target_height: 101,
+            scheduled_height: Some(296),
+        },
+    ];
+
+    // The rebase committed at height 200, but cancellation or a crash kept
+    // every signed child unpromoted. Proof creation must remain due now rather
+    // than waiting for the first randomized broadcast offset at height 248.
+    let projection = calculate_migration_timing_projection(
+        &schedule,
+        &[],
+        &signed_children,
+        Some(200),
+        Some(200),
+        200,
+        2,
+        3,
+    )
+    .unwrap();
+
+    assert_eq!(projection.next_action_height, Some(200));
+    assert_eq!(projection.next_action_part_index, Some(0));
+    assert_eq!(projection.next_proof_window_height, Some(200));
+    assert_eq!(projection.next_proof_window_part_indices, vec![0, 1]);
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![
+            MigrationTimingProjectedSignedPart {
+                part_index: 0,
+                schedule_start_height: 200,
+                scheduled_height: 248,
+            },
+            MigrationTimingProjectedSignedPart {
+                part_index: 1,
+                schedule_start_height: 200,
+                scheduled_height: 296,
             },
         ]
     );

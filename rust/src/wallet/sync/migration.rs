@@ -5651,14 +5651,13 @@ fn calculate_migration_timing_projection(
         .filter(|part| part.status == "scheduled")
         .min_by_key(|part| part.scheduled_height)
         .map(|part| (part.scheduled_height, part.part_index));
-    // The run-wide rebase marker applies only to the initial signed cohort.
-    // Before any child is promoted, its persisted rebased height supersedes
-    // the readiness height that triggered that one-time rebase. Once a
-    // pending row exists, however, proof_retry_height belongs to a later
-    // proof wave and is again the next action for unpromoted children.
+    // Rebasing changes the approved broadcast schedule, but it does not prove
+    // or promote any child. Keep an already-due proof retry visible while
+    // signed children remain so a cancellation or restart between the rebase
+    // transaction and the first promotion resumes proof creation immediately.
     let initial_rebased_schedule_pending_promotion = rebased_origin.is_some() && pending.is_empty();
     let proof_next = proof_retry_height
-        .filter(|_| !initial_rebased_schedule_pending_promotion && !signed_children.is_empty())
+        .filter(|_| !signed_children.is_empty())
         .map(|height| {
             (
                 height,
