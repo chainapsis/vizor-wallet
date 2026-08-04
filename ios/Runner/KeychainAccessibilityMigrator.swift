@@ -6,6 +6,7 @@ let keychainAccessibilityMigrationChannelName =
   "com.zcash.wallet/keychain_accessibility_migration"
 let keychainAccessibilityMigrationStagingSuffix =
   ".accessibility-migration-v1"
+let keychainAccessibilityMigrationVersion = 1
 let keychainAccessibilityMigrationAllowedServices = [
   "com.keplr.vizor.secure_store",
   "com.keplr.vizor.ironwood.secure_store",
@@ -44,6 +45,11 @@ protocol KeychainAccessibilityMigrationStore {
   func delete(service: String, account: String) throws
 }
 
+protocol KeychainAccessibilityMigrationCompletionStore {
+  func isComplete(service: String, version: Int) -> Bool
+  func markComplete(service: String, version: Int)
+}
+
 enum KeychainAccessibilityMigrationError: Error, Equatable {
   case invalidService
   case duplicateAccount(String)
@@ -61,15 +67,27 @@ final class KeychainAccessibilityMigrator {
   )
 
   private let store: KeychainAccessibilityMigrationStore
+  private let completionStore: KeychainAccessibilityMigrationCompletionStore
 
-  init(store: KeychainAccessibilityMigrationStore = SecurityKeychainMigrationStore()) {
+  init(
+    store: KeychainAccessibilityMigrationStore = SecurityKeychainMigrationStore(),
+    completionStore: KeychainAccessibilityMigrationCompletionStore =
+      UserDefaultsKeychainAccessibilityMigrationCompletionStore()
+  ) {
     self.store = store
+    self.completionStore = completionStore
   }
 
   @discardableResult
   func ensureFirstUnlockThisDeviceOnly(service: String) throws -> Int {
     guard Self.allowedServices.contains(service) else {
       throw KeychainAccessibilityMigrationError.invalidService
+    }
+    if completionStore.isComplete(
+      service: service,
+      version: keychainAccessibilityMigrationVersion
+    ) {
+      return 0
     }
 
     let stagingService = service + keychainAccessibilityMigrationStagingSuffix
@@ -90,6 +108,10 @@ final class KeychainAccessibilityMigrator {
         migratedCount += 1
       }
     }
+    completionStore.markComplete(
+      service: service,
+      version: keychainAccessibilityMigrationVersion
+    )
     return migratedCount
   }
 
@@ -185,6 +207,28 @@ final class KeychainAccessibilityMigrator {
     let actual = matches[0]
     try requireTarget(actual)
     try requireMatchingData(expected, actual)
+  }
+}
+
+final class UserDefaultsKeychainAccessibilityMigrationCompletionStore:
+  KeychainAccessibilityMigrationCompletionStore
+{
+  private let userDefaults: UserDefaults
+
+  init(userDefaults: UserDefaults = .standard) {
+    self.userDefaults = userDefaults
+  }
+
+  func isComplete(service: String, version: Int) -> Bool {
+    userDefaults.bool(forKey: key(service: service, version: version))
+  }
+
+  func markComplete(service: String, version: Int) {
+    userDefaults.set(true, forKey: key(service: service, version: version))
+  }
+
+  private func key(service: String, version: Int) -> String {
+    "vizor_keychain_accessibility_migration_v\(version)_complete.\(service)"
   }
 }
 
