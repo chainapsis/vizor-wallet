@@ -82,6 +82,15 @@ Widget buildSwapPageUnsupportedFiatUseCase(BuildContext context) {
   );
 }
 
+Widget buildSwapPageTorBlockedUseCase(BuildContext context) {
+  return _SwapPageFrame(
+    child: _SwapComposerPreview(
+      initialState: _torBlockedState,
+      actionLabel: 'Add refund address',
+    ),
+  );
+}
+
 Widget buildSwapAddressModalFigmaNode7UseCase(BuildContext context) {
   return _SwapPageModalFrame(
     child: SwapAddressEditModal(
@@ -755,6 +764,20 @@ final _unsupportedFiatState = SwapState(
   reviewVisible: false,
   intents: [],
   slippageBps: 50,
+);
+
+final _torBlockedState = SwapState(
+  direction: SwapDirection.externalToZec,
+  amountText: '0',
+  receiveAmountText: '0',
+  destinationText: '',
+  externalAsset: _figmaUsdc,
+  reviewVisible: false,
+  intents: [],
+  slippageBps: 50,
+  supportedAssetsError:
+      'Swap is unavailable over Tor because the service blocked this connection.\n'
+      'Turn off Tor in Settings to use swap.',
 );
 
 const _designProgressSteps = <SwapStatusStepData>[

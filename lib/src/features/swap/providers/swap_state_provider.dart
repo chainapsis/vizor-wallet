@@ -9,6 +9,7 @@ import '../models/swap_deposit_broadcast_result.dart';
 import '../models/swap_intent_presentation_mapper.dart';
 import '../models/swap_models.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
 import 'swap_activity_tracker.dart';
@@ -613,6 +614,7 @@ class SwapNotifier extends Notifier<SwapState> {
         reviewVisible: selectedChanged ? false : state.reviewVisible,
         clearReview: selectedChanged || retryUnsupported,
         clearQuoteError: true,
+        clearSupportedAssetsError: true,
       );
       nextState = swapStateWithTokenAmountsForFiatModes(nextState);
       if (nextState.reviewQuote == null) {
@@ -625,8 +627,18 @@ class SwapNotifier extends Notifier<SwapState> {
         preserveReceiveFiatInput:
             nextState.receiveAmountInputMode == SwapAmountInputMode.fiat,
       );
-    } catch (_) {
-      // Keep the static fallback so the swap flow remains usable offline.
+    } catch (error) {
+      if (generation != _pricingLoadGeneration) return;
+      final torEnabled = ref.read(networkPrivacyProvider).torEnabled;
+      final message = _providerFailureMessage(
+        SwapFailureOperation.tokenList,
+        error,
+      );
+      state = state.copyWith(supportedAssetsError: message);
+      log(
+        'Swap: supported assets load failed '
+        'torEnabled=$torEnabled error=$error',
+      );
     } finally {
       if (generation == _pricingLoadGeneration) {
         state = state.copyWith(pricingLoading: false);
@@ -780,7 +792,7 @@ class SwapNotifier extends Notifier<SwapState> {
         );
         state = state.copyWith(
           startSubmitting: false,
-          statusError: swapFailureMessage(
+          statusError: _providerFailureMessage(
             SwapFailureOperation.sendZecDeposit,
             e,
           ),
@@ -800,7 +812,7 @@ class SwapNotifier extends Notifier<SwapState> {
       state = state.copyWith(
         startSubmitting: false,
         quoteLoading: false,
-        statusError: swapFailureMessage(SwapFailureOperation.start, e),
+        statusError: _providerFailureMessage(SwapFailureOperation.start, e),
       );
       return null;
     }
@@ -1169,7 +1181,7 @@ class SwapNotifier extends Notifier<SwapState> {
         );
       } catch (e) {
         final failed = checkpointed.copyWith(
-          statusError: swapFailureMessage(
+          statusError: _providerFailureMessage(
             SwapFailureOperation.submitDeposit,
             e,
           ),
@@ -1239,7 +1251,10 @@ class SwapNotifier extends Notifier<SwapState> {
         'intent=${_shortSwapValue(intent.id)} '
         'tx=${_shortSwapValue(normalizedTxHash)} error=$e',
       );
-      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e);
+      final message = _providerFailureMessage(
+        SwapFailureOperation.submitDeposit,
+        e,
+      );
       state = state.copyWith(depositSubmitting: false, statusError: message);
     }
   }
@@ -1338,7 +1353,10 @@ class SwapNotifier extends Notifier<SwapState> {
         'Swap: submit deposit failed intent=${_shortSwapValue(selected.id)} '
         'error=$e',
       );
-      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e);
+      final message = _providerFailureMessage(
+        SwapFailureOperation.submitDeposit,
+        e,
+      );
       if (selected.accountUuid != null &&
           !_isAccountActive(selected.accountUuid)) {
         await _submitDepositTransactionForStoredIntent(
@@ -1407,7 +1425,10 @@ class SwapNotifier extends Notifier<SwapState> {
       await _persistIntentsForAccount(accountUuid, updatedIntents);
     } catch (e) {
       final failed = checkpointed.copyWith(
-        statusError: swapFailureMessage(SwapFailureOperation.submitDeposit, e),
+        statusError: _providerFailureMessage(
+          SwapFailureOperation.submitDeposit,
+          e,
+        ),
       );
       updatedIntents = updatedIntents.replaceSwapIntent(intentId, failed);
       await _persistIntentsForAccount(accountUuid, updatedIntents);
@@ -1465,7 +1486,7 @@ class SwapNotifier extends Notifier<SwapState> {
         'Swap: live ZEC deposit failed intent=${_shortSwapValue(intentId)} '
         'error=$e',
       );
-      final message = swapFailureMessage(
+      final message = _providerFailureMessage(
         SwapFailureOperation.sendZecDeposit,
         e,
       );
@@ -1566,7 +1587,10 @@ class SwapNotifier extends Notifier<SwapState> {
         'intent=${_shortSwapValue(intentId)} tx=${_shortSwapValue(broadcast.txHash)} '
         'error=$e',
       );
-      final message = swapFailureMessage(SwapFailureOperation.submitDeposit, e);
+      final message = _providerFailureMessage(
+        SwapFailureOperation.submitDeposit,
+        e,
+      );
       if (!_isAccountActive(accountUuid)) {
         await _submitDepositTransactionForStoredIntent(
           accountUuid: accountUuid,
@@ -1973,10 +1997,23 @@ class SwapNotifier extends Notifier<SwapState> {
     if (error is SwapZecStagingAddressUnavailableException) {
       return error.toString();
     }
-    return swapFailureMessage(
+    return _providerFailureMessage(
       SwapFailureOperation.quote,
       error,
       surface: state.payMode ? SwapFailureSurface.pay : SwapFailureSurface.swap,
+    );
+  }
+
+  String _providerFailureMessage(
+    SwapFailureOperation operation,
+    Object error, {
+    SwapFailureSurface surface = SwapFailureSurface.swap,
+  }) {
+    return swapFailureMessage(
+      operation,
+      error,
+      surface: surface,
+      torEnabled: ref.read(networkPrivacyProvider).torEnabled,
     );
   }
 

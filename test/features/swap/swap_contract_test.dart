@@ -115,6 +115,31 @@ void main() {
     expect(supported.canReviewQuote, isTrue);
   });
 
+  test('supported-asset loading error takes priority and blocks review', () {
+    const error =
+        'Swap is unavailable over Tor because the service blocked '
+        'this connection.\nTurn off Tor in Settings to use swap.';
+    const state = SwapState(
+      direction: SwapDirection.zecToExternal,
+      amountText: '',
+      receiveAmountText: '100',
+      destinationText: validEvmRecipient,
+      externalAsset: SwapAsset.usdc,
+      reviewVisible: false,
+      intents: [],
+      quoteMode: SwapQuoteMode.exactOutput,
+      supportedAssetsError: error,
+    );
+
+    expect(state.externalAssetIsSupported, isTrue);
+    expect(state.externalAssetSupportError, error);
+    expect(state.canReviewQuote, isFalse);
+    expect(
+      state.copyWith(clearSupportedAssetsError: true).canReviewQuote,
+      isTrue,
+    );
+  });
+
   test(
     'formats slippage amounts using token decimals before display floors',
     () {

@@ -879,6 +879,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Unsupported fiat price',
                       builder: buildSwapPageUnsupportedFiatUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Tor connection blocked',
+                      builder: buildSwapPageTorBlockedUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(
