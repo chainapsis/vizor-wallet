@@ -468,6 +468,7 @@ struct MigrationTimingPendingPart {
 struct MigrationTimingSignedChild {
     part_index: u32,
     target_height: u32,
+    scheduled_height: Option<u32>,
 }
 
 pub(crate) fn migration_status(
@@ -3702,6 +3703,296 @@ pub(crate) fn set_proof_retry_height(
     Ok(())
 }
 
+/// One-time rebase of the approved absolute child schedule onto the height at
+/// which proof finalization can actually run.
+///
+/// The signed schedule is planned before denomination notes can be proved.
+/// Once `proof_retry_height` records readiness, shift every unpromoted signed
+/// child to the current scanned height so time spent waiting for foreground
+/// finalization does not consume the approved offsets. If any child would leave
+/// its already-signed ZIP-318 expiry bucket, leave the schedule untouched so
+/// the normal overdue catch-up / resign path can run.
+///
+/// Returns `true` only when child heights were rewritten. Idempotent once the
+/// durable `initial_schedule_rebased_origin_height` marker is set.
+pub(crate) fn rebase_initial_signed_schedule_for_anchor_readiness(
+    db_path: &str,
+    run_id: &str,
+    current_scanned_height: u32,
+) -> Result<bool, String> {
+    with_wallet_db_write_lock("migration.rebase_initial_signed_schedule", || {
+        let conn = open_wallet_raw_conn_with_timeout(db_path, WALLET_DB_BUSY_TIMEOUT)?;
+        ensure_schema(&conn)?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Begin initial migration schedule rebase: {e}"))?;
+        let applied = rebase_initial_signed_schedule_for_anchor_readiness_with_tx(
+            &tx,
+            run_id,
+            current_scanned_height,
+        )?;
+        tx.commit()
+            .map_err(|e| format!("Commit initial migration schedule rebase: {e}"))?;
+        Ok(applied)
+    })
+}
+
+fn rebase_initial_signed_schedule_for_anchor_readiness_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    current_scanned_height: u32,
+) -> Result<bool, String> {
+    let (
+        schedule_json,
+        target_values_json,
+        proof_retry_height,
+        signed_schedule_origin,
+        rebased_origin,
+    ) = tx
+        .query_row(
+            &format!(
+                "SELECT schedule_json, target_values_json, proof_retry_height,
+                        signed_schedule_origin_height,
+                        initial_schedule_rebased_origin_height
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<u32>>(2)?,
+                    row.get::<_, Option<u32>>(3)?,
+                    row.get::<_, Option<u32>>(4)?,
+                ))
+            },
+        )
+        .map_err(|e| format!("Read migration schedule for initial rebase: {e}"))?;
+
+    // If already rebased, do nothing.
+    if rebased_origin.is_some() {
+        return Ok(false);
+    }
+    let Some(proof_retry_height) = proof_retry_height else {
+        return Ok(false);
+    };
+    // This function can be reached while the prepared note is known but its
+    // anchor is still aging. Do not freeze the one-time marker until the
+    // wallet has actually scanned through proof readiness.
+    if current_scanned_height < proof_retry_height {
+        return Ok(false);
+    }
+    let Some(signed_schedule_origin) = signed_schedule_origin else {
+        return Ok(false);
+    };
+
+    // If at least one child has been turned into a pending transaction, do nothing.
+    if count_for_run(tx, PENDING_TXS_TABLE, run_id)? > 0 {
+        return Ok(false);
+    }
+
+    // Decode the schedule and targets.
+    let schedule: Vec<MigrationScheduleEntry> = serde_json::from_str(&schedule_json)
+        .map_err(|e| format!("Decode migration schedule for initial rebase: {e}"))?;
+    if schedule.is_empty() {
+        return Ok(false);
+    }
+    let target_values: Vec<u64> = serde_json::from_str(&target_values_json)
+        .map_err(|e| format!("Decode migration targets for initial rebase: {e}"))?;
+
+    let mut stmt = tx
+        .prepare_cached(&format!(
+            "SELECT message_id, child_index, value_zatoshi, scheduled_height, expiry_height
+             FROM {SIGNED_CHILD_PCZTS_TABLE}
+             WHERE run_id = ?1
+             ORDER BY child_index ASC, message_id ASC"
+        ))
+        .map_err(|e| format!("Prepare signed children for initial rebase: {e}"))?;
+    let rows = stmt
+        .query_map(params![run_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, u32>(1)?,
+                row.get::<_, u64>(2)?,
+                row.get::<_, u32>(3)?,
+                row.get::<_, u32>(4)?,
+            ))
+        })
+        .map_err(|e| format!("Query signed children for initial rebase: {e}"))?;
+    let mut children = Vec::new();
+    for row in rows {
+        children.push(row.map_err(|e| format!("Read signed child for initial rebase: {e}"))?);
+    }
+    drop(stmt);
+    if children.is_empty() {
+        return Ok(false);
+    }
+    // A resumable Keystone request can retain unsigned children while older
+    // or partially committed siblings are already present. Rebasing that
+    // subset would make the outstanding request's original schedule origin
+    // impossible to insert. Wait until every planned initial part is durable;
+    // current requests commit all remaining parts atomically, so this only
+    // delays legacy/incremental recovery states.
+    let planned_part_count = u32::try_from(target_values.len())
+        .map_err(|_| "Migration target count exceeds u32 during initial rebase")?;
+    let committed_part_indices = children
+        .iter()
+        .map(|(_, child_index, _, _, _)| *child_index)
+        .collect::<BTreeSet<_>>();
+    if committed_part_indices
+        .iter()
+        .copied()
+        .ne(0..planned_part_count)
+    {
+        return Ok(false);
+    }
+
+    // Start the schedule when finalization can actually run, rather than at
+    // the earlier chain-derived proof-readiness height.
+    let new_origin = signed_schedule_origin.max(current_scanned_height);
+    if new_origin == signed_schedule_origin {
+        // Nothing to shift, but freeze the attempt so later calls cannot
+        // reinterpret the already-approved schedule.
+        mark_initial_schedule_rebased_with_tx(
+            tx,
+            run_id,
+            signed_schedule_origin,
+            new_origin,
+            "already at finalization origin",
+        )?;
+        return Ok(false);
+    }
+
+    // Validate and calculate every child update.
+    let mut updates = Vec::with_capacity(children.len());
+    for (message_id, child_index, value_zatoshi, scheduled_height, expiry_height) in children {
+        // Find the block offset for this child.
+        let Some(block_offset) =
+            schedule_block_offset_for_part(&schedule, &target_values, child_index, value_zatoshi)
+        else {
+            // Retained replacement / legacy children can fall outside the
+            // approved schedule. Freeze the rebase attempt and leave catch-up
+            // / resign to handle the schedule.
+            mark_initial_schedule_rebased_with_tx(
+                tx,
+                run_id,
+                signed_schedule_origin,
+                new_origin,
+                "child missing from approved schedule",
+            )?;
+            return Ok(false);
+        };
+        let Some(expected_origin) = scheduled_height.checked_sub(block_offset) else {
+            mark_initial_schedule_rebased_with_tx(
+                tx,
+                run_id,
+                signed_schedule_origin,
+                new_origin,
+                "child schedule underflows origin",
+            )?;
+            return Ok(false);
+        };
+        if expected_origin != signed_schedule_origin {
+            // Mixed origins are reachable after recovery/reorg paths keep
+            // children keyed off recovery_schedule_origin_height. Never turn
+            // that into a permanent finalize hard-error.
+            mark_initial_schedule_rebased_with_tx(
+                tx,
+                run_id,
+                signed_schedule_origin,
+                new_origin,
+                &format!("mixed child origin {expected_origin}"),
+            )?;
+            return Ok(false);
+        }
+        let Some(new_scheduled_height) = new_origin.checked_add(block_offset) else {
+            mark_initial_schedule_rebased_with_tx(
+                tx,
+                run_id,
+                signed_schedule_origin,
+                new_origin,
+                "rebased scheduled height overflow",
+            )?;
+            return Ok(false);
+        };
+        let new_expiry = zip318_canonical_migration_expiry_height(new_scheduled_height)?;
+        if new_expiry != expiry_height {
+            // Crossing a ZIP-318 expiry bucket would invalidate the already-
+            // signed PCZT. Leave the schedule alone for catch-up / resign.
+            // Do not freeze the marker: a replacement signed schedule may use
+            // an expiry bucket compatible with the then-current height.
+            log::info!(
+                "migration: skipped initial schedule rebase for run {run_id}: \
+                 expiry bucket would change (origin {signed_schedule_origin} -> {new_origin})"
+            );
+            return Ok(false);
+        }
+        updates.push((message_id, new_scheduled_height));
+    }
+
+    let now = now_ms()?;
+    for (message_id, new_scheduled_height) in &updates {
+        let updated = tx
+            .execute(
+                &format!(
+                    "UPDATE {SIGNED_CHILD_PCZTS_TABLE}
+                     SET scheduled_height = ?1
+                     WHERE run_id = ?2 AND message_id = ?3"
+                ),
+                params![new_scheduled_height, run_id, message_id],
+            )
+            .map_err(|e| format!("Update rebased migration scheduled height: {e}"))?;
+        if updated != 1 {
+            // PK is (run_id, message_id), so this only happens if the row
+            // disappeared mid-transaction. Abort without committing writes.
+            return Err("Failed to rebase exactly one signed migration child".to_string());
+        }
+    }
+    tx.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET signed_schedule_origin_height = ?1,
+                 initial_schedule_rebased_origin_height = ?1,
+                 updated_at_ms = ?2
+             WHERE run_id = ?3
+               AND initial_schedule_rebased_origin_height IS NULL"
+        ),
+        params![new_origin, now, run_id],
+    )
+    .map_err(|e| format!("Persist rebased migration schedule origin: {e}"))?;
+    log::info!(
+        "migration: rebased initial schedule for run {run_id} \
+         from origin {signed_schedule_origin} to {new_origin}"
+    );
+    Ok(true)
+}
+
+fn mark_initial_schedule_rebased_with_tx(
+    tx: &rusqlite::Transaction<'_>,
+    run_id: &str,
+    old_origin: u32,
+    new_origin: u32,
+    reason: &str,
+) -> Result<(), String> {
+    tx.execute(
+        &format!(
+            "UPDATE {RUNS_TABLE}
+             SET initial_schedule_rebased_origin_height = ?1,
+                 updated_at_ms = ?2
+             WHERE run_id = ?3
+               AND initial_schedule_rebased_origin_height IS NULL"
+        ),
+        params![old_origin, now_ms()?, run_id],
+    )
+    .map_err(|e| format!("Mark migration initial schedule rebase complete: {e}"))?;
+    log::info!(
+        "migration: froze initial schedule rebase for run {run_id}: {reason} \
+         (origin {old_origin} -> {new_origin})"
+    );
+    Ok(())
+}
+
 /// Whether a past-expiry pending row should flip to `needs_resign`.
 ///
 /// `scheduled` always resigns. `broadcasted` only resigns once local storage
@@ -5236,17 +5527,25 @@ pub(crate) fn locked_migration_note_refs(
 fn migration_timing_projection_for_run(
     conn: &rusqlite::Connection,
     run_id: &str,
+    current_scanned_height: u32,
     total_count: u32,
     confirmation_target: u32,
 ) -> Result<MigrationTimingProjection, String> {
-    let (schedule_json, proof_retry_height) = conn
+    let (schedule_json, proof_retry_height, rebased_origin) = conn
         .query_row(
             &format!(
-                "SELECT schedule_json, proof_retry_height
+                "SELECT schedule_json, proof_retry_height,
+                        initial_schedule_rebased_origin_height
                  FROM {RUNS_TABLE} WHERE run_id = ?1"
             ),
             params![run_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<u32>>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<u32>>(1)?,
+                    row.get::<_, Option<u32>>(2)?,
+                ))
+            },
         )
         .map_err(|e| format!("Read migration timing projection: {e}"))?;
     let schedule = serde_json::from_str::<Vec<MigrationScheduleEntry>>(&schedule_json)
@@ -5295,7 +5594,7 @@ fn migration_timing_projection_for_run(
 
     let mut stmt = conn
         .prepare_cached(&format!(
-            "SELECT c.child_index, c.target_height
+            "SELECT c.child_index, c.target_height, c.scheduled_height
              FROM {SIGNED_CHILD_PCZTS_TABLE} c
              WHERE c.run_id = ?1
                AND NOT EXISTS (
@@ -5310,6 +5609,7 @@ fn migration_timing_projection_for_run(
             Ok(MigrationTimingSignedChild {
                 part_index: row.get(0)?,
                 target_height: row.get(1)?,
+                scheduled_height: row.get(2)?,
             })
         })
         .map_err(|e| format!("Query migration timing signed children: {e}"))?
@@ -5321,6 +5621,8 @@ fn migration_timing_projection_for_run(
         &pending,
         &signed_children,
         proof_retry_height,
+        rebased_origin,
+        current_scanned_height,
         total_count,
         confirmation_target,
     )
@@ -5331,6 +5633,8 @@ fn calculate_migration_timing_projection(
     pending: &[MigrationTimingPendingPart],
     signed_children: &[MigrationTimingSignedChild],
     proof_retry_height: Option<u32>,
+    rebased_origin: Option<u32>,
+    current_scanned_height: u32,
     total_count: u32,
     confirmation_target: u32,
 ) -> Result<MigrationTimingProjection, String> {
@@ -5347,28 +5651,28 @@ fn calculate_migration_timing_projection(
         .filter(|part| part.status == "scheduled")
         .min_by_key(|part| part.scheduled_height)
         .map(|part| (part.scheduled_height, part.part_index));
+    // The run-wide rebase marker applies only to the initial signed cohort.
+    // Before any child is promoted, its persisted rebased height supersedes
+    // the readiness height that triggered that one-time rebase. Once a
+    // pending row exists, however, proof_retry_height belongs to a later
+    // proof wave and is again the next action for unpromoted children.
+    let initial_rebased_schedule_pending_promotion = rebased_origin.is_some() && pending.is_empty();
     let proof_next = proof_retry_height
-        .filter(|_| !signed_children.is_empty())
+        .filter(|_| !initial_rebased_schedule_pending_promotion && !signed_children.is_empty())
         .map(|height| {
             (
                 height,
                 signed_children.iter().map(|child| child.part_index).min(),
             )
         });
-    let next_action = match (scheduled_next, proof_next) {
-        (Some(scheduled), Some(proof)) => Some(if scheduled.0 <= proof.0 {
-            scheduled
-        } else {
-            proof
-        }),
-        (Some(scheduled), None) => Some(scheduled),
-        (None, Some(proof)) => Some(proof),
-        (None, None) => None,
+    let mut next_proof_window_part_indices = if proof_next.is_some() {
+        signed_children
+            .iter()
+            .map(|child| child.part_index)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
     };
-    let mut next_proof_window_part_indices = signed_children
-        .iter()
-        .map(|child| child.part_index)
-        .collect::<Vec<_>>();
     next_proof_window_part_indices.sort_by_key(|part_index| {
         (
             schedule_order_by_part
@@ -5382,52 +5686,93 @@ fn calculate_migration_timing_projection(
     let projected_signed_parts = if signed_children.is_empty() {
         Vec::new()
     } else {
-        // Promotion reuses the first persisted schedule origin. Before any
-        // child is promoted it uses the latest signed construction height.
+        // Before the one-time rebase decision, estimate from construction
+        // height and proof readiness. Once that decision is frozen, or any
+        // child has already been promoted, each signed child's persisted
+        // height is authoritative: recovery can leave children with mixed
+        // origins that cannot be reconstructed from one run-wide marker.
         let persisted_schedule_origin = pending.first().map(|part| {
             part.schedule_start_height
                 .unwrap_or_else(|| part.target_height.saturating_sub(1))
         });
-        let schedule_origin = persisted_schedule_origin
+        let use_persisted_child_schedule =
+            persisted_schedule_origin.is_some() || rebased_origin.is_some();
+        let fallback_schedule_origin = persisted_schedule_origin
+            .or(rebased_origin)
             .or_else(|| {
                 signed_children
                     .iter()
                     .map(|child| child.target_height.saturating_sub(1))
                     .max()
-                    .map(|height| height.max(proof_retry_height.unwrap_or(0)))
+                    .map(|height| {
+                        height
+                            .max(proof_retry_height.unwrap_or(0))
+                            .max(current_scanned_height)
+                    })
             })
             .ok_or("Migration timing projection has no schedule origin")?;
         let indexed_schedule = schedule.iter().all(|entry| entry.part_index.is_some());
         signed_children
             .iter()
-            .map(|child| {
-                let offset = if indexed_schedule {
-                    schedule
-                        .iter()
-                        .find(|entry| entry.part_index == Some(child.part_index))
-                        .map(|entry| entry.block_offset)
-                } else {
-                    schedule.iter().map(|entry| entry.block_offset).max()
-                }
-                .ok_or("Migration timing projection is missing a signed-child schedule")?;
-                schedule_origin
-                    .checked_add(offset)
-                    .ok_or("Migration projected broadcast height overflow")
-                    .map(|height| {
-                        let scheduled_height = if persisted_schedule_origin.is_some() {
-                            height.max(proof_retry_height.unwrap_or(0))
-                        } else {
-                            height
-                        };
-                        MigrationTimingProjectedSignedPart {
+            .map(
+                |child| -> Result<MigrationTimingProjectedSignedPart, String> {
+                    let offset = if indexed_schedule {
+                        schedule
+                            .iter()
+                            .find(|entry| entry.part_index == Some(child.part_index))
+                            .map(|entry| entry.block_offset)
+                    } else {
+                        schedule.iter().map(|entry| entry.block_offset).max()
+                    }
+                    .ok_or("Migration timing projection is missing a signed-child schedule")?;
+                    if let Some(scheduled_height) = child
+                        .scheduled_height
+                        .filter(|_| use_persisted_child_schedule)
+                    {
+                        let schedule_start_height = scheduled_height
+                            .checked_sub(offset)
+                            .ok_or("Migration persisted signed-child schedule underflows origin")?;
+                        // The persisted height remains the source of the
+                        // child's schedule origin, but it cannot be an
+                        // effective broadcast height before proofs are ready.
+                        let scheduled_height =
+                            scheduled_height.max(proof_retry_height.unwrap_or(0));
+                        Ok(MigrationTimingProjectedSignedPart {
                             part_index: child.part_index,
-                            schedule_start_height: schedule_origin,
+                            schedule_start_height,
                             scheduled_height,
-                        }
-                    })
-            })
+                        })
+                    } else {
+                        let scheduled_height = fallback_schedule_origin
+                            .checked_add(offset)
+                            .ok_or("Migration projected broadcast height overflow")?;
+                        let scheduled_height = if persisted_schedule_origin.is_some() {
+                            scheduled_height.max(proof_retry_height.unwrap_or(0))
+                        } else {
+                            scheduled_height
+                        };
+                        Ok(MigrationTimingProjectedSignedPart {
+                            part_index: child.part_index,
+                            schedule_start_height: fallback_schedule_origin,
+                            scheduled_height,
+                        })
+                    }
+                },
+            )
             .collect::<Result<Vec<_>, _>>()?
     };
+    let projected_next = initial_rebased_schedule_pending_promotion
+        .then(|| {
+            projected_signed_parts
+                .iter()
+                .min_by_key(|part| part.scheduled_height)
+                .map(|part| (part.scheduled_height, Some(part.part_index)))
+        })
+        .flatten();
+    let next_action = [scheduled_next, proof_next, projected_next]
+        .into_iter()
+        .flatten()
+        .min_by_key(|candidate| candidate.0);
     // The send loop broadcasts one overdue transaction, then gives every
     // other overdue transaction a fresh randomized height. Until those rows
     // are persisted, an exact completion height would be misleading.
@@ -5502,10 +5847,17 @@ fn calculate_migration_timing_projection(
 fn migration_timing_projection_or_default(
     conn: &rusqlite::Connection,
     run_id: &str,
+    current_scanned_height: u32,
     total_count: u32,
     confirmation_target: u32,
 ) -> MigrationTimingProjection {
-    match migration_timing_projection_for_run(conn, run_id, total_count, confirmation_target) {
+    match migration_timing_projection_for_run(
+        conn,
+        run_id,
+        current_scanned_height,
+        total_count,
+        confirmation_target,
+    ) {
         Ok(projection) => projection,
         Err(error) => {
             log::warn!("migration: timing projection unavailable for run {run_id}: {error}");
@@ -5641,6 +5993,7 @@ fn status_for_run(
     let timing_projection = migration_timing_projection_or_default(
         conn,
         &run.run_id,
+        current_scanned_height,
         total_count,
         denomination_confirmation_target,
     );

@@ -4444,6 +4444,26 @@ fn finalize_presigned_migration_children(
         return Ok(0);
     }
 
+    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
+    // Persist the first proof-ready height only when unset so later
+    // next-anchor retries are not rewritten before the one-time rebase.
+    if super::migration::proof_retry_height(db_path, run_id)?.is_none() {
+        if let Some(ready_height) = super::migration::prepared_notes_proof_ready_height(
+            db_path,
+            run_id,
+            network,
+            timing_policy,
+        )? {
+            super::migration::set_proof_retry_height(db_path, run_id, ready_height)?;
+        }
+    }
+    let current_scanned_height = current_migration_scanned_height(db_path, network)?;
+    let _ = super::migration::rebase_initial_signed_schedule_for_anchor_readiness(
+        db_path,
+        run_id,
+        current_scanned_height,
+    )?;
+
     let signed_children = super::migration::signed_child_pczts_for_run(
         db_path,
         run_id,
@@ -4454,10 +4474,8 @@ fn finalize_presigned_migration_children(
         return Ok(0);
     }
     let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
-    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
     let signed_child_count = signed_children.len();
-    let current_scanned_height = current_migration_scanned_height(db_path, network)?;
     let mut durable_retry_height = super::migration::next_anchor_retry_height_after(
         network,
         timing_policy,
