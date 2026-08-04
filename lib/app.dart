@@ -1607,8 +1607,49 @@ class _RpcEndpointFailoverToastListener extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return NetworkFallbackToastHost(
-      child: _RpcEndpointFailoverToastBridge(child: child),
+      child: _NetworkPrivacyStartupToastBridge(
+        child: _RpcEndpointFailoverToastBridge(child: child),
+      ),
     );
+  }
+}
+
+class _NetworkPrivacyStartupToastBridge extends ConsumerStatefulWidget {
+  const _NetworkPrivacyStartupToastBridge({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_NetworkPrivacyStartupToastBridge> createState() =>
+      _NetworkPrivacyStartupToastBridgeState();
+}
+
+class _NetworkPrivacyStartupToastBridgeState
+    extends ConsumerState<_NetworkPrivacyStartupToastBridge> {
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<String?>(
+      networkPrivacyProvider.select((state) => state.startupNotice),
+      (previous, next) {
+        if (next == null || next == previous) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          showNetworkFallbackToast(
+            context,
+            next,
+            duration: const Duration(seconds: 4),
+          );
+          ref.read(networkPrivacyProvider.notifier).clearStartupNotice();
+        });
+      },
+      fireImmediately: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
   }
 }
 
