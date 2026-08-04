@@ -154,8 +154,9 @@ async fn open_lwd_channel_for_route(
     if let Some(tor_client) = crate::network_privacy::tor_client_for_route(isolated)
         .map_err(|e| SyncError::net(format!("network privacy blocked lightwalletd: {e}")))?
     {
+        let allow_onion_services = endpoint_allows_onion_services(&endpoint);
         return tor_client
-            .connect_to_lightwalletd(endpoint.uri().clone(), false)
+            .connect_to_lightwalletd(endpoint.uri().clone(), allow_onion_services)
             .await
             .map_err(|e| SyncError::net(format!("Tor gRPC connect failed: {e}")));
     }
@@ -173,6 +174,13 @@ async fn open_lwd_channel_for_route(
             .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?
     };
     Ok(CompactTxStreamerClient::new(channel))
+}
+
+fn endpoint_allows_onion_services(endpoint: &Endpoint) -> bool {
+    endpoint
+        .uri()
+        .host()
+        .is_some_and(|host| host.to_ascii_lowercase().ends_with(".onion"))
 }
 
 /// Return the current chain tip with a bounded response wait.
@@ -594,6 +602,18 @@ pub(super) async fn download_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn onion_lightwalletd_hosts_enable_onion_service_connections() {
+        for (url, expected) in [
+            ("https://example.com", false),
+            ("https://lightwalletd.example.onion", true),
+            ("https://LIGHTWALLETD.EXAMPLE.ONION", true),
+        ] {
+            let endpoint = Endpoint::from_shared(url.to_string()).expect("valid endpoint");
+            assert_eq!(endpoint_allows_onion_services(&endpoint), expected, "{url}");
+        }
+    }
 
     #[tokio::test]
     async fn stalled_address_utxo_stream_start_is_bounded() {
