@@ -103,6 +103,13 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     mobile: true,
   ),
   FigmaCompareScenario(
+    id: 'mobile-home-no-balance',
+    description: 'Mobile home with no balance or activity',
+    builder: buildMobileHomeNoBalanceUseCase,
+    desktop: false,
+    mobile: true,
+  ),
+  FigmaCompareScenario(
     id: 'mobile-home-ironwood-migration-required',
     description:
         'Mobile home balance card in Ironwood migration-required state',

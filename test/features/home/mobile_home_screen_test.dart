@@ -680,6 +680,42 @@ void main() {
     expect(find.text('No activity, yet...'), findsOneWidget);
   });
 
+  testWidgets('empty activity uses the Figma inner inset', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_app(_syncedState()));
+    await tester.pump();
+
+    final receiveRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_receive')),
+    );
+    final canvasRect = tester.getRect(
+      find.byKey(const ValueKey('mobile_home_rest_canvas')),
+    );
+    final titleRect = tester.getRect(find.text('No activity, yet...'));
+    final bodyRect = tester.getRect(
+      find.text('How about running your\nfirst ZEC tx?'),
+    );
+
+    expect(
+      canvasRect.left,
+      moreOrLessEquals(receiveRect.left + AppSpacing.xs, epsilon: 0.1),
+    );
+    expect(
+      titleRect.top,
+      moreOrLessEquals(receiveRect.bottom + 36, epsilon: 0.1),
+    );
+    expect(
+      bodyRect.top - titleRect.bottom,
+      moreOrLessEquals(AppSpacing.xxs, epsilon: 0.1),
+    );
+    expect(
+      canvasRect.top - bodyRect.bottom,
+      moreOrLessEquals(AppSpacing.xxs, epsilon: 0.1),
+    );
+  });
+
   testWidgets('includes Ironwood funds in the mobile shielded balance', (
     tester,
   ) async {

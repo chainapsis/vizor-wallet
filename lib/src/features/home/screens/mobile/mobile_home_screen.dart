@@ -2026,26 +2026,37 @@ class _EmptyActivity extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Column(
-      children: [
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          'No activity, yet...',
-          style: AppTypography.headlineSmall.copyWith(
-            color: colors.text.accent,
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: AppSpacing.s,
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: 340,
+          child: Column(
+            children: [
+              Text(
+                'No activity, yet...',
+                style: AppTypography.headlineSmall.copyWith(
+                  color: colors.text.accent,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                'How about running your\nfirst ZEC tx?',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              const _MobileRestImage(),
+            ],
           ),
         ),
-        const SizedBox(height: AppSpacing.xxs),
-        Text(
-          'How about running your\nfirst ZEC tx?',
-          textAlign: TextAlign.center,
-          style: AppTypography.bodyMedium.copyWith(
-            color: colors.text.secondary,
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        const _MobileRestImage(),
-      ],
+      ),
     );
   }
 }
