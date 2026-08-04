@@ -4336,6 +4336,36 @@ void main() {
     expect(find.textContaining('is not currently supported'), findsNothing);
   });
 
+  testWidgets(
+    'initial ordinary token-list failure keeps static assets usable',
+    (tester) async {
+      await _setDesktopViewport(tester);
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _InitialPricingFailureSwapProvider(),
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byKey(const ValueKey('swap_amount_field'))),
+      );
+      final state = container.read(swapStateProvider);
+      expect(state.supportedAssetsError, isNull);
+      expect(state.supportedExternalAssets, isNotEmpty);
+      expect(
+        find.textContaining('Swap tokens could not be loaded'),
+        findsNothing,
+      );
+    },
+  );
+
   testWidgets('turning Tor off retries after the direct route is ready', (
     tester,
   ) async {
