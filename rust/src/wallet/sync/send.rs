@@ -108,8 +108,8 @@ use super::migration_wallet_ops::{
 };
 use super::{
     consume_stored_proposal, finish_stored_proposal, open_readonly_conn, open_wallet_db,
-    open_wallet_db_for_read, stored_proposal_lock, StoredProposal, StoredProposalLock,
-    WalletDatabase, PROPOSAL_STORE,
+    open_wallet_db_for_read, stored_proposal_lock, submission_failures_message, StoredProposal,
+    StoredProposalLock, WalletDatabase, PROPOSAL_STORE,
 };
 
 const UNBROADCAST_MIGRATION_RECOVERY_SAFETY_BLOCKS: u32 = 10;
@@ -5877,10 +5877,6 @@ fn txid_bytes(txid: &TxId) -> [u8; 32] {
     let mut bytes = [0; 32];
     bytes.copy_from_slice(txid.as_ref());
     bytes
-}
-
-fn submission_failures_message(failures: &[super::SubmissionFailure]) -> String {
-    super::submission_failures_message(failures)
 }
 
 #[derive(Debug)]

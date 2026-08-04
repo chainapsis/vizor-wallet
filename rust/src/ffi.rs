@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use crate::migration_preparation::{self, MigrationPreparationProgress};
 use crate::wallet::keys;
+use crate::wallet::sync::submission_mode;
 use futures::{stream::FuturesUnordered, StreamExt};
 use tonic::Code;
 
@@ -72,14 +73,6 @@ fn transaction_observation_from_height(height: u64) -> CLightwalletdTransactionO
             state: 2,
             mined_height,
         },
-    }
-}
-
-fn submission_mode(managed_submission_routing: bool) -> crate::wallet::sync::SubmissionMode {
-    if managed_submission_routing {
-        crate::wallet::sync::SubmissionMode::ProviderAware
-    } else {
-        crate::wallet::sync::SubmissionMode::CurrentOnly
     }
 }
 

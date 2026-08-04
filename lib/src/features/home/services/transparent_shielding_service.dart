@@ -69,9 +69,7 @@ Future<rust_sync.ShieldTransparentResult> shieldTransparentSoftwareBalance({
 
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-    final managedSubmissionRouting =
-        transactionSubmissionRoutingFor(endpoint) ==
-        TransactionSubmissionRouting.managedProviders;
+    final managedSubmissionRouting = endpoint.usesManagedSubmissionRouting;
     attemptedEndpoint = endpoint;
 
     late final rust_sync.ShieldTransparentResult result;

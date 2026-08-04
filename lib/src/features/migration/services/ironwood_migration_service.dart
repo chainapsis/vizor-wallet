@@ -3131,8 +3131,7 @@ RpcEndpointConfig _missingEndpoint() {
 }
 
 bool _managedSubmissionRoutingFor(RpcEndpointConfig endpoint) =>
-    transactionSubmissionRoutingFor(endpoint) ==
-    TransactionSubmissionRouting.managedProviders;
+    endpoint.usesManagedSubmissionRouting;
 
 String _missingSessionPassword() {
   throw StateError('Ironwood migration password getter is not configured.');

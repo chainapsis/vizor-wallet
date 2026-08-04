@@ -70,6 +70,16 @@ pub enum SubmissionMode {
     CurrentOnly,
 }
 
+pub(crate) fn submission_mode(managed_submission_routing: bool) -> SubmissionMode {
+    // Routing intent cannot be inferred from the URL because a custom endpoint
+    // may reuse a built-in provider URL.
+    if managed_submission_routing {
+        SubmissionMode::ProviderAware
+    } else {
+        SubmissionMode::CurrentOnly
+    }
+}
+
 /// One endpoint failure that contributed to an inconclusive submission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SubmissionFailure {

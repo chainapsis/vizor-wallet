@@ -9,9 +9,6 @@ const kIronwoodMasqueradeRpcEndpointPresetId = 'ironwood-masquerade';
 const kRegtestSlowRpcEndpointPresetId = 'slow-regtest';
 const kRegtestUnavailableRpcEndpointPresetId = 'unavailable-regtest';
 
-/// How a transaction submission endpoint is chosen.
-enum TransactionSubmissionRouting { currentEndpointOnly, managedProviders }
-
 class RpcEndpointConfig {
   const RpcEndpointConfig({
     required this.networkName,
@@ -24,6 +21,15 @@ class RpcEndpointConfig {
   final String? presetId;
 
   ZcashNetwork get network => zcashNetworkFromName(networkName);
+
+  /// Whether transaction submission may use providers managed by Vizor.
+  ///
+  /// Custom endpoints, legacy endpoint records, non-mainnet networks, and
+  /// masquerade builds remain pinned to the configured endpoint.
+  bool get usesManagedSubmissionRouting =>
+      !kZcashIronwoodMasquerade &&
+      network == ZcashNetwork.mainnet &&
+      explicitRpcEndpointPresetFor(this) != null;
 
   String get normalizedLightwalletdUrl =>
       normalizeRpcEndpointUrl(lightwalletdUrl, allowDefaultPort: true);
@@ -237,23 +243,6 @@ RpcEndpointPreset? explicitRpcEndpointPresetFor(RpcEndpointConfig config) {
   }
 
   return findRpcEndpointPresetById(config.networkName, presetId);
-}
-
-/// Selects whether transaction submission may use providers managed by Vizor.
-///
-/// Explicit mainnet presets use managed routing, including community presets.
-/// Custom endpoints, legacy endpoint records without a preset ID, testnet,
-/// regtest, and masquerade builds stay pinned to the configured endpoint.
-TransactionSubmissionRouting transactionSubmissionRoutingFor(
-  RpcEndpointConfig config,
-) {
-  if (kZcashIronwoodMasquerade ||
-      config.network != ZcashNetwork.mainnet ||
-      explicitRpcEndpointPresetFor(config) == null) {
-    return TransactionSubmissionRouting.currentEndpointOnly;
-  }
-
-  return TransactionSubmissionRouting.managedProviders;
 }
 
 List<RpcEndpointConfig> fallbackRpcEndpointCandidatesFor(

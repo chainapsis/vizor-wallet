@@ -6,6 +6,7 @@ use flutter_rust_bridge::frb;
 use zeroize::Zeroizing;
 
 use crate::frb_generated::StreamSink;
+use crate::wallet::sync::submission_mode;
 use crate::wallet::{keys, network::WalletNetwork, secret_store, sync as wallet_sync, sync_engine};
 
 // ======================== Sync Mode ========================
@@ -42,16 +43,6 @@ pub struct ApiSyncProgressEvent {
     /// Current sync phase: `"download"`, `"scan"`, `"enhance"`, or
     /// `""` (completion / unspecified).
     pub phase: String,
-}
-
-fn submission_mode(managed_submission_routing: bool) -> wallet_sync::SubmissionMode {
-    // Dart may enable this only for an explicit managed mainnet preset; URL
-    // matching cannot distinguish a custom endpoint that reuses a built-in URL.
-    if managed_submission_routing {
-        wallet_sync::SubmissionMode::ProviderAware
-    } else {
-        wallet_sync::SubmissionMode::CurrentOnly
-    }
 }
 
 fn run_full_sync_internal<F>(

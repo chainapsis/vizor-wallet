@@ -1115,8 +1115,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
 
           final endpoint = _endpointConfig;
           final managedSubmissionRouting =
-              transactionSubmissionRoutingFor(endpoint) ==
-              TransactionSubmissionRouting.managedProviders;
+              endpoint.usesManagedSubmissionRouting;
           log('Sync: starting foreground sync via ${endpoint.hostPort}');
           // Fire up the mempool observer alongside the scan loop.
           // It has its own Rust cancel flag (MEMPOOL_CANCEL) and runs

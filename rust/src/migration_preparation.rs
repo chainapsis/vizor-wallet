@@ -194,7 +194,6 @@ pub fn is_sync_running() -> bool {
 pub fn run_sync(
     db_path: &str,
     lightwalletd_url: &str,
-    submission_mode: sync::SubmissionMode,
     network: WalletNetwork,
     progress_callback: impl Fn(SyncProgressEvent) + Send + Sync,
 ) -> Result<(), MigrationPreparationError> {
@@ -208,7 +207,7 @@ pub fn run_sync(
         .block_on(sync_engine::run_sync_inner(
             db_path,
             lightwalletd_url,
-            submission_mode,
+            sync::SubmissionMode::CurrentOnly,
             network,
             control.cancel.clone(),
             MIGRATION_PREPARATION_SYNC_MODE,

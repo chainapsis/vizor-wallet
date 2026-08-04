@@ -3,7 +3,6 @@ import 'dart:io' show Platform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -110,9 +109,7 @@ class RustSwapDepositSender implements SwapDepositSender {
       final proposal = proposalContext.proposal;
       final dbPath = proposalContext.dbPath;
       final endpoint = proposalContext.endpoint;
-      final managedSubmissionRouting =
-          transactionSubmissionRoutingFor(endpoint) ==
-          TransactionSubmissionRouting.managedProviders;
+      final managedSubmissionRouting = endpoint.usesManagedSubmissionRouting;
       proposalId = proposal.proposalId;
       log(
         'SwapDepositSender: proposal ready flow=$sendFlowId '

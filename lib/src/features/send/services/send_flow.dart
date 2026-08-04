@@ -13,7 +13,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
@@ -405,9 +404,7 @@ Future<SendBroadcastOutcome> runSendBroadcast({
   try {
     final dbPath = await getWalletDbPath();
     final endpoint = ref.read(rpcEndpointFailoverProvider).current;
-    final managedSubmissionRouting =
-        transactionSubmissionRoutingFor(endpoint) ==
-        TransactionSubmissionRouting.managedProviders;
+    final managedSubmissionRouting = endpoint.usesManagedSubmissionRouting;
     var saplingParams = await loadSaplingParamsStatus();
 
     if (args.needsSaplingParams) {

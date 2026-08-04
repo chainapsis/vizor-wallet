@@ -32,8 +32,8 @@ mod transactions;
 
 pub use crate::wallet::sync_engine::submission::SubmissionMode;
 pub(crate) use crate::wallet::sync_engine::submission::{
-    resolve_submission_endpoint_groups, submission_failures_message, submit_transaction,
-    submit_transaction_while, SubmissionFailure, SubmissionOutcome,
+    resolve_submission_endpoint_groups, submission_failures_message, submission_mode,
+    submit_transaction, submit_transaction_while, SubmissionOutcome,
 };
 pub(crate) use broadcast::send_rejection_is_already_accepted;
 

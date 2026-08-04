@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
-import '../../../core/config/rpc_endpoint_config.dart';
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -240,9 +239,7 @@ class RustSwapHardwareSigningService implements SwapHardwareSigningService {
     try {
       final dbPath = await getWalletDbPath();
       final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-      final managedSubmissionRouting =
-          transactionSubmissionRoutingFor(endpoint) ==
-          TransactionSubmissionRouting.managedProviders;
+      final managedSubmissionRouting = endpoint.usesManagedSubmissionRouting;
       result = await rust_sync.extractAndBroadcastPczt(
         dbPath: dbPath,
         lightwalletdUrl: endpoint.normalizedLightwalletdUrl,

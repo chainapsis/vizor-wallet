@@ -253,7 +253,7 @@ void main() {
     });
   });
 
-  group('transactionSubmissionRoutingFor', () {
+  group('usesManagedSubmissionRouting', () {
     test('enables managed routing for explicit mainnet presets', () {
       for (final config in [
         defaultRpcEndpointConfig('main'),
@@ -268,10 +268,7 @@ void main() {
           presetId: 'z3-deepikaw',
         ),
       ]) {
-        expect(
-          transactionSubmissionRoutingFor(config),
-          TransactionSubmissionRouting.managedProviders,
-        );
+        expect(config.usesManagedSubmissionRouting, isTrue);
       }
     });
 
@@ -280,29 +277,21 @@ void main() {
         'https://custom.example:443',
         defaultRpcEndpointConfig('main').lightwalletdUrl,
       ]) {
-        expect(
-          transactionSubmissionRoutingFor(
-            RpcEndpointConfig(
-              networkName: 'main',
-              lightwalletdUrl: url,
-              presetId: kCustomRpcEndpointPresetId,
-            ),
-          ),
-          TransactionSubmissionRouting.currentEndpointOnly,
+        final config = RpcEndpointConfig(
+          networkName: 'main',
+          lightwalletdUrl: url,
+          presetId: kCustomRpcEndpointPresetId,
         );
+        expect(config.usesManagedSubmissionRouting, isFalse);
       }
     });
 
     test('keeps legacy mainnet endpoint records on the current endpoint', () {
-      expect(
-        transactionSubmissionRoutingFor(
-          RpcEndpointConfig(
-            networkName: 'main',
-            lightwalletdUrl: defaultRpcEndpointConfig('main').lightwalletdUrl,
-          ),
-        ),
-        TransactionSubmissionRouting.currentEndpointOnly,
+      final config = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: defaultRpcEndpointConfig('main').lightwalletdUrl,
       );
+      expect(config.usesManagedSubmissionRouting, isFalse);
     });
 
     test('keeps testnet and regtest presets on the current endpoint', () {
@@ -310,24 +299,17 @@ void main() {
         defaultRpcEndpointConfig('test'),
         defaultRpcEndpointConfig('regtest'),
       ]) {
-        expect(
-          transactionSubmissionRoutingFor(config),
-          TransactionSubmissionRouting.currentEndpointOnly,
-        );
+        expect(config.usesManagedSubmissionRouting, isFalse);
       }
     });
 
     test('keeps masquerade builds on the current endpoint', () {
-      expect(
-        transactionSubmissionRoutingFor(
-          const RpcEndpointConfig(
-            networkName: 'main',
-            lightwalletdUrl: 'https://lwd.157.245.208.35.sslip.io:443',
-            presetId: kIronwoodMasqueradeRpcEndpointPresetId,
-          ),
-        ),
-        TransactionSubmissionRouting.currentEndpointOnly,
+      const config = RpcEndpointConfig(
+        networkName: 'main',
+        lightwalletdUrl: 'https://lwd.157.245.208.35.sslip.io:443',
+        presetId: kIronwoodMasqueradeRpcEndpointPresetId,
       );
+      expect(config.usesManagedSubmissionRouting, isFalse);
     });
   });
 
