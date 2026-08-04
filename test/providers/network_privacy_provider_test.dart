@@ -3,6 +3,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 
 void main() {
+  test('preference read failure pauses native updates before launch', () async {
+    final events = <String>[];
+    try {
+      await initializeNetworkPrivacyRuntime(
+        store: _ThrowingReadStore(events),
+        runtime: _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+        nativeUpdates: _FakeNativeUpdateCoordinator(events),
+      );
+
+      expect(events, ['store:read', 'begin-enable', 'native:true']);
+    } finally {
+      await initializeNetworkPrivacyRuntime(
+        store: _FakeStore(<String>[]),
+        runtime: _FakeRuntime(<String>[], NetworkPrivacyConnectionStatus.off),
+        nativeUpdates: _FakeNativeUpdateCoordinator(<String>[]),
+      );
+    }
+  });
+
   test('enabling blocks direct traffic before the first await', () async {
     final events = <String>[];
     final container = ProviderContainer(
@@ -174,6 +193,23 @@ class _FakeStore implements NetworkPrivacyPreferenceStore {
   @override
   Future<void> writeTorEnabled(bool enabled) async {
     events.add('store:$enabled');
+  }
+}
+
+class _ThrowingReadStore implements NetworkPrivacyPreferenceStore {
+  _ThrowingReadStore(this.events);
+
+  final List<String> events;
+
+  @override
+  Future<bool> readTorEnabled() async {
+    events.add('store:read');
+    throw StateError('read failed');
+  }
+
+  @override
+  Future<void> writeTorEnabled(bool enabled) async {
+    throw UnimplementedError();
   }
 }
 

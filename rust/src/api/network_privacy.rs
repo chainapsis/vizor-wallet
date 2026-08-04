@@ -11,9 +11,11 @@ use zcash_client_backend::proto::{
     compact_formats::CompactBlock,
     service::{compact_tx_streamer_client::CompactTxStreamerClient, BlockId, ChainSpec, Empty},
 };
-use zcash_client_backend::tor::http::HttpError;
+use zcash_client_backend::tor::http::{HttpError, TimeoutPhase};
 
 pub use crate::network_privacy::NetworkPrivacyStatus;
+
+const TOR_API_RESPONSE_BODY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Blocks new policy-aware direct requests immediately. Tor bootstrap is
 /// intentionally separate so the caller can first quiesce channels that were
@@ -159,12 +161,24 @@ fn apply_headers(
 async fn collect_body(
     body: hyper::body::Incoming,
 ) -> Result<Vec<u8>, zcash_client_backend::tor::Error> {
-    Ok(body
-        .collect()
+    with_api_response_body_timeout(TOR_API_RESPONSE_BODY_TIMEOUT, async move {
+        Ok(body
+            .collect()
+            .await
+            .map_err(HttpError::from)?
+            .to_bytes()
+            .to_vec())
+    })
+    .await
+}
+
+async fn with_api_response_body_timeout<T>(
+    timeout: Duration,
+    future: impl std::future::Future<Output = Result<T, zcash_client_backend::tor::Error>>,
+) -> Result<T, zcash_client_backend::tor::Error> {
+    tokio::time::timeout(timeout, future)
         .await
-        .map_err(HttpError::from)?
-        .to_bytes()
-        .to_vec())
+        .unwrap_or_else(|_| Err(HttpError::Timeout(TimeoutPhase::ResponseBody).into()))
 }
 
 async fn write_body_to_file(
@@ -293,4 +307,30 @@ fn timed_birthday_request<T>(message: T) -> Request<T> {
     let mut request = Request::new(message);
     request.set_timeout(Duration::from_secs(10));
     request
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use zcash_client_backend::tor::{
+        http::{HttpError, TimeoutPhase},
+        Error,
+    };
+
+    use super::with_api_response_body_timeout;
+
+    #[tokio::test]
+    async fn ordinary_http_body_stall_is_cancelled_before_download_deadline() {
+        let result = with_api_response_body_timeout(
+            Duration::from_millis(1),
+            std::future::pending::<Result<(), Error>>(),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(Error::Http(HttpError::Timeout(TimeoutPhase::ResponseBody)))
+        ));
+    }
 }

@@ -134,15 +134,19 @@ var _initialNetworkPrivacyState = const NetworkPrivacyState.off();
 /// Applies the persisted route before app bootstrap or providers can start any
 /// network work. Failure is retained as an enabled/failed state; Rust has
 /// already switched to fail-closed routing at that point.
-Future<void> initializeNetworkPrivacyRuntime() async {
-  const store = SharedPreferencesNetworkPrivacyStore();
-  const runtime = RustNetworkPrivacyRuntime();
-  const nativeUpdates = PlatformNetworkPrivacyNativeUpdateCoordinator();
+Future<void> initializeNetworkPrivacyRuntime({
+  NetworkPrivacyPreferenceStore store =
+      const SharedPreferencesNetworkPrivacyStore(),
+  NetworkPrivacyRuntime runtime = const RustNetworkPrivacyRuntime(),
+  NetworkPrivacyNativeUpdateCoordinator nativeUpdates =
+      const PlatformNetworkPrivacyNativeUpdateCoordinator(),
+}) async {
   late final bool enabled;
   try {
     enabled = await store.readTorEnabled();
   } catch (error) {
     runtime.beginEnable();
+    await nativeUpdates.setTorEnabled(true);
     _initialNetworkPrivacyState = NetworkPrivacyState(
       torEnabled: true,
       status: NetworkPrivacyConnectionStatus.failed,
