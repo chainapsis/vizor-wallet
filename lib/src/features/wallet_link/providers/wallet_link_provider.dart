@@ -52,6 +52,21 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   }
 
   Future<void> start() async {
+    if (ref.read(networkPrivacyProvider).torEnabled) {
+      // Keep an already-displayed QR valid until its normal expiry. Clearing
+      // it here would also attempt an unsupported DELETE over Tor and leave
+      // the remote package alive without a QR the user can still scan.
+      if (_remotePackageId != null) return;
+      state = const WalletLinkState(
+        phase: WalletLinkPhase.error,
+        errorMessage:
+            'Link mobile is unavailable while Tor is on because its temporary '
+            'package cannot be explicitly deleted over the current Tor '
+            'transport.',
+      );
+      return;
+    }
+
     final epoch = ++_epoch;
     _timer?.cancel();
     final previousPackageId = _remotePackageId;
@@ -64,13 +79,6 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     state = const WalletLinkState(phase: WalletLinkPhase.preparing);
 
     try {
-      if (ref.read(networkPrivacyProvider).torEnabled) {
-        throw StateError(
-          'Link mobile is unavailable while Tor is on because its temporary '
-          'package cannot be explicitly deleted over the current Tor '
-          'transport.',
-        );
-      }
       final upload = await _createUpload();
       if (epoch != _epoch) return;
 
