@@ -4447,6 +4447,12 @@ fn finalize_presigned_migration_children(
     if super::migration::signed_child_pczt_count(db_path, run_id)? == 0 {
         return Ok(0);
     }
+    // Keystone persists one bounded QR batch at a time while the run remains
+    // ready_to_migrate. Do not promote the first batch and move the run to
+    // broadcast_scheduled before every remaining batch has been signed.
+    if !super::migration::migration_part_assignment_complete(db_path, run_id)? {
+        return Ok(0);
+    }
     if !prepared_note_spend_metadata_is_available(db_path, run_id)? {
         let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
         if let Some(retry_height) = super::migration::prepared_notes_proof_ready_height(
@@ -4460,6 +4466,21 @@ fn finalize_presigned_migration_children(
         return Ok(0);
     }
 
+    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
+    // Persist the first proof-ready height only when unset so later
+    // next-anchor retries are not rewritten before the one-time rebase.
+    if super::migration::proof_retry_height(db_path, run_id)?.is_none() {
+        if let Some(ready_height) = super::migration::prepared_notes_proof_ready_height(
+            db_path,
+            run_id,
+            network,
+            timing_policy,
+        )? {
+            super::migration::set_proof_retry_height(db_path, run_id, ready_height)?;
+        }
+    }
+    let current_scanned_height = current_migration_scanned_height(db_path, network)?;
+
     let signed_children = super::migration::signed_child_pczts_for_run(
         db_path,
         run_id,
@@ -4470,10 +4491,8 @@ fn finalize_presigned_migration_children(
         return Ok(0);
     }
     let current_prepared = super::migration::prepared_notes_for_run(db_path, run_id)?;
-    let timing_policy = super::migration::timing_policy_for_run(db_path, run_id, network)?;
     let already_pending = super::migration::pending_migration_note_outpoints(db_path, run_id)?;
     let signed_child_count = signed_children.len();
-    let current_scanned_height = current_migration_scanned_height(db_path, network)?;
     let mut durable_retry_height = super::migration::next_anchor_retry_height_after(
         network,
         timing_policy,
@@ -4598,6 +4617,7 @@ fn finalize_presigned_migration_children(
             db_path,
             run_id,
             vec![pending_insert],
+            current_scanned_height,
             remaining_child_retry_height,
             pending_password,
             pending_salt_base64,

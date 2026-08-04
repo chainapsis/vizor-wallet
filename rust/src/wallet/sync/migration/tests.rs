@@ -2210,7 +2210,7 @@ fn planner_drains_balance_beyond_the_old_run_cap() {
 }
 
 #[test]
-fn timing_projection_starts_approved_offsets_after_initial_proof_readiness() {
+fn timing_projection_clamps_pre_rebase_origin_to_current_scanned_height() {
     let schedule = vec![
         MigrationScheduleEntry {
             part_index: Some(0),
@@ -2232,26 +2232,37 @@ fn timing_projection_starts_approved_offsets_after_initial_proof_readiness() {
         MigrationTimingSignedChild {
             part_index: 0,
             target_height: 101,
+            scheduled_height: Some(100),
         },
         MigrationTimingSignedChild {
             part_index: 1,
             target_height: 101,
+            scheduled_height: Some(148),
         },
         MigrationTimingSignedChild {
             part_index: 2,
             target_height: 101,
+            scheduled_height: Some(196),
         },
     ];
 
-    let projection =
-        calculate_migration_timing_projection(&schedule, &[], &signed_children, Some(200), 3, 3)
-            .unwrap();
+    let projection = calculate_migration_timing_projection(
+        &schedule,
+        &[],
+        &signed_children,
+        Some(200),
+        None,
+        340,
+        3,
+        3,
+    )
+    .unwrap();
 
     assert_eq!(projection.next_action_height, Some(200));
     assert_eq!(projection.next_action_part_index, Some(0));
     assert_eq!(projection.next_proof_window_height, Some(200));
     assert_eq!(projection.next_proof_window_part_indices, vec![0, 1, 2]);
-    assert_eq!(projection.estimated_completion_height, Some(299));
+    assert_eq!(projection.estimated_completion_height, Some(439));
     assert_eq!(
         projection.schedule_order_by_part,
         BTreeMap::from([(0, 0), (1, 1), (2, 2)])
@@ -2261,20 +2272,936 @@ fn timing_projection_starts_approved_offsets_after_initial_proof_readiness() {
         vec![
             MigrationTimingProjectedSignedPart {
                 part_index: 0,
-                schedule_start_height: 200,
-                scheduled_height: 200,
+                schedule_start_height: 340,
+                scheduled_height: 340,
             },
             MigrationTimingProjectedSignedPart {
                 part_index: 1,
+                schedule_start_height: 340,
+                scheduled_height: 388,
+            },
+            MigrationTimingProjectedSignedPart {
+                part_index: 2,
+                schedule_start_height: 340,
+                scheduled_height: 436,
+            },
+        ]
+    );
+}
+
+fn create_signed_children_rebase_fixture(
+    db_path: &str,
+    run_id: &str,
+    origin: u32,
+    parts: &[(u32, u64, u32)],
+    proof_retry_height: Option<u32>,
+) {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    ensure_schema(&conn).unwrap();
+    let schedule = parts
+        .iter()
+        .map(
+            |(part_index, value_zatoshi, block_offset)| MigrationScheduleEntry {
+                part_index: Some(*part_index),
+                value_zatoshi: *value_zatoshi,
+                block_offset: *block_offset,
+            },
+        )
+        .collect::<Vec<_>>();
+    let target_values = parts
+        .iter()
+        .map(|(_, value_zatoshi, _)| *value_zatoshi)
+        .collect::<Vec<_>>();
+    conn.execute(
+        &format!(
+            "INSERT INTO {RUNS_TABLE}
+             (run_id, account_uuid, network, db_fingerprint, phase,
+              created_at_ms, updated_at_ms, target_values_json, schedule_json,
+              timing_policy, proof_retry_height, signed_schedule_origin_height)
+             VALUES (?1, 'account-1', 'main', ?2, ?3, 1, 1, ?4, ?5,
+                     'standard_90m', ?6, ?7)"
+        ),
+        params![
+            run_id,
+            db_path,
+            PHASE_READY_TO_MIGRATE,
+            serde_json::to_string(&target_values).unwrap(),
+            serde_json::to_string(&schedule).unwrap(),
+            proof_retry_height,
+            origin,
+        ],
+    )
+    .unwrap();
+    for (part_index, value_zatoshi, block_offset) in parts {
+        let scheduled_height = origin + block_offset;
+        let expiry_height = zip318_canonical_migration_expiry_height(scheduled_height).unwrap();
+        let selected_note = PreparedOrchardNoteRef {
+            txid_hex: format!("{:064x}", 100 + part_index),
+            output_index: 0,
+            value_zatoshi: value_zatoshi + 10,
+            note_version: 2,
+            nullifier_hex: Some(format!("{:064x}", 200 + part_index)),
+        };
+        let metadata = PendingMigrationTxMetadata {
+            tx_kind: "migration".to_string(),
+            funding_account_uuid: "account-1".to_string(),
+            selected_note: selected_note.clone(),
+        };
+        conn.execute(
+            &format!(
+                "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
+                 (run_id, message_id, child_index, encrypted_base_pczt,
+                  encrypted_compact_sigs, target_height, expiry_height,
+                  scheduled_height, value_zatoshi, fee_zatoshi,
+                  selected_note_json, metadata_json)
+                 VALUES (?1, ?2, ?3, 'base', 'sigs', ?4, ?5, ?6, ?7, 10, ?8, ?9)"
+            ),
+            params![
+                run_id,
+                format!("child-{part_index}"),
+                part_index,
+                origin + 1,
+                expiry_height,
+                scheduled_height,
+                value_zatoshi,
+                serde_json::to_string(&selected_note).unwrap(),
+                serde_json::to_string(&metadata).unwrap(),
+            ],
+        )
+        .unwrap();
+    }
+}
+
+fn signed_child_schedule_snapshot(
+    db_path: &str,
+    run_id: &str,
+) -> (Option<u32>, Option<u32>, Vec<(u32, u32, u32)>) {
+    let conn = open_wallet_raw_conn_with_timeout(db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let (origin, rebased): (Option<u32>, Option<u32>) = conn
+        .query_row(
+            &format!(
+                "SELECT signed_schedule_origin_height,
+                        initial_schedule_rebased_origin_height
+                 FROM {RUNS_TABLE}
+                 WHERE run_id = ?1"
+            ),
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT child_index, scheduled_height, expiry_height
+             FROM {SIGNED_CHILD_PCZTS_TABLE}
+             WHERE run_id = ?1
+             ORDER BY child_index ASC"
+        ))
+        .unwrap();
+    let children = stmt
+        .query_map(params![run_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    (origin, rebased, children)
+}
+
+fn rebase_fixture_pending(
+    part_index: u32,
+    value_zatoshi: u64,
+    scheduled_height: u32,
+) -> PendingMigrationTxInsert {
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: format!("{:064x}", 100 + part_index),
+        output_index: 0,
+        value_zatoshi: value_zatoshi + 10,
+        note_version: 2,
+        nullifier_hex: Some(format!("{:064x}", 200 + part_index)),
+    };
+    PendingMigrationTxInsert {
+        part_index,
+        txid_hex: format!("{:064x}", 300 + part_index),
+        raw_tx: vec![part_index as u8, 0xaa, 0x55],
+        target_height: 101,
+        anchor_boundary_height: Some(90),
+        expiry_height: zip318_canonical_migration_expiry_height(scheduled_height).unwrap(),
+        scheduled_height,
+        value_zatoshi,
+        fee_zatoshi: 10,
+        selected_note: selected_note.clone(),
+        metadata: PendingMigrationTxMetadata {
+            tx_kind: "migration".to_string(),
+            funding_account_uuid: "account-1".to_string(),
+            selected_note,
+        },
+    }
+}
+
+#[test]
+fn initial_schedule_rebase_starts_at_finalization_and_preserves_approved_offsets() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-same-bucket",
+        100,
+        &[(0, 100, 0), (1, 200, 48), (2, 300, 96)],
+        Some(200),
+    );
+
+    assert!(rebase_initial_signed_schedule_for_anchor_readiness(
+        &db_path,
+        "rebase-same-bucket",
+        340,
+    )
+    .unwrap());
+
+    let (origin, rebased, children) =
+        signed_child_schedule_snapshot(&db_path, "rebase-same-bucket");
+    assert_eq!(origin, Some(340));
+    assert_eq!(rebased, Some(340));
+    assert_eq!(
+        children,
+        vec![(0, 340, 69_120), (1, 388, 69_120), (2, 436, 69_120),]
+    );
+
+    let projection = calculate_migration_timing_projection(
+        &[
+            MigrationScheduleEntry {
+                part_index: Some(0),
+                value_zatoshi: 100,
+                block_offset: 0,
+            },
+            MigrationScheduleEntry {
+                part_index: Some(1),
+                value_zatoshi: 200,
+                block_offset: 48,
+            },
+            MigrationScheduleEntry {
+                part_index: Some(2),
+                value_zatoshi: 300,
+                block_offset: 96,
+            },
+        ],
+        &[],
+        &[
+            MigrationTimingSignedChild {
+                part_index: 0,
+                target_height: 101,
+                scheduled_height: Some(340),
+            },
+            MigrationTimingSignedChild {
+                part_index: 1,
+                target_height: 101,
+                scheduled_height: Some(388),
+            },
+            MigrationTimingSignedChild {
+                part_index: 2,
+                target_height: 101,
+                scheduled_height: Some(436),
+            },
+        ],
+        Some(340),
+        Some(340),
+        500,
+        3,
+        3,
+    )
+    .unwrap();
+    assert_eq!(projection.next_action_height, Some(340));
+    assert_eq!(projection.next_action_part_index, Some(0));
+    assert_eq!(projection.next_proof_window_height, Some(340));
+    assert_eq!(projection.next_proof_window_part_indices, vec![0, 1, 2]);
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![
+            MigrationTimingProjectedSignedPart {
+                part_index: 0,
+                schedule_start_height: 340,
+                scheduled_height: 340,
+            },
+            MigrationTimingProjectedSignedPart {
+                part_index: 1,
+                schedule_start_height: 340,
+                scheduled_height: 388,
+            },
+            MigrationTimingProjectedSignedPart {
+                part_index: 2,
+                schedule_start_height: 340,
+                scheduled_height: 436,
+            },
+        ]
+    );
+}
+
+#[test]
+fn timing_projection_keeps_due_proof_retry_after_rebase_before_promotion() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100,
+            block_offset: 48,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 200,
+            block_offset: 96,
+        },
+    ];
+    let signed_children = vec![
+        MigrationTimingSignedChild {
+            part_index: 0,
+            target_height: 101,
+            scheduled_height: Some(248),
+        },
+        MigrationTimingSignedChild {
+            part_index: 1,
+            target_height: 101,
+            scheduled_height: Some(296),
+        },
+    ];
+
+    // The rebase committed at height 200, but cancellation or a crash kept
+    // every signed child unpromoted. Proof creation must remain due now rather
+    // than waiting for the first randomized broadcast offset at height 248.
+    let projection = calculate_migration_timing_projection(
+        &schedule,
+        &[],
+        &signed_children,
+        Some(200),
+        Some(200),
+        200,
+        2,
+        3,
+    )
+    .unwrap();
+
+    assert_eq!(projection.next_action_height, Some(200));
+    assert_eq!(projection.next_action_part_index, Some(0));
+    assert_eq!(projection.next_proof_window_height, Some(200));
+    assert_eq!(projection.next_proof_window_part_indices, vec![0, 1]);
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![
+            MigrationTimingProjectedSignedPart {
+                part_index: 0,
                 schedule_start_height: 200,
                 scheduled_height: 248,
             },
             MigrationTimingProjectedSignedPart {
-                part_index: 2,
+                part_index: 1,
                 schedule_start_height: 200,
                 scheduled_height: 296,
             },
         ]
+    );
+}
+
+#[test]
+fn initial_schedule_rebase_waits_for_every_planned_child() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-partial-request",
+        100,
+        &[(0, 100, 0), (1, 200, 48)],
+        Some(200),
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "DELETE FROM {SIGNED_CHILD_PCZTS_TABLE}
+             WHERE run_id = 'rebase-partial-request' AND child_index = 1"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(!rebase_initial_signed_schedule_for_anchor_readiness(
+        &db_path,
+        "rebase-partial-request",
+        340,
+    )
+    .unwrap());
+    let (origin, rebased, children) =
+        signed_child_schedule_snapshot(&db_path, "rebase-partial-request");
+    assert_eq!(origin, Some(100));
+    assert_eq!(rebased, None);
+    assert_eq!(children, vec![(0, 100, 69_120)]);
+
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: format!("{:064x}", 101),
+        output_index: 0,
+        value_zatoshi: 210,
+        note_version: 2,
+        nullifier_hex: Some(format!("{:064x}", 201)),
+    };
+    persist_signed_child_pczts_for_run(
+        &db_path,
+        "rebase-partial-request",
+        vec![SignedMigrationPcztInsert {
+            message_id: "child-1".to_string(),
+            child_index: 1,
+            base_pczt: vec![1, 2, 3],
+            sigs: Vec::new(),
+            target_height: 101,
+            anchor_boundary_height: None,
+            expiry_height: 69_120,
+            scheduled_height: 148,
+            value_zatoshi: 200,
+            fee_zatoshi: 10,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note,
+            },
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    assert!(rebase_initial_signed_schedule_for_anchor_readiness(
+        &db_path,
+        "rebase-partial-request",
+        340,
+    )
+    .unwrap());
+    let (origin, rebased, children) =
+        signed_child_schedule_snapshot(&db_path, "rebase-partial-request");
+    assert_eq!(origin, Some(340));
+    assert_eq!(rebased, Some(340));
+    assert_eq!(children, vec![(0, 340, 69_120), (1, 388, 69_120)]);
+}
+
+#[test]
+fn keystone_batches_finish_signing_before_atomic_rebase_promotion() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    let planned_part_count = MIGRATION_KEYSTONE_BATCH_MAX_PARTS + 2;
+    let parts = (0..planned_part_count)
+        .map(|part_index| (part_index, 100 + u64::from(part_index), part_index))
+        .collect::<Vec<_>>();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-keystone-batch",
+        100,
+        &parts,
+        Some(200),
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "DELETE FROM {SIGNED_CHILD_PCZTS_TABLE}
+             WHERE run_id = 'rebase-keystone-batch' AND child_index >= ?1"
+        ),
+        params![MIGRATION_KEYSTONE_BATCH_MAX_PARTS],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(!migration_part_assignment_complete(&db_path, "rebase-keystone-batch").unwrap());
+    assert_eq!(
+        promote_signed_child_pczts_to_pending_txs(
+            &db_path,
+            "rebase-keystone-batch",
+            vec![rebase_fixture_pending(0, 100, 100)],
+            200,
+            250,
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap_err(),
+        "Migration signing batches are incomplete before proof promotion"
+    );
+    let (origin, rebased, _) = signed_child_schedule_snapshot(&db_path, "rebase-keystone-batch");
+    assert_eq!(origin, Some(100));
+    assert_eq!(rebased, None);
+    let later_children = (MIGRATION_KEYSTONE_BATCH_MAX_PARTS..planned_part_count)
+        .map(|part_index| {
+            let value_zatoshi = 100 + u64::from(part_index);
+            let scheduled_height = 100 + part_index;
+            let selected_note = PreparedOrchardNoteRef {
+                txid_hex: format!("{:064x}", 100 + part_index),
+                output_index: 0,
+                value_zatoshi: value_zatoshi + 10,
+                note_version: 2,
+                nullifier_hex: Some(format!("{:064x}", 200 + part_index)),
+            };
+            SignedMigrationPcztInsert {
+                message_id: format!("child-{part_index}"),
+                child_index: part_index,
+                base_pczt: vec![1, 2, 3],
+                sigs: Vec::new(),
+                target_height: 101,
+                anchor_boundary_height: None,
+                expiry_height: zip318_canonical_migration_expiry_height(scheduled_height).unwrap(),
+                scheduled_height,
+                value_zatoshi,
+                fee_zatoshi: 10,
+                selected_note: selected_note.clone(),
+                metadata: PendingMigrationTxMetadata {
+                    tx_kind: "migration".to_string(),
+                    funding_account_uuid: "account-1".to_string(),
+                    selected_note,
+                },
+            }
+        })
+        .collect();
+    persist_signed_child_pczts_for_run(
+        &db_path,
+        "rebase-keystone-batch",
+        later_children,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+    assert!(migration_part_assignment_complete(&db_path, "rebase-keystone-batch").unwrap());
+
+    promote_signed_child_pczts_to_pending_txs(
+        &db_path,
+        "rebase-keystone-batch",
+        vec![rebase_fixture_pending(0, 100, 100)],
+        200,
+        250,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    // The foreground finalizer loaded this child before the first promotion
+    // rebased every durable child row. Its stale caller-provided height must be
+    // refreshed from storage even though this second promotion does not rebase.
+    promote_signed_child_pczts_to_pending_txs(
+        &db_path,
+        "rebase-keystone-batch",
+        vec![rebase_fixture_pending(1, 101, 101)],
+        200,
+        250,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    let (origin, rebased, children) =
+        signed_child_schedule_snapshot(&db_path, "rebase-keystone-batch");
+    assert_eq!(origin, Some(200));
+    assert_eq!(rebased, Some(200));
+    assert_eq!(children.len(), planned_part_count as usize);
+    assert_eq!(children.first(), Some(&(0, 200, 69_120)));
+    assert_eq!(
+        children.last(),
+        Some(&(planned_part_count - 1, 200 + planned_part_count - 1, 69_120,))
+    );
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT part_index, schedule_start_height, scheduled_height
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = 'rebase-keystone-batch'
+             ORDER BY part_index"
+        ))
+        .unwrap();
+    let stored_schedules = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<Vec<(u32, u32, u32)>, _>>()
+        .unwrap();
+    assert_eq!(stored_schedules, vec![(0, 200, 200), (1, 200, 201)]);
+}
+
+#[test]
+fn failed_first_promotion_rolls_back_initial_schedule_rebase() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-promotion-rollback",
+        100,
+        &[(0, 100, 0), (1, 200, 48)],
+        Some(200),
+    );
+    let mut invalid_pending = rebase_fixture_pending(0, 100, 100);
+    invalid_pending.value_zatoshi = 999;
+
+    assert_eq!(
+        promote_signed_child_pczts_to_pending_txs(
+            &db_path,
+            "rebase-promotion-rollback",
+            vec![invalid_pending],
+            340,
+            400,
+            TEST_PASSWORD,
+            TEST_SALT_BASE64,
+        )
+        .unwrap_err(),
+        "Approved migration schedule no longer matches prepared values"
+    );
+
+    let (origin, rebased, children) =
+        signed_child_schedule_snapshot(&db_path, "rebase-promotion-rollback");
+    assert_eq!(origin, Some(100));
+    assert_eq!(rebased, None);
+    assert_eq!(children, vec![(0, 100, 69_120), (1, 148, 69_120)]);
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    assert_eq!(
+        count_for_run(&conn, PENDING_TXS_TABLE, "rebase-promotion-rollback").unwrap(),
+        0
+    );
+}
+
+#[test]
+fn initial_schedule_rebase_waits_for_proof_readiness_before_freezing_origin() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-before-ready",
+        100,
+        &[(0, 100, 0), (1, 200, 24)],
+        Some(300),
+    );
+
+    assert!(!rebase_initial_signed_schedule_for_anchor_readiness(
+        &db_path,
+        "rebase-before-ready",
+        250,
+    )
+    .unwrap());
+    let (origin, rebased, children) =
+        signed_child_schedule_snapshot(&db_path, "rebase-before-ready");
+    assert_eq!(origin, Some(100));
+    assert_eq!(rebased, None);
+    assert_eq!(children, vec![(0, 100, 69_120), (1, 124, 69_120)]);
+
+    assert!(rebase_initial_signed_schedule_for_anchor_readiness(
+        &db_path,
+        "rebase-before-ready",
+        340,
+    )
+    .unwrap());
+    let (origin, rebased, children) =
+        signed_child_schedule_snapshot(&db_path, "rebase-before-ready");
+    assert_eq!(origin, Some(340));
+    assert_eq!(rebased, Some(340));
+    assert_eq!(children, vec![(0, 340, 69_120), (1, 364, 69_120)]);
+}
+
+#[test]
+fn initial_schedule_rebase_is_idempotent_across_restart() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-restart",
+        100,
+        &[(0, 100, 0), (1, 200, 24)],
+        Some(200),
+    );
+
+    assert!(
+        rebase_initial_signed_schedule_for_anchor_readiness(&db_path, "rebase-restart", 200)
+            .unwrap()
+    );
+    assert!(
+        !rebase_initial_signed_schedule_for_anchor_readiness(&db_path, "rebase-restart", 300)
+            .unwrap()
+    );
+
+    let (origin, rebased, children) = signed_child_schedule_snapshot(&db_path, "rebase-restart");
+    assert_eq!(origin, Some(200));
+    assert_eq!(rebased, Some(200));
+    assert_eq!(children, vec![(0, 200, 69_120), (1, 224, 69_120)]);
+}
+
+#[test]
+fn initial_schedule_rebase_skips_atomically_when_expiry_bucket_would_change() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-expiry",
+        100,
+        &[(0, 100, 0), (1, 200, 48)],
+        Some(ZIP318_EXPIRY_MODULUS),
+    );
+
+    assert!(!rebase_initial_signed_schedule_for_anchor_readiness(
+        &db_path,
+        "rebase-expiry",
+        ZIP318_EXPIRY_MODULUS,
+    )
+    .unwrap());
+
+    let (origin, rebased, children) = signed_child_schedule_snapshot(&db_path, "rebase-expiry");
+    assert_eq!(origin, Some(100));
+    assert_eq!(rebased, None);
+    assert_eq!(children, vec![(0, 100, 69_120), (1, 148, 69_120)]);
+}
+
+#[test]
+fn initial_schedule_rebase_skips_mixed_origin_children_without_stalling() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-mixed-origin",
+        100,
+        &[(0, 100, 0), (1, 200, 48)],
+        Some(250),
+    );
+    // Simulate a retained replacement / legacy child whose absolute schedule
+    // was built from recovery_schedule_origin_height instead of the run origin.
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!(
+            "UPDATE {SIGNED_CHILD_PCZTS_TABLE}
+             SET scheduled_height = 348
+             WHERE run_id = 'rebase-mixed-origin' AND child_index = 1"
+        ),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(!rebase_initial_signed_schedule_for_anchor_readiness(
+        &db_path,
+        "rebase-mixed-origin",
+        250,
+    )
+    .unwrap());
+    assert!(!rebase_initial_signed_schedule_for_anchor_readiness(
+        &db_path,
+        "rebase-mixed-origin",
+        300,
+    )
+    .unwrap());
+
+    let (origin, rebased, children) =
+        signed_child_schedule_snapshot(&db_path, "rebase-mixed-origin");
+    assert_eq!(origin, Some(100));
+    assert_eq!(rebased, Some(100));
+    assert_eq!(children, vec![(0, 100, 69_120), (1, 348, 69_120)]);
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let projection =
+        migration_timing_projection_for_run(&conn, "rebase-mixed-origin", 500, 2, 3).unwrap();
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![
+            MigrationTimingProjectedSignedPart {
+                part_index: 0,
+                schedule_start_height: 100,
+                scheduled_height: 250,
+            },
+            MigrationTimingProjectedSignedPart {
+                part_index: 1,
+                schedule_start_height: 300,
+                scheduled_height: 348,
+            },
+        ]
+    );
+    assert_eq!(projection.next_action_height, Some(250));
+    assert_eq!(projection.next_action_part_index, Some(0));
+}
+
+#[test]
+fn initial_schedule_rebase_skips_after_partial_promotion_and_survives_reorg_reset() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-reorg",
+        100,
+        &[(0, 100, 0), (1, 200, 48)],
+        Some(250),
+    );
+    assert!(
+        rebase_initial_signed_schedule_for_anchor_readiness(&db_path, "rebase-reorg", 250).unwrap()
+    );
+
+    let selected_note = PreparedOrchardNoteRef {
+        txid_hex: format!("{:064x}", 100),
+        output_index: 0,
+        value_zatoshi: 110,
+        note_version: 2,
+        nullifier_hex: Some(format!("{:064x}", 200)),
+    };
+    insert_pending_txs(
+        &db_path,
+        "rebase-reorg",
+        vec![PendingMigrationTxInsert {
+            part_index: 0,
+            txid_hex: format!("{:064x}", 1),
+            raw_tx: vec![1, 0xaa, 0x55],
+            target_height: 101,
+            anchor_boundary_height: Some(90),
+            expiry_height: 69_120,
+            scheduled_height: 250,
+            value_zatoshi: 100,
+            fee_zatoshi: 10,
+            selected_note: selected_note.clone(),
+            metadata: PendingMigrationTxMetadata {
+                tx_kind: "migration".to_string(),
+                funding_account_uuid: "account-1".to_string(),
+                selected_note,
+            },
+        }],
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    assert!(
+        !rebase_initial_signed_schedule_for_anchor_readiness(&db_path, "rebase-reorg", 300)
+            .unwrap()
+    );
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    conn.execute(
+        &format!("DELETE FROM {PENDING_TXS_TABLE} WHERE run_id = 'rebase-reorg'"),
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    assert!(
+        !rebase_initial_signed_schedule_for_anchor_readiness(&db_path, "rebase-reorg", 350)
+            .unwrap()
+    );
+    let (origin, rebased, children) = signed_child_schedule_snapshot(&db_path, "rebase-reorg");
+    assert_eq!(origin, Some(250));
+    assert_eq!(rebased, Some(250));
+    assert_eq!(children, vec![(0, 250, 69_120), (1, 298, 69_120)]);
+}
+
+#[test]
+fn genuine_catch_up_still_redraws_after_initial_schedule_rebase() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir
+        .path()
+        .join("wallet.db")
+        .to_string_lossy()
+        .to_string();
+    create_signed_children_rebase_fixture(
+        &db_path,
+        "rebase-catch-up",
+        100,
+        &[(0, 100, 0), (1, 200, 48)],
+        Some(200),
+    );
+    assert!(
+        rebase_initial_signed_schedule_for_anchor_readiness(&db_path, "rebase-catch-up", 200)
+            .unwrap()
+    );
+
+    let pending = (0..2)
+        .map(|index| {
+            let value_zatoshi = if index == 0 { 100 } else { 200 };
+            let selected_note = PreparedOrchardNoteRef {
+                txid_hex: format!("{:064x}", 100 + index),
+                output_index: 0,
+                value_zatoshi: value_zatoshi + 10,
+                note_version: 2,
+                nullifier_hex: Some(format!("{:064x}", 200 + index)),
+            };
+            PendingMigrationTxInsert {
+                part_index: index,
+                txid_hex: format!("{:064x}", index + 1),
+                raw_tx: vec![index as u8, 0xaa, 0x55],
+                target_height: 101,
+                anchor_boundary_height: Some(90),
+                expiry_height: 69_120,
+                scheduled_height: 200 + if index == 0 { 0 } else { 48 },
+                value_zatoshi,
+                fee_zatoshi: 10,
+                selected_note: selected_note.clone(),
+                metadata: PendingMigrationTxMetadata {
+                    tx_kind: "migration".to_string(),
+                    funding_account_uuid: "account-1".to_string(),
+                    selected_note,
+                },
+            }
+        })
+        .collect();
+    insert_pending_txs(
+        &db_path,
+        "rebase-catch-up",
+        pending,
+        TEST_PASSWORD,
+        TEST_SALT_BASE64,
+    )
+    .unwrap();
+
+    // Tip is past both rebased heights, so overdue catch-up must redraw.
+    reschedule_overdue_pending_txs(&db_path, "rebase-catch-up", WalletNetwork::Main, 300).unwrap();
+
+    let conn = open_wallet_raw_conn_with_timeout(&db_path, READ_DB_BUSY_TIMEOUT).unwrap();
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT scheduled_height, status
+             FROM {PENDING_TXS_TABLE}
+             WHERE run_id = 'rebase-catch-up'
+             ORDER BY part_index ASC"
+        ))
+        .unwrap();
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    let still_original = rows
+        .iter()
+        .filter(|(_, status)| status == "scheduled")
+        .map(|(height, _)| *height)
+        .collect::<Vec<_>>();
+    assert_ne!(
+        still_original,
+        vec![200, 248],
+        "catch-up must not keep the entire overdue rebased schedule unchanged: {rows:?}"
     );
 }
 
@@ -2358,7 +3285,7 @@ fn persisting_presigned_children_keeps_ready_phase_and_proof_height() {
 }
 
 #[test]
-fn timing_projection_keeps_unpromoted_parts_after_a_reschedule() {
+fn timing_projection_keeps_later_proof_wave_after_initial_rebase() {
     let schedule = vec![
         MigrationScheduleEntry {
             part_index: Some(0),
@@ -2382,6 +3309,7 @@ fn timing_projection_keeps_unpromoted_parts_after_a_reschedule() {
     let signed_children = vec![MigrationTimingSignedChild {
         part_index: 1,
         target_height: 101,
+        scheduled_height: Some(788),
     }];
 
     let projection = calculate_migration_timing_projection(
@@ -2389,6 +3317,8 @@ fn timing_projection_keeps_unpromoted_parts_after_a_reschedule() {
         &pending,
         &signed_children,
         Some(550),
+        Some(500),
+        550,
         2,
         3,
     )
@@ -2431,9 +3361,10 @@ fn timing_projection_ignores_retained_signed_children_after_promotion() {
             "INSERT INTO {RUNS_TABLE}
              (run_id, account_uuid, network, db_fingerprint, phase,
               created_at_ms, updated_at_ms, target_values_json,
-              schedule_json, proof_retry_height)
+              schedule_json, proof_retry_height,
+              initial_schedule_rebased_origin_height)
              VALUES ('run-timing', 'account-1', 'test', 'db', ?1, 1, 1,
-                     '[100,200]', ?2, 550)"
+                     '[100,200]', ?2, 550, 500)"
         ),
         params![PHASE_BROADCAST_SCHEDULED, schedule_json],
     )
@@ -2457,20 +3388,35 @@ fn timing_projection_ignores_retained_signed_children_after_promotion() {
                 "INSERT INTO {SIGNED_CHILD_PCZTS_TABLE}
                  (run_id, message_id, child_index, encrypted_base_pczt,
                   encrypted_compact_sigs, target_height, expiry_height,
-                  value_zatoshi, fee_zatoshi, selected_note_json, metadata_json)
+                  scheduled_height, value_zatoshi, fee_zatoshi,
+                  selected_note_json, metadata_json)
                  VALUES ('run-timing', ?1, ?2, 'base', 'sigs', 101, 900,
-                         99, 1, '{{}}', '{{}}')"
+                         ?3, 99, 1, '{{}}', '{{}}')"
             ),
-            params![format!("message-{child_index}"), child_index],
+            params![
+                format!("message-{child_index}"),
+                child_index,
+                500 + [144, 288][child_index as usize],
+            ],
         )
         .unwrap();
     }
 
-    let projection = migration_timing_projection_for_run(&conn, "run-timing", 2, 3).unwrap();
+    let projection = migration_timing_projection_for_run(&conn, "run-timing", 550, 2, 3).unwrap();
 
     assert_eq!(projection.next_action_height, Some(550));
     assert_eq!(projection.next_action_part_index, Some(1));
+    assert_eq!(projection.next_proof_window_height, Some(550));
+    assert_eq!(projection.next_proof_window_part_indices, vec![1]);
     assert_eq!(projection.estimated_completion_height, Some(791));
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![MigrationTimingProjectedSignedPart {
+            part_index: 1,
+            schedule_start_height: 500,
+            scheduled_height: 788,
+        }]
+    );
 }
 
 #[test]
@@ -2490,7 +3436,8 @@ fn timing_projection_counts_the_mined_block_as_confirmation_one() {
     }];
 
     let projection =
-        calculate_migration_timing_projection(&schedule, &pending, &[], None, 1, 3).unwrap();
+        calculate_migration_timing_projection(&schedule, &pending, &[], None, None, 100, 1, 3)
+            .unwrap();
 
     assert_eq!(projection.estimated_completion_height, Some(107));
 }
@@ -2512,6 +3459,7 @@ fn timing_projection_waits_for_multi_part_catch_up_reschedule() {
     let signed_children = vec![MigrationTimingSignedChild {
         part_index: 1,
         target_height: 101,
+        scheduled_height: Some(180),
     }];
     let pending = vec![MigrationTimingPendingPart {
         part_index: Some(0),
@@ -2527,13 +3475,77 @@ fn timing_projection_waits_for_multi_part_catch_up_reschedule() {
         &pending,
         &signed_children,
         Some(200),
+        Some(100),
+        200,
         2,
         3,
     )
     .unwrap();
 
     assert_eq!(projection.next_action_height, Some(150));
+    assert_eq!(projection.next_action_part_index, Some(0));
+    assert_eq!(projection.next_proof_window_height, Some(200));
+    assert_eq!(projection.next_proof_window_part_indices, vec![1]);
     assert_eq!(projection.estimated_completion_height, None);
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![MigrationTimingProjectedSignedPart {
+            part_index: 1,
+            schedule_start_height: 100,
+            scheduled_height: 200,
+        }]
+    );
+}
+
+#[test]
+fn timing_projection_clamps_persisted_child_to_proof_readiness() {
+    let schedule = vec![
+        MigrationScheduleEntry {
+            part_index: Some(0),
+            value_zatoshi: 100,
+            block_offset: 50,
+        },
+        MigrationScheduleEntry {
+            part_index: Some(1),
+            value_zatoshi: 200,
+            block_offset: 80,
+        },
+    ];
+    let pending = vec![MigrationTimingPendingPart {
+        part_index: Some(0),
+        target_height: 101,
+        schedule_start_height: Some(100),
+        scheduled_height: 150,
+        status: "confirmed".to_string(),
+        mined_height: Some(150),
+    }];
+    let signed_children = vec![MigrationTimingSignedChild {
+        part_index: 1,
+        target_height: 101,
+        scheduled_height: Some(180),
+    }];
+
+    let projection = calculate_migration_timing_projection(
+        &schedule,
+        &pending,
+        &signed_children,
+        Some(200),
+        None,
+        200,
+        2,
+        3,
+    )
+    .unwrap();
+
+    assert_eq!(
+        projection.projected_signed_parts,
+        vec![MigrationTimingProjectedSignedPart {
+            part_index: 1,
+            schedule_start_height: 100,
+            scheduled_height: 200,
+        }]
+    );
+    assert_eq!(projection.estimated_completion_height, Some(203));
 }
 
 #[test]
@@ -4155,6 +5167,7 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
         &db_path,
         "run-1",
         vec![pending(0, 100, 501)],
+        501,
         1_200,
         TEST_PASSWORD,
         TEST_SALT_BASE64,
@@ -4215,6 +5228,7 @@ fn approved_schedule_keeps_unpromoted_anchor_retention_candidates() {
         &db_path,
         "run-1",
         vec![pending(1, 200, 999)],
+        999,
         1_400,
         TEST_PASSWORD,
         TEST_SALT_BASE64,

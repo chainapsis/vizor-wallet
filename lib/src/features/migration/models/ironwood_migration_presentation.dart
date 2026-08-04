@@ -292,8 +292,7 @@ MigrationNextActionPresentation migrationNextActionPresentation({
   final proofWindowIsNext =
       nextProofWindowHeight != null &&
       proofWindowPartIndices.isNotEmpty &&
-      (earliestScheduledHeight == null ||
-          nextProofWindowHeight < earliestScheduledHeight);
+      earliestScheduledHeight == null;
   if (proofWindowIsNext) {
     final windowAmount = parts
         .where((part) => proofWindowPartIndices.contains(part.partIndex))
@@ -375,10 +374,15 @@ MigrationNextActionPresentation migrationNextActionPresentation({
     (part) => part.state == rust_sync.MigrationPartState.preparing,
   );
   if (preparing != null) {
+    final scheduledHeight =
+        preparing.effectiveScheduledHeight ??
+        preparing.scheduledHeight ??
+        status.nextActionHeight;
     return MigrationNextActionPresentation(
       label: 'Next migration',
       amountZatoshi: preparing.valueZatoshi,
-      detail: 'Schedule pending',
+      detail: scheduledHeight == null ? 'Schedule pending' : 'at',
+      scheduledHeight: scheduledHeight,
     );
   }
 

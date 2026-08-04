@@ -516,6 +516,7 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             preparation_timing_policy TEXT NOT NULL DEFAULT 'immediate',
             proof_retry_height INTEGER,
             signed_schedule_origin_height INTEGER,
+            initial_schedule_rebased_origin_height INTEGER,
             last_error TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_vizor_migration_runs_active
@@ -634,6 +635,12 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
         conn,
         RUNS_TABLE,
         "signed_schedule_origin_height",
+        "INTEGER",
+    )?;
+    add_column_if_missing(
+        conn,
+        RUNS_TABLE,
+        "initial_schedule_rebased_origin_height",
         "INTEGER",
     )?;
     add_column_if_missing(conn, PENDING_TXS_TABLE, "scheduled_height", "INTEGER")?;

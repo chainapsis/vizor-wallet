@@ -402,6 +402,74 @@ void main() {
     expect(presentation.scheduledHeight, 3_428_143);
   });
 
+  test('presents the rebased height for an unpromoted signed note', () {
+    final status = _status(
+      phase: 'broadcast_scheduled',
+      broadcasts: const [],
+      nextActionHeight: 3_435_409,
+      parts: [
+        _part(
+          index: 0,
+          value: 20_000,
+          state: rust_sync.MigrationPartState.preparing,
+          scheduledHeight: 3_435_409,
+        ),
+      ],
+    );
+
+    final presentation = migrationNextActionPresentation(
+      status: status,
+      currentHeight: 3_435_400,
+    );
+
+    expect(presentation.label, 'Next migration');
+    expect(presentation.amountZatoshi, BigInt.from(20_000));
+    expect(presentation.detail, 'at');
+    expect(presentation.scheduledHeight, 3_435_409);
+  });
+
+  test('presents a scheduled transfer before an internal proof window', () {
+    final status = _status(
+      phase: 'broadcast_scheduled',
+      broadcasts: const [],
+      proofReady: false,
+      nextProofWindowHeight: 1_074,
+      nextProofWindowPartIndices: [2],
+      parts: [
+        _part(
+          index: 0,
+          scheduleOrder: 0,
+          value: 500_000_000,
+          state: rust_sync.MigrationPartState.migrating,
+          scheduledHeight: 1_071,
+        ),
+        _part(
+          index: 1,
+          scheduleOrder: 1,
+          value: 50_000_000_000,
+          state: rust_sync.MigrationPartState.scheduled,
+          scheduledHeight: 1_083,
+        ),
+        _part(
+          index: 2,
+          scheduleOrder: 2,
+          value: 1_000_000_000_000,
+          scheduledHeight: 1_700,
+        ),
+      ],
+    );
+
+    final presentation = migrationNextActionPresentation(
+      status: status,
+      currentHeight: 1_071,
+    );
+
+    expect(presentation.label, 'Next migration');
+    expect(presentation.amountZatoshi, BigInt.from(50_000_000_000));
+    expect(presentation.detail, 'at');
+    expect(presentation.scheduledHeight, 1_083);
+  });
+
   test('keeps a signing part block while the batch needs input', () {
     final status = _status(
       phase: 'ready_to_migrate',
