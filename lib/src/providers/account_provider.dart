@@ -32,6 +32,7 @@ export 'account_models.dart';
 const _accountsKey = 'zcash_accounts';
 const _activeAccountKey = 'zcash_active_account';
 const _networkKey = 'zcash_wallet_network';
+const _derivedAccountRecoveryKey = 'zcash_derived_account_recovery';
 // Keep in sync with zcash_voting::storage::VotingDb::wallet_sidecar_path,
 // which appends ".voting" to the wallet DB path for sidecar persistence.
 const _votingSidecarSuffix = '.voting';
@@ -87,6 +88,30 @@ class DerivedAccountCompensationException implements Exception {
     return 'Derived account compensation failed after: $cause. '
         'Cleanup failures: $cleanup. The wallet must be reconciled before '
         'retrying.';
+  }
+}
+
+/// A derived account was retained because its Rust rollback could not delete
+/// it. Its secret and local metadata were durably reconciled, but a later
+/// derive is blocked until the retained account has been reviewed.
+class DerivedAccountRecoveryRequiredException implements Exception {
+  const DerivedAccountRecoveryRequiredException({
+    required this.accountUuid,
+    required this.cause,
+    this.cleanupFailures = const [],
+  });
+
+  final String accountUuid;
+  final Object cause;
+  final List<Object> cleanupFailures;
+
+  @override
+  String toString() {
+    final diagnostics = cleanupFailures.isEmpty
+        ? ''
+        : ' Diagnostics: ${cleanupFailures.join('; ')}.';
+    return 'Derived account recovered as $accountUuid after: $cause. '
+        'Review the recovered account before deriving another one.$diagnostics';
   }
 }
 
@@ -344,6 +369,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String profilePictureId = kDefaultProfilePictureId,
   }) async {
     try {
+      final pendingRecoveryAccountUuid = await _storage.readString(
+        _derivedAccountRecoveryKey,
+      );
+      if (pendingRecoveryAccountUuid != null &&
+          pendingRecoveryAccountUuid.isNotEmpty) {
+        throw DerivedAccountRecoveryRequiredException(
+          accountUuid: pendingRecoveryAccountUuid,
+          cause: StateError(
+            'A previous derived account must be reviewed before retrying.',
+          ),
+        );
+      }
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
@@ -424,22 +461,83 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         activeAccountWriteAttempted = true;
         await _storage.writeString(_activeAccountKey, result.accountUuid);
       } catch (error, stackTrace) {
-        final cleanupFailures = <Object>[];
-
-        Future<void> attemptCleanup(Future<void> Function() operation) async {
-          try {
-            await operation();
-          } catch (cleanupError, cleanupStackTrace) {
-            cleanupFailures.add(cleanupError);
-            log(
-              'deriveAccountFromExistingSeed: compensation failed: '
-              '$cleanupError\n$cleanupStackTrace',
-            );
+        Future<List<Object>> attemptOperations(
+          Iterable<Future<void> Function()> operations,
+          String phase,
+        ) async {
+          final failures = <Object>[];
+          for (final operation in operations) {
+            try {
+              await operation();
+            } catch (cleanupError, cleanupStackTrace) {
+              failures.add(cleanupError);
+              log(
+                'deriveAccountFromExistingSeed: $phase failed: '
+                '$cleanupError\n$cleanupStackTrace',
+              );
+            }
           }
+          return failures;
         }
 
+        Object? rustDeleteFailure;
+        try {
+          await rust_wallet.deleteAccount(
+            dbPath: dbPath,
+            network: network,
+            accountUuid: result.accountUuid,
+          );
+        } catch (deleteError, deleteStackTrace) {
+          rustDeleteFailure = deleteError;
+          log(
+            'deriveAccountFromExistingSeed: Rust rollback failed: '
+            '$deleteError\n$deleteStackTrace',
+          );
+        }
+
+        if (rustDeleteFailure != null) {
+          final recoveryFailures = await attemptOperations([
+            () => _storage.writeAccountMnemonic(
+              result.accountUuid,
+              secret.mnemonic,
+              bip39Passphrase: secret.bip39Passphrase,
+            ),
+            () => _saveAccounts(updatedAccounts),
+            () => _storage.writeString(_activeAccountKey, result.accountUuid),
+            () => _storage.writeString(
+              _derivedAccountRecoveryKey,
+              result.accountUuid,
+            ),
+          ], 'recovery reconciliation');
+          if (recoveryFailures.isNotEmpty) {
+            Error.throwWithStackTrace(
+              DerivedAccountCompensationException(
+                cause: error,
+                cleanupFailures: [rustDeleteFailure, ...recoveryFailures],
+              ),
+              stackTrace,
+            );
+          }
+          state = AsyncData(
+            AccountState(
+              accounts: updatedAccounts,
+              activeAccountUuid: result.accountUuid,
+              activeAddress: result.unifiedAddress,
+            ),
+          );
+          Error.throwWithStackTrace(
+            DerivedAccountRecoveryRequiredException(
+              accountUuid: result.accountUuid,
+              cause: error,
+              cleanupFailures: [rustDeleteFailure],
+            ),
+            stackTrace,
+          );
+        }
+
+        final cleanupOperations = <Future<void> Function()>[];
         if (activeAccountWriteAttempted) {
-          await attemptCleanup(() async {
+          cleanupOperations.add(() async {
             final previousActiveUuid = state.value?.activeAccountUuid;
             if (previousActiveUuid == null) {
               await _storage.delete(_activeAccountKey);
@@ -449,19 +547,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           });
         }
         if (accountsWriteAttempted) {
-          await attemptCleanup(() => _saveAccounts(accounts));
+          cleanupOperations.add(() => _saveAccounts(accounts));
         }
         if (mnemonicWriteAttempted) {
-          await attemptCleanup(
+          cleanupOperations.add(
             () => _storage.deleteAccountMnemonic(result.accountUuid),
           );
         }
-        await attemptCleanup(
-          () => rust_wallet.deleteAccount(
-            dbPath: dbPath,
-            network: network,
-            accountUuid: result.accountUuid,
-          ),
+        final cleanupFailures = await attemptOperations(
+          cleanupOperations,
+          'rollback cleanup',
         );
 
         if (cleanupFailures.isNotEmpty) {
@@ -492,6 +587,29 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('deriveAccountFromExistingSeed: ERROR: $e\n$st');
       rethrow;
     }
+  }
+
+  /// Clears the safety marker after the retained derived account's locally
+  /// stored signing secret and metadata have been reviewed. This deliberately
+  /// requires an explicit caller action so a retry cannot silently advance the
+  /// ZIP 32 index after a failed Rust rollback.
+  Future<void> acknowledgeDerivedAccountRecovery() async {
+    final accountUuid = await _storage.readString(_derivedAccountRecoveryKey);
+    if (accountUuid == null || accountUuid.isEmpty) return;
+
+    final accounts = state.value?.accounts ?? const <AccountInfo>[];
+    final accountExists = accounts.any(
+      (account) => account.uuid == accountUuid,
+    );
+    final secret = await getSoftwareWalletSecretForAccount(accountUuid);
+    if (!accountExists || secret == null) {
+      throw StateError(
+        'Cannot acknowledge derived account recovery for $accountUuid until '
+        'its local account metadata and signing secret are restored.',
+      );
+    }
+
+    await _storage.delete(_derivedAccountRecoveryKey);
   }
 
   /// Import a wallet from mnemonic.

@@ -295,64 +295,70 @@ void main() {
     });
 
     for (final boundary in _DerivedAccountWriteBoundary.values) {
-      test(
-        'compensates ${boundary.name} write failure without consuming an account index',
-        () async {
-          storage.failNextWriteFor = boundary.storageKey;
-          final container = _deriveAccountContainer(source);
-          addTearDown(container.dispose);
-          await container.read(accountProvider.future);
+      for (final mode in _DerivedAccountWriteFailureMode.values) {
+        test(
+          'compensates ${mode.name} ${boundary.name} write failure without consuming an account index',
+          () async {
+            mode.inject(storage, boundary.storageKey);
+            final container = _deriveAccountContainer(source);
+            addTearDown(container.dispose);
+            await container.read(accountProvider.future);
 
-          await expectLater(
-            container
-                .read(accountProvider.notifier)
-                .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
-            throwsA(isA<SecureStorageUnavailableException>()),
-          );
+            await expectLater(
+              container
+                  .read(accountProvider.notifier)
+                  .deriveAccountFromExistingSeed(
+                    sourceAccountUuid: source.uuid,
+                  ),
+              throwsA(isA<SecureStorageUnavailableException>()),
+            );
 
-          expect(rust.liveAccountIndices, isEmpty);
-          expect(
+            expect(rust.liveAccountIndices, isEmpty);
+            expect(
+              await container
+                  .read(accountProvider.notifier)
+                  .getSoftwareWalletSecretForAccount('derived-1'),
+              isNull,
+            );
+            expect(
+              jsonDecode(storage.values['zcash_accounts']!) as List,
+              hasLength(1),
+            );
+            expect(storage.values['zcash_active_account'], source.uuid);
+            final stateAfterFailure = container
+                .read(accountProvider)
+                .requireValue;
+            expect(stateAfterFailure.accounts, hasLength(1));
+            expect(stateAfterFailure.accounts.single.uuid, source.uuid);
+            expect(stateAfterFailure.activeAccountUuid, source.uuid);
+
             await container
                 .read(accountProvider.notifier)
-                .getSoftwareWalletSecretForAccount('derived-1'),
-            isNull,
-          );
-          expect(
-            jsonDecode(storage.values['zcash_accounts']!) as List,
-            hasLength(1),
-          );
-          expect(storage.values['zcash_active_account'], source.uuid);
-          final stateAfterFailure = container
-              .read(accountProvider)
-              .requireValue;
-          expect(stateAfterFailure.accounts, hasLength(1));
-          expect(stateAfterFailure.accounts.single.uuid, source.uuid);
-          expect(stateAfterFailure.activeAccountUuid, source.uuid);
+                .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
 
-          await container
-              .read(accountProvider.notifier)
-              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
-
-          expect(rust.allocatedIndices, [1, 1]);
-          expect(rust.liveAccountIndices, {1});
-          final persistedSecret = await container
-              .read(accountProvider.notifier)
-              .getSoftwareWalletSecretForAccount('derived-1');
-          expect(persistedSecret?.mnemonic, 'source recovery phrase');
-          expect(persistedSecret?.bip39Passphrase, isEmpty);
-          expect(
-            container.read(accountProvider).requireValue.accounts,
-            hasLength(2),
-          );
-        },
-      );
+            expect(rust.allocatedIndices, [1, 1]);
+            expect(rust.liveAccountIndices, {1});
+            final persistedSecret = await container
+                .read(accountProvider.notifier)
+                .getSoftwareWalletSecretForAccount('derived-1');
+            expect(persistedSecret?.mnemonic, 'source recovery phrase');
+            expect(persistedSecret?.bip39Passphrase, isEmpty);
+            expect(
+              container.read(accountProvider).requireValue.accounts,
+              hasLength(2),
+            );
+          },
+        );
+      }
     }
 
     test(
-      'surfaces both the original write failure and failed Rust cleanup',
+      'surfaces original and cleanup failures when recovery reconciliation fails',
       () async {
-        storage.failNextWriteFor =
-            _DerivedAccountWriteBoundary.accounts.storageKey;
+        storage.failWrites(
+          _DerivedAccountWriteBoundary.accounts.storageKey,
+          count: 2,
+        );
         rust.failNextDelete = true;
         final container = _deriveAccountContainer(source);
         addTearDown(container.dispose);
@@ -376,6 +382,93 @@ void main() {
         expect(stateAfterFailure.accounts, hasLength(1));
         expect(stateAfterFailure.accounts.single.uuid, source.uuid);
         expect(stateAfterFailure.activeAccountUuid, source.uuid);
+        expect(storage.values['zcash_derived_account_recovery'], 'derived-1');
+        expect(rust.liveAccountIndices, {1});
+        final retainedSecret = await container
+            .read(accountProvider.notifier)
+            .getSoftwareWalletSecretForAccount('derived-1');
+        expect(retainedSecret?.mnemonic, 'source recovery phrase');
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+          throwsA(isA<DerivedAccountRecoveryRequiredException>()),
+        );
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .acknowledgeDerivedAccountRecovery(),
+          throwsA(isA<StateError>()),
+        );
+        expect(rust.allocatedIndices, [1]);
+      },
+    );
+
+    test(
+      'retains a complete recovered account and blocks blind retry when Rust deletion fails',
+      () async {
+        storage.failNextWriteFor =
+            _DerivedAccountWriteBoundary.accounts.storageKey;
+        rust.failNextDelete = true;
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+          throwsA(
+            predicate<Object>(
+              (error) =>
+                  error.toString().contains('Derived account recovered') &&
+                  error.toString().contains('zcash_accounts') &&
+                  error.toString().contains('forced Rust delete failure'),
+              'a recovery error retaining the original and Rust-delete causes',
+            ),
+          ),
+        );
+
+        expect(rust.liveAccountIndices, {1});
+        final persistedSecret = await container
+            .read(accountProvider.notifier)
+            .getSoftwareWalletSecretForAccount('derived-1');
+        expect(persistedSecret?.mnemonic, 'source recovery phrase');
+        expect(persistedSecret?.bip39Passphrase, isEmpty);
+        expect(
+          jsonDecode(storage.values['zcash_accounts']!) as List,
+          hasLength(2),
+        );
+        expect(storage.values['zcash_active_account'], 'derived-1');
+        expect(storage.values['zcash_derived_account_recovery'], 'derived-1');
+        final stateAfterRecovery = container.read(accountProvider).requireValue;
+        expect(stateAfterRecovery.accounts, hasLength(2));
+        expect(stateAfterRecovery.activeAccountUuid, 'derived-1');
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+          throwsA(
+            predicate<Object>(
+              (error) => error.toString().contains('Derived account recovered'),
+              'an explicit recovery acknowledgement before another derivation',
+            ),
+          ),
+        );
+        expect(rust.allocatedIndices, [1]);
+
+        await container
+            .read(accountProvider.notifier)
+            .acknowledgeDerivedAccountRecovery();
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+
+        await container
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+        expect(rust.allocatedIndices, [1, 2]);
+        expect(rust.liveAccountIndices, {1, 2});
       },
     );
   });
@@ -678,9 +771,29 @@ enum _DerivedAccountWriteBoundary {
   final String storageKey;
 }
 
+enum _DerivedAccountWriteFailureMode {
+  beforePersist,
+  persistThenThrow;
+
+  void inject(_FaultInjectingSecureStorage storage, String key) {
+    switch (this) {
+      case _DerivedAccountWriteFailureMode.beforePersist:
+        storage.failNextWriteFor = key;
+      case _DerivedAccountWriteFailureMode.persistThenThrow:
+        storage.persistThenThrowNextWriteFor = key;
+    }
+  }
+}
+
 class _FaultInjectingSecureStorage extends FlutterSecureStoragePlatform {
   final values = <String, String>{};
   String? failNextWriteFor;
+  String? persistThenThrowNextWriteFor;
+  final _remainingWriteFailures = <String, int>{};
+
+  void failWrites(String key, {required int count}) {
+    _remainingWriteFailures[key] = count;
+  }
 
   @override
   Future<bool> containsKey({
@@ -718,11 +831,23 @@ class _FaultInjectingSecureStorage extends FlutterSecureStoragePlatform {
     required String value,
     required Map<String, String> options,
   }) async {
+    final remainingFailures = _remainingWriteFailures[key] ?? 0;
+    if (remainingFailures > 0) {
+      _remainingWriteFailures[key] = remainingFailures - 1;
+      throw PlatformException(code: 'fault', message: 'forced $key write');
+    }
     if (key == failNextWriteFor) {
       failNextWriteFor = null;
       throw PlatformException(code: 'fault', message: 'forced $key write');
     }
     values[key] = value;
+    if (key == persistThenThrowNextWriteFor) {
+      persistThenThrowNextWriteFor = null;
+      throw PlatformException(
+        code: 'fault',
+        message: 'persisted then forced $key write failure',
+      );
+    }
   }
 }
 
