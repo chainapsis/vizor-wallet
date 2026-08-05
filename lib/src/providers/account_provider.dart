@@ -66,6 +66,19 @@ class WalletResetException implements Exception {
   String toString() => cause.toString();
 }
 
+/// Picks the software account whose recovery phrase should derive a new
+/// account. Prefers the active account, then falls back to list order.
+String? defaultDeriveSourceAccountUuid(AccountState state) {
+  final softwareAccounts = state.accounts.where((a) => !a.isHardware).toList()
+    ..sort((a, b) => a.order.compareTo(b.order));
+  if (softwareAccounts.isEmpty) return null;
+
+  for (final account in softwareAccounts) {
+    if (account.uuid == state.activeAccountUuid) return account.uuid;
+  }
+  return softwareAccounts.first.uuid;
+}
+
 class LinkedWalletAccountImport {
   const LinkedWalletAccountImport({
     required this.name,
@@ -278,6 +291,89 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('createAccountFromMnemonic: success, uuid=$accountUuid');
     } catch (e, st) {
       log('createAccountFromMnemonic: ERROR: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Derive the next ZIP 32 account from an existing software account's
+  /// recovery phrase. The phrase is resolved from secure storage and never
+  /// passes through the UI.
+  Future<void> deriveAccountFromExistingSeed({
+    required String sourceAccountUuid,
+    String? name,
+    String profilePictureId = kDefaultProfilePictureId,
+  }) async {
+    try {
+      final dbPath = await _getDbPath();
+      final endpoint = ref.read(rpcEndpointProvider);
+      final network = endpoint.networkName;
+
+      final secret = await getSoftwareWalletSecretForAccount(sourceAccountUuid);
+      if (secret == null) {
+        throw StateError(
+          'No recovery phrase available for account $sourceAccountUuid',
+        );
+      }
+
+      final birthday = await _fetchCreationBirthdayHeight();
+      log('deriveAccountFromExistingSeed: birthday=$birthday');
+
+      final accounts = state.value?.accounts ?? [];
+      final accountName = normalizeAccountName(
+        name ?? 'Account ${accounts.length + 1}',
+      );
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
+
+      final result = await rust_wallet.deriveNextSoftwareAccount(
+        mnemonic: secret.mnemonic,
+        bip39Passphrase: secret.bip39Passphrase,
+        birthdayHeight: birthday,
+        network: network,
+        dbPath: dbPath,
+        name: accountName,
+      );
+
+      await _storage.writeAccountMnemonic(
+        result.accountUuid,
+        secret.mnemonic,
+        bip39Passphrase: secret.bip39Passphrase,
+      );
+
+      final newAccount = AccountInfo(
+        uuid: result.accountUuid,
+        name: accountName,
+        order: accounts.length,
+        isSeedAnchor: result.isSeedAnchor,
+        profilePictureId: normalizedProfilePictureId,
+      );
+      final updatedAccounts = [...accounts, newAccount];
+      await _saveAccounts(updatedAccounts);
+      await _storage.writeString(_activeAccountKey, result.accountUuid);
+
+      state = AsyncData(
+        AccountState(
+          accounts: updatedAccounts,
+          activeAccountUuid: result.accountUuid,
+          activeAddress: result.unifiedAddress,
+        ),
+      );
+
+      log(
+        'deriveAccountFromExistingSeed: success, uuid=${result.accountUuid}, '
+        'zip32Index=${result.zip32AccountIndex}',
+      );
+    } catch (e, st) {
+      log('deriveAccountFromExistingSeed: ERROR: $e\n$st');
       rethrow;
     }
   }

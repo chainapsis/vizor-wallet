@@ -44,6 +44,51 @@ void main() {
     ]);
   });
 
+  group('defaultDeriveSourceAccountUuid', () {
+    AccountInfo account(String uuid, int order, {bool isHardware = false}) =>
+        AccountInfo(
+          uuid: uuid,
+          name: 'A$order',
+          order: order,
+          isHardware: isHardware,
+          isSeedAnchor: order == 0 && !isHardware,
+        );
+
+    test('prefers the active account when it is a software account', () {
+      final state = AccountState(
+        accounts: [account('a', 0), account('b', 1)],
+        activeAccountUuid: 'b',
+      );
+
+      expect(defaultDeriveSourceAccountUuid(state), 'b');
+    });
+
+    test(
+      'falls back to the first software account when active is hardware',
+      () {
+        final state = AccountState(
+          accounts: [account('hw', 0, isHardware: true), account('sw', 1)],
+          activeAccountUuid: 'hw',
+        );
+
+        expect(defaultDeriveSourceAccountUuid(state), 'sw');
+      },
+    );
+
+    test('returns null for hardware-only wallets', () {
+      final state = AccountState(
+        accounts: [account('hw', 0, isHardware: true)],
+        activeAccountUuid: 'hw',
+      );
+
+      expect(defaultDeriveSourceAccountUuid(state), isNull);
+    });
+
+    test('returns null for empty wallets', () {
+      expect(defaultDeriveSourceAccountUuid(const AccountState()), isNull);
+    });
+  });
+
   test('wallet link duplicate import errors are recognized', () {
     expect(
       isWalletLinkDuplicateImportError(
