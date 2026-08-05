@@ -76,6 +76,7 @@ import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/features/settings/screens/settings_uninstall_screen.dart';
 import 'src/features/settings/settings_platform.dart';
+import 'src/features/settings/widgets/windows_update_download_flow.dart';
 import 'src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import 'src/features/swap/models/swap_activity_navigation.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
@@ -1304,7 +1305,8 @@ class _WindowsUpdatePromptHostState
       WindowsUpdateStatus.available ||
       WindowsUpdateStatus.downloading ||
       WindowsUpdateStatus.ready ||
-      WindowsUpdateStatus.applying => true,
+      WindowsUpdateStatus.applying ||
+      WindowsUpdateStatus.failed => true,
       _ => false,
     };
     if (!visibleStatus) return false;
@@ -1318,12 +1320,6 @@ class _WindowsUpdatePromptHostState
   }
 
   Future<void> _handleDownload() async {
-    final privacy = ref.read(networkPrivacyProvider);
-    if (!privacy.torEnabled) {
-      await ref.read(windowsUpdateProvider.notifier).downloadUpdate();
-      return;
-    }
-
     final dialogContext = widget
         .router
         .routerDelegate
@@ -1332,23 +1328,7 @@ class _WindowsUpdatePromptHostState
         ?.overlay
         ?.context;
     if (dialogContext == null) return;
-    final choice = await showDialog<_WindowsUpdatePrivacyChoice>(
-      context: dialogContext,
-      builder: (_) => const _WindowsUpdatePrivacyChoiceDialog(),
-    );
-    if (!mounted || choice == null) return;
-
-    if (choice == _WindowsUpdatePrivacyChoice.direct) {
-      await ref.read(networkPrivacyProvider.notifier).setTorEnabled(false);
-      if (!mounted) return;
-      final directState = ref.read(networkPrivacyProvider);
-      if (directState.torEnabled ||
-          directState.status != NetworkPrivacyConnectionStatus.off) {
-        return;
-      }
-    }
-
-    await ref.read(windowsUpdateProvider.notifier).downloadUpdate();
+    await startWindowsUpdateDownload(context: dialogContext, ref: ref);
   }
 
   @override
@@ -1396,6 +1376,13 @@ class _WindowsUpdatePromptHostState
                                 .applyUpdateAndRestart(),
                           );
                         },
+                        onRetry: () {
+                          unawaited(
+                            ref
+                                .read(windowsUpdateProvider.notifier)
+                                .checkForUpdates(),
+                          );
+                        },
                         onLater: () => _dismiss(state),
                       )
                     : const SizedBox.shrink(
@@ -1410,100 +1397,12 @@ class _WindowsUpdatePromptHostState
   }
 }
 
-enum _WindowsUpdatePrivacyChoice { tor, direct }
-
-class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
-  const _WindowsUpdatePrivacyChoiceDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Dialog(
-      backgroundColor: colors.background.ground,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.large),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 424),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: colors.background.neutralSubtleOpacity,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: AppIcon(
-                        AppIcons.shieldKeyholeOutline,
-                        size: AppIconSize.medium,
-                        color: colors.icon.regular,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Expanded(
-                    child: Text(
-                      'Use Tor for this update?',
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: colors.text.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Updating over Tor may take longer. Turning Tor off switches '
-                'all Vizor network requests to a direct connection.',
-                style: AppTypography.bodyMedium.copyWith(
-                  color: colors.text.secondary,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              AppButton(
-                expand: true,
-                onPressed: () =>
-                    Navigator.of(context).pop(_WindowsUpdatePrivacyChoice.tor),
-                child: const Text('Continue with Tor'),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              AppButton(
-                expand: true,
-                variant: AppButtonVariant.secondary,
-                onPressed: () => Navigator.of(
-                  context,
-                ).pop(_WindowsUpdatePrivacyChoice.direct),
-                child: const Text('Turn off Tor and update'),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              AppButton(
-                expand: true,
-                variant: AppButtonVariant.ghost,
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _WindowsUpdatePrompt extends StatelessWidget {
   const _WindowsUpdatePrompt({
     required this.state,
     required this.onDownload,
     required this.onRestart,
+    required this.onRetry,
     required this.onLater,
     super.key,
   });
@@ -1511,6 +1410,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
   final WindowsUpdateState state;
   final VoidCallback onDownload;
   final VoidCallback onRestart;
+  final VoidCallback onRetry;
   final VoidCallback onLater;
 
   @override
@@ -1593,7 +1493,11 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                         onPressed: onLater,
                         variant: AppButtonVariant.ghost,
                         size: AppButtonSize.small,
-                        child: const Text('Later'),
+                        child: Text(
+                          state.status == WindowsUpdateStatus.failed
+                              ? 'Dismiss'
+                              : 'Later',
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
                     ],
@@ -1620,6 +1524,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
       WindowsUpdateStatus.downloading => 'Downloading update',
       WindowsUpdateStatus.ready => 'Update ready',
       WindowsUpdateStatus.applying => 'Restarting Vizor',
+      WindowsUpdateStatus.failed => 'Update failed',
       _ => 'Update available',
     };
   }
@@ -1631,13 +1536,18 @@ class _WindowsUpdatePrompt extends StatelessWidget {
         '${state.downloadProgress}% downloaded.',
       WindowsUpdateStatus.ready => 'Restart when you are ready.',
       WindowsUpdateStatus.applying => 'Applying after Vizor closes.',
+      WindowsUpdateStatus.failed =>
+        state.message.trim().isEmpty
+            ? "Couldn't complete the update. Try again."
+            : state.message.trim(),
       _ => '',
     };
   }
 
   bool _canDismiss() {
     return state.status == WindowsUpdateStatus.available ||
-        state.status == WindowsUpdateStatus.ready;
+        state.status == WindowsUpdateStatus.ready ||
+        state.status == WindowsUpdateStatus.failed;
   }
 
   _WindowsUpdatePromptAction _primaryAction() {
@@ -1655,6 +1565,10 @@ class _WindowsUpdatePrompt extends StatelessWidget {
       ),
       WindowsUpdateStatus.applying => const _WindowsUpdatePromptAction(
         label: 'Restarting',
+      ),
+      WindowsUpdateStatus.failed => _WindowsUpdatePromptAction(
+        label: 'Try again',
+        onPressed: onRetry,
       ),
       _ => const _WindowsUpdatePromptAction(label: 'Update'),
     };
@@ -1685,9 +1599,15 @@ class _WindowsUpdatePromptIcon extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: AppIcon(
-        status == WindowsUpdateStatus.ready ? AppIcons.check : AppIcons.sync,
+        switch (status) {
+          WindowsUpdateStatus.ready => AppIcons.check,
+          WindowsUpdateStatus.failed => AppIcons.warning,
+          _ => AppIcons.sync,
+        },
         size: 16,
-        color: colors.icon.accent,
+        color: status == WindowsUpdateStatus.failed
+            ? colors.icon.warning
+            : colors.icon.accent,
       ),
     );
   }

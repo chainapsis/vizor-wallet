@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_version_config.dart';
@@ -17,6 +18,19 @@ enum WindowsUpdateStatus {
   ready,
   applying,
   failed,
+}
+
+const kWindowsTorUpdateRouteUnavailableMessage =
+    'The software updater is not connected to Tor. Retry updates in Settings, '
+    'or turn off Tor and try again.';
+
+class WindowsUpdateDownloadResult {
+  const WindowsUpdateDownloadResult.started() : started = true, message = '';
+
+  const WindowsUpdateDownloadResult.failed(this.message) : started = false;
+
+  final bool started;
+  final String message;
 }
 
 class WindowsUpdateState {
@@ -113,6 +127,10 @@ final windowsUpdateServiceProvider = Provider<WindowsUpdateService>(
   (ref) => WindowsUpdateService(),
 );
 
+final windowsUpdateTorEnabledProvider = Provider<bool Function()>(
+  (_) => rust_network_privacy.isTorEnabled,
+);
+
 class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   Timer? _pollTimer;
   bool _polling = false;
@@ -143,9 +161,35 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     await _runAndPoll(ref.read(windowsUpdateServiceProvider).checkForUpdates());
   }
 
-  Future<void> downloadUpdate() async {
-    if (!state.canDownload || !await _updateNetworkReady()) return;
-    await _runAndPoll(ref.read(windowsUpdateServiceProvider).downloadUpdate());
+  Future<WindowsUpdateDownloadResult> downloadUpdate() async {
+    if (!state.canDownload) {
+      return const WindowsUpdateDownloadResult.failed(
+        'This update is no longer ready to download. Check for updates again.',
+      );
+    }
+
+    try {
+      if (!await _updateNetworkReady()) {
+        return const WindowsUpdateDownloadResult.failed(
+          kWindowsTorUpdateRouteUnavailableMessage,
+        );
+      }
+      await _runAndPoll(
+        ref.read(windowsUpdateServiceProvider).downloadUpdate(),
+      );
+    } catch (error) {
+      final message = _updateErrorMessage(error);
+      _setFailed(message);
+      return WindowsUpdateDownloadResult.failed(message);
+    }
+
+    if (state.status == WindowsUpdateStatus.failed) {
+      final message = state.message.trim();
+      return WindowsUpdateDownloadResult.failed(
+        message.isEmpty ? "Couldn't complete the update. Try again." : message,
+      );
+    }
+    return const WindowsUpdateDownloadResult.started();
   }
 
   Future<void> applyUpdateAndRestart() async {
@@ -155,7 +199,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     );
   }
 
-  bool get _torEnabled => rust_network_privacy.isTorEnabled();
+  bool get _torEnabled => ref.read(windowsUpdateTorEnabledProvider)();
 
   Future<bool> _updateNetworkReady() async {
     if (!_torEnabled) return true;
@@ -172,6 +216,22 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   Future<void> _updateFrom(Future<WindowsUpdateSnapshot> action) async {
     final snapshot = await action;
     state = WindowsUpdateState.fromSnapshot(snapshot);
+  }
+
+  void _setFailed(String message) {
+    final current = state;
+    state = WindowsUpdateState(
+      supported: current.supported,
+      status: WindowsUpdateStatus.failed,
+      currentVersion: current.currentVersion,
+      appId: current.appId,
+      repoUrl: current.repoUrl,
+      availableVersion: current.availableVersion,
+      downloadProgress: current.downloadProgress,
+      pendingRestart: current.pendingRestart,
+      torProxyReady: current.torProxyReady,
+      message: message,
+    );
   }
 
   void _startPollingIfBusy() {
@@ -192,6 +252,15 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       }
     });
   }
+}
+
+String _updateErrorMessage(Object error) {
+  if (error is PlatformException) {
+    final message = error.message?.trim();
+    if (message != null && message.isNotEmpty) return message;
+  }
+  final message = error.toString().trim();
+  return message.isEmpty ? "Couldn't complete the update. Try again." : message;
 }
 
 final windowsUpdateProvider =

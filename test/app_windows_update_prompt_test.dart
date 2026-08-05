@@ -97,6 +97,98 @@ void main() {
     expect(events, ['disable:start', 'disable:done', 'download']);
   });
 
+  testWidgets('failed Tor disable keeps the update blocked and explains why', (
+    tester,
+  ) async {
+    final events = <String>[];
+    await tester.pumpWidget(
+      _appHarness(
+        windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+          () => _RecordingAvailableWindowsUpdateNotifier(events),
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            () => _FailingTorDisablePrivacyNotifier(events),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(AppButton, 'Download'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(AppButton, 'Turn off Tor and update'));
+    await tester.pumpAndSettle();
+
+    expect(events, ['disable']);
+    expect(find.text("Couldn't turn off Tor"), findsOneWidget);
+    expect(
+      find.textContaining('Tor remains on, so Vizor kept the update blocked.'),
+      findsOneWidget,
+    );
+    expect(downloadsFrom(events), isEmpty);
+  });
+
+  testWidgets('unavailable Tor updater route stays fail-closed with guidance', (
+    tester,
+  ) async {
+    final events = <String>[];
+    await tester.pumpWidget(
+      _appHarness(
+        windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+          () => _RecordingAvailableWindowsUpdateNotifier(events),
+        ),
+        extraOverrides: [
+          networkPrivacyProvider.overrideWith(
+            _TorUpdatesUnavailablePrivacyNotifier.new,
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(AppButton, 'Download'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(AppButton, 'Continue with Tor'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Software updates unavailable over Tor'), findsOneWidget);
+    expect(find.textContaining('Retry updates in Settings'), findsOneWidget);
+    expect(downloadsFrom(events), isEmpty);
+  });
+
+  testWidgets('background download failure stays visible with retry guidance', (
+    tester,
+  ) async {
+    final events = <String>[];
+    await tester.pumpWidget(
+      _appHarness(
+        windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+          () => _BackgroundFailureWindowsUpdateNotifier(events),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Downloading update'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(UnlockScreen)),
+    );
+    final notifier = container.read(windowsUpdateProvider.notifier);
+    (notifier as _BackgroundFailureWindowsUpdateNotifier).failDownload();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Update failed'), findsOneWidget);
+    expect(find.text('Signed feed verification failed.'), findsOneWidget);
+    expect(find.widgetWithText(AppButton, 'Dismiss'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(AppButton, 'Try again'));
+    await tester.pump();
+
+    expect(events, ['retry']);
+  });
+
   testWidgets(
     'Tor-connected startup checks once without route-switch duplication',
     (tester) async {
@@ -214,8 +306,9 @@ class _RecordingAvailableWindowsUpdateNotifier
   final List<String> events;
 
   @override
-  Future<void> downloadUpdate() async {
+  Future<WindowsUpdateDownloadResult> downloadUpdate() async {
     events.add('download');
+    return const WindowsUpdateDownloadResult.started();
   }
 }
 
@@ -230,6 +323,46 @@ class _TrackingWindowsUpdateNotifier extends WindowsUpdateNotifier {
   @override
   Future<void> checkOnStartup() async {
     checks.add('check');
+  }
+}
+
+class _BackgroundFailureWindowsUpdateNotifier extends WindowsUpdateNotifier {
+  _BackgroundFailureWindowsUpdateNotifier(this.events);
+
+  final List<String> events;
+
+  @override
+  WindowsUpdateState build() => const WindowsUpdateState(
+    supported: true,
+    status: WindowsUpdateStatus.downloading,
+    currentVersion: '1.0.0',
+    appId: 'Vizor',
+    repoUrl: 'https://updates.example.invalid/vizor',
+    availableVersion: '9.9.9',
+    downloadProgress: 42,
+    pendingRestart: false,
+    torProxyReady: true,
+    message: '',
+  );
+
+  void failDownload() {
+    state = const WindowsUpdateState(
+      supported: true,
+      status: WindowsUpdateStatus.failed,
+      currentVersion: '1.0.0',
+      appId: 'Vizor',
+      repoUrl: 'https://updates.example.invalid/vizor',
+      availableVersion: '9.9.9',
+      downloadProgress: 42,
+      pendingRestart: false,
+      torProxyReady: true,
+      message: 'Signed feed verification failed.',
+    );
+  }
+
+  @override
+  Future<void> checkForUpdates() async {
+    events.add('retry');
   }
 }
 
@@ -261,6 +394,24 @@ class _DeferredTorDisablePrivacyNotifier extends _TorOnPrivacyNotifier {
   }
 }
 
+class _FailingTorDisablePrivacyNotifier extends _TorOnPrivacyNotifier {
+  _FailingTorDisablePrivacyNotifier(this.events);
+
+  final List<String> events;
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    assert(!enabled);
+    events.add('disable');
+    state = const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.failed,
+      targetTorEnabled: false,
+      error: 'sync did not stop',
+    );
+  }
+}
+
 class _TorUpdatesUnavailablePrivacyNotifier extends NetworkPrivacyNotifier {
   @override
   NetworkPrivacyState build() => const NetworkPrivacyState(
@@ -276,3 +427,6 @@ class _TorUpdatesUnavailablePrivacyNotifier extends NetworkPrivacyNotifier {
     );
   }
 }
+
+List<String> downloadsFrom(List<String> events) =>
+    events.where((event) => event == 'download').toList();

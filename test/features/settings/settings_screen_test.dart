@@ -4,16 +4,19 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
+import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 
 import '../../fakes/fake_sync_notifier.dart';
 
@@ -77,6 +80,83 @@ void main() {
       expect(find.text('Danger zone'), findsNothing);
       expect(find.text('Uninstall Vizor'), findsNothing);
     } finally {
+      _resetPlatformOverride();
+    }
+  });
+
+  testWidgets('Settings update download uses the Tor privacy choice', (
+    tester,
+  ) async {
+    _overridePlatform(TargetPlatform.windows);
+    final downloads = <String>[];
+    await tester.binding.setSurfaceSize(const Size(1512, 1100));
+
+    try {
+      await tester.pumpWidget(
+        _settingsHarness(
+          networkPrivacyState: const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connected,
+          ),
+          extraOverrides: [
+            windowsUpdateProvider.overrideWith(
+              () => _RecordingWindowsUpdateNotifier(downloads),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('Updates'));
+      await tester.pump();
+      await tester.tap(find.text('Updates'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(AppButton, 'Download update'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Use Tor for this update?'), findsOneWidget);
+      expect(downloads, isEmpty);
+
+      await tester.tap(find.widgetWithText(AppButton, 'Continue with Tor'));
+      await tester.pumpAndSettle();
+
+      expect(downloads, ['download']);
+    } finally {
+      await tester.binding.setSurfaceSize(null);
+      _resetPlatformOverride();
+    }
+  });
+
+  testWidgets('Settings preserves the underlying Windows update error', (
+    tester,
+  ) async {
+    _overridePlatform(TargetPlatform.windows);
+    await tester.binding.setSurfaceSize(const Size(1512, 1100));
+
+    try {
+      await tester.pumpWidget(
+        _settingsHarness(
+          extraOverrides: [
+            windowsUpdateProvider.overrideWith(
+              () => _FailedWindowsUpdateNotifier(),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+
+      await tester.ensureVisible(find.text('Updates'));
+      await tester.pump();
+      await tester.tap(find.text('Updates'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Signed feed verification failed.'), findsOneWidget);
+      expect(
+        find.text("Couldn't complete the update. Try again."),
+        findsNothing,
+      );
+    } finally {
+      await tester.binding.setSurfaceSize(null);
       _resetPlatformOverride();
     }
   });
@@ -258,6 +338,7 @@ void _resetPlatformOverride() {
 Widget _settingsHarness({
   NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
   List<bool>? networkPrivacyCalls,
+  List<Override> extraOverrides = const [],
 }) {
   final router = GoRouter(
     initialLocation: '/settings',
@@ -283,6 +364,7 @@ Widget _settingsHarness({
           networkPrivacyCalls ?? <bool>[],
         ),
       ),
+      ...extraOverrides,
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -304,6 +386,48 @@ class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
   Future<void> setTorEnabled(bool enabled) async {
     calls.add(enabled);
   }
+}
+
+class _RecordingWindowsUpdateNotifier extends WindowsUpdateNotifier {
+  _RecordingWindowsUpdateNotifier(this.downloads);
+
+  final List<String> downloads;
+
+  @override
+  WindowsUpdateState build() => const WindowsUpdateState(
+    supported: true,
+    status: WindowsUpdateStatus.available,
+    currentVersion: '1.0.0',
+    appId: 'Vizor',
+    repoUrl: 'https://updates.example.invalid/vizor',
+    availableVersion: '9.9.9',
+    downloadProgress: 0,
+    pendingRestart: false,
+    torProxyReady: true,
+    message: '',
+  );
+
+  @override
+  Future<WindowsUpdateDownloadResult> downloadUpdate() async {
+    downloads.add('download');
+    return const WindowsUpdateDownloadResult.started();
+  }
+}
+
+class _FailedWindowsUpdateNotifier extends WindowsUpdateNotifier {
+  @override
+  WindowsUpdateState build() => const WindowsUpdateState(
+    supported: true,
+    status: WindowsUpdateStatus.failed,
+    currentVersion: '1.0.0',
+    appId: 'Vizor',
+    repoUrl: 'https://updates.example.invalid/vizor',
+    availableVersion: '9.9.9',
+    downloadProgress: 0,
+    pendingRestart: false,
+    torProxyReady: true,
+    message: 'Signed feed verification failed.',
+  );
 }
 
 final _bootstrap = AppBootstrapState(
