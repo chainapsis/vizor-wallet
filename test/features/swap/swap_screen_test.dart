@@ -4336,6 +4336,73 @@ void main() {
     expect(find.textContaining('is not currently supported'), findsNothing);
   });
 
+  testWidgets('Tor-blocked token list closes the Pay recipient step', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        swapProvider: _PricingThenTorBlockedSwapProvider(),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_select_recipient_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+      listen: false,
+    );
+    (container.read(networkPrivacyProvider.notifier)
+            as _FakeNetworkPrivacyNotifier)
+        .setStateForTest(
+          const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connected,
+          ),
+        );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Pay is unavailable over Tor because the service blocked this '
+        'connection.\nTurn off Tor in Settings to pay.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_select_recipient_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
+
   testWidgets(
     'initial ordinary token-list failure keeps static assets usable',
     (tester) async {

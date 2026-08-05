@@ -216,13 +216,20 @@ class SwapState {
     return '${externalAsset.symbol} on ${externalAsset.chainLabel} is not currently supported.';
   }
 
+  /// Whether the selected external asset can carry a quote. A failed token-list
+  /// load keeps the last known [supportedExternalAssets], so
+  /// [externalAssetIsSupported] alone still reads true while
+  /// [supportedAssetsError] is set — every surface that gates on asset support
+  /// must use this, or it offers an action the review path will refuse.
+  bool get externalAssetIsAvailable =>
+      externalAssetIsSupported && supportedAssetsError == null;
+
   bool get canReviewQuote =>
       quoteAmount != null &&
       quoteAmountPrecisionError == null &&
       draftAddressPlan != null &&
       destinationAddressFormatError == null &&
-      externalAssetIsSupported &&
-      supportedAssetsError == null &&
+      externalAssetIsAvailable &&
       !quoteLoading;
 
   bool get canSubmitDepositTx =>

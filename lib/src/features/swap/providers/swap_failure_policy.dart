@@ -148,8 +148,11 @@ String _messageFor(
       'No quote is available for this route or amount.\n'
           'Adjust the amount, slippage, or asset and try again.',
     SwapFailureCategory.torBlocked =>
-      'Swap is unavailable over Tor because the service blocked this '
-          'connection.\nTurn off Tor in Settings to use swap.',
+      surface == SwapFailureSurface.pay
+          ? 'Pay is unavailable over Tor because the service blocked this '
+                'connection.\nTurn off Tor in Settings to pay.'
+          : 'Swap is unavailable over Tor because the service blocked this '
+                'connection.\nTurn off Tor in Settings to use swap.',
     SwapFailureCategory.serviceUnavailable => _serviceUnavailableMessage(
       operation,
     ),

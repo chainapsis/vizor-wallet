@@ -343,7 +343,7 @@ class _MobilePayScreenState extends ConsumerState<MobilePayScreen> {
                     contacts: contacts,
                     recents: recents,
                     busy: swapState.quoteLoading,
-                    enabled: swapState.externalAssetIsSupported,
+                    enabled: swapState.externalAssetIsAvailable,
                     externalAsset: swapState.externalAsset,
                     onAddressChanged: swapNotifier.updateDestination,
                     onOpenScanner: () =>

@@ -654,6 +654,9 @@ class SwapNotifier extends Notifier<SwapState> {
       final message = _providerFailureMessage(
         SwapFailureOperation.tokenList,
         error,
+        surface: state.payMode
+            ? SwapFailureSurface.pay
+            : SwapFailureSurface.swap,
       );
       if (category == SwapFailureCategory.torBlocked) {
         state = state.copyWith(supportedAssetsError: message);

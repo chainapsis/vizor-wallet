@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/pay/screens/mobile/mobile_pay_screen.dart';
 import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
@@ -233,6 +234,29 @@ class _RefreshFailPayReviewNotifier extends SwapNotifier {
       quoteError: 'Unable to fetch a quote. Try again.',
       clearReview: true,
     );
+  }
+}
+
+const _torBlockedPayMessage =
+    'Pay is unavailable over Tor because the service blocked this '
+    'connection.\nTurn off Tor in Settings to pay.';
+
+class _TorBlockablePayNotifier extends SwapNotifier {
+  @override
+  SwapState build() => const SwapState(
+    direction: SwapDirection.zecToExternal,
+    quoteMode: SwapQuoteMode.exactOutput,
+    amountText: '0.025',
+    receiveAmountText: '10',
+    destinationText: '0x1111111111111111111111111111111111111111',
+    externalAsset: SwapAsset.usdc,
+    reviewVisible: false,
+    intents: [],
+    payMode: true,
+  );
+
+  void blockTokenListOverTor() {
+    state = state.copyWith(supportedAssetsError: _torBlockedPayMessage);
   }
 }
 
@@ -696,5 +720,56 @@ void main() {
     expect(find.text('Unable to fetch a quote. Try again.'), findsOneWidget);
     expect(find.text('Continue'), findsOneWidget);
     expect(find.text('Pay review route'), findsNothing);
+  });
+
+  testWidgets('a Tor-blocked token list closes the recipient CTA', (
+    tester,
+  ) async {
+    await _setMobileViewport(tester, const Size(393, 852));
+    final notifier = _TorBlockablePayNotifier();
+    final router = GoRouter(
+      initialLocation: '/pay',
+      routes: [
+        GoRoute(
+          path: '/pay',
+          builder: (_, _) =>
+              const MobilePayScreen(preservePreparedComposer: true),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(_routedPayApp(router, notifier));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_pay_amount_continue_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(
+              const ValueKey('mobile_pay_recipient_continue_button'),
+            ),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    notifier.blockTokenListOverTor();
+    await tester.pumpAndSettle();
+
+    expect(find.text(_torBlockedPayMessage), findsOneWidget);
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(
+              const ValueKey('mobile_pay_recipient_continue_button'),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
   });
 }
