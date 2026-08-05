@@ -25,8 +25,12 @@ const _migrationStatusPollInterval = Duration(seconds: 15);
 /// (machine sleep — the monotonic clock pauses while asleep) or refresh
 /// activity itself gaps past it with the process awake (wallet locked for a
 /// long stretch). Must stay well above [_migrationStatusPollInterval] so
-/// occlusion alone can never restart the epoch; sweep duration is exempt from
-/// the activity-gap signal, so a slow sweep needs no headroom here.
+/// occlusion alone can never restart the epoch. On macOS and Linux sweep
+/// duration is exempt from the activity-gap signal, so a slow sweep needs no
+/// headroom here; Windows cannot grant that exemption (its monotonic clock
+/// runs through sleep, so a mid-sweep gap is indistinguishable from one), and
+/// a sweep stalled past this threshold there restarts the epoch — re-arming
+/// the on-open allowance rather than risking a missed sleep.
 const kDesktopMigrationEpochSuspensionGap = Duration(minutes: 3);
 const _migrationAdvanceInterval = Duration(
   seconds: String.fromEnvironment('ZCASH_DEFAULT_NETWORK') == 'regtest'
