@@ -94,7 +94,10 @@ void main() {
     expect(find.text('Current'), findsOneWidget);
     // Accounts without seed metadata stay isolated rather than being merged
     // into a misleading family.
-    expect(find.text('Other'), findsNWidgets(2));
+    expect(find.text('Wallet 1'), findsOneWidget);
+    expect(find.text('Wallet 2'), findsOneWidget);
+    expect(find.text('Wallet 3'), findsOneWidget);
+    expect(find.text('Other'), findsNothing);
     expect(find.text('Keystone'), findsNothing);
     final keystoneIcon = tester
         .widgetList<AppIcon>(find.byType(AppIcon))
@@ -161,7 +164,67 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Current'), findsOneWidget);
+    expect(find.text('Wallet 1'), findsOneWidget);
     expect(find.text('Other'), findsNothing);
+  });
+
+  testWidgets('group header edits and applies the family display name', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Primary',
+          order: 0,
+          seedFamilyId: 'shared-seed',
+          accountGroupName: 'Everyday wallet',
+        ),
+        AccountInfo(
+          uuid: 'account-2',
+          name: 'Savings',
+          order: 1,
+          seedFamilyId: 'shared-seed',
+          accountGroupName: 'Everyday wallet',
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    await tester.pumpWidget(
+      _accountsHarness(accountNotifier: () => accountNotifier),
+    );
+    await tester.pump();
+
+    expect(find.text('Everyday wallet'), findsOneWidget);
+    expect(find.text('Current'), findsOneWidget);
+    final editGroupButton = find.byKey(
+      const ValueKey('accounts_edit_group_account-1'),
+    );
+    Focus.of(tester.element(editGroupButton)).requestFocus();
+    await tester.pumpAndSettle();
+
+    final focusRing = tester.widget<AnimatedOpacity>(
+      find.byKey(const ValueKey('accounts_edit_group_focus_ring_account-1')),
+    );
+    expect(focusRing.opacity, 1);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Group name'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'Daily wallet');
+    await tester.pump();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.renamedGroupAnchorUuid, 'account-1');
+    expect(accountNotifier.renamedGroupName, 'Daily wallet');
+    expect(find.text('Daily wallet'), findsOneWidget);
   });
 
   testWidgets(
@@ -196,6 +259,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Current'), findsOneWidget);
+      expect(find.text('Wallet 1'), findsOneWidget);
       expect(find.text('Other'), findsNothing);
       expect(find.text('Add account'), findsOneWidget);
     },
@@ -1517,6 +1581,8 @@ class _FakeAccountNotifier extends AccountNotifier {
   final Object? resetError;
   String? renamedUuid;
   String? renamedName;
+  String? renamedGroupAnchorUuid;
+  String? renamedGroupName;
   String? updatedProfilePictureUuid;
   String? updatedProfilePictureId;
   String? removedUuid;
@@ -1541,6 +1607,29 @@ class _FakeAccountNotifier extends AccountNotifier {
     final updated = [
       for (final account in prev.accounts)
         if (account.uuid == uuid) account.copyWith(name: newName) else account,
+    ];
+    state = AsyncData(prev.copyWith(accounts: updated));
+  }
+
+  @override
+  Future<void> renameAccountGroup(
+    String anchorAccountUuid,
+    String newName,
+  ) async {
+    renamedGroupAnchorUuid = anchorAccountUuid;
+    renamedGroupName = newName;
+    final prev = state.value ?? initialState;
+    final anchor = prev.accounts.firstWhere(
+      (account) => account.uuid == anchorAccountUuid,
+    );
+    final updated = [
+      for (final account in prev.accounts)
+        if (anchor.seedFamilyId == null
+            ? account.uuid == anchor.uuid
+            : account.seedFamilyId == anchor.seedFamilyId)
+          account.copyWith(accountGroupName: newName)
+        else
+          account,
     ];
     state = AsyncData(prev.copyWith(accounts: updated));
   }

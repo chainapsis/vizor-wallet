@@ -29,6 +29,7 @@ import '../../../providers/wallet_mutation_guard.dart';
 import '../../send/models/send_prefill_args.dart';
 import '../../swap/providers/swap_activity_store.dart';
 import '../widgets/account_edit_modal.dart';
+import '../widgets/account_group_edit_modal.dart';
 import '../widgets/account_profile_picture_modal.dart';
 import '../widgets/account_remove_modal.dart';
 
@@ -37,7 +38,7 @@ const _accountsContentWidth = 420.0;
 const _accountsSurfaceWidth = 396.0;
 const _accountsSurfaceVerticalPadding = AppSpacing.md;
 const _accountsSurfaceHorizontalPadding = AppSpacing.sm;
-const _accountsSectionLabelHeight = 24.0;
+const _accountsSectionLabelHeight = 32.0;
 const _accountsRowGap = AppSpacing.xs;
 const _accountsContentHorizontalPadding = AppSpacing.s;
 const _accountsContentVerticalPadding = AppSpacing.sm;
@@ -61,7 +62,7 @@ class AccountsScreen extends ConsumerStatefulWidget {
   ConsumerState<AccountsScreen> createState() => _AccountsScreenState();
 }
 
-enum _AccountModalType { editAccount, profilePicture, removeAccount }
+enum _AccountModalType { editAccount, editGroup, profilePicture, removeAccount }
 
 _AccountModalType? _modalTypeFromInitial(AccountsScreenInitialModal? modal) {
   return switch (modal) {
@@ -75,6 +76,7 @@ _AccountModalType? _modalTypeFromInitial(AccountsScreenInitialModal? modal) {
 
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   late String? _modalAccountUuid;
+  String? _modalFamilyAnchorUuid;
   late _AccountModalType? _activeModal;
   final Set<String> _copyingAddressUuids = {};
   final Set<String> _sendingZecAddressUuids = {};
@@ -100,6 +102,14 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     _showModal(_AccountModalType.editAccount, account);
   }
 
+  void _showEditGroupModal(AccountFamily family) {
+    setState(() {
+      _modalAccountUuid = null;
+      _modalFamilyAnchorUuid = family.anchorAccountUuid;
+      _activeModal = _AccountModalType.editGroup;
+    });
+  }
+
   void _showRemoveAccountModal(AccountInfo account) {
     if (_blockDestructiveWalletChangeIfVotingSubmissionInProgress()) return;
     _showModal(_AccountModalType.removeAccount, account);
@@ -108,6 +118,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   void _showModal(_AccountModalType modal, AccountInfo account) {
     setState(() {
       _modalAccountUuid = account.uuid;
+      _modalFamilyAnchorUuid = null;
       _activeModal = modal;
     });
   }
@@ -115,6 +126,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   void _closeModal() {
     setState(() {
       _modalAccountUuid = null;
+      _modalFamilyAnchorUuid = null;
       _activeModal = null;
       _editDraftName = null;
       _editDraftProfilePictureId = null;
@@ -148,6 +160,14 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     if (draftPicture != null && draftPicture != account.profilePictureId) {
       await notifier.updateProfilePicture(account.uuid, draftPicture);
     }
+    if (!mounted) return;
+    _closeModal();
+  }
+
+  Future<void> _commitEditGroup(AccountFamily family, String name) async {
+    await ref
+        .read(accountProvider.notifier)
+        .renameAccountGroup(family.anchorAccountUuid, name);
     if (!mounted) return;
     _closeModal();
   }
@@ -257,6 +277,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       activeAccount?.uuid,
     );
     final modalAccount = _accountForUuid(accounts, _modalAccountUuid);
+    final modalFamily = _familyForAnchor(
+      accountFamilies,
+      _modalFamilyAnchorUuid,
+    );
     final isLastModalAccount =
         modalAccount != null &&
         accounts.length == 1 &&
@@ -293,13 +317,26 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                   onSelectAccount: _handleAccountSelected,
                   onCopyAddress: _copyAddress,
                   onSendZec: _sendZec,
+                  onEditGroup: _showEditGroupModal,
                   onEditAccount: _showEditAccountModal,
                   onRemoveAccount: _showRemoveAccountModal,
                   initialOpenMenuAccountUuid: widget.initialOpenMenuAccountUuid,
                 ),
               ),
             ),
-            if (modalAccount != null && _activeModal != null)
+            if (modalFamily != null &&
+                _activeModal == _AccountModalType.editGroup)
+              AppPaneModalOverlay(
+                borderRadius: const BorderRadius.all(Radius.circular(20)),
+                onDismiss: _closeModal,
+                child: AccountGroupEditModal(
+                  anchorAccountUuid: modalFamily.anchorAccountUuid,
+                  groupName: modalFamily.name,
+                  onCancel: _closeModal,
+                  onUpdate: (name) => _commitEditGroup(modalFamily, name),
+                ),
+              )
+            else if (modalAccount != null && _activeModal != null)
               AppPaneModalOverlay(
                 borderRadius: const BorderRadius.all(Radius.circular(20)),
                 onDismiss: _closeModal,
@@ -359,6 +396,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                       onProgress: onProgress,
                     ),
                   ),
+                  _AccountModalType.editGroup => const SizedBox.shrink(),
                 },
               ),
           ],
@@ -506,6 +544,17 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     }
     return null;
   }
+
+  static AccountFamily? _familyForAnchor(
+    List<AccountFamily> families,
+    String? anchorAccountUuid,
+  ) {
+    if (anchorAccountUuid == null) return null;
+    for (final family in families) {
+      if (family.anchorAccountUuid == anchorAccountUuid) return family;
+    }
+    return null;
+  }
 }
 
 class _AccountsPane extends StatelessWidget {
@@ -515,6 +564,7 @@ class _AccountsPane extends StatelessWidget {
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
+    required this.onEditGroup,
     required this.onEditAccount,
     required this.onRemoveAccount,
     required this.initialOpenMenuAccountUuid,
@@ -525,6 +575,7 @@ class _AccountsPane extends StatelessWidget {
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
+  final ValueChanged<AccountFamily> onEditGroup;
   final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemoveAccount;
   final String? initialOpenMenuAccountUuid;
@@ -558,6 +609,7 @@ class _AccountsPane extends StatelessWidget {
                 onSelectAccount: onSelectAccount,
                 onCopyAddress: onCopyAddress,
                 onSendZec: onSendZec,
+                onEditGroup: onEditGroup,
                 onEditAccount: onEditAccount,
                 onRemoveAccount: onRemoveAccount,
                 initialOpenMenuAccountUuid: initialOpenMenuAccountUuid,
@@ -686,6 +738,7 @@ class _AccountsList extends StatelessWidget {
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
+    required this.onEditGroup,
     required this.onEditAccount,
     required this.onRemoveAccount,
     required this.initialOpenMenuAccountUuid,
@@ -698,6 +751,7 @@ class _AccountsList extends StatelessWidget {
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
+  final ValueChanged<AccountFamily> onEditGroup;
   final ValueChanged<AccountInfo> onEditAccount;
   final ValueChanged<AccountInfo> onRemoveAccount;
   final String? initialOpenMenuAccountUuid;
@@ -729,9 +783,8 @@ class _AccountsList extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _AccountsSectionLabel(
-                      label: accountFamilies[index].containsActiveAccount
-                          ? 'Current'
-                          : 'Other',
+                      family: accountFamilies[index],
+                      onEdit: () => onEditGroup(accountFamilies[index]),
                     ),
                     const SizedBox(height: _accountsRowGap),
                     _AccountsRows(
@@ -861,22 +914,132 @@ class _AccountsRows extends StatelessWidget {
 }
 
 class _AccountsSectionLabel extends StatelessWidget {
-  const _AccountsSectionLabel({required this.label});
+  const _AccountsSectionLabel({required this.family, required this.onEdit});
 
-  final String label;
+  final AccountFamily family;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: _accountsSectionLabelHeight,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xxs),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            label,
-            style: AppTypography.labelMedium.copyWith(
-              color: context.colors.text.secondary,
+      child: Row(
+        children: [
+          const SizedBox(width: AppSpacing.xxs),
+          Expanded(
+            child: Text(
+              family.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+          ),
+          if (family.containsActiveAccount) ...[
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              'Current',
+              style: AppTypography.labelMedium.copyWith(
+                color: context.colors.text.secondary,
+              ),
+            ),
+          ],
+          const SizedBox(width: AppSpacing.xxs),
+          _AccountGroupEditButton(family: family, onEdit: onEdit),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccountGroupEditButton extends StatefulWidget {
+  const _AccountGroupEditButton({required this.family, required this.onEdit});
+
+  final AccountFamily family;
+  final VoidCallback onEdit;
+
+  @override
+  State<_AccountGroupEditButton> createState() =>
+      _AccountGroupEditButtonState();
+}
+
+class _AccountGroupEditButtonState extends State<_AccountGroupEditButton> {
+  bool _focused = false;
+
+  void _setFocused(bool value) {
+    if (_focused == value) return;
+    setState(() => _focused = value);
+  }
+
+  KeyEventResult _handleEditKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey != LogicalKeyboardKey.enter &&
+        event.logicalKey != LogicalKeyboardKey.numpadEnter &&
+        event.logicalKey != LogicalKeyboardKey.space) {
+      return KeyEventResult.ignored;
+    }
+    widget.onEdit();
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final anchorUuid = widget.family.anchorAccountUuid;
+    return Focus(
+      onFocusChange: _setFocused,
+      onKeyEvent: _handleEditKey,
+      child: Semantics(
+        button: true,
+        label: 'Edit group name for ${widget.family.name}',
+        onTap: widget.onEdit,
+        child: ExcludeSemantics(
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              key: ValueKey('accounts_edit_group_$anchorUuid'),
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onEdit,
+              child: SizedBox(
+                width: 32,
+                height: 32,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned(
+                      left: -2,
+                      top: -2,
+                      right: -2,
+                      bottom: -2,
+                      child: IgnorePointer(
+                        child: AnimatedOpacity(
+                          key: ValueKey(
+                            'accounts_edit_group_focus_ring_$anchorUuid',
+                          ),
+                          duration: const Duration(milliseconds: 120),
+                          curve: Curves.easeOut,
+                          opacity: _focused ? 1 : 0,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: context.colors.state.focusRing,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    AppIcon(
+                      AppIcons.edit,
+                      size: 16,
+                      color: context.colors.icon.muted,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

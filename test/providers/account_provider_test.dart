@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -88,6 +90,89 @@ void main() {
       expect(defaultDeriveSourceAccountUuid(const AccountState()), isNull);
     });
   });
+
+  test(
+    'renameAccountGroup updates and persists every account in the family',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      const accountState = AccountState(
+        accounts: [
+          AccountInfo(
+            uuid: 'account-1',
+            name: 'Primary',
+            order: 0,
+            seedFamilyId: 'seed-a',
+          ),
+          AccountInfo(
+            uuid: 'account-2',
+            name: 'Savings',
+            order: 1,
+            seedFamilyId: 'seed-a',
+          ),
+          AccountInfo(
+            uuid: 'account-3',
+            name: 'Travel',
+            order: 2,
+            seedFamilyId: 'seed-b',
+          ),
+        ],
+        activeAccountUuid: 'account-1',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            AppBootstrapState(
+              initialLocation: '/accounts',
+              initialAccountState: accountState,
+              initialSyncSnapshot: AppSyncSnapshot.empty,
+              network: 'main',
+              rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+              themeMode: ThemeMode.system,
+              privacyModeEnabled: false,
+              isPasswordConfigured: true,
+              isUnlocked: true,
+              passwordRotationRecoveryFailed: false,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await container
+          .read(accountProvider.notifier)
+          .renameAccountGroup('account-1', '  Everyday wallet  ');
+
+      final accounts = container.read(accountProvider).requireValue.accounts;
+      expect(accounts[0].accountGroupName, 'Everyday wallet');
+      expect(accounts[1].accountGroupName, 'Everyday wallet');
+      expect(accounts[2].accountGroupName, isNull);
+
+      final raw = await const FlutterSecureStorage().read(
+        key: 'zcash_accounts',
+      );
+      final stored = (jsonDecode(raw!) as List).cast<Map<String, dynamic>>();
+      expect(stored[0]['accountGroupName'], 'Everyday wallet');
+      expect(stored[1]['accountGroupName'], 'Everyday wallet');
+      expect(stored[2]['accountGroupName'], isNull);
+
+      final inheritedName = existingAccountGroupNameForSeedFamily(
+        accounts,
+        'seed-a',
+      );
+      final replacement = AccountInfo(
+        uuid: 'account-4',
+        name: 'Later import',
+        order: 3,
+        seedFamilyId: 'seed-a',
+        accountGroupName: inheritedName,
+      );
+      expect(
+        groupAccountsBySeedFamily([replacement], replacement.uuid).single.name,
+        'Everyday wallet',
+      );
+    },
+  );
 
   test('wallet link duplicate import errors are recognized', () {
     expect(

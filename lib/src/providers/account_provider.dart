@@ -187,6 +187,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         order: accounts.length,
         isSeedAnchor: accounts.isEmpty,
         seedFamilyId: seedFamilyId,
+        accountGroupName: existingAccountGroupNameForSeedFamily(
+          accounts,
+          seedFamilyId,
+        ),
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -283,6 +287,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         isSeedAnchor: accounts.isEmpty,
         profilePictureId: normalizedProfilePictureId,
         seedFamilyId: seedFamilyId,
+        accountGroupName: existingAccountGroupNameForSeedFamily(
+          accounts,
+          seedFamilyId,
+        ),
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -327,6 +335,14 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       log('deriveAccountFromExistingSeed: birthday=$birthday');
 
       final accounts = state.value?.accounts ?? [];
+      final sourceAccount = accounts.firstWhere(
+        (account) => account.uuid == sourceAccountUuid,
+        orElse: () => throw ArgumentError.value(
+          sourceAccountUuid,
+          'sourceAccountUuid',
+          'Unknown account UUID',
+        ),
+      );
       final accountName = normalizeAccountName(
         name ?? 'Account ${accounts.length + 1}',
       );
@@ -364,6 +380,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         isSeedAnchor: result.isSeedAnchor,
         profilePictureId: normalizedProfilePictureId,
         seedFamilyId: result.seedFamilyId,
+        accountGroupName: sourceAccount.accountGroupName,
       );
       final updatedAccounts = [
         for (final account in accounts)
@@ -454,6 +471,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             order: accounts.length + i,
             isSeedAnchor: result.accounts[i].isSeedAnchor,
             seedFamilyId: result.accounts[i].seedFamilyId,
+            accountGroupName: existingAccountGroupNameForSeedFamily(
+              accounts,
+              result.accounts[i].seedFamilyId,
+            ),
           ),
       ];
       final updatedAccounts = [...accounts, ...importedAccounts];
@@ -591,6 +612,44 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     await _saveAccounts(updated);
     state = AsyncData(prev.copyWith(accounts: updated));
     log('renameAccount: $uuid → $normalizedName');
+  }
+
+  /// Rename the seed family containing [anchorAccountUuid].
+  ///
+  /// Accounts without seed-family metadata are intentionally treated as a
+  /// one-account family, matching how the Accounts UI groups legacy and
+  /// hardware records.
+  Future<void> renameAccountGroup(
+    String anchorAccountUuid,
+    String newName,
+  ) async {
+    validateAccountName(newName);
+    final normalizedName = normalizeAccountName(newName);
+    final prev = state.value ?? const AccountState();
+    final anchorIndex = prev.accounts.indexWhere(
+      (account) => account.uuid == anchorAccountUuid,
+    );
+    if (anchorIndex < 0) {
+      throw ArgumentError.value(
+        anchorAccountUuid,
+        'anchorAccountUuid',
+        'Unknown account UUID',
+      );
+    }
+    final anchor = prev.accounts[anchorIndex];
+    final seedFamilyId = _normalizedOptionalString(anchor.seedFamilyId);
+    final updated = [
+      for (final account in prev.accounts)
+        if (seedFamilyId == null
+            ? account.uuid == anchor.uuid
+            : _normalizedOptionalString(account.seedFamilyId) == seedFamilyId)
+          account.copyWith(accountGroupName: normalizedName)
+        else
+          account,
+    ];
+    await _saveAccounts(updated);
+    state = AsyncData(prev.copyWith(accounts: updated));
+    log('renameAccountGroup: $anchorAccountUuid → $normalizedName');
   }
 
   /// Update an account profile picture.
@@ -1044,6 +1103,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         order: prev.accounts.length,
         isHardware: true,
         seedFamilyId: result.seedFamilyId,
+        accountGroupName: existingAccountGroupNameForSeedFamily(
+          prev.accounts,
+          result.seedFamilyId,
+        ),
       );
       final updated = [...prev.accounts, newAccount];
       await _saveAccounts(updated);
@@ -1166,6 +1229,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               input.sourceAccountUuid,
             ),
             seedFamilyId: seedFamilyId,
+            accountGroupName: existingAccountGroupNameForSeedFamily([
+              ...prev.accounts,
+              ...importedAccounts,
+            ], seedFamilyId),
           ),
         );
         nextOrder += 1;
@@ -1418,6 +1485,24 @@ bool isWalletLinkDuplicateImportError(Object error) {
 String? _normalizedOptionalString(String? value) {
   final normalized = value?.trim();
   return normalized == null || normalized.isEmpty ? null : normalized;
+}
+
+@visibleForTesting
+String? existingAccountGroupNameForSeedFamily(
+  List<AccountInfo> accounts,
+  String? seedFamilyId,
+) {
+  final normalizedSeedFamilyId = _normalizedOptionalString(seedFamilyId);
+  if (normalizedSeedFamilyId == null) return null;
+  for (final account in accounts) {
+    if (_normalizedOptionalString(account.seedFamilyId) !=
+        normalizedSeedFamilyId) {
+      continue;
+    }
+    final groupName = _normalizedOptionalString(account.accountGroupName);
+    if (groupName != null) return groupName;
+  }
+  return null;
 }
 
 String _normalizedExceptionMessage(Object error) {

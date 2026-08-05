@@ -4179,6 +4179,30 @@ class _PreviewAccountNotifier extends AccountNotifier {
   }
 
   @override
+  Future<void> renameAccountGroup(
+    String anchorAccountUuid,
+    String newName,
+  ) async {
+    final prev = state.value ?? initialState;
+    final anchor = prev.accounts.firstWhere(
+      (account) => account.uuid == anchorAccountUuid,
+    );
+    state = AsyncData(
+      prev.copyWith(
+        accounts: [
+          for (final account in prev.accounts)
+            if (anchor.seedFamilyId == null
+                ? account.uuid == anchor.uuid
+                : account.seedFamilyId == anchor.seedFamilyId)
+              account.copyWith(accountGroupName: newName)
+            else
+              account,
+        ],
+      ),
+    );
+  }
+
+  @override
   Future<void> updateProfilePicture(
     String uuid,
     String profilePictureId,

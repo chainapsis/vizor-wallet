@@ -35,6 +35,7 @@ AccountInfo _account(
   bool isSeedAnchor = false,
   bool isHardware = false,
   String? seedFamilyId,
+  String? accountGroupName,
 }) => AccountInfo(
   uuid: uuid,
   name: name,
@@ -43,6 +44,7 @@ AccountInfo _account(
   isSeedAnchor: isSeedAnchor,
   isHardware: isHardware,
   seedFamilyId: seedFamilyId,
+  accountGroupName: accountGroupName,
 );
 
 AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
@@ -145,6 +147,8 @@ class _FakeAccountNotifier extends AccountNotifier {
   final AccountState initialState;
   var resetCount = 0;
   String? removedUuid;
+  String? renamedGroupAnchorUuid;
+  String? renamedGroupName;
 
   @override
   FutureOr<AccountState> build() => initialState;
@@ -168,6 +172,29 @@ class _FakeAccountNotifier extends AccountNotifier {
             : previous.activeAddress,
       ),
     );
+  }
+
+  @override
+  Future<void> renameAccountGroup(
+    String anchorAccountUuid,
+    String newName,
+  ) async {
+    renamedGroupAnchorUuid = anchorAccountUuid;
+    renamedGroupName = newName;
+    final previous = state.value ?? initialState;
+    final anchor = previous.accounts.firstWhere(
+      (account) => account.uuid == anchorAccountUuid,
+    );
+    final updated = [
+      for (final account in previous.accounts)
+        if (anchor.seedFamilyId == null
+            ? account.uuid == anchor.uuid
+            : account.seedFamilyId == anchor.seedFamilyId)
+          account.copyWith(accountGroupName: newName)
+        else
+          account,
+    ];
+    state = AsyncData(previous.copyWith(accounts: updated));
   }
 
   @override
@@ -272,8 +299,9 @@ void main() {
       ..devicePixelRatio = 1.0;
   });
 
-  testWidgets('groups the active account under Current and the rest under '
-      'Other', (tester) async {
+  testWidgets('names account groups and marks the active family as current', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _app(
         AccountState(
@@ -288,7 +316,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('Current'), findsOneWidget);
-    expect(find.text('Other'), findsOneWidget);
+    expect(find.text('Wallet 1'), findsOneWidget);
+    expect(find.text('Wallet 2'), findsOneWidget);
+    expect(find.text('Other'), findsNothing);
     expect(find.text('Knight'), findsOneWidget);
     expect(find.text('Viking'), findsOneWidget);
     final title = tester.widget<Text>(find.text('Accounts'));
@@ -359,7 +389,58 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Current'), findsOneWidget);
+    expect(find.text('Wallet 1'), findsOneWidget);
     expect(find.text('Other'), findsNothing);
+  });
+
+  testWidgets('mobile group header edits and applies the family display name', (
+    tester,
+  ) async {
+    final accountState = AccountState(
+      accounts: [
+        _account(
+          'a',
+          'Knight',
+          isSeedAnchor: true,
+          seedFamilyId: 'shared-seed',
+          accountGroupName: 'Everyday wallet',
+        ),
+        _account(
+          'b',
+          'Viking',
+          seedFamilyId: 'shared-seed',
+          accountGroupName: 'Everyday wallet',
+        ),
+      ],
+      activeAccountUuid: 'a',
+    );
+    final accountNotifier = _FakeAccountNotifier(accountState);
+    await tester.pumpWidget(
+      _app(accountState, accountNotifier: () => accountNotifier),
+    );
+    await tester.pump();
+
+    expect(find.text('Everyday wallet'), findsOneWidget);
+    expect(find.text('Current'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_accounts_edit_group_a')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Group name'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('mobile_account_group_edit_name')),
+      'Daily wallet',
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_account_group_edit_save')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(accountNotifier.renamedGroupAnchorUuid, 'a');
+    expect(accountNotifier.renamedGroupName, 'Daily wallet');
+    expect(find.text('Daily wallet'), findsOneWidget);
   });
 
   testWidgets('imported accounts and seed anchors offer removal', (
@@ -576,11 +657,7 @@ void main() {
           accounts: [
             _account('a', 'Knight', isSeedAnchor: true),
             for (var i = 0; i < 12; i++)
-              _account(
-                'other-$i',
-                'Other $i',
-                seedFamilyId: 'other-family',
-              ),
+              _account('other-$i', 'Other $i', seedFamilyId: 'other-family'),
           ],
           activeAccountUuid: 'a',
         ),

@@ -9,6 +9,7 @@ class AccountInfo {
   final String profilePictureId;
   final String? walletLinkSourceAccountUuid;
   final String? seedFamilyId;
+  final String? accountGroupName;
 
   const AccountInfo({
     required this.uuid,
@@ -19,6 +20,7 @@ class AccountInfo {
     this.profilePictureId = kDefaultProfilePictureId,
     this.walletLinkSourceAccountUuid,
     this.seedFamilyId,
+    this.accountGroupName,
   });
 
   AccountInfo copyWith({
@@ -28,6 +30,7 @@ class AccountInfo {
     String? profilePictureId,
     String? walletLinkSourceAccountUuid,
     String? seedFamilyId,
+    String? accountGroupName,
   }) => AccountInfo(
     uuid: uuid,
     name: name ?? this.name,
@@ -38,6 +41,7 @@ class AccountInfo {
     walletLinkSourceAccountUuid:
         walletLinkSourceAccountUuid ?? this.walletLinkSourceAccountUuid,
     seedFamilyId: seedFamilyId ?? this.seedFamilyId,
+    accountGroupName: accountGroupName ?? this.accountGroupName,
   );
 
   Map<String, dynamic> toJson() => {
@@ -49,6 +53,7 @@ class AccountInfo {
     'profilePictureId': profilePictureId,
     'walletLinkSourceAccountUuid': walletLinkSourceAccountUuid,
     'seedFamilyId': seedFamilyId,
+    'accountGroupName': accountGroupName,
   };
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
@@ -70,6 +75,7 @@ class AccountInfo {
       json['walletLinkSourceAccountUuid'],
     ),
     seedFamilyId: _normalizedOptionalString(json['seedFamilyId']),
+    accountGroupName: _normalizedOptionalString(json['accountGroupName']),
   );
 }
 
@@ -80,11 +86,13 @@ class AccountInfo {
 class AccountFamily {
   const AccountFamily({
     required this.anchorAccountUuid,
+    required this.name,
     required this.accounts,
     required this.containsActiveAccount,
   });
 
   final String anchorAccountUuid;
+  final String name;
   final List<AccountInfo> accounts;
   final bool containsActiveAccount;
 }
@@ -125,6 +133,7 @@ List<AccountFamily> groupAccountsBySeedFamily(
     families.add(
       AccountFamily(
         anchorAccountUuid: familyAccounts.first.uuid,
+        name: _accountFamilyName(familyAccounts, families.length + 1),
         accounts: displayAccounts,
         containsActiveAccount: containsActive,
       ),
@@ -139,6 +148,14 @@ List<AccountFamily> groupAccountsBySeedFamily(
     families.insert(0, activeFamily);
   }
   return families;
+}
+
+String _accountFamilyName(List<AccountInfo> accounts, int familyNumber) {
+  for (final account in accounts) {
+    final customName = _normalizedOptionalString(account.accountGroupName);
+    if (customName != null) return customName;
+  }
+  return 'Wallet $familyNumber';
 }
 
 String? _normalizedOptionalString(Object? value) {

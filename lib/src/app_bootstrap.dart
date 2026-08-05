@@ -428,6 +428,7 @@ AccountInfo mergeBootstrappedAccountInfo({
     ),
     walletLinkSourceAccountUuid: storedAccount?.walletLinkSourceAccountUuid,
     seedFamilyId: rustAccount.seedFamilyId,
+    accountGroupName: storedAccount?.accountGroupName,
   );
 }
 

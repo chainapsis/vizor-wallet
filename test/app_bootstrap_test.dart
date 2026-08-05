@@ -43,6 +43,7 @@ void main() {
       isSeedAnchor: false,
       profilePictureId: 'pfp-04',
       walletLinkSourceAccountUuid: 'desktop-account-1',
+      accountGroupName: 'Everyday wallet',
     );
 
     final merged = mergeBootstrappedAccountInfo(
@@ -58,6 +59,7 @@ void main() {
     expect(merged.isSeedAnchor, isTrue);
     expect(merged.profilePictureId, 'pfp-04');
     expect(merged.walletLinkSourceAccountUuid, 'desktop-account-1');
+    expect(merged.accountGroupName, 'Everyday wallet');
   });
 
   test(

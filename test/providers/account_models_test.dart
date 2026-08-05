@@ -49,17 +49,19 @@ void main() {
     expect(account.isSeedAnchor, isFalse);
   });
 
-  test('AccountInfo round-trips seed family metadata', () {
+  test('AccountInfo round-trips seed family and display-name metadata', () {
     const account = AccountInfo(
       uuid: 'account-1',
       name: 'Primary Vault',
       order: 0,
       seedFamilyId: 'a1b2c3d4',
+      accountGroupName: 'Everyday wallet',
     );
 
     final restored = AccountInfo.fromJson(account.toJson());
 
     expect(restored.seedFamilyId, 'a1b2c3d4');
+    expect(restored.accountGroupName, 'Everyday wallet');
   });
 
   test(
@@ -80,6 +82,31 @@ void main() {
         'a',
       ]);
       expect(families.last.accounts.single.uuid, 'c');
+      expect(families.first.name, 'Wallet 1');
+      expect(families.last.name, 'Wallet 2');
+    },
+  );
+
+  test(
+    'group names stay tied to creation order when another family is active',
+    () {
+      const accounts = [
+        AccountInfo(uuid: 'a', name: 'First', order: 0, seedFamilyId: 'one'),
+        AccountInfo(
+          uuid: 'b',
+          name: 'Second',
+          order: 1,
+          seedFamilyId: 'two',
+          accountGroupName: 'Savings wallet',
+        ),
+      ];
+
+      final families = groupAccountsBySeedFamily(accounts, 'b');
+
+      expect(families.first.anchorAccountUuid, 'b');
+      expect(families.first.name, 'Savings wallet');
+      expect(families.last.anchorAccountUuid, 'a');
+      expect(families.last.name, 'Wallet 1');
     },
   );
 
