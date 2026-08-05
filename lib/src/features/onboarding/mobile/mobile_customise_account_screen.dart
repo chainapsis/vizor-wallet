@@ -153,11 +153,17 @@ class _MobileCustomiseAccountScreenState
 
     Future<void> createAccount() => runWithSyncPausedForAccountMutation(
       ref,
-      () => accountNotifier.createAccountFromMnemonic(
-        mnemonic: args.mnemonic,
-        name: _normalizedName,
-        profilePictureId: _profilePictureId,
-      ),
+      () => args.isDeriveFlow
+          ? accountNotifier.deriveAccountFromExistingSeed(
+              sourceAccountUuid: args.deriveFromAccountUuid!,
+              name: _normalizedName,
+              profilePictureId: _profilePictureId,
+            )
+          : accountNotifier.createAccountFromMnemonic(
+              mnemonic: args.mnemonic,
+              name: _normalizedName,
+              profilePictureId: _profilePictureId,
+            ),
       onStoppingSync: () {
         if (mounted) {
           setState(() => _submitPhase = _SubmitPhase.stoppingSync);
