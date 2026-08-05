@@ -32,6 +32,36 @@ void main() {
     expect(service.checkCalls, 2);
   });
 
+  test('a startup failure reported through polling is retryable', () async {
+    // The native check runs detached: the initial call reports 'checking' and
+    // the failure only appears in a later polled snapshot.
+    final service = _FakeWindowsUpdateService(
+      checkResult: _snapshot(status: 'checking'),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => false),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+      ],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(windowsUpdateProvider.notifier);
+
+    await notifier.runStartupCheck();
+    expect(service.checkCalls, 1);
+
+    service.stateResult = _snapshot(status: 'failed');
+    await notifier.refresh();
+
+    final state = container.read(windowsUpdateProvider);
+    expect(state.status, WindowsUpdateStatus.failed);
+    expect(state.failure?.userInitiated, isFalse);
+
+    // Route recovery re-runs checkOnStartup; the spent flag must not block it.
+    await notifier.runStartupCheck();
+    expect(service.checkCalls, 2);
+  });
+
   test('download preserves the native Windows update failure detail', () async {
     final service = _FakeWindowsUpdateService(
       downloadResult: _snapshot(
@@ -343,7 +373,7 @@ class _FakeWindowsUpdateService extends WindowsUpdateService {
     this.applyError,
   });
 
-  final WindowsUpdateSnapshot? stateResult;
+  WindowsUpdateSnapshot? stateResult;
   final WindowsUpdateSnapshot? checkResult;
   final WindowsUpdateSnapshot? downloadResult;
   final Object? downloadError;

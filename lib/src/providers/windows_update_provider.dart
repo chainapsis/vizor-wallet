@@ -287,9 +287,15 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   Future<void> _updateFrom(Future<WindowsUpdateSnapshot> action) async {
     final snapshot = await action;
     final next = WindowsUpdateState.fromSnapshot(snapshot);
-    state = next.status == WindowsUpdateStatus.failed
-        ? WindowsUpdateState.fromSnapshot(snapshot, failure: _nextFailure())
-        : next;
+    if (next.status != WindowsUpdateStatus.failed) {
+      state = next;
+      return;
+    }
+    state = WindowsUpdateState.fromSnapshot(snapshot, failure: _nextFailure());
+    // The native check runs detached and can report its failure through a
+    // later polled snapshot rather than by throwing, so the startup check has
+    // to be re-armed here too or route recovery can never retry it.
+    if (!_userInitiatedOperation) _startupCheckStarted = false;
   }
 
   WindowsUpdateFailure _nextFailure() => WindowsUpdateFailure(
