@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../navigation/app_back_resolver.dart';
@@ -27,7 +28,14 @@ class AppBackLink extends StatefulWidget {
 }
 
 class _AppBackLinkState extends State<AppBackLink> {
+  static const _activationShortcuts = <ShortcutActivator, Intent>{
+    SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+    SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+    SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+  };
+
   bool _hovered = false;
+  bool _focused = false;
 
   static const _labelStyle = TextStyle(
     fontFamily: 'Geist',
@@ -45,43 +53,64 @@ class _AppBackLinkState extends State<AppBackLink> {
     return Semantics(
       button: true,
       label: widget.semanticsLabel ?? 'Back to ${widget.label}',
+      onTap: _activate,
       child: ExcludeSemantics(
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onEnter: (_) => _setHovered(true),
-          onExit: (_) => _setHovered(false),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => unawaited(Future<void>.value(widget.onTap())),
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 120),
-              opacity: _hovered ? 0.75 : 1,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: widget.minWidth),
-                child: SizedBox(
-                  height: AppBackLink.height,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(AppRadii.full),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.s,
+        child: FocusableActionDetector(
+          mouseCursor: SystemMouseCursors.click,
+          onShowFocusHighlight: _setFocused,
+          shortcuts: _activationShortcuts,
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<Intent>(
+              onInvoke: (_) {
+                _activate();
+                return null;
+              },
+            ),
+          },
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => _setHovered(true),
+            onExit: (_) => _setHovered(false),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _activate,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 120),
+                opacity: _hovered ? 0.75 : 1,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: widget.minWidth),
+                  child: SizedBox(
+                    height: AppBackLink.height,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(AppRadii.full),
+                        border: _focused
+                            ? Border.all(
+                                color: colors.state.focusRing,
+                                width: 2,
+                                strokeAlign: BorderSide.strokeAlignOutside,
+                              )
+                            : null,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AppIcon(
-                            AppIcons.chevronBackward,
-                            size: 16,
-                            color: contentColor,
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                          Text(
-                            widget.label,
-                            style: _labelStyle.copyWith(color: contentColor),
-                          ),
-                        ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AppIcon(
+                              AppIcons.chevronBackward,
+                              size: 16,
+                              color: contentColor,
+                            ),
+                            const SizedBox(width: AppSpacing.xxs),
+                            Text(
+                              widget.label,
+                              style: _labelStyle.copyWith(color: contentColor),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -94,10 +123,19 @@ class _AppBackLinkState extends State<AppBackLink> {
     );
   }
 
+  void _activate() => unawaited(Future<void>.value(widget.onTap()));
+
   void _setHovered(bool hovered) {
     if (_hovered == hovered) return;
     setState(() {
       _hovered = hovered;
+    });
+  }
+
+  void _setFocused(bool focused) {
+    if (_focused == focused) return;
+    setState(() {
+      _focused = focused;
     });
   }
 }
