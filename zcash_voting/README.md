@@ -193,11 +193,13 @@ This release line requires Rust 1.88 or newer.
   with `unstable-voting-circuits` enabled for the governance proof paths.
 - **`voting-circuits 0.9.0-rc.3`** from [valargroup/voting-circuits](https://github.com/valargroup/voting-circuits)
   for the delegation and vote proof circuits.
-- **`vote-commitment-tree 0.3`** and **`vote-commitment-tree-client 0.5`** for
-  vote commitment tree state and optional HTTP sync.
-- **`pczt`, `zcash_client_backend`, `zcash_client_sqlite`, `zcash_keys`,
-  `zcash_primitives`, and `zcash_protocol`** from the pinned librustzcash
-  revision for the Zcash protocol, wallet, PCZT, and storage dependencies.
+- **`vote-commitment-tree 0.4.0-rc.1`** and
+  **`vote-commitment-tree-client 0.6.0-rc.1`** for vote commitment tree state
+  and optional HTTP sync.
+- **`pczt 0.9.2`, `zcash_client_backend 0.24.0-rc.7`,
+  `zcash_client_sqlite 0.22.0-rc.7`, `zcash_keys 0.16.1`,
+  `zcash_primitives 0.30.0`, and `zcash_protocol 0.10.4`** from published
+  librustzcash releases.
 
 ## Migrating from 0.10
 

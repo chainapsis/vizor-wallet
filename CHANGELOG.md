@@ -6,12 +6,30 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 # Unreleased
 
+## v2.0.0-rc.3
+
 ### Changed
 - `NoteInfo::from_orchard_note` now rejects non-Ironwood/V3 notes with
   `VotingError::InvalidInput`. Voting is Ironwood-only, but `NoteInfo` does not
   carry the note version, so an Orchard/V2 note previously passed ingestion and
   bundling and failed only during proof construction — after the governance PCZT
   had been built and signed.
+- Updated the published librustzcash dependency requirements to `pczt 0.9.2`,
+  `zcash_client_backend 0.24.0-rc.7`, `zcash_client_sqlite 0.22.0-rc.7`,
+  `zcash_keys 0.16.1`, and `zcash_protocol 0.10.4`. Orchard remains on the
+  compatible `0.15` line so downstream workspaces select their own patch release.
+- Updated the real delegation proof fixture to use Ironwood/V3 notes and run the
+  ignored Halo2 proof tests under the release profile in CI.
+
+## v2.0.0-rc.2
+
+### Changed
+- Published the retained-checkpoint vote tree on `shardtree 0.7` as
+  `vote-commitment-tree 0.4.0-rc.1`, with the aligned
+  `vote-commitment-tree-client 0.6.0-rc.1` release.
+- Updated the librustzcash dependency family to published
+  `zcash_client_backend 0.24.0-rc.4`, `zcash_client_sqlite 0.22.0-rc.4`, and
+  `pczt 0.9.1`.
 
 ## v2.0.0-rc.1
 
