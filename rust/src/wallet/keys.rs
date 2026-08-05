@@ -292,7 +292,14 @@ pub fn begin_software_account_derivation_lease(
 }
 
 /// Re-acquire a crashed operation only when Dart presents the token stored in
-/// its matching durable fence. A fresh token replaces the old one atomically.
+/// its matching durable fence.
+///
+/// The token is a stable, durable operation identifier; it is deliberately
+/// not a per-process lease credential. The exclusively held OS lock is the
+/// process ownership credential. Keeping the identifier unchanged is what
+/// makes a crash after this function commits recoverable: the native pending
+/// record and the Dart fence continue to authenticate one another without a
+/// second, non-atomic cross-store token update.
 pub fn resume_software_account_derivation_lease(
     db_path: &str,
     previous_operation_token: &str,
@@ -327,16 +334,6 @@ pub fn resume_software_account_derivation_lease(
         .ok_or_else(|| {
             "The native derivation recovery record cannot authenticate this fence.".to_string()
         })?;
-    let token = if record.is_pending {
-        let token = uuid::Uuid::new_v4().to_string();
-        transaction.execute(
-            &format!("UPDATE {PENDING_DERIVATION_TABLE} SET operation_token = ?1 WHERE singleton = 1"),
-            rusqlite::params![token],
-        ).map_err(|error| format!("Failed to claim derivation recovery record: {error}"))?;
-        token
-    } else {
-        previous_operation_token.to_string()
-    };
     transaction
         .commit()
         .map_err(|error| format!("Failed to commit derivation recovery record: {error}"))?;
@@ -344,7 +341,7 @@ pub fn resume_software_account_derivation_lease(
         .lock()
         .expect("software derivation lease mutex poisoned")
         .insert(
-            token.clone(),
+            previous_operation_token.to_string(),
             SoftwareAccountDerivationLease {
                 db_path: db_path.to_string(),
                 _source_account_uuid: record.source_account_uuid.clone(),
@@ -352,7 +349,7 @@ pub fn resume_software_account_derivation_lease(
             },
         );
     Ok(SoftwareAccountDerivationLeaseInfo {
-        operation_token: token,
+        operation_token: previous_operation_token.to_string(),
         source_account_uuid: record.source_account_uuid,
         baseline_account_uuids: record.baseline_account_uuids,
         is_pending: record.is_pending,
@@ -3439,5 +3436,44 @@ mod tests {
             1,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn crash_restart_resume_keeps_the_durable_derivation_token() {
+        // Releasing the held OS lock while retaining the SQLite record models
+        // process death. Repeat the crash at the exact old rotation window:
+        // immediately after native resume has committed but before Dart can
+        // touch its durable fence. Every restart must still authenticate the
+        // original persisted token.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
+                .unwrap();
+        let token = begin_software_account_derivation_lease(db_path, &source_uuid)
+            .unwrap()
+            .operation_token;
+        finish_software_account_derivation_lease(&token).unwrap();
+
+        for restart in 1..=2 {
+            let resumed = resume_software_account_derivation_lease(db_path, &token).unwrap();
+            assert_eq!(
+                resumed.operation_token, token,
+                "restart {restart} must preserve the Dart fence token"
+            );
+            assert!(resumed.is_pending);
+            // A process crash releases this lock without resolving the record.
+            finish_software_account_derivation_lease(&resumed.operation_token).unwrap();
+        }
+
+        let recovered = resume_software_account_derivation_lease(db_path, &token).unwrap();
+        resolve_software_account_derivation_lease(&recovered.operation_token, None).unwrap();
+        finish_software_account_derivation_lease(&recovered.operation_token).unwrap();
+        let next = begin_software_account_derivation_lease(db_path, &source_uuid)
+            .expect("a recovered record must no longer block a new operation");
+        resolve_software_account_derivation_lease(&next.operation_token, None).unwrap();
+        finish_software_account_derivation_lease(&next.operation_token).unwrap();
     }
 }

@@ -628,8 +628,9 @@ pub fn begin_software_account_derivation_lease(
     })
 }
 
-/// Reclaim a crash-left pending record only with the opaque token from its
-/// matching versioned Dart fence.
+/// Reclaim a crash-left pending record only with the stable opaque operation
+/// token from its matching versioned Dart fence. The held OS lock, not this
+/// durable identifier, establishes process ownership.
 pub fn resume_software_account_derivation_lease(
     db_path: String,
     previous_operation_token: String,

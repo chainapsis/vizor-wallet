@@ -496,6 +496,48 @@ void main() {
     );
 
     test(
+      'restart-shaped recovery keeps the durable v2 fence token after native resume',
+      () async {
+        final rawFence = _recoveryFenceJson(sourceAccountUuid: source.uuid);
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          rawFence,
+        );
+
+        // Each iteration models a crash immediately after native resume: the
+        // OS lock is released but neither the durable Dart fence nor native
+        // pending record is resolved. They must retain one shared token.
+        for (var restart = 1; restart <= 2; restart++) {
+          final resumed = await rust
+              .crateApiWalletResumeSoftwareAccountDerivationLease(
+                dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+                previousOperationToken: 'recovery-token',
+              );
+          expect(
+            resumed.operationToken,
+            'recovery-token',
+            reason: 'restart $restart must not rotate the persisted token',
+          );
+          await rust.crateApiWalletFinishSoftwareAccountDerivationLease(
+            operationToken: resumed.operationToken,
+          );
+          expect(storage.values['zcash_derived_account_recovery'], rawFence);
+        }
+
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await container
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+
+        expect(rust.allocatedIndices, [1]);
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+      },
+    );
+
+    test(
       'fails closed when a pending fence sees a foreign seed-family delta',
       () async {
         const foreign = AccountInfo(
@@ -1282,9 +1324,10 @@ class _DerivationRustApiFake implements RustLibApi {
       throw StateError('native derivation recovery record cannot authenticate');
     }
     final pending = _persistentLeaseIsPending;
-    final token = pending ? 'lease-${++_nextLease}' : previousOperationToken;
-    _persistentLeaseToken = token;
-    _persistentLeaseIsPending = pending;
+    // The SQLite-backed token identifies the durable operation across process
+    // crashes. Reacquiring the OS lease must not rotate it because Dart's
+    // fence lives in a different durable store.
+    final token = previousOperationToken;
     _activeLeaseToken = token;
     return rust_wallet.SoftwareAccountDerivationLease(
       operationToken: token,

@@ -431,15 +431,15 @@ fn same_seed_hd_accounts_keep_balances_isolated_per_account() {
         REGTEST_NETWORK.into(),
         path_str(&main_db),
         "Secondary".into(),
-        derivation_lease.clone(),
+        derivation_lease.operation_token.clone(),
     )
     .expect("derive_next_software_account");
     wallet_api::resolve_software_account_derivation_lease(
-        derivation_lease.clone(),
+        derivation_lease.operation_token.clone(),
         Some(second_account.account_uuid.clone()),
     )
     .expect("resolve derivation lease");
-    wallet_api::finish_software_account_derivation_lease(derivation_lease)
+    wallet_api::finish_software_account_derivation_lease(derivation_lease.operation_token)
         .expect("finish derivation lease");
     assert_eq!(
         second_account.zip32_account_index, 1,
