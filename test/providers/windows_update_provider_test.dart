@@ -139,6 +139,101 @@ void main() {
     },
   );
 
+  test('download maps an unexpected failure to update copy', () async {
+    final service = _FakeWindowsUpdateService(
+      downloadError: StateError(
+        'SocketException: connection refused (127.0.0.1:9150)',
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => false),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+        windowsUpdateProvider.overrideWith(_AvailableWindowsUpdateNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final result = await container
+        .read(windowsUpdateProvider.notifier)
+        .downloadUpdate();
+
+    expect(result.started, isFalse);
+    expect(result.message, kWindowsUpdateGenericFailureMessage);
+    expect(
+      container.read(windowsUpdateProvider).message,
+      kWindowsUpdateGenericFailureMessage,
+    );
+  });
+
+  test('download keeps a native failure message from the updater', () async {
+    final service = _FakeWindowsUpdateService(
+      downloadError: PlatformException(
+        code: 'update_failed',
+        message: 'Signed feed verification failed.',
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => false),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+        windowsUpdateProvider.overrideWith(_AvailableWindowsUpdateNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final result = await container
+        .read(windowsUpdateProvider.notifier)
+        .downloadUpdate();
+
+    expect(result.message, 'Signed feed verification failed.');
+  });
+
+  test('check reports the blocked Tor update route', () async {
+    final service = _FakeWindowsUpdateService(
+      stateResult: _snapshot(status: 'available', torProxyReady: false),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => true),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+        windowsUpdateProvider.overrideWith(_AvailableWindowsUpdateNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(windowsUpdateProvider.notifier).checkForUpdates();
+
+    final state = container.read(windowsUpdateProvider);
+    expect(state.status, WindowsUpdateStatus.failed);
+    expect(state.message, kWindowsTorUpdateRouteUnavailableMessage);
+    expect(state.canCheck, isTrue);
+    expect(service.checkCalls, 0);
+  });
+
+  test('check runs once the Tor updater proxy is ready', () async {
+    final service = _FakeWindowsUpdateService(
+      stateResult: _snapshot(status: 'available', torProxyReady: true),
+      checkResult: _snapshot(status: 'noUpdate', torProxyReady: true),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => true),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+        windowsUpdateProvider.overrideWith(_AvailableWindowsUpdateNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(windowsUpdateProvider.notifier).checkForUpdates();
+
+    expect(
+      container.read(windowsUpdateProvider).status,
+      WindowsUpdateStatus.noUpdate,
+    );
+    expect(service.checkCalls, 1);
+  });
+
   test(
     'download reads the current Tor route after switching to direct',
     () async {
@@ -214,6 +309,7 @@ class _ReadyWindowsUpdateNotifier extends WindowsUpdateNotifier {
 class _FakeWindowsUpdateService extends WindowsUpdateService {
   _FakeWindowsUpdateService({
     this.stateResult,
+    this.checkResult,
     this.downloadResult,
     this.downloadError,
     this.checkError,
@@ -221,10 +317,12 @@ class _FakeWindowsUpdateService extends WindowsUpdateService {
   });
 
   final WindowsUpdateSnapshot? stateResult;
+  final WindowsUpdateSnapshot? checkResult;
   final WindowsUpdateSnapshot? downloadResult;
   final Object? downloadError;
   final Object? checkError;
   final Object? applyError;
+  var checkCalls = 0;
   var downloadCalls = 0;
 
   @override
@@ -232,16 +330,17 @@ class _FakeWindowsUpdateService extends WindowsUpdateService {
       stateResult ?? _snapshot(status: 'available', torProxyReady: true);
 
   @override
+  Future<WindowsUpdateSnapshot> checkForUpdates() async {
+    checkCalls++;
+    if (checkError case final error?) throw error;
+    return checkResult ?? _snapshot(status: 'checking');
+  }
+
+  @override
   Future<WindowsUpdateSnapshot> downloadUpdate() async {
     downloadCalls++;
     if (downloadError case final error?) throw error;
     return downloadResult ?? _snapshot(status: 'downloading');
-  }
-
-  @override
-  Future<WindowsUpdateSnapshot> checkForUpdates() async {
-    if (checkError case final error?) throw error;
-    return _snapshot(status: 'checking');
   }
 
   @override
