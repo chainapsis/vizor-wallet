@@ -8,6 +8,7 @@ class AccountInfo {
   final bool isSeedAnchor;
   final String profilePictureId;
   final String? walletLinkSourceAccountUuid;
+  final String? seedFamilyId;
 
   const AccountInfo({
     required this.uuid,
@@ -17,6 +18,7 @@ class AccountInfo {
     this.isSeedAnchor = false,
     this.profilePictureId = kDefaultProfilePictureId,
     this.walletLinkSourceAccountUuid,
+    this.seedFamilyId,
   });
 
   AccountInfo copyWith({
@@ -25,6 +27,7 @@ class AccountInfo {
     bool? isSeedAnchor,
     String? profilePictureId,
     String? walletLinkSourceAccountUuid,
+    String? seedFamilyId,
   }) => AccountInfo(
     uuid: uuid,
     name: name ?? this.name,
@@ -34,6 +37,7 @@ class AccountInfo {
     profilePictureId: profilePictureId ?? this.profilePictureId,
     walletLinkSourceAccountUuid:
         walletLinkSourceAccountUuid ?? this.walletLinkSourceAccountUuid,
+    seedFamilyId: seedFamilyId ?? this.seedFamilyId,
   );
 
   Map<String, dynamic> toJson() => {
@@ -44,6 +48,7 @@ class AccountInfo {
     'isSeedAnchor': isSeedAnchor,
     'profilePictureId': profilePictureId,
     'walletLinkSourceAccountUuid': walletLinkSourceAccountUuid,
+    'seedFamilyId': seedFamilyId,
   };
 
   factory AccountInfo.fromJson(Map<String, dynamic> json) => AccountInfo(
@@ -64,7 +69,76 @@ class AccountInfo {
     walletLinkSourceAccountUuid: _normalizedOptionalString(
       json['walletLinkSourceAccountUuid'],
     ),
+    seedFamilyId: _normalizedOptionalString(json['seedFamilyId']),
   );
+}
+
+/// A display-only group of accounts backed by the same ZIP-32 seed.
+///
+/// Accounts without derivation metadata are intentionally isolated so two
+/// unrelated hardware or legacy accounts are never grouped by accident.
+class AccountFamily {
+  const AccountFamily({
+    required this.anchorAccountUuid,
+    required this.accounts,
+    required this.containsActiveAccount,
+  });
+
+  final String anchorAccountUuid;
+  final List<AccountInfo> accounts;
+  final bool containsActiveAccount;
+}
+
+List<AccountFamily> groupAccountsBySeedFamily(
+  List<AccountInfo> accounts,
+  String? activeAccountUuid,
+) {
+  final indexedAccounts = accounts.indexed.toList()
+    ..sort((left, right) {
+      final order = left.$2.order.compareTo(right.$2.order);
+      return order != 0 ? order : left.$1.compareTo(right.$1);
+    });
+  final grouped = <String, List<AccountInfo>>{};
+  for (final (_, account) in indexedAccounts) {
+    final seedFamilyId = _normalizedOptionalString(account.seedFamilyId);
+    final key = seedFamilyId == null
+        ? 'account:${account.uuid}'
+        : 'seed:$seedFamilyId';
+    grouped.putIfAbsent(key, () => []).add(account);
+  }
+
+  final families = <AccountFamily>[];
+  for (final familyAccounts in grouped.values) {
+    final containsActive = familyAccounts.any(
+      (account) => account.uuid == activeAccountUuid,
+    );
+    final displayAccounts = containsActive
+        ? [
+            ...familyAccounts.where(
+              (account) => account.uuid == activeAccountUuid,
+            ),
+            ...familyAccounts.where(
+              (account) => account.uuid != activeAccountUuid,
+            ),
+          ]
+        : familyAccounts;
+    families.add(
+      AccountFamily(
+        anchorAccountUuid: familyAccounts.first.uuid,
+        accounts: displayAccounts,
+        containsActiveAccount: containsActive,
+      ),
+    );
+  }
+
+  final activeFamilyIndex = families.indexWhere(
+    (family) => family.containsActiveAccount,
+  );
+  if (activeFamilyIndex > 0) {
+    final activeFamily = families.removeAt(activeFamilyIndex);
+    families.insert(0, activeFamily);
+  }
+  return families;
 }
 
 String? _normalizedOptionalString(Object? value) {

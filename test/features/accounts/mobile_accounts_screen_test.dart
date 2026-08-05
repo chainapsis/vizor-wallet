@@ -34,6 +34,7 @@ AccountInfo _account(
   String name, {
   bool isSeedAnchor = false,
   bool isHardware = false,
+  String? seedFamilyId,
 }) => AccountInfo(
   uuid: uuid,
   name: name,
@@ -41,6 +42,7 @@ AccountInfo _account(
   profilePictureId: kDefaultProfilePictureId,
   isSeedAnchor: isSeedAnchor,
   isHardware: isHardware,
+  seedFamilyId: seedFamilyId,
 );
 
 AppBootstrapState _bootstrap(AccountState accounts) => AppBootstrapState(
@@ -319,6 +321,47 @@ void main() {
     expect(safeArea.bottom, isFalse);
   });
 
+  testWidgets('keeps same-seed mobile accounts in the current family card', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        AccountState(
+          accounts: [
+            _account(
+              'a',
+              'Silver Scholar',
+              isSeedAnchor: true,
+              seedFamilyId: 'shared-seed',
+            ),
+            _account('b', 'Dawnlit Smith', seedFamilyId: 'shared-seed'),
+          ],
+          activeAccountUuid: 'a',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final familyCard = find.byKey(const ValueKey('mobile_accounts_family_a'));
+    expect(familyCard, findsOneWidget);
+    expect(
+      find.descendant(
+        of: familyCard,
+        matching: find.byKey(const ValueKey('mobile_accounts_row_a')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: familyCard,
+        matching: find.byKey(const ValueKey('mobile_accounts_row_b')),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Current'), findsOneWidget);
+    expect(find.text('Other'), findsNothing);
+  });
+
   testWidgets('imported accounts and seed anchors offer removal', (
     tester,
   ) async {
@@ -532,7 +575,12 @@ void main() {
         AccountState(
           accounts: [
             _account('a', 'Knight', isSeedAnchor: true),
-            for (var i = 0; i < 12; i++) _account('other-$i', 'Other $i'),
+            for (var i = 0; i < 12; i++)
+              _account(
+                'other-$i',
+                'Other $i',
+                seedFamilyId: 'other-family',
+              ),
           ],
           activeAccountUuid: 'a',
         ),

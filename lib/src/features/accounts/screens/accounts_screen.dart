@@ -35,7 +35,6 @@ import '../widgets/account_remove_modal.dart';
 const _accountRowHeight = 44.0;
 const _accountsContentWidth = 420.0;
 const _accountsSurfaceWidth = 396.0;
-const _accountsCurrentSurfaceHeight = 124.0;
 const _accountsSurfaceVerticalPadding = AppSpacing.md;
 const _accountsSurfaceHorizontalPadding = AppSpacing.sm;
 const _accountsSectionLabelHeight = 24.0;
@@ -253,10 +252,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       accounts,
       accountState.activeAccountUuid,
     );
-    final otherAccounts = [
-      for (final account in accounts)
-        if (account.uuid != activeAccount?.uuid) account,
-    ];
+    final accountFamilies = groupAccountsBySeedFamily(
+      accounts,
+      activeAccount?.uuid,
+    );
     final modalAccount = _accountForUuid(accounts, _modalAccountUuid);
     final isLastModalAccount =
         modalAccount != null &&
@@ -289,8 +288,8 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                 ),
                 padding: EdgeInsets.only(bottom: bottomReserve),
                 child: _AccountsPane(
-                  activeAccount: activeAccount,
-                  otherAccounts: otherAccounts,
+                  accountFamilies: accountFamilies,
+                  activeAccountUuid: activeAccount?.uuid,
                   onSelectAccount: _handleAccountSelected,
                   onCopyAddress: _copyAddress,
                   onSendZec: _sendZec,
@@ -511,8 +510,8 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
 
 class _AccountsPane extends StatelessWidget {
   const _AccountsPane({
-    required this.activeAccount,
-    required this.otherAccounts,
+    required this.accountFamilies,
+    required this.activeAccountUuid,
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
@@ -521,8 +520,8 @@ class _AccountsPane extends StatelessWidget {
     required this.initialOpenMenuAccountUuid,
   });
 
-  final AccountInfo? activeAccount;
-  final List<AccountInfo> otherAccounts;
+  final List<AccountFamily> accountFamilies;
+  final String? activeAccountUuid;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
@@ -554,8 +553,8 @@ class _AccountsPane extends StatelessWidget {
               ),
               const SizedBox(height: _accountsTitleSurfaceGap),
               _AccountsList(
-                activeAccount: activeAccount,
-                otherAccounts: otherAccounts,
+                accountFamilies: accountFamilies,
+                activeAccountUuid: activeAccountUuid,
                 onSelectAccount: onSelectAccount,
                 onCopyAddress: onCopyAddress,
                 onSendZec: onSendZec,
@@ -682,8 +681,8 @@ class _AccountsAddAccountButtonState extends State<_AccountsAddAccountButton> {
 
 class _AccountsList extends StatelessWidget {
   const _AccountsList({
-    required this.activeAccount,
-    required this.otherAccounts,
+    required this.accountFamilies,
+    required this.activeAccountUuid,
     required this.onSelectAccount,
     required this.onCopyAddress,
     required this.onSendZec,
@@ -694,8 +693,8 @@ class _AccountsList extends StatelessWidget {
 
   static const _width = _accountsSurfaceWidth;
 
-  final AccountInfo? activeAccount;
-  final List<AccountInfo> otherAccounts;
+  final List<AccountFamily> accountFamilies;
+  final String? activeAccountUuid;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
   final ValueChanged<AccountInfo> onSendZec;
@@ -705,7 +704,10 @@ class _AccountsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accountCount = otherAccounts.length + (activeAccount == null ? 0 : 1);
+    final accountCount = accountFamilies.fold<int>(
+      0,
+      (count, family) => count + family.accounts.length,
+    );
     return Align(
       alignment: Alignment.topCenter,
       child: SizedBox(
@@ -713,46 +715,28 @@ class _AccountsList extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (activeAccount != null) ...[
+            for (var index = 0; index < accountFamilies.length; index++) ...[
+              if (index > 0) const SizedBox(height: AppSpacing.sm),
               _AccountsSurface(
-                key: const ValueKey('accounts_current_surface'),
-                height: _accountsCurrentSurfaceHeight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const _AccountsSectionLabel(label: 'Current'),
-                    const SizedBox(height: _accountsRowGap),
-                    _AccountRow(
-                      key: ValueKey(
-                        'accounts_active_row_${activeAccount!.uuid}',
-                      ),
-                      account: activeAccount!,
-                      onTap: null,
-                      showSendZec: false,
-                      onCopyAddress: onCopyAddress,
-                      onSendZec: onSendZec,
-                      onEditAccount: onEditAccount,
-                      onRemove: onRemoveAccount,
-                      showRemove: _AccountsList._canRemoveAccount(accountCount),
-                      initiallyOpenMenu:
-                          initialOpenMenuAccountUuid == activeAccount!.uuid,
-                    ),
-                  ],
+                key: ValueKey(
+                  'accounts_family_surface_'
+                  '${accountFamilies[index].anchorAccountUuid}',
                 ),
-              ),
-            ],
-            if (otherAccounts.isNotEmpty) ...[
-              if (activeAccount != null) const SizedBox(height: AppSpacing.sm),
-              _AccountsSurface(
-                key: const ValueKey('accounts_other_surface'),
-                height: _otherAccountsSurfaceHeight(otherAccounts.length),
+                height: _accountsSurfaceHeight(
+                  accountFamilies[index].accounts.length,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const _AccountsSectionLabel(label: 'Other'),
+                    _AccountsSectionLabel(
+                      label: accountFamilies[index].containsActiveAccount
+                          ? 'Current'
+                          : 'Other',
+                    ),
                     const SizedBox(height: _accountsRowGap),
-                    _OtherAccountsRows(
-                      accounts: otherAccounts,
+                    _AccountsRows(
+                      accounts: accountFamilies[index].accounts,
+                      activeAccountUuid: activeAccountUuid,
                       accountCount: accountCount,
                       onSelectAccount: onSelectAccount,
                       onCopyAddress: onCopyAddress,
@@ -780,7 +764,7 @@ class _AccountsList extends StatelessWidget {
     return count * _accountRowHeight + (count - 1) * _accountsRowGap;
   }
 
-  static double _otherAccountsSurfaceHeight(int count) {
+  static double _accountsSurfaceHeight(int count) {
     return _accountsSurfaceVerticalPadding * 2 +
         _accountsSectionLabelHeight +
         _accountsRowGap +
@@ -816,9 +800,10 @@ class _AccountsSurface extends StatelessWidget {
   }
 }
 
-class _OtherAccountsRows extends StatelessWidget {
-  const _OtherAccountsRows({
+class _AccountsRows extends StatelessWidget {
+  const _AccountsRows({
     required this.accounts,
+    required this.activeAccountUuid,
     required this.accountCount,
     required this.onSelectAccount,
     required this.onCopyAddress,
@@ -829,6 +814,7 @@ class _OtherAccountsRows extends StatelessWidget {
   });
 
   final List<AccountInfo> accounts;
+  final String? activeAccountUuid;
   final int accountCount;
   final Future<void> Function(String uuid) onSelectAccount;
   final ValueChanged<AccountInfo> onCopyAddress;
@@ -852,14 +838,15 @@ class _OtherAccountsRows extends StatelessWidget {
         rows.add(const SizedBox(height: _accountsRowGap));
       }
       final account = accounts[index];
+      final isActive = account.uuid == activeAccountUuid;
       rows.add(
         _AccountRow(
-          key: ValueKey('accounts_other_row_${account.uuid}'),
+          key: ValueKey(
+            'accounts_${isActive ? 'active' : 'other'}_row_${account.uuid}',
+          ),
           account: account,
-          onTap: () {
-            onSelectAccount(account.uuid);
-          },
-          showSendZec: true,
+          onTap: isActive ? null : () => onSelectAccount(account.uuid),
+          showSendZec: !isActive,
           onCopyAddress: onCopyAddress,
           onSendZec: onSendZec,
           onEditAccount: onEditAccount,

@@ -338,14 +338,17 @@ Future<List<String>> getRecentTransparentReceiveAddresses({
 class AccountCreationResult {
   final String accountUuid;
   final String unifiedAddress;
+  final String? seedFamilyId;
 
   const AccountCreationResult({
     required this.accountUuid,
     required this.unifiedAddress,
+    this.seedFamilyId,
   });
 
   @override
-  int get hashCode => accountUuid.hashCode ^ unifiedAddress.hashCode;
+  int get hashCode =>
+      accountUuid.hashCode ^ unifiedAddress.hashCode ^ seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -353,7 +356,8 @@ class AccountCreationResult {
       other is AccountCreationResult &&
           runtimeType == other.runtimeType &&
           accountUuid == other.accountUuid &&
-          unifiedAddress == other.unifiedAddress;
+          unifiedAddress == other.unifiedAddress &&
+          seedFamilyId == other.seedFamilyId;
 }
 
 /// Sensitive metadata for explicit encrypted wallet export flows.
@@ -392,12 +396,16 @@ class AccountInfo {
   final bool isSeedAnchor;
   final bool isHardware;
 
+  /// Opaque ZIP-32 seed fingerprint used only to group related accounts.
+  final String? seedFamilyId;
+
   const AccountInfo({
     required this.uuid,
     required this.name,
     required this.unifiedAddress,
     required this.isSeedAnchor,
     required this.isHardware,
+    this.seedFamilyId,
   });
 
   @override
@@ -406,7 +414,8 @@ class AccountInfo {
       name.hashCode ^
       unifiedAddress.hashCode ^
       isSeedAnchor.hashCode ^
-      isHardware.hashCode;
+      isHardware.hashCode ^
+      seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -417,7 +426,8 @@ class AccountInfo {
           name == other.name &&
           unifiedAddress == other.unifiedAddress &&
           isSeedAnchor == other.isSeedAnchor &&
-          isHardware == other.isHardware;
+          isHardware == other.isHardware &&
+          seedFamilyId == other.seedFamilyId;
 }
 
 /// Chain upgrade activation state computed from a known chain tip height.
@@ -543,6 +553,7 @@ class SoftwareWalletImportAccount {
   final int zip32AccountIndex;
   final String name;
   final bool isSeedAnchor;
+  final String? seedFamilyId;
 
   const SoftwareWalletImportAccount({
     required this.accountUuid,
@@ -550,6 +561,7 @@ class SoftwareWalletImportAccount {
     required this.zip32AccountIndex,
     required this.name,
     required this.isSeedAnchor,
+    this.seedFamilyId,
   });
 
   @override
@@ -558,7 +570,8 @@ class SoftwareWalletImportAccount {
       unifiedAddress.hashCode ^
       zip32AccountIndex.hashCode ^
       name.hashCode ^
-      isSeedAnchor.hashCode;
+      isSeedAnchor.hashCode ^
+      seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -569,7 +582,8 @@ class SoftwareWalletImportAccount {
           unifiedAddress == other.unifiedAddress &&
           zip32AccountIndex == other.zip32AccountIndex &&
           name == other.name &&
-          isSeedAnchor == other.isSeedAnchor;
+          isSeedAnchor == other.isSeedAnchor &&
+          seedFamilyId == other.seedFamilyId;
 }
 
 /// Software account discovery result for an import attempt.
@@ -621,16 +635,21 @@ class WalletCreationResult {
   final String mnemonic;
   final String unifiedAddress;
   final String accountUuid;
+  final String? seedFamilyId;
 
   const WalletCreationResult({
     required this.mnemonic,
     required this.unifiedAddress,
     required this.accountUuid,
+    this.seedFamilyId,
   });
 
   @override
   int get hashCode =>
-      mnemonic.hashCode ^ unifiedAddress.hashCode ^ accountUuid.hashCode;
+      mnemonic.hashCode ^
+      unifiedAddress.hashCode ^
+      accountUuid.hashCode ^
+      seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -639,21 +658,25 @@ class WalletCreationResult {
           runtimeType == other.runtimeType &&
           mnemonic == other.mnemonic &&
           unifiedAddress == other.unifiedAddress &&
-          accountUuid == other.accountUuid;
+          accountUuid == other.accountUuid &&
+          seedFamilyId == other.seedFamilyId;
 }
 
 /// Result of wallet import, containing the unified address and account UUID.
 class WalletImportResult {
   final String unifiedAddress;
   final String accountUuid;
+  final String? seedFamilyId;
 
   const WalletImportResult({
     required this.unifiedAddress,
     required this.accountUuid,
+    this.seedFamilyId,
   });
 
   @override
-  int get hashCode => unifiedAddress.hashCode ^ accountUuid.hashCode;
+  int get hashCode =>
+      unifiedAddress.hashCode ^ accountUuid.hashCode ^ seedFamilyId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -661,5 +684,6 @@ class WalletImportResult {
       other is WalletImportResult &&
           runtimeType == other.runtimeType &&
           unifiedAddress == other.unifiedAddress &&
-          accountUuid == other.accountUuid;
+          accountUuid == other.accountUuid &&
+          seedFamilyId == other.seedFamilyId;
 }

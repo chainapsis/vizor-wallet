@@ -128,6 +128,29 @@ void main() {
     expect(merged.name, 'Stored Keystone');
   });
 
+  test('mergeBootstrappedAccountInfo uses Rust seed family metadata', () {
+    const rustAccount = AccountInfo(
+      uuid: 'account-4',
+      name: 'Rust Account',
+      order: 0,
+      seedFamilyId: 'rust-family',
+    );
+    const storedAccount = AccountInfo(
+      uuid: 'account-4',
+      name: 'Stored Account',
+      order: 0,
+      seedFamilyId: 'stale-family',
+    );
+
+    final merged = mergeBootstrappedAccountInfo(
+      rustAccount: rustAccount,
+      storedAccount: storedAccount,
+      order: 0,
+    );
+
+    expect(merged.seedFamilyId, 'rust-family');
+  });
+
   test('empty bootstrap has no password rotation recovery failure', () {
     expect(AppBootstrapState.empty.passwordRotationRecoveryFailed, isFalse);
   });

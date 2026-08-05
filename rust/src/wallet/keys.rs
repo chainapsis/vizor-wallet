@@ -125,6 +125,12 @@ pub fn mnemonic_to_seed(phrase: &str) -> Result<SecretVec<u8>, String> {
     mnemonic_to_seed_with_passphrase(phrase, "")
 }
 
+pub fn seed_family_id(seed: &SecretVec<u8>) -> Result<String, String> {
+    SeedFingerprint::from_seed(seed.expose_secret())
+        .map(|fingerprint| hex::encode(fingerprint.to_bytes()))
+        .ok_or_else(|| "Invalid seed length for fingerprint".to_string())
+}
+
 /// Convert UTF-8 mnemonic bytes to a 64-byte seed wrapped in SecretVec.
 /// The caller remains responsible for zeroizing the input bytes.
 pub fn mnemonic_bytes_to_seed(phrase: &[u8]) -> Result<SecretVec<u8>, String> {
@@ -556,6 +562,7 @@ pub struct AccountInfo {
     pub unified_address: String,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+    pub seed_family_id: Option<String>,
 }
 
 pub struct AccountExportMetadata {
@@ -721,6 +728,9 @@ pub fn list_accounts(db_path: &str, network: WalletNetwork) -> Result<Vec<Accoun
             unified_address: address,
             is_seed_anchor: matches!(source, AccountSource::Derived { .. }),
             is_hardware,
+            seed_family_id: source
+                .key_derivation()
+                .map(|derivation| hex::encode(derivation.seed_fingerprint().to_bytes())),
         });
     }
 

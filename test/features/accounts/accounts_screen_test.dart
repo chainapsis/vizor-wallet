@@ -92,7 +92,9 @@ void main() {
       ),
     );
     expect(find.text('Current'), findsOneWidget);
-    expect(find.text('Other'), findsOneWidget);
+    // Accounts without seed metadata stay isolated rather than being merged
+    // into a misleading family.
+    expect(find.text('Other'), findsNWidgets(2));
     expect(find.text('Keystone'), findsNothing);
     final keystoneIcon = tester
         .widgetList<AppIcon>(find.byType(AppIcon))
@@ -104,6 +106,62 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('add account route'), findsOneWidget);
+  });
+
+  testWidgets('accounts from the same seed render in one family surface', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1512, 982));
+    addTearDown(() async {
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    const accountState = AccountState(
+      accounts: [
+        AccountInfo(
+          uuid: 'account-1',
+          name: 'Silver Scholar',
+          order: 0,
+          isSeedAnchor: true,
+          seedFamilyId: 'shared-seed',
+        ),
+        AccountInfo(
+          uuid: 'account-2',
+          name: 'Dawnlit Smith',
+          order: 1,
+          seedFamilyId: 'shared-seed',
+        ),
+      ],
+      activeAccountUuid: 'account-1',
+      activeAddress: 'u1accountsaddress',
+    );
+    await tester.pumpWidget(
+      _accountsHarness(
+        accountNotifier: () => _FakeAccountNotifier(accountState),
+      ),
+    );
+    await tester.pump();
+
+    final currentSurface = find.byKey(
+      const ValueKey('accounts_family_surface_account-1'),
+    );
+    expect(currentSurface, findsOneWidget);
+    expect(
+      find.descendant(
+        of: currentSurface,
+        matching: find.byKey(const ValueKey('accounts_active_row_account-1')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: currentSurface,
+        matching: find.byKey(const ValueKey('accounts_other_row_account-2')),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Current'), findsOneWidget);
+    expect(find.text('Other'), findsNothing);
   });
 
   testWidgets(
@@ -202,7 +260,9 @@ void main() {
     final addAccountButton = find.byKey(
       const ValueKey('accounts_add_account_button'),
     );
-    final otherSurface = find.byKey(const ValueKey('accounts_other_surface'));
+    final otherSurface = find.byKey(
+      const ValueKey('accounts_family_surface_account-20'),
+    );
     expect(
       tester.getRect(otherSurface).bottom,
       lessThanOrEqualTo(tester.getRect(addAccountButton).top + 0.5),

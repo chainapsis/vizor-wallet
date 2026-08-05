@@ -145,6 +145,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       String mnemonic;
       String accountUuid;
       String unifiedAddress;
+      String? seedFamilyId;
 
       if (accounts.isEmpty) {
         // First account — create wallet (init DB + create account)
@@ -158,6 +159,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         mnemonic = result.mnemonic;
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
+        seedFamilyId = result.seedFamilyId;
         await _storage.writeString(_networkKey, network);
       } else {
         // Additional account — generate mnemonic + add to existing DB
@@ -172,6 +174,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         );
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
+        seedFamilyId = result.seedFamilyId;
       }
 
       // Store mnemonic per-account
@@ -183,6 +186,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         name: accountName,
         order: accounts.length,
         isSeedAnchor: accounts.isEmpty,
+        seedFamilyId: seedFamilyId,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -240,6 +244,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
 
       late final String accountUuid;
       late final String unifiedAddress;
+      late final String? seedFamilyId;
 
       if (accounts.isEmpty) {
         await _deleteExistingDb(dbPath);
@@ -253,6 +258,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         );
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
+        seedFamilyId = result.seedFamilyId;
         await _storage.writeString(_networkKey, network);
       } else {
         final result = await rust_wallet.addAccount(
@@ -265,6 +271,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         );
         accountUuid = result.accountUuid;
         unifiedAddress = result.unifiedAddress;
+        seedFamilyId = result.seedFamilyId;
       }
 
       await _storage.writeAccountMnemonic(accountUuid, mnemonic);
@@ -275,6 +282,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         order: accounts.length,
         isSeedAnchor: accounts.isEmpty,
         profilePictureId: normalizedProfilePictureId,
+        seedFamilyId: seedFamilyId,
       );
       final updatedAccounts = [...accounts, newAccount];
       await _saveAccounts(updatedAccounts);
@@ -355,8 +363,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         order: accounts.length,
         isSeedAnchor: result.isSeedAnchor,
         profilePictureId: normalizedProfilePictureId,
+        seedFamilyId: result.seedFamilyId,
       );
-      final updatedAccounts = [...accounts, newAccount];
+      final updatedAccounts = [
+        for (final account in accounts)
+          if (account.uuid == sourceAccountUuid && result.seedFamilyId != null)
+            account.copyWith(seedFamilyId: result.seedFamilyId)
+          else
+            account,
+        newAccount,
+      ];
       await _saveAccounts(updatedAccounts);
       await _storage.writeString(_activeAccountKey, result.accountUuid);
 
@@ -437,6 +453,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             name: result.accounts[i].name,
             order: accounts.length + i,
             isSeedAnchor: result.accounts[i].isSeedAnchor,
+            seedFamilyId: result.accounts[i].seedFamilyId,
           ),
       ];
       final updatedAccounts = [...accounts, ...importedAccounts];
@@ -1026,6 +1043,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         name: name,
         order: prev.accounts.length,
         isHardware: true,
+        seedFamilyId: result.seedFamilyId,
       );
       final updated = [...prev.accounts, newAccount];
       await _saveAccounts(updated);
@@ -1080,6 +1098,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         late final String accountUuid;
         late final String unifiedAddress;
         late final bool isSeedAnchor;
+        late final String? seedFamilyId;
         try {
           if (input.isHardware) {
             final result = await rust_wallet.importHardwareAccount(
@@ -1094,6 +1113,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             accountUuid = result.accountUuid;
             unifiedAddress = result.unifiedAddress;
             isSeedAnchor = false;
+            seedFamilyId = result.seedFamilyId;
           } else {
             final result = await rust_wallet.importSoftwareAccountAtIndex(
               mnemonic: input.mnemonic ?? '',
@@ -1109,6 +1129,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             accountUuid = result.accountUuid;
             unifiedAddress = result.unifiedAddress;
             isSeedAnchor = result.isSeedAnchor;
+            seedFamilyId = result.seedFamilyId;
           }
         } catch (error) {
           if (isWalletLinkDuplicateImportError(error)) {
@@ -1144,6 +1165,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             walletLinkSourceAccountUuid: _normalizedOptionalString(
               input.sourceAccountUuid,
             ),
+            seedFamilyId: seedFamilyId,
           ),
         );
         nextOrder += 1;

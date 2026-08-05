@@ -6782,9 +6782,11 @@ impl SseDecode for crate::api::wallet::AccountCreationResult {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_accountUuid = <String>::sse_decode(deserializer);
         let mut var_unifiedAddress = <String>::sse_decode(deserializer);
+        let mut var_seedFamilyId = <Option<String>>::sse_decode(deserializer);
         return crate::api::wallet::AccountCreationResult {
             account_uuid: var_accountUuid,
             unified_address: var_unifiedAddress,
+            seed_family_id: var_seedFamilyId,
         };
     }
 }
@@ -6811,12 +6813,14 @@ impl SseDecode for crate::api::wallet::AccountInfo {
         let mut var_unifiedAddress = <String>::sse_decode(deserializer);
         let mut var_isSeedAnchor = <bool>::sse_decode(deserializer);
         let mut var_isHardware = <bool>::sse_decode(deserializer);
+        let mut var_seedFamilyId = <Option<String>>::sse_decode(deserializer);
         return crate::api::wallet::AccountInfo {
             uuid: var_uuid,
             name: var_name,
             unified_address: var_unifiedAddress,
             is_seed_anchor: var_isSeedAnchor,
             is_hardware: var_isHardware,
+            seed_family_id: var_seedFamilyId,
         };
     }
 }
@@ -9056,12 +9060,14 @@ impl SseDecode for crate::api::wallet::SoftwareWalletImportAccount {
         let mut var_zip32AccountIndex = <u32>::sse_decode(deserializer);
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_isSeedAnchor = <bool>::sse_decode(deserializer);
+        let mut var_seedFamilyId = <Option<String>>::sse_decode(deserializer);
         return crate::api::wallet::SoftwareWalletImportAccount {
             account_uuid: var_accountUuid,
             unified_address: var_unifiedAddress,
             zip32_account_index: var_zip32AccountIndex,
             name: var_name,
             is_seed_anchor: var_isSeedAnchor,
+            seed_family_id: var_seedFamilyId,
         };
     }
 }
@@ -9506,10 +9512,12 @@ impl SseDecode for crate::api::wallet::WalletCreationResult {
         let mut var_mnemonic = <String>::sse_decode(deserializer);
         let mut var_unifiedAddress = <String>::sse_decode(deserializer);
         let mut var_accountUuid = <String>::sse_decode(deserializer);
+        let mut var_seedFamilyId = <Option<String>>::sse_decode(deserializer);
         return crate::api::wallet::WalletCreationResult {
             mnemonic: var_mnemonic,
             unified_address: var_unifiedAddress,
             account_uuid: var_accountUuid,
+            seed_family_id: var_seedFamilyId,
         };
     }
 }
@@ -9519,9 +9527,11 @@ impl SseDecode for crate::api::wallet::WalletImportResult {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_unifiedAddress = <String>::sse_decode(deserializer);
         let mut var_accountUuid = <String>::sse_decode(deserializer);
+        let mut var_seedFamilyId = <Option<String>>::sse_decode(deserializer);
         return crate::api::wallet::WalletImportResult {
             unified_address: var_unifiedAddress,
             account_uuid: var_accountUuid,
+            seed_family_id: var_seedFamilyId,
         };
     }
 }
@@ -9781,6 +9791,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::AccountCreationResult
         [
             self.account_uuid.into_into_dart().into_dart(),
             self.unified_address.into_into_dart().into_dart(),
+            self.seed_family_id.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -9827,6 +9838,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::AccountInfo {
             self.unified_address.into_into_dart().into_dart(),
             self.is_seed_anchor.into_into_dart().into_dart(),
             self.is_hardware.into_into_dart().into_dart(),
+            self.seed_family_id.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -11667,6 +11679,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::SoftwareWalletImportA
             self.zip32_account_index.into_into_dart().into_dart(),
             self.name.into_into_dart().into_dart(),
             self.is_seed_anchor.into_into_dart().into_dart(),
+            self.seed_family_id.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12203,6 +12216,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::WalletCreationResult 
             self.mnemonic.into_into_dart().into_dart(),
             self.unified_address.into_into_dart().into_dart(),
             self.account_uuid.into_into_dart().into_dart(),
+            self.seed_family_id.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12224,6 +12238,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::wallet::WalletImportResult {
         [
             self.unified_address.into_into_dart().into_dart(),
             self.account_uuid.into_into_dart().into_dart(),
+            self.seed_family_id.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -12397,6 +12412,7 @@ impl SseEncode for crate::api::wallet::AccountCreationResult {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.account_uuid, serializer);
         <String>::sse_encode(self.unified_address, serializer);
+        <Option<String>>::sse_encode(self.seed_family_id, serializer);
     }
 }
 
@@ -12417,6 +12433,7 @@ impl SseEncode for crate::api::wallet::AccountInfo {
         <String>::sse_encode(self.unified_address, serializer);
         <bool>::sse_encode(self.is_seed_anchor, serializer);
         <bool>::sse_encode(self.is_hardware, serializer);
+        <Option<String>>::sse_encode(self.seed_family_id, serializer);
     }
 }
 
@@ -14007,6 +14024,7 @@ impl SseEncode for crate::api::wallet::SoftwareWalletImportAccount {
         <u32>::sse_encode(self.zip32_account_index, serializer);
         <String>::sse_encode(self.name, serializer);
         <bool>::sse_encode(self.is_seed_anchor, serializer);
+        <Option<String>>::sse_encode(self.seed_family_id, serializer);
     }
 }
 
@@ -14309,6 +14327,7 @@ impl SseEncode for crate::api::wallet::WalletCreationResult {
         <String>::sse_encode(self.mnemonic, serializer);
         <String>::sse_encode(self.unified_address, serializer);
         <String>::sse_encode(self.account_uuid, serializer);
+        <Option<String>>::sse_encode(self.seed_family_id, serializer);
     }
 }
 
@@ -14317,6 +14336,7 @@ impl SseEncode for crate::api::wallet::WalletImportResult {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.unified_address, serializer);
         <String>::sse_encode(self.account_uuid, serializer);
+        <Option<String>>::sse_encode(self.seed_family_id, serializer);
     }
 }
 

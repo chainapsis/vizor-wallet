@@ -8087,11 +8087,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AccountCreationResult dco_decode_account_creation_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return AccountCreationResult(
       accountUuid: dco_decode_String(arr[0]),
       unifiedAddress: dco_decode_String(arr[1]),
+      seedFamilyId: dco_decode_opt_String(arr[2]),
     );
   }
 
@@ -8112,14 +8113,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AccountInfo dco_decode_account_info(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return AccountInfo(
       uuid: dco_decode_String(arr[0]),
       name: dco_decode_String(arr[1]),
       unifiedAddress: dco_decode_String(arr[2]),
       isSeedAnchor: dco_decode_bool(arr[3]),
       isHardware: dco_decode_bool(arr[4]),
+      seedFamilyId: dco_decode_opt_String(arr[5]),
     );
   }
 
@@ -9904,14 +9906,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return SoftwareWalletImportAccount(
       accountUuid: dco_decode_String(arr[0]),
       unifiedAddress: dco_decode_String(arr[1]),
       zip32AccountIndex: dco_decode_u_32(arr[2]),
       name: dco_decode_String(arr[3]),
       isSeedAnchor: dco_decode_bool(arr[4]),
+      seedFamilyId: dco_decode_opt_String(arr[5]),
     );
   }
 
@@ -10270,12 +10273,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletCreationResult dco_decode_wallet_creation_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return WalletCreationResult(
       mnemonic: dco_decode_String(arr[0]),
       unifiedAddress: dco_decode_String(arr[1]),
       accountUuid: dco_decode_String(arr[2]),
+      seedFamilyId: dco_decode_opt_String(arr[3]),
     );
   }
 
@@ -10283,11 +10287,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   WalletImportResult dco_decode_wallet_import_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return WalletImportResult(
       unifiedAddress: dco_decode_String(arr[0]),
       accountUuid: dco_decode_String(arr[1]),
+      seedFamilyId: dco_decode_opt_String(arr[2]),
     );
   }
 
@@ -10400,9 +10405,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_accountUuid = sse_decode_String(deserializer);
     var var_unifiedAddress = sse_decode_String(deserializer);
+    var var_seedFamilyId = sse_decode_opt_String(deserializer);
     return AccountCreationResult(
       accountUuid: var_accountUuid,
       unifiedAddress: var_unifiedAddress,
+      seedFamilyId: var_seedFamilyId,
     );
   }
 
@@ -10429,12 +10436,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_unifiedAddress = sse_decode_String(deserializer);
     var var_isSeedAnchor = sse_decode_bool(deserializer);
     var var_isHardware = sse_decode_bool(deserializer);
+    var var_seedFamilyId = sse_decode_opt_String(deserializer);
     return AccountInfo(
       uuid: var_uuid,
       name: var_name,
       unifiedAddress: var_unifiedAddress,
       isSeedAnchor: var_isSeedAnchor,
       isHardware: var_isHardware,
+      seedFamilyId: var_seedFamilyId,
     );
   }
 
@@ -12865,12 +12874,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_zip32AccountIndex = sse_decode_u_32(deserializer);
     var var_name = sse_decode_String(deserializer);
     var var_isSeedAnchor = sse_decode_bool(deserializer);
+    var var_seedFamilyId = sse_decode_opt_String(deserializer);
     return SoftwareWalletImportAccount(
       accountUuid: var_accountUuid,
       unifiedAddress: var_unifiedAddress,
       zip32AccountIndex: var_zip32AccountIndex,
       name: var_name,
       isSeedAnchor: var_isSeedAnchor,
+      seedFamilyId: var_seedFamilyId,
     );
   }
 
@@ -13308,10 +13319,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_mnemonic = sse_decode_String(deserializer);
     var var_unifiedAddress = sse_decode_String(deserializer);
     var var_accountUuid = sse_decode_String(deserializer);
+    var var_seedFamilyId = sse_decode_opt_String(deserializer);
     return WalletCreationResult(
       mnemonic: var_mnemonic,
       unifiedAddress: var_unifiedAddress,
       accountUuid: var_accountUuid,
+      seedFamilyId: var_seedFamilyId,
     );
   }
 
@@ -13322,9 +13335,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_unifiedAddress = sse_decode_String(deserializer);
     var var_accountUuid = sse_decode_String(deserializer);
+    var var_seedFamilyId = sse_decode_opt_String(deserializer);
     return WalletImportResult(
       unifiedAddress: var_unifiedAddress,
       accountUuid: var_accountUuid,
+      seedFamilyId: var_seedFamilyId,
     );
   }
 
@@ -13483,6 +13498,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.accountUuid, serializer);
     sse_encode_String(self.unifiedAddress, serializer);
+    sse_encode_opt_String(self.seedFamilyId, serializer);
   }
 
   @protected
@@ -13504,6 +13520,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.unifiedAddress, serializer);
     sse_encode_bool(self.isSeedAnchor, serializer);
     sse_encode_bool(self.isHardware, serializer);
+    sse_encode_opt_String(self.seedFamilyId, serializer);
   }
 
   @protected
@@ -15448,6 +15465,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.zip32AccountIndex, serializer);
     sse_encode_String(self.name, serializer);
     sse_encode_bool(self.isSeedAnchor, serializer);
+    sse_encode_opt_String(self.seedFamilyId, serializer);
   }
 
   @protected
@@ -15759,6 +15777,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.mnemonic, serializer);
     sse_encode_String(self.unifiedAddress, serializer);
     sse_encode_String(self.accountUuid, serializer);
+    sse_encode_opt_String(self.seedFamilyId, serializer);
   }
 
   @protected
@@ -15769,6 +15788,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.unifiedAddress, serializer);
     sse_encode_String(self.accountUuid, serializer);
+    sse_encode_opt_String(self.seedFamilyId, serializer);
   }
 
   @protected

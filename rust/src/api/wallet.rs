@@ -16,18 +16,21 @@ pub struct WalletCreationResult {
     pub mnemonic: String,
     pub unified_address: String,
     pub account_uuid: String,
+    pub seed_family_id: Option<String>,
 }
 
 /// Result of wallet import, containing the unified address and account UUID.
 pub struct WalletImportResult {
     pub unified_address: String,
     pub account_uuid: String,
+    pub seed_family_id: Option<String>,
 }
 
 /// Result of adding an account to an existing wallet.
 pub struct AccountCreationResult {
     pub account_uuid: String,
     pub unified_address: String,
+    pub seed_family_id: Option<String>,
 }
 
 /// Result of software mnemonic import with ZIP32 account discovery.
@@ -55,6 +58,7 @@ pub struct SoftwareWalletImportAccount {
     pub zip32_account_index: u32,
     pub name: String,
     pub is_seed_anchor: bool,
+    pub seed_family_id: Option<String>,
 }
 
 /// Account info returned by list_accounts.
@@ -64,6 +68,8 @@ pub struct AccountInfo {
     pub unified_address: String,
     pub is_seed_anchor: bool,
     pub is_hardware: bool,
+    /// Opaque ZIP-32 seed fingerprint used only to group related accounts.
+    pub seed_family_id: Option<String>,
 }
 
 /// Sensitive metadata for explicit encrypted wallet export flows.
@@ -265,6 +271,7 @@ pub fn create_wallet(
             mnemonic,
             unified_address,
             account_uuid,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
     })
 }
@@ -289,6 +296,7 @@ pub fn import_wallet(
         Ok(WalletImportResult {
             unified_address,
             account_uuid,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
     })
 }
@@ -314,6 +322,7 @@ pub fn add_account(
         Ok(AccountCreationResult {
             account_uuid,
             unified_address,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
     })
 }
@@ -541,6 +550,7 @@ pub fn import_software_account_at_index(
             zip32_account_index,
             name,
             is_seed_anchor,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
     })
 }
@@ -574,6 +584,7 @@ pub fn derive_next_software_account(
             zip32_account_index,
             name,
             is_seed_anchor,
+            seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
     })
 }
@@ -607,6 +618,7 @@ fn import_discovered_software_wallet_accounts(
     first_account_number: u32,
     discovered_indices: Vec<u32>,
 ) -> Result<SoftwareWalletImportWithDiscoveryResult, String> {
+    let seed_family_id = keys::seed_family_id(seed)?;
     let existing_seed_accounts = if is_first_wallet_account {
         None
     } else {
@@ -652,6 +664,7 @@ fn import_discovered_software_wallet_accounts(
             zip32_account_index: 0,
             name: first_name,
             is_seed_anchor: import_as_derived,
+            seed_family_id: Some(seed_family_id.clone()),
         });
         did_import_primary_account = true;
     }
@@ -699,6 +712,7 @@ fn import_discovered_software_wallet_accounts(
                     zip32_account_index: account_index,
                     name,
                     is_seed_anchor: import_as_derived,
+                    seed_family_id: Some(seed_family_id.clone()),
                 });
                 next_name_number += 1;
             }
@@ -921,6 +935,7 @@ pub fn import_hardware_account(
         Ok(AccountCreationResult {
             account_uuid,
             unified_address,
+            seed_family_id: Some(hex::encode(seed_fingerprint)),
         })
     })
 }
@@ -938,6 +953,7 @@ pub fn list_accounts(db_path: String, network: String) -> Result<Vec<AccountInfo
                 unified_address: a.unified_address,
                 is_seed_anchor: a.is_seed_anchor,
                 is_hardware: a.is_hardware,
+                seed_family_id: a.seed_family_id,
             })
             .collect())
     })
@@ -1267,6 +1283,20 @@ mod tests {
         assert_eq!(third.zip32_account_index, 2);
         assert_ne!(second.unified_address, third.unified_address);
         assert_ne!(second.account_uuid, third.account_uuid);
+        assert_eq!(
+            second.seed_family_id.as_deref(),
+            third.seed_family_id.as_deref()
+        );
+
+        let accounts = list_accounts(db_path_str.to_string(), "main".to_string()).unwrap();
+        let seed_family_ids: Vec<_> = accounts
+            .iter()
+            .map(|account| account.seed_family_id.as_deref())
+            .collect();
+        assert_eq!(seed_family_ids.len(), 3);
+        assert!(seed_family_ids[0].is_some());
+        assert!(seed_family_ids.windows(2).all(|pair| pair[0] == pair[1]));
+        assert_eq!(seed_family_ids[0], second.seed_family_id.as_deref());
 
         let birthdays: Vec<u32> = {
             let connection = rusqlite::Connection::open(db_path_str).unwrap();

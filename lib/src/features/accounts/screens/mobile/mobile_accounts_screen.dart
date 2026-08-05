@@ -500,10 +500,7 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
     final state = ref.watch(accountProvider).value;
     final accounts = state?.accounts ?? const <AccountInfo>[];
     final active = state?.activeAccount;
-    final others = [
-      for (final account in accounts)
-        if (account.uuid != active?.uuid) account,
-    ];
+    final accountFamilies = groupAccountsBySeedFamily(accounts, active?.uuid);
 
     return Scaffold(
       backgroundColor: colors.background.window,
@@ -526,19 +523,25 @@ class _MobileAccountsScreenState extends ConsumerState<MobileAccountsScreen> {
                     kMobileTabBarHeight + AppSpacing.lg,
                   ),
                   children: [
-                    if (active != null)
+                    for (
+                      var index = 0;
+                      index < accountFamilies.length;
+                      index++
+                    ) ...[
+                      if (index > 0) const SizedBox(height: AppSpacing.sm),
                       _AccountsGroupCard(
-                        title: 'Current',
-                        titleGap: AppSpacing.s,
-                        children: [_accountRow(active, enabled: !_busy)],
-                      ),
-                    if (others.isNotEmpty) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      _AccountsGroupCard(
-                        title: 'Other',
-                        titleGap: AppSpacing.xs,
+                        key: ValueKey(
+                          'mobile_accounts_family_'
+                          '${accountFamilies[index].anchorAccountUuid}',
+                        ),
+                        title: accountFamilies[index].containsActiveAccount
+                            ? 'Current'
+                            : 'Other',
+                        titleGap: accountFamilies[index].containsActiveAccount
+                            ? AppSpacing.s
+                            : AppSpacing.xs,
                         children: [
-                          for (final account in others)
+                          for (final account in accountFamilies[index].accounts)
                             _accountRow(account, enabled: !_busy),
                         ],
                       ),
@@ -640,6 +643,7 @@ class _AccountsGroupCard extends StatelessWidget {
     required this.title,
     required this.titleGap,
     required this.children,
+    super.key,
   });
 
   final String title;
