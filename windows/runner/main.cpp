@@ -4,8 +4,12 @@
 #include <windows.h>
 
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "flutter_window.h"
+#include "payment_uri_handoff.h"
+#include "payment_uri_protocol.h"
 #include "single_instance.h"
 #include "utils.h"
 #include "velopack_uninstall.h"
@@ -14,10 +18,27 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
   RunVelopackHooks();
 
+  std::vector<std::string> command_line_arguments =
+      GetCommandLineArguments();
+  std::vector<std::string> initial_payment_links =
+      GetPaymentLinkUriArguments(command_line_arguments);
+
   SingleInstanceGuard single_instance;
   const SingleInstanceAcquireResult instance_result = single_instance.Acquire();
   if (instance_result == SingleInstanceAcquireResult::kSecondary) {
-    if (!ActivateExistingInstance(single_instance.activation_message())) {
+    bool handed_off = false;
+    if (initial_payment_links.empty()) {
+      handed_off =
+          ActivateExistingInstance(single_instance.activation_message());
+    } else {
+      handed_off = ForwardPaymentLinksToRunningInstance(initial_payment_links);
+      if (!handed_off &&
+          ActivateExistingInstance(single_instance.activation_message())) {
+        handed_off =
+            ForwardPaymentLinksToRunningInstance(initial_payment_links);
+      }
+    }
+    if (!handed_off) {
       ::MessageBoxW(
           nullptr,
           L"Vizor is already running. It may be starting, not responding, or "
@@ -46,15 +67,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   const HRESULT ro_init = ::RoInitialize(RO_INIT_SINGLETHREADED);
   const bool ro_initialized = SUCCEEDED(ro_init);
+  RegisterVizorProtocolHandlerIfUnclaimed();
 
   flutter::DartProject project(L"data");
 
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
-
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
-  FlutterWindow window(project, single_instance.activation_message());
+  FlutterWindow window(project, single_instance.activation_message(),
+                       std::move(initial_payment_links));
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1095, 726);
   if (!window.Create(L"Vizor", origin, size)) {

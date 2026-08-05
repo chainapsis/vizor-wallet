@@ -12,9 +12,11 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "payment_uri_handoff.h"
 #include "single_instance.h"
 #include "utils.h"
 #include "velopack_update.h"
@@ -24,6 +26,15 @@ namespace {
 namespace credentials_ui = ABI::Windows::Security::Credentials::UI;
 namespace foundation = ABI::Windows::Foundation;
 namespace wrl = Microsoft::WRL;
+
+void PresentWindowForPaymentLink(HWND window) {
+  if (::IsIconic(window)) {
+    ::ShowWindow(window, SW_RESTORE);
+  } else {
+    ::ShowWindow(window, SW_SHOW);
+  }
+  ::SetForegroundWindow(window);
+}
 
 std::wstring StringArg(const flutter::EncodableValue* arguments,
                        const char* key) {
@@ -379,9 +390,12 @@ void VerifyDeviceOwner(
 
 }  // namespace
 
-FlutterWindow::FlutterWindow(const flutter::DartProject& project,
-                             UINT activation_message)
-    : project_(project), activation_message_(activation_message) {}
+FlutterWindow::FlutterWindow(
+    const flutter::DartProject& project, UINT activation_message,
+    std::vector<std::string> initial_payment_links)
+    : project_(project),
+      activation_message_(activation_message),
+      pending_payment_links_(std::move(initial_payment_links)) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -434,6 +448,25 @@ bool FlutterWindow::OnCreate() {
       });
   velopack_update_channel_ =
       CreateVelopackUpdateChannel(flutter_controller_->engine()->messenger());
+  incoming_uri_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.zcash.wallet/payment_uri",
+          &flutter::StandardMethodCodec::GetInstance());
+  incoming_uri_channel_->SetMethodCallHandler(
+      [this](const auto& call, auto result) {
+        if (call.method_name() == "takePendingUris") {
+          result->Success(TakePendingPaymentLinks());
+          return;
+        }
+        if (call.method_name() == "ready") {
+          incoming_uri_dart_ready_ = true;
+          FlushPendingPaymentLinks();
+          result->Success();
+          return;
+        }
+        result->NotImplemented();
+      });
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
@@ -454,6 +487,7 @@ void FlutterWindow::OnDestroy() {
     camera_permission_channel_.reset();
     device_owner_auth_channel_.reset();
     velopack_update_channel_.reset();
+    incoming_uri_channel_.reset();
     flutter_controller_ = nullptr;
   }
 
@@ -482,6 +516,16 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     return kSingleInstanceActivationAcknowledged;
   }
 
+  if (message == WM_COPYDATA) {
+    std::string payment_link;
+    if (TryReadPaymentLinkCopyData(lparam, &payment_link)) {
+      pending_payment_links_.push_back(std::move(payment_link));
+      PresentWindowForPaymentLink(hwnd);
+      FlushPendingPaymentLinks();
+      return TRUE;
+    }
+  }
+
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
@@ -499,4 +543,24 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+}
+
+flutter::EncodableValue FlutterWindow::TakePendingPaymentLinks() {
+  flutter::EncodableList uris;
+  uris.reserve(pending_payment_links_.size());
+  for (const auto& uri : pending_payment_links_) {
+    uris.emplace_back(uri);
+  }
+  pending_payment_links_.clear();
+  return flutter::EncodableValue(uris);
+}
+
+void FlutterWindow::FlushPendingPaymentLinks() {
+  if (!incoming_uri_dart_ready_ || !incoming_uri_channel_ ||
+      pending_payment_links_.empty()) {
+    return;
+  }
+  incoming_uri_channel_->InvokeMethod(
+      "onUris", std::make_unique<flutter::EncodableValue>(
+                    TakePendingPaymentLinks()));
 }

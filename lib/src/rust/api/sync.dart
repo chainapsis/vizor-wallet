@@ -226,6 +226,28 @@ Future<ProposalResult> proposeSend({
   memo: memo,
 );
 
+/// Propose a transfer using the minimum shielded confirmation policy.
+///
+/// Payment-link claims sweep a freshly funded one-time account after one
+/// confirmation, while normal wallet sends keep the default policy.
+Future<ProposalResult> proposeSendMinConfirmations({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String sendFlowId,
+  required String toAddress,
+  required BigInt amountZatoshi,
+  String? memo,
+}) => RustLib.instance.api.crateApiSyncProposeSendMinConfirmations(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  sendFlowId: sendFlowId,
+  toAddress: toAddress,
+  amountZatoshi: amountZatoshi,
+  memo: memo,
+);
+
 /// Estimate the fee for a transfer without storing a proposal.
 Future<BigInt> estimateFee({
   required String dbPath,
@@ -251,6 +273,24 @@ Future<SendMaxEstimateResult> estimateSendMax({
   required String toAddress,
   String? memo,
 }) => RustLib.instance.api.crateApiSyncEstimateSendMax(
+  dbPath: dbPath,
+  network: network,
+  accountUuid: accountUuid,
+  toAddress: toAddress,
+  memo: memo,
+);
+
+/// Estimate max send using the minimum shielded confirmation policy.
+///
+/// Payment-link claims use this before `propose_send_min_confirmations` so the
+/// estimate and stored proposal agree on one-confirmation spendability.
+Future<SendMaxEstimateResult> estimateSendMaxMinConfirmations({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String toAddress,
+  String? memo,
+}) => RustLib.instance.api.crateApiSyncEstimateSendMaxMinConfirmations(
   dbPath: dbPath,
   network: network,
   accountUuid: accountUuid,
