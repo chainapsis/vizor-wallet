@@ -99,6 +99,7 @@ abstract final class AppIcons {
   static const sync = 'sync';
   static const theme = 'theme';
   static const time = 'time';
+  static const tor = 'tor';
   static const transparentBalance = 'transparent_balance';
   static const unlock = 'unlock';
   static const trash = 'trash';

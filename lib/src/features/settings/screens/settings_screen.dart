@@ -1,6 +1,7 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -23,6 +24,8 @@ import '../../accounts/widgets/account_modal_card.dart';
 import '../../accounts/widgets/account_edit_modal.dart';
 import '../../accounts/widgets/account_profile_picture_modal.dart';
 import '../settings_platform.dart';
+import '../widgets/network_privacy_control.dart';
+import '../widgets/windows_update_download_flow.dart';
 
 const _settingsRowActivationShortcuts = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
@@ -141,7 +144,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         accountState?.activeAccount?.isHardware ?? false;
     final themeMode = ref.watch(themeModeProvider);
     final endpointLabel = ref.watch(rpcEndpointProvider).hostPort;
-    final updateState = Platform.isWindows
+    final updateState = defaultTargetPlatform == TargetPlatform.windows
         ? ref.watch(windowsUpdateProvider)
         : null;
     final showUninstall = settingsUninstallSupported();
@@ -456,6 +459,16 @@ class _SettingsList extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.md),
         _SettingsBlock(
+          title: 'Privacy',
+          rows: const [
+            NetworkPrivacyControl(
+              key: ValueKey('settings_tor_control'),
+              showSurface: false,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _SettingsBlock(
           title: 'System',
           rows: [
             _SettingsRow(
@@ -626,7 +639,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(windowsUpdateProvider);
-    final primary = _primaryAction(ref, state);
+    final primary = _primaryAction(context, ref, state);
 
     return AccountModalCard(
       child: Column(
@@ -675,6 +688,7 @@ class _WindowsUpdateModal extends ConsumerWidget {
   }
 
   static _UpdatePrimaryAction _primaryAction(
+    BuildContext context,
     WidgetRef ref,
     WindowsUpdateState state,
   ) {
@@ -683,18 +697,18 @@ class _WindowsUpdateModal extends ConsumerWidget {
     }
     return switch (state.status) {
       WindowsUpdateStatus.checking => const _UpdatePrimaryAction(
-        label: 'Checking...',
+        label: 'Checking…',
       ),
       WindowsUpdateStatus.downloading => const _UpdatePrimaryAction(
-        label: 'Downloading...',
+        label: 'Downloading…',
       ),
       WindowsUpdateStatus.applying => const _UpdatePrimaryAction(
-        label: 'Restarting...',
+        label: 'Restarting…',
       ),
       WindowsUpdateStatus.available => _UpdatePrimaryAction(
         label: 'Download update',
         onPressed: () {
-          unawaited(ref.read(windowsUpdateProvider.notifier).downloadUpdate());
+          unawaited(startWindowsUpdateDownload(context: context, ref: ref));
         },
       ),
       WindowsUpdateStatus.ready => _UpdatePrimaryAction(
@@ -735,7 +749,9 @@ class _WindowsUpdateModal extends ConsumerWidget {
         'Version ${state.availableVersion} is ready.',
       WindowsUpdateStatus.applying => 'Restarting Vizor.',
       WindowsUpdateStatus.failed =>
-        state.message.isEmpty ? "Couldn't check for updates." : state.message,
+        state.message.trim().isEmpty
+            ? "Couldn't complete the update. Try again."
+            : state.message.trim(),
       _ => 'Ready to check for updates.',
     };
   }
@@ -949,7 +965,7 @@ class _SettingsBlock extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
               title,
-              style: AppTypography.labelMedium.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 fontWeight: FontWeight.w400,
                 color: colors.text.secondary,
               ),

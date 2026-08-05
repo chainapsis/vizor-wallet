@@ -7,6 +7,7 @@ import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
+import '../widgetbook/swap_use_cases.dart';
 
 typedef FigmaCompareScenarioBuilder = Widget Function(BuildContext context);
 
@@ -112,6 +113,56 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'customise-account',
     description: 'Desktop account personalisation onboarding screen',
     builder: buildCustomiseAccountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-main',
+    description: 'Desktop settings with Tor privacy control',
+    builder: buildSettingsMainUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-connecting',
+    description: 'Desktop settings while Tor is connecting',
+    builder: buildSettingsTorConnectingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-connected',
+    description: 'Desktop settings with Tor connected',
+    builder: buildSettingsTorConnectedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-switching-direct',
+    description: 'Desktop settings while switching from Tor to direct',
+    builder: buildSettingsTorSwitchingToDirectUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-updates-unavailable',
+    description: 'Desktop settings when Tor updates are unavailable',
+    builder: buildSettingsTorUpdatesUnavailableUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'settings-tor-failed',
+    description: 'Desktop settings after Tor connection failure',
+    builder: buildSettingsTorFailedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'welcome-large',
+    description: 'Desktop first-wallet welcome screen',
+    builder: buildWelcomeLargeUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'welcome-network-settings',
+    description: 'Desktop first-wallet network settings with Tor control',
+    builder: buildWelcomeNetworkSettingsUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'welcome-network-settings-tor-connected',
+    description: 'Desktop first-wallet network settings with Tor connected',
+    builder: buildWelcomeNetworkSettingsTorConnectedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'swap-tor-blocked',
+    description: 'Desktop swap when the provider blocks a Tor exit',
+    builder: buildSwapPageTorBlockedUseCase,
   ),
   FigmaCompareScenario(
     id: 'mobile-customise-account',

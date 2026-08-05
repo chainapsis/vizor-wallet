@@ -1002,7 +1002,7 @@ pub async fn extract_and_broadcast_pczt(
     // but a response deadline is ambiguous: lightwalletd may already
     // have relayed the transaction, so we store locally and let the
     // normal pending/resubmit path reconcile it.
-    let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
+    let mut client = crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
         .await
         .map_err(|e| e.to_string())?;
     let latest = crate::wallet::sync_engine::get_latest_block(&mut client)

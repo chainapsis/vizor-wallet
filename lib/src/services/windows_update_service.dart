@@ -13,6 +13,7 @@ class WindowsUpdateSnapshot {
     required this.availableVersion,
     required this.downloadProgress,
     required this.pendingRestart,
+    required this.torProxyReady,
     required this.message,
   });
 
@@ -27,6 +28,7 @@ class WindowsUpdateSnapshot {
       availableVersion: '',
       downloadProgress: 0,
       pendingRestart: false,
+      torProxyReady: false,
       message: '',
     );
   }
@@ -42,6 +44,7 @@ class WindowsUpdateSnapshot {
       availableVersion: _stringValue(map['availableVersion']),
       downloadProgress: _intValue(map['downloadProgress']).clamp(0, 100),
       pendingRestart: map['pendingRestart'] == true,
+      torProxyReady: map['torProxyReady'] == true,
       message: _stringValue(map['message']),
     );
   }
@@ -55,6 +58,7 @@ class WindowsUpdateSnapshot {
   final String availableVersion;
   final int downloadProgress;
   final bool pendingRestart;
+  final bool torProxyReady;
   final String message;
 
   static String _stringValue(Object? value, {String fallback = ''}) {
@@ -79,6 +83,30 @@ class WindowsUpdateService {
 
   Future<WindowsUpdateSnapshot> applyUpdateAndRestart() =>
       _invoke('applyUpdateAndRestart');
+
+  Future<String?> getUpdateBaseUrl() async {
+    if (!Platform.isWindows) return null;
+    try {
+      return await _channel.invokeMethod<String>('getUpdateBaseUrl');
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  Future<void> setTorRouting({
+    required bool enabled,
+    String? proxyBaseUrl,
+  }) async {
+    if (!Platform.isWindows) return;
+    try {
+      await _channel.invokeMethod<void>('setTorRouting', {
+        'enabled': enabled,
+        'proxyBaseUrl': proxyBaseUrl,
+      });
+    } on MissingPluginException {
+      // Development builds without Velopack have no updater to configure.
+    }
+  }
 
   Future<WindowsUpdateSnapshot> _invoke(String method) async {
     if (!Platform.isWindows) {

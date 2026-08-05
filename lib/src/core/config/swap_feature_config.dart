@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../main.dart' show log;
 import '../../app_bootstrap.dart';
 import '../layout/app_form_factor.dart';
+import '../network/network_http_client.dart';
 import 'app_version_config.dart';
 import 'network_config.dart';
 import 'swap_remote_enable_config.dart';
@@ -51,22 +52,26 @@ abstract interface class SwapEnabledOverrideSource {
 class HttpSwapEnabledOverrideSource implements SwapEnabledOverrideSource {
   HttpSwapEnabledOverrideSource({
     HttpClient? client,
+    NetworkHttpClient? networkClient,
     Uri? endpoint,
     this.timeout = const Duration(seconds: 8),
-  }) : _client = client ?? HttpClient(),
+  }) : _client = networkClient ?? NetworkHttpClient(directClient: client),
        _endpoint = endpoint ?? Uri.parse(kSwapEnabledOverrideUrl);
 
-  final HttpClient _client;
+  final NetworkHttpClient _client;
   final Uri _endpoint;
   final Duration timeout;
 
   @override
   Future<bool> isEnabledForVersion(String version) async {
     try {
-      final request = await _client.getUrl(_endpoint).timeout(timeout);
-      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      final response = await request.close().timeout(timeout);
-      final body = await utf8.decoder.bind(response).join().timeout(timeout);
+      final response = await _client.request(
+        'GET',
+        _endpoint,
+        headers: const {HttpHeaders.acceptHeader: 'application/json'},
+        timeout: timeout,
+      );
+      final body = utf8.decode(response.bodyBytes);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         log('swapFeature: override returned ${response.statusCode}');
         return false;

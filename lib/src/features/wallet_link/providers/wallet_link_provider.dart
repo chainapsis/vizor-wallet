@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
+import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -51,6 +52,21 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   }
 
   Future<void> start() async {
+    if (ref.read(networkPrivacyProvider).torEnabled) {
+      // Keep an already-displayed QR valid until its normal expiry. Clearing
+      // it here would also attempt an unsupported DELETE over Tor and leave
+      // the remote package alive without a QR the user can still scan.
+      if (_remotePackageId != null) return;
+      state = const WalletLinkState(
+        phase: WalletLinkPhase.error,
+        errorMessage:
+            'Link mobile is unavailable while Tor is on because its temporary '
+            'package cannot be explicitly deleted over the current Tor '
+            'transport.',
+      );
+      return;
+    }
+
     final epoch = ++_epoch;
     _timer?.cancel();
     final previousPackageId = _remotePackageId;

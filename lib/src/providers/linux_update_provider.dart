@@ -7,8 +7,11 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_version_config.dart';
+import '../core/network/network_http_client.dart';
 
-const _feedTimeout = Duration(seconds: 8);
+const kLinuxUpdateFeedTimeout = Duration(seconds: 30);
+
+typedef LinuxUpdateHttpClientFactory = NetworkHttpClient Function();
 
 final linuxUpdateProvider = FutureProvider<LinuxUpdateInfo?>((ref) async {
   if (!kVizorUpdateCheckEnabled ||
@@ -18,33 +21,55 @@ final linuxUpdateProvider = FutureProvider<LinuxUpdateInfo?>((ref) async {
     return null;
   }
 
-  final repository = _normalizedRepository(kVizorReleaseRepository);
-  if (repository == null) return null;
+  return fetchLinuxUpdate(
+    clientFactory: NetworkHttpClient.new,
+    repository: kVizorReleaseRepository,
+    flavor: kVizorReleaseFlavor,
+    arch: _linuxReleaseArch(),
+    currentBuildNumber: kVizorReleaseBuildNumber,
+  );
+});
 
-  final flavor = _normalizedFlavor(kVizorReleaseFlavor);
-  final arch = _linuxReleaseArch();
+/// Checks the Linux release feed through the process-wide network route.
+///
+/// Keeping the request separate from the platform/build gate lets tests prove
+/// that Tor routing, feed validation, and timeout behavior work on any host.
+Future<LinuxUpdateInfo?> fetchLinuxUpdate({
+  required LinuxUpdateHttpClientFactory clientFactory,
+  required String repository,
+  required String flavor,
+  required String arch,
+  required int currentBuildNumber,
+  Duration timeout = kLinuxUpdateFeedTimeout,
+}) async {
+  final normalizedRepository = _normalizedRepository(repository);
+  if (normalizedRepository == null) return null;
+
+  final normalizedFlavor = _normalizedFlavor(flavor);
   final feedUri = Uri.parse(
-    'https://github.com/$repository/releases/latest/download/'
-    '${_feedAssetName(flavor)}',
+    'https://github.com/$normalizedRepository/releases/latest/download/'
+    '${_feedAssetName(normalizedFlavor)}',
   );
 
-  final client = HttpClient()..connectionTimeout = _feedTimeout;
+  final client = clientFactory();
   try {
-    final request = await client.getUrl(feedUri).timeout(_feedTimeout);
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-
-    final response = await request.close().timeout(_feedTimeout);
+    final response = await client.request(
+      'GET',
+      feedUri,
+      headers: const {HttpHeaders.acceptHeader: 'application/json'},
+      timeout: timeout,
+    );
     if (response.statusCode == HttpStatus.notFound) return null;
     if (response.statusCode != HttpStatus.ok) return null;
 
-    final body = await utf8.decodeStream(response).timeout(_feedTimeout);
+    final body = utf8.decode(response.bodyBytes);
     final decoded = jsonDecode(body);
     if (decoded is! Map<String, dynamic>) return null;
 
     return LinuxUpdateInfo.fromJson(
       decoded,
-      currentBuildNumber: kVizorReleaseBuildNumber,
-      expectedFlavor: flavor,
+      currentBuildNumber: currentBuildNumber,
+      expectedFlavor: normalizedFlavor,
       expectedArch: arch,
     );
   } catch (_) {
@@ -52,7 +77,7 @@ final linuxUpdateProvider = FutureProvider<LinuxUpdateInfo?>((ref) async {
   } finally {
     client.close(force: true);
   }
-});
+}
 
 class LinuxUpdateInfo {
   const LinuxUpdateInfo({

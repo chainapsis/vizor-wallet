@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_version_config.dart';
+import '../rust/api/network_privacy.dart' as rust_network_privacy;
 import '../services/windows_update_service.dart';
 
 enum WindowsUpdateStatus {
@@ -18,6 +20,19 @@ enum WindowsUpdateStatus {
   failed,
 }
 
+const kWindowsTorUpdateRouteUnavailableMessage =
+    'The software updater is not connected to Tor. Retry updates in Settings, '
+    'or turn off Tor and try again.';
+
+class WindowsUpdateDownloadResult {
+  const WindowsUpdateDownloadResult.started() : started = true, message = '';
+
+  const WindowsUpdateDownloadResult.failed(this.message) : started = false;
+
+  final bool started;
+  final String message;
+}
+
 class WindowsUpdateState {
   const WindowsUpdateState({
     required this.supported,
@@ -28,6 +43,7 @@ class WindowsUpdateState {
     required this.availableVersion,
     required this.downloadProgress,
     required this.pendingRestart,
+    required this.torProxyReady,
     required this.message,
   });
 
@@ -43,6 +59,7 @@ class WindowsUpdateState {
       availableVersion: '',
       downloadProgress: 0,
       pendingRestart: false,
+      torProxyReady: false,
       message: '',
     );
   }
@@ -59,6 +76,7 @@ class WindowsUpdateState {
       availableVersion: snapshot.availableVersion,
       downloadProgress: snapshot.downloadProgress,
       pendingRestart: snapshot.pendingRestart,
+      torProxyReady: snapshot.torProxyReady,
       message: snapshot.message,
     );
   }
@@ -71,6 +89,7 @@ class WindowsUpdateState {
   final String availableVersion;
   final int downloadProgress;
   final bool pendingRestart;
+  final bool torProxyReady;
   final String message;
 
   bool get isBusy => switch (status) {
@@ -108,6 +127,10 @@ final windowsUpdateServiceProvider = Provider<WindowsUpdateService>(
   (ref) => WindowsUpdateService(),
 );
 
+final windowsUpdateTorEnabledProvider = Provider<bool Function()>(
+  (_) => rust_network_privacy.isTorEnabled,
+);
+
 class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   Timer? _pollTimer;
   bool _polling = false;
@@ -124,6 +147,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
 
   Future<void> checkOnStartup() async {
     if (_startupCheckStarted || !Platform.isWindows) return;
+    if (!await _updateNetworkReady()) return;
     _startupCheckStarted = true;
     await checkForUpdates();
   }
@@ -133,12 +157,39 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   Future<void> checkForUpdates() async {
+    if (!await _updateNetworkReady()) return;
     await _runAndPoll(ref.read(windowsUpdateServiceProvider).checkForUpdates());
   }
 
-  Future<void> downloadUpdate() async {
-    if (!state.canDownload) return;
-    await _runAndPoll(ref.read(windowsUpdateServiceProvider).downloadUpdate());
+  Future<WindowsUpdateDownloadResult> downloadUpdate() async {
+    if (!state.canDownload) {
+      return const WindowsUpdateDownloadResult.failed(
+        'This update is no longer ready to download. Check for updates again.',
+      );
+    }
+
+    try {
+      if (!await _updateNetworkReady()) {
+        return const WindowsUpdateDownloadResult.failed(
+          kWindowsTorUpdateRouteUnavailableMessage,
+        );
+      }
+      await _runAndPoll(
+        ref.read(windowsUpdateServiceProvider).downloadUpdate(),
+      );
+    } catch (error) {
+      final message = _updateErrorMessage(error);
+      _setFailed(message);
+      return WindowsUpdateDownloadResult.failed(message);
+    }
+
+    if (state.status == WindowsUpdateStatus.failed) {
+      final message = state.message.trim();
+      return WindowsUpdateDownloadResult.failed(
+        message.isEmpty ? "Couldn't complete the update. Try again." : message,
+      );
+    }
+    return const WindowsUpdateDownloadResult.started();
   }
 
   Future<void> applyUpdateAndRestart() async {
@@ -146,6 +197,14 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     await _runAndPoll(
       ref.read(windowsUpdateServiceProvider).applyUpdateAndRestart(),
     );
+  }
+
+  bool get _torEnabled => ref.read(windowsUpdateTorEnabledProvider)();
+
+  Future<bool> _updateNetworkReady() async {
+    if (!_torEnabled) return true;
+    final snapshot = await ref.read(windowsUpdateServiceProvider).getState();
+    return snapshot.torProxyReady;
   }
 
   Future<void> _runAndPoll(Future<WindowsUpdateSnapshot> action) async {
@@ -157,6 +216,22 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   Future<void> _updateFrom(Future<WindowsUpdateSnapshot> action) async {
     final snapshot = await action;
     state = WindowsUpdateState.fromSnapshot(snapshot);
+  }
+
+  void _setFailed(String message) {
+    final current = state;
+    state = WindowsUpdateState(
+      supported: current.supported,
+      status: WindowsUpdateStatus.failed,
+      currentVersion: current.currentVersion,
+      appId: current.appId,
+      repoUrl: current.repoUrl,
+      availableVersion: current.availableVersion,
+      downloadProgress: current.downloadProgress,
+      pendingRestart: current.pendingRestart,
+      torProxyReady: current.torProxyReady,
+      message: message,
+    );
   }
 
   void _startPollingIfBusy() {
@@ -177,6 +252,15 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       }
     });
   }
+}
+
+String _updateErrorMessage(Object error) {
+  if (error is PlatformException) {
+    final message = error.message?.trim();
+    if (message != null && message.isNotEmpty) return message;
+  }
+  final message = error.toString().trim();
+  return message.isEmpty ? "Couldn't complete the update. Try again." : message;
 }
 
 final windowsUpdateProvider =

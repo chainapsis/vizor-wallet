@@ -1654,6 +1654,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// silent for the rest of the session if the toggle fires while
   /// sync is already idle.
   Future<void> restartSync() async {
+    await restartSyncAfterTransportChange(() async {});
+  }
+
+  /// Quiesces every Rust network lane, applies one transport change, then
+  /// starts sync and polling again. The callback runs only after existing
+  /// direct or Tor channels have been asked to stop, which prevents a runtime
+  /// route toggle from overlapping a newly configured connection.
+  Future<void> restartSyncAfterTransportChange(
+    Future<void> Function() updateTransport,
+  ) async {
     ++_syncGen;
     ++_progressEventVersion;
     ++_balanceReadVersion;
@@ -1688,17 +1698,22 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // the sync loop's post-batch cancel check nor the observer's
     // 100ms cancel slice should take anywhere near that long,
     // but a network stall mid-broadcast can extend it.
-    await _waitForRustTasksToStop(
+    final stopped = await _waitForRustTasksToStop(
       timeoutMs: 5000,
       onSyncTimeout:
           'SyncNotifier: restartSync timed out waiting for Rust sync loop to '
-          'stop after 5s; starting anyway (the startSync guard will log if '
-          'the old run is still around)',
+          'stop after 5s; transport change blocked',
       onMempoolTimeout:
           'SyncNotifier: restartSync timed out waiting for mempool observer to '
-          'stop after 5s; the new observer start will skip and the new '
-          'session runs without streaming',
+          'stop after 5s; transport change blocked',
     );
+    if (!stopped) {
+      throw StateError(
+        'Network tasks did not stop before the transport change. Direct '
+        'traffic remains blocked; retry the Tor setting after sync stops.',
+      );
+    }
+    await updateTransport();
     startSync();
     _startPolling();
   }

@@ -16,10 +16,13 @@
 
 use std::{future::Future, time::Duration};
 
+use http::Uri;
+use hyper_util::client::legacy::connect::HttpConnector;
 use tonic::{
     transport::{Channel, ClientTlsConfig, Endpoint},
     Request, Response, Status,
 };
+use tower_service::Service;
 use zcash_client_backend::{
     data_api::{chain::CommitmentTreeRoot, WalletCommitmentTrees},
     proto::service::{
@@ -127,6 +130,22 @@ where
 pub(crate) async fn open_lwd_channel(
     lightwalletd_url: &str,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_channel_for_route(lightwalletd_url, false).await
+}
+
+/// Opens an isolated Tor circuit when Tor is enabled. Direct mode retains its
+/// normal direct transport. Use this for transaction broadcasts that must not
+/// share a Tor circuit with other wallet activity.
+pub(crate) async fn open_isolated_lwd_channel(
+    lightwalletd_url: &str,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    open_lwd_channel_for_route(lightwalletd_url, true).await
+}
+
+async fn open_lwd_channel_for_route(
+    lightwalletd_url: &str,
+    isolated: bool,
+) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -135,20 +154,83 @@ pub(crate) async fn open_lwd_channel(
     let endpoint = Endpoint::from_shared(lightwalletd_url.to_string())
         .map_err(|e| SyncError::net(format!("invalid URL: {e}")))?
         .connect_timeout(LIGHTWALLETD_CONNECT_TIMEOUT);
-    let channel = if lightwalletd_url.starts_with("https://") {
+    if let Some(tor_client) = crate::network_privacy::tor_client_for_route(isolated)
+        .map_err(|e| SyncError::net(format!("network privacy blocked lightwalletd: {e}")))?
+    {
+        let allow_onion_services = endpoint_allows_onion_services(&endpoint);
+        return tor_client
+            .connect_to_lightwalletd(endpoint.uri().clone(), allow_onion_services)
+            .await
+            .map_err(|e| SyncError::net(format!("Tor gRPC connect failed: {e}")));
+    }
+    let endpoint = if lightwalletd_url.starts_with("https://") {
         endpoint
             .tls_config(ClientTlsConfig::new().with_webpki_roots())
             .map_err(|e| SyncError::net(format!("TLS error: {e}")))?
-            .connect()
-            .await
-            .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?
     } else {
         endpoint
-            .connect()
-            .await
-            .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?
     };
+    let channel = endpoint
+        .connect_with_connector(DirectRouteConnector::new())
+        .await
+        .map_err(|e| SyncError::net(format!("gRPC connect failed: {e}")))?;
     Ok(CompactTxStreamerClient::new(channel))
+}
+
+#[derive(Clone)]
+struct DirectRouteConnector {
+    inner: HttpConnector,
+}
+
+impl DirectRouteConnector {
+    fn new() -> Self {
+        let mut inner = HttpConnector::new();
+        inner.enforce_http(false);
+        Self { inner }
+    }
+}
+
+impl Service<Uri> for DirectRouteConnector {
+    type Response =
+        crate::network_privacy::DirectRouteIo<hyper_util::rt::TokioIo<tokio::net::TcpStream>>;
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+    type Future =
+        std::pin::Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.inner
+            .poll_ready(cx)
+            .map(|result| result.map_err(|error| Box::new(error) as Self::Error))
+    }
+
+    fn call(&mut self, uri: Uri) -> Self::Future {
+        let future = self.inner.call(uri);
+        let route = crate::network_privacy::DirectRouteLease::new();
+        Box::pin(async move {
+            let mut future = Box::pin(future);
+            let connected = std::future::poll_fn(|cx| {
+                route.poll(cx, |cx| match future.as_mut().poll(cx) {
+                    std::task::Poll::Ready(Ok(connected)) => std::task::Poll::Ready(Ok(connected)),
+                    std::task::Poll::Ready(Err(error)) => {
+                        std::task::Poll::Ready(Err(Box::new(error) as Self::Error))
+                    }
+                    std::task::Poll::Pending => std::task::Poll::Pending,
+                })
+            })
+            .await?;
+            Ok(route.into_io(connected))
+        })
+    }
+}
+
+fn endpoint_allows_onion_services(endpoint: &Endpoint) -> bool {
+    endpoint
+        .uri()
+        .host()
+        .is_some_and(|host| host.to_ascii_lowercase().ends_with(".onion"))
 }
 
 /// Return the current chain tip with a bounded response wait.
@@ -570,6 +652,18 @@ pub(super) async fn download_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn onion_lightwalletd_hosts_enable_onion_service_connections() {
+        for (url, expected) in [
+            ("https://example.com", false),
+            ("https://lightwalletd.example.onion", true),
+            ("https://LIGHTWALLETD.EXAMPLE.ONION", true),
+        ] {
+            let endpoint = Endpoint::from_shared(url.to_string()).expect("valid endpoint");
+            assert_eq!(endpoint_allows_onion_services(&endpoint), expected, "{url}");
+        }
+    }
 
     #[tokio::test]
     async fn stalled_address_utxo_stream_start_is_bounded() {
