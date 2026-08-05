@@ -775,6 +775,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           // Fail-closed routing blocks direct requests for the rest of the
           // session, and the wallet this route belonged to no longer exists.
           directRequests.allow();
+          // Onboarding can reach the network setting again, so the published
+          // route has to match the one Rust is now on. Going through
+          // setTorEnabled instead would restart sync in the middle of the wipe.
+          ref.read(networkPrivacyProvider.notifier).markRouteDirectAfterReset();
         },
       );
     }

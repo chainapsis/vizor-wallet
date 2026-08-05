@@ -625,6 +625,100 @@ void main() {
     },
   );
 
+  test('a user toggle stops the startup activation mid-flight', () async {
+    final events = <String>[];
+    final nativeUpdates = _DeferredEnableNativeUpdateCoordinator(events);
+    final runtime = _PendingBootstrapRuntime(events);
+    try {
+      await initializeNetworkPrivacyRuntime(
+        store: _EnabledStore(events),
+        runtime: runtime,
+        nativeUpdates: nativeUpdates,
+        directRequests: _FakeDirectRequestGate(events),
+      ).timeout(const Duration(seconds: 1));
+      await Future<void>.delayed(Duration.zero);
+
+      final container = ProviderContainer(
+        overrides: [
+          networkPrivacyPreferenceStoreProvider.overrideWithValue(
+            _FakeStore(events),
+          ),
+          networkPrivacyRuntimeProvider.overrideWithValue(
+            _FakeRuntime(events, NetworkPrivacyConnectionStatus.off),
+          ),
+          networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+            _FakeNativeUpdateCoordinator(events),
+          ),
+          networkPrivacyDirectRequestGateProvider.overrideWithValue(
+            _FakeDirectRequestGate(events),
+          ),
+          networkPrivacyTransportRestartProvider.overrideWithValue(
+            (update) async => update(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+      events.clear();
+
+      // The activation was parked inside its native-updater call; releasing it
+      // must not push Tor routing onto a runtime the user moved to Direct.
+      nativeUpdates.completeEnable();
+      runtime.completeBootstrap(NetworkPrivacyConnectionStatus.connected);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(runtime.configuredEnable, isFalse);
+      expect(events, isNot(contains('native-resume')));
+      expect(
+        container.read(networkPrivacyProvider).status,
+        NetworkPrivacyConnectionStatus.off,
+      );
+    } finally {
+      nativeUpdates.completeEnable();
+      runtime.completeBootstrap(NetworkPrivacyConnectionStatus.connected);
+      await initializeNetworkPrivacyRuntime(
+        store: _FakeStore(<String>[]),
+        runtime: _FakeRuntime(<String>[], NetworkPrivacyConnectionStatus.off),
+        nativeUpdates: _FakeNativeUpdateCoordinator(<String>[]),
+        directRequests: _FakeDirectRequestGate(<String>[]),
+      );
+    }
+  });
+
+  test('a wallet reset publishes the direct route it applied', () async {
+    final events = <String>[];
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _FakeStore(events),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(
+          _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+        ),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue(
+          (update) async => update(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+    expect(container.read(networkPrivacyProvider).torEnabled, isTrue);
+
+    container.read(networkPrivacyProvider.notifier).markRouteDirectAfterReset();
+
+    final state = container.read(networkPrivacyProvider);
+    expect(state.torEnabled, isFalse);
+    expect(state.status, NetworkPrivacyConnectionStatus.off);
+  });
+
   test('startup does not wait for Tor to bootstrap', () async {
     final events = <String>[];
     final runtime = _PendingBootstrapRuntime(events);
@@ -723,6 +817,9 @@ void main() {
         container.read(networkPrivacyProvider).status,
         NetworkPrivacyConnectionStatus.off,
       );
+      // Nor may it leave the native updaters routed for a Tor session the
+      // user has turned off.
+      expect(events, isNot(contains('native-resume')));
     } finally {
       runtime.completeBootstrap(NetworkPrivacyConnectionStatus.connected);
       await initializeNetworkPrivacyRuntime(
@@ -757,6 +854,7 @@ class _PendingBootstrapRuntime implements NetworkPrivacyRuntime {
   final List<String> events;
   final _bootstrap = Completer<NetworkPrivacyConnectionStatus>();
   var configureStarted = false;
+  var configuredEnable = false;
   var _torEnabled = false;
 
   void completeBootstrap(NetworkPrivacyConnectionStatus status) {
@@ -788,6 +886,7 @@ class _PendingBootstrapRuntime implements NetworkPrivacyRuntime {
       return NetworkPrivacyConnectionStatus.off;
     }
     configureStarted = true;
+    configuredEnable = true;
     return _bootstrap.future;
   }
 }
@@ -882,6 +981,42 @@ class _ThrowingRuntime implements NetworkPrivacyRuntime {
   }) async {
     events.add('configure:$enabled');
     throw StateError('bootstrap failed');
+  }
+}
+
+/// Parks inside the enable call so a test can toggle the route while the
+/// startup activation is still mid-flight.
+class _DeferredEnableNativeUpdateCoordinator
+    implements NetworkPrivacyNativeUpdateCoordinator {
+  _DeferredEnableNativeUpdateCoordinator(this.events);
+
+  final List<String> events;
+  final _enable = Completer<void>();
+
+  void completeEnable() {
+    if (_enable.isCompleted) return;
+    _enable.complete();
+  }
+
+  @override
+  Future<void> prepareForTorDisable() async {
+    events.add('native-prepare-disable');
+  }
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    events.add('native:$enabled');
+    if (enabled) await _enable.future;
+  }
+
+  @override
+  Future<void> pauseForFailClosedStartup() async {
+    events.add('native:force-pause');
+  }
+
+  @override
+  Future<void> resumeTorUpdates() async {
+    events.add('native-resume');
   }
 }
 

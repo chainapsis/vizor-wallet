@@ -310,7 +310,13 @@ var _initialNetworkPrivacyState = const NetworkPrivacyState.off();
 
 /// Tor activation left running by [initializeNetworkPrivacyRuntime] when the
 /// persisted route is Tor. `null` on every other startup path.
-Future<NetworkPrivacyState>? _pendingStartupActivation;
+Future<NetworkPrivacyState?>? _pendingStartupActivation;
+
+/// Set as soon as the user picks a route, so the startup activation stops
+/// before its next mutation. Rust already refuses a stale enable, but the
+/// native updaters would otherwise be left routed for a Tor session the user
+/// has since turned off.
+var _startupActivationSuperseded = false;
 
 /// A saved Tor preference must not be able to keep the app from launching, so
 /// the fail-closed startup pause waits only this long for an active native
@@ -335,6 +341,7 @@ Future<void> initializeNetworkPrivacyRuntime({
       const AppNetworkPrivacyDirectRequestGate(),
 }) async {
   _pendingStartupActivation = null;
+  _startupActivationSuperseded = false;
   late final bool enabled;
   try {
     enabled = await store.readTorEnabled();
@@ -401,15 +408,18 @@ Future<void> initializeNetworkPrivacyRuntime({
   );
 }
 
-Future<NetworkPrivacyState> _activateTorForStartup({
+Future<NetworkPrivacyState?> _activateTorForStartup({
   required NetworkPrivacyRuntime runtime,
   required NetworkPrivacyNativeUpdateCoordinator nativeUpdates,
   required Future<_NetworkPrivacyDrainFailure?> directDrain,
 }) async {
   try {
+    if (_startupActivationSuperseded) return null;
     await nativeUpdates.setTorEnabled(true);
     _throwIfDirectDrainFailed(await directDrain);
+    if (_startupActivationSuperseded) return null;
     final status = await runtime.configure(enabled: true);
+    if (_startupActivationSuperseded) return null;
     String? startupNotice;
     var softwareUpdatesAvailable = true;
     if (status == NetworkPrivacyConnectionStatus.connected) {
@@ -427,6 +437,7 @@ Future<NetworkPrivacyState> _activateTorForStartup({
       startupNotice: startupNotice,
     );
   } catch (error) {
+    if (_startupActivationSuperseded) return null;
     return NetworkPrivacyState(
       torEnabled: true,
       status: NetworkPrivacyConnectionStatus.failed,
@@ -480,13 +491,27 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
       unawaited(
         pending.then((activated) {
           // A user toggle during startup bootstrap owns the route instead.
-          if (disposed || generation != _generation) return;
+          if (activated == null || disposed || generation != _generation) {
+            return;
+          }
           _initialNetworkPrivacyState = activated;
           state = activated;
         }),
       );
     }
     return _initialNetworkPrivacyState;
+  }
+
+  /// Publishes the Direct route a wallet reset has already applied to Rust.
+  ///
+  /// The reset switches the runtime itself, because routing a wipe through
+  /// [setTorEnabled] would restart sync against the database being deleted.
+  /// This keeps the published state from outliving the wallet it belonged to.
+  void markRouteDirectAfterReset() {
+    _startupActivationSuperseded = true;
+    ++_generation;
+    _initialNetworkPrivacyState = const NetworkPrivacyState.off();
+    state = const NetworkPrivacyState.off();
   }
 
   void clearStartupNotice() {
@@ -501,6 +526,7 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
   }
 
   Future<void> setTorEnabled(bool enabled) async {
+    _startupActivationSuperseded = true;
     final generation = ++_generation;
     final previousState = state;
     final store = ref.read(networkPrivacyPreferenceStoreProvider);

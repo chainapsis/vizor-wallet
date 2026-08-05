@@ -5,6 +5,33 @@ import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
 import 'package:zcash_wallet/src/services/windows_update_service.dart';
 
 void main() {
+  test('an automatic startup check survives a native failure', () async {
+    final service = _FakeWindowsUpdateService(
+      checkError: PlatformException(code: 'feed_unreachable'),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => false),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+      ],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(windowsUpdateProvider.notifier);
+
+    // Callers start this unawaited; an escaping error would be unhandled.
+    await notifier.runStartupCheck();
+
+    final state = container.read(windowsUpdateProvider);
+    expect(state.status, WindowsUpdateStatus.failed);
+    // Nothing the user asked for, so the prompt must not interrupt them.
+    expect(state.failure?.userInitiated, isFalse);
+    expect(service.checkCalls, 1);
+
+    // The spent check must be retryable once the route recovers.
+    await notifier.runStartupCheck();
+    expect(service.checkCalls, 2);
+  });
+
   test('download preserves the native Windows update failure detail', () async {
     final service = _FakeWindowsUpdateService(
       downloadResult: _snapshot(

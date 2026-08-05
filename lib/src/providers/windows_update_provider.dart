@@ -180,14 +180,31 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   Future<void> checkOnStartup() async {
-    if (_startupCheckStarted || !Platform.isWindows) return;
+    if (!Platform.isWindows) return;
+    await runStartupCheck();
+  }
+
+  @visibleForTesting
+  Future<void> runStartupCheck() async {
+    if (_startupCheckStarted) return;
     // The startup check is automatic and re-armed once the route recovers, so
     // an unusable route stays silent instead of raising a failure the user
     // never asked for.
     if (!await _updateNetworkReady()) return;
     _startupCheckStarted = true;
     _userInitiatedOperation = false;
-    await _runAndPoll(ref.read(windowsUpdateServiceProvider).checkForUpdates());
+    try {
+      await _runAndPoll(
+        ref.read(windowsUpdateServiceProvider).checkForUpdates(),
+      );
+    } catch (error) {
+      // Callers start this unawaited, so an escaping error would surface as an
+      // unhandled async error and leave the check permanently spent. Record it
+      // silently and let route recovery run it again.
+      debugPrint('[zcash] Windows startup update check failed: $error');
+      _setFailed(_updateErrorMessage(error));
+      _startupCheckStarted = false;
+    }
   }
 
   Future<void> refresh() async {
