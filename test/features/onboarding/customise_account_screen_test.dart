@@ -29,6 +29,35 @@ void main() {
     );
   });
 
+  testWidgets('renders account customisation for derive flow', (tester) async {
+    await _setDesktopViewport(tester);
+    const args = CustomiseAccountArgs.derive(
+      deriveFromAccountUuid: 'software-account',
+    );
+
+    await tester.pumpWidget(
+      _screenHarness(
+        CustomiseAccountScreen(args: args, onFinish: (_, _) async {}),
+      ),
+    );
+
+    expect(args.isDeriveFlow, isTrue);
+    expect(args.configuresPassword, isFalse);
+    expect(args.deriveFromAccountUuid, 'software-account');
+    expect(
+      find.byKey(const ValueKey('customise_account_name_field')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('customise_account_avatar_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('customise_account_finish_button')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('set password continues to customise without creating a wallet', (
     tester,
   ) async {
@@ -39,10 +68,9 @@ void main() {
       routes: [
         GoRoute(
           path: '/onboarding/set-password',
-          builder:
-              (_, _) => const SetPasswordScreen(
-                args: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
-              ),
+          builder: (_, _) => const SetPasswordScreen(
+            args: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
         ),
         GoRoute(
           path: '/onboarding/customise-account',
@@ -286,10 +314,9 @@ AppButton _finishButton(WidgetTester tester) => tester.widget<AppButton>(
 Future<void> _loadAppFonts() async {
   final youngSerif = FontLoader('Young Serif')
     ..addFont(rootBundle.load('assets/fonts/YoungSerif-Regular.ttf'));
-  final geist =
-      FontLoader('Geist')
-        ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
-        ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
+  final geist = FontLoader('Geist')
+    ..addFont(rootBundle.load('assets/fonts/Geist-Regular.ttf'))
+    ..addFont(rootBundle.load('assets/fonts/Geist-Medium.ttf'));
   await Future.wait([youngSerif.load(), geist.load()]);
 }
 
@@ -319,11 +346,10 @@ Widget _routerHarness(GoRouter router) {
     ],
     child: MaterialApp.router(
       routerConfig: router,
-      builder:
-          (_, child) => AppTheme(
-            data: AppThemeData.dark,
-            child: Material(color: Colors.transparent, child: child!),
-          ),
+      builder: (_, child) => AppTheme(
+        data: AppThemeData.dark,
+        child: Material(color: Colors.transparent, child: child!),
+      ),
     ),
   );
 }

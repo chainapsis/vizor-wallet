@@ -15,12 +15,19 @@ class CreateSecretPassphraseArgs {
 /// setup has been persisted. It stays in route memory and is intentionally not
 /// carried when the user navigates back to the password screen.
 class CustomiseAccountArgs {
-  const CustomiseAccountArgs({required this.mnemonic, this.pendingPassword});
+  const CustomiseAccountArgs({required this.mnemonic, this.pendingPassword})
+    : deriveFromAccountUuid = null;
+
+  const CustomiseAccountArgs.derive({required this.deriveFromAccountUuid})
+    : mnemonic = '',
+      pendingPassword = null;
 
   final String mnemonic;
   final String? pendingPassword;
+  final String? deriveFromAccountUuid;
 
   bool get configuresPassword => pendingPassword != null;
+  bool get isDeriveFlow => deriveFromAccountUuid != null;
 }
 
 class ImportSecretPassphraseArgs {

@@ -117,11 +117,17 @@ class _CustomiseAccountScreenState
 
     Future<void> createAccount() => runWithSyncPausedForAccountMutation(
       ref,
-      () => accountNotifier.createAccountFromMnemonic(
-        mnemonic: args.mnemonic,
-        name: _normalizedName,
-        profilePictureId: _profilePictureId,
-      ),
+      () => args.isDeriveFlow
+          ? accountNotifier.deriveAccountFromExistingSeed(
+              sourceAccountUuid: args.deriveFromAccountUuid!,
+              name: _normalizedName,
+              profilePictureId: _profilePictureId,
+            )
+          : accountNotifier.createAccountFromMnemonic(
+              mnemonic: args.mnemonic,
+              name: _normalizedName,
+              profilePictureId: _profilePictureId,
+            ),
       onStoppingSync: () {
         if (!mounted) return;
         setState(() => _finishPhase = _FinishPhase.stoppingSync);
@@ -202,22 +208,21 @@ class _CustomiseAccountScreenState
 
   @override
   Widget build(BuildContext context) {
-    final profilePictureOverlay =
-        _showProfilePicturePicker
-            ? AppPaneModalOverlay(
-              borderRadius: const BorderRadius.all(Radius.circular(20)),
-              onDismiss: _closeProfilePicturePicker,
-              child: AppProfilePicturePickerModal(
-                title: 'Select profile picture',
-                currentProfilePictureId: _profilePictureId,
-                optionKeyPrefix: 'customise_account_pfp_option_',
-                cancelKey: const ValueKey('customise_account_pfp_cancel'),
-                actionKey: const ValueKey('customise_account_pfp_update'),
-                onCancel: _closeProfilePicturePicker,
-                onUpdate: _selectProfilePicture,
-              ),
-            )
-            : null;
+    final profilePictureOverlay = _showProfilePicturePicker
+        ? AppPaneModalOverlay(
+            borderRadius: const BorderRadius.all(Radius.circular(20)),
+            onDismiss: _closeProfilePicturePicker,
+            child: AppProfilePicturePickerModal(
+              title: 'Select profile picture',
+              currentProfilePictureId: _profilePictureId,
+              optionKeyPrefix: 'customise_account_pfp_option_',
+              cancelKey: const ValueKey('customise_account_pfp_cancel'),
+              actionKey: const ValueKey('customise_account_pfp_update'),
+              onCancel: _closeProfilePicturePicker,
+              onUpdate: _selectProfilePicture,
+            ),
+          )
+        : null;
 
     return OnboardingTrailingPane(
       backTarget: _isSubmitting ? null : _backTarget,

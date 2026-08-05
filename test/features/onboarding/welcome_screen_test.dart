@@ -8,7 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -64,6 +67,88 @@ void main() {
     expect(find.text('Endpoint'), findsOneWidget);
     expect(find.text('Custom Endpoint'), findsOneWidget);
     expect(find.text('Update'), findsOneWidget);
+  });
+
+  testWidgets('hides derive option when wallet has no accounts', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    expect(
+      find.byKey(const ValueKey('welcome_derive_account_button')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('welcome_create_wallet_button')),
+          )
+          .variant,
+      AppButtonVariant.primary,
+    );
+  });
+
+  testWidgets('shows derive option when a software account exists', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(
+      _welcomeScreen(accountState: _softwareAccountState),
+    );
+
+    expect(
+      find.byKey(const ValueKey('welcome_derive_account_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('welcome_create_wallet_button')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('welcome_create_wallet_button')),
+          )
+          .variant,
+      AppButtonVariant.secondary,
+    );
+  });
+
+  testWidgets('derive option routes to customise with derive args', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    CustomiseAccountArgs? routedArgs;
+    final router = GoRouter(
+      initialLocation: '/add-account',
+      routes: [
+        GoRoute(
+          path: '/add-account',
+          builder: (_, _) => const WelcomeScreen(showBackButton: true),
+        ),
+        GoRoute(
+          path: '/onboarding/customise-account',
+          builder: (_, state) {
+            routedArgs = state.extra! as CustomiseAccountArgs;
+            return const Text('Customise destination');
+          },
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      _welcomeRouter(router, accountState: _softwareAccountState),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('welcome_derive_account_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Customise destination'), findsOneWidget);
+    expect(routedArgs?.isDeriveFlow, isTrue);
+    expect(routedArgs?.deriveFromAccountUuid, 'software-account');
   });
 
   testWidgets('shows Back when adding an account to an existing wallet', (
@@ -127,10 +212,14 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
   });
 }
 
-Widget _welcomeScreen({bool showBackButton = false}) {
+Widget _welcomeScreen({
+  bool showBackButton = false,
+  AccountState accountState = const AccountState(),
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
     ],
     child: MaterialApp(
       home: AppTheme(
@@ -141,10 +230,14 @@ Widget _welcomeScreen({bool showBackButton = false}) {
   );
 }
 
-Widget _welcomeRouter(GoRouter router) {
+Widget _welcomeRouter(
+  GoRouter router, {
+  AccountState accountState = const AccountState(),
+}) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
     ],
     child: MaterialApp.router(
       routerConfig: router,
@@ -152,3 +245,24 @@ Widget _welcomeRouter(GoRouter router) {
     ),
   );
 }
+
+class _FakeAccountNotifier extends AccountNotifier {
+  _FakeAccountNotifier(this.fixedState);
+
+  final AccountState fixedState;
+
+  @override
+  AccountState build() => fixedState;
+}
+
+const _softwareAccountState = AccountState(
+  accounts: [
+    AccountInfo(
+      uuid: 'software-account',
+      name: 'Primary',
+      order: 0,
+      isSeedAnchor: true,
+    ),
+  ],
+  activeAccountUuid: 'software-account',
+);
