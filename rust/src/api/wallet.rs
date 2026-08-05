@@ -443,6 +443,41 @@ pub fn import_software_wallet_with_account_discovery(
     })
 }
 
+fn import_software_account_for_existing_wallet(
+    db_path: &str,
+    network: WalletNetwork,
+    seed: &secrecy::SecretVec<u8>,
+    birthday_height: Option<u64>,
+    name: &str,
+    zip32_account_index: u32,
+) -> Result<(String, String, bool), String> {
+    let existing = keys::existing_software_seed_account_state(db_path, network, seed)?;
+    if existing.contains(zip32_account_index) {
+        return Err(keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE.to_string());
+    }
+    if existing.has_derived_account {
+        let (account_uuid, unified_address) = keys::import_derived_account_at_index(
+            db_path,
+            network,
+            seed,
+            birthday_height,
+            name,
+            zip32_account_index,
+        )?;
+        Ok((account_uuid, unified_address, true))
+    } else {
+        let (account_uuid, unified_address) = keys::add_account_at_index(
+            db_path,
+            network,
+            name,
+            seed,
+            birthday_height,
+            zip32_account_index,
+        )?;
+        Ok((account_uuid, unified_address, false))
+    }
+}
+
 /// Import exactly one software ZIP32 account for encrypted wallet-link imports.
 ///
 /// Account 0 remains a Derived seed-anchor when it is the first wallet account.
@@ -490,33 +525,48 @@ pub fn import_software_account_at_index(
                 (account_uuid, unified_address, false)
             }
         } else {
-            let existing_seed_accounts =
-                keys::existing_software_seed_account_state(&db_path, network, &seed)?;
-            if existing_seed_accounts.contains(zip32_account_index) {
-                return Err(keys::DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE.to_string());
-            }
-            if existing_seed_accounts.has_derived_account {
-                let (account_uuid, unified_address) = keys::import_derived_account_at_index(
-                    &db_path,
-                    network,
-                    &seed,
-                    birthday_height,
-                    &name,
-                    zip32_account_index,
-                )?;
-                (account_uuid, unified_address, true)
-            } else {
-                let (account_uuid, unified_address) = keys::add_account_at_index(
-                    &db_path,
-                    network,
-                    &name,
-                    &seed,
-                    birthday_height,
-                    zip32_account_index,
-                )?;
-                (account_uuid, unified_address, false)
-            }
+            import_software_account_for_existing_wallet(
+                &db_path,
+                network,
+                &seed,
+                birthday_height,
+                &name,
+                zip32_account_index,
+            )?
         };
+
+        Ok(SoftwareWalletImportAccount {
+            account_uuid,
+            unified_address,
+            zip32_account_index,
+            name,
+            is_seed_anchor,
+        })
+    })
+}
+
+/// Derive the next account from a recovery phrase that already has at least
+/// one account in this wallet (ZIP 32 HD derivation — issue #266).
+///
+/// Atomically picks the lowest unused ZIP 32 account index for the seed's
+/// fingerprint. Deleted indices are re-derived before new indices are
+/// allocated, keeping the index space compact for import-time discovery.
+/// Routing matches `import_software_account_at_index`: `Derived` via
+/// `import_account_hd` when the seed's anchor exists, otherwise `Imported`
+/// with derivation metadata.
+pub fn derive_next_software_account(
+    mnemonic: String,
+    bip39_passphrase: String,
+    birthday_height: Option<u64>,
+    network: String,
+    db_path: String,
+    name: String,
+) -> Result<SoftwareWalletImportAccount, String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
+        let (account_uuid, unified_address, zip32_account_index, is_seed_anchor) =
+            keys::derive_next_software_account(&db_path, network, &seed, birthday_height, &name)?;
 
         Ok(SoftwareWalletImportAccount {
             account_uuid,
@@ -1174,6 +1224,209 @@ mod tests {
         );
         assert!(!is_ironwood_active_at_height(WalletNetwork::Regtest, activation - 1).unwrap());
         assert!(is_ironwood_active_at_height(WalletNetwork::Regtest, activation).unwrap());
+    }
+
+    #[test]
+    fn test_derive_next_software_account_appends_next_index() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let second = derive_next_software_account(
+            mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 2".to_string(),
+        )
+        .unwrap();
+        assert_eq!(second.zip32_account_index, 1);
+        assert!(second.is_seed_anchor);
+
+        let third = derive_next_software_account(
+            mnemonic,
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 3".to_string(),
+        )
+        .unwrap();
+        assert_eq!(third.zip32_account_index, 2);
+        assert_ne!(second.unified_address, third.unified_address);
+        assert_ne!(second.account_uuid, third.account_uuid);
+    }
+
+    #[test]
+    fn test_derive_next_software_account_fills_deleted_gap() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+        import_software_account_at_index(
+            mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 3".to_string(),
+            2,
+            false,
+        )
+        .unwrap();
+
+        let derived = derive_next_software_account(
+            mnemonic,
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 2".to_string(),
+        )
+        .unwrap();
+        assert_eq!(derived.zip32_account_index, 1);
+    }
+
+    #[test]
+    fn test_derive_next_software_account_rejects_unknown_seed() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let error = match derive_next_software_account(
+            keys::generate_mnemonic(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 2".to_string(),
+        ) {
+            Ok(_) => panic!("unknown seed should be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.contains("no accounts in this wallet"), "got: {error}");
+    }
+
+    #[test]
+    fn test_derive_next_software_account_from_imported_seed_family() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let anchor_mnemonic = keys::generate_mnemonic();
+        let anchor_seed = keys::mnemonic_to_seed(&anchor_mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &anchor_seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let other_mnemonic = keys::generate_mnemonic();
+        add_account(
+            db_path_str.to_string(),
+            "main".to_string(),
+            "Account 2".to_string(),
+            other_mnemonic.clone(),
+            String::new(),
+            None,
+        )
+        .unwrap();
+
+        let derived = derive_next_software_account(
+            other_mnemonic,
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path_str.to_string(),
+            "Account 3".to_string(),
+        )
+        .unwrap();
+        assert_eq!(derived.zip32_account_index, 1);
+        assert!(!derived.is_seed_anchor);
+    }
+
+    #[test]
+    fn test_derive_next_software_account_serializes_concurrent_allocations() {
+        const DERIVATIONS: u32 = 8;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path_str = db_path.to_str().unwrap();
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic).unwrap();
+
+        keys::init_db_and_create_account(
+            db_path_str,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Account 1",
+        )
+        .unwrap();
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(DERIVATIONS as usize));
+        let handles = (0..DERIVATIONS)
+            .map(|offset| {
+                let barrier = std::sync::Arc::clone(&barrier);
+                let mnemonic = mnemonic.clone();
+                let db_path = db_path_str.to_string();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    derive_next_software_account(
+                        mnemonic,
+                        String::new(),
+                        None,
+                        "main".to_string(),
+                        db_path,
+                        format!("Account {}", offset + 2),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut indices = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap().unwrap().zip32_account_index)
+            .collect::<Vec<_>>();
+        indices.sort_unstable();
+
+        assert_eq!(indices, (1..=DERIVATIONS).collect::<Vec<_>>());
     }
 
     #[test]

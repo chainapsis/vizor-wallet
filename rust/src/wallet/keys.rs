@@ -335,6 +335,20 @@ fn import_ufvk_account(
     birthday_height: Option<u64>,
     account_index: u32,
 ) -> Result<(String, String), String> {
+    with_wallet_db_write_lock("keys.import_ufvk_account", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        import_ufvk_account_with_db(&mut db, network, name, seed, birthday_height, account_index)
+    })
+}
+
+fn import_ufvk_account_with_db(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    name: &str,
+    seed: &SecretVec<u8>,
+    birthday_height: Option<u64>,
+    account_index: u32,
+) -> Result<(String, String), String> {
     let birthday = make_birthday(network, birthday_height);
     let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
         .ok_or("Invalid seed length for fingerprint")?;
@@ -348,21 +362,17 @@ fn import_ufvk_account(
         .default_address(shielded_address_request())
         .map_err(|e| format!("Failed to derive address: {e}"))?;
 
-    let account_id = with_wallet_db_write_lock("keys.import_ufvk_account", || {
-        let mut db = open_wallet_db_for_mutation(db_path, network)?;
-        let account = db
-            .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
-            .map_err(|e| {
-                map_account_import_error(
-                    e,
-                    DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE,
-                    "Failed to import account",
-                )
-            })?;
-        Ok::<_, String>(account.id())
-    })?;
+    let account = db
+        .import_account_ufvk(name, &ufvk, &birthday, purpose, None)
+        .map_err(|e| {
+            map_account_import_error(
+                e,
+                DUPLICATE_SOFTWARE_ACCOUNT_MESSAGE,
+                "Failed to import account",
+            )
+        })?;
 
-    Ok((account_id.expose_uuid().to_string(), ua.encode(&network)))
+    Ok((account.id().expose_uuid().to_string(), ua.encode(&network)))
 }
 
 /// Add an additional account (from a different seed) to the wallet database.
@@ -504,6 +514,27 @@ pub fn import_derived_account_at_index(
     name: &str,
     account_index: u32,
 ) -> Result<(String, String), String> {
+    with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        import_derived_account_at_index_with_db(
+            &mut db,
+            network,
+            seed,
+            birthday_height,
+            name,
+            account_index,
+        )
+    })
+}
+
+fn import_derived_account_at_index_with_db(
+    db: &mut WalletDatabase,
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    birthday_height: Option<u64>,
+    name: &str,
+    account_index: u32,
+) -> Result<(String, String), String> {
     let birthday = make_birthday(network, birthday_height);
     let account_id = zip32_account_id(account_index)?;
     let ufvk = software_account_ufvk(network, seed, account_index)?;
@@ -511,12 +542,10 @@ pub fn import_derived_account_at_index(
         .default_address(shielded_address_request())
         .map_err(|e| format!("Failed to derive address: {e}"))?;
 
-    let account = with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
-        let mut db = open_wallet_db_for_mutation(db_path, network)?;
-        db.import_account_hd(name, seed, account_id, &birthday, None)
-            .map(|(account, _usk)| account)
-            .map_err(|e| format!("Failed to import derived account: {e}"))
-    })?;
+    let account = db
+        .import_account_hd(name, seed, account_id, &birthday, None)
+        .map(|(account, _usk)| account)
+        .map_err(|e| format!("Failed to import derived account: {e}"))?;
 
     Ok((account.id().expose_uuid().to_string(), ua.encode(&network)))
 }
@@ -558,6 +587,13 @@ pub fn existing_software_seed_account_state(
     let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
         .ok_or("Invalid seed length for fingerprint")?;
     let db = open_wallet_db_for_read(db_path, network)?;
+    software_seed_account_state_from_db(&db, &seed_fp)
+}
+
+fn software_seed_account_state_from_db(
+    db: &WalletDatabase,
+    seed_fp: &SeedFingerprint,
+) -> Result<SoftwareSeedAccountState, String> {
     let account_ids = db
         .get_account_ids()
         .map_err(|e| format!("Failed to list accounts: {e}"))?;
@@ -572,7 +608,7 @@ pub fn existing_software_seed_account_state(
         let Some(derivation) = account.source().key_derivation() else {
             continue;
         };
-        if derivation.seed_fingerprint() != &seed_fp {
+        if derivation.seed_fingerprint() != seed_fp {
             continue;
         }
 
@@ -585,6 +621,59 @@ pub fn existing_software_seed_account_state(
     Ok(SoftwareSeedAccountState {
         account_indices,
         has_derived_account,
+    })
+}
+
+/// Atomically allocate the lowest unused ZIP 32 index for a software seed and
+/// import that account into an existing wallet.
+///
+/// The process-wide wallet write lock spans both index selection and account
+/// creation, so concurrent in-process callers cannot choose the same gap.
+/// Like all wallet mutations, this does not coordinate with a separate OS
+/// process opening the same database directly.
+pub fn derive_next_software_account(
+    db_path: &str,
+    network: WalletNetwork,
+    seed: &SecretVec<u8>,
+    birthday_height: Option<u64>,
+    name: &str,
+) -> Result<(String, String, u32, bool), String> {
+    with_wallet_db_write_lock("keys.derive_next_software_account", || {
+        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
+            .ok_or("Invalid seed length for fingerprint")?;
+        let existing = software_seed_account_state_from_db(&db, &seed_fp)?;
+        if existing.is_empty() {
+            return Err("This recovery phrase has no accounts in this wallet.".to_string());
+        }
+
+        let account_index = (0u32..)
+            .find(|index| !existing.contains(*index))
+            .expect("ZIP 32 index space cannot be exhausted");
+
+        let (account_uuid, unified_address, is_seed_anchor) = if existing.has_derived_account {
+            let (account_uuid, unified_address) = import_derived_account_at_index_with_db(
+                &mut db,
+                network,
+                seed,
+                birthday_height,
+                name,
+                account_index,
+            )?;
+            (account_uuid, unified_address, true)
+        } else {
+            let (account_uuid, unified_address) = import_ufvk_account_with_db(
+                &mut db,
+                network,
+                name,
+                seed,
+                birthday_height,
+                account_index,
+            )?;
+            (account_uuid, unified_address, false)
+        };
+
+        Ok((account_uuid, unified_address, account_index, is_seed_anchor))
     })
 }
 
