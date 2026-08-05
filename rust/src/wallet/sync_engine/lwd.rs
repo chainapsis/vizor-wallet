@@ -186,6 +186,11 @@ impl DirectRouteConnector {
     fn new() -> Self {
         let mut inner = HttpConnector::new();
         inner.enforce_http(false);
+        // Tonic applies the endpoint's `tcp_nodelay` (enabled by default) only
+        // to its own connector, while hyper-util defaults to Nagle enabled.
+        // Direct mode must keep the transport behaviour it had before the
+        // route lease was interposed.
+        inner.set_nodelay(true);
         Self { inner }
     }
 }
@@ -704,6 +709,34 @@ mod tests {
                 if message.contains("get_address_utxos_stream")
                     && message.contains("timed out")
         ));
+    }
+
+    #[tokio::test]
+    async fn direct_connections_keep_tcp_nodelay_enabled() {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind loopback listener");
+        let port = listener.local_addr().expect("listener address").port();
+        let accepted =
+            tokio::spawn(async move { listener.accept().await.map(|(stream, _)| stream) });
+
+        let uri: Uri = format!("http://127.0.0.1:{port}")
+            .parse()
+            .expect("valid loopback URI");
+        let connection = DirectRouteConnector::new()
+            .call(uri)
+            .await
+            .expect("direct loopback connection");
+
+        assert!(connection
+            .inner()
+            .inner()
+            .nodelay()
+            .expect("read TCP_NODELAY"));
+        accepted
+            .await
+            .expect("accept task")
+            .expect("accepted connection");
     }
 
     #[test]
