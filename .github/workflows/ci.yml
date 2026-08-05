@@ -11,6 +11,18 @@ jobs:
       - name: cargo test --workspace
         run: cargo test --workspace --locked
 
+  proofs:
+    name: Halo2 proof tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The end-to-end delegation proof runs keygen plus proving, so it is
+      # marked #[ignore] for the default suite and run here under --release.
+      - name: cargo test --release -- --ignored
+        run: cargo test --release -p zcash_voting --locked -- --ignored
+
   msrv:
     name: Rust 1.88
     runs-on: ubuntu-latest

@@ -860,12 +860,14 @@ mod tests {
 
         let mut notes = Vec::new();
         for &v in &note_values {
-            let (_, _, dummy_parent) = orchard::Note::dummy(&mut rng, None, NoteVersion::V2);
+            // Voting notes are Ironwood/V3: `reconstruct_note` accepts no other
+            // version, and `voting-circuits` rejects non-V3 real notes.
+            let (_, _, dummy_parent) = orchard::Note::dummy(&mut rng, None, NoteVersion::V3);
             let note = orchard::Note::new(
                 address,
                 NoteValue::from_raw(v),
                 Rho::from_nf_old(dummy_parent.nullifier(&fvk)),
-                NoteVersion::V2,
+                NoteVersion::V3,
                 &mut rng,
             );
             notes.push(note);
