@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
+// These functions are ignored because they are not marked as `pub`: `block_height_from_u64`, `catch`, `discover_software_account_at_index`, `discover_used_software_accounts`, `discovery_start_height`, `import_discovered_software_wallet_accounts`, `import_software_account_for_existing_wallet`, `is_ironwood_active_at_height`, `network_name`, `nu6_3_activation_height`, `parse_network_and_migrate`, `preview_transparent_balance_for_addresses`
 
 /// Get the latest block height from lightwalletd.
 Future<BigInt> getLatestBlockHeight({required String lightwalletdUrl}) =>
@@ -178,6 +178,31 @@ Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
   name: name,
   zip32AccountIndex: zip32AccountIndex,
   isFirstWalletAccount: isFirstWalletAccount,
+);
+
+/// Derive the next account from a recovery phrase that already has at least
+/// one account in this wallet (ZIP 32 HD derivation — issue #266).
+///
+/// Atomically picks the lowest unused ZIP 32 account index for the seed's
+/// fingerprint. Deleted indices are re-derived before new indices are
+/// allocated, keeping the index space compact for import-time discovery.
+/// Routing matches `import_software_account_at_index`: `Derived` via
+/// `import_account_hd` when the seed's anchor exists, otherwise `Imported`
+/// with derivation metadata.
+Future<SoftwareWalletImportAccount> deriveNextSoftwareAccount({
+  required String mnemonic,
+  required String bip39Passphrase,
+  BigInt? birthdayHeight,
+  required String network,
+  required String dbPath,
+  required String name,
+}) => RustLib.instance.api.crateApiWalletDeriveNextSoftwareAccount(
+  mnemonic: mnemonic,
+  bip39Passphrase: bip39Passphrase,
+  birthdayHeight: birthdayHeight,
+  network: network,
+  dbPath: dbPath,
+  name: name,
 );
 
 Future<bool> isSoftwareWalletLinkAccountImported({
