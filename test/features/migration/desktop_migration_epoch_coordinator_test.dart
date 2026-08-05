@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
 import 'package:zcash_wallet/src/features/migration/services/ironwood_migration_service.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -38,6 +39,7 @@ class _EpochHarness {
   int authoritativeHeightReads = 0;
   final walletOpenTipHeights = <int?>[];
   void Function()? onStatusSweep;
+  late final ProviderContainer container;
   late final IronwoodMigrationCoordinator coordinator;
 
   void sleep(Duration duration) {
@@ -48,10 +50,32 @@ class _EpochHarness {
     wallNow = wallNow.add(duration);
     monotonicNow += duration;
   }
+
+  void lock() {
+    container.read(appSecurityProvider.notifier).lock();
+  }
+
+  void unlock() {
+    final notifier =
+        container.read(appSecurityProvider.notifier)
+            as _TestAppSecurityNotifier;
+    notifier.unlockForTest();
+  }
+}
+
+class _TestAppSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+
+  void unlockForTest() {
+    state = state.copyWith(isUnlocked: true);
+  }
 }
 
 Future<_EpochHarness> _startCoordinator({
   rust_sync.MigrationStatus? accountStatus,
+  bool acceptScheduledBroadcast = false,
 }) async {
   final harness = _EpochHarness();
   final status = accountStatus ?? _completeStatus();
@@ -93,12 +117,13 @@ Future<_EpochHarness> _startCoordinator({
           int? walletOpenTipHeight,
         }) async {
           harness.walletOpenTipHeights.add(walletOpenTipHeight);
-          return _migrationResult();
+          return _migrationResult(accepted: acceptScheduledBroadcast);
         },
   );
   final container = ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(_bootstrap()),
+      appSecurityProvider.overrideWith(_TestAppSecurityNotifier.new),
       syncProvider.overrideWith(() => FakeSyncNotifier(SyncState())),
       ironwoodMigrationServiceProvider.overrideWithValue(service),
       rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue((
@@ -117,6 +142,7 @@ Future<_EpochHarness> _startCoordinator({
       ),
     ],
   );
+  harness.container = container;
   addTearDown(container.dispose);
   await container.read(accountProvider.future);
   final subscription = container.listen(
@@ -231,6 +257,86 @@ void main() {
           'refresh activity stopping for the threshold while the process '
           'stays awake means broadcasts could not run and must restart the '
           'epoch',
+    );
+  });
+
+  test('polling while locked preserves a long gap for unlock', () async {
+    final status = _scheduledStatus(scheduledHeight: 999);
+    final harness = await _startCoordinator(
+      accountStatus: status,
+      acceptScheduledBroadcast: true,
+    );
+    expect(harness.walletOpenTipHeights, [1_000]);
+
+    harness.lock();
+    for (
+      var elapsed = Duration.zero;
+      elapsed < kDesktopMigrationEpochSuspensionGap;
+      elapsed += const Duration(seconds: 15)
+    ) {
+      harness.run(const Duration(seconds: 15));
+      await harness.coordinator.refreshForPolling();
+    }
+
+    expect(
+      harness.authoritativeHeightReads,
+      1,
+      reason: 'locked polling must not begin a refresh or recapture the epoch',
+    );
+    expect(
+      harness.walletOpenTipHeights,
+      [1_000],
+      reason: 'locked polling must not attempt another scheduled broadcast',
+    );
+
+    harness.unlock();
+    await harness.coordinator.refreshNow(forceAdvance: true);
+
+    expect(
+      harness.authoritativeHeightReads,
+      2,
+      reason:
+          'unlock after a long locked gap must restart the wallet-open epoch',
+    );
+    expect(
+      harness.walletOpenTipHeights,
+      [1_000, 1_001],
+      reason:
+          'the first post-unlock broadcast must use the restarted epoch tip',
+    );
+  });
+
+  test('polling during a short lock preserves the current epoch', () async {
+    final status = _scheduledStatus(scheduledHeight: 999);
+    final harness = await _startCoordinator(
+      accountStatus: status,
+      acceptScheduledBroadcast: true,
+    );
+    expect(harness.walletOpenTipHeights, [1_000]);
+
+    harness.lock();
+    const shortLock = Duration(minutes: 2, seconds: 45);
+    for (
+      var elapsed = Duration.zero;
+      elapsed < shortLock;
+      elapsed += const Duration(seconds: 15)
+    ) {
+      harness.run(const Duration(seconds: 15));
+      await harness.coordinator.refreshForPolling();
+    }
+
+    harness.unlock();
+    await harness.coordinator.refreshNow(forceAdvance: true);
+
+    expect(
+      harness.authoritativeHeightReads,
+      1,
+      reason: 'a lock shorter than the suspension threshold keeps the epoch',
+    );
+    expect(
+      harness.walletOpenTipHeights,
+      [1_000],
+      reason: 'the consumed fallback allowance must not be replenished',
     );
   });
 
@@ -372,11 +478,11 @@ rust_sync.MigrationStatus _scheduledStatus({required int scheduledHeight}) {
   );
 }
 
-rust_sync.IronwoodMigrationResult _migrationResult() {
+rust_sync.IronwoodMigrationResult _migrationResult({bool accepted = false}) {
   return rust_sync.IronwoodMigrationResult(
-    txids: '',
+    txids: accepted ? 'scheduled-tx' : '',
     status: 'broadcast_scheduled',
-    broadcastedCount: 0,
+    broadcastedCount: accepted ? 1 : 0,
     totalCount: 1,
     feeZatoshi: BigInt.zero,
     migratedZatoshi: BigInt.from(100000000),
