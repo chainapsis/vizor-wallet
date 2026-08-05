@@ -1661,14 +1661,21 @@ class _LinuxUpdateNoticeListener extends ConsumerWidget {
         if (!context.mounted) return;
         final messenger = ScaffoldMessenger.maybeOf(context);
         if (messenger == null) return;
+        final torEnabled = ref.read(networkPrivacyProvider).torEnabled;
 
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Vizor ${update.assetVersion} is available.'),
+            content: Text(
+              torEnabled
+                  ? 'Vizor ${update.assetVersion} is available. The release '
+                        'page opens in your browser, outside Vizor’s Tor '
+                        'connection.'
+                  : 'Vizor ${update.assetVersion} is available.',
+            ),
             duration: const Duration(seconds: 8),
             action: SnackBarAction(
-              label: 'View release',
+              label: torEnabled ? 'Open in browser' : 'View release',
               onPressed: () => unawaited(_openLinuxUpdateRelease(update)),
             ),
           ),

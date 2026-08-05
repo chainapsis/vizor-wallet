@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,7 +30,10 @@ class NetworkPrivacyControl extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final state = ref.watch(networkPrivacyProvider);
-    final presentation = _presentationFor(state);
+    final presentation = _presentationFor(
+      state,
+      platform: defaultTargetPlatform,
+    );
 
     final assetList = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -323,7 +328,10 @@ class _NetworkPrivacyPresentation {
   final Color Function(AppColors colors) descriptionColor;
 }
 
-_NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
+_NetworkPrivacyPresentation _presentationFor(
+  NetworkPrivacyState state, {
+  required TargetPlatform platform,
+}) {
   if (!state.softwareUpdatesAvailable &&
       state.status == NetworkPrivacyConnectionStatus.connected) {
     return _NetworkPrivacyPresentation(
@@ -347,11 +355,14 @@ _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
     );
   }
   final targetTorEnabled = state.targetTorEnabled ?? state.torEnabled;
+  final isLinux = platform == TargetPlatform.linux;
   return switch ((state.status, targetTorEnabled)) {
     (NetworkPrivacyConnectionStatus.off, _) => _NetworkPrivacyPresentation(
       statusLabel: 'Direct',
-      description:
-          'Tor is off. Requests to the Zcash network, in-app services, and software updates connect directly.',
+      description: isLinux
+          ? 'Tor is off. Vizor requests, including software update checks, '
+                'connect directly. Update pages and downloads open in another app.'
+          : 'Tor is off. Requests to the Zcash network, in-app services, and software updates connect directly.',
       statusColor: (colors) => colors.text.secondary,
       iconColor: (colors) => colors.icon.muted,
       descriptionColor: (colors) => colors.text.accent,
@@ -359,8 +370,11 @@ _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
     (NetworkPrivacyConnectionStatus.connecting, true) =>
       _NetworkPrivacyPresentation(
         statusLabel: 'Connecting ...',
-        description:
-            'Requests to the Zcash network, in-app services, and software updates use Tor. Some services may be unavailable over Tor.',
+        description: isLinux
+            ? 'Vizor requests, including software update checks, will use Tor. '
+                  'Update pages and downloads opened in another app use that '
+                  'app’s connection.'
+            : 'Requests to the Zcash network, in-app services, and software updates use Tor. Some services may be unavailable over Tor.',
         statusColor: (colors) => colors.text.secondary,
         iconColor: (colors) => colors.icon.muted,
         descriptionColor: (colors) => colors.text.accent,
@@ -368,16 +382,21 @@ _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
     (NetworkPrivacyConnectionStatus.connecting, false) =>
       _NetworkPrivacyPresentation(
         statusLabel: 'Switching to direct…',
-        description:
-            'Vizor is switching network requests and software updates to a direct connection.',
+        description: isLinux
+            ? 'Vizor is switching its requests, including software update '
+                  'checks, to a direct connection.'
+            : 'Vizor is switching network requests and software updates to a direct connection.',
         statusColor: (colors) => colors.text.secondary,
         iconColor: (colors) => colors.icon.brandCrimson,
         descriptionColor: (colors) => colors.text.accent,
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
-      description:
-          'Requests to the Zcash network, in-app services, and software updates use Tor. Some services may be unavailable over Tor.',
+      description: isLinux
+          ? 'Vizor requests, including software update checks, use Tor. '
+                'Update pages and downloads opened in another app use that '
+                'app’s connection.'
+          : 'Requests to the Zcash network, in-app services, and software updates use Tor. Some services may be unavailable over Tor.',
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.accent,

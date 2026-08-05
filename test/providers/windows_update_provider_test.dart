@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/windows_update_provider.dart';
@@ -31,6 +32,84 @@ void main() {
       'Signed feed verification failed.',
     );
     expect(service.downloadCalls, 1);
+  });
+
+  test('download reports a reserved native route as not started', () async {
+    final service = _FakeWindowsUpdateService(
+      downloadError: PlatformException(
+        code: 'update_route_transition',
+        message: 'Software update routing is changing.',
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => false),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+        windowsUpdateProvider.overrideWith(_AvailableWindowsUpdateNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final result = await container
+        .read(windowsUpdateProvider.notifier)
+        .downloadUpdate();
+
+    expect(result.started, isFalse);
+    expect(result.message, 'Software update routing is changing.');
+    expect(
+      container.read(windowsUpdateProvider).status,
+      WindowsUpdateStatus.failed,
+    );
+  });
+
+  test('check surfaces a reserved native route', () async {
+    final service = _FakeWindowsUpdateService(
+      checkError: PlatformException(
+        code: 'update_route_transition',
+        message: 'Software update routing is changing.',
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => false),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+        windowsUpdateProvider.overrideWith(_AvailableWindowsUpdateNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(windowsUpdateProvider.notifier).checkForUpdates();
+
+    expect(
+      container.read(windowsUpdateProvider).message,
+      'Software update routing is changing.',
+    );
+  });
+
+  test('apply surfaces a reserved native route', () async {
+    final service = _FakeWindowsUpdateService(
+      applyError: PlatformException(
+        code: 'update_route_transition',
+        message: 'Software update routing is changing.',
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        windowsUpdateTorEnabledProvider.overrideWithValue(() => false),
+        windowsUpdateServiceProvider.overrideWithValue(service),
+        windowsUpdateProvider.overrideWith(_ReadyWindowsUpdateNotifier.new),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(windowsUpdateProvider.notifier)
+        .applyUpdateAndRestart();
+
+    expect(
+      container.read(windowsUpdateProvider).message,
+      'Software update routing is changing.',
+    );
   });
 
   test(
@@ -116,11 +195,36 @@ class _AvailableWindowsUpdateNotifier extends WindowsUpdateNotifier {
   );
 }
 
+class _ReadyWindowsUpdateNotifier extends WindowsUpdateNotifier {
+  @override
+  WindowsUpdateState build() => const WindowsUpdateState(
+    supported: true,
+    status: WindowsUpdateStatus.ready,
+    currentVersion: '1.0.0',
+    appId: 'Vizor',
+    repoUrl: 'https://updates.example.invalid/vizor',
+    availableVersion: '9.9.9',
+    downloadProgress: 100,
+    pendingRestart: true,
+    torProxyReady: false,
+    message: '',
+  );
+}
+
 class _FakeWindowsUpdateService extends WindowsUpdateService {
-  _FakeWindowsUpdateService({this.stateResult, this.downloadResult});
+  _FakeWindowsUpdateService({
+    this.stateResult,
+    this.downloadResult,
+    this.downloadError,
+    this.checkError,
+    this.applyError,
+  });
 
   final WindowsUpdateSnapshot? stateResult;
   final WindowsUpdateSnapshot? downloadResult;
+  final Object? downloadError;
+  final Object? checkError;
+  final Object? applyError;
   var downloadCalls = 0;
 
   @override
@@ -130,7 +234,20 @@ class _FakeWindowsUpdateService extends WindowsUpdateService {
   @override
   Future<WindowsUpdateSnapshot> downloadUpdate() async {
     downloadCalls++;
+    if (downloadError case final error?) throw error;
     return downloadResult ?? _snapshot(status: 'downloading');
+  }
+
+  @override
+  Future<WindowsUpdateSnapshot> checkForUpdates() async {
+    if (checkError case final error?) throw error;
+    return _snapshot(status: 'checking');
+  }
+
+  @override
+  Future<WindowsUpdateSnapshot> applyUpdateAndRestart() async {
+    if (applyError case final error?) throw error;
+    return _snapshot(status: 'applying');
   }
 }
 

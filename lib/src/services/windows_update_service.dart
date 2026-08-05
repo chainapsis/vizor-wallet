@@ -84,6 +84,15 @@ class WindowsUpdateService {
   Future<WindowsUpdateSnapshot> applyUpdateAndRestart() =>
       _invoke('applyUpdateAndRestart');
 
+  Future<void> prepareForTorDisable() async {
+    if (!Platform.isWindows) return;
+    try {
+      await _channel.invokeMethod<void>('prepareForTorDisable');
+    } on MissingPluginException {
+      // Development builds without Velopack have no updater to reserve.
+    }
+  }
+
   Future<String?> getUpdateBaseUrl() async {
     if (!Platform.isWindows) return null;
     try {

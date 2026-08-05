@@ -17,6 +17,8 @@ const kTorStartupFailureNotice =
     "Couldn't connect to Tor. Network requests are paused.";
 const kTorUpdateInProgressNotice =
     'Finish the current software update before turning on Tor.';
+const kTorDisableUpdateInProgressNotice =
+    'Finish the current software update before turning off Tor.';
 const kTorUpdateUnavailableNotice =
     'Tor is connected, but software updates are unavailable. Turn off Tor to update directly.';
 const kSoftwareUpdateUnavailableNotice =
@@ -125,6 +127,8 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
 }
 
 abstract interface class NetworkPrivacyNativeUpdateCoordinator {
+  Future<void> prepareForTorDisable();
+
   Future<void> setTorEnabled(bool enabled);
 
   Future<void> pauseForFailClosedStartup();
@@ -154,6 +158,20 @@ class PlatformNetworkPrivacyNativeUpdateCoordinator
 
   static void clearDisableTorForUpdateHandler() {
     _macosChannel.setMethodCallHandler(null);
+  }
+
+  @override
+  Future<void> prepareForTorDisable() async {
+    if (Platform.isWindows) {
+      await WindowsUpdateService().prepareForTorDisable();
+      return;
+    }
+    if (!Platform.isMacOS) return;
+    try {
+      await _macosChannel.invokeMethod<void>('prepareForTorDisable');
+    } on MissingPluginException {
+      // Development builds without Sparkle have no updater to drain.
+    }
   }
 
   @override
@@ -462,6 +480,31 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
       }
       if (generation != _generation) return;
       runtime.beginEnable();
+    } else {
+      state = NetworkPrivacyState(
+        torEnabled: previousState.torEnabled,
+        status: NetworkPrivacyConnectionStatus.connecting,
+        targetTorEnabled: false,
+        softwareUpdatesAvailable: previousState.softwareUpdatesAvailable,
+      );
+      try {
+        // Keep the current Tor updater proxy alive until a running native
+        // update cycle has finished. Only then may the shared Tor runtime and
+        // its loopback relay be switched back to direct routing.
+        await nativeUpdates.prepareForTorDisable();
+      } catch (error) {
+        if (generation != _generation) return;
+        state = NetworkPrivacyState(
+          torEnabled: previousState.torEnabled,
+          status: previousState.status,
+          targetTorEnabled: false,
+          softwareUpdatesAvailable: previousState.softwareUpdatesAvailable,
+          error: error.toString(),
+          startupNotice: kTorDisableUpdateInProgressNotice,
+        );
+        return;
+      }
+      if (generation != _generation) return;
     }
 
     final directDrain = enabled
@@ -519,14 +562,26 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
     } catch (error) {
       if (generation != _generation) return;
       final effectiveTorEnabled = runtime.isTorEnabled();
+      var softwareUpdatesAvailable = enabled
+          ? false
+          : previousState.softwareUpdatesAvailable;
+      String? startupNotice;
+      if (!enabled && effectiveTorEnabled) {
+        try {
+          await nativeUpdates.resumeTorUpdates();
+        } catch (_) {
+          softwareUpdatesAvailable = false;
+          startupNotice = kTorUpdateUnavailableNotice;
+        }
+      }
+      if (generation != _generation) return;
       state = NetworkPrivacyState(
         torEnabled: effectiveTorEnabled,
         status: NetworkPrivacyConnectionStatus.failed,
         targetTorEnabled: enabled,
-        softwareUpdatesAvailable: enabled
-            ? false
-            : previousState.softwareUpdatesAvailable,
+        softwareUpdatesAvailable: softwareUpdatesAvailable,
         error: error.toString(),
+        startupNotice: startupNotice,
       );
     }
   }

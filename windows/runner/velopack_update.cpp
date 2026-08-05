@@ -50,6 +50,11 @@ enum class UpdateStatus {
   kFailed,
 };
 
+enum class UpdateOperationStartResult {
+  kHandled,
+  kRouteTransitionReserved,
+};
+
 struct ManagerDeleter {
   void operator()(vpkc_update_manager_t* value) const {
     if (value != nullptr) {
@@ -85,6 +90,7 @@ AssetPtr g_pending_asset;
 UpdateStatus g_status = UpdateStatus::kIdle;
 bool g_supported = true;
 bool g_busy = false;
+bool g_update_route_transition_reserved = false;
 bool g_pending_restart = false;
 int32_t g_download_progress = 0;
 std::string g_current_version = FLUTTER_VERSION;
@@ -211,6 +217,28 @@ void SetTorRouting(bool enabled, std::string proxy_base_url) {
   std::lock_guard<std::mutex> lock(g_update_route_mutex);
   g_tor_routing_required = enabled;
   g_tor_proxy_base_url = enabled ? std::move(proxy_base_url) : std::string();
+}
+
+bool ReserveTorDisable() {
+  std::lock_guard<std::mutex> lock(g_update_mutex);
+  if (g_update_route_transition_reserved) {
+    return true;
+  }
+  if (g_busy) {
+    return false;
+  }
+  g_update_route_transition_reserved = true;
+  return true;
+}
+
+bool CommitTorRouting(bool enabled, std::string proxy_base_url) {
+  std::lock_guard<std::mutex> lock(g_update_mutex);
+  if (g_busy) {
+    return false;
+  }
+  SetTorRouting(enabled, std::move(proxy_base_url));
+  g_update_route_transition_reserved = false;
+  return true;
 }
 
 bool TorProxyReady() {
@@ -782,16 +810,19 @@ void DownloadProgress(void* user_data, size_t progress) {
       static_cast<int32_t>(std::min<size_t>(progress, 100));
 }
 
-void StartCheckForUpdates() {
+UpdateOperationStartResult StartCheckForUpdates() {
   vpkc_update_manager_t* manager = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
     if (!EnsureManagerLocked() || g_busy) {
-      return;
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     RefreshPendingRestartLocked();
     if (g_status == UpdateStatus::kReady) {
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
     g_busy = true;
     g_status = UpdateStatus::kChecking;
@@ -835,20 +866,24 @@ void StartCheckForUpdates() {
     g_status = UpdateStatus::kNoUpdate;
     g_message.clear();
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
-void StartDownloadUpdate() {
+UpdateOperationStartResult StartDownloadUpdate() {
   vpkc_update_manager_t* manager = nullptr;
   vpkc_update_info_t* update = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
     if (!EnsureManagerLocked() || g_busy) {
-      return;
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     if (!g_update_info) {
       g_status = UpdateStatus::kFailed;
       g_message = "No update is ready to download.";
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
     g_busy = true;
     g_status = UpdateStatus::kDownloading;
@@ -895,15 +930,19 @@ void StartDownloadUpdate() {
     g_status = UpdateStatus::kReady;
     g_message.clear();
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
-void StartApplyUpdateAndRestart() {
+UpdateOperationStartResult StartApplyUpdateAndRestart() {
   vpkc_update_manager_t* manager = nullptr;
   vpkc_asset_t* asset = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
     if (!EnsureManagerLocked() || g_busy) {
-      return;
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     if (g_pending_asset) {
       asset = g_pending_asset.get();
@@ -914,7 +953,7 @@ void StartApplyUpdateAndRestart() {
     if (asset == nullptr) {
       g_status = UpdateStatus::kFailed;
       g_message = "No downloaded update is ready to apply.";
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
 
     g_busy = true;
@@ -937,6 +976,7 @@ void StartApplyUpdateAndRestart() {
     g_status = UpdateStatus::kFailed;
     g_message = CoalesceMessage(error);
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
 }  // namespace
@@ -951,6 +991,17 @@ CreateVelopackUpdateChannel(flutter::BinaryMessenger* messenger) {
     const std::string& method = call.method_name();
     if (method == "getUpdateBaseUrl") {
       result->Success(flutter::EncodableValue(DirectReleaseBaseUrl()));
+      return;
+    }
+    if (method == "prepareForTorDisable") {
+      if (!ReserveTorDisable()) {
+        result->Error(
+            "update_in_progress",
+            "Wait for the current software update operation to finish before "
+            "turning off Tor.");
+        return;
+      }
+      result->Success();
       return;
     }
     if (method == "setTorRouting") {
@@ -975,8 +1026,14 @@ CreateVelopackUpdateChannel(flutter::BinaryMessenger* messenger) {
           std::holds_alternative<std::string>(proxy_it->second)) {
         proxy_base_url = std::get<std::string>(proxy_it->second);
       }
-      SetTorRouting(std::get<bool>(enabled_it->second),
-                    std::move(proxy_base_url));
+      if (!CommitTorRouting(std::get<bool>(enabled_it->second),
+                            std::move(proxy_base_url))) {
+        result->Error(
+            "update_in_progress",
+            "Wait for the current software update operation to finish before "
+            "changing Tor routing.");
+        return;
+      }
       result->Success();
       return;
     }
@@ -985,17 +1042,38 @@ CreateVelopackUpdateChannel(flutter::BinaryMessenger* messenger) {
       return;
     }
     if (method == "checkForUpdates") {
-      StartCheckForUpdates();
+      if (StartCheckForUpdates() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }
     if (method == "downloadUpdate") {
-      StartDownloadUpdate();
+      if (StartDownloadUpdate() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }
     if (method == "applyUpdateAndRestart") {
-      StartApplyUpdateAndRestart();
+      if (StartApplyUpdateAndRestart() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }

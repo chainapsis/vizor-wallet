@@ -262,6 +262,34 @@ void main() {
     expect(description.style?.color, AppThemeData.light.colors.text.accent);
   });
 
+  testWidgets('Linux Tor copy excludes external update traffic', (
+    tester,
+  ) async {
+    _overridePlatform(TargetPlatform.linux);
+    try {
+      await tester.pumpWidget(
+        _settingsHarness(
+          networkPrivacyState: const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connected,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.text(
+          'Vizor requests, including software update checks, use Tor. Update '
+          'pages and downloads opened in another app use that app’s connection.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('software updates use Tor'), findsNothing);
+    } finally {
+      _resetPlatformOverride();
+    }
+  });
+
   testWidgets('Tor stays effective while switching to direct', (tester) async {
     await tester.pumpWidget(
       _settingsHarness(

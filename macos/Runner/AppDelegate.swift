@@ -203,7 +203,7 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
   private static let directUpdateRetryTimeout: TimeInterval = 10
   var feedURL: String?
   var resourceProxyURL: URL?
-  private var failClosedPauseCompletions: [() -> Void] = []
+  private var updateCycleDrainCompletions: [() -> Void] = []
   private var pendingDirectUpdateCheck: (() -> Void)?
   private var directUpdateRetryDeadline: DispatchTime?
   private var directUpdateRetryWorkItem: DispatchWorkItem?
@@ -276,7 +276,7 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
     request.timeoutInterval = torUpdateTransferTimeout
   }
 
-  func awaitCurrentUpdateCycleBeforeFailClosedPause(
+  func awaitCurrentUpdateCycle(
     updater: SPUUpdater,
     completion: @escaping () -> Void
   ) {
@@ -284,7 +284,7 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
       completion()
       return
     }
-    failClosedPauseCompletions.append(completion)
+    updateCycleDrainCompletions.append(completion)
   }
 
   func updater(
@@ -292,8 +292,8 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
     didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
     error: Error?
   ) {
-    let completions = failClosedPauseCompletions
-    failClosedPauseCompletions.removeAll()
+    let completions = updateCycleDrainCompletions
+    updateCycleDrainCompletions.removeAll()
     completions.forEach { $0() }
     DispatchQueue.main.async { [weak self, weak updater] in
       guard let self, let updater else { return }
@@ -429,6 +429,23 @@ class AppDelegate: FlutterAppDelegate {
     return true
   }
 
+  func prepareForTorDisable(completion: @escaping () -> Void) {
+    updaterController?.updater.automaticallyChecksForUpdates = false
+    configureUpdateMenu(enabled: false)
+    guard let updater = updaterController?.updater else {
+      completion()
+      return
+    }
+
+    // Keep the existing feed and resource proxies installed while an active
+    // Sparkle cycle drains. Flutter tears those proxies down only after this
+    // completion is delivered.
+    updateFeedDelegate.awaitCurrentUpdateCycle(
+      updater: updater,
+      completion: completion
+    )
+  }
+
   func pauseUpdatesForFailClosedStartup(completion: @escaping () -> Void) {
     updaterController?.updater.automaticallyChecksForUpdates = false
     updateFeedDelegate.feedURL = nil
@@ -443,7 +460,7 @@ class AppDelegate: FlutterAppDelegate {
     // An already-running Sparkle transfer cannot be rerouted. Delay the
     // fail-closed startup result until that session has fully quiesced, so the
     // Flutter layer cannot report paused traffic while Sparkle is still direct.
-    updateFeedDelegate.awaitCurrentUpdateCycleBeforeFailClosedPause(
+    updateFeedDelegate.awaitCurrentUpdateCycle(
       updater: updater,
       completion: completion
     )
@@ -545,6 +562,18 @@ final class NativeUpdatePrivacyChannel {
       case "getUpdateFeedUrl":
 #if SPARKLE_ENABLED
         result(AppDelegate.configuredUpdateFeedURL())
+#else
+        result(nil)
+#endif
+      case "prepareForTorDisable":
+#if SPARKLE_ENABLED
+        guard let delegate = NSApp.delegate as? AppDelegate else {
+          result(nil)
+          return
+        }
+        delegate.prepareForTorDisable {
+          result(nil)
+        }
 #else
         result(nil)
 #endif
