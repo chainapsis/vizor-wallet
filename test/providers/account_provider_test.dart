@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart' show ThemeMode;
@@ -352,6 +353,155 @@ void main() {
       }
     }
 
+    for (final mode in _DerivedAccountWriteFailureMode.values) {
+      test(
+        'requires a durable ${mode.name} fence before Rust derivation',
+        () async {
+          mode.inject(storage, 'zcash_derived_account_recovery');
+          final container = _deriveAccountContainer(source);
+          addTearDown(container.dispose);
+          await container.read(accountProvider.future);
+
+          await expectLater(
+            container
+                .read(accountProvider.notifier)
+                .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+            throwsA(isA<SecureStorageUnavailableException>()),
+          );
+
+          expect(rust.allocatedIndices, isEmpty);
+          expect(rust.liveAccountIndices, isEmpty);
+          expect(
+            jsonDecode(storage.values['zcash_accounts']!) as List,
+            hasLength(1),
+          );
+
+          if (mode == _DerivedAccountWriteFailureMode.persistThenThrow) {
+            expect(storage.values['zcash_derived_account_recovery'], isNotNull);
+            await container
+                .read(accountProvider.notifier)
+                .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+            expect(rust.allocatedIndices, [1]);
+          }
+        },
+      );
+    }
+
+    test(
+      'fences concurrent derive calls before another Rust index is selected',
+      () async {
+        rust.pauseDerivation();
+        final firstContainer = _deriveAccountContainer(source);
+        final secondContainer = _deriveAccountContainer(source);
+        addTearDown(firstContainer.dispose);
+        addTearDown(secondContainer.dispose);
+        await firstContainer.read(accountProvider.future);
+        await secondContainer.read(accountProvider.future);
+
+        final first = firstContainer
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+        await rust.waitForDerivationStart();
+
+        try {
+          await expectLater(
+            secondContainer
+                .read(accountProvider.notifier)
+                .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+            throwsA(
+              predicate<Object>(
+                (error) => error.toString().contains('already in progress'),
+                'the process-wide derivation fence',
+              ),
+            ),
+          );
+          expect(rust.allocatedIndices, isEmpty);
+        } finally {
+          rust.resumeDerivation();
+        }
+        await first;
+        expect(rust.allocatedIndices, [1]);
+      },
+    );
+
+    test(
+      'acknowledgement requires durable metadata after bootstrap restores state',
+      () async {
+        const derived = AccountInfo(
+          uuid: 'derived-1',
+          name: 'Recovered',
+          order: 1,
+          isSeedAnchor: true,
+          seedFamilyId: 'software-family',
+        );
+        await AppSecureStore.instance.writeAccountMnemonic(
+          derived.uuid,
+          'source recovery phrase',
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          derived.uuid,
+        );
+        final container = _deriveAccountContainer(
+          source,
+          bootstrapAccounts: [source, derived],
+        );
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .acknowledgeDerivedAccountRecovery(),
+          throwsA(isA<StateError>()),
+        );
+        expect(storage.values['zcash_derived_account_recovery'], isNotNull);
+      },
+    );
+
+    test(
+      'derive retry reconciles a durable fence before allocating another index',
+      () async {
+        const derived = AccountInfo(
+          uuid: 'derived-1',
+          name: 'Recovered',
+          order: 1,
+          isSeedAnchor: true,
+          seedFamilyId: 'software-family',
+        );
+        await AppSecureStore.instance.writeAccountMnemonic(
+          derived.uuid,
+          'source recovery phrase',
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_accounts',
+          jsonEncode([source.toJson(), derived.toJson()]),
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_active_account',
+          derived.uuid,
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          _recoveryFenceJson(sourceAccountUuid: source.uuid),
+        );
+        rust.addListedAccount(derived);
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await container
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+
+        expect(rust.allocatedIndices, isEmpty);
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+        final stateAfterRecovery = container.read(accountProvider).requireValue;
+        expect(stateAfterRecovery.accounts, hasLength(2));
+        expect(stateAfterRecovery.activeAccountUuid, derived.uuid);
+      },
+    );
+
     test(
       'surfaces original and cleanup failures when recovery reconciliation fails',
       () async {
@@ -382,24 +532,23 @@ void main() {
         expect(stateAfterFailure.accounts, hasLength(1));
         expect(stateAfterFailure.accounts.single.uuid, source.uuid);
         expect(stateAfterFailure.activeAccountUuid, source.uuid);
-        expect(storage.values['zcash_derived_account_recovery'], 'derived-1');
+        expect(
+          storage.values['zcash_derived_account_recovery'],
+          contains('"baselineAccountUuids"'),
+        );
         expect(rust.liveAccountIndices, {1});
         final retainedSecret = await container
             .read(accountProvider.notifier)
             .getSoftwareWalletSecretForAccount('derived-1');
         expect(retainedSecret?.mnemonic, 'source recovery phrase');
 
-        await expectLater(
-          container
-              .read(accountProvider.notifier)
-              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
-          throwsA(isA<DerivedAccountRecoveryRequiredException>()),
-        );
-        await expectLater(
-          container
-              .read(accountProvider.notifier)
-              .acknowledgeDerivedAccountRecovery(),
-          throwsA(isA<StateError>()),
+        await container
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+        expect(
+          container.read(accountProvider).requireValue.accounts,
+          hasLength(2),
         );
         expect(rust.allocatedIndices, [1]);
       },
@@ -408,7 +557,7 @@ void main() {
     test(
       'retains a complete recovered account and blocks blind retry when Rust deletion fails',
       () async {
-        storage.failNextWriteFor =
+        storage.persistThenThrowNextWriteFor =
             _DerivedAccountWriteBoundary.accounts.storageKey;
         rust.failNextDelete = true;
         final container = _deriveAccountContainer(source);
@@ -441,28 +590,23 @@ void main() {
           hasLength(2),
         );
         expect(storage.values['zcash_active_account'], 'derived-1');
-        expect(storage.values['zcash_derived_account_recovery'], 'derived-1');
+        expect(
+          storage.values['zcash_derived_account_recovery'],
+          contains('"baselineAccountUuids"'),
+        );
         final stateAfterRecovery = container.read(accountProvider).requireValue;
         expect(stateAfterRecovery.accounts, hasLength(2));
         expect(stateAfterRecovery.activeAccountUuid, 'derived-1');
 
-        await expectLater(
-          container
-              .read(accountProvider.notifier)
-              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
-          throwsA(
-            predicate<Object>(
-              (error) => error.toString().contains('Derived account recovered'),
-              'an explicit recovery acknowledgement before another derivation',
-            ),
-          ),
-        );
+        await container
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
         expect(rust.allocatedIndices, [1]);
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
 
         await container
             .read(accountProvider.notifier)
             .acknowledgeDerivedAccountRecovery();
-        expect(storage.values['zcash_derived_account_recovery'], isNull);
 
         await container
             .read(accountProvider.notifier)
@@ -734,14 +878,17 @@ AppBootstrapState _bootstrapWithAccounts() {
   );
 }
 
-ProviderContainer _deriveAccountContainer(AccountInfo source) {
+ProviderContainer _deriveAccountContainer(
+  AccountInfo source, {
+  List<AccountInfo>? bootstrapAccounts,
+}) {
   return ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(
         AppBootstrapState(
           initialLocation: '/accounts',
           initialAccountState: AccountState(
-            accounts: [source],
+            accounts: bootstrapAccounts ?? [source],
             activeAccountUuid: source.uuid,
           ),
           initialSyncSnapshot: AppSyncSnapshot.empty,
@@ -760,6 +907,14 @@ ProviderContainer _deriveAccountContainer(AccountInfo source) {
     ],
   );
 }
+
+String _recoveryFenceJson({required String sourceAccountUuid}) => jsonEncode({
+  'version': 1,
+  'sourceAccountUuid': sourceAccountUuid,
+  'name': 'Recovered',
+  'profilePictureId': 'pfp-01',
+  'baselineAccountUuids': [sourceAccountUuid],
+});
 
 enum _DerivedAccountWriteBoundary {
   mnemonic('zcash_account_mnemonic_derived-1'),
@@ -854,6 +1009,9 @@ class _FaultInjectingSecureStorage extends FlutterSecureStoragePlatform {
 class _DerivationRustApiFake implements RustLibApi {
   final _occupiedIndices = <int>{0};
   final allocatedIndices = <int>[];
+  final _listedAccountsByUuid = <String, rust_wallet.AccountInfo>{};
+  Completer<void>? _derivationGate;
+  Completer<void>? _derivationStarted;
   bool failNextDelete = false;
 
   Set<int> get liveAccountIndices => {
@@ -866,7 +1024,39 @@ class _DerivationRustApiFake implements RustLibApi {
       ..clear()
       ..add(0);
     allocatedIndices.clear();
+    _derivationGate = null;
+    _derivationStarted = null;
+    _listedAccountsByUuid
+      ..clear()
+      ..['source'] = const rust_wallet.AccountInfo(
+        uuid: 'source',
+        name: 'Source',
+        unifiedAddress: 'u-source',
+        isSeedAnchor: true,
+        isHardware: false,
+        seedFamilyId: 'software-family',
+      );
     failNextDelete = false;
+  }
+
+  void pauseDerivation() {
+    _derivationGate = Completer<void>();
+    _derivationStarted = Completer<void>();
+  }
+
+  Future<void> waitForDerivationStart() => _derivationStarted!.future;
+
+  void resumeDerivation() => _derivationGate?.complete();
+
+  void addListedAccount(AccountInfo account) {
+    _listedAccountsByUuid[account.uuid] = rust_wallet.AccountInfo(
+      uuid: account.uuid,
+      name: account.name,
+      unifiedAddress: 'u-${account.uuid}',
+      isSeedAnchor: account.isSeedAnchor,
+      isHardware: account.isHardware,
+      seedFamilyId: account.seedFamilyId,
+    );
   }
 
   @override
@@ -879,12 +1069,14 @@ class _DerivationRustApiFake implements RustLibApi {
     required String dbPath,
     required String name,
   }) async {
+    _derivationStarted?.complete();
+    await _derivationGate?.future;
     final index = Iterable<int>.generate(
       1 << 16,
     ).firstWhere((candidate) => !_occupiedIndices.contains(candidate));
     _occupiedIndices.add(index);
     allocatedIndices.add(index);
-    return rust_wallet.SoftwareWalletImportAccount(
+    final result = rust_wallet.SoftwareWalletImportAccount(
       accountUuid: 'derived-$index',
       unifiedAddress: 'u-derived-$index',
       zip32AccountIndex: index,
@@ -892,7 +1084,22 @@ class _DerivationRustApiFake implements RustLibApi {
       isSeedAnchor: true,
       seedFamilyId: 'software-family',
     );
+    _listedAccountsByUuid[result.accountUuid] = rust_wallet.AccountInfo(
+      uuid: result.accountUuid,
+      name: result.name,
+      unifiedAddress: result.unifiedAddress,
+      isSeedAnchor: result.isSeedAnchor,
+      isHardware: false,
+      seedFamilyId: result.seedFamilyId,
+    );
+    return result;
   }
+
+  @override
+  Future<List<rust_wallet.AccountInfo>> crateApiWalletListAccounts({
+    required String dbPath,
+    required String network,
+  }) async => _listedAccountsByUuid.values.toList();
 
   @override
   Future<void> crateApiWalletDeleteAccount({
@@ -906,6 +1113,7 @@ class _DerivationRustApiFake implements RustLibApi {
     }
     final index = int.tryParse(accountUuid.replaceFirst('derived-', ''));
     if (index != null) _occupiedIndices.remove(index);
+    _listedAccountsByUuid.remove(accountUuid);
   }
 
   @override

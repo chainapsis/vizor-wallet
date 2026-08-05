@@ -115,6 +115,89 @@ class DerivedAccountRecoveryRequiredException implements Exception {
   }
 }
 
+/// Persistent fence written before Rust can allocate a derived account.
+///
+/// The baseline lets a later process identify the one Rust account added after
+/// an interruption even if the result UUID was never written back to Dart
+/// storage. Keep this representation deliberately small and versioned because
+/// it is a recovery journal, not user-facing account metadata.
+class _DerivedAccountRecoveryFence {
+  const _DerivedAccountRecoveryFence({
+    required this.sourceAccountUuid,
+    required this.name,
+    required this.profilePictureId,
+    required this.accountGroupName,
+    required this.baselineAccountUuids,
+    this.legacyAccountUuid,
+  });
+
+  final String sourceAccountUuid;
+  final String name;
+  final String profilePictureId;
+  final String? accountGroupName;
+  final Set<String> baselineAccountUuids;
+
+  /// Round 2 persisted only a UUID. It remains a recovery barrier until the
+  /// same durable checks used by the new format prove it is safe to clear.
+  final String? legacyAccountUuid;
+
+  bool get isLegacy => legacyAccountUuid != null;
+
+  String encode() => jsonEncode({
+    'version': 1,
+    'sourceAccountUuid': sourceAccountUuid,
+    'name': name,
+    'profilePictureId': profilePictureId,
+    'accountGroupName': accountGroupName,
+    'baselineAccountUuids': baselineAccountUuids.toList()..sort(),
+  });
+
+  static _DerivedAccountRecoveryFence decode(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic> && decoded['version'] == 1) {
+        final sourceAccountUuid = decoded['sourceAccountUuid'];
+        final name = decoded['name'];
+        final profilePictureId = decoded['profilePictureId'];
+        final baseline = decoded['baselineAccountUuids'];
+        if (sourceAccountUuid is String &&
+            sourceAccountUuid.isNotEmpty &&
+            name is String &&
+            profilePictureId is String &&
+            baseline is List) {
+          final baselineAccountUuids = baseline
+              .whereType<String>()
+              .where((uuid) => uuid.isNotEmpty)
+              .toSet();
+          if (baselineAccountUuids.isNotEmpty) {
+            return _DerivedAccountRecoveryFence(
+              sourceAccountUuid: sourceAccountUuid,
+              name: name,
+              profilePictureId: profilePictureId,
+              accountGroupName: decoded['accountGroupName'] as String?,
+              baselineAccountUuids: baselineAccountUuids,
+            );
+          }
+        }
+      }
+    } catch (_) {
+      // Fall through to the legacy UUID case below.
+    }
+
+    if (raw.isNotEmpty && !raw.contains('{')) {
+      return _DerivedAccountRecoveryFence(
+        sourceAccountUuid: '',
+        name: '',
+        profilePictureId: kDefaultProfilePictureId,
+        accountGroupName: null,
+        baselineAccountUuids: const {},
+        legacyAccountUuid: raw,
+      );
+    }
+    throw StateError('Invalid derived account recovery fence.');
+  }
+}
+
 /// Picks the software account whose recovery phrase should derive a new
 /// account. Prefers the active account, then falls back to list order.
 String? defaultDeriveSourceAccountUuid(AccountState state) {
@@ -168,6 +251,7 @@ class LinkedWalletAccountsImportResult {
 
 class AccountNotifier extends AsyncNotifier<AccountState> {
   static final _storage = AppSecureStore.instance;
+  static var _deriveOperationInFlight = false;
 
   @override
   FutureOr<AccountState> build() {
@@ -368,22 +452,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String? name,
     String profilePictureId = kDefaultProfilePictureId,
   }) async {
+    if (_deriveOperationInFlight) {
+      throw StateError('A derived account operation is already in progress.');
+    }
+    _deriveOperationInFlight = true;
     try {
-      final pendingRecoveryAccountUuid = await _storage.readString(
-        _derivedAccountRecoveryKey,
-      );
-      if (pendingRecoveryAccountUuid != null &&
-          pendingRecoveryAccountUuid.isNotEmpty) {
-        throw DerivedAccountRecoveryRequiredException(
-          accountUuid: pendingRecoveryAccountUuid,
-          cause: StateError(
-            'A previous derived account must be reviewed before retrying.',
-          ),
-        );
-      }
       final dbPath = await _getDbPath();
       final endpoint = ref.read(rpcEndpointProvider);
       final network = endpoint.networkName;
+
+      // A retry is a recovery opportunity, never a second blind allocation.
+      if (await _recoverPendingDerivedAccount(
+        dbPath: dbPath,
+        network: network,
+      )) {
+        return;
+      }
 
       final secret = await getSoftwareWalletSecretForAccount(sourceAccountUuid);
       if (secret == null) {
@@ -417,6 +501,27 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
       final normalizedProfilePictureId = normalizeProfilePictureId(
         profilePictureId,
+      );
+
+      // This journal is deliberately written before invoking Rust. If the app
+      // dies after Rust commits but before Dart receives its result, the saved
+      // baseline identifies the new account on the next process start.
+      final rustAccountsBeforeDerivation = await rust_wallet.listAccounts(
+        dbPath: dbPath,
+        network: network,
+      );
+      final recoveryFence = _DerivedAccountRecoveryFence(
+        sourceAccountUuid: sourceAccountUuid,
+        name: accountName,
+        profilePictureId: normalizedProfilePictureId,
+        accountGroupName: sourceAccount.accountGroupName,
+        baselineAccountUuids: {
+          for (final account in rustAccountsBeforeDerivation) account.uuid,
+        },
+      );
+      await _storage.writeString(
+        _derivedAccountRecoveryKey,
+        recoveryFence.encode(),
       );
 
       final result = await rust_wallet.deriveNextSoftwareAccount(
@@ -496,35 +601,27 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         }
 
         if (rustDeleteFailure != null) {
-          final recoveryFailures = await attemptOperations([
-            () => _storage.writeAccountMnemonic(
-              result.accountUuid,
-              secret.mnemonic,
-              bip39Passphrase: secret.bip39Passphrase,
-            ),
-            () => _saveAccounts(updatedAccounts),
-            () => _storage.writeString(_activeAccountKey, result.accountUuid),
-            () => _storage.writeString(
-              _derivedAccountRecoveryKey,
-              result.accountUuid,
-            ),
-          ], 'recovery reconciliation');
-          if (recoveryFailures.isNotEmpty) {
+          try {
+            final recoveredAccountUuid = await _reconcileDerivedAccountFence(
+              recoveryFence,
+              dbPath: dbPath,
+              network: network,
+            );
+            if (recoveredAccountUuid == null) {
+              throw StateError(
+                'Rust deletion failed but no derived account was found for '
+                'the durable recovery fence.',
+              );
+            }
+          } catch (recoveryError) {
             Error.throwWithStackTrace(
               DerivedAccountCompensationException(
                 cause: error,
-                cleanupFailures: [rustDeleteFailure, ...recoveryFailures],
+                cleanupFailures: [rustDeleteFailure, recoveryError],
               ),
               stackTrace,
             );
           }
-          state = AsyncData(
-            AccountState(
-              accounts: updatedAccounts,
-              activeAccountUuid: result.accountUuid,
-              activeAddress: result.unifiedAddress,
-            ),
-          );
           Error.throwWithStackTrace(
             DerivedAccountRecoveryRequiredException(
               accountUuid: result.accountUuid,
@@ -568,6 +665,19 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             stackTrace,
           );
         }
+        // If fence deletion fails, it remains a safe cross-process barrier.
+        // The next derive will first prove no Rust delta remains and clear it.
+        try {
+          await _clearRecoveryFence();
+        } catch (cleanupError) {
+          Error.throwWithStackTrace(
+            DerivedAccountCompensationException(
+              cause: error,
+              cleanupFailures: [cleanupError],
+            ),
+            stackTrace,
+          );
+        }
         Error.throwWithStackTrace(error, stackTrace);
       }
 
@@ -579,6 +689,23 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         ),
       );
 
+      try {
+        await _clearRecoveryFenceAfterDurableValidation(
+          result.accountUuid,
+          dbPath: dbPath,
+          network: network,
+        );
+      } catch (recoveryError, recoveryStackTrace) {
+        log(
+          'deriveAccountFromExistingSeed: completed account but retained '
+          'recovery fence: $recoveryError\n$recoveryStackTrace',
+        );
+        throw DerivedAccountRecoveryRequiredException(
+          accountUuid: result.accountUuid,
+          cause: recoveryError,
+        );
+      }
+
       log(
         'deriveAccountFromExistingSeed: success, uuid=${result.accountUuid}, '
         'zip32Index=${result.zip32AccountIndex}',
@@ -586,6 +713,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     } catch (e, st) {
       log('deriveAccountFromExistingSeed: ERROR: $e\n$st');
       rethrow;
+    } finally {
+      _deriveOperationInFlight = false;
     }
   }
 
@@ -594,22 +723,254 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// requires an explicit caller action so a retry cannot silently advance the
   /// ZIP 32 index after a failed Rust rollback.
   Future<void> acknowledgeDerivedAccountRecovery() async {
-    final accountUuid = await _storage.readString(_derivedAccountRecoveryKey);
-    if (accountUuid == null || accountUuid.isEmpty) return;
+    final dbPath = await _getDbPath();
+    final network = ref.read(rpcEndpointProvider).networkName;
+    await _recoverPendingDerivedAccount(dbPath: dbPath, network: network);
+  }
 
-    final accounts = state.value?.accounts ?? const <AccountInfo>[];
-    final accountExists = accounts.any(
-      (account) => account.uuid == accountUuid,
+  /// Resolves the durable derivation fence before a retry can reach Rust.
+  /// Returns true when a retained account was recovered for the caller's
+  /// original derive action, so the UI can complete that action without
+  /// allocating a second account.
+  Future<bool> _recoverPendingDerivedAccount({
+    required String dbPath,
+    required String network,
+  }) async {
+    final rawFence = await _storage.readString(_derivedAccountRecoveryKey);
+    if (rawFence == null || rawFence.isEmpty) return false;
+
+    final fence = _DerivedAccountRecoveryFence.decode(rawFence);
+    if (fence.isLegacy) {
+      final accountUuid = fence.legacyAccountUuid!;
+      await _publishDurablyRecoveredAccount(
+        accountUuid,
+        dbPath: dbPath,
+        network: network,
+      );
+      await _clearRecoveryFenceAfterDurableValidation(
+        accountUuid,
+        dbPath: dbPath,
+        network: network,
+      );
+      return true;
+    }
+
+    final recoveredAccountUuid = await _reconcileDerivedAccountFence(
+      fence,
+      dbPath: dbPath,
+      network: network,
     );
-    final secret = await getSoftwareWalletSecretForAccount(accountUuid);
-    if (!accountExists || secret == null) {
+    if (recoveredAccountUuid == null) {
+      // The fence persisted before a Rust call that never committed. It is
+      // safe to remove only after the Rust baseline proves there is no delta.
+      await _clearRecoveryFence();
+      return false;
+    }
+
+    await _clearRecoveryFenceAfterDurableValidation(
+      recoveredAccountUuid,
+      dbPath: dbPath,
+      network: network,
+    );
+    return true;
+  }
+
+  /// Reconstructs a Dart account from the Rust delta held behind [fence].
+  /// The fence is intentionally left in place until a later durable
+  /// validation clears it.
+  Future<String?> _reconcileDerivedAccountFence(
+    _DerivedAccountRecoveryFence fence, {
+    required String dbPath,
+    required String network,
+  }) async {
+    final rustAccounts = await rust_wallet.listAccounts(
+      dbPath: dbPath,
+      network: network,
+    );
+    final candidates = rustAccounts
+        .where((account) => !fence.baselineAccountUuids.contains(account.uuid))
+        .toList();
+    if (candidates.isEmpty) return null;
+    if (candidates.length != 1 || candidates.single.isHardware) {
       throw StateError(
-        'Cannot acknowledge derived account recovery for $accountUuid until '
-        'its local account metadata and signing secret are restored.',
+        'Derived account recovery fence has ${candidates.length} Rust '
+        'account deltas and cannot safely choose one.',
       );
     }
 
-    await _storage.delete(_derivedAccountRecoveryKey);
+    final candidate = candidates.single;
+    final sourceSecret = await getSoftwareWalletSecretForAccount(
+      fence.sourceAccountUuid,
+    );
+    if (sourceSecret == null) {
+      throw StateError(
+        'Cannot reconcile derived account ${candidate.uuid} without the '
+        'source signing secret.',
+      );
+    }
+
+    final durableAccounts = await _readDurableAccounts();
+    final source = durableAccounts.where(
+      (account) => account.uuid == fence.sourceAccountUuid,
+    );
+    if (source.isEmpty) {
+      throw StateError(
+        'Cannot reconcile derived account ${candidate.uuid} without durable '
+        'source account metadata.',
+      );
+    }
+
+    final recoveredAccount = AccountInfo(
+      uuid: candidate.uuid,
+      name: fence.name,
+      order: durableAccounts.length,
+      isSeedAnchor: candidate.isSeedAnchor,
+      profilePictureId: fence.profilePictureId,
+      seedFamilyId: candidate.seedFamilyId,
+      accountGroupName: fence.accountGroupName,
+    );
+    final hasCandidate = durableAccounts.any(
+      (account) => account.uuid == candidate.uuid,
+    );
+    final reconciledAccounts = [
+      for (final account in durableAccounts)
+        if (account.uuid == fence.sourceAccountUuid &&
+            candidate.seedFamilyId != null)
+          account.copyWith(seedFamilyId: candidate.seedFamilyId)
+        else
+          account,
+      if (!hasCandidate) recoveredAccount,
+    ];
+
+    await _storage.writeAccountMnemonic(
+      candidate.uuid,
+      sourceSecret.mnemonic,
+      bip39Passphrase: sourceSecret.bip39Passphrase,
+    );
+    await _saveAccounts(reconciledAccounts);
+    await _storage.writeString(_activeAccountKey, candidate.uuid);
+    await _publishDurablyRecoveredAccount(
+      candidate.uuid,
+      dbPath: dbPath,
+      network: network,
+    );
+    return candidate.uuid;
+  }
+
+  /// Reads from secure storage rather than Riverpod so acknowledgement remains
+  /// safe after bootstrap recreated in-memory accounts from Rust alone.
+  Future<List<AccountInfo>> _readDurableAccounts() async {
+    final rawAccounts = await _storage.readString(_accountsKey);
+    if (rawAccounts == null) return const [];
+    final decoded = jsonDecode(rawAccounts);
+    if (decoded is! List) {
+      throw StateError('Stored account metadata is not a list.');
+    }
+    return decoded.map((entry) {
+      if (entry is! Map<String, dynamic>) {
+        throw StateError('Stored account metadata contains an invalid row.');
+      }
+      return AccountInfo.fromJson(entry);
+    }).toList();
+  }
+
+  Future<void> _publishDurablyRecoveredAccount(
+    String accountUuid, {
+    required String dbPath,
+    required String network,
+  }) async {
+    final durableAccounts = await _readDurableAccounts();
+    if (!durableAccounts.any((account) => account.uuid == accountUuid)) {
+      throw StateError(
+        'Cannot acknowledge derived account recovery for $accountUuid until '
+        'its durable local account metadata is restored.',
+      );
+    }
+    final secret = await getSoftwareWalletSecretForAccount(accountUuid);
+    if (secret == null) {
+      throw StateError(
+        'Cannot acknowledge derived account recovery for $accountUuid until '
+        'its encrypted signing secret is restored.',
+      );
+    }
+    final rustAccounts = await rust_wallet.listAccounts(
+      dbPath: dbPath,
+      network: network,
+    );
+    final rustAccount = rustAccounts.where(
+      (account) => account.uuid == accountUuid,
+    );
+    if (rustAccount.isEmpty) {
+      throw StateError(
+        'Cannot acknowledge derived account recovery for $accountUuid because '
+        'Rust no longer contains that account.',
+      );
+    }
+
+    state = AsyncData(
+      AccountState(
+        accounts: durableAccounts,
+        activeAccountUuid: accountUuid,
+        activeAddress: rustAccount.single.unifiedAddress,
+      ),
+    );
+  }
+
+  Future<void> _clearRecoveryFenceAfterDurableValidation(
+    String accountUuid, {
+    required String dbPath,
+    required String network,
+  }) async {
+    await _publishDurablyRecoveredAccount(
+      accountUuid,
+      dbPath: dbPath,
+      network: network,
+    );
+    await _clearRecoveryFence();
+  }
+
+  Future<void> _clearRecoveryFence() async {
+    try {
+      await _storage.delete(_derivedAccountRecoveryKey);
+    } catch (error) {
+      // A keychain write can persist and still report an error. Read-after-
+      // failure distinguishes a cleared fence from one that must remain.
+      final remaining = await _storage.readString(_derivedAccountRecoveryKey);
+      if (remaining == null || remaining.isEmpty) return;
+      rethrow;
+    }
+    final remaining = await _storage.readString(_derivedAccountRecoveryKey);
+    if (remaining != null && remaining.isNotEmpty) {
+      throw StateError('Derived account recovery fence could not be cleared.');
+    }
+  }
+
+  /// Removing the retained account must not leave a recovery barrier that can
+  /// never be acknowledged. Clear only when Rust proves the fence no longer
+  /// has a derived delta; any ambiguous fence remains fail-closed.
+  Future<void> _clearRecoveryFenceAfterAccountRemoval({
+    required String removedAccountUuid,
+    required String dbPath,
+    required String network,
+  }) async {
+    final rawFence = await _storage.readString(_derivedAccountRecoveryKey);
+    if (rawFence == null || rawFence.isEmpty) return;
+    final fence = _DerivedAccountRecoveryFence.decode(rawFence);
+    if (fence.isLegacy) {
+      if (fence.legacyAccountUuid == removedAccountUuid) {
+        await _clearRecoveryFence();
+      }
+      return;
+    }
+
+    final rustAccounts = await rust_wallet.listAccounts(
+      dbPath: dbPath,
+      network: network,
+    );
+    final hasDerivedDelta = rustAccounts.any(
+      (account) => !fence.baselineAccountUuids.contains(account.uuid),
+    );
+    if (!hasDerivedDelta) await _clearRecoveryFence();
   }
 
   /// Import a wallet from mnemonic.
@@ -1002,6 +1363,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         activeAddress: nextActiveAddress,
       ),
     );
+    try {
+      await _clearRecoveryFenceAfterAccountRemoval(
+        removedAccountUuid: uuid,
+        dbPath: dbPath,
+        network: network,
+      );
+    } catch (e, st) {
+      log(
+        'removeAccount: retained derived recovery fence after removing '
+        '$uuid: $e\n$st',
+      );
+    }
     if (!migrationQuiescenceManagedByCaller) {
       try {
         await migrationLifecycle.resumeAfterMutation();
