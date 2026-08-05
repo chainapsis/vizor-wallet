@@ -21,10 +21,10 @@ class MacOSTorUpdateProxyConfiguration {
 
 /// Loopback-only HTTP bridge for native desktop updaters.
 ///
-/// The signed Sparkle feed and Velopack resources use [NetworkHttpClient].
-/// Sparkle package bytes use a Rust loopback relay so the embedded Arti client
-/// can stream directly to the native updater without buffering the full
-/// archive on disk or copying chunks through Flutter Rust Bridge.
+/// Signed update feeds and signatures use [NetworkHttpClient]. Update package
+/// bytes use a Rust loopback relay so the embedded Arti client can stream
+/// directly to the native updater without buffering the full archive on disk
+/// or copying chunks through Flutter Rust Bridge.
 class DesktopTorUpdateProxy {
   DesktopTorUpdateProxy({
     NetworkHttpClient Function()? clientFactory,
@@ -44,6 +44,8 @@ class DesktopTorUpdateProxy {
   String? _token;
   Uri? _macOSFeed;
   Uri? _windowsReleaseBase;
+  Uri? _windowsResourceUrl;
+  final _windowsResourceLengths = <String, int>{};
   var _torRelayRunning = false;
 
   Future<MacOSTorUpdateProxyConfiguration> configureMacOS(
@@ -73,6 +75,17 @@ class DesktopTorUpdateProxy {
     _windowsReleaseBase = upstreamReleaseBase.path.endsWith('/')
         ? upstreamReleaseBase
         : upstreamReleaseBase.replace(path: '${upstreamReleaseBase.path}/');
+    _windowsResourceLengths.clear();
+    final resourceUrl = await _torRelayStarter();
+    _torRelayRunning = true;
+    try {
+      _requireLoopbackHttp(resourceUrl);
+    } catch (_) {
+      _torRelayRunning = false;
+      await _torRelayStopper();
+      rethrow;
+    }
+    _windowsResourceUrl = resourceUrl;
     return _localUri('windows/');
   }
 
@@ -82,6 +95,8 @@ class DesktopTorUpdateProxy {
     _token = null;
     _macOSFeed = null;
     _windowsReleaseBase = null;
+    _windowsResourceUrl = null;
+    _windowsResourceLengths.clear();
     _client?.close(force: true);
     _client = null;
     await server?.close(force: true);
@@ -174,6 +189,30 @@ class DesktopTorUpdateProxy {
   }
 
   Future<void> _serveUpstreamFile(Uri upstream, HttpResponse response) async {
+    if (upstream.path.toLowerCase().endsWith('.nupkg')) {
+      final resourceUrl = _windowsResourceUrl;
+      if (resourceUrl == null) {
+        response.statusCode = HttpStatus.serviceUnavailable;
+        return;
+      }
+      response.statusCode = HttpStatus.temporaryRedirect;
+      final expectedLength =
+          _windowsResourceLengths[upstream.pathSegments.last];
+      response.headers.set(
+        HttpHeaders.locationHeader,
+        resourceUrl
+            .replace(
+              queryParameters: {
+                ...resourceUrl.queryParameters,
+                'url': upstream.toString(),
+                if (expectedLength != null) 'length': '$expectedLength',
+              },
+            )
+            .toString(),
+      );
+      return;
+    }
+
     final client = _client;
     if (client == null) {
       response.statusCode = HttpStatus.serviceUnavailable;
@@ -196,9 +235,35 @@ class DesktopTorUpdateProxy {
         response.headers.set(HttpHeaders.contentTypeHeader, contentType);
       }
       response.contentLength = await file.length();
+      if (upstream.path.toLowerCase().endsWith('.json')) {
+        await _rememberWindowsResourceLengths(file);
+      }
       await response.addStream(file.openRead());
     } finally {
       await directory.delete(recursive: true);
+    }
+  }
+
+  Future<void> _rememberWindowsResourceLengths(File feed) async {
+    try {
+      final decoded = jsonDecode(await feed.readAsString());
+      if (decoded is! Map<String, dynamic>) return;
+      final assets = decoded['Assets'] ?? decoded['assets'];
+      if (assets is! List) return;
+      for (final asset in assets) {
+        if (asset is! Map) continue;
+        final fileName = asset['FileName'] ?? asset['fileName'];
+        final size = asset['Size'] ?? asset['size'];
+        if (fileName is String &&
+            fileName.isNotEmpty &&
+            size is int &&
+            size > 0) {
+          _windowsResourceLengths[fileName] = size;
+        }
+      }
+    } on FormatException {
+      // Velopack reports an invalid signed feed; keep the relay streaming with
+      // indeterminate progress rather than changing the native error path.
     }
   }
 

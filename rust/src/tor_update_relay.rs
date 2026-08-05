@@ -9,7 +9,7 @@
 use std::{io, sync::OnceLock, time::Duration};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use http::{header, StatusCode, Uri};
+use http::{header, Response, StatusCode, Uri};
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use rand::{rngs::OsRng, RngCore};
@@ -20,10 +20,11 @@ use tokio::{
     task::{JoinHandle, JoinSet},
 };
 use url::Url;
-use zcash_client_backend::tor::{http::HttpError, Client as TorClient};
+use zcash_client_backend::tor::{http::HttpError, Client as TorClient, Error as TorError};
 
 const MAX_REQUEST_HEADER_BYTES: usize = 16 * 1024;
 const LOCAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const RESPONSE_BODY_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
 const MAX_REDIRECTS: usize = 5;
 
 struct RelayState {
@@ -103,7 +104,7 @@ async fn run(listener: TcpListener, resource_path: String, mut shutdown: oneshot
 
 async fn handle_connection(mut stream: TcpStream, resource_path: &str) -> Result<(), String> {
     let target = read_get_target(&mut stream).await?;
-    let upstream = parse_upstream(&target, resource_path)?;
+    let (upstream, expected_length) = parse_upstream(&target, resource_path)?;
     let upstream_host = upstream.host_str().unwrap_or("unknown").to_string();
     log::info!("network privacy: Tor update relay request started for {upstream_host}");
     let client = crate::network_privacy::tor_client_for_route(true)?
@@ -112,10 +113,15 @@ async fn handle_connection(mut stream: TcpStream, resource_path: &str) -> Result
     // Sparkle's loopback URLSession has a 60-second request timeout. Send the
     // local response headers immediately; upstream resolution and every body
     // frame still remain fail-closed on the embedded Tor client.
+    let framing_header = expected_length.map_or_else(
+        || "Transfer-Encoding: chunked\r\n".to_string(),
+        |length| format!("Content-Length: {length}\r\n"),
+    );
+    let response_headers = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n{framing_header}Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+    );
     stream
-        .write_all(
-            b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nTransfer-Encoding: chunked\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        )
+        .write_all(response_headers.as_bytes())
         .await
         .map_err(|error| format!("Write Tor update relay headers: {error}"))?;
     stream
@@ -123,27 +129,18 @@ async fn handle_connection(mut stream: TcpStream, resource_path: &str) -> Result
         .await
         .map_err(|error| format!("Flush Tor update relay headers: {error}"))?;
 
-    let final_uri = resolve_final_uri(&client, upstream).await?;
+    let (final_url, response) = open_final_response(&client, upstream).await?;
     log::info!(
         "network privacy: Tor update relay upstream resolved to {}",
-        final_uri.host().unwrap_or("unknown")
+        final_url.host_str().unwrap_or("unknown")
     );
-    let response = client
-        .http_get(
-            final_uri,
-            |builder| builder.header(header::ACCEPT, "application/octet-stream"),
-            move |body| stream_chunked_body(body, stream),
-            0,
-            |_| None,
-        )
-        .await
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Update server returned HTTP {}",
-            response.status().as_u16()
-        ));
-    }
+    tokio::time::timeout(
+        RESPONSE_BODY_TIMEOUT,
+        stream_response_body(response.into_body(), stream, expected_length),
+    )
+    .await
+    .map_err(|_| "Timed out streaming the Tor update response body".to_string())?
+    .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -191,7 +188,7 @@ async fn read_get_target(stream: &mut TcpStream) -> Result<String, String> {
     Ok(target.to_string())
 }
 
-fn parse_upstream(target: &str, resource_path: &str) -> Result<Url, String> {
+fn parse_upstream(target: &str, resource_path: &str) -> Result<(Url, Option<u64>), String> {
     let local = Url::parse(&format!("http://127.0.0.1{target}"))
         .map_err(|error| format!("Invalid Tor update relay URL: {error}"))?;
     if local.path() != resource_path {
@@ -204,10 +201,27 @@ fn parse_upstream(target: &str, resource_path: &str) -> Result<Url, String> {
     let upstream = Url::parse(&raw_upstream)
         .map_err(|error| format!("Invalid upstream update URL: {error}"))?;
     require_https(&upstream)?;
-    Ok(upstream)
+    let expected_length = local
+        .query_pairs()
+        .find_map(|(name, value)| (name == "length").then(|| value.into_owned()))
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .map_err(|error| format!("Invalid expected update length: {error}"))
+                .and_then(|length| {
+                    (length > 0)
+                        .then_some(length)
+                        .ok_or_else(|| "Expected update length must be positive".to_string())
+                })
+        })
+        .transpose()?;
+    Ok((upstream, expected_length))
 }
 
-async fn resolve_final_uri(client: &TorClient, mut current: Url) -> Result<Uri, String> {
+async fn open_final_response(
+    client: &TorClient,
+    mut current: Url,
+) -> Result<(Url, Response<Incoming>), String> {
     for redirect_count in 0..=MAX_REDIRECTS {
         let uri: Uri = current
             .as_str()
@@ -216,8 +230,8 @@ async fn resolve_final_uri(client: &TorClient, mut current: Url) -> Result<Uri, 
         let response = client
             .http_get(
                 uri,
-                |builder| builder.header(header::RANGE, "bytes=0-0"),
-                discard_probe_body,
+                |builder| builder.header(header::ACCEPT, "application/octet-stream"),
+                |body| async move { Ok::<_, TorError>(body) },
                 0,
                 |_| None,
             )
@@ -246,21 +260,15 @@ async fn resolve_final_uri(client: &TorClient, mut current: Url) -> Result<Uri, 
                 response.status().as_u16()
             ));
         }
-        return current
-            .as_str()
-            .parse()
-            .map_err(|error| format!("Invalid resolved update URL: {error}"));
+        return Ok((current, response));
     }
     Err("Too many Tor update redirects".to_string())
 }
 
-async fn discard_probe_body(_body: Incoming) -> Result<(), zcash_client_backend::tor::Error> {
-    Ok(())
-}
-
-async fn stream_chunked_body(
+async fn stream_response_body(
     mut body: Incoming,
     mut stream: TcpStream,
+    expected_length: Option<u64>,
 ) -> Result<(), zcash_client_backend::tor::Error> {
     let mut total_bytes = 0_u64;
     let mut received_first_bytes = false;
@@ -273,11 +281,27 @@ async fn stream_chunked_body(
                     received_first_bytes = true;
                 }
                 total_bytes += data.len() as u64;
-                write_chunk(&mut stream, &data).await?;
+                if expected_length.is_some() {
+                    stream.write_all(&data).await?;
+                } else {
+                    write_chunk(&mut stream, &data).await?;
+                }
             }
         }
     }
-    stream.write_all(b"0\r\n\r\n").await?;
+    if let Some(expected_length) = expected_length {
+        if total_bytes != expected_length {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!(
+                    "Tor update body length mismatch: expected {expected_length}, received {total_bytes}"
+                ),
+            )
+            .into());
+        }
+    } else {
+        stream.write_all(b"0\r\n\r\n").await?;
+    }
     stream.flush().await?;
     log::info!("network privacy: Tor update relay completed package stream ({total_bytes} bytes)");
     Ok(())
@@ -323,12 +347,13 @@ mod tests {
 
     #[test]
     fn relay_target_requires_the_secret_path_and_https() {
-        let upstream = parse_upstream(
-            "/secret/resource?url=https%3A%2F%2Fcdn.example%2FVizor.dmg",
+        let (upstream, expected_length) = parse_upstream(
+            "/secret/resource?url=https%3A%2F%2Fcdn.example%2FVizor.dmg&length=321",
             "/secret/resource",
         )
         .unwrap();
         assert_eq!(upstream.as_str(), "https://cdn.example/Vizor.dmg");
+        assert_eq!(expected_length, Some(321));
         assert!(parse_upstream(
             "/wrong/resource?url=https%3A%2F%2Fcdn.example%2FVizor.dmg",
             "/secret/resource",
@@ -336,6 +361,11 @@ mod tests {
         .is_err());
         assert!(parse_upstream(
             "/secret/resource?url=http%3A%2F%2Fcdn.example%2FVizor.dmg",
+            "/secret/resource",
+        )
+        .is_err());
+        assert!(parse_upstream(
+            "/secret/resource?url=https%3A%2F%2Fcdn.example%2FVizor.dmg&length=0",
             "/secret/resource",
         )
         .is_err());

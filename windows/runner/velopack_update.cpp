@@ -431,6 +431,17 @@ bool HttpGetStream(const std::string& url, ChunkWriter writer) {
     return false;
   }
 
+  if (TorProxyReady()) {
+    constexpr int kTorUpdateTimeoutMs = 2 * 60 * 60 * 1000;
+    if (!WinHttpSetTimeouts(session, kTorUpdateTimeoutMs,
+                            kTorUpdateTimeoutMs, kTorUpdateTimeoutMs,
+                            kTorUpdateTimeoutMs)) {
+      WinHttpCloseHandle(session);
+      SetSourceError("Could not configure Tor update HTTP timeouts.");
+      return false;
+    }
+  }
+
   HINTERNET connection =
       WinHttpConnect(session, host.c_str(), port, 0);
   if (connection == nullptr) {

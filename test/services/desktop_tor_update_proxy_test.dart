@@ -76,14 +76,33 @@ length: 321
     final bridge = _UpdateTorBridge(
       bodies: {
         'https://updates.example/releases/releases.win.json': utf8.encode(
-          '{"assets":[{"fileName":"Vizor-1.2.3-full.nupkg"}]}',
+          '{"Assets":[{"FileName":"Vizor-1.2.3-full.nupkg","Size":1024}]}',
         ),
-        'https://updates.example/releases/Vizor-1.2.3-full.nupkg': packageBytes,
       },
     );
+    final relayedUrls = <String>[];
+    final relayedLengths = <String>[];
+    final relay = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    relay.listen((request) async {
+      relayedUrls.add(request.uri.queryParameters['url']!);
+      relayedLengths.add(request.uri.queryParameters['length']!);
+      request.response.add(packageBytes.sublist(0, 512));
+      await request.response.flush();
+      request.response.add(packageBytes.sublist(512));
+      await request.response.close();
+    });
+    addTearDown(() => relay.close(force: true));
+    var relayStopped = false;
     final proxy = DesktopTorUpdateProxy(
       clientFactory: () =>
           NetworkHttpClient(torDesired: () => true, torBridge: bridge),
+      torRelayStarter: () async => Uri(
+        scheme: 'http',
+        host: InternetAddress.loopbackIPv4.address,
+        port: relay.port,
+        path: '/resource',
+      ),
+      torRelayStopper: () async => relayStopped = true,
     );
     addTearDown(proxy.stop);
 
@@ -98,14 +117,20 @@ length: 321
     expect(feedResponse.statusCode, HttpStatus.ok);
     expect(
       utf8.decode(feedResponse.bodyBytes),
-      '{"assets":[{"fileName":"Vizor-1.2.3-full.nupkg"}]}',
+      '{"Assets":[{"FileName":"Vizor-1.2.3-full.nupkg","Size":1024}]}',
     );
     expect(packageResponse.statusCode, HttpStatus.ok);
     expect(packageResponse.bodyBytes, packageBytes);
-    expect(bridge.downloads, [
-      'https://updates.example/releases/releases.win.json',
+    expect(relayedUrls, [
       'https://updates.example/releases/Vizor-1.2.3-full.nupkg',
     ]);
+    expect(relayedLengths, ['1024']);
+    expect(bridge.downloads, [
+      'https://updates.example/releases/releases.win.json',
+    ]);
+
+    await proxy.stop();
+    expect(relayStopped, isTrue);
   });
 }
 
