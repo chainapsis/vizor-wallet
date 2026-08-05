@@ -48,10 +48,10 @@ class WalletLinkApiClient {
     return WalletLinkCreatePackageResponse.fromJson(decoded);
   }
 
-  Future<void> deletePackage(String packageId) async {
+  Future<void> revokePackage(String packageId) async {
     final response = await _client.request(
-      'DELETE',
-      walletLinkPackagesUri(_baseUri, packageId: packageId),
+      'POST',
+      walletLinkPackageRevokeUri(_baseUri, packageId: packageId),
       headers: const {HttpHeaders.acceptHeader: 'application/json'},
       timeout: timeout,
     );
@@ -59,7 +59,7 @@ class WalletLinkApiClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw WalletLinkApiException(
         response.statusCode,
-        'Failed to delete wallet link package.',
+        'Failed to revoke wallet link package.',
       );
     }
   }
