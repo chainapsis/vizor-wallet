@@ -6,6 +6,13 @@ and this workspace adheres to [Semantic Versioning](https://semver.org/spec/v2.0
 
 # Unreleased
 
+### Changed
+- `NoteInfo::from_orchard_note` now rejects non-Ironwood/V3 notes with
+  `VotingError::InvalidInput`. Voting is Ironwood-only, but `NoteInfo` does not
+  carry the note version, so an Orchard/V2 note previously passed ingestion and
+  bundling and failed only during proof construction — after the governance PCZT
+  had been built and signed.
+
 ## v2.0.0-rc.1
 
 ### Changed

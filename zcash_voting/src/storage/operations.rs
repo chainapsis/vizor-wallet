@@ -2053,11 +2053,12 @@ mod tests {
         let mut notes = Vec::new();
         for position in 0..BUNDLE_NOTE_SLOTS {
             let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None, NoteVersion::V2);
+            // Voting notes are Ironwood/V3; `from_orchard_note` rejects V2.
             let note = orchard::Note::new(
                 address,
                 NoteValue::from_raw(13_000_000),
                 Rho::from_nf_old(parent_note.nullifier(&fvk)),
-                NoteVersion::V2,
+                NoteVersion::V3,
                 &mut rng,
             );
             notes.push(

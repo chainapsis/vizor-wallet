@@ -1,7 +1,7 @@
 use std::fmt;
 
 use ff::PrimeField;
-use orchard::note::ExtractedNoteCommitment;
+use orchard::note::{ExtractedNoteCommitment, NoteVersion};
 use pasta_curves::pallas;
 use serde::{Deserialize, Serialize};
 use subtle::CtOption;
@@ -212,9 +212,17 @@ pub struct NoteInfo {
 impl NoteInfo {
     /// Builds voting note metadata from a shielded note owned by the given UFVK.
     ///
-    /// The `orchard` crate represents both Orchard/V2 and Ironwood/V3 notes.
-    /// Callers are responsible for selecting Ironwood/V3 notes for the voting
-    /// round.
+    /// The `orchard` crate represents both Orchard/V2 and Ironwood/V3 notes, but
+    /// voting is Ironwood-only: the delegation circuit accepts V3 real notes
+    /// exclusively. Non-V3 notes are rejected here rather than at proof time,
+    /// because `NoteInfo` does not carry the note version and the mismatch
+    /// would otherwise surface only after the governance PCZT has been built
+    /// and signed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VotingError::InvalidInput`] if `ufvk` has no Orchard component
+    /// or if `note` is not an Ironwood/V3 note.
     pub fn from_orchard_note<P: consensus::Parameters>(
         note: &orchard::note::Note,
         position: u64,
@@ -222,6 +230,14 @@ impl NoteInfo {
         ufvk: &UnifiedFullViewingKey,
         network: &P,
     ) -> Result<Self, VotingError> {
+        if note.version() != NoteVersion::V3 {
+            return Err(VotingError::InvalidInput {
+                message: format!(
+                    "voting requires Ironwood/V3 notes, got {:?}",
+                    note.version()
+                ),
+            });
+        }
         let fvk = ufvk.orchard().ok_or_else(|| VotingError::InvalidInput {
             message: "ufvk has no Orchard component".to_string(),
         })?;
@@ -1029,14 +1045,7 @@ mod tests {
         let address = fvk.address_at(0u32, Scope::External);
 
         let mut rng = OsRng;
-        let (_, _, parent_note) = orchard::Note::dummy(&mut rng, None, NoteVersion::V2);
-        let note = orchard::Note::new(
-            address,
-            NoteValue::from_raw(12_500_000),
-            Rho::from_nf_old(parent_note.nullifier(&fvk)),
-            NoteVersion::V2,
-            &mut rng,
-        );
+        let note = test_note(&fvk, address, NoteVersion::V3, &mut rng);
 
         let note_info =
             NoteInfo::from_orchard_note(&note, 42, Scope::External, &ufvk, &TEST_NETWORK).unwrap();
@@ -1058,6 +1067,44 @@ mod tests {
         assert_eq!(note_info.scope, 0);
         assert_eq!(note_info.ufvk_str, ufvk.encode(&TEST_NETWORK));
     }
+
+    #[test]
+    fn from_orchard_note_rejects_non_ironwood_notes() {
+        let seed = [0x42u8; 32];
+        let account = AccountId::try_from(0u32).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(&TEST_NETWORK, &seed, account).unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let fvk = ufvk.orchard().unwrap().clone();
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let note = test_note(&fvk, address, NoteVersion::V2, &mut rng);
+
+        let err = NoteInfo::from_orchard_note(&note, 42, Scope::External, &ufvk, &TEST_NETWORK)
+            .expect_err("Orchard/V2 notes are not eligible for voting");
+
+        assert!(
+            err.to_string().contains("requires Ironwood/V3 notes"),
+            "{err}"
+        );
+    }
+
+    fn test_note(
+        fvk: &orchard::keys::FullViewingKey,
+        address: orchard::Address,
+        version: NoteVersion,
+        rng: &mut OsRng,
+    ) -> orchard::Note {
+        let (_, _, parent_note) = orchard::Note::dummy(&mut *rng, None, NoteVersion::V2);
+        orchard::Note::new(
+            address,
+            NoteValue::from_raw(12_500_000),
+            Rho::from_nf_old(parent_note.nullifier(fvk)),
+            version,
+            rng,
+        )
+    }
+
     #[test]
     fn validate_vote_round_id_accepts_canonical_lowercase_hex() {
         assert!(validate_vote_round_id_hex(&"01".repeat(32)).is_ok());
