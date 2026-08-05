@@ -189,6 +189,52 @@ void main() {
     expect(events, ['retry']);
   });
 
+  testWidgets('an automatic check failure does not interrupt the user', (
+    tester,
+  ) async {
+    final notifier = _BackgroundFailureWindowsUpdateNotifier(<String>[]);
+    await tester.pumpWidget(
+      _appHarness(
+        windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+          () => notifier,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    notifier.failAutomaticCheck();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Update failed'), findsNothing);
+  });
+
+  testWidgets('dismissing one failure still shows the next one', (
+    tester,
+  ) async {
+    final notifier = _BackgroundFailureWindowsUpdateNotifier(<String>[]);
+    await tester.pumpWidget(
+      _appHarness(
+        windowsUpdateOverride: windowsUpdateProvider.overrideWith(
+          () => notifier,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    notifier.failDownload();
+    await tester.pumpAndSettle();
+    expect(find.text('Update failed'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(AppButton, 'Dismiss'));
+    await tester.pumpAndSettle();
+    expect(find.text('Update failed'), findsNothing);
+
+    // A second attempt that fails must not inherit the first dismissal.
+    notifier.failDownload(ordinal: 2);
+    await tester.pumpAndSettle();
+    expect(find.text('Update failed'), findsOneWidget);
+  });
+
   testWidgets(
     'Tor-connected startup checks once without route-switch duplication',
     (tester) async {
@@ -345,8 +391,17 @@ class _BackgroundFailureWindowsUpdateNotifier extends WindowsUpdateNotifier {
     message: '',
   );
 
-  void failDownload() {
-    state = const WindowsUpdateState(
+  void failDownload({int ordinal = 1}) {
+    // The user started this download, so its failure has to reach them.
+    _fail(WindowsUpdateFailure(userInitiated: true, ordinal: ordinal));
+  }
+
+  void failAutomaticCheck() {
+    _fail(const WindowsUpdateFailure(userInitiated: false, ordinal: 1));
+  }
+
+  void _fail(WindowsUpdateFailure failure) {
+    state = WindowsUpdateState(
       supported: true,
       status: WindowsUpdateStatus.failed,
       currentVersion: '1.0.0',
@@ -357,6 +412,7 @@ class _BackgroundFailureWindowsUpdateNotifier extends WindowsUpdateNotifier {
       pendingRestart: false,
       torProxyReady: true,
       message: 'Signed feed verification failed.',
+      failure: failure,
     );
   }
 

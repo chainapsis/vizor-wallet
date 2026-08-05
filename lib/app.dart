@@ -1295,6 +1295,11 @@ class _WindowsUpdatePromptHostState
   }
 
   String _promptKey(WindowsUpdateState state) {
+    // Each failure gets its own key: dismissing one must not hide the next.
+    final failureOrdinal = state.failure?.ordinal;
+    if (failureOrdinal != null) {
+      return '${state.status.name}:$failureOrdinal';
+    }
     return '${state.status.name}:${state.availableVersion}';
   }
 
@@ -1305,8 +1310,10 @@ class _WindowsUpdatePromptHostState
       WindowsUpdateStatus.available ||
       WindowsUpdateStatus.downloading ||
       WindowsUpdateStatus.ready ||
-      WindowsUpdateStatus.applying ||
-      WindowsUpdateStatus.failed => true,
+      WindowsUpdateStatus.applying => true,
+      // Only a failure the user is waiting on earns an interruption. An
+      // automatic check that fails is re-run once the route recovers.
+      WindowsUpdateStatus.failed => state.failure?.userInitiated ?? false,
       _ => false,
     };
     if (!visibleStatus) return false;
