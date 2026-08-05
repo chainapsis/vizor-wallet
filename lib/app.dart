@@ -1317,6 +1317,40 @@ class _WindowsUpdatePromptHostState
     });
   }
 
+  Future<void> _handleDownload() async {
+    final privacy = ref.read(networkPrivacyProvider);
+    if (!privacy.torEnabled) {
+      await ref.read(windowsUpdateProvider.notifier).downloadUpdate();
+      return;
+    }
+
+    final dialogContext = widget
+        .router
+        .routerDelegate
+        .navigatorKey
+        .currentState
+        ?.overlay
+        ?.context;
+    if (dialogContext == null) return;
+    final choice = await showDialog<_WindowsUpdatePrivacyChoice>(
+      context: dialogContext,
+      builder: (_) => const _WindowsUpdatePrivacyChoiceDialog(),
+    );
+    if (!mounted || choice == null) return;
+
+    if (choice == _WindowsUpdatePrivacyChoice.direct) {
+      await ref.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+      if (!mounted) return;
+      final directState = ref.read(networkPrivacyProvider);
+      if (directState.torEnabled ||
+          directState.status != NetworkPrivacyConnectionStatus.off) {
+        return;
+      }
+    }
+
+    await ref.read(windowsUpdateProvider.notifier).downloadUpdate();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(windowsUpdateProvider);
@@ -1353,11 +1387,7 @@ class _WindowsUpdatePromptHostState
                         key: ValueKey(_promptKey(state)),
                         state: state,
                         onDownload: () {
-                          unawaited(
-                            ref
-                                .read(windowsUpdateProvider.notifier)
-                                .downloadUpdate(),
-                          );
+                          unawaited(_handleDownload());
                         },
                         onRestart: () {
                           unawaited(
@@ -1376,6 +1406,95 @@ class _WindowsUpdatePromptHostState
           ),
         ),
       ],
+    );
+  }
+}
+
+enum _WindowsUpdatePrivacyChoice { tor, direct }
+
+class _WindowsUpdatePrivacyChoiceDialog extends StatelessWidget {
+  const _WindowsUpdatePrivacyChoiceDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.background.ground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.large),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 424),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: colors.background.neutralSubtleOpacity,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: AppIcon(
+                        AppIcons.shieldKeyholeOutline,
+                        size: AppIconSize.medium,
+                        color: colors.icon.regular,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      'Use Tor for this update?',
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: colors.text.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Updating over Tor may take longer. Turning Tor off switches '
+                'all Vizor network requests to a direct connection.',
+                style: AppTypography.bodyMedium.copyWith(
+                  color: colors.text.secondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                expand: true,
+                onPressed: () =>
+                    Navigator.of(context).pop(_WindowsUpdatePrivacyChoice.tor),
+                child: const Text('Continue with Tor'),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              AppButton(
+                expand: true,
+                variant: AppButtonVariant.secondary,
+                onPressed: () => Navigator.of(
+                  context,
+                ).pop(_WindowsUpdatePrivacyChoice.direct),
+                child: const Text('Turn off Tor and update'),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              AppButton(
+                expand: true,
+                variant: AppButtonVariant.ghost,
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
