@@ -85,6 +85,7 @@ AssetPtr g_pending_asset;
 UpdateStatus g_status = UpdateStatus::kIdle;
 bool g_supported = true;
 bool g_busy = false;
+bool g_update_route_transition_reserved = false;
 bool g_pending_restart = false;
 int32_t g_download_progress = 0;
 std::string g_current_version = FLUTTER_VERSION;
@@ -211,6 +212,28 @@ void SetTorRouting(bool enabled, std::string proxy_base_url) {
   std::lock_guard<std::mutex> lock(g_update_route_mutex);
   g_tor_routing_required = enabled;
   g_tor_proxy_base_url = enabled ? std::move(proxy_base_url) : std::string();
+}
+
+bool ReserveTorDisable() {
+  std::lock_guard<std::mutex> lock(g_update_mutex);
+  if (g_update_route_transition_reserved) {
+    return true;
+  }
+  if (g_busy) {
+    return false;
+  }
+  g_update_route_transition_reserved = true;
+  return true;
+}
+
+bool CommitTorRouting(bool enabled, std::string proxy_base_url) {
+  std::lock_guard<std::mutex> lock(g_update_mutex);
+  if (g_busy) {
+    return false;
+  }
+  SetTorRouting(enabled, std::move(proxy_base_url));
+  g_update_route_transition_reserved = false;
+  return true;
 }
 
 bool TorProxyReady() {
@@ -786,7 +809,8 @@ void StartCheckForUpdates() {
   vpkc_update_manager_t* manager = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
-    if (!EnsureManagerLocked() || g_busy) {
+    if (!EnsureManagerLocked() || g_busy ||
+        g_update_route_transition_reserved) {
       return;
     }
     RefreshPendingRestartLocked();
@@ -842,7 +866,8 @@ void StartDownloadUpdate() {
   vpkc_update_info_t* update = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
-    if (!EnsureManagerLocked() || g_busy) {
+    if (!EnsureManagerLocked() || g_busy ||
+        g_update_route_transition_reserved) {
       return;
     }
     if (!g_update_info) {
@@ -902,7 +927,8 @@ void StartApplyUpdateAndRestart() {
   vpkc_asset_t* asset = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
-    if (!EnsureManagerLocked() || g_busy) {
+    if (!EnsureManagerLocked() || g_busy ||
+        g_update_route_transition_reserved) {
       return;
     }
     if (g_pending_asset) {
@@ -953,6 +979,17 @@ CreateVelopackUpdateChannel(flutter::BinaryMessenger* messenger) {
       result->Success(flutter::EncodableValue(DirectReleaseBaseUrl()));
       return;
     }
+    if (method == "prepareForTorDisable") {
+      if (!ReserveTorDisable()) {
+        result->Error(
+            "update_in_progress",
+            "Wait for the current software update operation to finish before "
+            "turning off Tor.");
+        return;
+      }
+      result->Success();
+      return;
+    }
     if (method == "setTorRouting") {
       const auto* arguments = call.arguments();
       if (arguments == nullptr ||
@@ -975,8 +1012,14 @@ CreateVelopackUpdateChannel(flutter::BinaryMessenger* messenger) {
           std::holds_alternative<std::string>(proxy_it->second)) {
         proxy_base_url = std::get<std::string>(proxy_it->second);
       }
-      SetTorRouting(std::get<bool>(enabled_it->second),
-                    std::move(proxy_base_url));
+      if (!CommitTorRouting(std::get<bool>(enabled_it->second),
+                            std::move(proxy_base_url))) {
+        result->Error(
+            "update_in_progress",
+            "Wait for the current software update operation to finish before "
+            "changing Tor routing.");
+        return;
+      }
       result->Success();
       return;
     }

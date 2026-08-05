@@ -219,6 +219,7 @@ void main() {
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
 
     expect(events, [
+      'native-prepare-disable',
       'restart',
       'store:false',
       'configure:false',
@@ -233,6 +234,119 @@ void main() {
             (state) => state.status,
             'status',
             NetworkPrivacyConnectionStatus.off,
+          ),
+    );
+  });
+
+  test('disabling waits for the native Tor update cycle to drain', () async {
+    final events = <String>[];
+    final nativeUpdates = _DeferredDisableNativeUpdateCoordinator(events);
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _FakeStore(events),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(
+          _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+        ),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          nativeUpdates,
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+    events.clear();
+
+    final disabling = container
+        .read(networkPrivacyProvider.notifier)
+        .setTorEnabled(false);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(events, ['native-prepare-disable']);
+    expect(
+      container.read(networkPrivacyProvider),
+      isA<NetworkPrivacyState>()
+          .having((state) => state.torEnabled, 'torEnabled', isTrue)
+          .having(
+            (state) => state.status,
+            'status',
+            NetworkPrivacyConnectionStatus.connecting,
+          )
+          .having(
+            (state) => state.targetTorEnabled,
+            'targetTorEnabled',
+            isFalse,
+          ),
+    );
+
+    nativeUpdates.completeDrain();
+    await disabling;
+
+    expect(events, [
+      'native-prepare-disable',
+      'native-disable-drained',
+      'restart',
+      'store:false',
+      'configure:false',
+      'direct-allow',
+      'native:false',
+    ]);
+  });
+
+  test('failed native disable preflight preserves the Tor route', () async {
+    final events = <String>[];
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _FakeStore(events),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(
+          _FakeRuntime(events, NetworkPrivacyConnectionStatus.connected),
+        ),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _RejectingDisableNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+    events.clear();
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
+
+    expect(events, ['native-prepare-disable']);
+    expect(
+      container.read(networkPrivacyProvider),
+      isA<NetworkPrivacyState>()
+          .having((state) => state.torEnabled, 'torEnabled', isTrue)
+          .having(
+            (state) => state.status,
+            'status',
+            NetworkPrivacyConnectionStatus.connected,
+          )
+          .having(
+            (state) => state.startupNotice,
+            'startupNotice',
+            kTorDisableUpdateInProgressNotice,
           ),
     );
   });
@@ -361,7 +475,13 @@ void main() {
     events.clear();
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
 
-    expect(events, ['restart', 'store:false', 'configure:false']);
+    expect(events, [
+      'native-prepare-disable',
+      'restart',
+      'store:false',
+      'configure:false',
+      'native-resume',
+    ]);
     expect(
       container.read(networkPrivacyProvider),
       isA<NetworkPrivacyState>()
@@ -380,7 +500,13 @@ void main() {
 
     events.clear();
     await container.read(networkPrivacyProvider.notifier).retry();
-    expect(events, ['restart', 'store:false', 'configure:false']);
+    expect(events, [
+      'native-prepare-disable',
+      'restart',
+      'store:false',
+      'configure:false',
+      'native-resume',
+    ]);
   });
 
   test(
@@ -600,6 +726,11 @@ class _FakeNativeUpdateCoordinator
   final List<String> events;
 
   @override
+  Future<void> prepareForTorDisable() async {
+    events.add('native-prepare-disable');
+  }
+
+  @override
   Future<void> setTorEnabled(bool enabled) async {
     events.add('native:$enabled');
   }
@@ -620,6 +751,11 @@ class _RejectingNativeUpdateCoordinator
   _RejectingNativeUpdateCoordinator(this.events);
 
   final List<String> events;
+
+  @override
+  Future<void> prepareForTorDisable() async {
+    events.add('native-prepare-disable');
+  }
 
   @override
   Future<void> setTorEnabled(bool enabled) async {
@@ -651,6 +787,33 @@ class _DeferredPauseNativeUpdateCoordinator
     events.add('native:force-pause');
     await _pause.future;
     events.add('native:paused');
+  }
+}
+
+class _DeferredDisableNativeUpdateCoordinator
+    extends _FakeNativeUpdateCoordinator {
+  _DeferredDisableNativeUpdateCoordinator(super.events);
+
+  final _drain = Completer<void>();
+
+  void completeDrain() => _drain.complete();
+
+  @override
+  Future<void> prepareForTorDisable() async {
+    events.add('native-prepare-disable');
+    await _drain.future;
+    events.add('native-disable-drained');
+  }
+}
+
+class _RejectingDisableNativeUpdateCoordinator
+    extends _FakeNativeUpdateCoordinator {
+  _RejectingDisableNativeUpdateCoordinator(super.events);
+
+  @override
+  Future<void> prepareForTorDisable() async {
+    events.add('native-prepare-disable');
+    throw StateError('update in progress');
   }
 }
 
