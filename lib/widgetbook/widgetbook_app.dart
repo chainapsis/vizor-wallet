@@ -89,6 +89,14 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Network settings',
                       builder: buildWelcomeNetworkSettingsUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Network settings - Tor connecting',
+                      builder: buildWelcomeNetworkSettingsTorConnectingUseCase,
+                    ),
+                    WidgetbookUseCase(
+                      name: 'Network settings - Tor connected',
+                      builder: buildWelcomeNetworkSettingsTorConnectedUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(

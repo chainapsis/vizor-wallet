@@ -965,7 +965,7 @@ class _SettingsBlock extends StatelessWidget {
             padding: const EdgeInsets.all(AppSpacing.xxs),
             child: Text(
               title,
-              style: AppTypography.labelMedium.copyWith(
+              style: AppTypography.labelLarge.copyWith(
                 fontWeight: FontWeight.w400,
                 color: colors.text.secondary,
               ),

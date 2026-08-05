@@ -30,90 +30,74 @@ class NetworkPrivacyControl extends ConsumerWidget {
     final state = ref.watch(networkPrivacyProvider);
     final presentation = _presentationFor(state);
 
-    final content = Padding(
-      padding: showSurface
-          ? const EdgeInsets.all(AppSpacing.sm)
-          : const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: state.torEnabled
-                      ? colors.background.brandCrimsonSubtle
-                      : colors.background.raised,
-                  borderRadius: BorderRadius.circular(AppRadii.medium),
-                ),
-                alignment: Alignment.center,
-                child: AppIcon(
-                  AppIcons.shieldKeyholeOutline,
-                  size: 20,
-                  color: state.torEnabled
-                      ? colors.icon.brandCrimson
-                      : colors.icon.muted,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Use Tor',
-                      style: AppTypography.labelLarge.copyWith(
-                        color: colors.text.accent,
-                      ),
+    final assetList = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: 44,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox.square(
+                  dimension: 20,
+                  child: Center(
+                    child: AppIcon(
+                      AppIcons.tor,
+                      key: const ValueKey('network_privacy_tor_icon'),
+                      size: 20,
+                      color: presentation.iconColor(colors),
                     ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Row(
-                      children: [
-                        if (presentation.iconName != null) ...[
-                          AppIcon(
-                            presentation.iconName!,
-                            size: 14,
-                            color: presentation.statusColor(colors),
-                          ),
-                          const SizedBox(width: AppSpacing.xxs),
-                        ],
-                        Flexible(
-                          child: Text(
-                            presentation.statusLabel,
-                            key: ValueKey(
-                              'network_privacy_status_${state.status.name}_${state.torEnabled}',
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.bodySmall.copyWith(
-                              color: presentation.statusColor(colors),
-                            ),
-                          ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Use Tor',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: colors.text.accent,
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s),
-              _NetworkPrivacyToggle(
-                key: const ValueKey('network_privacy_toggle'),
-                enabled: state.torEnabled,
-                busy: state.isBusy,
-                onToggle: state.isBusy
-                    ? null
-                    : () => unawaited(
-                        ref
-                            .read(networkPrivacyProvider.notifier)
-                            .setTorEnabled(!state.torEnabled),
                       ),
-              ),
-            ],
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        presentation.statusLabel,
+                        key: ValueKey(
+                          'network_privacy_status_${state.status.name}_${state.torEnabled}',
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge.copyWith(
+                          color: presentation.statusColor(colors),
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                _NetworkPrivacyToggle(
+                  key: const ValueKey('network_privacy_toggle'),
+                  enabled: state.torEnabled,
+                  onToggle: state.isBusy
+                      ? null
+                      : () => unawaited(
+                          ref
+                              .read(networkPrivacyProvider.notifier)
+                              .setTorEnabled(!state.torEnabled),
+                        ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          AnimatedSwitcher(
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxs),
+          child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 160),
             switchInCurve: Curves.easeOut,
             switchOutCurve: Curves.easeOut,
@@ -122,66 +106,86 @@ class NetworkPrivacyControl extends ConsumerWidget {
               key: ValueKey(
                 'network_privacy_description_${state.status.name}_${state.torEnabled}',
               ),
-              style: AppTypography.bodySmall.copyWith(
-                color: state.status == NetworkPrivacyConnectionStatus.failed
-                    ? colors.text.destructive
-                    : colors.text.secondary,
+              style: AppTypography.bodyMedium.copyWith(
+                color: presentation.descriptionColor(colors),
               ),
             ),
           ),
-          if (!state.softwareUpdatesAvailable &&
-              (state.status == NetworkPrivacyConnectionStatus.connected ||
-                  state.status == NetworkPrivacyConnectionStatus.off)) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppButton(
-                onPressed: () => unawaited(
-                  ref
-                      .read(networkPrivacyProvider.notifier)
-                      .retrySoftwareUpdates(),
-                ),
-                variant: AppButtonVariant.ghost,
-                size: AppButtonSize.small,
-                leading: const AppIcon(AppIcons.renew),
-                child: const Text('Retry updates'),
+        ),
+        if (!state.softwareUpdatesAvailable &&
+            (state.status == NetworkPrivacyConnectionStatus.connected ||
+                state.status == NetworkPrivacyConnectionStatus.off)) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppButton(
+              onPressed: () => unawaited(
+                ref
+                    .read(networkPrivacyProvider.notifier)
+                    .retrySoftwareUpdates(),
+              ),
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.small,
+              leading: const AppIcon(AppIcons.renew),
+              child: const Text('Retry updates'),
+            ),
+          ),
+        ] else if (state.status == NetworkPrivacyConnectionStatus.failed) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppButton(
+              onPressed: () => unawaited(
+                ref
+                    .read(networkPrivacyProvider.notifier)
+                    .setTorEnabled(state.targetTorEnabled ?? state.torEnabled),
+              ),
+              variant: AppButtonVariant.ghost,
+              size: AppButtonSize.small,
+              leading: const AppIcon(AppIcons.renew),
+              child: Text(
+                (state.targetTorEnabled ?? state.torEnabled)
+                    ? 'Try again'
+                    : 'Try direct connection',
               ),
             ),
-          ] else if (state.status == NetworkPrivacyConnectionStatus.failed) ...[
-            const SizedBox(height: AppSpacing.xs),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppButton(
-                onPressed: () => unawaited(
-                  ref
-                      .read(networkPrivacyProvider.notifier)
-                      .setTorEnabled(
-                        state.targetTorEnabled ?? state.torEnabled,
-                      ),
-                ),
-                variant: AppButtonVariant.ghost,
-                size: AppButtonSize.small,
-                leading: const AppIcon(AppIcons.renew),
-                child: Text(
-                  (state.targetTorEnabled ?? state.torEnabled)
-                      ? 'Try again'
-                      : 'Try direct connection',
-                ),
-              ),
-            ),
-          ],
+          ),
         ],
-      ),
+      ],
     );
 
-    if (!showSurface) return content;
+    if (!showSurface) return assetList;
     return DecoratedBox(
+      key: const ValueKey('network_privacy_surface'),
       decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.medium),
-        border: Border.all(color: colors.border.subtle),
+        color: colors.background.ground,
+        borderRadius: BorderRadius.circular(AppRadii.large),
+        boxShadow: appSurfaceShadow(colors),
       ),
-      child: content,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.md,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(AppSpacing.xxs),
+              child: Text(
+                'Privacy',
+                key: const ValueKey('network_privacy_surface_title'),
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.secondary,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            assetList,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -189,13 +193,11 @@ class NetworkPrivacyControl extends ConsumerWidget {
 class _NetworkPrivacyToggle extends StatefulWidget {
   const _NetworkPrivacyToggle({
     required this.enabled,
-    required this.busy,
     required this.onToggle,
     super.key,
   });
 
   final bool enabled;
-  final bool busy;
   final VoidCallback? onToggle;
 
   @override
@@ -214,19 +216,15 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
     final track = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      width: 48,
-      height: 26,
-      padding: const EdgeInsets.all(3),
+      key: const ValueKey('network_privacy_toggle_track'),
+      width: 44,
+      height: 20,
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: widget.enabled
             ? colors.background.brandCrimsonStrong
-            : colors.background.raised,
+            : colors.background.overlay,
         borderRadius: BorderRadius.circular(AppRadii.full),
-        border: Border.all(
-          color: widget.enabled
-              ? colors.border.brandCrimsonStrong
-              : colors.border.regular,
-        ),
       ),
       child: AnimatedAlign(
         duration: const Duration(milliseconds: 160),
@@ -239,7 +237,7 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
             color: const Color(0xFFFFFFFF),
             borderRadius: BorderRadius.circular(AppRadii.full),
           ),
-          child: const SizedBox.square(dimension: 18),
+          child: const SizedBox(width: 28, height: 16),
         ),
       ),
     );
@@ -247,7 +245,7 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
     final control = Stack(
       clipBehavior: Clip.none,
       children: [
-        Opacity(opacity: widget.busy ? 0.65 : 1, child: track),
+        track,
         if (_focused)
           Positioned(
             left: -3,
@@ -298,7 +296,7 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
             behavior: HitTestBehavior.opaque,
             onTap: widget.onToggle,
             child: SizedBox(
-              width: 48,
+              width: 44,
               height: 44,
               child: Center(child: control),
             ),
@@ -314,13 +312,15 @@ class _NetworkPrivacyPresentation {
     required this.statusLabel,
     required this.description,
     required this.statusColor,
-    this.iconName,
+    required this.iconColor,
+    required this.descriptionColor,
   });
 
   final String statusLabel;
   final String description;
-  final String? iconName;
   final Color Function(AppColors colors) statusColor;
+  final Color Function(AppColors colors) iconColor;
+  final Color Function(AppColors colors) descriptionColor;
 }
 
 _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
@@ -330,8 +330,9 @@ _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
       statusLabel: 'Connected',
       description:
           'Zcash network and in-app service requests use Tor. Software updates are unavailable.',
-      iconName: AppIcons.warning,
       statusColor: (colors) => colors.text.destructive,
+      iconColor: (colors) => colors.icon.brandCrimson,
+      descriptionColor: (colors) => colors.text.destructive,
     );
   }
   if (!state.softwareUpdatesAvailable &&
@@ -340,8 +341,9 @@ _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
       statusLabel: 'Direct',
       description:
           'Network requests connect directly. Software updates are unavailable.',
-      iconName: AppIcons.warning,
       statusColor: (colors) => colors.text.destructive,
+      iconColor: (colors) => colors.icon.muted,
+      descriptionColor: (colors) => colors.text.destructive,
     );
   }
   final targetTorEnabled = state.targetTorEnabled ?? state.torEnabled;
@@ -351,44 +353,52 @@ _NetworkPrivacyPresentation _presentationFor(NetworkPrivacyState state) {
       description:
           'Tor is off. Requests to the Zcash network, in-app services, and software updates connect directly.',
       statusColor: (colors) => colors.text.secondary,
+      iconColor: (colors) => colors.icon.muted,
+      descriptionColor: (colors) => colors.text.accent,
     ),
     (NetworkPrivacyConnectionStatus.connecting, true) =>
       _NetworkPrivacyPresentation(
-        statusLabel: 'Connecting…',
-        description: 'New requests wait until the Tor connection is ready.',
-        iconName: AppIcons.loader,
-        statusColor: (colors) => colors.text.brandCrimson,
+        statusLabel: 'Connecting ...',
+        description:
+            'Requests to the Zcash network, in-app services, and software updates use Tor. Some services may be unavailable over Tor.',
+        statusColor: (colors) => colors.text.secondary,
+        iconColor: (colors) => colors.icon.muted,
+        descriptionColor: (colors) => colors.text.accent,
       ),
     (NetworkPrivacyConnectionStatus.connecting, false) =>
       _NetworkPrivacyPresentation(
         statusLabel: 'Switching to direct…',
         description:
             'Vizor is switching network requests and software updates to a direct connection.',
-        iconName: AppIcons.loader,
         statusColor: (colors) => colors.text.secondary,
+        iconColor: (colors) => colors.icon.brandCrimson,
+        descriptionColor: (colors) => colors.text.accent,
       ),
     (NetworkPrivacyConnectionStatus.connected, _) => _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
       description:
           'Requests to the Zcash network, in-app services, and software updates use Tor. Some services may be unavailable over Tor.',
-      iconName: AppIcons.checkCircle,
-      statusColor: (colors) => colors.text.positiveStrong,
+      statusColor: (colors) => colors.text.brandCrimson,
+      iconColor: (colors) => colors.icon.brandCrimson,
+      descriptionColor: (colors) => colors.text.accent,
     ),
     (NetworkPrivacyConnectionStatus.failed, true) =>
       _NetworkPrivacyPresentation(
         statusLabel: 'Connection failed',
         description:
             'Direct requests remain blocked. Try again or turn off Tor.',
-        iconName: AppIcons.warning,
         statusColor: (colors) => colors.text.destructive,
+        iconColor: (colors) => colors.icon.destructive,
+        descriptionColor: (colors) => colors.text.destructive,
       ),
     (NetworkPrivacyConnectionStatus.failed, false) =>
       _NetworkPrivacyPresentation(
         statusLabel: 'Switch failed',
         description:
             'Vizor could not switch to a direct connection. Try again.',
-        iconName: AppIcons.warning,
         statusColor: (colors) => colors.text.destructive,
+        iconColor: (colors) => colors.icon.destructive,
+        descriptionColor: (colors) => colors.text.destructive,
       ),
   };
 }

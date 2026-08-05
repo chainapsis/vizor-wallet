@@ -136,12 +136,36 @@ Widget buildWelcomeLargeUseCase(BuildContext context) {
 }
 
 Widget buildWelcomeNetworkSettingsUseCase(BuildContext context) {
+  return _buildWelcomeNetworkSettingsUseCase(const NetworkPrivacyState.off());
+}
+
+Widget buildWelcomeNetworkSettingsTorConnectingUseCase(BuildContext context) {
+  return _buildWelcomeNetworkSettingsUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connecting,
+    ),
+  );
+}
+
+Widget buildWelcomeNetworkSettingsTorConnectedUseCase(BuildContext context) {
+  return _buildWelcomeNetworkSettingsUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connected,
+    ),
+  );
+}
+
+Widget _buildWelcomeNetworkSettingsUseCase(
+  NetworkPrivacyState networkPrivacyState,
+) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new),
       networkPrivacyProvider.overrideWith(
-        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+        () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
       ),
     ],
     child: const _WelcomeHarness(showNetworkSettingsInitially: true),

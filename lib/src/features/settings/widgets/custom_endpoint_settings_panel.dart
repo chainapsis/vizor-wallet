@@ -118,12 +118,14 @@ class _CustomEndpointSettingsPanelState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
     final current = ref.watch(rpcEndpointProvider);
     final latencyState = ref.watch(rpcEndpointLatencyProvider);
 
     return DecoratedBox(
+      key: const ValueKey('network_settings_panel_surface'),
       decoration: BoxDecoration(
-        color: colors.background.ground,
+        color: isDark ? colors.background.window : colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
         border: Border.all(color: colors.border.subtle),
       ),

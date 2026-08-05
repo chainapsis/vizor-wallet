@@ -155,6 +155,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildWelcomeNetworkSettingsUseCase,
   ),
   FigmaCompareScenario(
+    id: 'welcome-network-settings-tor-connected',
+    description: 'Desktop first-wallet network settings with Tor connected',
+    builder: buildWelcomeNetworkSettingsTorConnectedUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'swap-tor-blocked',
     description: 'Desktop swap when the provider blocks a Tor exit',
     builder: buildSwapPageTorBlockedUseCase,

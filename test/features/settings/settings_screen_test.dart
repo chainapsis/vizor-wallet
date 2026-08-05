@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_screen.dart';
 import 'package:zcash_wallet/src/features/settings/settings_platform.dart';
 import 'package:zcash_wallet/src/providers/account_models.dart';
@@ -195,9 +196,12 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Connecting…'), findsOneWidget);
+    expect(find.text('Connecting ...'), findsOneWidget);
     expect(
-      find.text('New requests wait until the Tor connection is ready.'),
+      find.text(
+        'Requests to the Zcash network, in-app services, and software updates '
+        'use Tor. Some services may be unavailable over Tor.',
+      ),
       findsOneWidget,
     );
 
@@ -228,6 +232,34 @@ void main() {
       ),
       findsOneWidget,
     );
+
+    final torIcon = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('network_privacy_tor_icon')),
+    );
+    expect(torIcon.name, AppIcons.tor);
+    expect(torIcon.size, 20);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('network_privacy_toggle_track')),
+      ),
+      const Size(44, 20),
+    );
+
+    final status = tester.widget<Text>(
+      find.byKey(const ValueKey('network_privacy_status_connected_true')),
+    );
+    expect(status.style?.fontSize, 14);
+    expect(status.style?.fontWeight, FontWeight.w400);
+    expect(status.style?.height, 16 / 14);
+    expect(status.style?.color, AppThemeData.light.colors.text.brandCrimson);
+
+    final description = tester.widget<Text>(
+      find.byKey(const ValueKey('network_privacy_description_connected_true')),
+    );
+    expect(description.style?.fontSize, 14);
+    expect(description.style?.fontWeight, FontWeight.w400);
+    expect(description.style?.height, 21 / 14);
+    expect(description.style?.color, AppThemeData.light.colors.text.accent);
   });
 
   testWidgets('Tor stays effective while switching to direct', (tester) async {

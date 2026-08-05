@@ -3,7 +3,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/material.dart' show MaterialApp, TextButton;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart'
-    show BoxDecoration, DecoratedBox, Text, ValueKey, Widget;
+    show BorderRadius, BoxDecoration, DecoratedBox, Text, ValueKey, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -90,10 +90,52 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Network settings'), findsOneWidget);
+    expect(find.text('Privacy'), findsOneWidget);
     expect(find.text('Use Tor'), findsOneWidget);
     expect(find.text('Direct'), findsOneWidget);
     expect(find.text('Custom endpoint'), findsOneWidget);
     expect(find.text('Update endpoint'), findsOneWidget);
+
+    final surface = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('network_privacy_surface')),
+    );
+    final decoration = surface.decoration as BoxDecoration;
+    expect(decoration.borderRadius, BorderRadius.circular(AppRadii.large));
+    expect(decoration.boxShadow, hasLength(4));
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('network_privacy_toggle_track')),
+      ),
+      const Size(44, 20),
+    );
+  });
+
+  testWidgets('uses the darker modal layer in dark mode', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen(theme: AppThemeData.dark));
+
+    await tester.tap(
+      find.byKey(const ValueKey('welcome_endpoint_settings_button')),
+    );
+    await tester.pump();
+
+    final panel = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('network_settings_panel_surface')),
+    );
+    final panelDecoration = panel.decoration as BoxDecoration;
+    expect(panelDecoration.color, AppThemeData.dark.colors.background.window);
+
+    final privacySurface = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('network_privacy_surface')),
+    );
+    final privacyDecoration = privacySurface.decoration as BoxDecoration;
+    expect(
+      privacyDecoration.color,
+      AppThemeData.dark.colors.background.ground,
+    );
+    expect(privacyDecoration.border, isNull);
   });
 
   testWidgets(
@@ -180,6 +222,7 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 Widget _welcomeScreen({
   bool showBackButton = false,
   List<bool>? networkPrivacyCalls,
+  AppThemeData theme = AppThemeData.light,
 }) {
   return ProviderScope(
     overrides: [
@@ -190,7 +233,7 @@ Widget _welcomeScreen({
     ],
     child: MaterialApp(
       home: AppTheme(
-        data: AppThemeData.light,
+        data: theme,
         child: WelcomeScreen(showBackButton: showBackButton),
       ),
     ),
