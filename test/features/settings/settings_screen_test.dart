@@ -196,14 +196,17 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Connecting ...'), findsOneWidget);
+    expect(find.text('Connecting…'), findsOneWidget);
     expect(
-      find.text(
-        'Requests to the Zcash network, in-app services, and software updates '
-        'use Tor. Some services may be unavailable over Tor.',
-      ),
+      find.text('New requests wait until the Tor connection is ready.'),
       findsOneWidget,
     );
+
+    final statusIcon = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('network_privacy_status_icon')),
+    );
+    expect(statusIcon.name, AppIcons.loader);
+    expect(_toggleTrackOpacity(tester), lessThan(1));
 
     await tester.tap(
       find.byKey(const ValueKey('network_privacy_toggle')),
@@ -227,11 +230,16 @@ void main() {
     expect(find.text('Connected'), findsOneWidget);
     expect(
       find.text(
-        'Requests to the Zcash network, in-app services, and software updates '
-        'use Tor. Some services may be unavailable over Tor.',
+        'Wallet sync, most in-app requests, and software updates go through '
+        'Tor. Some services may be unavailable over Tor.',
       ),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('network_privacy_status_icon')),
+      findsNothing,
+    );
+    expect(_toggleTrackOpacity(tester), 1);
 
     final torIcon = tester.widget<AppIcon>(
       find.byKey(const ValueKey('network_privacy_tor_icon')),
@@ -279,8 +287,9 @@ void main() {
 
       expect(
         find.text(
-          'Vizor requests, including software update checks, use Tor. Update '
-          'pages and downloads opened in another app use that app’s connection.',
+          'Wallet sync, most in-app requests, and software update checks go '
+          'through Tor. Update pages and downloads opened in another app '
+          'use that app’s connection.',
         ),
         findsOneWidget,
       );
@@ -309,6 +318,12 @@ void main() {
       ),
       findsOneWidget,
     );
+
+    final statusIcon = tester.widget<AppIcon>(
+      find.byKey(const ValueKey('network_privacy_status_icon')),
+    );
+    expect(statusIcon.name, AppIcons.loader);
+    expect(_toggleTrackOpacity(tester), lessThan(1));
   });
 
   testWidgets('Tor update-route failure remains visible after the toast', (
@@ -327,8 +342,8 @@ void main() {
 
     expect(
       find.text(
-        'Zcash network and in-app service requests use Tor. Software updates '
-        'are unavailable.',
+        'Wallet sync and most in-app requests go through Tor. Software '
+        'updates are unavailable.',
       ),
       findsOneWidget,
     );
@@ -506,6 +521,18 @@ final _bootstrap = AppBootstrapState(
   isUnlocked: true,
   passwordRotationRecoveryFailed: false,
 );
+
+double _toggleTrackOpacity(WidgetTester tester) {
+  final opacity = tester.widget<Opacity>(
+    find
+        .ancestor(
+          of: find.byKey(const ValueKey('network_privacy_toggle_track')),
+          matching: find.byType(Opacity),
+        )
+        .first,
+  );
+  return opacity.opacity;
+}
 
 Color? _rowBackgroundColor(WidgetTester tester, String label) {
   final container = tester.widget<Container>(_rowContainerFinder(label));
