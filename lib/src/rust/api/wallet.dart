@@ -189,6 +189,10 @@ Future<SoftwareWalletImportAccount> importSoftwareAccountAtIndex({
 /// Routing matches `import_software_account_at_index`: `Derived` via
 /// `import_account_hd` when the seed's anchor exists, otherwise `Imported`
 /// with derivation metadata.
+///
+/// `operation_token` is issued by `begin_software_account_derivation_lease`.
+/// Rust keeps the OS-level lease until Dart durably commits or aborts the
+/// matching recovery journal, so another process cannot allocate around it.
 Future<SoftwareWalletImportAccount> deriveNextSoftwareAccount({
   required String mnemonic,
   required String bip39Passphrase,
@@ -196,6 +200,7 @@ Future<SoftwareWalletImportAccount> deriveNextSoftwareAccount({
   required String network,
   required String dbPath,
   required String name,
+  required String operationToken,
 }) => RustLib.instance.api.crateApiWalletDeriveNextSoftwareAccount(
   mnemonic: mnemonic,
   bip39Passphrase: bip39Passphrase,
@@ -203,7 +208,49 @@ Future<SoftwareWalletImportAccount> deriveNextSoftwareAccount({
   network: network,
   dbPath: dbPath,
   name: name,
+  operationToken: operationToken,
 );
+
+/// Acquire the native lease for a software-account derivation before Dart
+/// writes its recovery journal. The lease remains held across FFI calls.
+Future<String> beginSoftwareAccountDerivationLease({
+  required String dbPath,
+  required String sourceAccountUuid,
+}) => RustLib.instance.api.crateApiWalletBeginSoftwareAccountDerivationLease(
+  dbPath: dbPath,
+  sourceAccountUuid: sourceAccountUuid,
+);
+
+/// Release a derivation lease after the matching durable journal has been
+/// committed or safely retained for recovery.
+Future<void> finishSoftwareAccountDerivationLease({
+  required String operationToken,
+}) => RustLib.instance.api.crateApiWalletFinishSoftwareAccountDerivationLease(
+  operationToken: operationToken,
+);
+
+/// Fail closed for destructive account operations while a live process owns a
+/// derivation lease. A stale sidecar without a held OS lock is not considered
+/// live after a crash.
+Future<bool> isSoftwareAccountDerivationLocked({required String dbPath}) =>
+    RustLib.instance.api.crateApiWalletIsSoftwareAccountDerivationLocked(
+      dbPath: dbPath,
+    );
+
+/// Compensate a just-derived account before Dart metadata commits. The caller
+/// must prove ownership of the same native derivation lease.
+Future<void> deleteAccountUnderSoftwareAccountDerivationLease({
+  required String dbPath,
+  required String network,
+  required String accountUuid,
+  required String operationToken,
+}) => RustLib.instance.api
+    .crateApiWalletDeleteAccountUnderSoftwareAccountDerivationLease(
+      dbPath: dbPath,
+      network: network,
+      accountUuid: accountUuid,
+      operationToken: operationToken,
+    );
 
 Future<bool> isSoftwareWalletLinkAccountImported({
   required String mnemonic,

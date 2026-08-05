@@ -418,6 +418,11 @@ fn same_seed_hd_accounts_keep_balances_isolated_per_account() {
     let (main_dir, first_wallet) = create_wallet("Primary");
     let main_db = main_dir.path().join("zcash_wallet.db");
     let birthday = current_tip_height();
+    let derivation_lease = wallet_api::begin_software_account_derivation_lease(
+        path_str(&main_db),
+        first_wallet.account_uuid.clone(),
+    )
+    .expect("begin derivation lease");
 
     let second_account = wallet_api::derive_next_software_account(
         first_wallet.mnemonic.clone(),
@@ -426,8 +431,11 @@ fn same_seed_hd_accounts_keep_balances_isolated_per_account() {
         REGTEST_NETWORK.into(),
         path_str(&main_db),
         "Secondary".into(),
+        derivation_lease.clone(),
     )
     .expect("derive_next_software_account");
+    wallet_api::finish_software_account_derivation_lease(derivation_lease)
+        .expect("finish derivation lease");
     assert_eq!(
         second_account.zip32_account_index, 1,
         "the first same-seed account should use ZIP 32 index 1"

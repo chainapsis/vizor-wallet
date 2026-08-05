@@ -564,6 +564,10 @@ pub fn import_software_account_at_index(
 /// Routing matches `import_software_account_at_index`: `Derived` via
 /// `import_account_hd` when the seed's anchor exists, otherwise `Imported`
 /// with derivation metadata.
+///
+/// `operation_token` is issued by `begin_software_account_derivation_lease`.
+/// Rust keeps the OS-level lease until Dart durably commits or aborts the
+/// matching recovery journal, so another process cannot allocate around it.
 pub fn derive_next_software_account(
     mnemonic: String,
     bip39_passphrase: String,
@@ -571,12 +575,20 @@ pub fn derive_next_software_account(
     network: String,
     db_path: String,
     name: String,
+    operation_token: String,
 ) -> Result<SoftwareWalletImportAccount, String> {
     catch(|| {
         let network = parse_network_and_migrate(&db_path, &network)?;
         let seed = keys::mnemonic_to_seed_with_passphrase(&mnemonic, &bip39_passphrase)?;
         let (account_uuid, unified_address, zip32_account_index, is_seed_anchor) =
-            keys::derive_next_software_account(&db_path, network, &seed, birthday_height, &name)?;
+            keys::derive_next_software_account(
+                &db_path,
+                network,
+                &seed,
+                birthday_height,
+                &name,
+                &operation_token,
+            )?;
 
         Ok(SoftwareWalletImportAccount {
             account_uuid,
@@ -586,6 +598,55 @@ pub fn derive_next_software_account(
             is_seed_anchor,
             seed_family_id: Some(keys::seed_family_id(&seed)?),
         })
+    })
+}
+
+/// Acquire the native lease for a software-account derivation before Dart
+/// writes its recovery journal. The lease remains held across FFI calls.
+pub fn begin_software_account_derivation_lease(
+    db_path: String,
+    source_account_uuid: String,
+) -> Result<String, String> {
+    catch(|| keys::begin_software_account_derivation_lease(&db_path, &source_account_uuid))
+}
+
+/// Release a derivation lease after the matching durable journal has been
+/// committed or safely retained for recovery.
+pub fn finish_software_account_derivation_lease(operation_token: String) -> Result<(), String> {
+    catch(|| keys::finish_software_account_derivation_lease(&operation_token))
+}
+
+/// Fail closed for destructive account operations while a live process owns a
+/// derivation lease. A stale sidecar without a held OS lock is not considered
+/// live after a crash.
+pub fn is_software_account_derivation_locked(db_path: String) -> Result<bool, String> {
+    catch(|| keys::is_software_account_derivation_locked(&db_path))
+}
+
+/// Compensate a just-derived account before Dart metadata commits. The caller
+/// must prove ownership of the same native derivation lease.
+pub fn delete_account_under_software_account_derivation_lease(
+    db_path: String,
+    network: String,
+    account_uuid: String,
+    operation_token: String,
+) -> Result<(), String> {
+    catch(|| {
+        let network = parse_network_and_migrate(&db_path, &network)?;
+        keys::delete_account_under_software_account_derivation_lease(
+            &db_path,
+            network,
+            &account_uuid,
+            &operation_token,
+        )?;
+        if let Err(error) = transparent_receive_cache::delete_account(&db_path, &account_uuid) {
+            log::warn!(
+                "transparent receive cache: failed to delete account {}: {}",
+                account_uuid,
+                error
+            );
+        }
+        Ok(())
     })
 }
 
@@ -1145,6 +1206,11 @@ mod tests {
         "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfgram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3nem8wwyen732wemtxcg6lxr4n2agm437m2";
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
 
+    fn test_derivation_lease(db_path: &str) -> String {
+        begin_software_account_derivation_lease(db_path.to_string(), "test-source".to_string())
+            .unwrap()
+    }
+
     #[test]
     fn bip39_passphrase_import_matches_independent_mainnet_address_vectors() {
         // These expected addresses were generated outside this crate from the
@@ -1259,6 +1325,7 @@ mod tests {
         )
         .unwrap();
 
+        let second_lease = test_derivation_lease(db_path_str);
         let second = derive_next_software_account(
             mnemonic.clone(),
             String::new(),
@@ -1266,11 +1333,14 @@ mod tests {
             "main".to_string(),
             db_path_str.to_string(),
             "Account 2".to_string(),
+            second_lease.clone(),
         )
         .unwrap();
+        finish_software_account_derivation_lease(second_lease).unwrap();
         assert_eq!(second.zip32_account_index, 1);
         assert!(second.is_seed_anchor);
 
+        let third_lease = test_derivation_lease(db_path_str);
         let third = derive_next_software_account(
             mnemonic,
             String::new(),
@@ -1278,8 +1348,10 @@ mod tests {
             "main".to_string(),
             db_path_str.to_string(),
             "Account 3".to_string(),
+            third_lease.clone(),
         )
         .unwrap();
+        finish_software_account_derivation_lease(third_lease).unwrap();
         assert_eq!(third.zip32_account_index, 2);
         assert_ne!(second.unified_address, third.unified_address);
         assert_ne!(second.account_uuid, third.account_uuid);
@@ -1342,6 +1414,7 @@ mod tests {
         )
         .unwrap();
 
+        let lease = test_derivation_lease(db_path_str);
         let derived = derive_next_software_account(
             mnemonic,
             String::new(),
@@ -1349,8 +1422,10 @@ mod tests {
             "main".to_string(),
             db_path_str.to_string(),
             "Account 2".to_string(),
+            lease.clone(),
         )
         .unwrap();
+        finish_software_account_derivation_lease(lease).unwrap();
         assert_eq!(derived.zip32_account_index, 1);
 
         let birthday: u32 = rusqlite::Connection::open(db_path_str)
@@ -1389,6 +1464,7 @@ mod tests {
         )
         .unwrap();
 
+        let lease = test_derivation_lease(db_path_str);
         let error = match derive_next_software_account(
             keys::generate_mnemonic(),
             String::new(),
@@ -1396,10 +1472,12 @@ mod tests {
             "main".to_string(),
             db_path_str.to_string(),
             "Account 2".to_string(),
+            lease.clone(),
         ) {
             Ok(_) => panic!("unknown seed should be rejected"),
             Err(error) => error,
         };
+        finish_software_account_derivation_lease(lease).unwrap();
         assert!(error.contains("no accounts in this wallet"), "got: {error}");
     }
 
@@ -1431,6 +1509,7 @@ mod tests {
         )
         .unwrap();
 
+        let lease = test_derivation_lease(db_path_str);
         let derived = derive_next_software_account(
             other_mnemonic,
             String::new(),
@@ -1438,14 +1517,16 @@ mod tests {
             "main".to_string(),
             db_path_str.to_string(),
             "Account 3".to_string(),
+            lease.clone(),
         )
         .unwrap();
+        finish_software_account_derivation_lease(lease).unwrap();
         assert_eq!(derived.zip32_account_index, 1);
         assert!(!derived.is_seed_anchor);
     }
 
     #[test]
-    fn test_derive_next_software_account_serializes_concurrent_allocations() {
+    fn test_derive_next_software_account_allocates_across_successive_leases() {
         const DERIVATIONS: u32 = 8;
 
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1463,31 +1544,22 @@ mod tests {
         )
         .unwrap();
 
-        let barrier = std::sync::Arc::new(std::sync::Barrier::new(DERIVATIONS as usize));
-        let handles = (0..DERIVATIONS)
-            .map(|offset| {
-                let barrier = std::sync::Arc::clone(&barrier);
-                let mnemonic = mnemonic.clone();
-                let db_path = db_path_str.to_string();
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    derive_next_software_account(
-                        mnemonic,
-                        String::new(),
-                        None,
-                        "main".to_string(),
-                        db_path,
-                        format!("Account {}", offset + 2),
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let mut indices = handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap().unwrap().zip32_account_index)
-            .collect::<Vec<_>>();
-        indices.sort_unstable();
+        let mut indices = Vec::new();
+        for offset in 0..DERIVATIONS {
+            let lease = test_derivation_lease(db_path_str);
+            let derived = derive_next_software_account(
+                mnemonic.clone(),
+                String::new(),
+                None,
+                "main".to_string(),
+                db_path_str.to_string(),
+                format!("Account {}", offset + 2),
+                lease.clone(),
+            )
+            .unwrap();
+            finish_software_account_derivation_lease(lease).unwrap();
+            indices.push(derived.zip32_account_index);
+        }
 
         assert_eq!(indices, (1..=DERIVATIONS).collect::<Vec<_>>());
     }

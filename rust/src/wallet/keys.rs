@@ -1,10 +1,13 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
+    fs::{File, OpenOptions},
+    io::{Seek, SeekFrom, Write},
     path::Path,
     sync::{Mutex, OnceLock},
 };
 
 use bip0039::{Count, English, Language, Mnemonic};
+use fs2::FileExt;
 use rusqlite::{named_params, OptionalExtension};
 use secrecy::{ExposeSecret, SecretVec};
 use transparent::keys::{IncomingViewingKey as _, NonHardenedChildIndex};
@@ -38,6 +41,137 @@ const MIN_MNEMONIC_WORD_COUNT: usize = 12;
 const MAX_MNEMONIC_WORD_COUNT: usize = 24;
 const MNEMONIC_WORD_COUNT_STEP: usize = 3;
 const TRANSPARENT_EXTERNAL_KEY_SCOPE: i64 = 0;
+const DERIVATION_LEASE_BUSY_MESSAGE: &str =
+    "A software account derivation is already in progress. Finish it before trying again.";
+
+/// A process-held OS lock covering one software-account derivation from its
+/// durable intent through Dart's durable metadata commit. The sidecar lock is
+/// deliberately held by Rust rather than represented by the Dart journal: a
+/// second isolate/process cannot claim or clear a live operation's journal.
+struct SoftwareAccountDerivationLease {
+    db_path: String,
+    _source_account_uuid: String,
+    lock_file: File,
+}
+
+fn software_account_derivation_leases(
+) -> &'static Mutex<HashMap<String, SoftwareAccountDerivationLease>> {
+    static LEASES: OnceLock<Mutex<HashMap<String, SoftwareAccountDerivationLease>>> =
+        OnceLock::new();
+    LEASES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn derivation_lock_path(db_path: &str) -> String {
+    format!("{db_path}.software-account-derivation.lock")
+}
+
+/// Begin a native-owned software account derivation operation.
+///
+/// The file lock is automatically released if this process dies. A process
+/// local registry additionally rejects a second lease because advisory file
+/// locks may be re-entrant within one process on some platforms.
+pub fn begin_software_account_derivation_lease(
+    db_path: &str,
+    source_account_uuid: &str,
+) -> Result<String, String> {
+    let mut leases = software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned");
+    if leases.values().any(|lease| lease.db_path == db_path) {
+        return Err(DERIVATION_LEASE_BUSY_MESSAGE.to_string());
+    }
+
+    let lock_path = derivation_lock_path(db_path);
+    let mut lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|error| format!("Failed to open software derivation lock: {error}"))?;
+    lock_file
+        .try_lock_exclusive()
+        .map_err(|_| DERIVATION_LEASE_BUSY_MESSAGE.to_string())?;
+
+    // The contents are diagnostic only. Ownership comes from the held OS lock
+    // and opaque token, never from this mutable sidecar data.
+    lock_file
+        .set_len(0)
+        .and_then(|()| lock_file.seek(SeekFrom::Start(0)).map(|_| ()))
+        .and_then(|()| lock_file.write_all(source_account_uuid.as_bytes()))
+        .and_then(|()| lock_file.sync_data())
+        .map_err(|error| format!("Failed to write software derivation lock: {error}"))?;
+
+    let token = uuid::Uuid::new_v4().to_string();
+    leases.insert(
+        token.clone(),
+        SoftwareAccountDerivationLease {
+            db_path: db_path.to_string(),
+            _source_account_uuid: source_account_uuid.to_string(),
+            lock_file,
+        },
+    );
+    Ok(token)
+}
+
+fn require_software_account_derivation_lease(token: &str, db_path: &str) -> Result<(), String> {
+    let leases = software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned");
+    match leases.get(token) {
+        Some(lease) if lease.db_path == db_path => Ok(()),
+        _ => Err(
+            "Software account derivation operation is no longer owned by this process.".to_string(),
+        ),
+    }
+}
+
+/// Finish a derivation operation. Only the process holding `token` can release
+/// its lease; a stale Dart caller cannot unlock another process's journal.
+pub fn finish_software_account_derivation_lease(token: &str) -> Result<(), String> {
+    let lease = software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned")
+        .remove(token)
+        .ok_or_else(|| {
+            "Software account derivation operation is no longer owned by this process.".to_string()
+        })?;
+    lease
+        .lock_file
+        .unlock()
+        .map_err(|error| format!("Failed to release software derivation lock: {error}"))
+}
+
+/// Whether any process currently owns a derivation lease for this wallet.
+/// Failed acquisition is intentionally treated as locked without trusting the
+/// sidecar contents, so destructive account removal fails closed during the
+/// tiny interval before another process has written diagnostic metadata.
+pub fn is_software_account_derivation_locked(db_path: &str) -> Result<bool, String> {
+    if software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned")
+        .values()
+        .any(|lease| lease.db_path == db_path)
+    {
+        return Ok(true);
+    }
+
+    let lock_path = derivation_lock_path(db_path);
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .map_err(|error| format!("Failed to open software derivation lock: {error}"))?;
+    match lock_file.try_lock_exclusive() {
+        Ok(()) => {
+            lock_file
+                .unlock()
+                .map_err(|error| format!("Failed to release software derivation lock: {error}"))?;
+            Ok(false)
+        }
+        Err(_) => Ok(true),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExternalTransparentAddress {
@@ -644,7 +778,9 @@ pub fn derive_next_software_account(
     seed: &SecretVec<u8>,
     birthday_height: Option<u64>,
     name: &str,
+    operation_token: &str,
 ) -> Result<(String, String, u32, bool), String> {
+    require_software_account_derivation_lease(operation_token, db_path)?;
     with_wallet_db_write_lock("keys.derive_next_software_account", || {
         let mut db = open_wallet_db_for_mutation(db_path, network)?;
         let seed_fp = SeedFingerprint::from_seed(seed.expose_secret())
@@ -809,6 +945,33 @@ pub fn list_account_uuids_from_db(db_path: &str) -> Result<Vec<String>, String> 
 
 /// Delete an account from the wallet database.
 pub fn delete_account(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+) -> Result<(), String> {
+    if is_software_account_derivation_locked(db_path)? {
+        return Err(
+            "Finish the in-progress software account creation before removing an account."
+                .to_string(),
+        );
+    }
+    delete_account_unchecked(db_path, network, account_uuid)
+}
+
+/// Delete the account just created by a currently-owned derivation lease.
+/// This is only for compensation before local metadata has committed; normal
+/// deletion stays fail-closed while any lease is live.
+pub fn delete_account_under_software_account_derivation_lease(
+    db_path: &str,
+    network: WalletNetwork,
+    account_uuid: &str,
+    operation_token: &str,
+) -> Result<(), String> {
+    require_software_account_derivation_lease(operation_token, db_path)?;
+    delete_account_unchecked(db_path, network, account_uuid)
+}
+
+fn delete_account_unchecked(
     db_path: &str,
     network: WalletNetwork,
     account_uuid: &str,
@@ -2862,5 +3025,28 @@ mod tests {
             !debug.contains("P2pkh"),
             "UA should NOT contain transparent receiver"
         );
+    }
+
+    #[test]
+    fn software_derivation_lease_rejects_interleaved_owner_and_stale_token() {
+        // Rust-backed ownership contract for the A/B interleaving: while A
+        // pauses with its native lease, B cannot acquire a lease or use A's
+        // journal token; only after A finishes can B become owner.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+
+        let a_token = begin_software_account_derivation_lease(db_path, "source-a").unwrap();
+        assert!(is_software_account_derivation_locked(db_path).unwrap());
+        let b_while_a_live = begin_software_account_derivation_lease(db_path, "source-b")
+            .expect_err("B must not claim or reconcile A's live journal");
+        assert!(b_while_a_live.contains("already in progress"));
+
+        finish_software_account_derivation_lease(&a_token).unwrap();
+        assert!(!is_software_account_derivation_locked(db_path).unwrap());
+        let b_token = begin_software_account_derivation_lease(db_path, "source-b").unwrap();
+        assert!(require_software_account_derivation_lease(&a_token, db_path).is_err());
+        require_software_account_derivation_lease(&b_token, db_path).unwrap();
+        finish_software_account_derivation_lease(&b_token).unwrap();
     }
 }

@@ -424,6 +424,146 @@ void main() {
       },
     );
 
+    test('blocks source removal while a derivation fence is live', () async {
+      rust.pauseDerivation();
+      final firstContainer = _deriveAccountContainer(source);
+      final secondContainer = _deriveAccountContainer(source);
+      addTearDown(firstContainer.dispose);
+      addTearDown(secondContainer.dispose);
+      await firstContainer.read(accountProvider.future);
+      await secondContainer.read(accountProvider.future);
+
+      final first = firstContainer
+          .read(accountProvider.notifier)
+          .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+      await rust.waitForDerivationStart();
+      try {
+        await expectLater(
+          secondContainer
+              .read(accountProvider.notifier)
+              .removeAccount(source.uuid),
+          throwsA(
+            predicate<Object>(
+              (error) => error.toString().contains('in-progress software'),
+              'a live native derivation lease blocks destructive removal',
+            ),
+          ),
+        );
+        expect(storage.values['zcash_derived_account_recovery'], isNotNull);
+        expect(
+          secondContainer
+              .read(accountProvider)
+              .requireValue
+              .accounts
+              .single
+              .uuid,
+          source.uuid,
+        );
+      } finally {
+        rust.resumeDerivation();
+      }
+      await first;
+    });
+
+    test(
+      'blocks source removal when a crashed derivation left a fence',
+      () async {
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          _recoveryFenceJson(sourceAccountUuid: source.uuid),
+        );
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container.read(accountProvider.notifier).removeAccount(source.uuid),
+          throwsA(
+            predicate<Object>(
+              (error) => error.toString().contains(
+                'pending software account recovery',
+              ),
+              'the persisted fence protects source secret and metadata',
+            ),
+          ),
+        );
+        expect(storage.values['zcash_derived_account_recovery'], isNotNull);
+        expect(
+          container.read(accountProvider).requireValue.accounts.single.uuid,
+          source.uuid,
+        );
+      },
+    );
+
+    test(
+      'fails closed when a pending fence sees a foreign seed-family delta',
+      () async {
+        const foreign = AccountInfo(
+          uuid: 'foreign-1',
+          name: 'Foreign',
+          order: 1,
+          isSeedAnchor: false,
+          seedFamilyId: 'foreign-family',
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          _recoveryFenceJson(sourceAccountUuid: source.uuid),
+        );
+        rust.addListedAccount(foreign);
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+          throwsA(isA<StateError>()),
+        );
+        expect(rust.allocatedIndices, isEmpty);
+        expect(storage.values['zcash_derived_account_recovery'], isNotNull);
+      },
+    );
+
+    test(
+      'fails closed when a pending fence sees multiple Rust deltas',
+      () async {
+        const first = AccountInfo(
+          uuid: 'derived-1',
+          name: 'One',
+          order: 1,
+          isSeedAnchor: true,
+          seedFamilyId: 'software-family',
+        );
+        const second = AccountInfo(
+          uuid: 'derived-2',
+          name: 'Two',
+          order: 2,
+          isSeedAnchor: true,
+          seedFamilyId: 'software-family',
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          _recoveryFenceJson(sourceAccountUuid: source.uuid),
+        );
+        rust
+          ..addListedAccount(first)
+          ..addListedAccount(second);
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+          throwsA(isA<StateError>()),
+        );
+        expect(rust.allocatedIndices, isEmpty);
+        expect(storage.values['zcash_derived_account_recovery'], isNotNull);
+      },
+    );
+
     test(
       'acknowledgement requires durable metadata after bootstrap restores state',
       () async {
@@ -1013,6 +1153,8 @@ class _DerivationRustApiFake implements RustLibApi {
   Completer<void>? _derivationGate;
   Completer<void>? _derivationStarted;
   bool failNextDelete = false;
+  String? _activeLeaseToken;
+  int _nextLease = 0;
 
   Set<int> get liveAccountIndices => {
     for (final index in _occupiedIndices)
@@ -1026,6 +1168,8 @@ class _DerivationRustApiFake implements RustLibApi {
     allocatedIndices.clear();
     _derivationGate = null;
     _derivationStarted = null;
+    _activeLeaseToken = null;
+    _nextLease = 0;
     _listedAccountsByUuid
       ..clear()
       ..['source'] = const rust_wallet.AccountInfo(
@@ -1038,6 +1182,34 @@ class _DerivationRustApiFake implements RustLibApi {
       );
     failNextDelete = false;
   }
+
+  @override
+  Future<String> crateApiWalletBeginSoftwareAccountDerivationLease({
+    required String dbPath,
+    required String sourceAccountUuid,
+  }) async {
+    if (_activeLeaseToken != null) {
+      throw StateError('A software account derivation is already in progress.');
+    }
+    return _activeLeaseToken = 'lease-${++_nextLease}';
+  }
+
+  @override
+  Future<void> crateApiWalletFinishSoftwareAccountDerivationLease({
+    required String operationToken,
+  }) async {
+    if (_activeLeaseToken != operationToken) {
+      throw StateError(
+        'Software account derivation operation is no longer owned.',
+      );
+    }
+    _activeLeaseToken = null;
+  }
+
+  @override
+  Future<bool> crateApiWalletIsSoftwareAccountDerivationLocked({
+    required String dbPath,
+  }) async => _activeLeaseToken != null;
 
   void pauseDerivation() {
     _derivationGate = Completer<void>();
@@ -1068,7 +1240,13 @@ class _DerivationRustApiFake implements RustLibApi {
     required String network,
     required String dbPath,
     required String name,
+    required String operationToken,
   }) async {
+    if (_activeLeaseToken != operationToken) {
+      throw StateError(
+        'Software account derivation operation is no longer owned.',
+      );
+    }
     _derivationStarted?.complete();
     await _derivationGate?.future;
     final index = Iterable<int>.generate(
@@ -1107,6 +1285,30 @@ class _DerivationRustApiFake implements RustLibApi {
     required String network,
     required String accountUuid,
   }) async {
+    if (_activeLeaseToken != null) {
+      throw StateError(
+        'Finish the in-progress software account creation before removing an account.',
+      );
+    }
+    await _deleteAccount(accountUuid);
+  }
+
+  @override
+  Future<void> crateApiWalletDeleteAccountUnderSoftwareAccountDerivationLease({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+    required String operationToken,
+  }) async {
+    if (_activeLeaseToken != operationToken) {
+      throw StateError(
+        'Software account derivation operation is no longer owned.',
+      );
+    }
+    await _deleteAccount(accountUuid);
+  }
+
+  Future<void> _deleteAccount(String accountUuid) async {
     if (failNextDelete) {
       failNextDelete = false;
       throw StateError('forced Rust delete failure');
