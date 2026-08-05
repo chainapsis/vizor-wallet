@@ -88,6 +88,41 @@ void main() {
   );
 
   test(
+    'groupAccountsBySeedFamily isolates hardware accounts with matching seed metadata',
+    () {
+      const accounts = [
+        AccountInfo(
+          uuid: 'software',
+          name: 'Software',
+          order: 0,
+          seedFamilyId: 'shared-fingerprint',
+        ),
+        AccountInfo(
+          uuid: 'hardware-1',
+          name: 'Keystone 1',
+          order: 1,
+          isHardware: true,
+          seedFamilyId: 'shared-fingerprint',
+        ),
+        AccountInfo(
+          uuid: 'hardware-2',
+          name: 'Keystone 2',
+          order: 2,
+          isHardware: true,
+          seedFamilyId: 'shared-fingerprint',
+        ),
+      ];
+
+      final families = groupAccountsBySeedFamily(accounts, 'hardware-1');
+
+      expect(families, hasLength(3));
+      expect(families.first.accounts.single.uuid, 'hardware-1');
+      expect(families[1].accounts.single.uuid, 'software');
+      expect(families[2].accounts.single.uuid, 'hardware-2');
+    },
+  );
+
+  test(
     'group names stay tied to creation order when another family is active',
     () {
       const accounts = [

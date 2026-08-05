@@ -66,6 +66,30 @@ class WalletResetException implements Exception {
   String toString() => cause.toString();
 }
 
+/// A post-Rust derived-account write failed and durable rollback also failed.
+///
+/// The original write failure is retained alongside every cleanup failure so
+/// callers do not mistake an incomplete rollback for a clean retry state.
+class DerivedAccountCompensationException implements Exception {
+  const DerivedAccountCompensationException({
+    required this.cause,
+    required this.cleanupFailures,
+  });
+
+  final Object cause;
+  final List<Object> cleanupFailures;
+
+  @override
+  String toString() {
+    final cleanup = cleanupFailures
+        .map((failure) => failure.toString())
+        .join('; ');
+    return 'Derived account compensation failed after: $cause. '
+        'Cleanup failures: $cleanup. The wallet must be reconciled before '
+        'retrying.';
+  }
+}
+
 /// Picks the software account whose recovery phrase should derive a new
 /// account. Prefers the active account, then falls back to list order.
 String? defaultDeriveSourceAccountUuid(AccountState state) {
@@ -367,12 +391,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         name: accountName,
       );
 
-      await _storage.writeAccountMnemonic(
-        result.accountUuid,
-        secret.mnemonic,
-        bip39Passphrase: secret.bip39Passphrase,
-      );
-
       final newAccount = AccountInfo(
         uuid: result.accountUuid,
         name: accountName,
@@ -390,8 +408,73 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             account,
         newAccount,
       ];
-      await _saveAccounts(updatedAccounts);
-      await _storage.writeString(_activeAccountKey, result.accountUuid);
+
+      var mnemonicWriteAttempted = false;
+      var accountsWriteAttempted = false;
+      var activeAccountWriteAttempted = false;
+      try {
+        mnemonicWriteAttempted = true;
+        await _storage.writeAccountMnemonic(
+          result.accountUuid,
+          secret.mnemonic,
+          bip39Passphrase: secret.bip39Passphrase,
+        );
+        accountsWriteAttempted = true;
+        await _saveAccounts(updatedAccounts);
+        activeAccountWriteAttempted = true;
+        await _storage.writeString(_activeAccountKey, result.accountUuid);
+      } catch (error, stackTrace) {
+        final cleanupFailures = <Object>[];
+
+        Future<void> attemptCleanup(Future<void> Function() operation) async {
+          try {
+            await operation();
+          } catch (cleanupError, cleanupStackTrace) {
+            cleanupFailures.add(cleanupError);
+            log(
+              'deriveAccountFromExistingSeed: compensation failed: '
+              '$cleanupError\n$cleanupStackTrace',
+            );
+          }
+        }
+
+        if (activeAccountWriteAttempted) {
+          await attemptCleanup(() async {
+            final previousActiveUuid = state.value?.activeAccountUuid;
+            if (previousActiveUuid == null) {
+              await _storage.delete(_activeAccountKey);
+            } else {
+              await _storage.writeString(_activeAccountKey, previousActiveUuid);
+            }
+          });
+        }
+        if (accountsWriteAttempted) {
+          await attemptCleanup(() => _saveAccounts(accounts));
+        }
+        if (mnemonicWriteAttempted) {
+          await attemptCleanup(
+            () => _storage.deleteAccountMnemonic(result.accountUuid),
+          );
+        }
+        await attemptCleanup(
+          () => rust_wallet.deleteAccount(
+            dbPath: dbPath,
+            network: network,
+            accountUuid: result.accountUuid,
+          ),
+        );
+
+        if (cleanupFailures.isNotEmpty) {
+          Error.throwWithStackTrace(
+            DerivedAccountCompensationException(
+              cause: error,
+              cleanupFailures: cleanupFailures,
+            ),
+            stackTrace,
+          );
+        }
+        Error.throwWithStackTrace(error, stackTrace);
+      }
 
       state = AsyncData(
         AccountState(
@@ -640,7 +723,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final seedFamilyId = _normalizedOptionalString(anchor.seedFamilyId);
     final updated = [
       for (final account in prev.accounts)
-        if (seedFamilyId == null
+        if (anchor.isHardware || seedFamilyId == null || account.isHardware
             ? account.uuid == anchor.uuid
             : _normalizedOptionalString(account.seedFamilyId) == seedFamilyId)
           account.copyWith(accountGroupName: normalizedName)
@@ -1106,6 +1189,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         accountGroupName: existingAccountGroupNameForSeedFamily(
           prev.accounts,
           result.seedFamilyId,
+          isHardware: true,
         ),
       );
       final updated = [...prev.accounts, newAccount];
@@ -1229,10 +1313,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               input.sourceAccountUuid,
             ),
             seedFamilyId: seedFamilyId,
-            accountGroupName: existingAccountGroupNameForSeedFamily([
-              ...prev.accounts,
-              ...importedAccounts,
-            ], seedFamilyId),
+            accountGroupName: existingAccountGroupNameForSeedFamily(
+              [...prev.accounts, ...importedAccounts],
+              seedFamilyId,
+              isHardware: input.isHardware,
+            ),
           ),
         );
         nextOrder += 1;
@@ -1490,11 +1575,14 @@ String? _normalizedOptionalString(String? value) {
 @visibleForTesting
 String? existingAccountGroupNameForSeedFamily(
   List<AccountInfo> accounts,
-  String? seedFamilyId,
-) {
+  String? seedFamilyId, {
+  bool isHardware = false,
+}) {
+  if (isHardware) return null;
   final normalizedSeedFamilyId = _normalizedOptionalString(seedFamilyId);
   if (normalizedSeedFamilyId == null) return null;
   for (final account in accounts) {
+    if (account.isHardware) continue;
     if (_normalizedOptionalString(account.seedFamilyId) !=
         normalizedSeedFamilyId) {
       continue;

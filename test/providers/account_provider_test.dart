@@ -2,12 +2,19 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+// ignore: depend_on_referenced_packages
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
+import 'package:zcash_wallet/src/core/storage/app_secure_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
+import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
+import 'package:zcash_wallet/src/rust/frb_generated.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -173,6 +180,205 @@ void main() {
       );
     },
   );
+
+  test(
+    'hardware account group rename and inheritance ignore matching software fingerprint',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      const accountState = AccountState(
+        accounts: [
+          AccountInfo(
+            uuid: 'software',
+            name: 'Software',
+            order: 0,
+            seedFamilyId: 'shared-fingerprint',
+          ),
+          AccountInfo(
+            uuid: 'hardware',
+            name: 'Keystone',
+            order: 1,
+            isHardware: true,
+            seedFamilyId: 'shared-fingerprint',
+            accountGroupName: 'Hardware wallet',
+          ),
+        ],
+        activeAccountUuid: 'software',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(
+            AppBootstrapState(
+              initialLocation: '/accounts',
+              initialAccountState: accountState,
+              initialSyncSnapshot: AppSyncSnapshot.empty,
+              network: 'main',
+              rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+              themeMode: ThemeMode.system,
+              privacyModeEnabled: false,
+              isPasswordConfigured: true,
+              isUnlocked: true,
+              passwordRotationRecoveryFailed: false,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await container
+          .read(accountProvider.notifier)
+          .renameAccountGroup('hardware', '  Renamed hardware  ');
+
+      final accounts = container.read(accountProvider).requireValue.accounts;
+      expect(accounts[0].accountGroupName, isNull);
+      expect(accounts[1].accountGroupName, 'Renamed hardware');
+      expect(
+        existingAccountGroupNameForSeedFamily(accounts, 'shared-fingerprint'),
+        isNull,
+      );
+    },
+  );
+
+  group('derived account durable commit', () {
+    const source = AccountInfo(
+      uuid: 'source',
+      name: 'Source',
+      order: 0,
+      isSeedAnchor: true,
+      seedFamilyId: 'software-family',
+    );
+    final rust = _DerivationRustApiFake();
+    late FlutterSecureStoragePlatform previousStoragePlatform;
+    late _FaultInjectingSecureStorage storage;
+
+    setUpAll(() {
+      RustLib.initMock(api: rust);
+    });
+
+    tearDownAll(RustLib.dispose);
+
+    setUp(() async {
+      previousStoragePlatform = FlutterSecureStoragePlatform.instance;
+      storage = _FaultInjectingSecureStorage();
+      FlutterSecureStoragePlatform.instance = storage;
+      rust.reset();
+      await AppSecureStore.instance.deleteAll();
+      AppSecureStore.instance.setSessionPassword('Testpass1!');
+      await AppSecureStore.instance.writeAccountMnemonic(
+        source.uuid,
+        'source recovery phrase',
+      );
+      await AppSecureStore.instance.writeString(
+        'zcash_accounts',
+        jsonEncode([source.toJson()]),
+      );
+      await AppSecureStore.instance.writeString(
+        'zcash_active_account',
+        source.uuid,
+      );
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (call) async {
+            if (call.method == 'getApplicationSupportDirectory') {
+              return '/private/tmp/vizor-account-provider-test';
+            }
+            return null;
+          });
+    });
+
+    tearDown(() async {
+      AppSecureStore.instance.clearSessionPassword();
+      FlutterSecureStoragePlatform.instance = previousStoragePlatform;
+      const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, null);
+    });
+
+    for (final boundary in _DerivedAccountWriteBoundary.values) {
+      test(
+        'compensates ${boundary.name} write failure without consuming an account index',
+        () async {
+          storage.failNextWriteFor = boundary.storageKey;
+          final container = _deriveAccountContainer(source);
+          addTearDown(container.dispose);
+          await container.read(accountProvider.future);
+
+          await expectLater(
+            container
+                .read(accountProvider.notifier)
+                .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+            throwsA(isA<SecureStorageUnavailableException>()),
+          );
+
+          expect(rust.liveAccountIndices, isEmpty);
+          expect(
+            await container
+                .read(accountProvider.notifier)
+                .getSoftwareWalletSecretForAccount('derived-1'),
+            isNull,
+          );
+          expect(
+            jsonDecode(storage.values['zcash_accounts']!) as List,
+            hasLength(1),
+          );
+          expect(storage.values['zcash_active_account'], source.uuid);
+          final stateAfterFailure = container
+              .read(accountProvider)
+              .requireValue;
+          expect(stateAfterFailure.accounts, hasLength(1));
+          expect(stateAfterFailure.accounts.single.uuid, source.uuid);
+          expect(stateAfterFailure.activeAccountUuid, source.uuid);
+
+          await container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+
+          expect(rust.allocatedIndices, [1, 1]);
+          expect(rust.liveAccountIndices, {1});
+          final persistedSecret = await container
+              .read(accountProvider.notifier)
+              .getSoftwareWalletSecretForAccount('derived-1');
+          expect(persistedSecret?.mnemonic, 'source recovery phrase');
+          expect(persistedSecret?.bip39Passphrase, isEmpty);
+          expect(
+            container.read(accountProvider).requireValue.accounts,
+            hasLength(2),
+          );
+        },
+      );
+    }
+
+    test(
+      'surfaces both the original write failure and failed Rust cleanup',
+      () async {
+        storage.failNextWriteFor =
+            _DerivedAccountWriteBoundary.accounts.storageKey;
+        rust.failNextDelete = true;
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid),
+          throwsA(
+            predicate<Object>(
+              (error) =>
+                  error.toString().contains('Derived account compensation') &&
+                  error.toString().contains('zcash_accounts') &&
+                  error.toString().contains('forced Rust delete failure'),
+              'an error reporting both original and cleanup failures',
+            ),
+          ),
+        );
+        final stateAfterFailure = container.read(accountProvider).requireValue;
+        expect(stateAfterFailure.accounts, hasLength(1));
+        expect(stateAfterFailure.accounts.single.uuid, source.uuid);
+        expect(stateAfterFailure.activeAccountUuid, source.uuid);
+      },
+    );
+  });
 
   test('wallet link duplicate import errors are recognized', () {
     expect(
@@ -433,4 +639,172 @@ AppBootstrapState _bootstrapWithAccounts() {
     isUnlocked: true,
     passwordRotationRecoveryFailed: false,
   );
+}
+
+ProviderContainer _deriveAccountContainer(AccountInfo source) {
+  return ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        AppBootstrapState(
+          initialLocation: '/accounts',
+          initialAccountState: AccountState(
+            accounts: [source],
+            activeAccountUuid: source.uuid,
+          ),
+          initialSyncSnapshot: AppSyncSnapshot.empty,
+          network: 'main',
+          rpcEndpointConfig: defaultRpcEndpointConfig('main'),
+          themeMode: ThemeMode.system,
+          privacyModeEnabled: false,
+          isPasswordConfigured: true,
+          isUnlocked: true,
+          passwordRotationRecoveryFailed: false,
+        ),
+      ),
+      rpcEndpointFailoverLatestBlockHeightGetterProvider.overrideWithValue(
+        (_) async => BigInt.from(100),
+      ),
+    ],
+  );
+}
+
+enum _DerivedAccountWriteBoundary {
+  mnemonic('zcash_account_mnemonic_derived-1'),
+  accounts('zcash_accounts'),
+  activeAccount('zcash_active_account');
+
+  const _DerivedAccountWriteBoundary(this.storageKey);
+
+  final String storageKey;
+}
+
+class _FaultInjectingSecureStorage extends FlutterSecureStoragePlatform {
+  final values = <String, String>{};
+  String? failNextWriteFor;
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    required Map<String, String> options,
+  }) async => values.containsKey(key);
+
+  @override
+  Future<void> delete({
+    required String key,
+    required Map<String, String> options,
+  }) async {
+    values.remove(key);
+  }
+
+  @override
+  Future<void> deleteAll({required Map<String, String> options}) async {
+    values.clear();
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    required Map<String, String> options,
+  }) async => values[key];
+
+  @override
+  Future<Map<String, String>> readAll({
+    required Map<String, String> options,
+  }) async => Map<String, String>.from(values);
+
+  @override
+  Future<void> write({
+    required String key,
+    required String value,
+    required Map<String, String> options,
+  }) async {
+    if (key == failNextWriteFor) {
+      failNextWriteFor = null;
+      throw PlatformException(code: 'fault', message: 'forced $key write');
+    }
+    values[key] = value;
+  }
+}
+
+class _DerivationRustApiFake implements RustLibApi {
+  final _occupiedIndices = <int>{0};
+  final allocatedIndices = <int>[];
+  bool failNextDelete = false;
+
+  Set<int> get liveAccountIndices => {
+    for (final index in _occupiedIndices)
+      if (index != 0) index,
+  };
+
+  void reset() {
+    _occupiedIndices
+      ..clear()
+      ..add(0);
+    allocatedIndices.clear();
+    failNextDelete = false;
+  }
+
+  @override
+  Future<rust_wallet.SoftwareWalletImportAccount>
+  crateApiWalletDeriveNextSoftwareAccount({
+    required String mnemonic,
+    required String bip39Passphrase,
+    BigInt? birthdayHeight,
+    required String network,
+    required String dbPath,
+    required String name,
+  }) async {
+    final index = Iterable<int>.generate(
+      1 << 16,
+    ).firstWhere((candidate) => !_occupiedIndices.contains(candidate));
+    _occupiedIndices.add(index);
+    allocatedIndices.add(index);
+    return rust_wallet.SoftwareWalletImportAccount(
+      accountUuid: 'derived-$index',
+      unifiedAddress: 'u-derived-$index',
+      zip32AccountIndex: index,
+      name: name,
+      isSeedAnchor: true,
+      seedFamilyId: 'software-family',
+    );
+  }
+
+  @override
+  Future<void> crateApiWalletDeleteAccount({
+    required String dbPath,
+    required String network,
+    required String accountUuid,
+  }) async {
+    if (failNextDelete) {
+      failNextDelete = false;
+      throw StateError('forced Rust delete failure');
+    }
+    final index = int.tryParse(accountUuid.replaceFirst('derived-', ''));
+    if (index != null) _occupiedIndices.remove(index);
+  }
+
+  @override
+  Future<Uint8List> crateApiSecretDecryptSecretPayload({
+    required String payloadJson,
+    required String password,
+    required String saltBase64,
+  }) async {
+    final payload = jsonDecode(payloadJson) as Map<String, dynamic>;
+    return Uint8List.fromList(base64Decode(payload['c'] as String));
+  }
+
+  @override
+  Future<String> crateApiSecretEncryptSecretPayload({
+    required List<int> plainBytes,
+    required String password,
+    required String saltBase64,
+  }) async => jsonEncode({
+    'v': 1,
+    'n': base64Encode([0]),
+    'c': base64Encode(plainBytes),
+    'm': base64Encode([0]),
+  });
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
 }

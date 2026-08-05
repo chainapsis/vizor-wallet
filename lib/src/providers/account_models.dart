@@ -81,8 +81,8 @@ class AccountInfo {
 
 /// A display-only group of accounts backed by the same ZIP-32 seed.
 ///
-/// Accounts without derivation metadata are intentionally isolated so two
-/// unrelated hardware or legacy accounts are never grouped by accident.
+/// Hardware accounts and accounts without derivation metadata are intentionally
+/// isolated so hardware/legacy accounts are never grouped by accident.
 class AccountFamily {
   const AccountFamily({
     required this.anchorAccountUuid,
@@ -109,7 +109,7 @@ List<AccountFamily> groupAccountsBySeedFamily(
   final grouped = <String, List<AccountInfo>>{};
   for (final (_, account) in indexedAccounts) {
     final seedFamilyId = _normalizedOptionalString(account.seedFamilyId);
-    final key = seedFamilyId == null
+    final key = account.isHardware || seedFamilyId == null
         ? 'account:${account.uuid}'
         : 'seed:$seedFamilyId';
     grouped.putIfAbsent(key, () => []).add(account);
