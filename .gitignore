@@ -80,3 +80,4 @@ app.*.map.json
 # Generated when selecting Linux release flavors.
 /linux/FlavorOverrides.cmake
 .design-refs/
+.worktrees/
