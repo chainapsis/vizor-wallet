@@ -1246,7 +1246,7 @@ mod tests {
         let second = derive_next_software_account(
             mnemonic.clone(),
             String::new(),
-            None,
+            Some(900_000),
             "main".to_string(),
             db_path_str.to_string(),
             "Account 2".to_string(),
@@ -1258,7 +1258,7 @@ mod tests {
         let third = derive_next_software_account(
             mnemonic,
             String::new(),
-            None,
+            Some(1_000_000),
             "main".to_string(),
             db_path_str.to_string(),
             "Account 3".to_string(),
@@ -1267,6 +1267,21 @@ mod tests {
         assert_eq!(third.zip32_account_index, 2);
         assert_ne!(second.unified_address, third.unified_address);
         assert_ne!(second.account_uuid, third.account_uuid);
+
+        let birthdays: Vec<u32> = {
+            let connection = rusqlite::Connection::open(db_path_str).unwrap();
+            let mut statement = connection
+                .prepare(
+                    "SELECT birthday_height FROM accounts WHERE name IN ('Account 2', 'Account 3') ORDER BY name",
+                )
+                .unwrap();
+            statement
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        assert_eq!(birthdays, vec![900_000, 1_000_000]);
     }
 
     #[test]
@@ -1300,13 +1315,31 @@ mod tests {
         let derived = derive_next_software_account(
             mnemonic,
             String::new(),
-            None,
+            Some(1_000_000),
             "main".to_string(),
             db_path_str.to_string(),
             "Account 2".to_string(),
         )
         .unwrap();
         assert_eq!(derived.zip32_account_index, 1);
+
+        let birthday: u32 = rusqlite::Connection::open(db_path_str)
+            .unwrap()
+            .query_row(
+                "SELECT birthday_height FROM accounts WHERE name = 'Account 2'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            birthday,
+            u32::from(
+                WalletNetwork::Main
+                    .activation_height(NetworkUpgrade::Sapling)
+                    .unwrap(),
+            ),
+            "filling a gap must rescan from Sapling activation so a deleted account's old funds resurface",
+        );
     }
 
     #[test]

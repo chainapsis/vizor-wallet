@@ -651,12 +651,26 @@ pub fn derive_next_software_account(
             .find(|index| !existing.contains(*index))
             .expect("ZIP 32 index space cannot be exhausted");
 
+        // A free index below an existing higher index may be an account that
+        // was deleted after receiving funds. Re-import it from Sapling
+        // activation so historical notes can be rediscovered. Appending a
+        // genuinely new index keeps the caller's current-height birthday.
+        let fills_index_gap = existing
+            .account_indices
+            .iter()
+            .any(|existing_index| *existing_index > account_index);
+        let account_birthday_height = if fills_index_gap {
+            None
+        } else {
+            birthday_height
+        };
+
         let (account_uuid, unified_address, is_seed_anchor) = if existing.has_derived_account {
             let (account_uuid, unified_address) = import_derived_account_at_index_with_db(
                 &mut db,
                 network,
                 seed,
-                birthday_height,
+                account_birthday_height,
                 name,
                 account_index,
             )?;
@@ -667,7 +681,7 @@ pub fn derive_next_software_account(
                 network,
                 name,
                 seed,
-                birthday_height,
+                account_birthday_height,
                 account_index,
             )?;
             (account_uuid, unified_address, false)
