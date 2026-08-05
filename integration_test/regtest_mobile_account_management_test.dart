@@ -59,7 +59,7 @@ void main() {
 
       expect(added.uuid, isNot(source.uuid));
       expect(addedAddress, isNot(sourceAddress));
-      expect(source.seedFamilyId, isNotNull);
+      expect(source.seedFamilyId, isNotEmpty);
       expect(added.seedFamilyId, source.seedFamilyId);
       expect(addedSecret?.mnemonic, sourceSecret?.mnemonic);
       expect(addedSecret?.bip39Passphrase, sourceSecret?.bip39Passphrase);
