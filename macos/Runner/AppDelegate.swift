@@ -12,9 +12,10 @@ class AppDelegate: FlutterAppDelegate {
   /// or occluded. Wallet sync polling and ZIP 318 scheduled migration
   /// broadcasts are Dart-timer driven and intentionally continue while the
   /// app is not visible; App Nap coalesces/suspends those timers, which would
-  /// silently stall scheduled broadcasts. `.background` avoids App Nap
-  /// without preventing idle system sleep — a closed lid still suspends the
-  /// process, which the migration coordinator detects as an epoch restart.
+  /// silently stall scheduled broadcasts.
+  /// `.userInitiatedAllowingIdleSystemSleep` avoids App Nap without preventing
+  /// idle system sleep — a closed lid still suspends the process, which the
+  /// migration coordinator detects as an epoch restart.
   private var appNapActivity: NSObjectProtocol?
 
 #if SPARKLE_ENABLED
@@ -39,7 +40,7 @@ class AppDelegate: FlutterAppDelegate {
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
     appNapActivity = ProcessInfo.processInfo.beginActivity(
-      options: .background,
+      options: .userInitiatedAllowingIdleSystemSleep,
       reason: "Wallet sync and scheduled shielded broadcasts run while hidden"
     )
 
