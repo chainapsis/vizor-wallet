@@ -1,10 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/voting/voting_submission_guard_provider.dart';
 
 void main() {
@@ -42,6 +46,74 @@ void main() {
       '.voting-shm',
       '.receive.redb',
     ]);
+  });
+
+  test(
+    'wallet reset clears the tor data directory and route preference',
+    () async {
+      SharedPreferences.setMockInitialValues({kTorEnabledPreferenceKey: true});
+      addTearDown(() => SharedPreferences.setMockInitialValues({}));
+      final torDirectory = Directory.systemTemp.createTempSync(
+        'vizor-tor-reset',
+      );
+      addTearDown(() {
+        if (torDirectory.existsSync()) torDirectory.deleteSync(recursive: true);
+      });
+      File(
+        '${torDirectory.path}${Platform.pathSeparator}state.json',
+      ).writeAsStringSync('{}');
+      var directoryExistedWhenRouteSwitched = false;
+
+      await clearTorPrivacyStateForReset(
+        switchRouteToDirect: () async {
+          directoryExistedWhenRouteSwitched = torDirectory.existsSync();
+        },
+        resolveTorDirectory: () async => torDirectory.path,
+      );
+
+      expect(directoryExistedWhenRouteSwitched, isTrue);
+      expect(torDirectory.existsSync(), isFalse);
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getBool(kTorEnabledPreferenceKey), isNull);
+    },
+  );
+
+  test(
+    'wallet reset keeps the tor directory when the route stays on tor',
+    () async {
+      SharedPreferences.setMockInitialValues({kTorEnabledPreferenceKey: true});
+      addTearDown(() => SharedPreferences.setMockInitialValues({}));
+      final torDirectory = Directory.systemTemp.createTempSync(
+        'vizor-tor-reset',
+      );
+      addTearDown(() {
+        if (torDirectory.existsSync()) torDirectory.deleteSync(recursive: true);
+      });
+
+      await clearTorPrivacyStateForReset(
+        switchRouteToDirect: () async => throw StateError('tor still running'),
+        resolveTorDirectory: () async => torDirectory.path,
+      );
+
+      expect(torDirectory.existsSync(), isTrue);
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getBool(kTorEnabledPreferenceKey), isNull);
+    },
+  );
+
+  test('wallet reset survives tor cleanup failures', () async {
+    final torDirectory = Directory.systemTemp.createTempSync('vizor-tor-reset');
+    addTearDown(() {
+      if (torDirectory.existsSync()) torDirectory.deleteSync(recursive: true);
+    });
+
+    await clearTorPrivacyStateForReset(
+      switchRouteToDirect: () async {},
+      resolveTorDirectory: () async => torDirectory.path,
+      openPreferences: () async => throw StateError('preferences unavailable'),
+    );
+
+    expect(torDirectory.existsSync(), isFalse);
   });
 
   test('wallet link duplicate import errors are recognized', () {
