@@ -110,16 +110,9 @@ async fn handle_connection(mut stream: TcpStream, resource_path: &str) -> Result
     let client = crate::network_privacy::tor_client_for_route(true)?
         .ok_or_else(|| "Tor is not enabled".to_string())?;
 
-    // Sparkle's loopback URLSession has a 60-second request timeout. Send the
-    // local response headers immediately; upstream resolution and every body
-    // frame still remain fail-closed on the embedded Tor client.
-    let framing_header = expected_length.map_or_else(
-        || "Transfer-Encoding: chunked\r\n".to_string(),
-        |length| format!("Content-Length: {length}\r\n"),
-    );
-    let response_headers = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n{framing_header}Cache-Control: no-store\r\nConnection: close\r\n\r\n"
-    );
+    // Respond to the native updater promptly while upstream resolution and
+    // every body frame remain fail-closed on the embedded Tor client.
+    let response_headers = relay_response_headers(&upstream, expected_length);
     stream
         .write_all(response_headers.as_bytes())
         .await
@@ -216,6 +209,63 @@ fn parse_upstream(target: &str, resource_path: &str) -> Result<(Url, Option<u64>
         })
         .transpose()?;
     Ok((upstream, expected_length))
+}
+
+fn content_disposition_header(upstream: &Url) -> Option<String> {
+    require_https(upstream).ok()?;
+    let encoded_filename = upstream.path_segments()?.next_back()?;
+    let filename = percent_decode_utf8(encoded_filename)?;
+    let lowercase = filename.to_ascii_lowercase();
+    if filename.is_empty()
+        || filename.trim() != filename
+        || !filename.is_ascii()
+        || filename.bytes().any(|byte| byte < b' ' || byte == 0x7f)
+        || filename.contains(['"', '/', '\\'])
+        || !(lowercase.ends_with(".dmg") || lowercase.ends_with(".delta"))
+    {
+        return None;
+    }
+    Some(format!(
+        "Content-Disposition: attachment; filename=\"{filename}\"\r\n"
+    ))
+}
+
+fn relay_response_headers(upstream: &Url, expected_length: Option<u64>) -> String {
+    let framing_header = expected_length.map_or_else(
+        || "Transfer-Encoding: chunked\r\n".to_string(),
+        |length| format!("Content-Length: {length}\r\n"),
+    );
+    let content_disposition = content_disposition_header(upstream).unwrap_or_default();
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n{framing_header}{content_disposition}Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+    )
+}
+
+fn percent_decode_utf8(value: &str) -> Option<String> {
+    let input = value.as_bytes();
+    let mut output = Vec::with_capacity(input.len());
+    let mut index = 0;
+    while index < input.len() {
+        if input[index] == b'%' {
+            let high = hex_value(*input.get(index + 1)?)?;
+            let low = hex_value(*input.get(index + 2)?)?;
+            output.push((high << 4) | low);
+            index += 3;
+        } else {
+            output.push(input[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(output).ok()
+}
+
+fn hex_value(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }
 
 async fn open_final_response(
@@ -342,8 +392,9 @@ fn random_token() -> String {
 #[cfg(test)]
 mod tests {
     use tokio::io::{duplex, AsyncReadExt};
+    use url::Url;
 
-    use super::{parse_upstream, write_chunk};
+    use super::{content_disposition_header, parse_upstream, relay_response_headers, write_chunk};
 
     #[test]
     fn relay_target_requires_the_secret_path_and_https() {
@@ -369,6 +420,38 @@ mod tests {
             "/secret/resource",
         )
         .is_err());
+    }
+
+    #[test]
+    fn relay_archive_disposition_preserves_safe_filename_extensions() {
+        let dmg = Url::parse("https://cdn.example/Vizor%20Wallet.dmg?download=1").unwrap();
+        assert!(relay_response_headers(&dmg, None)
+            .contains("Content-Disposition: attachment; filename=\"Vizor Wallet.dmg\"\r\n"));
+
+        let delta = Url::parse("https://cdn.example/Vizor-1.2.3.delta").unwrap();
+        assert!(relay_response_headers(&delta, Some(321))
+            .contains("Content-Disposition: attachment; filename=\"Vizor-1.2.3.delta\"\r\n"));
+    }
+
+    #[test]
+    fn relay_archive_disposition_rejects_unsafe_filenames() {
+        for raw_url in [
+            "https://cdn.example/",
+            "https://cdn.example/%2E%2E",
+            "https://cdn.example/bad%0D%0AInjected.dmg",
+            "https://cdn.example/bad%22name.dmg",
+            "https://cdn.example/..%2Fsecret.dmg",
+            "https://cdn.example/..%5Csecret.delta",
+            "https://cdn.example/%FF.dmg",
+            "https://cdn.example/release-notes.md",
+        ] {
+            let url = Url::parse(raw_url).unwrap();
+            assert_eq!(
+                content_disposition_header(&url),
+                None,
+                "unexpected safe filename for {raw_url}"
+            );
+        }
     }
 
     #[tokio::test]

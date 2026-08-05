@@ -4,6 +4,8 @@ import FlutterMacOS
 import ObjectiveC.runtime
 import Sparkle
 
+private let torUpdateTransferTimeout: TimeInterval = 2 * 60 * 60
+
 private final class TorUpdateReleaseNotesURLProtocol: URLProtocol, URLSessionDataDelegate {
   private static let stateLock = NSLock()
   private static var resourceProxyURL: URL?
@@ -92,9 +94,11 @@ private final class TorUpdateReleaseNotesURLProtocol: URLProtocol, URLSessionDat
     var proxyRequest = URLRequest(url: proxyURL)
     proxyRequest.httpMethod = "GET"
     proxyRequest.cachePolicy = .reloadIgnoringLocalCacheData
+    proxyRequest.timeoutInterval = torUpdateTransferTimeout
 
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = []
+    configuration.timeoutIntervalForRequest = torUpdateTransferTimeout
     let session = URLSession(
       configuration: configuration,
       delegate: self,
@@ -269,6 +273,7 @@ private final class TorUpdateFeedDelegate: NSObject, SPUUpdaterDelegate {
       return
     }
     request.url = proxyURL
+    request.timeoutInterval = torUpdateTransferTimeout
   }
 
   func awaitCurrentUpdateCycleBeforeFailClosedPause(
