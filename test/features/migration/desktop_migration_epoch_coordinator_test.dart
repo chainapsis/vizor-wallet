@@ -234,6 +234,36 @@ void main() {
     );
   });
 
+  test('a manual retry after a long locked gap restarts the epoch', () async {
+    // `retry` reaches `_advance` without running a sweep first, and the
+    // advance-path observation exempts sweep duration from the idle-gap
+    // signal. If the retry entry point did not count the gap itself, a retry
+    // tapped right after unlocking a long-locked wallet would broadcast
+    // against the pre-lock epoch — and, by overwriting the activity baseline,
+    // stop the unlock-triggered sweep from ever restarting the epoch.
+    final status = _scheduledStatus(scheduledHeight: 999);
+    final harness = await _startCoordinator(accountStatus: status);
+    expect(harness.walletOpenTipHeights, [1_000]);
+
+    harness.run(kDesktopMigrationEpochSuspensionGap);
+    await harness.coordinator.retry(_accountUuid, status: status);
+
+    expect(
+      harness.authoritativeHeightReads,
+      2,
+      reason:
+          'a manual retry after an awake gap past the threshold must restart '
+          'the epoch before advancing',
+    );
+    expect(
+      harness.walletOpenTipHeights.skip(1),
+      everyElement(1_001),
+      reason:
+          'no broadcast after the restart may carry the pre-lock epoch\'s '
+          'entry tip',
+    );
+  });
+
   test('threads each epoch\'s entry tip into the one-due broadcast', () async {
     // The Rust one-due endpoint floors its post-accept wallet-overdue redraw
     // at the epoch entry tip. Losing this argument would silently reintroduce

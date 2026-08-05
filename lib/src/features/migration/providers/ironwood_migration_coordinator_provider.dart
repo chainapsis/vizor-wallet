@@ -487,6 +487,15 @@ class IronwoodMigrationCoordinator
     String accountUuid, {
     rust_sync.MigrationStatus? status,
   }) async {
+    // A manual retry is user-initiated activity, not sweep-bounded work, so
+    // the gap since the last observation is genuine idleness — count it.
+    // Without this, a retry tapped right after unlocking a long-locked wallet
+    // reaches `_advance` (whose own observation exempts sweep duration) before
+    // the unlock-triggered sweep can run its counting observation, and the
+    // baseline overwrite permanently swallows the locked gap: the epoch never
+    // restarts, and transfers that became due while locked broadcast against
+    // the pre-lock epoch without the fresh overdue-at-open gate.
+    _observeDesktopEpochActivity(idleGapCounts: true);
     // A status screen can be the first migration surface after a cold launch.
     // Its route provider may already have a current status while this
     // coordinator has not completed its first polling pass. Preserve that
