@@ -2765,6 +2765,7 @@ void main() {
             required accountUuid,
             required password,
             required saltBase64,
+            int? walletOpenTipHeight,
           }) {
             seenPassword = password;
             seenSalts.add(saltBase64);
@@ -2812,6 +2813,7 @@ void main() {
             required accountUuid,
             required password,
             required saltBase64,
+            int? walletOpenTipHeight,
           }) {
             return Future.value(_migrationResult(status: 'ready_to_migrate'));
           },
@@ -2867,6 +2869,7 @@ void main() {
               required accountUuid,
               required password,
               required saltBase64,
+              int? walletOpenTipHeight,
             }) async => _migrationResult(status: 'ready_to_migrate'),
         startMacosSoftwareMigration:
             ({
@@ -3551,6 +3554,7 @@ void main() {
               required accountUuid,
               required password,
               required saltBase64,
+              int? walletOpenTipHeight,
             }) async {
               broadcastCalled = true;
               return _migrationResult();
@@ -4413,6 +4417,7 @@ void main() {
             required accountUuid,
             required password,
             required saltBase64,
+            int? walletOpenTipHeight,
           }) {
             rustCalled = true;
             return Future.value(_migrationResult());
@@ -5037,6 +5042,7 @@ void main() {
             required accountUuid,
             required password,
             required saltBase64,
+            int? walletOpenTipHeight,
           }) async {
             dueBroadcastCount++;
             return _migrationResult();

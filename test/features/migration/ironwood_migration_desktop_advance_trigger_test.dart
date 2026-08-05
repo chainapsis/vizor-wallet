@@ -232,6 +232,7 @@ class _Harness {
             required accountUuid,
             required password,
             required saltBase64,
+            int? walletOpenTipHeight,
           }) async {
             broadcasts.add(accountUuid);
             // Hold the run in `broadcast_scheduled` so the status -- and

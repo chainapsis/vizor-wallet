@@ -8,6 +8,16 @@ import Sparkle
 class AppDelegate: FlutterAppDelegate {
   @IBOutlet private weak var checkForUpdatesMenuItem: NSMenuItem!
 
+  /// Keeps App Nap from throttling the process while every window is hidden
+  /// or occluded. Wallet sync polling and ZIP 318 scheduled migration
+  /// broadcasts are Dart-timer driven and intentionally continue while the
+  /// app is not visible; App Nap coalesces/suspends those timers, which would
+  /// silently stall scheduled broadcasts.
+  /// `.userInitiatedAllowingIdleSystemSleep` avoids App Nap without preventing
+  /// idle system sleep — a closed lid still suspends the process, which the
+  /// migration coordinator detects as an epoch restart.
+  private var appNapActivity: NSObjectProtocol?
+
 #if SPARKLE_ENABLED
   private let updaterController: SPUStandardUpdaterController?
 #endif
@@ -29,6 +39,11 @@ class AppDelegate: FlutterAppDelegate {
   }
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
+    appNapActivity = ProcessInfo.processInfo.beginActivity(
+      options: .userInitiatedAllowingIdleSystemSleep,
+      reason: "Wallet sync and scheduled shielded broadcasts run while hidden"
+    )
+
 #if SPARKLE_ENABLED
     guard let updaterController else {
       checkForUpdatesMenuItem.isEnabled = false
