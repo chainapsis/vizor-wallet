@@ -434,6 +434,11 @@ fn same_seed_hd_accounts_keep_balances_isolated_per_account() {
         derivation_lease.clone(),
     )
     .expect("derive_next_software_account");
+    wallet_api::resolve_software_account_derivation_lease(
+        derivation_lease.clone(),
+        Some(second_account.account_uuid.clone()),
+    )
+    .expect("resolve derivation lease");
     wallet_api::finish_software_account_derivation_lease(derivation_lease)
         .expect("finish derivation lease");
     assert_eq!(

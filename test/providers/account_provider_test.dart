@@ -600,6 +600,56 @@ void main() {
     );
 
     test(
+      'legacy raw UUID fence never publishes or clears without provenance',
+      () async {
+        const derived = AccountInfo(
+          uuid: 'derived-1',
+          name: 'Legacy candidate',
+          order: 1,
+          isSeedAnchor: true,
+          seedFamilyId: 'software-family',
+        );
+        await AppSecureStore.instance.writeAccountMnemonic(
+          derived.uuid,
+          'source recovery phrase',
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_accounts',
+          jsonEncode([source.toJson(), derived.toJson()]),
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_active_account',
+          source.uuid,
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_derived_account_recovery',
+          derived.uuid,
+        );
+        rust.addListedAccount(derived);
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        await expectLater(
+          container
+              .read(accountProvider.notifier)
+              .acknowledgeDerivedAccountRecovery(),
+          throwsA(
+            predicate<Object>(
+              (error) => error.toString().contains('cannot prove its origin'),
+              'legacy recovery remains fail-closed',
+            ),
+          ),
+        );
+        expect(storage.values['zcash_derived_account_recovery'], derived.uuid);
+        expect(
+          container.read(accountProvider).requireValue.activeAccountUuid,
+          source.uuid,
+        );
+      },
+    );
+
+    test(
       'derive retry reconciles a durable fence before allocating another index',
       () async {
         const derived = AccountInfo(
@@ -1049,11 +1099,12 @@ ProviderContainer _deriveAccountContainer(
 }
 
 String _recoveryFenceJson({required String sourceAccountUuid}) => jsonEncode({
-  'version': 1,
+  'version': 2,
   'sourceAccountUuid': sourceAccountUuid,
   'name': 'Recovered',
   'profilePictureId': 'pfp-01',
   'baselineAccountUuids': [sourceAccountUuid],
+  'operationToken': 'recovery-token',
 });
 
 enum _DerivedAccountWriteBoundary {
@@ -1154,6 +1205,8 @@ class _DerivationRustApiFake implements RustLibApi {
   Completer<void>? _derivationStarted;
   bool failNextDelete = false;
   String? _activeLeaseToken;
+  String? _persistentLeaseToken;
+  bool _persistentLeaseIsPending = false;
   int _nextLease = 0;
 
   Set<int> get liveAccountIndices => {
@@ -1169,6 +1222,8 @@ class _DerivationRustApiFake implements RustLibApi {
     _derivationGate = null;
     _derivationStarted = null;
     _activeLeaseToken = null;
+    _persistentLeaseToken = null;
+    _persistentLeaseIsPending = false;
     _nextLease = 0;
     _listedAccountsByUuid
       ..clear()
@@ -1184,14 +1239,71 @@ class _DerivationRustApiFake implements RustLibApi {
   }
 
   @override
-  Future<String> crateApiWalletBeginSoftwareAccountDerivationLease({
+  Future<rust_wallet.SoftwareAccountDerivationLease>
+  crateApiWalletBeginSoftwareAccountDerivationLease({
     required String dbPath,
     required String sourceAccountUuid,
   }) async {
     if (_activeLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
-    return _activeLeaseToken = 'lease-${++_nextLease}';
+    if (_persistentLeaseIsPending) {
+      throw StateError(
+        'A previous software account derivation needs recovery.',
+      );
+    }
+    final token = _activeLeaseToken = 'lease-${++_nextLease}';
+    _persistentLeaseToken = token;
+    _persistentLeaseIsPending = true;
+    return rust_wallet.SoftwareAccountDerivationLease(
+      operationToken: token,
+      sourceAccountUuid: sourceAccountUuid,
+      baselineAccountUuids: _listedAccountsByUuid.keys.toList(),
+      isPending: true,
+    );
+  }
+
+  @override
+  Future<rust_wallet.SoftwareAccountDerivationLease>
+  crateApiWalletResumeSoftwareAccountDerivationLease({
+    required String dbPath,
+    required String previousOperationToken,
+  }) async {
+    if (_activeLeaseToken != null) {
+      throw StateError('A software account derivation is already in progress.');
+    }
+    // Existing round-three fixtures have only Dart state; materialize the
+    // matching native record so provider tests can focus on Dart recovery.
+    if (_persistentLeaseToken == null) {
+      _persistentLeaseToken = previousOperationToken;
+      _persistentLeaseIsPending = true;
+    }
+    if (_persistentLeaseToken != previousOperationToken) {
+      throw StateError('native derivation recovery record cannot authenticate');
+    }
+    final pending = _persistentLeaseIsPending;
+    final token = pending ? 'lease-${++_nextLease}' : previousOperationToken;
+    _persistentLeaseToken = token;
+    _persistentLeaseIsPending = pending;
+    _activeLeaseToken = token;
+    return rust_wallet.SoftwareAccountDerivationLease(
+      operationToken: token,
+      sourceAccountUuid: 'source',
+      baselineAccountUuids: const ['source'],
+      isPending: pending,
+    );
+  }
+
+  @override
+  Future<void> crateApiWalletResolveSoftwareAccountDerivationLease({
+    required String operationToken,
+    String? accountUuid,
+  }) async {
+    if (_activeLeaseToken != operationToken ||
+        _persistentLeaseToken != operationToken) {
+      throw StateError('native derivation recovery record cannot authenticate');
+    }
+    _persistentLeaseIsPending = false;
   }
 
   @override

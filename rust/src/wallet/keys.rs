@@ -43,6 +43,25 @@ const MNEMONIC_WORD_COUNT_STEP: usize = 3;
 const TRANSPARENT_EXTERNAL_KEY_SCOPE: i64 = 0;
 const DERIVATION_LEASE_BUSY_MESSAGE: &str =
     "A software account derivation is already in progress. Finish it before trying again.";
+const PENDING_DERIVATION_MESSAGE: &str =
+    "A previous software account derivation needs recovery before accounts can be changed.";
+const PENDING_DERIVATION_TABLE: &str = "vizor_pending_software_account_derivation";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoftwareAccountDerivationLeaseInfo {
+    pub operation_token: String,
+    pub source_account_uuid: String,
+    pub baseline_account_uuids: Vec<String>,
+    pub is_pending: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PersistentSoftwareAccountDerivation {
+    operation_token: String,
+    source_account_uuid: String,
+    baseline_account_uuids: Vec<String>,
+    is_pending: bool,
+}
 
 /// A process-held OS lock covering one software-account derivation from its
 /// durable intent through Dart's durable metadata commit. The sidecar lock is
@@ -65,6 +84,122 @@ fn derivation_lock_path(db_path: &str) -> String {
     format!("{db_path}.software-account-derivation.lock")
 }
 
+fn with_derivation_gate<T>(
+    db_path: &str,
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    if software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned")
+        .values()
+        .any(|lease| lease.db_path == db_path)
+    {
+        return Err(DERIVATION_LEASE_BUSY_MESSAGE.to_string());
+    }
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(derivation_lock_path(db_path))
+        .map_err(|error| format!("Failed to open software derivation lock: {error}"))?;
+    lock_file
+        .try_lock_exclusive()
+        .map_err(|_| DERIVATION_LEASE_BUSY_MESSAGE.to_string())?;
+    let result = operation();
+    lock_file
+        .unlock()
+        .map_err(|error| format!("Failed to release software derivation lock: {error}"))?;
+    result
+}
+
+fn ensure_pending_derivation_table(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute(
+        &format!(
+            "CREATE TABLE IF NOT EXISTS {PENDING_DERIVATION_TABLE} (\
+             singleton INTEGER PRIMARY KEY CHECK (singleton = 1), \
+             operation_token TEXT NOT NULL, source_account_uuid TEXT NOT NULL, \
+             baseline_account_uuids_json TEXT NOT NULL, state TEXT NOT NULL)"
+        ),
+        [],
+    )
+    .map_err(|error| format!("Failed to initialize derivation recovery record: {error}"))?;
+    Ok(())
+}
+
+fn read_persistent_derivation(
+    conn: &rusqlite::Connection,
+) -> Result<Option<PersistentSoftwareAccountDerivation>, String> {
+    ensure_pending_derivation_table(conn)?;
+    conn.query_row(
+        &format!(
+            "SELECT operation_token, source_account_uuid, baseline_account_uuids_json, state \
+             FROM {PENDING_DERIVATION_TABLE} WHERE singleton = 1"
+        ),
+        [],
+        |row| {
+            let baseline_json: String = row.get(2)?;
+            let baseline_account_uuids = serde_json::from_str(&baseline_json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    baseline_json.len(),
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            Ok(PersistentSoftwareAccountDerivation {
+                operation_token: row.get(0)?,
+                source_account_uuid: row.get(1)?,
+                baseline_account_uuids,
+                is_pending: row.get::<_, String>(3)? == "pending",
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| format!("Failed to read derivation recovery record: {error}"))
+}
+
+fn account_uuids_for_persistent_derivation(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<String>, String> {
+    let mut statement = conn
+        .prepare("SELECT uuid FROM accounts ORDER BY id ASC")
+        .map_err(|error| format!("Failed to read derivation baseline: {error}"))?;
+    let account_uuids = statement
+        .query_map([], |row| row.get::<_, Vec<u8>>(0))
+        .map_err(|error| format!("Failed to query derivation baseline: {error}"))?
+        .map(|row| {
+            let bytes = row.map_err(|error| format!("Failed to read account UUID: {error}"))?;
+            uuid::Uuid::from_slice(&bytes)
+                .map(|uuid| uuid.to_string())
+                .map_err(|error| format!("Invalid account UUID in derivation baseline: {error}"))
+        })
+        .collect();
+    account_uuids
+}
+
+fn reject_pending_derivation(conn: &rusqlite::Connection) -> Result<(), String> {
+    if read_persistent_derivation(conn)?.is_some_and(|record| record.is_pending) {
+        return Err(PENDING_DERIVATION_MESSAGE.to_string());
+    }
+    Ok(())
+}
+
+/// Serializes every account constructor against a persistent derivation record.
+/// Holding the same OS gate through the mutation closes the begin-record versus
+/// importer race across processes.
+fn with_no_pending_derivation<T>(
+    db_path: &str,
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    with_derivation_gate(db_path, || {
+        if Path::new(db_path).exists() {
+            let conn = rusqlite::Connection::open(db_path)
+                .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
+            reject_pending_derivation(&conn)?;
+        }
+        operation()
+    })
+}
+
 /// Begin a native-owned software account derivation operation.
 ///
 /// The file lock is automatically released if this process dies. A process
@@ -73,7 +208,7 @@ fn derivation_lock_path(db_path: &str) -> String {
 pub fn begin_software_account_derivation_lease(
     db_path: &str,
     source_account_uuid: &str,
-) -> Result<String, String> {
+) -> Result<SoftwareAccountDerivationLeaseInfo, String> {
     let mut leases = software_account_derivation_leases()
         .lock()
         .expect("software derivation lease mutex poisoned");
@@ -102,6 +237,44 @@ pub fn begin_software_account_derivation_lease(
         .map_err(|error| format!("Failed to write software derivation lock: {error}"))?;
 
     let token = uuid::Uuid::new_v4().to_string();
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
+    conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
+        .map_err(|error| format!("Failed to configure wallet DB busy timeout: {error}"))?;
+    let transaction = conn
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to begin derivation recovery record: {error}"))?;
+    if read_persistent_derivation(&transaction)?.is_some_and(|record| record.is_pending) {
+        return Err(PENDING_DERIVATION_MESSAGE.to_string());
+    }
+    let baseline_account_uuids = account_uuids_for_persistent_derivation(&transaction)?;
+    if !baseline_account_uuids
+        .iter()
+        .any(|uuid| uuid == source_account_uuid)
+    {
+        return Err("Cannot begin a derivation for an unknown source account.".to_string());
+    }
+    transaction
+        .execute(
+            &format!(
+                "INSERT INTO {PENDING_DERIVATION_TABLE} \
+                 (singleton, operation_token, source_account_uuid, baseline_account_uuids_json, state) \
+                 VALUES (1, ?1, ?2, ?3, 'pending') \
+                 ON CONFLICT(singleton) DO UPDATE SET operation_token = excluded.operation_token, \
+                 source_account_uuid = excluded.source_account_uuid, \
+                 baseline_account_uuids_json = excluded.baseline_account_uuids_json, state = 'pending'"
+            ),
+            rusqlite::params![
+                token,
+                source_account_uuid,
+                serde_json::to_string(&baseline_account_uuids)
+                    .map_err(|error| format!("Failed to encode derivation baseline: {error}"))?,
+            ],
+        )
+        .map_err(|error| format!("Failed to persist derivation recovery record: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit derivation recovery record: {error}"))?;
     leases.insert(
         token.clone(),
         SoftwareAccountDerivationLease {
@@ -110,7 +283,138 @@ pub fn begin_software_account_derivation_lease(
             lock_file,
         },
     );
-    Ok(token)
+    Ok(SoftwareAccountDerivationLeaseInfo {
+        operation_token: token,
+        source_account_uuid: source_account_uuid.to_string(),
+        baseline_account_uuids,
+        is_pending: true,
+    })
+}
+
+/// Re-acquire a crashed operation only when Dart presents the token stored in
+/// its matching durable fence. A fresh token replaces the old one atomically.
+pub fn resume_software_account_derivation_lease(
+    db_path: &str,
+    previous_operation_token: &str,
+) -> Result<SoftwareAccountDerivationLeaseInfo, String> {
+    if software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned")
+        .values()
+        .any(|lease| lease.db_path == db_path)
+    {
+        return Err(DERIVATION_LEASE_BUSY_MESSAGE.to_string());
+    }
+    let lock_path = derivation_lock_path(db_path);
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .map_err(|error| format!("Failed to open software derivation lock: {error}"))?;
+    lock_file
+        .try_lock_exclusive()
+        .map_err(|_| DERIVATION_LEASE_BUSY_MESSAGE.to_string())?;
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
+    conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
+        .map_err(|error| format!("Failed to configure wallet DB busy timeout: {error}"))?;
+    let transaction = conn
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to begin derivation recovery record: {error}"))?;
+    let record = read_persistent_derivation(&transaction)?
+        .filter(|record| record.operation_token == previous_operation_token)
+        .ok_or_else(|| {
+            "The native derivation recovery record cannot authenticate this fence.".to_string()
+        })?;
+    let token = if record.is_pending {
+        let token = uuid::Uuid::new_v4().to_string();
+        transaction.execute(
+            &format!("UPDATE {PENDING_DERIVATION_TABLE} SET operation_token = ?1 WHERE singleton = 1"),
+            rusqlite::params![token],
+        ).map_err(|error| format!("Failed to claim derivation recovery record: {error}"))?;
+        token
+    } else {
+        previous_operation_token.to_string()
+    };
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit derivation recovery record: {error}"))?;
+    software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned")
+        .insert(
+            token.clone(),
+            SoftwareAccountDerivationLease {
+                db_path: db_path.to_string(),
+                _source_account_uuid: record.source_account_uuid.clone(),
+                lock_file,
+            },
+        );
+    Ok(SoftwareAccountDerivationLeaseInfo {
+        operation_token: token,
+        source_account_uuid: record.source_account_uuid,
+        baseline_account_uuids: record.baseline_account_uuids,
+        is_pending: record.is_pending,
+    })
+}
+
+/// Resolve a pending record only while its current native lease is held. An
+/// empty expected delta is a verified abort; a nonempty one is durable commit.
+pub fn resolve_software_account_derivation_lease(
+    token: &str,
+    expected_account_uuid: Option<&str>,
+) -> Result<(), String> {
+    let db_path = {
+        let leases = software_account_derivation_leases()
+            .lock()
+            .expect("software derivation lease mutex poisoned");
+        leases
+            .get(token)
+            .ok_or_else(|| {
+                "Software account derivation operation is no longer owned by this process."
+                    .to_string()
+            })?
+            .db_path
+            .clone()
+    };
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
+    let transaction = conn
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to begin derivation recovery resolution: {error}"))?;
+    let record = read_persistent_derivation(&transaction)?
+        .filter(|record| record.is_pending && record.operation_token == token)
+        .ok_or_else(|| {
+            "The native derivation recovery record cannot authenticate this lease.".to_string()
+        })?;
+    let current = account_uuids_for_persistent_derivation(&transaction)?;
+    let delta: Vec<_> = current
+        .iter()
+        .filter(|uuid| !record.baseline_account_uuids.contains(uuid))
+        .collect();
+    match expected_account_uuid {
+        Some(account_uuid) if delta.len() == 1 && delta[0] == account_uuid => {}
+        None if delta.is_empty() => {}
+        _ => {
+            return Err(
+                "Native derivation recovery record does not match the wallet account delta."
+                    .to_string(),
+            )
+        }
+    }
+    transaction
+        .execute(
+            &format!(
+                "UPDATE {PENDING_DERIVATION_TABLE} SET state = 'resolved' WHERE singleton = 1"
+            ),
+            [],
+        )
+        .map_err(|error| format!("Failed to resolve derivation recovery record: {error}"))?;
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit derivation recovery resolution: {error}"))?;
+    Ok(())
 }
 
 fn require_software_account_derivation_lease(token: &str, db_path: &str) -> Result<(), String> {
@@ -475,9 +779,18 @@ fn import_ufvk_account(
     birthday_height: Option<u64>,
     account_index: u32,
 ) -> Result<(String, String), String> {
-    with_wallet_db_write_lock("keys.import_ufvk_account", || {
-        let mut db = open_wallet_db_for_mutation(db_path, network)?;
-        import_ufvk_account_with_db(&mut db, network, name, seed, birthday_height, account_index)
+    with_no_pending_derivation(db_path, || {
+        with_wallet_db_write_lock("keys.import_ufvk_account", || {
+            let mut db = open_wallet_db_for_mutation(db_path, network)?;
+            import_ufvk_account_with_db(
+                &mut db,
+                network,
+                name,
+                seed,
+                birthday_height,
+                account_index,
+            )
+        })
     })
 }
 
@@ -558,6 +871,28 @@ pub fn import_hardware_account(
     zip32_index: u32,
     birthday_height: Option<u64>,
 ) -> Result<(String, String), String> {
+    with_no_pending_derivation(db_path, || {
+        import_hardware_account_unchecked(
+            db_path,
+            network,
+            name,
+            ufvk_string,
+            seed_fingerprint_bytes,
+            zip32_index,
+            birthday_height,
+        )
+    })
+}
+
+fn import_hardware_account_unchecked(
+    db_path: &str,
+    network: WalletNetwork,
+    name: &str,
+    ufvk_string: &str,
+    seed_fingerprint_bytes: &[u8],
+    zip32_index: u32,
+    birthday_height: Option<u64>,
+) -> Result<(String, String), String> {
     // Ensure DB is initialized (without seed — hardware wallet has no local seed)
     ensure_db_migrated_once(db_path, network)?;
 
@@ -621,26 +956,28 @@ pub fn init_db_and_create_account(
     birthday_height: Option<u64>,
     name: &str,
 ) -> Result<(String, String), String> {
-    ensure_db_initialized_with_seed(db_path, network, seed)?;
+    with_no_pending_derivation(db_path, || {
+        ensure_db_initialized_with_seed(db_path, network, seed)?;
 
-    let birthday = make_birthday(network, birthday_height);
+        let birthday = make_birthday(network, birthday_height);
 
-    let (account_id, usk) = with_wallet_db_write_lock("keys.create_account", || {
-        let mut db = open_wallet_db_for_mutation(db_path, network)?;
+        let (account_id, usk) = with_wallet_db_write_lock("keys.create_account", || {
+            let mut db = open_wallet_db_for_mutation(db_path, network)?;
 
-        // The bootstrap account uses create_account (Derived) so initial
-        // seed-aware DB setup records the seed fingerprint.
-        db.create_account(name, seed, &birthday, None)
-            .map_err(|e| format!("Failed to create account: {e}"))
-    })?;
+            // The bootstrap account uses create_account (Derived) so initial
+            // seed-aware DB setup records the seed fingerprint.
+            db.create_account(name, seed, &birthday, None)
+                .map_err(|e| format!("Failed to create account: {e}"))
+        })?;
 
-    let ufvk = usk.to_unified_full_viewing_key();
-    let (ua, _di) = ufvk
-        .default_address(shielded_address_request())
-        .map_err(|e| format!("Failed to derive address: {e}"))?;
+        let ufvk = usk.to_unified_full_viewing_key();
+        let (ua, _di) = ufvk
+            .default_address(shielded_address_request())
+            .map_err(|e| format!("Failed to derive address: {e}"))?;
 
-    let uuid_str = account_id.expose_uuid().to_string();
-    Ok((uuid_str, ua.encode(&network)))
+        let uuid_str = account_id.expose_uuid().to_string();
+        Ok((uuid_str, ua.encode(&network)))
+    })
 }
 
 /// Import a same-seed software account for a specific ZIP32 account index as a
@@ -654,16 +991,18 @@ pub fn import_derived_account_at_index(
     name: &str,
     account_index: u32,
 ) -> Result<(String, String), String> {
-    with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
-        let mut db = open_wallet_db_for_mutation(db_path, network)?;
-        import_derived_account_at_index_with_db(
-            &mut db,
-            network,
-            seed,
-            birthday_height,
-            name,
-            account_index,
-        )
+    with_no_pending_derivation(db_path, || {
+        with_wallet_db_write_lock("keys.import_derived_account_at_index", || {
+            let mut db = open_wallet_db_for_mutation(db_path, network)?;
+            import_derived_account_at_index_with_db(
+                &mut db,
+                network,
+                seed,
+                birthday_height,
+                name,
+                account_index,
+            )
+        })
     })
 }
 
@@ -3035,18 +3374,70 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("wallet.db");
         let db_path = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
+                .unwrap();
 
-        let a_token = begin_software_account_derivation_lease(db_path, "source-a").unwrap();
+        let a_token = begin_software_account_derivation_lease(db_path, &source_uuid)
+            .unwrap()
+            .operation_token;
         assert!(is_software_account_derivation_locked(db_path).unwrap());
-        let b_while_a_live = begin_software_account_derivation_lease(db_path, "source-b")
+        let b_while_a_live = begin_software_account_derivation_lease(db_path, &source_uuid)
             .expect_err("B must not claim or reconcile A's live journal");
         assert!(b_while_a_live.contains("already in progress"));
 
+        resolve_software_account_derivation_lease(&a_token, None).unwrap();
         finish_software_account_derivation_lease(&a_token).unwrap();
         assert!(!is_software_account_derivation_locked(db_path).unwrap());
-        let b_token = begin_software_account_derivation_lease(db_path, "source-b").unwrap();
+        let b_token = begin_software_account_derivation_lease(db_path, &source_uuid)
+            .unwrap()
+            .operation_token;
         assert!(require_software_account_derivation_lease(&a_token, db_path).is_err());
         require_software_account_derivation_lease(&b_token, db_path).unwrap();
+        resolve_software_account_derivation_lease(&b_token, None).unwrap();
         finish_software_account_derivation_lease(&b_token).unwrap();
+    }
+
+    #[test]
+    fn crash_left_pending_derivation_blocks_same_family_import_before_recovery() {
+        // This models A dying after the native record is durable but before
+        // Dart can reconcile: a linked-wallet import of index 1 from the same
+        // seed must fail before it can become a misleading baseline delta.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let mnemonic = generate_mnemonic();
+        let seed = mnemonic_to_seed(&mnemonic).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
+                .unwrap();
+        let lease = begin_software_account_derivation_lease(db_path, &source_uuid).unwrap();
+        let token = lease.operation_token;
+        finish_software_account_derivation_lease(&token).unwrap();
+
+        let error = add_account_at_index(
+            db_path,
+            WalletNetwork::Main,
+            "Foreign linked account",
+            &seed,
+            None,
+            1,
+        )
+        .expect_err("pending derivation must block same-family linked import");
+        assert!(error.contains("needs recovery"), "got: {error}");
+
+        let resumed = resume_software_account_derivation_lease(db_path, &token).unwrap();
+        resolve_software_account_derivation_lease(&resumed.operation_token, None).unwrap();
+        finish_software_account_derivation_lease(&resumed.operation_token).unwrap();
+        add_account_at_index(
+            db_path,
+            WalletNetwork::Main,
+            "Allowed after recovery",
+            &seed,
+            None,
+            1,
+        )
+        .unwrap();
     }
 }

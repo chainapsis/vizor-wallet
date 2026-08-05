@@ -61,6 +61,16 @@ pub struct SoftwareWalletImportAccount {
     pub seed_family_id: Option<String>,
 }
 
+/// Native durable ownership and baseline for a software-account derivation.
+/// Dart stores the token in its fence but Rust's DB record remains authoritative
+/// after a process crash.
+pub struct SoftwareAccountDerivationLease {
+    pub operation_token: String,
+    pub source_account_uuid: String,
+    pub baseline_account_uuids: Vec<String>,
+    pub is_pending: bool,
+}
+
 /// Account info returned by list_accounts.
 pub struct AccountInfo {
     pub uuid: String,
@@ -606,8 +616,45 @@ pub fn derive_next_software_account(
 pub fn begin_software_account_derivation_lease(
     db_path: String,
     source_account_uuid: String,
-) -> Result<String, String> {
-    catch(|| keys::begin_software_account_derivation_lease(&db_path, &source_account_uuid))
+) -> Result<SoftwareAccountDerivationLease, String> {
+    catch(|| {
+        let lease = keys::begin_software_account_derivation_lease(&db_path, &source_account_uuid)?;
+        Ok(SoftwareAccountDerivationLease {
+            operation_token: lease.operation_token,
+            source_account_uuid: lease.source_account_uuid,
+            baseline_account_uuids: lease.baseline_account_uuids,
+            is_pending: lease.is_pending,
+        })
+    })
+}
+
+/// Reclaim a crash-left pending record only with the opaque token from its
+/// matching versioned Dart fence.
+pub fn resume_software_account_derivation_lease(
+    db_path: String,
+    previous_operation_token: String,
+) -> Result<SoftwareAccountDerivationLease, String> {
+    catch(|| {
+        let lease =
+            keys::resume_software_account_derivation_lease(&db_path, &previous_operation_token)?;
+        Ok(SoftwareAccountDerivationLease {
+            operation_token: lease.operation_token,
+            source_account_uuid: lease.source_account_uuid,
+            baseline_account_uuids: lease.baseline_account_uuids,
+            is_pending: lease.is_pending,
+        })
+    })
+}
+
+/// Mark the authenticated persistent record resolved only when Rust proves the
+/// current DB delta is either empty (abort) or exactly `account_uuid` (commit).
+pub fn resolve_software_account_derivation_lease(
+    operation_token: String,
+    account_uuid: Option<String>,
+) -> Result<(), String> {
+    catch(|| {
+        keys::resolve_software_account_derivation_lease(&operation_token, account_uuid.as_deref())
+    })
 }
 
 /// Release a derivation lease after the matching durable journal has been
@@ -1207,8 +1254,15 @@ mod tests {
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
 
     fn test_derivation_lease(db_path: &str) -> String {
-        begin_software_account_derivation_lease(db_path.to_string(), "test-source".to_string())
+        let source_account_uuid = keys::list_accounts(db_path, WalletNetwork::Main)
             .unwrap()
+            .into_iter()
+            .next()
+            .expect("test wallet has a source account")
+            .uuid;
+        begin_software_account_derivation_lease(db_path.to_string(), source_account_uuid)
+            .unwrap()
+            .operation_token
     }
 
     #[test]
@@ -1336,6 +1390,11 @@ mod tests {
             second_lease.clone(),
         )
         .unwrap();
+        resolve_software_account_derivation_lease(
+            second_lease.clone(),
+            Some(second.account_uuid.clone()),
+        )
+        .unwrap();
         finish_software_account_derivation_lease(second_lease).unwrap();
         assert_eq!(second.zip32_account_index, 1);
         assert!(second.is_seed_anchor);
@@ -1349,6 +1408,11 @@ mod tests {
             db_path_str.to_string(),
             "Account 3".to_string(),
             third_lease.clone(),
+        )
+        .unwrap();
+        resolve_software_account_derivation_lease(
+            third_lease.clone(),
+            Some(third.account_uuid.clone()),
         )
         .unwrap();
         finish_software_account_derivation_lease(third_lease).unwrap();
@@ -1384,6 +1448,62 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(birthdays, vec![900_000, 1_000_000]);
+    }
+
+    #[test]
+    fn pending_derivation_blocks_linked_same_family_import_until_authenticated_recovery() {
+        // This exercises the public linked-wallet import constructor, rather
+        // than only the lower-level key helper. A crash can release the OS
+        // lease, but it must not let another same-seed import become an
+        // ambiguous recovery delta before the original fence is authenticated.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap().to_string();
+        let mnemonic = keys::generate_mnemonic();
+        let source = import_wallet(
+            mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path.clone(),
+            Some("Source".to_string()),
+        )
+        .unwrap();
+        let lease =
+            begin_software_account_derivation_lease(db_path.clone(), source.account_uuid).unwrap();
+        let operation_token = lease.operation_token;
+        finish_software_account_derivation_lease(operation_token.clone()).unwrap();
+
+        let error = match import_software_account_at_index(
+            mnemonic.clone(),
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path.clone(),
+            "Foreign linked account".to_string(),
+            1,
+            false,
+        ) {
+            Ok(_) => panic!("pending derivation must block a same-family linked import"),
+            Err(error) => error,
+        };
+        assert!(error.contains("needs recovery"), "got: {error}");
+
+        let resumed =
+            resume_software_account_derivation_lease(db_path.clone(), operation_token).unwrap();
+        resolve_software_account_derivation_lease(resumed.operation_token.clone(), None).unwrap();
+        finish_software_account_derivation_lease(resumed.operation_token).unwrap();
+        import_software_account_at_index(
+            mnemonic,
+            String::new(),
+            None,
+            "main".to_string(),
+            db_path,
+            "Allowed after recovery".to_string(),
+            1,
+            false,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1423,6 +1543,11 @@ mod tests {
             db_path_str.to_string(),
             "Account 2".to_string(),
             lease.clone(),
+        )
+        .unwrap();
+        resolve_software_account_derivation_lease(
+            lease.clone(),
+            Some(derived.account_uuid.clone()),
         )
         .unwrap();
         finish_software_account_derivation_lease(lease).unwrap();
@@ -1477,6 +1602,7 @@ mod tests {
             Ok(_) => panic!("unknown seed should be rejected"),
             Err(error) => error,
         };
+        resolve_software_account_derivation_lease(lease.clone(), None).unwrap();
         finish_software_account_derivation_lease(lease).unwrap();
         assert!(error.contains("no accounts in this wallet"), "got: {error}");
     }
@@ -1520,6 +1646,11 @@ mod tests {
             lease.clone(),
         )
         .unwrap();
+        resolve_software_account_derivation_lease(
+            lease.clone(),
+            Some(derived.account_uuid.clone()),
+        )
+        .unwrap();
         finish_software_account_derivation_lease(lease).unwrap();
         assert_eq!(derived.zip32_account_index, 1);
         assert!(!derived.is_seed_anchor);
@@ -1555,6 +1686,11 @@ mod tests {
                 db_path_str.to_string(),
                 format!("Account {}", offset + 2),
                 lease.clone(),
+            )
+            .unwrap();
+            resolve_software_account_derivation_lease(
+                lease.clone(),
+                Some(derived.account_uuid.clone()),
             )
             .unwrap();
             finish_software_account_derivation_lease(lease).unwrap();

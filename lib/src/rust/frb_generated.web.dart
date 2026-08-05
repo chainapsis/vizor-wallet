@@ -644,6 +644,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  SoftwareAccountDerivationLease dco_decode_software_account_derivation_lease(
+    dynamic raw,
+  );
+
+  @protected
   SoftwareWalletDiscoveredAccount dco_decode_software_wallet_discovered_account(
     dynamic raw,
   );
@@ -1520,6 +1525,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SignedVoteCommitmentsView sse_decode_signed_vote_commitments_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SoftwareAccountDerivationLease sse_decode_software_account_derivation_lease(
     SseDeserializer deserializer,
   );
 
@@ -2592,6 +2602,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_signed_vote_commitments_view(
     SignedVoteCommitmentsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_software_account_derivation_lease(
+    SoftwareAccountDerivationLease self,
     SseSerializer serializer,
   );
 

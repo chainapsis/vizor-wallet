@@ -213,12 +213,32 @@ Future<SoftwareWalletImportAccount> deriveNextSoftwareAccount({
 
 /// Acquire the native lease for a software-account derivation before Dart
 /// writes its recovery journal. The lease remains held across FFI calls.
-Future<String> beginSoftwareAccountDerivationLease({
+Future<SoftwareAccountDerivationLease> beginSoftwareAccountDerivationLease({
   required String dbPath,
   required String sourceAccountUuid,
 }) => RustLib.instance.api.crateApiWalletBeginSoftwareAccountDerivationLease(
   dbPath: dbPath,
   sourceAccountUuid: sourceAccountUuid,
+);
+
+/// Reclaim a crash-left pending record only with the opaque token from its
+/// matching versioned Dart fence.
+Future<SoftwareAccountDerivationLease> resumeSoftwareAccountDerivationLease({
+  required String dbPath,
+  required String previousOperationToken,
+}) => RustLib.instance.api.crateApiWalletResumeSoftwareAccountDerivationLease(
+  dbPath: dbPath,
+  previousOperationToken: previousOperationToken,
+);
+
+/// Mark the authenticated persistent record resolved only when Rust proves the
+/// current DB delta is either empty (abort) or exactly `account_uuid` (commit).
+Future<void> resolveSoftwareAccountDerivationLease({
+  required String operationToken,
+  String? accountUuid,
+}) => RustLib.instance.api.crateApiWalletResolveSoftwareAccountDerivationLease(
+  operationToken: operationToken,
+  accountUuid: accountUuid,
 );
 
 /// Release a derivation lease after the matching durable journal has been
@@ -568,6 +588,40 @@ class ChainUpgradeStatus {
           nu63ActivationHeight == other.nu63ActivationHeight &&
           ironwoodActiveAtTip == other.ironwoodActiveAtTip &&
           endpointMatchesNetwork == other.endpointMatchesNetwork;
+}
+
+/// Native durable ownership and baseline for a software-account derivation.
+/// Dart stores the token in its fence but Rust's DB record remains authoritative
+/// after a process crash.
+class SoftwareAccountDerivationLease {
+  final String operationToken;
+  final String sourceAccountUuid;
+  final List<String> baselineAccountUuids;
+  final bool isPending;
+
+  const SoftwareAccountDerivationLease({
+    required this.operationToken,
+    required this.sourceAccountUuid,
+    required this.baselineAccountUuids,
+    required this.isPending,
+  });
+
+  @override
+  int get hashCode =>
+      operationToken.hashCode ^
+      sourceAccountUuid.hashCode ^
+      baselineAccountUuids.hashCode ^
+      isPending.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SoftwareAccountDerivationLease &&
+          runtimeType == other.runtimeType &&
+          operationToken == other.operationToken &&
+          sourceAccountUuid == other.sourceAccountUuid &&
+          baselineAccountUuids == other.baselineAccountUuids &&
+          isPending == other.isPending;
 }
 
 /// A higher ZIP32 software account that can be imported by user choice.

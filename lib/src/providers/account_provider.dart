@@ -472,18 +472,47 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // Rust owns this OS-level lease until this method has either committed
       // the local metadata or retained its journal. A second process must not
       // inspect, clear, or replace this operation's recovery fence.
-      final operationToken = await rust_wallet
-          .beginSoftwareAccountDerivationLease(
-            dbPath: dbPath,
-            sourceAccountUuid: sourceAccountUuid,
+      final existingRawFence = await _storage.readString(
+        _derivedAccountRecoveryKey,
+      );
+      late final rust_wallet.SoftwareAccountDerivationLease nativeLease;
+      if (existingRawFence != null && existingRawFence.isNotEmpty) {
+        final existingFence = _DerivedAccountRecoveryFence.decode(
+          existingRawFence,
+        );
+        if (existingFence.isLegacy || existingFence.operationToken == null) {
+          throw StateError(
+            'This legacy derived-account recovery marker cannot prove its '
+            'origin. Recovery is required before creating another account.',
           );
+        }
+        nativeLease = await rust_wallet.resumeSoftwareAccountDerivationLease(
+          dbPath: dbPath,
+          previousOperationToken: existingFence.operationToken!,
+        );
+      } else {
+        nativeLease = await rust_wallet.beginSoftwareAccountDerivationLease(
+          dbPath: dbPath,
+          sourceAccountUuid: sourceAccountUuid,
+        );
+      }
+      final operationToken = nativeLease.operationToken;
       try {
         // A retry is a recovery opportunity, never a second blind allocation.
         if (await _recoverPendingDerivedAccount(
           dbPath: dbPath,
           network: network,
+          operationToken: operationToken,
+          nativeRecordIsPending: nativeLease.isPending,
         )) {
           return;
+        }
+
+        if (!nativeLease.isPending) {
+          throw StateError(
+            'The native derivation recovery record is resolved but its Dart '
+            'fence could not be reconciled safely.',
+          );
         }
 
         final secret = await getSoftwareWalletSecretForAccount(
@@ -525,24 +554,35 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         // This journal is deliberately written before invoking Rust. If the app
         // dies after Rust commits but before Dart receives its result, the saved
         // baseline identifies the new account on the next process start.
-        final rustAccountsBeforeDerivation = await rust_wallet.listAccounts(
-          dbPath: dbPath,
-          network: network,
-        );
         final recoveryFence = _DerivedAccountRecoveryFence(
           sourceAccountUuid: sourceAccountUuid,
           name: accountName,
           profilePictureId: normalizedProfilePictureId,
           accountGroupName: sourceAccount.accountGroupName,
-          baselineAccountUuids: {
-            for (final account in rustAccountsBeforeDerivation) account.uuid,
-          },
+          baselineAccountUuids: {...nativeLease.baselineAccountUuids},
           operationToken: operationToken,
         );
-        await _storage.writeString(
-          _derivedAccountRecoveryKey,
-          recoveryFence.encode(),
-        );
+        try {
+          await _storage.writeString(
+            _derivedAccountRecoveryKey,
+            recoveryFence.encode(),
+          );
+        } catch (_) {
+          // Keychain writes can persist and still report an error. Keep the
+          // native record pending when this exact fence exists, so a retry can
+          // authenticate it and use the same baseline rather than opening a
+          // new constructor window. If it did not persist, resolve the native
+          // abort before returning the storage failure.
+          final persistedFence = await _storage.readString(
+            _derivedAccountRecoveryKey,
+          );
+          if (persistedFence != recoveryFence.encode()) {
+            await rust_wallet.resolveSoftwareAccountDerivationLease(
+              operationToken: operationToken,
+            );
+          }
+          rethrow;
+        }
 
         final result = await rust_wallet.deriveNextSoftwareAccount(
           mnemonic: secret.mnemonic,
@@ -694,6 +734,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           // If fence deletion fails, it remains a safe cross-process barrier.
           // The next derive will first prove no Rust delta remains and clear it.
           try {
+            await rust_wallet.resolveSoftwareAccountDerivationLease(
+              operationToken: operationToken,
+            );
             await _clearRecoveryFence(expectedRawFence: recoveryFence.encode());
           } catch (cleanupError) {
             Error.throwWithStackTrace(
@@ -721,6 +764,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             dbPath: dbPath,
             network: network,
             expectedRawFence: recoveryFence.encode(),
+            operationToken: operationToken,
+            nativeRecordIsPending: nativeLease.isPending,
           );
         } catch (recoveryError, recoveryStackTrace) {
           log(
@@ -760,16 +805,26 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     final rawFence = await _storage.readString(_derivedAccountRecoveryKey);
     if (rawFence == null || rawFence.isEmpty) return;
     final fence = _DerivedAccountRecoveryFence.decode(rawFence);
-    final operationToken = await rust_wallet
-        .beginSoftwareAccountDerivationLease(
-          dbPath: dbPath,
-          sourceAccountUuid: fence.sourceAccountUuid,
-        );
+    if (fence.isLegacy || fence.operationToken == null) {
+      throw StateError(
+        'This legacy derived-account recovery marker cannot prove its origin. '
+        'Do not remove or activate accounts until it is resolved manually.',
+      );
+    }
+    final nativeLease = await rust_wallet.resumeSoftwareAccountDerivationLease(
+      dbPath: dbPath,
+      previousOperationToken: fence.operationToken!,
+    );
     try {
-      await _recoverPendingDerivedAccount(dbPath: dbPath, network: network);
+      await _recoverPendingDerivedAccount(
+        dbPath: dbPath,
+        network: network,
+        operationToken: nativeLease.operationToken,
+        nativeRecordIsPending: nativeLease.isPending,
+      );
     } finally {
       await rust_wallet.finishSoftwareAccountDerivationLease(
-        operationToken: operationToken,
+        operationToken: nativeLease.operationToken,
       );
     }
   }
@@ -781,25 +836,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<bool> _recoverPendingDerivedAccount({
     required String dbPath,
     required String network,
+    required String operationToken,
+    required bool nativeRecordIsPending,
   }) async {
     final rawFence = await _storage.readString(_derivedAccountRecoveryKey);
     if (rawFence == null || rawFence.isEmpty) return false;
 
     final fence = _DerivedAccountRecoveryFence.decode(rawFence);
     if (fence.isLegacy) {
-      final accountUuid = fence.legacyAccountUuid!;
-      await _publishDurablyRecoveredAccount(
-        accountUuid,
-        dbPath: dbPath,
-        network: network,
+      throw StateError(
+        'This legacy derived-account recovery marker cannot prove which '
+        'operation created its UUID. Recovery is required before proceeding.',
       );
-      await _clearRecoveryFenceAfterDurableValidation(
-        accountUuid,
-        dbPath: dbPath,
-        network: network,
-        expectedRawFence: rawFence,
-      );
-      return true;
     }
 
     final recoveredAccountUuid = await _reconcileDerivedAccountFence(
@@ -810,6 +858,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     if (recoveredAccountUuid == null) {
       // The fence persisted before a Rust call that never committed. It is
       // safe to remove only after the Rust baseline proves there is no delta.
+      // Keep the pending native record and its held lease: the caller can now
+      // re-write a fresh Dart fence and derive against that same baseline
+      // without reopening a constructor race.
       await _clearRecoveryFence(expectedRawFence: rawFence);
       return false;
     }
@@ -819,6 +870,8 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       dbPath: dbPath,
       network: network,
       expectedRawFence: rawFence,
+      operationToken: operationToken,
+      nativeRecordIsPending: nativeRecordIsPending,
     );
     return true;
   }
@@ -971,12 +1024,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required String dbPath,
     required String network,
     required String expectedRawFence,
+    required String operationToken,
+    required bool nativeRecordIsPending,
   }) async {
     await _publishDurablyRecoveredAccount(
       accountUuid,
       dbPath: dbPath,
       network: network,
     );
+    if (nativeRecordIsPending) {
+      await rust_wallet.resolveSoftwareAccountDerivationLease(
+        operationToken: operationToken,
+        accountUuid: accountUuid,
+      );
+    }
     await _clearRecoveryFence(expectedRawFence: expectedRawFence);
   }
 
