@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../widgetbook/home_use_cases.dart';
 import '../widgetbook/pay_use_cases.dart';
+import '../widgetbook/payment_link_use_cases.dart';
 import '../widgetbook/carousel_use_cases.dart';
 import '../widgetbook/screen_use_cases.dart';
 import '../widgetbook/swap_use_cases.dart';
@@ -113,6 +114,91 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'pay-completed',
     description: 'Pay activity completed state',
     builder: buildPayCompletedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-empty',
+    description: 'Desktop Gift Cards empty state',
+    builder: buildPaymentLinkEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-help',
+    description: 'Desktop Gift Cards help modal',
+    builder: buildPaymentLinkHelpUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-empty',
+    description: 'Desktop Gift Card amount step without an amount',
+    builder: buildPaymentLinkCreateEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-focused',
+    description: 'Desktop Gift Card amount step with focused input',
+    builder: buildPaymentLinkCreateFocusedUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-amount',
+    description: 'Desktop Gift Card amount step with ZEC value',
+    builder: buildPaymentLinkCreateAmountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-fiat-loading',
+    description: 'Desktop Gift Card amount step while fiat price loads',
+    builder: buildPaymentLinkCreateFiatLoadingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-create-fiat',
+    description: 'Desktop Gift Card amount step with fiat value',
+    builder: buildPaymentLinkCreateFiatUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-message-empty',
+    description: 'Desktop Gift Card empty optional-message step',
+    builder: buildPaymentLinkMessageEmptyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-message-filled',
+    description: 'Desktop Gift Card filled optional-message step',
+    builder: buildPaymentLinkMessageFilledUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-review',
+    description: 'Desktop Gift Card review fixture',
+    builder: buildPaymentLinkReviewUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ready-flip',
+    description: 'Desktop Gift Card ready state with flip hint',
+    builder: buildPaymentLinkReadyFlipUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-ready',
+    description: 'Desktop Gift Card ready state',
+    builder: buildPaymentLinkReadyUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-cards-list',
+    description: 'Desktop created Gift Cards list fixture',
+    builder: buildPaymentLinkCardsListUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-paste',
+    description: 'Desktop Gift Card redeem paste state',
+    builder: buildPaymentLinkRedeemPasteUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-loading',
+    description: 'Desktop Gift Card redeem loading state',
+    builder: buildPaymentLinkRedeemLoadingUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-redeem-invalid',
+    description: 'Desktop Gift Card redeem invalid-link state',
+    builder: buildPaymentLinkRedeemInvalidUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'payment-link-received',
+    description: 'Desktop received Gift Card preview',
+    builder: buildPaymentLinkReceivedUseCase,
   ),
   FigmaCompareScenario(
     id: 'customise-account',
