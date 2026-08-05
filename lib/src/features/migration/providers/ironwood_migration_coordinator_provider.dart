@@ -252,6 +252,8 @@ class IronwoodMigrationCoordinator
   final _desktopOpenFallbackGate = DesktopOpenMigrationFallbackGate();
   DateTime? _lastDesktopActivityWallTime;
   Duration? _lastDesktopActivityMonotonicTime;
+  DateTime? _desktopLockStartedWallTime;
+  Duration? _desktopLockStartedMonotonicTime;
   bool _hasObservedInitialAccountList = false;
   Future<void>? _backgroundPreparationRecovery;
   final Map<String, DateTime> _lastAdvanceAt = {};
@@ -287,6 +289,12 @@ class IronwoodMigrationCoordinator
       }
     });
     ref.listen(appSecurityProvider, (previous, next) {
+      if (previous != null) {
+        _observeDesktopLockTransition(
+          wasLocked: previous.requiresUnlock,
+          isLocked: next.requiresUnlock,
+        );
+      }
       if (previous?.requiresUnlock == true && !next.requiresUnlock) {
         unawaited(resumeBackgroundPreparations());
         unawaited(refreshNow());
@@ -805,6 +813,45 @@ class IronwoodMigrationCoordinator
     }
   }
 
+  /// Tracks wallet lock duration independently from refresh activity.
+  ///
+  /// A lock can begin while a refresh sweep is already in flight. That sweep's
+  /// `finally` records its completion as process activity, which is correct for
+  /// slow unlocked work but would otherwise erase most or all of an overlapping
+  /// lock gap. Measuring the security transition directly preserves the gap and
+  /// lets unlock restart the wallet-open epoch before its refresh is queued.
+  void _observeDesktopLockTransition({
+    required bool wasLocked,
+    required bool isLocked,
+  }) {
+    if (kAppFormFactor != AppFormFactor.desktop || wasLocked == isLocked) {
+      return;
+    }
+    if (isLocked) {
+      _desktopLockStartedWallTime = _now();
+      _desktopLockStartedMonotonicTime = _monotonicNow();
+      return;
+    }
+
+    final lockStartedWallTime = _desktopLockStartedWallTime;
+    final lockStartedMonotonicTime = _desktopLockStartedMonotonicTime;
+    _desktopLockStartedWallTime = null;
+    _desktopLockStartedMonotonicTime = null;
+    if (lockStartedWallTime == null || lockStartedMonotonicTime == null) {
+      return;
+    }
+
+    final wallGap = _now().difference(lockStartedWallTime);
+    final monotonicGap = _monotonicNow() - lockStartedMonotonicTime;
+    // macOS/Linux monotonic clocks pause during sleep while Windows' advances;
+    // taking the larger duration counts both an awake lock and a lock spanning
+    // sleep, while a backward wall-clock correction cannot hide awake time.
+    final effectiveLockGap = wallGap > monotonicGap ? wallGap : monotonicGap;
+    if (effectiveLockGap >= kDesktopMigrationEpochSuspensionGap) {
+      _desktopOpenFallbackGate.restartEpoch();
+    }
+  }
+
   Future<void> _refreshOnce({required bool forceAdvance}) async {
     if (!ref.mounted) return;
     if (!canRunAppProcessWork(isInForeground: _foreground)) return;
@@ -1037,6 +1084,8 @@ class IronwoodMigrationCoordinator
     _lastAdvanceProgressKeys.clear();
     _lastDesktopActivityWallTime = null;
     _lastDesktopActivityMonotonicTime = null;
+    _desktopLockStartedWallTime = null;
+    _desktopLockStartedMonotonicTime = null;
     _desktopOpenFallbackGate.restartEpoch();
     state = const IronwoodMigrationCoordinatorState();
     _invalidateMigrationProviders(null);

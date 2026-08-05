@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,7 +40,7 @@ class _EpochHarness {
   Duration monotonicNow = Duration.zero;
   int authoritativeHeightReads = 0;
   final walletOpenTipHeights = <int?>[];
-  void Function()? onStatusSweep;
+  FutureOr<void> Function()? onStatusSweep;
   late final ProviderContainer container;
   late final IronwoodMigrationCoordinator coordinator;
 
@@ -86,7 +88,7 @@ Future<_EpochHarness> _startCoordinator({
             status,
     getStatuses:
         ({required dbPath, required network, required accountUuids}) async {
-          harness.onStatusSweep?.call();
+          await harness.onStatusSweep?.call();
           return [
             for (final accountUuid in accountUuids)
               rust_sync.MigrationStatusEntry(
@@ -339,6 +341,97 @@ void main() {
       reason: 'the consumed fallback allowance must not be replenished',
     );
   });
+
+  test(
+    'a long lock overlapping an in-flight sweep restarts the epoch',
+    () async {
+      final status = _scheduledStatus(scheduledHeight: 999);
+      final harness = await _startCoordinator(
+        accountStatus: status,
+        acceptScheduledBroadcast: true,
+      );
+      expect(harness.walletOpenTipHeights, [1_000]);
+
+      final sweepStarted = Completer<void>();
+      final releaseSweep = Completer<void>();
+      harness.onStatusSweep = () async {
+        harness.onStatusSweep = null;
+        sweepStarted.complete();
+        await releaseSweep.future;
+      };
+      final sweep = harness.coordinator.refreshNow();
+      await sweepStarted.future;
+
+      harness.lock();
+      harness.run(kDesktopMigrationEpochSuspensionGap);
+      releaseSweep.complete();
+      await sweep;
+
+      expect(
+        harness.authoritativeHeightReads,
+        1,
+        reason: 'the in-flight sweep must finish against the original epoch',
+      );
+
+      harness.unlock();
+      await harness.coordinator.refreshNow(forceAdvance: true);
+
+      expect(
+        harness.authoritativeHeightReads,
+        2,
+        reason:
+            'sweep completion while locked must not erase the lock duration at '
+            'unlock',
+      );
+      expect(
+        harness.walletOpenTipHeights.last,
+        1_001,
+        reason: 'post-unlock work must use the restarted epoch tip',
+      );
+    },
+  );
+
+  test(
+    'a short lock overlapping an in-flight sweep preserves the epoch',
+    () async {
+      final status = _scheduledStatus(scheduledHeight: 999);
+      final harness = await _startCoordinator(
+        accountStatus: status,
+        acceptScheduledBroadcast: true,
+      );
+      expect(harness.walletOpenTipHeights, [1_000]);
+
+      final sweepStarted = Completer<void>();
+      final releaseSweep = Completer<void>();
+      harness.onStatusSweep = () async {
+        harness.onStatusSweep = null;
+        sweepStarted.complete();
+        await releaseSweep.future;
+      };
+      final sweep = harness.coordinator.refreshNow();
+      await sweepStarted.future;
+
+      harness.lock();
+      harness.run(const Duration(minutes: 2, seconds: 45));
+      releaseSweep.complete();
+      await sweep;
+
+      harness.unlock();
+      await harness.coordinator.refreshNow(forceAdvance: true);
+
+      expect(
+        harness.authoritativeHeightReads,
+        1,
+        reason: 'an overlapping lock below the threshold must keep the epoch',
+      );
+      expect(
+        harness.walletOpenTipHeights,
+        [1_000],
+        reason:
+            'a short lock must not replenish the consumed fallback allowance',
+      );
+    },
+  );
 
   test('a manual retry after a long locked gap restarts the epoch', () async {
     // `retry` reaches `_advance` without running a sweep first, and the
