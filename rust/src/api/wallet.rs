@@ -30,6 +30,12 @@ pub struct AccountCreationResult {
     pub unified_address: String,
 }
 
+/// Result of deriving a software account without importing it into the wallet DB.
+pub struct SoftwareAccountPreviewResult {
+    pub mnemonic: String,
+    pub unified_address: String,
+}
+
 /// Result of software mnemonic import with ZIP32 account discovery.
 pub struct SoftwareWalletImportWithDiscoveryResult {
     pub accounts: Vec<SoftwareWalletImportAccount>,
@@ -313,6 +319,25 @@ pub fn add_account(
 
         Ok(AccountCreationResult {
             account_uuid,
+            unified_address,
+        })
+    })
+}
+
+/// Generate a software account mnemonic and shielded address without touching
+/// the wallet DB. Used for an external one-time recipient controlled by a
+/// fresh seed, such as payment-link funding.
+pub fn preview_new_software_account(
+    network: String,
+) -> Result<SoftwareAccountPreviewResult, String> {
+    catch(|| {
+        let network = keys::parse_network(&network)?;
+        let mnemonic = keys::generate_mnemonic();
+        let seed = keys::mnemonic_to_seed(&mnemonic)?;
+        let unified_address = keys::software_account_unified_address(network, &seed, 0)?;
+
+        Ok(SoftwareAccountPreviewResult {
+            mnemonic,
             unified_address,
         })
     })
@@ -1082,6 +1107,15 @@ mod tests {
     const BIP39_VECTOR_MAINNET_UA: &str =
         "u1flce76a85e0zvdtrqaqj59mdk2mv35d074lafaeej5s09qjm4vflc9gndayyxt37v6tekfgram4p9209ygugkz7es438hc9gsujwmcm0trr7zt5lcz8xmpfg9rqyfyznc83ax697lc5ur3nem8wwyen732wemtxcg6lxr4n2agm437m2";
     const BIP39_VECTOR_MAINNET_TADDR: &str = "t1eB9Q9aDobjEnazefA9hdGyx3ku7dHshw5";
+
+    #[test]
+    fn payment_link_account_preview_is_valid_without_creating_a_database() {
+        let preview = preview_new_software_account("main".to_string()).unwrap();
+
+        assert_eq!(preview.mnemonic.split_whitespace().count(), 24);
+        assert!(validate_mnemonic(preview.mnemonic.clone()));
+        assert!(preview.unified_address.starts_with("u1"));
+    }
 
     #[test]
     fn bip39_passphrase_import_matches_independent_mainnet_address_vectors() {

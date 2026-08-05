@@ -483,6 +483,23 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+
+    let incomingUriChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/payment_uri",
+      binaryMessenger: messenger
+    )
+    IncomingUriChannelBridge.shared.attach(channel: incomingUriChannel)
+    incomingUriChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "takePendingUris":
+        result(IncomingUriChannelBridge.shared.takePending())
+      case "ready":
+        IncomingUriChannelBridge.shared.markReady()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func completeOutboxArmWithBackgroundSchedule(
@@ -708,6 +725,56 @@ import UIKit
         return false
       }
     #endif
+  }
+}
+
+/// Buffers bearer payment links until the Dart isolate has installed its
+/// handler. Never logs the URL because it contains account recovery material.
+final class IncomingUriChannelBridge {
+  static let shared = IncomingUriChannelBridge()
+  private init() {}
+
+  private var channel: FlutterMethodChannel?
+  private var pendingUris: [String] = []
+  private var dartReady = false
+
+  func attach(channel: FlutterMethodChannel) {
+    self.channel = channel
+    dartReady = false
+  }
+
+  func markReady() {
+    dartReady = true
+    flush()
+  }
+
+  func takePending() -> [String] {
+    let uris = pendingUris
+    pendingUris.removeAll()
+    return uris
+  }
+
+  func handle(urlContexts: Set<UIOpenURLContext>) {
+    let strings = urlContexts.compactMap { context -> String? in
+      let url = context.url
+      guard
+        url.scheme?.lowercased() == "vizor",
+        url.host?.lowercased() == "payment-link"
+      else {
+        return nil
+      }
+      return url.absoluteString
+    }
+    guard !strings.isEmpty else { return }
+    pendingUris.append(contentsOf: strings)
+    flush()
+  }
+
+  private func flush() {
+    guard dartReady, let channel, !pendingUris.isEmpty else { return }
+    let uris = pendingUris
+    pendingUris.removeAll()
+    channel.invokeMethod("onUris", arguments: uris)
   }
 }
 

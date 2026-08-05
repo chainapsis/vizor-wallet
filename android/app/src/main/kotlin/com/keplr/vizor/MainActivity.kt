@@ -13,6 +13,9 @@ import io.flutter.plugin.common.MethodChannel
 // FlutterFragmentActivity: BiometricPrompt requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
     private lateinit var deviceOwnerAuthHandler: DeviceOwnerAuthHandler
+    private var incomingUriChannel: MethodChannel? = null
+    private val pendingIncomingUris = mutableListOf<String>()
+    private var incomingUriDartReady = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -85,6 +88,28 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        incomingUriChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            INCOMING_URI_CHANNEL
+        ).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "takePendingUris" -> {
+                        val uris = pendingIncomingUris.toList()
+                        pendingIncomingUris.clear()
+                        result.success(uris)
+                    }
+                    "ready" -> {
+                        incomingUriDartReady = true
+                        flushPendingIncomingUris()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+        captureIncomingUri(intent)
     }
 
     /** REJECT is the platform's error haptic; older APIs report
@@ -126,6 +151,12 @@ class MainActivity : FlutterFragmentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureIncomingUri(intent)
+    }
+
     private fun openAppSettings(): Boolean {
         return try {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -158,10 +189,29 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    private fun captureIncomingUri(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_VIEW) return
+        if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return
+        val data = intent.data ?: return
+        if (!"vizor".equals(data.scheme, ignoreCase = true)) return
+        if (!"payment-link".equals(data.host, ignoreCase = true)) return
+        pendingIncomingUris.add(intent.dataString ?: data.toString())
+        flushPendingIncomingUris()
+    }
+
+    private fun flushPendingIncomingUris() {
+        if (!incomingUriDartReady || pendingIncomingUris.isEmpty()) return
+        val channel = incomingUriChannel ?: return
+        val uris = pendingIncomingUris.toList()
+        pendingIncomingUris.clear()
+        channel.invokeMethod("onUris", uris)
+    }
+
     companion object {
         private const val CAMERA_PERMISSION_CHANNEL = "com.zcash.wallet/camera_permission"
         private const val HAPTICS_CHANNEL = "com.zcash.wallet/haptics"
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
+        private const val INCOMING_URI_CHANNEL = "com.zcash.wallet/payment_uri"
     }
 }

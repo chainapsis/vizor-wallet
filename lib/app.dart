@@ -59,6 +59,7 @@ import 'src/features/onboarding/mobile/mobile_unlock_screen.dart';
 import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/pay/screens/pay_screen.dart';
+import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -100,6 +101,7 @@ import 'src/providers/windows_update_provider.dart';
 import 'src/rust/api/sync.dart' as rust_sync;
 import 'src/rust/frb_generated.dart';
 import 'src/rust/api/simple.dart' as rust_simple;
+import 'src/services/incoming_uri_service.dart';
 
 void log(String message) => debugPrint('[zcash] $message');
 
@@ -1141,29 +1143,31 @@ class ZcashWalletApp extends ConsumerWidget {
             child: _WindowsUpdateStartupCheck(
               child: _WindowsUpdatePromptHost(
                 router: router,
-                child: _RpcEndpointFailoverToastListener(
-                  child: _DesktopOpaqueWindowBackground(
-                    child: IronwoodMigrationCoordinatorHost(
-                      child: IronwoodMigrationPrivacyLockHost(
-                        child: SyncKeepAwakeNativeHost(
-                          child: SyncKeepAwakePrivacyLockHost(
-                            child: SyncKeepAwakeInteractionListener(
-                              child: GestureDetector(
-                                onTap: () {
-                                  // Leaf-only: skip when the primary focus is a
-                                  // `FocusScopeNode` rather than a concrete `FocusNode`.
-                                  // Unfocusing the scope itself strips the scope's
-                                  // "most-recently-focused child" memory, which leaves the
-                                  // next Tab with no deterministic starting point.
-                                  final primary =
-                                      FocusManager.instance.primaryFocus;
-                                  if (primary != null &&
-                                      primary is! FocusScopeNode) {
-                                    primary.unfocus();
-                                  }
-                                },
-                                behavior: HitTestBehavior.translucent,
-                                child: child!,
+                child: _IncomingPaymentLinkHost(
+                  child: _RpcEndpointFailoverToastListener(
+                    child: _DesktopOpaqueWindowBackground(
+                      child: IronwoodMigrationCoordinatorHost(
+                        child: IronwoodMigrationPrivacyLockHost(
+                          child: SyncKeepAwakeNativeHost(
+                            child: SyncKeepAwakePrivacyLockHost(
+                              child: SyncKeepAwakeInteractionListener(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    // Leaf-only: skip when the primary focus is a
+                                    // `FocusScopeNode` rather than a concrete `FocusNode`.
+                                    // Unfocusing the scope itself strips the scope's
+                                    // "most-recently-focused child" memory, which leaves the
+                                    // next Tab with no deterministic starting point.
+                                    final primary =
+                                        FocusManager.instance.primaryFocus;
+                                    if (primary != null &&
+                                        primary is! FocusScopeNode) {
+                                      primary.unfocus();
+                                    }
+                                  },
+                                  behavior: HitTestBehavior.translucent,
+                                  child: child!,
+                                ),
                               ),
                             ),
                           ),
@@ -1213,6 +1217,40 @@ class _MacOSUpdatePrivacyChoiceHostState
     if (Platform.isMacOS) {
       PlatformNetworkPrivacyNativeUpdateCoordinator.clearDisableTorForUpdateHandler();
     }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+class _IncomingPaymentLinkHost extends ConsumerStatefulWidget {
+  const _IncomingPaymentLinkHost({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_IncomingPaymentLinkHost> createState() =>
+      _IncomingPaymentLinkHostState();
+}
+
+class _IncomingPaymentLinkHostState
+    extends ConsumerState<_IncomingPaymentLinkHost> {
+  StreamSubscription<String>? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    final service = ref.read(incomingUriServiceProvider);
+    _subscription = service.uriStream.listen((rawUri) {
+      ref.read(paymentLinkIntakeProvider.notifier).ingest(rawUri);
+    });
+    unawaited(service.initialize());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_subscription?.cancel());
     super.dispose();
   }
 
