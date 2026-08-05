@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../main.dart' show log;
 import '../../../core/storage/wallet_paths.dart';
 import '../../../providers/account_provider.dart';
-import '../../../providers/network_privacy_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../rust/api/sync.dart' as rust_sync;
 import '../../../rust/api/wallet.dart' as rust_wallet;
@@ -52,28 +51,13 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   }
 
   Future<void> start() async {
-    if (ref.read(networkPrivacyProvider).torEnabled) {
-      // Keep an already-displayed QR valid until its normal expiry. Clearing
-      // it here would also attempt an unsupported DELETE over Tor and leave
-      // the remote package alive without a QR the user can still scan.
-      if (_remotePackageId != null) return;
-      state = const WalletLinkState(
-        phase: WalletLinkPhase.error,
-        errorMessage:
-            'Link mobile is unavailable while Tor is on because its temporary '
-            'package cannot be explicitly deleted over the current Tor '
-            'transport.',
-      );
-      return;
-    }
-
     final epoch = ++_epoch;
     _timer?.cancel();
     final previousPackageId = _remotePackageId;
     _remotePackageId = null;
     _activeKeyBytes = null;
     if (previousPackageId != null) {
-      unawaited(_deletePackage(previousPackageId));
+      unawaited(_revokePackage(previousPackageId));
     }
 
     state = const WalletLinkState(phase: WalletLinkPhase.preparing);
@@ -115,7 +99,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
   Future<void> regenerate() => start();
 
   void expire() {
-    _expire(deleteRemote: false);
+    _expire(revokeRemote: false);
   }
 
   void markLinkedForPreview({required int accounts, required int contacts}) {
@@ -280,7 +264,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
       if (epoch != _epoch) return;
       final remaining = expiresAt.difference(DateTime.now());
       if (remaining <= Duration.zero) {
-        _expire(deleteRemote: true);
+        _expire(revokeRemote: true);
         return;
       }
       state = state.copyWith(remaining: remaining);
@@ -315,7 +299,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     } on WalletLinkApiException catch (error) {
       if (epoch != _epoch) return;
       if (error.statusCode == 404 || error.statusCode == 410) {
-        _expire(deleteRemote: false);
+        _expire(revokeRemote: false);
       } else {
         _logStatusPollError(error);
       }
@@ -328,7 +312,7 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     }
   }
 
-  void _expire({required bool deleteRemote}) {
+  void _expire({required bool revokeRemote}) {
     _timer?.cancel();
     _epoch++;
     _statusPollEpoch = null;
@@ -336,8 +320,8 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     final packageId = _remotePackageId;
     _remotePackageId = null;
     _activeKeyBytes = null;
-    if (deleteRemote && packageId != null) {
-      unawaited(_deletePackage(packageId));
+    if (revokeRemote && packageId != null) {
+      unawaited(_revokePackage(packageId));
     }
     state = WalletLinkState(
       phase: WalletLinkPhase.expired,
@@ -346,11 +330,11 @@ class WalletLinkController extends Notifier<WalletLinkState> {
     );
   }
 
-  Future<void> _deletePackage(String packageId) async {
+  Future<void> _revokePackage(String packageId) async {
     try {
-      await ref.read(walletLinkApiClientProvider).deletePackage(packageId);
+      await ref.read(walletLinkApiClientProvider).revokePackage(packageId);
     } catch (error, stackTrace) {
-      log('WalletLinkController.deletePackage: ERROR: $error\n$stackTrace');
+      log('WalletLinkController.revokePackage: ERROR: $error\n$stackTrace');
       // Explicit cleanup is best-effort. Backend TTL remains the fallback
       // if this cleanup cannot reach Lambda/DynamoDB.
     }
