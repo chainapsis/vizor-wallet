@@ -158,7 +158,13 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
 
   Future<void> checkForUpdates() async {
     if (!await _updateNetworkReady()) return;
-    await _runAndPoll(ref.read(windowsUpdateServiceProvider).checkForUpdates());
+    try {
+      await _runAndPoll(
+        ref.read(windowsUpdateServiceProvider).checkForUpdates(),
+      );
+    } catch (error) {
+      _setFailed(_updateErrorMessage(error));
+    }
   }
 
   Future<WindowsUpdateDownloadResult> downloadUpdate() async {
@@ -194,9 +200,13 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
 
   Future<void> applyUpdateAndRestart() async {
     if (!state.canRestart) return;
-    await _runAndPoll(
-      ref.read(windowsUpdateServiceProvider).applyUpdateAndRestart(),
-    );
+    try {
+      await _runAndPoll(
+        ref.read(windowsUpdateServiceProvider).applyUpdateAndRestart(),
+      );
+    } catch (error) {
+      _setFailed(_updateErrorMessage(error));
+    }
   }
 
   bool get _torEnabled => ref.read(windowsUpdateTorEnabledProvider)();

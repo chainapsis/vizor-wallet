@@ -50,6 +50,11 @@ enum class UpdateStatus {
   kFailed,
 };
 
+enum class UpdateOperationStartResult {
+  kHandled,
+  kRouteTransitionReserved,
+};
+
 struct ManagerDeleter {
   void operator()(vpkc_update_manager_t* value) const {
     if (value != nullptr) {
@@ -805,17 +810,19 @@ void DownloadProgress(void* user_data, size_t progress) {
       static_cast<int32_t>(std::min<size_t>(progress, 100));
 }
 
-void StartCheckForUpdates() {
+UpdateOperationStartResult StartCheckForUpdates() {
   vpkc_update_manager_t* manager = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
-    if (!EnsureManagerLocked() || g_busy ||
-        g_update_route_transition_reserved) {
-      return;
+    if (!EnsureManagerLocked() || g_busy) {
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     RefreshPendingRestartLocked();
     if (g_status == UpdateStatus::kReady) {
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
     g_busy = true;
     g_status = UpdateStatus::kChecking;
@@ -859,21 +866,24 @@ void StartCheckForUpdates() {
     g_status = UpdateStatus::kNoUpdate;
     g_message.clear();
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
-void StartDownloadUpdate() {
+UpdateOperationStartResult StartDownloadUpdate() {
   vpkc_update_manager_t* manager = nullptr;
   vpkc_update_info_t* update = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
-    if (!EnsureManagerLocked() || g_busy ||
-        g_update_route_transition_reserved) {
-      return;
+    if (!EnsureManagerLocked() || g_busy) {
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     if (!g_update_info) {
       g_status = UpdateStatus::kFailed;
       g_message = "No update is ready to download.";
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
     g_busy = true;
     g_status = UpdateStatus::kDownloading;
@@ -920,16 +930,19 @@ void StartDownloadUpdate() {
     g_status = UpdateStatus::kReady;
     g_message.clear();
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
-void StartApplyUpdateAndRestart() {
+UpdateOperationStartResult StartApplyUpdateAndRestart() {
   vpkc_update_manager_t* manager = nullptr;
   vpkc_asset_t* asset = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
-    if (!EnsureManagerLocked() || g_busy ||
-        g_update_route_transition_reserved) {
-      return;
+    if (!EnsureManagerLocked() || g_busy) {
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     if (g_pending_asset) {
       asset = g_pending_asset.get();
@@ -940,7 +953,7 @@ void StartApplyUpdateAndRestart() {
     if (asset == nullptr) {
       g_status = UpdateStatus::kFailed;
       g_message = "No downloaded update is ready to apply.";
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
 
     g_busy = true;
@@ -963,6 +976,7 @@ void StartApplyUpdateAndRestart() {
     g_status = UpdateStatus::kFailed;
     g_message = CoalesceMessage(error);
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
 }  // namespace
@@ -1028,17 +1042,38 @@ CreateVelopackUpdateChannel(flutter::BinaryMessenger* messenger) {
       return;
     }
     if (method == "checkForUpdates") {
-      StartCheckForUpdates();
+      if (StartCheckForUpdates() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }
     if (method == "downloadUpdate") {
-      StartDownloadUpdate();
+      if (StartDownloadUpdate() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }
     if (method == "applyUpdateAndRestart") {
-      StartApplyUpdateAndRestart();
+      if (StartApplyUpdateAndRestart() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }
