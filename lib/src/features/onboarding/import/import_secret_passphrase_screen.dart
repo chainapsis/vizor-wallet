@@ -11,6 +11,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/layout/app_desktop_shell.dart';
@@ -1151,6 +1152,14 @@ class _MnemonicWordCell extends StatefulWidget {
 class _MnemonicWordCellState extends State<_MnemonicWordCell> {
   static const _fieldWidth = 116.0;
   static const _fieldHeight = 33.0;
+  static const _straightUnderlineLeft = 22.5;
+  static const _straightUnderlineBottom = 1.5;
+  static const _straightUnderlineWidth = 87.0;
+  static const _straightUnderlineHeight = 1.0;
+  static const _invalidUnderlineLeft = 22.25;
+  static const _invalidUnderlineBottom = 1.25;
+  static const _invalidUnderlineWidth = 87.5002;
+  static const _invalidUnderlineHeight = 3.16039;
   static const _suggestionWidth = 172.0;
   static const _maxSuggestionCount = 64;
 
@@ -1371,13 +1380,11 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
     final hintStyle = AppTypography.labelLarge.copyWith(
       color: colors.text.homeCard.withValues(alpha: 0.2),
     );
-    final borderColor = isInvalidUnfocused
-        ? colors.text.destructive
-        : isFocused
+    final underlineColor = isFocused
         ? colors.text.homeCard
         : _hovered
         ? colors.text.homeCard.withValues(alpha: 0.45)
-        : colors.text.homeCard.withValues(alpha: 0.22);
+        : colors.text.homeCard.withValues(alpha: 0.2);
 
     final numberColor = isInvalidUnfocused
         ? colors.text.destructive
@@ -1402,15 +1409,39 @@ class _MnemonicWordCellState extends State<_MnemonicWordCell> {
             height: _fieldHeight,
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      height: isFocused || isInvalidUnfocused ? 1.5 : 1,
-                      color: borderColor,
+                if (isInvalidUnfocused)
+                  Positioned(
+                    left: _invalidUnderlineLeft,
+                    bottom: _invalidUnderlineBottom,
+                    width: _invalidUnderlineWidth,
+                    height: _invalidUnderlineHeight,
+                    child: IgnorePointer(
+                      child: SvgPicture.asset(
+                        'assets/illustrations/mnemonic_invalid_underline.svg',
+                        key: ValueKey(
+                          'import_mnemonic_invalid_underline_${widget.index}',
+                        ),
+                        fit: BoxFit.fill,
+                        colorFilter: ColorFilter.mode(
+                          colors.text.destructive,
+                          BlendMode.srcIn,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Positioned(
+                    key: ValueKey(
+                      'import_mnemonic_straight_underline_${widget.index}',
+                    ),
+                    left: _straightUnderlineLeft,
+                    bottom: _straightUnderlineBottom,
+                    width: _straightUnderlineWidth,
+                    height: _straightUnderlineHeight,
+                    child: IgnorePointer(
+                      child: ColoredBox(color: underlineColor),
                     ),
                   ),
-                ),
                 Positioned.fill(
                   child: Row(
                     children: [

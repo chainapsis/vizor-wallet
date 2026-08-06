@@ -89,6 +89,9 @@ const _previewImportReviewMnemonic =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify active effort merit fossil carbon drift '
     'narrow across raise';
+
+const _previewInvalidImportMnemonic =
+    'abandon ability able about above absent absorb abstract cin';
 const _previewImportReviewMnemonic15 =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify';
@@ -313,6 +316,29 @@ Widget buildImportSecretPassphrasePopulatedUseCase(BuildContext context) {
           args: const ImportSecretPassphraseArgs(
             mnemonic: _previewMnemonic,
             bip39Passphrase: 'My BIP39 passphrase',
+          ),
+          wordListOverride: _previewImportWordList,
+          mnemonicValidatorOverride: _previewMnemonicValidator,
+          useEnvironmentPrivacySignals: false,
+        ),
+      ),
+    ),
+  );
+}
+
+Widget buildImportSecretPassphraseInvalidWordUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.background.window,
+    child: ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ],
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.secretPassphrase,
+        showPasswordStep: false,
+        child: ImportSecretPassphraseScreen(
+          args: const ImportSecretPassphraseArgs(
+            mnemonic: _previewInvalidImportMnemonic,
           ),
           wordListOverride: _previewImportWordList,
           mnemonicValidatorOverride: _previewMnemonicValidator,

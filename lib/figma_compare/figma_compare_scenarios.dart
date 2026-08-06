@@ -55,6 +55,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildImportSecretPassphrasePopulatedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'import-secret-passphrase-invalid-word',
+    description: 'Desktop wallet import with an invalid mnemonic word',
+    builder: buildImportSecretPassphraseInvalidWordUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'import-secret-passphrase-modal',
     description: 'Desktop wallet import BIP39 passphrase modal',
     builder: buildImportSecretPassphraseModalUseCase,
