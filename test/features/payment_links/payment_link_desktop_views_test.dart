@@ -1,4 +1,4 @@
-import 'dart:ui' show Tristate;
+import 'dart:ui' show PointerDeviceKind, Tristate;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -57,6 +57,87 @@ void main() {
     expect(helpPressed, isTrue);
     expect(createPressed, isTrue);
     expect(redeemPressed, isTrue);
+  });
+
+  testWidgets('hover feedback keeps the keyboard focus ring fully visible', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      PaymentLinksHomeDesktopView(
+        illustration: const SizedBox(width: 243, height: 162),
+        onBack: () {},
+        onShowHelp: () {},
+        onCreate: () {},
+        onRedeem: () {},
+      ),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+
+    final focusRing = find.byKey(
+      const ValueKey('payment_link_text_action_focus_ring_How Gift Cards work'),
+    );
+    final hoverFeedback = find.byKey(
+      const ValueKey('payment_link_text_action_hover_How Gift Cards work'),
+    );
+    final focusedBorder = find.descendant(
+      of: focusRing,
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is DecoratedBox &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration as BoxDecoration).border != null,
+      ),
+    );
+    expect(focusedBorder, findsOneWidget);
+    expect(
+      find.descendant(of: focusRing, matching: hoverFeedback),
+      findsOneWidget,
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer();
+    await mouse.moveTo(tester.getCenter(find.text('How Gift Cards work')));
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(tester.widget<AnimatedOpacity>(hoverFeedback).opacity, lessThan(1));
+    expect(focusedBorder, findsOneWidget);
+    final border =
+        tester.widget<DecoratedBox>(focusedBorder).decoration as BoxDecoration;
+    expect(
+      border.border?.top.color,
+      tester.element(focusRing).colors.state.focusRing,
+    );
+  });
+
+  testWidgets('gift-card editor reacts to programmatic controller updates', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await _pump(
+      tester,
+      PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.chestLava,
+        amountController: controller,
+        amountFocusNode: focusNode,
+        semanticLabel: 'Gift card amount input',
+      ),
+    );
+    expect(find.text('ZEC'), findsNothing);
+
+    controller.text = '2.5';
+    await tester.pump();
+
+    expect(find.text('2.5'), findsOneWidget);
+    expect(find.text('ZEC'), findsOneWidget);
   });
 
   testWidgets('home and review CTAs use the Figma gift-card icon', (
@@ -334,7 +415,9 @@ void main() {
         disableAnimations: false,
       );
 
-      await tester.tap(find.bySemanticsLabel('Gift card amount input'));
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
+      );
       await tester.enterText(
         find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
         '2.5',
@@ -343,8 +426,13 @@ void main() {
 
       expect(
         tester
-            .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
-            .amountText,
+            .widget<TextField>(
+              find.byKey(
+                const ValueKey('payment_link_interactive_amount_editor'),
+              ),
+            )
+            .controller
+            ?.text,
         '2.5',
       );
       expect(

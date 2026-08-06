@@ -555,10 +555,6 @@ class _PaymentLinkInteractiveDesktopPreviewState
     setState(() => _amountFocused = _amountFocusNode.hasFocus);
   }
 
-  void _focusAmountEditor() {
-    _amountFocusNode.requestFocus();
-  }
-
   void _handleAmountChanged(String value) {
     _fiatTimer?.cancel();
     final amount = double.tryParse(value.startsWith('.') ? '0$value' : value);
@@ -595,12 +591,6 @@ class _PaymentLinkInteractiveDesktopPreviewState
     return PaymentLinkAmountVisualState.amount;
   }
 
-  String? get _displayAmount {
-    final value = _amountController.text;
-    if (value.isNotEmpty) return value;
-    return _amountFocused ? '' : null;
-  }
-
   bool get _hasPositiveAmount {
     final value = _amountController.text;
     final amount = double.tryParse(value.startsWith('.') ? '0$value' : value);
@@ -618,54 +608,20 @@ class _PaymentLinkInteractiveDesktopPreviewState
             padding: EdgeInsets.zero,
             child: PaymentLinkAmountDesktopView(
               state: _visualState,
-              card: Stack(
-                children: [
-                  PaymentLinkGiftCard(
-                    artwork: _selectedArtwork,
-                    amountText: _displayAmount,
-                    maxAmountText: '142.23',
-                    supportingText: _fiatText,
-                    supportingLoading: _fiatLoading,
-                    emptyAmountLabel: 'Enter Amount',
-                    showCaret: _amountFocused,
-                    onTap: _focusAmountEditor,
-                    semanticLabel: 'Gift card amount input',
-                  ),
-                  Positioned(
-                    left: 0,
-                    bottom: 0,
-                    child: ExcludeSemantics(
-                      child: Opacity(
-                        opacity: 0,
-                        child: SizedBox(
-                          width: 1,
-                          height: 1,
-                          child: EditableText(
-                            key: const ValueKey(
-                              'payment_link_interactive_amount_editor',
-                            ),
-                            controller: _amountController,
-                            focusNode: _amountFocusNode,
-                            style: const TextStyle(
-                              color: Color(0x00000000),
-                              fontSize: 1,
-                            ),
-                            cursorColor: const Color(0x00000000),
-                            backgroundCursorColor: const Color(0x00000000),
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            inputFormatters: [_amountFormatter],
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            enableInteractiveSelection: false,
-                            onChanged: _handleAmountChanged,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              card: PaymentLinkGiftCard(
+                artwork: _selectedArtwork,
+                amountController: _amountController,
+                amountFocusNode: _amountFocusNode,
+                amountEditorKey: const ValueKey(
+                  'payment_link_interactive_amount_editor',
+                ),
+                amountInputFormatters: [_amountFormatter],
+                onAmountChanged: _handleAmountChanged,
+                maxAmountText: '142.23',
+                supportingText: _fiatText,
+                supportingLoading: _fiatLoading,
+                emptyAmountLabel: 'Enter Amount',
+                semanticLabel: 'Gift card amount input',
               ),
               cardSelector: PaymentLinkCardSelectorRail(
                 artworks: PaymentLinkCardArtwork.values,
