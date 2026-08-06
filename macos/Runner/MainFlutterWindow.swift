@@ -949,6 +949,8 @@ final class DeviceOwnerAuthChannel {
 }
 
 final class IncomingUriChannel {
+  private static let maxIncomingUriBytes = 16 * 1024
+  private static let maxPendingURLs = 16
   private static var channel: FlutterMethodChannel?
   private static var pendingURLs: [String] = []
   private static var dartReady = false
@@ -977,17 +979,26 @@ final class IncomingUriChannel {
   }
 
   static func handle(urls: [URL]) {
-    let urlStrings = urls.compactMap { url -> String? in
+    var handledPaymentLink = false
+    for url in urls {
       guard
         url.scheme?.lowercased() == "vizor",
         url.host?.lowercased() == "payment-link"
       else {
-        return nil
+        continue
       }
-      return url.absoluteString
+      handledPaymentLink = true
+      let uri = url.absoluteString
+      guard
+        uri.utf8.count <= maxIncomingUriBytes,
+        pendingURLs.count < maxPendingURLs,
+        !pendingURLs.contains(uri)
+      else {
+        continue
+      }
+      pendingURLs.append(uri)
     }
-    guard !urlStrings.isEmpty else { return }
-    pendingURLs.append(contentsOf: urlStrings)
+    guard handledPaymentLink else { return }
     flushPendingURLs()
     presentMainWindow()
   }

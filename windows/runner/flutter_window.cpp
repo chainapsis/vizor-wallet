@@ -389,11 +389,8 @@ void VerifyDeviceOwner(
 
 }  // namespace
 
-FlutterWindow::FlutterWindow(
-    const flutter::DartProject& project,
-    std::vector<std::string> initial_payment_links)
-    : project_(project),
-      pending_payment_links_(std::move(initial_payment_links)) {}
+FlutterWindow::FlutterWindow(const flutter::DartProject& project)
+    : project_(project) {}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -499,7 +496,8 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   if (message == WM_COPYDATA) {
     std::string payment_link;
     if (TryReadPaymentLinkCopyData(lparam, &payment_link)) {
-      pending_payment_links_.push_back(std::move(payment_link));
+      AppendPaymentLinkIfAccepted(&pending_payment_links_,
+                                  std::move(payment_link));
       PresentWindowForPaymentLink(hwnd);
       FlushPendingPaymentLinks();
       return TRUE;

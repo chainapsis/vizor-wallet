@@ -732,6 +732,8 @@ import UIKit
 /// handler. Never logs the URL because it contains account recovery material.
 final class IncomingUriChannelBridge {
   static let shared = IncomingUriChannelBridge()
+  private static let maxIncomingUriBytes = 16 * 1024
+  private static let maxPendingUris = 16
   private init() {}
 
   private var channel: FlutterMethodChannel?
@@ -755,18 +757,27 @@ final class IncomingUriChannelBridge {
   }
 
   func handle(urlContexts: Set<UIOpenURLContext>) {
-    let strings = urlContexts.compactMap { context -> String? in
+    var handledPaymentLink = false
+    for context in urlContexts {
       let url = context.url
       guard
         url.scheme?.lowercased() == "vizor",
         url.host?.lowercased() == "payment-link"
       else {
-        return nil
+        continue
       }
-      return url.absoluteString
+      handledPaymentLink = true
+      let uri = url.absoluteString
+      guard
+        uri.utf8.count <= Self.maxIncomingUriBytes,
+        pendingUris.count < Self.maxPendingUris,
+        !pendingUris.contains(uri)
+      else {
+        continue
+      }
+      pendingUris.append(uri)
     }
-    guard !strings.isEmpty else { return }
-    pendingUris.append(contentsOf: strings)
+    guard handledPaymentLink else { return }
     flush()
   }
 

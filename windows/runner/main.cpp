@@ -31,18 +31,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
+  bool had_payment_link_argument = false;
   std::vector<std::string> initial_payment_links =
-      GetPaymentLinkUriArguments(command_line_arguments);
-  if (ForwardPaymentLinksToRunningInstance(initial_payment_links)) {
+      ExtractPaymentLinkUriArguments(&command_line_arguments,
+                                     &had_payment_link_argument);
+  if (had_payment_link_argument) {
+    const bool delivered =
+        ForwardPaymentLinksToRunningInstance(initial_payment_links) ||
+        LaunchCleanInstanceAndForwardPaymentLinks(initial_payment_links);
     if (ro_initialized) {
       ::RoUninitialize();
     }
-    return EXIT_SUCCESS;
+    return delivered ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
-  FlutterWindow window(project, std::move(initial_payment_links));
+  FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1095, 726);
   if (!window.Create(L"Vizor", origin, size)) {
