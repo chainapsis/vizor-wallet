@@ -181,7 +181,7 @@ class _FakeHardwareSigningService implements PaymentLinkHardwareSigningService {
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
-    String? artworkId,
+    PaymentLinkPresentation? presentation,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
