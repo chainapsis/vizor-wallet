@@ -7,9 +7,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
+import 'package:zcash_wallet/src/core/widgets/app_modal_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_confetti.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_desktop_views.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_skeleton.dart';
 import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 
 void main() {
@@ -39,7 +42,7 @@ void main() {
     await _pump(
       tester,
       PaymentLinksHomeDesktopView(
-        illustration: const SizedBox(width: 261, height: 174),
+        illustration: const SizedBox(width: 243, height: 162),
         onBack: () {},
         onShowHelp: () => helpPressed = true,
         onCreate: () => createPressed = true,
@@ -62,7 +65,7 @@ void main() {
     await _pump(
       tester,
       PaymentLinksHomeDesktopView(
-        illustration: const SizedBox(width: 261, height: 174),
+        illustration: const SizedBox(width: 243, height: 162),
         onBack: () {},
         onShowHelp: () {},
         onCreate: () {},
@@ -71,15 +74,15 @@ void main() {
     );
 
     final homeButton = find.widgetWithText(AppButton, 'Create new card');
-    expect(
-      find.descendant(
-        of: homeButton,
-        matching: find.byWidgetPredicate(
-          (widget) => widget is AppIcon && widget.name == AppIcons.giftCard,
-        ),
+    final homeGiftIconFinder = find.descendant(
+      of: homeButton,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.giftCard,
       ),
-      findsOneWidget,
     );
+    final homeGiftIcon = tester.widget<AppIcon>(homeGiftIconFinder);
+    expect(homeGiftIcon.size, AppIconSize.medium);
+    expect(tester.getSize(homeGiftIconFinder), const Size(16, 16));
 
     await _pump(
       tester,
@@ -100,8 +103,15 @@ void main() {
       reviewButton.leading,
       isA<AppIcon>()
           .having((icon) => icon.name, 'name', AppIcons.giftCard)
-          .having((icon) => icon.size, 'size', 20),
+          .having((icon) => icon.size, 'size', AppIconSize.medium),
     );
+    final reviewGiftIconFinder = find.descendant(
+      of: find.widgetWithText(AppButton, 'Confirm & create'),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is AppIcon && widget.name == AppIcons.giftCard,
+      ),
+    );
+    expect(tester.getSize(reviewGiftIconFinder), const Size(16, 16));
   });
 
   testWidgets('how-it-works steps use the exact icon set and accent color', (
@@ -142,12 +152,102 @@ void main() {
     expect(icons.map((icon) => icon.color).toSet(), {
       viewContext.colors.icon.accent,
     });
+    expect(icons.map((icon) => icon.size).toSet(), {16});
+    final giftCardSvg = await rootBundle.loadString(
+      'assets/icons/gift_card.svg',
+    );
+    expect(giftCardSvg, contains('viewBox="0 0 24 24"'));
+    expect(giftCardSvg, contains('translate(1 2.21826)'));
+    for (final icon in const [
+      AppIcons.giftCard,
+      AppIcons.link,
+      AppIcons.arrowDownCircle,
+    ]) {
+      final slot = find.byKey(ValueKey('payment_link_help_icon_slot_$icon'));
+      final iconFrame = find.descendant(
+        of: slot,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is AppIcon && widget.name == icon,
+        ),
+      );
+      expect(tester.getSize(slot).width, 32);
+      expect(tester.getSize(iconFrame), const Size(16, 16));
+      expect(tester.getTopLeft(iconFrame).dx, tester.getTopLeft(slot).dx + 8);
+      expect(tester.getTopLeft(iconFrame).dy, tester.getTopLeft(slot).dy + 4);
+    }
     for (final copy in const [create, share, redeem]) {
       expect(
         tester.widget<Text>(find.text(copy)).style?.color,
         viewContext.colors.text.accent,
       );
     }
+  });
+
+  testWidgets('how-it-works modal matches the Figma chrome and close action', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.help),
+    );
+
+    final modal = find.byType(AppModalCard);
+    expect(tester.getSize(modal), const Size(312, 441));
+    final innerHighlight = find.byKey(
+      const ValueKey('app_modal_inner_highlight'),
+    );
+    expect(innerHighlight, findsOneWidget);
+    expect(
+      tester.widget<CustomPaint>(innerHighlight).foregroundPainter,
+      isNotNull,
+    );
+
+    final closeButtonFinder = find.widgetWithText(AppButton, 'Close');
+    final closeButton = tester.widget<AppButton>(closeButtonFinder);
+    expect(closeButton.variant, AppButtonVariant.ghost);
+    expect(closeButton.size, AppButtonSize.mediumLarge);
+    expect(closeButton.expand, isTrue);
+    expect(tester.getSize(closeButtonFinder), const Size(280, 36));
+    final modalTopLeft = tester.getTopLeft(modal);
+    expect(
+      tester.getTopLeft(closeButtonFinder) - modalTopLeft,
+      const Offset(16, 381),
+    );
+
+    final closeTextFinder = find.text('Close');
+    final closeText = tester.widget<Text>(closeTextFinder);
+    final closeTextStyle = DefaultTextStyle.of(
+      tester.element(closeTextFinder),
+    ).style.merge(closeText.style);
+    expect(
+      tester.getCenter(closeTextFinder) - modalTopLeft,
+      const Offset(156, 399),
+    );
+    expect(closeTextStyle.fontFamily, 'Geist');
+    expect(closeTextStyle.fontWeight, FontWeight.w500);
+    expect(closeTextStyle.fontSize, 14);
+    expect(closeTextStyle.height, 16 / 14);
+    expect(closeTextStyle.letterSpacing, -0.06);
+    expect(closeTextStyle.color, const Color(0xFFC2C3C3));
+
+    expect(
+      find.text(
+        'Enter amount to gift, pick a design,\n'
+        'add a message (optional) and create\n'
+        'your Card with a single click.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'After the card created, you will get a uniquely generated Link. '
+        'All data in the link is encrypted and safe to share. send this '
+        'Link to the recipient.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('payment-link Back link supports desktop keyboard activation', (
@@ -157,7 +257,7 @@ void main() {
     await _pump(
       tester,
       PaymentLinksHomeDesktopView(
-        illustration: const SizedBox(width: 261, height: 174),
+        illustration: const SizedBox(width: 243, height: 162),
         onBack: () => backActivations += 1,
         onShowHelp: () {},
         onCreate: () {},
@@ -191,6 +291,111 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('Widgetbook amount fixtures update the selected card artwork', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.createAmount,
+      ),
+    );
+
+    expect(
+      tester
+          .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+          .artwork,
+      PaymentLinkCardArtwork.chestLava,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_card_selector_chestCave')),
+    );
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+          .artwork,
+      PaymentLinkCardArtwork.chestCave,
+    );
+  });
+
+  testWidgets(
+    'interactive Widgetbook preview accepts amount, card, and fiat changes',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(
+        tester,
+        const PaymentLinkInteractiveDesktopPreview(),
+        disableAnimations: false,
+      );
+
+      await tester.tap(find.bySemanticsLabel('Gift card amount input'));
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
+        '2.5',
+      );
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+            .amountText,
+        '2.5',
+      );
+      expect(
+        find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('payment_link_fiat_loading_shimmer')),
+        findsOneWidget,
+      );
+
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_card_selector_coin')),
+      );
+      await tester.pump();
+      expect(
+        tester
+            .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+            .artwork,
+        PaymentLinkCardArtwork.coin,
+      );
+
+      await tester.pump(kPaymentLinkPreviewFiatDelay);
+      await tester.pump();
+
+      expect(find.text(r'$680.00'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<AppButton>(find.widgetWithText(AppButton, 'Create card'))
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('payment_link_interactive_amount_editor')),
+        '',
+      );
+      await tester.pump();
+      expect(
+        tester
+            .widget<AppButton>(find.widgetWithText(AppButton, 'Enter amount'))
+            .onPressed,
+        isNull,
+      );
+    },
+  );
 
   testWidgets('redeem loading uses the Figma skeleton color hierarchy', (
     tester,
@@ -237,17 +442,21 @@ void main() {
       ValueKey('payment_link_loading_label'),
       ValueKey('payment_link_loading_amount'),
     ]) {
-      final placeholder = tester.widget<Container>(find.byKey(key));
-      final placeholderDecoration = placeholder.decoration! as BoxDecoration;
-      final placeholderGradient =
-          placeholderDecoration.gradient! as LinearGradient;
-      expect(placeholderGradient.colors, const [
-        Color(0x00858686),
-        Color(0x80858686),
-      ]);
+      final placeholder = tester.widget<PaymentLinkSkeletonBar>(
+        find.byKey(key),
+      );
+      expect(placeholder.colors, const [Color(0x00858686), Color(0x80858686)]);
     }
     expect(
       find.byKey(const ValueKey('payment_link_loading_shimmer')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('payment_link_loading_label_shimmer')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('payment_link_loading_amount_shimmer')),
       findsNothing,
     );
   });
@@ -270,11 +479,17 @@ void main() {
       ),
       const Size(48, 12),
     );
+    expect(
+      find.byKey(const ValueKey('payment_link_fiat_loading_shimmer')),
+      findsNothing,
+    );
     final fade = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('payment_link_card_artwork_fade')),
     );
     final fadeDecoration = fade.decoration as BoxDecoration;
     final gradient = fadeDecoration.gradient! as LinearGradient;
+    expect(gradient.begin, Alignment.topCenter);
+    expect(gradient.end, Alignment.bottomCenter);
     expect(gradient.stops, const [0.48024, 0.73518]);
     expect(gradient.colors.last, const Color(0xB3000000));
   });
@@ -355,13 +570,100 @@ void main() {
       ),
       disableAnimations: false,
     );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('payment_link_loading_label')),
+        matching: find.byKey(
+          const ValueKey('payment_link_loading_label_shimmer'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('payment_link_loading_amount')),
+        matching: find.byKey(
+          const ValueKey('payment_link_loading_amount_shimmer'),
+        ),
+      ),
+      findsOneWidget,
+    );
     Transform shimmer() => tester.widget<Transform>(
       find.byKey(const ValueKey('payment_link_loading_shimmer')),
     );
+    Transform labelShimmer() => tester.widget<Transform>(
+      find.byKey(const ValueKey('payment_link_loading_label_shimmer')),
+    );
+    Transform amountShimmer() => tester.widget<Transform>(
+      find.byKey(const ValueKey('payment_link_loading_amount_shimmer')),
+    );
     final firstX = shimmer().transform.getTranslation().x;
+    final firstLabelX = labelShimmer().transform.getTranslation().x;
+    final firstAmountX = amountShimmer().transform.getTranslation().x;
     await tester.pump(const Duration(milliseconds: 300));
     expect(shimmer().transform.getTranslation().x, isNot(firstX));
+    expect(labelShimmer().transform.getTranslation().x, isNot(firstLabelX));
+    expect(amountShimmer().transform.getTranslation().x, isNot(firstAmountX));
     await tester.pumpWidget(const SizedBox.shrink());
+
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(
+        state: PaymentLinkPreviewState.createFiatLoading,
+      ),
+      disableAnimations: false,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('payment_link_fiat_loading_placeholder')),
+        matching: find.byKey(
+          const ValueKey('payment_link_fiat_loading_shimmer'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    Transform fiatShimmer() => tester.widget<Transform>(
+      find.byKey(const ValueKey('payment_link_fiat_loading_shimmer')),
+    );
+    final firstFiatX = fiatShimmer().transform.getTranslation().x;
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(fiatShimmer().transform.getTranslation().x, isNot(firstFiatX));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('received Widgetbook card flips to its message and back', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1080, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pump(
+      tester,
+      const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.received),
+      disableAnimations: false,
+    );
+
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_front')),
+      findsOneWidget,
+    );
+    await tester.tap(find.bySemanticsLabel('Reveal gift card message'));
+    await tester.pump();
+    await tester.pump(PaymentLinkCardFlip.duration);
+
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_back')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Welcome to the Shielded'), findsOneWidget);
+
+    await tester.tap(find.bySemanticsLabel('Show gift card artwork'));
+    await tester.pump();
+    await tester.pump(PaymentLinkCardFlip.duration);
+
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_front')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('flip hint includes the Figma share-arrow decoration', (
@@ -416,8 +718,9 @@ void main() {
       (widget) => widget is Image && widget.semanticLabel == 'Gift box',
     );
     final illustrationTopLeft = tester.getTopLeft(emptyIllustration);
-    expect(illustrationTopLeft.dx, closeTo(542, 0.6));
-    expect(illustrationTopLeft.dy, closeTo(191, 0.6));
+    expect(tester.getSize(emptyIllustration), const Size(243, 162));
+    expect(illustrationTopLeft.dx, closeTo(551, 0.6));
+    expect(illustrationTopLeft.dy, closeTo(197, 0.6));
 
     await _pump(
       tester,
