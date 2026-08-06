@@ -13,10 +13,10 @@ void main() {
         final store = PaymentLinkRecoveryStore(storage);
         final link = _link();
 
-        final funded = await PaymentLinkFundingRecovery(store).fund(
+        final fundingTxid = await PaymentLinkFundingRecovery(store).fund(
           link: link,
           sourceAccountUuid: 'source-account',
-          broadcast: () async {
+          createTransaction: () async {
             final restartedRecords = await PaymentLinkRecoveryStore(
               storage,
             ).load();
@@ -28,10 +28,10 @@ void main() {
             expect(restartedRecords.single.link.mnemonic, link.mnemonic);
             return 'funding-txid';
           },
+          fundingTxids: (txid) => txid,
         );
 
-        expect(funded.state, PaymentLinkRecoveryState.funded);
-        expect(funded.fundingTxids, 'funding-txid');
+        expect(fundingTxid, 'funding-txid');
         final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
         expect(restartedRecords.single.state, PaymentLinkRecoveryState.funded);
         expect(restartedRecords.single.fundingTxids, 'funding-txid');
@@ -39,16 +39,19 @@ void main() {
     );
 
     test(
-      'broadcast failure leaves the draft recoverable after restart',
+      'transaction failure leaves the draft recoverable after restart',
       () async {
         final storage = _FakePaymentLinkRecoveryStorage();
         final link = _link();
 
         await expectLater(
-          PaymentLinkFundingRecovery(PaymentLinkRecoveryStore(storage)).fund(
+          PaymentLinkFundingRecovery(
+            PaymentLinkRecoveryStore(storage),
+          ).fund<String>(
             link: link,
             sourceAccountUuid: 'source-account',
-            broadcast: () => throw StateError('broadcast failed'),
+            createTransaction: () => throw StateError('transaction failed'),
+            fundingTxids: (txid) => txid,
           ),
           throwsStateError,
         );
@@ -70,7 +73,8 @@ void main() {
           PaymentLinkFundingRecovery(PaymentLinkRecoveryStore(storage)).fund(
             link: link,
             sourceAccountUuid: 'source-account',
-            broadcast: () async => 'funding-txid',
+            createTransaction: () async => 'funding-txid',
+            fundingTxids: (txid) => txid,
           ),
           throwsStateError,
         );
@@ -80,6 +84,25 @@ void main() {
         expect(restartedRecords.single.link.mnemonic, link.mnemonic);
       },
     );
+
+    test('records pending transaction ids before status handling', () async {
+      final storage = _FakePaymentLinkRecoveryStorage();
+      final store = PaymentLinkRecoveryStore(storage);
+      final link = _link();
+
+      final result = await PaymentLinkFundingRecovery(store).fund(
+        link: link,
+        sourceAccountUuid: 'source-account',
+        createTransaction: () async =>
+            (txids: 'pending-funding-txid', status: 'pending_broadcast'),
+        fundingTxids: (result) => result.txids,
+      );
+
+      expect(result.status, 'pending_broadcast');
+      final restartedRecords = await PaymentLinkRecoveryStore(storage).load();
+      expect(restartedRecords.single.state, PaymentLinkRecoveryState.funded);
+      expect(restartedRecords.single.fundingTxids, 'pending-funding-txid');
+    });
 
     test('archiving a shared record keeps its recovery secret', () async {
       final storage = _FakePaymentLinkRecoveryStorage();

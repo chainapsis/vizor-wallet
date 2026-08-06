@@ -164,22 +164,23 @@ class PaymentLinkService {
       createdAt: DateTime.now(),
     );
 
-    await PaymentLinkFundingRecovery(_recoveryStore).fund(
-      link: link,
-      sourceAccountUuid: sourceAccountUuid,
-      broadcast: () async {
-        final result = await _sendShielded(
-          fromAccountUuid: sourceAccountUuid,
-          toAddress: ephemeralAddress,
-          amountZatoshi: amountZatoshi,
-          memo: null,
+    final fundingResult = await PaymentLinkFundingRecovery(_recoveryStore)
+        .fund<rust_sync.ExecuteProposalResult>(
+          link: link,
+          sourceAccountUuid: sourceAccountUuid,
+          createTransaction: () {
+            return _sendShielded(
+              fromAccountUuid: sourceAccountUuid,
+              toAddress: ephemeralAddress,
+              amountZatoshi: amountZatoshi,
+              memo: null,
+            );
+          },
+          fundingTxids: (result) => result.txids,
         );
-        _requireFullyBroadcasted(result);
-        return result.txids;
-      },
-    );
 
     unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
+    _requireFullyBroadcasted(fundingResult);
     return link;
   }
 
