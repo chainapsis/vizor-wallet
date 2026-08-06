@@ -51,6 +51,30 @@ BigInt paymentLinkClaimableAmountZatoshi({
       : BigInt.zero;
 }
 
+/// UI-facing boundary for the persisted Payment Link lifecycle.
+///
+/// Keeping the screen on this small surface makes transaction behavior
+/// replaceable in widget tests without weakening the production service.
+abstract interface class PaymentLinkOperations {
+  Future<VizorPaymentLink> createFundedLink({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+    PaymentLinkPresentation? presentation,
+  });
+
+  Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries();
+
+  Future<PaymentLinkRecoveryRecord> markCreatedLinkShared(
+    VizorPaymentLink link,
+  );
+
+  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link);
+}
+
+final paymentLinkOperationsProvider = Provider<PaymentLinkOperations>((ref) {
+  return ref.watch(paymentLinkServiceProvider);
+});
+
 class PaymentLinkClaimSession {
   const PaymentLinkClaimSession({
     required this.link,
@@ -174,12 +198,13 @@ class PaymentLinkBroadcastPendingException implements Exception {
   String toString() => message;
 }
 
-class PaymentLinkService {
+class PaymentLinkService implements PaymentLinkOperations {
   PaymentLinkService(this._ref, this._recoveryStore);
 
   final Ref _ref;
   final PaymentLinkRecoveryStore _recoveryStore;
 
+  @override
   Future<VizorPaymentLink> createFundedLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
@@ -246,10 +271,12 @@ class PaymentLinkService {
     return link;
   }
 
+  @override
   Future<List<PaymentLinkRecoveryRecord>> loadCreatedLinkRecoveries() {
     return _recoveryStore.load();
   }
 
+  @override
   Future<PaymentLinkRecoveryRecord> markCreatedLinkShared(
     VizorPaymentLink link,
   ) {
@@ -456,6 +483,7 @@ class PaymentLinkService {
     return claimResult;
   }
 
+  @override
   Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
     final session = await prepareClaim(link);
     return claimPreparedLink(session);

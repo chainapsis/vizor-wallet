@@ -425,7 +425,7 @@ class PaymentLinkReadyDesktopView extends StatelessWidget {
   final Widget card;
   final Widget? decoration;
   final VoidCallback onBack;
-  final VoidCallback onCopy;
+  final VoidCallback? onCopy;
   final VoidCallback? onCardTap;
   final VoidCallback? onReturnHome;
   final String backLabel;
@@ -589,8 +589,8 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
   const PaymentLinkReceivedDesktopView({
     required this.card,
     required this.onBack,
-    required this.onClaim,
-    required this.onRevealMessage,
+    this.onClaim,
+    this.onRevealMessage,
     this.decoration,
     this.backLabel = 'Cards',
     this.title = 'You’ve received a gift!',
@@ -604,8 +604,8 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
   final Widget card;
   final Widget? decoration;
   final VoidCallback onBack;
-  final VoidCallback onClaim;
-  final VoidCallback onRevealMessage;
+  final VoidCallback? onClaim;
+  final VoidCallback? onRevealMessage;
   final String backLabel;
   final String title;
   final String messageTitle;
@@ -638,36 +638,41 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  PaymentLinkAction(
-                    onPressed: onRevealMessage,
-                    semanticLabel: cardActionLabel,
-                    builder: (context, _, focused) => _ActionFocusRing(
-                      focused: focused,
-                      borderRadius: AppRadii.xLarge,
-                      child: ExcludeSemantics(
-                        child: IgnorePointer(child: card),
+                  if (onRevealMessage case final revealMessage?)
+                    PaymentLinkAction(
+                      onPressed: revealMessage,
+                      semanticLabel: cardActionLabel,
+                      builder: (context, _, focused) => _ActionFocusRing(
+                        focused: focused,
+                        borderRadius: AppRadii.xLarge,
+                        child: ExcludeSemantics(
+                          child: IgnorePointer(child: card),
+                        ),
+                      ),
+                    )
+                  else
+                    card,
+                  if (onRevealMessage != null) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    AppIcon(
+                      AppIcons.notificationBell,
+                      size: 16,
+                      color: context.colors.icon.brandCrimson,
+                    ),
+                    const SizedBox(height: AppSpacing.xxs),
+                    Text(
+                      messageTitle,
+                      style: AppTypography.bodyMediumStrong.copyWith(
+                        color: context.colors.text.primary,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  AppIcon(
-                    AppIcons.notificationBell,
-                    size: 16,
-                    color: context.colors.icon.brandCrimson,
-                  ),
-                  const SizedBox(height: AppSpacing.xxs),
-                  Text(
-                    messageTitle,
-                    style: AppTypography.bodyMediumStrong.copyWith(
-                      color: context.colors.text.primary,
+                    Text(
+                      messageHint,
+                      style: AppTypography.bodyMedium.copyWith(
+                        color: context.colors.text.secondary,
+                      ),
                     ),
-                  ),
-                  Text(
-                    messageHint,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: context.colors.text.secondary,
-                    ),
-                  ),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   AppButton(
                     onPressed: onClaim,
@@ -693,6 +698,8 @@ class PaymentLinkCardListRow extends StatelessWidget {
     required this.statusText,
     this.onAction,
     this.showCopyIcon = false,
+    this.secondaryActionText,
+    this.onSecondaryAction,
     super.key,
   });
 
@@ -702,6 +709,8 @@ class PaymentLinkCardListRow extends StatelessWidget {
   final String statusText;
   final VoidCallback? onAction;
   final bool showCopyIcon;
+  final String? secondaryActionText;
+  final VoidCallback? onSecondaryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -734,6 +743,14 @@ class PaymentLinkCardListRow extends StatelessWidget {
               ],
             ),
           ),
+          if (secondaryActionText case final secondaryLabel?) ...[
+            _TextAction(
+              label: secondaryLabel,
+              onTap: onSecondaryAction,
+              enabled: onSecondaryAction != null,
+            ),
+            const SizedBox(width: AppSpacing.s),
+          ],
           _TextAction(
             label: statusText,
             onTap: onAction,
