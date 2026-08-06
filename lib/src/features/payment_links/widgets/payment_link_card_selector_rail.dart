@@ -118,6 +118,7 @@ class _PaymentLinkCardSelectorRailState
       widget.artworks.toSet().length == widget.artworks.length,
       'artworks must not contain duplicates.',
     );
+    final inheritedScrollBehavior = ScrollConfiguration.of(context);
     return SizedBox(
       key: const ValueKey('payment_link_card_selector_rail'),
       width: widget.width,
@@ -136,7 +137,13 @@ class _PaymentLinkCardSelectorRailState
             stops: [0, 0.08, 0.92, 1],
           ).createShader(bounds),
           child: ScrollConfiguration(
-            behavior: const _PaymentLinkSelectorScrollBehavior(),
+            behavior: inheritedScrollBehavior.copyWith(
+              scrollbars: false,
+              dragDevices: {
+                ...inheritedScrollBehavior.dragDevices,
+                PointerDeviceKind.mouse,
+              },
+            ),
             child: ListView.builder(
               key: const ValueKey('payment_link_card_selector_scroll'),
               controller: _controller,
@@ -165,14 +172,4 @@ class _PaymentLinkCardSelectorRailState
       ),
     );
   }
-}
-
-class _PaymentLinkSelectorScrollBehavior extends ScrollBehavior {
-  const _PaymentLinkSelectorScrollBehavior();
-
-  @override
-  Set<PointerDeviceKind> get dragDevices => {
-    ...super.dragDevices,
-    PointerDeviceKind.mouse,
-  };
 }

@@ -11,6 +11,7 @@ import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_modal_card.dart';
 import '../../../core/widgets/app_pane_modal_overlay.dart';
 import 'payment_link_action.dart';
+import 'payment_link_skeleton.dart';
 
 /// Static desktop states represented by the payment-link Figma flow.
 ///
@@ -99,7 +100,10 @@ class PaymentLinksHomeDesktopView extends StatelessWidget {
                 AppButton(
                   onPressed: onCreate,
                   size: AppButtonSize.mediumLarge,
-                  leading: const AppIcon(AppIcons.giftCard),
+                  leading: const AppIcon(
+                    AppIcons.giftCard,
+                    size: AppIconSize.medium,
+                  ),
                   child: Text(createLabel),
                 ),
                 const SizedBox(height: AppSpacing.s),
@@ -173,16 +177,21 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpacing.md),
                     _HelpStep(icon: AppIcons.giftCard, text: createDescription),
-                    const SizedBox(height: AppSpacing.s),
+                    const SizedBox(height: AppSpacing.xs),
                     _HelpStep(icon: AppIcons.link, text: shareDescription),
-                    const SizedBox(height: AppSpacing.s),
+                    const SizedBox(height: AppSpacing.xs),
                     _HelpStep(
                       icon: AppIcons.arrowDownCircle,
                       text: redeemDescription,
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    Center(
-                      child: _TextAction(label: closeLabel, onTap: onClose),
+                    AppButton(
+                      key: const ValueKey('payment_link_help_close_button'),
+                      onPressed: onClose,
+                      variant: AppButtonVariant.ghost,
+                      size: AppButtonSize.mediumLarge,
+                      expand: true,
+                      child: Text(closeLabel),
                     ),
                   ],
                 ),
@@ -369,7 +378,7 @@ class PaymentLinkReviewDesktopView extends StatelessWidget {
             onPressed: onConfirm,
             minWidth: 196,
             size: AppButtonSize.mediumLarge,
-            leading: const AppIcon(AppIcons.giftCard, size: 20),
+            leading: const AppIcon(AppIcons.giftCard, size: AppIconSize.medium),
             child: Text(confirmLabel),
           ),
         ],
@@ -573,6 +582,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
     this.messageTitle = 'Message attached.',
     this.messageHint = 'Click on the card to reveal',
     this.claimLabel = 'Claim my gift',
+    this.cardActionLabel = 'Reveal gift card message',
     super.key,
   });
 
@@ -586,6 +596,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
   final String messageTitle;
   final String messageHint;
   final String claimLabel;
+  final String cardActionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -614,7 +625,7 @@ class PaymentLinkReceivedDesktopView extends StatelessWidget {
                   const SizedBox(height: AppSpacing.md),
                   PaymentLinkAction(
                     onPressed: onRevealMessage,
-                    semanticLabel: 'Reveal gift card message',
+                    semanticLabel: cardActionLabel,
                     builder: (context, _, focused) => _ActionFocusRing(
                       focused: focused,
                       borderRadius: AppRadii.xLarge,
@@ -1159,11 +1170,23 @@ class _HelpStep extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: AppIcon(icon, size: 16, color: context.colors.icon.accent),
+        SizedBox(
+          key: ValueKey('payment_link_help_icon_slot_$icon'),
+          width: 32,
+          height: 24,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xxs),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: AppIcon(
+                icon,
+                size: AppIconSize.medium,
+                color: context.colors.icon.accent,
+              ),
+            ),
+          ),
         ),
-        const SizedBox(width: AppSpacing.s),
+        const SizedBox(width: AppSpacing.xxs),
         Expanded(
           child: Text(
             text,
@@ -1288,9 +1311,6 @@ class _PaymentLinkLoadingCardState extends State<_PaymentLinkLoadingCard>
   @override
   Widget build(BuildContext context) {
     const cardRadius = BorderRadius.all(Radius.circular(AppRadii.xLarge));
-    const placeholderGradient = LinearGradient(
-      colors: [Color(0x00858686), Color(0x80858686)],
-    );
     final card = Container(
       key: const ValueKey('payment_link_loading_card'),
       width: 372,
@@ -1323,26 +1343,32 @@ class _PaymentLinkLoadingCardState extends State<_PaymentLinkLoadingCard>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    key: const ValueKey('payment_link_loading_label'),
-                    width: 60,
-                    height: 12,
-                    decoration: const BoxDecoration(
-                      gradient: placeholderGradient,
-                      borderRadius: BorderRadius.all(
-                        Radius.circular(AppRadii.full),
+                  const SizedBox(
+                    height: 16,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: PaymentLinkSkeletonBar(
+                        key: ValueKey('payment_link_loading_label'),
+                        width: 60,
+                        height: 12,
+                        shimmerKey: ValueKey(
+                          'payment_link_loading_label_shimmer',
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.s),
-                  Container(
-                    key: const ValueKey('payment_link_loading_amount'),
-                    width: 130,
-                    height: 31,
-                    decoration: const BoxDecoration(
-                      gradient: placeholderGradient,
-                      borderRadius: BorderRadius.all(
-                        Radius.circular(AppRadii.full),
+                  const SizedBox(
+                    height: 46,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: PaymentLinkSkeletonBar(
+                        key: ValueKey('payment_link_loading_amount'),
+                        width: 130,
+                        height: 31,
+                        shimmerKey: ValueKey(
+                          'payment_link_loading_amount_shimmer',
+                        ),
                       ),
                     ),
                   ),

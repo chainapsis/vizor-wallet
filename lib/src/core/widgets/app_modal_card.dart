@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
@@ -30,23 +32,49 @@ class AppModalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      width: width,
-      clipBehavior: Clip.antiAlias,
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.sm,
-        bottomPadding,
+    return CustomPaint(
+      key: const ValueKey('app_modal_inner_highlight'),
+      foregroundPainter: const _AppModalInnerHighlightPainter(),
+      child: Container(
+        width: width,
+        clipBehavior: Clip.antiAlias,
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.sm,
+          bottomPadding,
+        ),
+        decoration: BoxDecoration(
+          color: colors.background.base,
+          borderRadius: BorderRadius.circular(AppRadii.large),
+          boxShadow: appModalShadow,
+        ),
+        child: child,
       ),
-      decoration: BoxDecoration(
-        color: colors.background.base,
-        borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: appModalShadow,
-      ),
-      child: child,
     );
   }
+}
+
+/// Figma `Shadow Overlay` inner highlight for the shared desktop modal card.
+class _AppModalInnerHighlightPainter extends CustomPainter {
+  const _AppModalInnerHighlightPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(AppRadii.large),
+    );
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = const Color(0x26FFFFFF)
+      ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.inner, 2);
+    canvas.drawRRect(rrect, paint);
+  }
+
+  @override
+  bool shouldRepaint(_AppModalInnerHighlightPainter oldDelegate) => false;
 }
 
 const appModalShadow = [
