@@ -6,6 +6,45 @@ import 'package:zcash_wallet/src/features/payment_links/services/payment_link_se
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
+  test('funding covers the exact recipient amount and claim fee', () {
+    final recipientAmount = BigInt.from(100000000);
+
+    expect(
+      paymentLinkFundingAmountZatoshi(recipientAmount),
+      BigInt.from(100010000),
+    );
+    expect(
+      () => paymentLinkFundingAmountZatoshi(BigInt.zero),
+      throwsArgumentError,
+    );
+  });
+
+  test('claim exposes only the amount promised by the link', () {
+    final recipientAmount = BigInt.from(100000000);
+
+    expect(
+      paymentLinkClaimableAmountZatoshi(
+        recipientAmountZatoshi: recipientAmount,
+        maxSpendableZatoshi: BigInt.from(100000000),
+      ),
+      recipientAmount,
+    );
+    expect(
+      paymentLinkClaimableAmountZatoshi(
+        recipientAmountZatoshi: recipientAmount,
+        maxSpendableZatoshi: BigInt.from(120000000),
+      ),
+      recipientAmount,
+    );
+    expect(
+      paymentLinkClaimableAmountZatoshi(
+        recipientAmountZatoshi: recipientAmount,
+        maxSpendableZatoshi: BigInt.from(99999999),
+      ),
+      BigInt.zero,
+    );
+  });
+
   test('pending and partial claim broadcasts retain their wallet DB', () {
     expect(
       shouldRetainPaymentLinkClaimWallet(
@@ -59,6 +98,17 @@ void main() {
         expectedAddress: 'u1expected',
       ),
       isFalse,
+    );
+  });
+
+  test('claim broadcast stops when the wallet locks', () {
+    expect(
+      () => requireUnlockedPaymentLinkWallet(requiresUnlock: true),
+      throwsStateError,
+    );
+    expect(
+      () => requireUnlockedPaymentLinkWallet(requiresUnlock: false),
+      returnsNormally,
     );
   });
 
