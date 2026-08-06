@@ -1437,6 +1437,12 @@ class _PreviewSwapSidebar extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   AppSidebarItem(
+                    label: 'Pay',
+                    iconName: AppIcons.paid,
+                    onTap: () {},
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  AppSidebarItem(
                     label: 'Activity',
                     iconName: AppIcons.history,
                     onTap: () {},

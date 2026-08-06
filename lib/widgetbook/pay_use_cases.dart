@@ -421,16 +421,18 @@ class _PayPreviewSidebar extends StatelessWidget {
           children: [
             const _PreviewAccountHeader(),
             const SizedBox(height: AppSpacing.md),
-            const AppSidebarItem(
-              label: 'Home',
-              iconName: AppIcons.home,
-              active: true,
-            ),
+            const AppSidebarItem(label: 'Home', iconName: AppIcons.home),
             const SizedBox(height: AppSpacing.xs),
             AppSidebarItem(
               label: 'Swap',
               iconName: AppIcons.swapArrows,
               onTap: () {},
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            const AppSidebarItem(
+              label: 'Pay',
+              iconName: AppIcons.paid,
+              active: true,
             ),
             const SizedBox(height: AppSpacing.xs),
             AppSidebarItem(
