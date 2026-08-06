@@ -1664,8 +1664,9 @@ class _DerivationRustApiFake implements RustLibApi {
     if (_activeLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
-    if (!_persistentLeaseIsPending || _persistentLeaseToken == null)
+    if (!_persistentLeaseIsPending || _persistentLeaseToken == null) {
       return null;
+    }
     _activeLeaseToken = _persistentLeaseToken;
     return rust_wallet.SoftwareAccountDerivationLease(
       operationToken: _persistentLeaseToken!,
