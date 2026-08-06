@@ -948,6 +948,83 @@ final class DeviceOwnerAuthChannel {
   }
 }
 
+final class IncomingUriChannel {
+  private static let maxIncomingUriBytes = 16 * 1024
+  private static let maxPendingURLs = 16
+  private static var channel: FlutterMethodChannel?
+  private static var pendingURLs: [String] = []
+  private static var dartReady = false
+
+  static func register(messenger: FlutterBinaryMessenger) {
+    let methodChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/payment_uri",
+      binaryMessenger: messenger
+    )
+    channel = methodChannel
+    dartReady = false
+    methodChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "takePendingUris":
+        let urls = pendingURLs
+        pendingURLs.removeAll()
+        result(urls)
+      case "ready":
+        dartReady = true
+        flushPendingURLs()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  static func handle(urls: [URL]) {
+    var handledPaymentLink = false
+    for url in urls {
+      guard
+        url.scheme?.lowercased() == "vizor",
+        url.host?.lowercased() == "payment-link"
+      else {
+        continue
+      }
+      handledPaymentLink = true
+      let uri = url.absoluteString
+      guard
+        uri.utf8.count <= maxIncomingUriBytes,
+        pendingURLs.count < maxPendingURLs,
+        !pendingURLs.contains(uri)
+      else {
+        continue
+      }
+      pendingURLs.append(uri)
+    }
+    guard handledPaymentLink else { return }
+    flushPendingURLs()
+    presentMainWindow()
+  }
+
+  private static func flushPendingURLs() {
+    guard dartReady, let channel, !pendingURLs.isEmpty else { return }
+    let urls = pendingURLs
+    pendingURLs.removeAll()
+    channel.invokeMethod("onUris", arguments: urls)
+  }
+
+  private static func presentMainWindow() {
+    NSApp.activate(ignoringOtherApps: true)
+    guard let window = NSApp.windows.first(where: { $0 is MainFlutterWindow })
+      ?? NSApp.mainWindow
+      ?? NSApp.keyWindow
+    else {
+      return
+    }
+    if window.isMiniaturized {
+      window.deminiaturize(nil)
+    }
+    window.makeKeyAndOrderFront(nil)
+  }
+}
+
 class MainFlutterWindow: NSWindow {
   private let vizorWindowToolbarDelegate = VizorWindowToolbarDelegate()
   private var vizorWindowToolbar: NSToolbar?
@@ -991,6 +1068,9 @@ class MainFlutterWindow: NSWindow {
       messenger: flutterViewController.engine.binaryMessenger
     )
     NativeUpdatePrivacyChannel.register(
+      messenger: flutterViewController.engine.binaryMessenger
+    )
+    IncomingUriChannel.register(
       messenger: flutterViewController.engine.binaryMessenger
     )
     RegisterGeneratedPlugins(registry: flutterViewController)

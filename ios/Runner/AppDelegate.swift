@@ -483,6 +483,23 @@ import UIKit
       binaryMessenger: messenger
     )
     screenshotChannel.setStreamHandler(ScreenshotStreamHandler())
+
+    let incomingUriChannel = FlutterMethodChannel(
+      name: "com.zcash.wallet/payment_uri",
+      binaryMessenger: messenger
+    )
+    IncomingUriChannelBridge.shared.attach(channel: incomingUriChannel)
+    incomingUriChannel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "takePendingUris":
+        result(IncomingUriChannelBridge.shared.takePending())
+      case "ready":
+        IncomingUriChannelBridge.shared.markReady()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func completeOutboxArmWithBackgroundSchedule(
@@ -708,6 +725,67 @@ import UIKit
         return false
       }
     #endif
+  }
+}
+
+/// Buffers bearer payment links until the Dart isolate has installed its
+/// handler. Never logs the URL because it contains account recovery material.
+final class IncomingUriChannelBridge {
+  static let shared = IncomingUriChannelBridge()
+  private static let maxIncomingUriBytes = 16 * 1024
+  private static let maxPendingUris = 16
+  private init() {}
+
+  private var channel: FlutterMethodChannel?
+  private var pendingUris: [String] = []
+  private var dartReady = false
+
+  func attach(channel: FlutterMethodChannel) {
+    self.channel = channel
+    dartReady = false
+  }
+
+  func markReady() {
+    dartReady = true
+    flush()
+  }
+
+  func takePending() -> [String] {
+    let uris = pendingUris
+    pendingUris.removeAll()
+    return uris
+  }
+
+  func handle(urlContexts: Set<UIOpenURLContext>) {
+    var handledPaymentLink = false
+    for context in urlContexts {
+      let url = context.url
+      guard
+        url.scheme?.lowercased() == "vizor",
+        url.host?.lowercased() == "payment-link"
+      else {
+        continue
+      }
+      handledPaymentLink = true
+      let uri = url.absoluteString
+      guard
+        uri.utf8.count <= Self.maxIncomingUriBytes,
+        pendingUris.count < Self.maxPendingUris,
+        !pendingUris.contains(uri)
+      else {
+        continue
+      }
+      pendingUris.append(uri)
+    }
+    guard handledPaymentLink else { return }
+    flush()
+  }
+
+  private func flush() {
+    guard dartReady, let channel, !pendingUris.isEmpty else { return }
+    let uris = pendingUris
+    pendingUris.removeAll()
+    channel.invokeMethod("onUris", arguments: uris)
   }
 }
 

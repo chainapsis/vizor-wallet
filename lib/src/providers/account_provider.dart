@@ -780,6 +780,11 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
         log('resetWallet: failed to evict wallet summary cache: $e\n$st');
       }
       try {
+        await deletePaymentLinkClaimWalletDirectories();
+      } catch (e, st) {
+        recordError('payment-link claim db deletion', e, st);
+      }
+      try {
         await _storage.deleteAll();
       } catch (e, st) {
         recordError('secure storage wipe', e, st);

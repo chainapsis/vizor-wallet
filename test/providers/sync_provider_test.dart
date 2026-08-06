@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/formatting/sync_status_label.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
@@ -89,6 +90,86 @@ void main() {
       expect(resolveCount, 2);
     },
   );
+
+  test('exclusive Rust sync operations are serialized and bracketed', () async {
+    late _ExclusiveRustSyncTestNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        syncProvider.overrideWith(
+          () => notifier = _ExclusiveRustSyncTestNotifier(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+
+    final firstRelease = Completer<void>();
+    final firstStarted = Completer<void>();
+    var secondStarted = false;
+    final first = notifier.runWithExclusiveRustSync(() async {
+      firstStarted.complete();
+      await firstRelease.future;
+      return 'first';
+    });
+    await firstStarted.future;
+    final second = notifier.runWithExclusiveRustSync(() async {
+      secondStarted = true;
+      return 'second';
+    });
+
+    await Future<void>.delayed(Duration.zero);
+    expect(secondStarted, isFalse);
+    firstRelease.complete();
+
+    expect(await Future.wait([first, second]), ['first', 'second']);
+    expect(notifier.pauseCount, 2);
+    expect(notifier.resumeCount, 2);
+  });
+
+  test('queued exclusive Rust sync aborts when the wallet locks', () async {
+    late _ExclusiveRustSyncTestNotifier notifier;
+    late _MutableSecurityNotifier security;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        appSecurityProvider.overrideWith(
+          () => security = _MutableSecurityNotifier(),
+        ),
+        syncProvider.overrideWith(
+          () => notifier = _ExclusiveRustSyncTestNotifier(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+    container.read(appSecurityProvider);
+
+    final firstRelease = Completer<void>();
+    final firstStarted = Completer<void>();
+    var secondStarted = false;
+    final first = notifier.runWithExclusiveRustSync(() async {
+      firstStarted.complete();
+      await firstRelease.future;
+      return 'first';
+    });
+    await firstStarted.future;
+    final second = notifier.runWithExclusiveRustSync(() async {
+      secondStarted = true;
+      return 'second';
+    });
+    final secondExpectation = expectLater(second, throwsStateError);
+
+    security.lock();
+    firstRelease.complete();
+
+    expect(await first, 'first');
+    await secondExpectation;
+    expect(secondStarted, isFalse);
+    expect(notifier.pauseCount, 1);
+  });
 
   test('refreshAfterUnlock propagates DB path resolution failures', () async {
     final container = ProviderContainer(
@@ -437,6 +518,49 @@ class _LifecycleTestSyncNotifier extends SyncNotifier {
 
   void replaceState(SyncState next) {
     state = AsyncData(next);
+  }
+}
+
+class _ExclusiveRustSyncTestNotifier extends SyncNotifier {
+  _ExclusiveRustSyncTestNotifier()
+    : super(walletDbPathResolver: () async => 'wallet.db');
+
+  var pauseCount = 0;
+  var resumeCount = 0;
+
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async {
+    pauseCount++;
+    await onStoppingSync?.call();
+    return const WalletMutationSyncPause(
+      hadActiveSync: false,
+      hadPolling: false,
+      hadMempoolObserver: false,
+    );
+  }
+
+  @override
+  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
+    resumeCount++;
+  }
+}
+
+class _MutableSecurityNotifier extends AppSecurityNotifier {
+  @override
+  AppSecurityState build() =>
+      const AppSecurityState(isPasswordConfigured: true, isUnlocked: true);
+
+  @override
+  void lock() {
+    state = const AppSecurityState(
+      isPasswordConfigured: true,
+      isUnlocked: false,
+    );
   }
 }
 

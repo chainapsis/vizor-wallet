@@ -3,7 +3,11 @@
 #include <roapi.h>
 #include <windows.h>
 
+#include <utility>
+
 #include "flutter_window.h"
+#include "payment_uri_handoff.h"
+#include "payment_uri_protocol.h"
 #include "utils.h"
 #include "velopack_uninstall.h"
 
@@ -21,11 +25,25 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   const HRESULT ro_init = ::RoInitialize(RO_INIT_SINGLETHREADED);
   const bool ro_initialized = SUCCEEDED(ro_init);
+  RegisterVizorProtocolHandlerIfUnclaimed();
 
   flutter::DartProject project(L"data");
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
+  bool had_payment_link_argument = false;
+  std::vector<std::string> initial_payment_links =
+      ExtractPaymentLinkUriArguments(&command_line_arguments,
+                                     &had_payment_link_argument);
+  if (had_payment_link_argument) {
+    const bool delivered =
+        ForwardPaymentLinksToRunningInstance(initial_payment_links) ||
+        LaunchCleanInstanceAndForwardPaymentLinks(initial_payment_links);
+    if (ro_initialized) {
+      ::RoUninitialize();
+    }
+    return delivered ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 

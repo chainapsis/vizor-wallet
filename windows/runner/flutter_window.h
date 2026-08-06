@@ -6,6 +6,8 @@
 #include <flutter/method_channel.h>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "win32_window.h"
 
@@ -36,6 +38,13 @@ class FlutterWindow : public Win32Window {
       device_owner_auth_channel_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       velopack_update_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      incoming_uri_channel_;
+  std::vector<std::string> pending_payment_links_;
+  bool incoming_uri_dart_ready_ = false;
+
+  flutter::EncodableValue TakePendingPaymentLinks();
+  void FlushPendingPaymentLinks();
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
