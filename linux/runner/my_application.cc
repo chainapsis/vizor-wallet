@@ -20,6 +20,9 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+static constexpr gsize kMaxIncomingUriBytes = 16 * 1024;
+static constexpr guint kMaxPendingIncomingUris = 16;
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
@@ -48,11 +51,26 @@ static gboolean is_payment_link_uri(const gchar* value) {
          g_ascii_strncasecmp(value, "vizor://payment-link", 20) == 0;
 }
 
-static void add_pending_incoming_uri(MyApplication* self, const gchar* value) {
-  if (!is_payment_link_uri(value)) {
-    return;
+static gboolean add_bounded_payment_link(GPtrArray* uris,
+                                         const gchar* value) {
+  if (!is_payment_link_uri(value) ||
+      std::strlen(value) > kMaxIncomingUriBytes ||
+      uris->len >= kMaxPendingIncomingUris) {
+    return FALSE;
   }
-  g_ptr_array_add(self->pending_incoming_uris, g_strdup(value));
+  for (guint i = 0; i < uris->len; ++i) {
+    const gchar* existing =
+        static_cast<const gchar*>(g_ptr_array_index(uris, i));
+    if (g_strcmp0(existing, value) == 0) {
+      return FALSE;
+    }
+  }
+  g_ptr_array_add(uris, g_strdup(value));
+  return TRUE;
+}
+
+static void add_pending_incoming_uri(MyApplication* self, const gchar* value) {
+  add_bounded_payment_link(self->pending_incoming_uris, value);
 }
 
 static FlValue* take_pending_incoming_uris(MyApplication* self) {
@@ -200,7 +218,21 @@ static gboolean my_application_local_command_line(GApplication* application,
   MyApplication* self = MY_APPLICATION(application);
   // Strip out the first argument as it is the binary name.
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
-  self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
+  const gsize argument_count = g_strv_length(*arguments + 1);
+  self->dart_entrypoint_arguments = g_new0(gchar*, argument_count + 1);
+  g_autoptr(GPtrArray) incoming_uris =
+      g_ptr_array_new_with_free_func(g_free);
+  gsize dart_argument_index = 0;
+  for (gchar** argument = *arguments + 1;
+       argument != nullptr && *argument != nullptr; ++argument) {
+    if (is_payment_link_uri(*argument)) {
+      add_bounded_payment_link(incoming_uris, *argument);
+      std::memset(*argument, 0, std::strlen(*argument));
+      continue;
+    }
+    self->dart_entrypoint_arguments[dart_argument_index++] =
+        g_strdup(*argument);
+  }
 
   g_autoptr(GError) error = nullptr;
   if (!g_application_register(application, nullptr, &error)) {
@@ -211,11 +243,10 @@ static gboolean my_application_local_command_line(GApplication* application,
 
   if (g_application_get_is_remote(application)) {
     g_autoptr(GPtrArray) files = g_ptr_array_new_with_free_func(g_object_unref);
-    for (gchar** argument = self->dart_entrypoint_arguments;
-         argument != nullptr && *argument != nullptr; ++argument) {
-      if (is_payment_link_uri(*argument)) {
-        g_ptr_array_add(files, g_file_new_for_uri(*argument));
-      }
+    for (guint i = 0; i < incoming_uris->len; ++i) {
+      const gchar* uri =
+          static_cast<const gchar*>(g_ptr_array_index(incoming_uris, i));
+      g_ptr_array_add(files, g_file_new_for_uri(uri));
     }
     if (files->len > 0) {
       g_application_open(application, reinterpret_cast<GFile**>(files->pdata),
@@ -227,9 +258,10 @@ static gboolean my_application_local_command_line(GApplication* application,
     return TRUE;
   }
 
-  for (gchar** argument = self->dart_entrypoint_arguments;
-       argument != nullptr && *argument != nullptr; ++argument) {
-    add_pending_incoming_uri(self, *argument);
+  for (guint i = 0; i < incoming_uris->len; ++i) {
+    const gchar* uri =
+        static_cast<const gchar*>(g_ptr_array_index(incoming_uris, i));
+    add_pending_incoming_uri(self, uri);
   }
   g_application_activate(application);
   *exit_status = 0;
