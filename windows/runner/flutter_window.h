@@ -15,8 +15,7 @@
 class FlutterWindow : public Win32Window {
  public:
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
-  FlutterWindow(const flutter::DartProject& project, UINT activation_message,
-                std::vector<std::string> initial_payment_links);
+  FlutterWindow(const flutter::DartProject& project, UINT activation_message);
   virtual ~FlutterWindow();
 
  protected:

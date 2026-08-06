@@ -10,6 +10,20 @@ namespace {
 
 constexpr wchar_t kFlutterWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 constexpr ULONG_PTR kPaymentLinkCopyDataId = 0x565A504C;  // "VZPL"
+constexpr ULONGLONG kCleanLaunchForwardTimeoutMs = 15'000;
+
+struct ScopedProcessInformation {
+  PROCESS_INFORMATION value{};
+
+  ~ScopedProcessInformation() {
+    if (value.hThread != nullptr) {
+      ::CloseHandle(value.hThread);
+    }
+    if (value.hProcess != nullptr) {
+      ::CloseHandle(value.hProcess);
+    }
+  }
+};
 
 std::wstring ToLower(std::wstring value) {
   std::transform(value.begin(), value.end(), value.begin(),
@@ -84,6 +98,15 @@ struct ForwardContext {
   bool delivered = false;
 };
 
+bool SendAllPaymentLinks(HWND window,
+                         const std::vector<std::string>& uris) {
+  bool delivered = true;
+  for (const auto& uri : uris) {
+    delivered = SendPaymentLink(window, uri) && delivered;
+  }
+  return delivered;
+}
+
 BOOL CALLBACK ForwardToMatchingWindow(HWND window, LPARAM lparam) {
   auto* context = reinterpret_cast<ForwardContext*>(lparam);
   if (!IsFlutterRunnerWindow(window)) {
@@ -101,10 +124,36 @@ BOOL CALLBACK ForwardToMatchingWindow(HWND window, LPARAM lparam) {
   }
 
   ::AllowSetForegroundWindow(process_id);
-  for (const auto& uri : *context->uris) {
-    context->delivered = SendPaymentLink(window, uri) || context->delivered;
-  }
+  context->delivered = SendAllPaymentLinks(window, *context->uris);
   return context->delivered ? FALSE : TRUE;
+}
+
+struct ProcessForwardContext {
+  DWORD process_id;
+  const std::vector<std::string>* uris;
+  bool delivered = false;
+};
+
+BOOL CALLBACK ForwardToProcessWindow(HWND window, LPARAM lparam) {
+  auto* context = reinterpret_cast<ProcessForwardContext*>(lparam);
+  if (!IsFlutterRunnerWindow(window)) {
+    return TRUE;
+  }
+  DWORD process_id = 0;
+  ::GetWindowThreadProcessId(window, &process_id);
+  if (process_id != context->process_id) {
+    return TRUE;
+  }
+  ::AllowSetForegroundWindow(process_id);
+  context->delivered = SendAllPaymentLinks(window, *context->uris);
+  return context->delivered ? FALSE : TRUE;
+}
+
+bool ForwardPaymentLinksToProcess(DWORD process_id,
+                                  const std::vector<std::string>& uris) {
+  ProcessForwardContext context{process_id, &uris};
+  ::EnumWindows(ForwardToProcessWindow, reinterpret_cast<LPARAM>(&context));
+  return context.delivered;
 }
 
 }  // namespace
@@ -122,6 +171,43 @@ bool ForwardPaymentLinksToRunningInstance(
   }
   ::EnumWindows(ForwardToMatchingWindow, reinterpret_cast<LPARAM>(&context));
   return context.delivered;
+}
+
+bool LaunchCleanInstanceAndForwardPaymentLinks(
+    const std::vector<std::string>& uris) {
+  if (uris.empty()) {
+    return false;
+  }
+  const std::wstring module_path = ModuleFileName();
+  if (module_path.empty()) {
+    return false;
+  }
+
+  std::wstring command_line = L"\"" + module_path + L"\"";
+  std::vector<wchar_t> command_line_buffer(command_line.begin(),
+                                            command_line.end());
+  command_line_buffer.push_back(L'\0');
+  STARTUPINFOW startup_info{};
+  startup_info.cb = sizeof(startup_info);
+  ScopedProcessInformation process_info;
+  if (!::CreateProcessW(module_path.c_str(), command_line_buffer.data(),
+                        nullptr, nullptr, FALSE, 0, nullptr, nullptr,
+                        &startup_info, &process_info.value)) {
+    return false;
+  }
+
+  const ULONGLONG deadline =
+      ::GetTickCount64() + kCleanLaunchForwardTimeoutMs;
+  while (::GetTickCount64() < deadline) {
+    if (ForwardPaymentLinksToProcess(process_info.value.dwProcessId, uris)) {
+      return true;
+    }
+    if (::WaitForSingleObject(process_info.value.hProcess, 100) ==
+        WAIT_OBJECT_0) {
+      return false;
+    }
+  }
+  return false;
 }
 
 bool TryReadPaymentLinkCopyData(LPARAM lparam, std::string* uri) {

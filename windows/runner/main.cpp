@@ -20,25 +20,43 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
-  std::vector<std::string> initial_payment_links =
-      GetPaymentLinkUriArguments(command_line_arguments);
+  bool had_payment_link_argument = false;
+  std::vector<std::string> payment_links =
+      ExtractPaymentLinkUriArguments(&command_line_arguments,
+                                     &had_payment_link_argument);
+  if (had_payment_link_argument) {
+    if (payment_links.empty()) {
+      return EXIT_FAILURE;
+    }
+
+    bool delivered = false;
+    bool launch_clean_instance = false;
+    {
+      SingleInstanceGuard relay_probe;
+      const SingleInstanceAcquireResult relay_result = relay_probe.Acquire();
+      if (relay_result == SingleInstanceAcquireResult::kSecondary) {
+        delivered = ForwardPaymentLinksToRunningInstance(payment_links);
+        if (!delivered &&
+            ActivateExistingInstance(relay_probe.activation_message())) {
+          delivered = ForwardPaymentLinksToRunningInstance(payment_links);
+        }
+      } else if (relay_result == SingleInstanceAcquireResult::kPrimary) {
+        launch_clean_instance = true;
+      } else {
+        return EXIT_FAILURE;
+      }
+    }
+
+    if (!delivered && launch_clean_instance) {
+      delivered = LaunchCleanInstanceAndForwardPaymentLinks(payment_links);
+    }
+    return delivered ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
 
   SingleInstanceGuard single_instance;
   const SingleInstanceAcquireResult instance_result = single_instance.Acquire();
   if (instance_result == SingleInstanceAcquireResult::kSecondary) {
-    bool handed_off = false;
-    if (initial_payment_links.empty()) {
-      handed_off =
-          ActivateExistingInstance(single_instance.activation_message());
-    } else {
-      handed_off = ForwardPaymentLinksToRunningInstance(initial_payment_links);
-      if (!handed_off &&
-          ActivateExistingInstance(single_instance.activation_message())) {
-        handed_off =
-            ForwardPaymentLinksToRunningInstance(initial_payment_links);
-      }
-    }
-    if (!handed_off) {
+    if (!ActivateExistingInstance(single_instance.activation_message())) {
       ::MessageBoxW(
           nullptr,
           L"Vizor is already running. It may be starting, not responding, or "
@@ -73,8 +91,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
-  FlutterWindow window(project, single_instance.activation_message(),
-                       std::move(initial_payment_links));
+  FlutterWindow window(project, single_instance.activation_message());
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1095, 726);
   if (!window.Create(L"Vizor", origin, size)) {

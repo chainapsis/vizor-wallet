@@ -8,6 +8,8 @@
 
 bool ForwardPaymentLinksToRunningInstance(
     const std::vector<std::string>& uris);
+bool LaunchCleanInstanceAndForwardPaymentLinks(
+    const std::vector<std::string>& uris);
 bool TryReadPaymentLinkCopyData(LPARAM lparam, std::string* uri);
 
 #endif  // RUNNER_PAYMENT_URI_HANDOFF_H_
