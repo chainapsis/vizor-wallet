@@ -1,9 +1,11 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_action.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
@@ -43,8 +45,239 @@ void main() {
     );
 
     expect(find.text('Use max: 142.23'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('Use max: 142.23'),
+        matching: find.byType(PaymentLinkAction),
+      ),
+      findsNothing,
+    );
     expect(find.text('4.45'), findsOneWidget);
     expect(find.text('ZEC'), findsOneWidget);
+  });
+
+  testWidgets(
+    'message editor keeps native text behavior, count, and delete action',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final controller = TextEditingController(text: 'Hi');
+      final focusNode = FocusNode();
+      final changes = <String>[];
+      var cardActivations = 0;
+      var deletionCount = 0;
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await _pump(
+        tester,
+        PaymentLinkGiftCard(
+          artwork: PaymentLinkCardArtwork.gift,
+          showBack: true,
+          messageController: controller,
+          messageFocusNode: focusNode,
+          messageEditorKey: const ValueKey('test_payment_link_message_editor'),
+          messageInputFormatters: [
+            FilteringTextInputFormatter.deny(RegExp('!')),
+          ],
+          onMessageChanged: changes.add,
+          onTap: () => cardActivations += 1,
+          onDeleteMessage: () => deletionCount += 1,
+        ),
+      );
+
+      final editor = find.byKey(
+        const ValueKey('test_payment_link_message_editor'),
+      );
+      expect(editor, findsOneWidget);
+      final field = tester.widget<TextField>(editor);
+      expect(field.maxLines, greaterThan(1));
+      expect(field.keyboardType, TextInputType.multiline);
+      expect(field.cursorOpacityAnimates, isTrue);
+      expect(field.cursorWidth, greaterThan(0));
+      expect(
+        tester
+            .widget<MouseRegion>(
+              find.byKey(
+                const ValueKey('payment_link_message_input_mouse_region'),
+              ),
+            )
+            .cursor,
+        SystemMouseCursors.text,
+      );
+      expect(find.text('126/128'), findsOneWidget);
+
+      final editorSemantics = find.semantics.byLabel(
+        RegExp(r'^Gift card message(?:\n|$)'),
+      );
+      expect(editorSemantics, findsOne);
+      expect(
+        editorSemantics.evaluate().single.flagsCollection.isTextField,
+        isTrue,
+      );
+
+      final cardRect = tester.getRect(find.byType(PaymentLinkGiftCard));
+      await tester.tapAt(cardRect.topLeft + const Offset(12, 12));
+      await tester.pump();
+      expect(focusNode.hasFocus, isTrue);
+      expect(cardActivations, 1);
+      expect(
+        find.byKey(const ValueKey('payment_link_message_focus_ring')),
+        findsOneWidget,
+      );
+      expect(
+        editorSemantics.evaluate().single.getSemanticsData().hasAction(
+          SemanticsAction.setText,
+        ),
+        isTrue,
+      );
+
+      final overLimit = '${List.filled(140, 'x').join()}!';
+      await tester.enterText(editor, overLimit);
+      await tester.pump();
+
+      expect(controller.text, List.filled(128, 'x').join());
+      expect(changes.last, controller.text);
+      expect(find.text('0/128'), findsOneWidget);
+      expect(editorSemantics.evaluate().single.value, controller.text);
+
+      controller.value = const TextEditingValue(
+        text: 'Updated\nnote',
+        selection: TextSelection.collapsed(offset: 12),
+      );
+      await tester.pump();
+
+      expect(find.text('116/128'), findsOneWidget);
+      expect(editorSemantics.evaluate().single.value, 'Updated\nnote');
+
+      final editableRoot = tester.renderObject(
+        find.descendant(of: editor, matching: find.byType(EditableText)),
+      );
+      final caretRect = _globalCaretRect(
+        _findRenderEditable(editableRoot),
+        controller.text.length,
+      );
+      expect(caretRect.width, greaterThan(0));
+      expect(caretRect.height, greaterThan(0));
+      expect(tester.getRect(editor).overlaps(caretRect), isTrue);
+
+      controller.text = '👨‍👩‍👧‍👦';
+      await tester.pump();
+      expect(find.text('127/128'), findsOneWidget);
+
+      await tester.tap(find.bySemanticsLabel('Delete gift card message'));
+      await tester.pump();
+      expect(deletionCount, 1);
+      expect(cardActivations, 1);
+      semantics.dispose();
+    },
+  );
+
+  testWidgets('use max is an accessible action with Figma amount geometry', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final controller = TextEditingController(text: '4.45');
+    final focusNode = FocusNode();
+    var useMaxCount = 0;
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await _pump(
+      tester,
+      PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.chestLava,
+        amountController: controller,
+        amountFocusNode: focusNode,
+        amountEditorKey: const ValueKey('test_payment_link_amount_editor'),
+        maxAmountText: '142.23',
+        onUseMax: () => useMaxCount += 1,
+      ),
+    );
+
+    final actionText = find.text('Use max: 142.23');
+    final action = find.ancestor(
+      of: actionText,
+      matching: find.byType(PaymentLinkAction),
+    );
+    expect(action, findsOneWidget);
+    final actionStyle = tester.widget<Text>(actionText).style!;
+    expect(actionStyle.fontSize, 14);
+    expect(actionStyle.height, 16 / 14);
+
+    final actionSemantics = find.semantics.byLabel('Use max: 142.23 ZEC');
+    expect(actionSemantics, findsOne);
+    expect(actionSemantics.evaluate().single.flagsCollection.isButton, isTrue);
+    await tester.tap(actionText);
+    expect(useMaxCount, 1);
+
+    final currencyBox = find.byKey(
+      const ValueKey('payment_link_amount_currency_box'),
+    );
+    final amountEditor = find.byKey(
+      const ValueKey('test_payment_link_amount_editor'),
+    );
+    expect(tester.getSize(currencyBox), const Size(75, 46));
+    expect(
+      tester.getTopLeft(currencyBox).dx - tester.getTopRight(amountEditor).dx,
+      moreOrLessEquals(10, epsilon: 0.01),
+    );
+
+    final amountEditable = find.descendant(
+      of: amountEditor,
+      matching: find.byType(EditableText),
+    );
+    final currencyText = find.descendant(
+      of: currencyBox,
+      matching: find.text('ZEC'),
+    );
+    final amountRenderBox = _findRenderEditable(
+      tester.renderObject(amountEditable),
+    );
+    final currencyRenderBox = tester.renderObject<RenderParagraph>(
+      currencyText,
+    );
+    final amountTextBox = amountRenderBox
+        .getBoxesForSelection(
+          TextSelection(baseOffset: 0, extentOffset: controller.text.length),
+        )
+        .single;
+    final currencyTextBox = currencyRenderBox
+        .getBoxesForSelection(
+          const TextSelection(baseOffset: 0, extentOffset: 3),
+        )
+        .single;
+    final amountBottom = amountRenderBox.localToGlobal(
+      Offset(0, amountTextBox.bottom),
+    );
+    final currencyBottom = currencyRenderBox.localToGlobal(
+      Offset(0, currencyTextBox.bottom),
+    );
+    expect(currencyBottom.dy, moreOrLessEquals(amountBottom.dy, epsilon: 0.5));
+    semantics.dispose();
+  });
+
+  test('message editor is back-only and amount editor stays front-only', () {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    expect(
+      () => PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.gift,
+        messageController: controller,
+        messageFocusNode: focusNode,
+      ),
+      throwsAssertionError,
+    );
+    expect(
+      () => PaymentLinkGiftCard(
+        artwork: PaymentLinkCardArtwork.gift,
+        showBack: true,
+        amountController: controller,
+        amountFocusNode: focusNode,
+      ),
+      throwsAssertionError,
+    );
   });
 
   testWidgets('gift card back renders character count and delete callback', (
@@ -62,7 +295,7 @@ void main() {
     );
 
     expect(find.text('Hi'), findsOneWidget);
-    expect(find.text('2/128'), findsOneWidget);
+    expect(find.text('126/128'), findsOneWidget);
 
     await tester.tap(find.bySemanticsLabel('Delete gift card message'));
     expect(deletionCount, 1);
@@ -366,4 +599,20 @@ Future<void> _pump(WidgetTester tester, Widget child) {
       home: Scaffold(body: Center(child: child)),
     ),
   );
+}
+
+Rect _globalCaretRect(RenderEditable editable, int offset) {
+  final caretLocal = editable.getLocalRectForCaret(
+    TextPosition(offset: offset),
+  );
+  return editable.localToGlobal(caretLocal.topLeft) & caretLocal.size;
+}
+
+RenderEditable _findRenderEditable(RenderObject root) {
+  if (root is RenderEditable) return root;
+  RenderEditable? found;
+  root.visitChildren((child) {
+    found ??= _findRenderEditable(child);
+  });
+  return found!;
 }

@@ -82,6 +82,9 @@ Widget buildPaymentLinkMessageFilledUseCase(BuildContext context) =>
       state: PaymentLinkPreviewState.messageFilled,
     );
 
+Widget buildPaymentLinkMessageInteractiveUseCase(BuildContext context) =>
+    const PaymentLinkInteractiveMessageDesktopPreview();
+
 Widget buildPaymentLinkReviewUseCase(BuildContext context) =>
     const PaymentLinkDesktopPreview(state: PaymentLinkPreviewState.review);
 
@@ -216,6 +219,7 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
         card: const PaymentLinkGiftCard(
           artwork: PaymentLinkCardArtwork.ruby,
           showBack: true,
+          emptyMessageLabel: 'Start Typing',
         ),
         onBack: _noop,
         onSkip: _noop,
@@ -454,6 +458,73 @@ class _PaymentLinkReadyFlipPreviewState
       onBack: _noop,
       onCopy: _noop,
       onCardTap: _toggleCardSide,
+    );
+  }
+}
+
+/// Interactive message-entry surface kept separate from the deterministic
+/// empty and filled Figma fixtures.
+class PaymentLinkInteractiveMessageDesktopPreview extends StatefulWidget {
+  const PaymentLinkInteractiveMessageDesktopPreview({super.key});
+
+  @override
+  State<PaymentLinkInteractiveMessageDesktopPreview> createState() =>
+      _PaymentLinkInteractiveMessageDesktopPreviewState();
+}
+
+class _PaymentLinkInteractiveMessageDesktopPreviewState
+    extends State<PaymentLinkInteractiveMessageDesktopPreview> {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+
+  bool get _hasMessage => _controller.text.isNotEmpty;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _clearMessage() {
+    _controller.clear();
+    _focusNode.requestFocus();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox.fromSize(
+        size: _previewWindowSize,
+        child: AppDesktopShell(
+          sidebar: const _PaymentLinkPreviewSidebar(),
+          pane: AppDesktopPane(
+            padding: EdgeInsets.zero,
+            child: PaymentLinkMessageDesktopView(
+              state: _hasMessage
+                  ? PaymentLinkMessageVisualState.filled
+                  : PaymentLinkMessageVisualState.empty,
+              card: PaymentLinkGiftCard(
+                artwork: PaymentLinkCardArtwork.ruby,
+                showBack: true,
+                messageController: _controller,
+                messageFocusNode: _focusNode,
+                messageEditorKey: const ValueKey(
+                  'payment_link_interactive_message_editor',
+                ),
+                messageInputFormatters: [LengthLimitingTextInputFormatter(128)],
+                onMessageChanged: (_) => setState(() {}),
+                onDeleteMessage: _hasMessage ? _clearMessage : null,
+                semanticLabel: 'Gift card message input',
+              ),
+              onBack: _noop,
+              onSkip: _clearMessage,
+              onContinue: _hasMessage ? _noop : null,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

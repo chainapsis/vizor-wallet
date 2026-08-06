@@ -40,13 +40,29 @@ void main() {
     await tester.tap(find.text('How Gift Cards work'));
     await tester.pumpAndSettle();
 
+    expect(
+      find.text(
+        'Enter amount to gift, pick a design, add a message (optional) '
+        'and create your card with a single click.',
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('claim secret'), findsOneWidget);
     expect(
       find.textContaining('All data in the link is encrypted'),
       findsNothing,
     );
+    expect(
+      find.text(
+        'Recipient can redeem the card in their Vizor wallet using the link. '
+        'A small fee will be deducted from the card balance in order to make '
+        'a shielded transaction.',
+      ),
+      findsOneWidget,
+    );
 
     final modalRect = tester.getRect(find.byType(AppModalCard));
+    expect(modalRect.size, const Size(312, 441));
     final closeRect = tester.getRect(
       find.byKey(const ValueKey('payment_link_help_close_button')),
     );
@@ -174,9 +190,69 @@ void main() {
       findsOneWidget,
     );
 
+    expect(find.text('Use max: 142.23'), findsOneWidget);
+    await tester.tap(find.text('Use max: 142.23'));
+    await tester.pump();
+    expect(tester.widget<TextField>(amountEditor).controller?.text, '142.23');
+
     await tester.tap(find.text('Create card'));
     await tester.pumpAndSettle();
     expect(find.text('Attach a message'), findsOneWidget);
+
+    final messageEditor = find.byKey(
+      const ValueKey('payment_link_message_editor'),
+    );
+    expect(messageEditor, findsOneWidget);
+    expect(
+      tester.widget<TextField>(messageEditor).focusNode?.hasFocus,
+      isFalse,
+    );
+
+    await tester.tap(messageEditor);
+    await tester.enterText(messageEditor, 'For you');
+    await tester.pump();
+
+    expect(tester.widget<TextField>(messageEditor).focusNode?.hasFocus, isTrue);
+    expect(find.text('For you'), findsOneWidget);
+    expect(find.text('121/128'), findsOneWidget);
+
+    var continueButton = tester.widget<AppButton>(
+      find
+          .ancestor(of: find.text('Continue'), matching: find.byType(AppButton))
+          .first,
+    );
+    expect(continueButton.onPressed, isNotNull);
+
+    await tester.tap(find.bySemanticsLabel('Delete gift card message'));
+    await tester.pump();
+    expect(tester.widget<TextField>(messageEditor).controller?.text, isEmpty);
+    expect(find.text('128/128'), findsOneWidget);
+    continueButton = tester.widget<AppButton>(
+      find
+          .ancestor(of: find.text('Continue'), matching: find.byType(AppButton))
+          .first,
+    );
+    expect(continueButton.onPressed, isNull);
+
+    await tester.enterText(messageEditor, '   \n');
+    await tester.pump();
+    continueButton = tester.widget<AppButton>(
+      find
+          .ancestor(of: find.text('Continue'), matching: find.byType(AppButton))
+          .first,
+    );
+    expect(continueButton.onPressed, isNull);
+
+    await tester.enterText(messageEditor, 'For you');
+    await tester.pump();
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Review your Gift Card'), findsOneWidget);
+    expect(find.textContaining('Creating fee'), findsNothing);
+
+    await tester.tap(find.text('Add Message'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(messageEditor).controller?.text, 'For you');
 
     await tester.tap(find.text('Skip message'));
     await tester.pumpAndSettle();
@@ -229,6 +305,8 @@ Future<void> _pumpPaymentLinksScreen(WidgetTester tester) async {
               isSyncComplete: true,
               percentage: 1,
               displayPercentage: 1,
+              spendableBalance: BigInt.from(14223000000),
+              displaySpendableBalance: BigInt.from(14223000000),
             ),
           ),
         ),
