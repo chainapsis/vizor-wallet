@@ -74,7 +74,6 @@ void main() {
         outcome: find.byKey(ValueKey('mobile_accounts_menu_$addedUuid')),
         description: 'accounts management screen',
       );
-      await tapWidget(tester, ValueKey('mobile_accounts_menu_$addedUuid'));
 
       final familyCard = find.byKey(
         ValueKey('mobile_accounts_family_${source.uuid}'),
@@ -118,6 +117,7 @@ void main() {
       expect(groupedAccounts[0].accountGroupName, 'Everyday wallet');
       expect(groupedAccounts[1].accountGroupName, 'Everyday wallet');
 
+      await tapWidget(tester, ValueKey('mobile_accounts_menu_$addedUuid'));
       await tapWidget(tester, const ValueKey('mobile_account_menu_edit'));
       await enterText(
         tester,
