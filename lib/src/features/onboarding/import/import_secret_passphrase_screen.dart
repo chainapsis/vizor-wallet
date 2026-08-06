@@ -929,7 +929,7 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
                 bottomLeft: Radius.circular(AppRadii.large),
                 bottomRight: Radius.circular(AppRadii.large),
               ),
-              boxShadow: appModalShadow,
+              boxShadow: appSurfaceShadow(colors),
             ),
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.sm),
@@ -949,12 +949,6 @@ class _SavedBip39PassphraseFooter extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: AppSpacing.xs),
-                    AppIcon(
-                      AppIcons.edit,
-                      size: AppIconSize.medium,
-                      color: colors.icon.accent,
-                    ),
-                    const SizedBox(width: AppSpacing.xxs),
                     Text(
                       'Edit',
                       style: AppTypography.labelLarge.copyWith(

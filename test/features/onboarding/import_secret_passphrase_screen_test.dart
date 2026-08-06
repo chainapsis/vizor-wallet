@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart'
     show
         BackdropFilter,
+        BoxDecoration,
         Column,
+        DecoratedBox,
         Expanded,
         Focus,
         FocusNode,
@@ -375,6 +377,41 @@ void main() {
 
     expect(submittedArgs?.bip39Passphrase, '  My TREZOR phrase  ');
   });
+
+  for (final theme in [AppThemeData.light, AppThemeData.dark]) {
+    testWidgets(
+      'saved BIP39 passphrase footer matches ${theme == AppThemeData.light ? 'light' : 'dark'} styling',
+      (tester) async {
+        await _setDesktopViewport(tester);
+        await tester.pumpWidget(_importPassphraseScreen(theme: theme));
+        await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+        await tester.pumpAndSettle();
+        await tester.enterText(_bip39PassphraseField, 'secret');
+        await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('bip39_passphrase_save_button')),
+        );
+        await tester.pumpAndSettle();
+
+        final action = find.byKey(const ValueKey('bip39_passphrase_action'));
+        expect(
+          find.descendant(
+            of: action,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is AppIcon && widget.name == AppIcons.edit,
+            ),
+          ),
+          findsNothing,
+        );
+
+        final decoratedBox = tester.widget<DecoratedBox>(
+          find.descendant(of: action, matching: find.byType(DecoratedBox)),
+        );
+        final decoration = decoratedBox.decoration as BoxDecoration;
+        expect(decoration.boxShadow, appSurfaceShadow(theme.colors));
+      },
+    );
+  }
 
   testWidgets('limits BIP39 passphrases to 100 user-perceived characters', (
     tester,
@@ -863,6 +900,7 @@ Widget _importPassphraseScreen({
   FocusNode? afterNode,
   SensitivePrivacyOverlayController? privacyOverlayController,
   List<String>? wordListOverride,
+  AppThemeData theme = AppThemeData.light,
 }) {
   Widget body = ImportSecretPassphraseScreen(
     privacyOverlayController: privacyOverlayController,
@@ -883,7 +921,7 @@ Widget _importPassphraseScreen({
     ],
     child: MaterialApp(
       home: AppTheme(
-        data: AppThemeData.light,
+        data: theme,
         child: Scaffold(body: body),
       ),
     ),
