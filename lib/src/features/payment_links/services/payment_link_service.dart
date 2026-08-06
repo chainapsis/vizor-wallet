@@ -73,11 +73,20 @@ bool shouldRetainPaymentLinkClaimWallet(
 }
 
 @visibleForTesting
+bool shouldRecreatePaymentLinkClaimWallet({
+  required List<String> accountAddresses,
+  required String expectedAddress,
+}) {
+  return accountAddresses.length != 1 ||
+      accountAddresses.single != expectedAddress;
+}
+
+@visibleForTesting
 String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
   final identity = sha256
       .convert(utf8.encode('${link.network}:${link.address}:${link.mnemonic}'))
       .toString();
-  return 'payment_link_claim_$identity';
+  return '$kPaymentLinkClaimWalletDirectoryPrefix$identity';
 }
 
 class PaymentLinkClaimResult {
@@ -219,31 +228,56 @@ class PaymentLinkService {
     }
 
     final tempWallet = await _createOrOpenTemporaryWalletDb(link);
+    var deleteOnError = !tempWallet.existed;
     try {
       final String importedAddress;
       final String importedAccountUuid;
       if (tempWallet.existed) {
-        final accounts = await rust_wallet.listAccounts(
-          dbPath: tempWallet.dbPath,
-          network: endpoint.networkName,
-        );
-        if (accounts.length != 1) {
-          throw StateError(
-            'Saved payment link claim wallet has an invalid account count.',
+        List<rust_wallet.AccountInfo>? accounts;
+        try {
+          accounts = await rust_wallet.listAccounts(
+            dbPath: tempWallet.dbPath,
+            network: endpoint.networkName,
+          );
+        } catch (e, st) {
+          log(
+            'PaymentLinkService: reopening payment-link claim wallet failed; '
+            'recreating it: $e\n$st',
           );
         }
-        importedAddress = accounts.single.unifiedAddress;
-        importedAccountUuid = accounts.single.uuid;
+        if (accounts == null ||
+            shouldRecreatePaymentLinkClaimWallet(
+              accountAddresses: [
+                for (final account in accounts) account.unifiedAddress,
+              ],
+              expectedAddress: link.address,
+            )) {
+          if (accounts != null) {
+            log(
+              'PaymentLinkService: recreating incomplete payment-link claim '
+              'wallet with ${accounts.length} account(s)',
+            );
+          }
+          deleteOnError = true;
+          await _resetTemporaryWalletDb(tempWallet.directory);
+          final imported = await _importPaymentLinkClaimAccount(
+            link: link,
+            dbPath: tempWallet.dbPath,
+            network: endpoint.networkName,
+          );
+          importedAddress = imported.address;
+          importedAccountUuid = imported.accountUuid;
+        } else {
+          importedAddress = accounts.single.unifiedAddress;
+          importedAccountUuid = accounts.single.uuid;
+        }
       } else {
-        final imported = await rust_wallet.importWallet(
-          mnemonic: link.mnemonic,
-          bip39Passphrase: '',
-          birthdayHeight: BigInt.from(link.birthdayHeight),
-          network: endpoint.networkName,
+        final imported = await _importPaymentLinkClaimAccount(
+          link: link,
           dbPath: tempWallet.dbPath,
-          accountName: 'Payment link claim',
+          network: endpoint.networkName,
         );
-        importedAddress = imported.unifiedAddress;
+        importedAddress = imported.address;
         importedAccountUuid = imported.accountUuid;
       }
       if (importedAddress != link.address) {
@@ -287,7 +321,7 @@ class PaymentLinkService {
         feeZatoshi: feeZatoshi,
       );
     } catch (_) {
-      if (!tempWallet.existed) {
+      if (deleteOnError) {
         await _deleteTemporaryWalletDb(tempWallet.directory);
       }
       rethrow;
@@ -492,6 +526,33 @@ class PaymentLinkService {
     final existed = await File(dbPath).exists();
     await directory.create(recursive: true);
     return (directory: directory, dbPath: dbPath, existed: existed);
+  }
+
+  Future<({String address, String accountUuid})>
+  _importPaymentLinkClaimAccount({
+    required VizorPaymentLink link,
+    required String dbPath,
+    required String network,
+  }) async {
+    final imported = await rust_wallet.importWallet(
+      mnemonic: link.mnemonic,
+      bip39Passphrase: '',
+      birthdayHeight: BigInt.from(link.birthdayHeight),
+      network: network,
+      dbPath: dbPath,
+      accountName: 'Payment link claim',
+    );
+    return (
+      address: imported.unifiedAddress,
+      accountUuid: imported.accountUuid,
+    );
+  }
+
+  Future<void> _resetTemporaryWalletDb(Directory directory) async {
+    if (await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
+    await directory.create(recursive: true);
   }
 
   void _requireFullyBroadcasted(rust_sync.ExecuteProposalResult result) {

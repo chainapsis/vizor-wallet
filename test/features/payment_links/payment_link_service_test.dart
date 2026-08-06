@@ -31,6 +31,37 @@ void main() {
     );
   });
 
+  test('only reuses a complete claim wallet for the expected address', () {
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const [],
+        expectedAddress: 'u1expected',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const ['u1expected', 'u1unexpected'],
+        expectedAddress: 'u1expected',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const ['u1unexpected'],
+        expectedAddress: 'u1expected',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRecreatePaymentLinkClaimWallet(
+        accountAddresses: const ['u1expected'],
+        expectedAddress: 'u1expected',
+      ),
+      isFalse,
+    );
+  });
+
   test('claim wallet directory is deterministic without exposing its secret', () {
     final link = _link();
     final sameLinkName = paymentLinkClaimWalletDirectoryName(link);
