@@ -84,12 +84,48 @@ void main() {
     expect(notifier.takePending()?.address, second.address);
     expect(notifier.takePending(), isNull);
   });
+
+  test('coalesces duplicate links without growing the queue', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(paymentLinkIntakeProvider.notifier);
+    final link = _link();
+
+    expect(notifier.ingest(link.encode()), PaymentLinkIntakeResult.accepted);
+    expect(notifier.ingest(link.encode()), PaymentLinkIntakeResult.accepted);
+
+    expect(
+      container.read(paymentLinkIntakeProvider).pendingLinks,
+      hasLength(1),
+    );
+  });
+
+  test('rejects unique links beyond the bounded intake queue', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(paymentLinkIntakeProvider.notifier);
+
+    for (var i = 0; i < kPaymentLinkIntakeQueueCapacity; i++) {
+      expect(
+        notifier.ingest(_link(address: 'u1paymentlinkaddress$i').encode()),
+        PaymentLinkIntakeResult.accepted,
+      );
+    }
+
+    expect(
+      notifier.ingest(_link(address: 'u1paymentlinkoverflow').encode()),
+      PaymentLinkIntakeResult.rejected,
+    );
+    final state = container.read(paymentLinkIntakeProvider);
+    expect(state.pendingLinks, hasLength(kPaymentLinkIntakeQueueCapacity));
+    expect(state.errorMessage, 'Too many payment links are waiting to open.');
+  });
 }
 
-VizorPaymentLink _link() {
+VizorPaymentLink _link({String address = 'u1paymentlinkaddress'}) {
   return VizorPaymentLink(
     network: 'main',
-    address: 'u1paymentlinkaddress',
+    address: address,
     amountZatoshi: BigInt.from(100000),
     mnemonic:
         'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
