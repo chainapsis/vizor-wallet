@@ -538,6 +538,45 @@ void main() {
     );
 
     test(
+      'restart claims a native pending operation that crashed before its first Dart fence',
+      () async {
+        final lease = await rust
+            .crateApiWalletBeginSoftwareAccountDerivationLease(
+              dbPath: '/private/tmp/vizor-account-provider-test/wallet.db',
+              sourceAccountUuid: source.uuid,
+              recoveryName: 'Exact crash intent',
+              recoveryProfilePictureId: 'pfp-02',
+              recoveryAccountGroupName: 'Exact group',
+            );
+        // Model process death immediately after native begin: no secure-store
+        // fence exists and the OS lease is released.
+        await rust.crateApiWalletFinishSoftwareAccountDerivationLease(
+          operationToken: lease.operationToken,
+        );
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+        await container
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(
+              sourceAccountUuid: source.uuid,
+              name: 'Untrusted retry name',
+              profilePictureId: 'pfp-03',
+            );
+
+        final state = container.read(accountProvider).requireValue;
+        expect(state.accounts, hasLength(2));
+        expect(state.accounts.last.name, 'Exact crash intent');
+        expect(state.accounts.last.profilePictureId, 'pfp-02');
+        expect(state.accounts.last.accountGroupName, 'Exact group');
+        expect(storage.values['zcash_derived_account_recovery'], isNull);
+        expect(rust.allocatedIndices, [1]);
+      },
+    );
+
+    test(
       'fails closed when a pending fence sees a foreign seed-family delta',
       () async {
         const foreign = AccountInfo(
@@ -1249,6 +1288,9 @@ class _DerivationRustApiFake implements RustLibApi {
   String? _activeLeaseToken;
   String? _persistentLeaseToken;
   bool _persistentLeaseIsPending = false;
+  String? _persistentRecoveryName;
+  String? _persistentRecoveryProfilePictureId;
+  String? _persistentRecoveryAccountGroupName;
   int _nextLease = 0;
 
   Set<int> get liveAccountIndices => {
@@ -1266,6 +1308,9 @@ class _DerivationRustApiFake implements RustLibApi {
     _activeLeaseToken = null;
     _persistentLeaseToken = null;
     _persistentLeaseIsPending = false;
+    _persistentRecoveryName = null;
+    _persistentRecoveryProfilePictureId = null;
+    _persistentRecoveryAccountGroupName = null;
     _nextLease = 0;
     _listedAccountsByUuid
       ..clear()
@@ -1285,6 +1330,9 @@ class _DerivationRustApiFake implements RustLibApi {
   crateApiWalletBeginSoftwareAccountDerivationLease({
     required String dbPath,
     required String sourceAccountUuid,
+    required String recoveryName,
+    required String recoveryProfilePictureId,
+    String? recoveryAccountGroupName,
   }) async {
     if (_activeLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
@@ -1297,10 +1345,16 @@ class _DerivationRustApiFake implements RustLibApi {
     final token = _activeLeaseToken = 'lease-${++_nextLease}';
     _persistentLeaseToken = token;
     _persistentLeaseIsPending = true;
+    _persistentRecoveryName = recoveryName;
+    _persistentRecoveryProfilePictureId = recoveryProfilePictureId;
+    _persistentRecoveryAccountGroupName = recoveryAccountGroupName;
     return rust_wallet.SoftwareAccountDerivationLease(
       operationToken: token,
       sourceAccountUuid: sourceAccountUuid,
       baselineAccountUuids: _listedAccountsByUuid.keys.toList(),
+      recoveryName: recoveryName,
+      recoveryProfilePictureId: recoveryProfilePictureId,
+      recoveryAccountGroupName: recoveryAccountGroupName,
       isPending: true,
     );
   }
@@ -1333,7 +1387,32 @@ class _DerivationRustApiFake implements RustLibApi {
       operationToken: token,
       sourceAccountUuid: 'source',
       baselineAccountUuids: const ['source'],
+      recoveryName: _persistentRecoveryName,
+      recoveryProfilePictureId: _persistentRecoveryProfilePictureId,
+      recoveryAccountGroupName: _persistentRecoveryAccountGroupName,
       isPending: pending,
+    );
+  }
+
+  @override
+  Future<rust_wallet.SoftwareAccountDerivationLease?>
+  crateApiWalletClaimPendingSoftwareAccountDerivationLease({
+    required String dbPath,
+  }) async {
+    if (_activeLeaseToken != null) {
+      throw StateError('A software account derivation is already in progress.');
+    }
+    if (!_persistentLeaseIsPending || _persistentLeaseToken == null)
+      return null;
+    _activeLeaseToken = _persistentLeaseToken;
+    return rust_wallet.SoftwareAccountDerivationLease(
+      operationToken: _persistentLeaseToken!,
+      sourceAccountUuid: 'source',
+      baselineAccountUuids: const ['source'],
+      recoveryName: _persistentRecoveryName,
+      recoveryProfilePictureId: _persistentRecoveryProfilePictureId,
+      recoveryAccountGroupName: _persistentRecoveryAccountGroupName,
+      isPending: true,
     );
   }
 

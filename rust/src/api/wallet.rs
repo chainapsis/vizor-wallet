@@ -68,6 +68,9 @@ pub struct SoftwareAccountDerivationLease {
     pub operation_token: String,
     pub source_account_uuid: String,
     pub baseline_account_uuids: Vec<String>,
+    pub recovery_name: Option<String>,
+    pub recovery_profile_picture_id: Option<String>,
+    pub recovery_account_group_name: Option<String>,
     pub is_pending: bool,
 }
 
@@ -616,13 +619,25 @@ pub fn derive_next_software_account(
 pub fn begin_software_account_derivation_lease(
     db_path: String,
     source_account_uuid: String,
+    recovery_name: String,
+    recovery_profile_picture_id: String,
+    recovery_account_group_name: Option<String>,
 ) -> Result<SoftwareAccountDerivationLease, String> {
     catch(|| {
-        let lease = keys::begin_software_account_derivation_lease(&db_path, &source_account_uuid)?;
+        let lease = keys::begin_software_account_derivation_lease(
+            &db_path,
+            &source_account_uuid,
+            &recovery_name,
+            &recovery_profile_picture_id,
+            recovery_account_group_name.as_deref(),
+        )?;
         Ok(SoftwareAccountDerivationLease {
             operation_token: lease.operation_token,
             source_account_uuid: lease.source_account_uuid,
             baseline_account_uuids: lease.baseline_account_uuids,
+            recovery_name: lease.recovery_name,
+            recovery_profile_picture_id: lease.recovery_profile_picture_id,
+            recovery_account_group_name: lease.recovery_account_group_name,
             is_pending: lease.is_pending,
         })
     })
@@ -642,7 +657,31 @@ pub fn resume_software_account_derivation_lease(
             operation_token: lease.operation_token,
             source_account_uuid: lease.source_account_uuid,
             baseline_account_uuids: lease.baseline_account_uuids,
+            recovery_name: lease.recovery_name,
+            recovery_profile_picture_id: lease.recovery_profile_picture_id,
+            recovery_account_group_name: lease.recovery_account_group_name,
             is_pending: lease.is_pending,
+        })
+    })
+}
+
+/// Claim a native pending record when the Dart fence was never written (or was
+/// lost). The returned immutable intent lets Dart rebuild the exact fence
+/// before it reconciles any account delta.
+pub fn claim_pending_software_account_derivation_lease(
+    db_path: String,
+) -> Result<Option<SoftwareAccountDerivationLease>, String> {
+    catch(|| {
+        keys::claim_pending_software_account_derivation_lease(&db_path).map(|lease| {
+            lease.map(|lease| SoftwareAccountDerivationLease {
+                operation_token: lease.operation_token,
+                source_account_uuid: lease.source_account_uuid,
+                baseline_account_uuids: lease.baseline_account_uuids,
+                recovery_name: lease.recovery_name,
+                recovery_profile_picture_id: lease.recovery_profile_picture_id,
+                recovery_account_group_name: lease.recovery_account_group_name,
+                is_pending: lease.is_pending,
+            })
         })
     })
 }
@@ -1261,9 +1300,15 @@ mod tests {
             .next()
             .expect("test wallet has a source account")
             .uuid;
-        begin_software_account_derivation_lease(db_path.to_string(), source_account_uuid)
-            .unwrap()
-            .operation_token
+        begin_software_account_derivation_lease(
+            db_path.to_string(),
+            source_account_uuid,
+            "Recovered".to_string(),
+            "pfp-01".to_string(),
+            None,
+        )
+        .unwrap()
+        .operation_token
     }
 
     #[test]
@@ -1470,8 +1515,14 @@ mod tests {
             Some("Source".to_string()),
         )
         .unwrap();
-        let lease =
-            begin_software_account_derivation_lease(db_path.clone(), source.account_uuid).unwrap();
+        let lease = begin_software_account_derivation_lease(
+            db_path.clone(),
+            source.account_uuid,
+            "Recovered".to_string(),
+            "pfp-01".to_string(),
+            None,
+        )
+        .unwrap();
         let operation_token = lease.operation_token;
         finish_software_account_derivation_lease(operation_token.clone()).unwrap();
 

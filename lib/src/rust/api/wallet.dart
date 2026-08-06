@@ -216,13 +216,20 @@ Future<SoftwareWalletImportAccount> deriveNextSoftwareAccount({
 Future<SoftwareAccountDerivationLease> beginSoftwareAccountDerivationLease({
   required String dbPath,
   required String sourceAccountUuid,
+  required String recoveryName,
+  required String recoveryProfilePictureId,
+  String? recoveryAccountGroupName,
 }) => RustLib.instance.api.crateApiWalletBeginSoftwareAccountDerivationLease(
   dbPath: dbPath,
   sourceAccountUuid: sourceAccountUuid,
+  recoveryName: recoveryName,
+  recoveryProfilePictureId: recoveryProfilePictureId,
+  recoveryAccountGroupName: recoveryAccountGroupName,
 );
 
-/// Reclaim a crash-left pending record only with the opaque token from its
-/// matching versioned Dart fence.
+/// Reclaim a crash-left pending record only with the stable opaque operation
+/// token from its matching versioned Dart fence. The held OS lock, not this
+/// durable identifier, establishes process ownership.
 Future<SoftwareAccountDerivationLease> resumeSoftwareAccountDerivationLease({
   required String dbPath,
   required String previousOperationToken,
@@ -230,6 +237,15 @@ Future<SoftwareAccountDerivationLease> resumeSoftwareAccountDerivationLease({
   dbPath: dbPath,
   previousOperationToken: previousOperationToken,
 );
+
+/// Claim a native pending record when the Dart fence was never written (or was
+/// lost). The returned immutable intent lets Dart rebuild the exact fence
+/// before it reconciles any account delta.
+Future<SoftwareAccountDerivationLease?>
+claimPendingSoftwareAccountDerivationLease({required String dbPath}) => RustLib
+    .instance
+    .api
+    .crateApiWalletClaimPendingSoftwareAccountDerivationLease(dbPath: dbPath);
 
 /// Mark the authenticated persistent record resolved only when Rust proves the
 /// current DB delta is either empty (abort) or exactly `account_uuid` (commit).
@@ -597,12 +613,18 @@ class SoftwareAccountDerivationLease {
   final String operationToken;
   final String sourceAccountUuid;
   final List<String> baselineAccountUuids;
+  final String? recoveryName;
+  final String? recoveryProfilePictureId;
+  final String? recoveryAccountGroupName;
   final bool isPending;
 
   const SoftwareAccountDerivationLease({
     required this.operationToken,
     required this.sourceAccountUuid,
     required this.baselineAccountUuids,
+    this.recoveryName,
+    this.recoveryProfilePictureId,
+    this.recoveryAccountGroupName,
     required this.isPending,
   });
 
@@ -611,6 +633,9 @@ class SoftwareAccountDerivationLease {
       operationToken.hashCode ^
       sourceAccountUuid.hashCode ^
       baselineAccountUuids.hashCode ^
+      recoveryName.hashCode ^
+      recoveryProfilePictureId.hashCode ^
+      recoveryAccountGroupName.hashCode ^
       isPending.hashCode;
 
   @override
@@ -621,6 +646,9 @@ class SoftwareAccountDerivationLease {
           operationToken == other.operationToken &&
           sourceAccountUuid == other.sourceAccountUuid &&
           baselineAccountUuids == other.baselineAccountUuids &&
+          recoveryName == other.recoveryName &&
+          recoveryProfilePictureId == other.recoveryProfilePictureId &&
+          recoveryAccountGroupName == other.recoveryAccountGroupName &&
           isPending == other.isPending;
 }
 

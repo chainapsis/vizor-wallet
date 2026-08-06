@@ -52,6 +52,12 @@ pub struct SoftwareAccountDerivationLeaseInfo {
     pub operation_token: String,
     pub source_account_uuid: String,
     pub baseline_account_uuids: Vec<String>,
+    /// Durable Dart recovery-fence intent. It is written in the same SQLite
+    /// transaction as the pending token so a restart can safely rebuild a
+    /// missing Dart fence rather than guessing user metadata.
+    pub recovery_name: Option<String>,
+    pub recovery_profile_picture_id: Option<String>,
+    pub recovery_account_group_name: Option<String>,
     pub is_pending: bool,
 }
 
@@ -60,6 +66,9 @@ struct PersistentSoftwareAccountDerivation {
     operation_token: String,
     source_account_uuid: String,
     baseline_account_uuids: Vec<String>,
+    recovery_name: Option<String>,
+    recovery_profile_picture_id: Option<String>,
+    recovery_account_group_name: Option<String>,
     is_pending: bool,
 }
 
@@ -118,11 +127,35 @@ fn ensure_pending_derivation_table(conn: &rusqlite::Connection) -> Result<(), St
             "CREATE TABLE IF NOT EXISTS {PENDING_DERIVATION_TABLE} (\
              singleton INTEGER PRIMARY KEY CHECK (singleton = 1), \
              operation_token TEXT NOT NULL, source_account_uuid TEXT NOT NULL, \
-             baseline_account_uuids_json TEXT NOT NULL, state TEXT NOT NULL)"
+             baseline_account_uuids_json TEXT NOT NULL, \
+             recovery_name TEXT, recovery_profile_picture_id TEXT, \
+             recovery_account_group_name TEXT, state TEXT NOT NULL)"
         ),
         [],
     )
     .map_err(|error| format!("Failed to initialize derivation recovery record: {error}"))?;
+    // Existing installations may already have the earlier record shape. The
+    // nullable columns deliberately preserve those records: a fence-backed
+    // recovery can still authenticate them, while a no-fence recovery fails
+    // closed unless this exact intent is available.
+    for (column, definition) in [
+        ("recovery_name", "TEXT"),
+        ("recovery_profile_picture_id", "TEXT"),
+        ("recovery_account_group_name", "TEXT"),
+    ] {
+        let has_column = conn
+            .prepare(&format!(
+                "SELECT {column} FROM {PENDING_DERIVATION_TABLE} LIMIT 1"
+            ))
+            .is_ok();
+        if !has_column {
+            conn.execute(
+                &format!("ALTER TABLE {PENDING_DERIVATION_TABLE} ADD COLUMN {column} {definition}"),
+                [],
+            )
+            .map_err(|error| format!("Failed to upgrade derivation recovery record: {error}"))?;
+        }
+    }
     Ok(())
 }
 
@@ -132,7 +165,8 @@ fn read_persistent_derivation(
     ensure_pending_derivation_table(conn)?;
     conn.query_row(
         &format!(
-            "SELECT operation_token, source_account_uuid, baseline_account_uuids_json, state \
+            "SELECT operation_token, source_account_uuid, baseline_account_uuids_json, \
+             recovery_name, recovery_profile_picture_id, recovery_account_group_name, state \
              FROM {PENDING_DERIVATION_TABLE} WHERE singleton = 1"
         ),
         [],
@@ -149,7 +183,10 @@ fn read_persistent_derivation(
                 operation_token: row.get(0)?,
                 source_account_uuid: row.get(1)?,
                 baseline_account_uuids,
-                is_pending: row.get::<_, String>(3)? == "pending",
+                recovery_name: row.get(3)?,
+                recovery_profile_picture_id: row.get(4)?,
+                recovery_account_group_name: row.get(5)?,
+                is_pending: row.get::<_, String>(6)? == "pending",
             })
         },
     )
@@ -208,6 +245,9 @@ fn with_no_pending_derivation<T>(
 pub fn begin_software_account_derivation_lease(
     db_path: &str,
     source_account_uuid: &str,
+    recovery_name: &str,
+    recovery_profile_picture_id: &str,
+    recovery_account_group_name: Option<&str>,
 ) -> Result<SoftwareAccountDerivationLeaseInfo, String> {
     let mut leases = software_account_derivation_leases()
         .lock()
@@ -258,17 +298,24 @@ pub fn begin_software_account_derivation_lease(
         .execute(
             &format!(
                 "INSERT INTO {PENDING_DERIVATION_TABLE} \
-                 (singleton, operation_token, source_account_uuid, baseline_account_uuids_json, state) \
-                 VALUES (1, ?1, ?2, ?3, 'pending') \
+                 (singleton, operation_token, source_account_uuid, baseline_account_uuids_json, \
+                  recovery_name, recovery_profile_picture_id, recovery_account_group_name, state) \
+                 VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, 'pending') \
                  ON CONFLICT(singleton) DO UPDATE SET operation_token = excluded.operation_token, \
                  source_account_uuid = excluded.source_account_uuid, \
-                 baseline_account_uuids_json = excluded.baseline_account_uuids_json, state = 'pending'"
+                 baseline_account_uuids_json = excluded.baseline_account_uuids_json, \
+                 recovery_name = excluded.recovery_name, \
+                 recovery_profile_picture_id = excluded.recovery_profile_picture_id, \
+                 recovery_account_group_name = excluded.recovery_account_group_name, state = 'pending'"
             ),
             rusqlite::params![
                 token,
                 source_account_uuid,
                 serde_json::to_string(&baseline_account_uuids)
                     .map_err(|error| format!("Failed to encode derivation baseline: {error}"))?,
+                recovery_name,
+                recovery_profile_picture_id,
+                recovery_account_group_name,
             ],
         )
         .map_err(|error| format!("Failed to persist derivation recovery record: {error}"))?;
@@ -287,6 +334,9 @@ pub fn begin_software_account_derivation_lease(
         operation_token: token,
         source_account_uuid: source_account_uuid.to_string(),
         baseline_account_uuids,
+        recovery_name: Some(recovery_name.to_string()),
+        recovery_profile_picture_id: Some(recovery_profile_picture_id.to_string()),
+        recovery_account_group_name: recovery_account_group_name.map(str::to_string),
         is_pending: true,
     })
 }
@@ -352,8 +402,78 @@ pub fn resume_software_account_derivation_lease(
         operation_token: previous_operation_token.to_string(),
         source_account_uuid: record.source_account_uuid,
         baseline_account_uuids: record.baseline_account_uuids,
+        recovery_name: record.recovery_name,
+        recovery_profile_picture_id: record.recovery_profile_picture_id,
+        recovery_account_group_name: record.recovery_account_group_name,
         is_pending: record.is_pending,
     })
+}
+
+/// Claim a crashed pending operation when Dart has no fence at all. Unlike
+/// `resume_*`, this does not accept a Dart token: SQLite is the durable source
+/// of truth and returns its full persisted intent so Dart can immediately
+/// recreate the exact fence before reading or mutating account state.
+pub fn claim_pending_software_account_derivation_lease(
+    db_path: &str,
+) -> Result<Option<SoftwareAccountDerivationLeaseInfo>, String> {
+    if software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned")
+        .values()
+        .any(|lease| lease.db_path == db_path)
+    {
+        return Err(DERIVATION_LEASE_BUSY_MESSAGE.to_string());
+    }
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(derivation_lock_path(db_path))
+        .map_err(|error| format!("Failed to open software derivation lock: {error}"))?;
+    lock_file
+        .try_lock_exclusive()
+        .map_err(|_| DERIVATION_LEASE_BUSY_MESSAGE.to_string())?;
+    let conn = rusqlite::Connection::open(db_path)
+        .map_err(|error| format!("Failed to open wallet DB: {error}"))?;
+    conn.busy_timeout(ACCOUNT_MUTATION_DB_BUSY_TIMEOUT)
+        .map_err(|error| format!("Failed to configure wallet DB busy timeout: {error}"))?;
+    let transaction = conn
+        .unchecked_transaction()
+        .map_err(|error| format!("Failed to inspect derivation recovery record: {error}"))?;
+    let Some(record) = read_persistent_derivation(&transaction)?.filter(|record| record.is_pending)
+    else {
+        transaction
+            .commit()
+            .map_err(|error| format!("Failed to commit derivation recovery inspection: {error}"))?;
+        lock_file
+            .unlock()
+            .map_err(|error| format!("Failed to release software derivation lock: {error}"))?;
+        return Ok(None);
+    };
+    transaction
+        .commit()
+        .map_err(|error| format!("Failed to commit derivation recovery inspection: {error}"))?;
+    let info = SoftwareAccountDerivationLeaseInfo {
+        operation_token: record.operation_token.clone(),
+        source_account_uuid: record.source_account_uuid.clone(),
+        baseline_account_uuids: record.baseline_account_uuids.clone(),
+        recovery_name: record.recovery_name.clone(),
+        recovery_profile_picture_id: record.recovery_profile_picture_id.clone(),
+        recovery_account_group_name: record.recovery_account_group_name.clone(),
+        is_pending: true,
+    };
+    software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned")
+        .insert(
+            record.operation_token,
+            SoftwareAccountDerivationLease {
+                db_path: db_path.to_string(),
+                _source_account_uuid: record.source_account_uuid,
+                lock_file,
+            },
+        );
+    Ok(Some(info))
 }
 
 /// Resolve a pending record only while its current native lease is held. An
@@ -3376,20 +3496,38 @@ mod tests {
             init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
                 .unwrap();
 
-        let a_token = begin_software_account_derivation_lease(db_path, &source_uuid)
-            .unwrap()
-            .operation_token;
+        let a_token = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Recovered",
+            "pfp-01",
+            None,
+        )
+        .unwrap()
+        .operation_token;
         assert!(is_software_account_derivation_locked(db_path).unwrap());
-        let b_while_a_live = begin_software_account_derivation_lease(db_path, &source_uuid)
-            .expect_err("B must not claim or reconcile A's live journal");
+        let b_while_a_live = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Recovered",
+            "pfp-01",
+            None,
+        )
+        .expect_err("B must not claim or reconcile A's live journal");
         assert!(b_while_a_live.contains("already in progress"));
 
         resolve_software_account_derivation_lease(&a_token, None).unwrap();
         finish_software_account_derivation_lease(&a_token).unwrap();
         assert!(!is_software_account_derivation_locked(db_path).unwrap());
-        let b_token = begin_software_account_derivation_lease(db_path, &source_uuid)
-            .unwrap()
-            .operation_token;
+        let b_token = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Recovered",
+            "pfp-01",
+            None,
+        )
+        .unwrap()
+        .operation_token;
         assert!(require_software_account_derivation_lease(&a_token, db_path).is_err());
         require_software_account_derivation_lease(&b_token, db_path).unwrap();
         resolve_software_account_derivation_lease(&b_token, None).unwrap();
@@ -3409,7 +3547,14 @@ mod tests {
         let (source_uuid, _) =
             init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
                 .unwrap();
-        let lease = begin_software_account_derivation_lease(db_path, &source_uuid).unwrap();
+        let lease = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Exact crash intent",
+            "pfp-02",
+            Some("Exact group"),
+        )
+        .unwrap();
         let token = lease.operation_token;
         finish_software_account_derivation_lease(&token).unwrap();
 
@@ -3424,9 +3569,25 @@ mod tests {
         .expect_err("pending derivation must block same-family linked import");
         assert!(error.contains("needs recovery"), "got: {error}");
 
-        let resumed = resume_software_account_derivation_lease(db_path, &token).unwrap();
-        resolve_software_account_derivation_lease(&resumed.operation_token, None).unwrap();
-        finish_software_account_derivation_lease(&resumed.operation_token).unwrap();
+        // No Dart fence exists in this test. The restart may only claim the
+        // native record because SQLite retained the exact user intent needed
+        // to recreate one before reconciliation.
+        let claimed = claim_pending_software_account_derivation_lease(db_path)
+            .unwrap()
+            .expect("the native pending record must be claimable without Dart state");
+        assert_eq!(claimed.operation_token, token);
+        assert_eq!(claimed.source_account_uuid, source_uuid);
+        assert_eq!(claimed.recovery_name.as_deref(), Some("Exact crash intent"));
+        assert_eq!(
+            claimed.recovery_profile_picture_id.as_deref(),
+            Some("pfp-02")
+        );
+        assert_eq!(
+            claimed.recovery_account_group_name.as_deref(),
+            Some("Exact group")
+        );
+        resolve_software_account_derivation_lease(&claimed.operation_token, None).unwrap();
+        finish_software_account_derivation_lease(&claimed.operation_token).unwrap();
         add_account_at_index(
             db_path,
             WalletNetwork::Main,
@@ -3436,6 +3597,46 @@ mod tests {
             1,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn no_fence_claim_recovers_the_exact_native_delta_after_crash() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
+                .unwrap();
+        let lease = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Native exact name",
+            "pfp-03",
+            Some("Native exact group"),
+        )
+        .unwrap();
+        let derived = derive_next_software_account(
+            db_path,
+            WalletNetwork::Main,
+            &seed,
+            None,
+            "Native exact name",
+            &lease.operation_token,
+        )
+        .unwrap();
+        // Crash after Rust committed the account but before Dart wrote a
+        // fence. Releasing only the OS lock models process death.
+        finish_software_account_derivation_lease(&lease.operation_token).unwrap();
+
+        let claimed = claim_pending_software_account_derivation_lease(db_path)
+            .unwrap()
+            .expect("pending record survives the crash");
+        assert_eq!(claimed.baseline_account_uuids, vec![source_uuid]);
+        assert_eq!(claimed.recovery_name.as_deref(), Some("Native exact name"));
+        resolve_software_account_derivation_lease(&claimed.operation_token, Some(&derived.0))
+            .unwrap();
+        finish_software_account_derivation_lease(&claimed.operation_token).unwrap();
     }
 
     #[test]
@@ -3452,9 +3653,15 @@ mod tests {
         let (source_uuid, _) =
             init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
                 .unwrap();
-        let token = begin_software_account_derivation_lease(db_path, &source_uuid)
-            .unwrap()
-            .operation_token;
+        let token = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Recovered",
+            "pfp-01",
+            None,
+        )
+        .unwrap()
+        .operation_token;
         finish_software_account_derivation_lease(&token).unwrap();
 
         for restart in 1..=2 {
@@ -3471,8 +3678,14 @@ mod tests {
         let recovered = resume_software_account_derivation_lease(db_path, &token).unwrap();
         resolve_software_account_derivation_lease(&recovered.operation_token, None).unwrap();
         finish_software_account_derivation_lease(&recovered.operation_token).unwrap();
-        let next = begin_software_account_derivation_lease(db_path, &source_uuid)
-            .expect("a recovered record must no longer block a new operation");
+        let next = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Recovered",
+            "pfp-01",
+            None,
+        )
+        .expect("a recovered record must no longer block a new operation");
         resolve_software_account_derivation_lease(&next.operation_token, None).unwrap();
         finish_software_account_derivation_lease(&next.operation_token).unwrap();
     }
