@@ -267,14 +267,19 @@ class PaymentLinkFundingRecovery {
 
   final PaymentLinkRecoveryStore _store;
 
-  Future<PaymentLinkRecoveryRecord> fund({
+  Future<T> fund<T>({
     required VizorPaymentLink link,
     required String sourceAccountUuid,
-    required Future<String> Function() broadcast,
+    required Future<T> Function() createTransaction,
+    required String Function(T result) fundingTxids,
   }) async {
     await _store.saveDraft(link: link, sourceAccountUuid: sourceAccountUuid);
-    final fundingTxids = await broadcast();
-    return _store.markFunded(address: link.address, fundingTxids: fundingTxids);
+    final result = await createTransaction();
+    await _store.markFunded(
+      address: link.address,
+      fundingTxids: fundingTxids(result),
+    );
+    return result;
   }
 }
 
