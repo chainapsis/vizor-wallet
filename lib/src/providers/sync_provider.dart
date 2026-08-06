@@ -665,6 +665,7 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   int _authoritativeBalanceVersion = 0;
   Future<void>? _authoritativeBalanceRecovery;
   int _authoritativeSpendableOperationCount = 0;
+  Future<void> _exclusiveRustSyncTail = Future<void>.value();
   bool _syncStartDeferred = false;
   int? _deferredSyncLatestTipHeight;
   // Mempool observer subscription. Started in `startSync` and
@@ -1611,12 +1612,37 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
     if (_requiresUnlock) return;
 
-    if (pause.hadActiveSync) {
-      log('SyncNotifier: resuming sync after wallet DB mutation');
+    if (pause.hadActiveSync || pause.hadMempoolObserver) {
+      log('SyncNotifier: resuming sync and mempool observation after pause');
       startSync();
     }
     if (pause.hadPolling || pause.hadActiveSync) {
       _startPolling();
+    }
+  }
+
+  /// Serializes a non-wallet foreground sync against the process-global Rust
+  /// sync engine. New foreground starts stay deferred until the operation has
+  /// completed and any previously active wallet sync can be resumed.
+  Future<T> runWithExclusiveRustSync<T>(Future<T> Function() operation) {
+    final result = _exclusiveRustSyncTail.then(
+      (_) => _runWithExclusiveRustSync(operation),
+    );
+    _exclusiveRustSyncTail = result.then<void>((_) {}, onError: (_, _) {});
+    return result;
+  }
+
+  Future<T> _runWithExclusiveRustSync<T>(Future<T> Function() operation) async {
+    _authoritativeSpendableOperationCount++;
+    WalletMutationSyncPause? pause;
+    try {
+      pause = await pauseForWalletMutation();
+      return await operation();
+    } finally {
+      if (pause != null) {
+        resumeAfterWalletMutation(pause);
+      }
+      _releaseForegroundSyncLease();
     }
   }
 
@@ -2567,16 +2593,21 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
       await waitForAuthoritativeSpendable(accountUuid: accountUuid);
       return await operation();
     } finally {
-      _authoritativeSpendableOperationCount--;
-      if (_authoritativeSpendableOperationCount == 0 &&
-          _syncStartDeferred &&
-          ref.mounted &&
-          !_requiresUnlock) {
-        final latestTipHeight = _deferredSyncLatestTipHeight;
-        _syncStartDeferred = false;
-        _deferredSyncLatestTipHeight = null;
-        startSync(latestTipHeight: latestTipHeight);
-      }
+      _releaseForegroundSyncLease();
+    }
+  }
+
+  void _releaseForegroundSyncLease() {
+    assert(_authoritativeSpendableOperationCount > 0);
+    _authoritativeSpendableOperationCount--;
+    if (_authoritativeSpendableOperationCount == 0 &&
+        _syncStartDeferred &&
+        ref.mounted &&
+        !_requiresUnlock) {
+      final latestTipHeight = _deferredSyncLatestTipHeight;
+      _syncStartDeferred = false;
+      _deferredSyncLatestTipHeight = null;
+      startSync(latestTipHeight: latestTipHeight);
     }
   }
 
