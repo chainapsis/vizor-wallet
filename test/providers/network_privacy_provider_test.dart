@@ -176,7 +176,7 @@ void main() {
     },
   );
 
-  test('enabling quiesces direct traffic before persistence', () async {
+  test('enabling persists Tor as soon as the runtime is fail-closed', () async {
     final events = <String>[];
     final container = ProviderContainer(
       overrides: [
@@ -207,10 +207,10 @@ void main() {
     expect(events, [
       'native:true',
       'begin-enable',
+      'store:true',
       'runtime-quiesce',
       'direct-quiesce',
       'restart',
-      'store:true',
       'configure:true',
       'native-resume',
     ]);
@@ -253,10 +253,10 @@ void main() {
     expect(events, [
       'native:true',
       'begin-enable',
+      'store:true',
       'runtime-quiesce',
       'direct-quiesce',
       'restart',
-      'store:true',
       'configure:true',
     ]);
     expect(state.torEnabled, isTrue);
@@ -295,8 +295,8 @@ void main() {
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
+      'store:false',
       'direct-allow',
       'native:false',
     ]);
@@ -370,8 +370,8 @@ void main() {
       'native-prepare-disable',
       'native-disable-drained',
       'restart',
-      'store:false',
       'configure:false',
+      'store:false',
       'direct-allow',
       'native:false',
     ]);
@@ -453,9 +453,12 @@ void main() {
 
       await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
 
+      // The saved route is already Tor by the time the drain is attempted, so
+      // a quiescence failure cannot end the toggle with direct saved.
       expect(events, [
         'native:true',
         'begin-enable',
+        'store:true',
         'runtime-quiesce',
         'direct-quiesce',
         'restart',
@@ -516,6 +519,122 @@ void main() {
     );
   });
 
+  test('the saved route may be stricter than the runtime, never laxer', () {
+    // A wake that declares Tor and cannot afford it defers; a wake that
+    // declares direct against a session enforcing Tor puts wallet queries and
+    // signed transactions on a direct connection.
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: true,
+        runtimeTorDesired: true,
+      ),
+      isTrue,
+    );
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: false,
+        runtimeTorDesired: false,
+      ),
+      isTrue,
+    );
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: true,
+        runtimeTorDesired: false,
+      ),
+      isTrue,
+    );
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: false,
+        runtimeTorDesired: true,
+      ),
+      isFalse,
+    );
+  });
+
+  test('a drain failure leaves the saved route no laxer than Tor', () async {
+    final events = <String>[];
+    final store = _RecordingStore(events);
+    final runtime = _DrainFailingRuntime(events);
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(store),
+        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+
+    expect(container.read(networkPrivacyProvider).status,
+        NetworkPrivacyConnectionStatus.failed);
+    expect(runtime.isTorEnabled(), isTrue);
+    expect(store.saved, isTrue);
+    expect(
+      networkPrivacyPersistedRouteIsSafe(
+        persistedTorEnabled: store.saved ?? false,
+        runtimeTorDesired: runtime.isTorEnabled(),
+      ),
+      isTrue,
+    );
+    // The write precedes the step that fails, so the strict value is already
+    // durable when it does.
+    expect(events.indexOf('store:true'), lessThan(events.indexOf('restart')));
+  });
+
+  test('a preference write failure refuses the route instead of proceeding',
+      () async {
+    final events = <String>[];
+    final runtime = _FakeRuntime(
+      events,
+      NetworkPrivacyConnectionStatus.connected,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        networkPrivacyPreferenceStoreProvider.overrideWithValue(
+          _WriteFailingStore(events),
+        ),
+        networkPrivacyRuntimeProvider.overrideWithValue(runtime),
+        networkPrivacyNativeUpdateCoordinatorProvider.overrideWithValue(
+          _FakeNativeUpdateCoordinator(events),
+        ),
+        networkPrivacyDirectRequestGateProvider.overrideWithValue(
+          _FakeDirectRequestGate(events),
+        ),
+        networkPrivacyTransportRestartProvider.overrideWithValue((
+          update,
+        ) async {
+          events.add('restart');
+          await update();
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(networkPrivacyProvider.notifier).setTorEnabled(true);
+
+    // Nothing past the write ran, and the runtime is left fail-closed, so this
+    // process reaches nothing while the user decides whether to retry.
+    expect(events, ['native:true', 'begin-enable', 'store:write-failed']);
+    expect(runtime.isTorEnabled(), isTrue);
+    final state = container.read(networkPrivacyProvider);
+    expect(state.status, NetworkPrivacyConnectionStatus.failed);
+    expect(state.targetTorEnabled, isTrue);
+  });
+
   test('failed Tor disable preserves the effective Tor route', () async {
     final events = <String>[];
     final runtime = _FakeRuntime(
@@ -549,10 +668,11 @@ void main() {
     events.clear();
     await container.read(networkPrivacyProvider.notifier).setTorEnabled(false);
 
+    // The runtime switch threw, so the direct value is never saved: a wake
+    // into a cold process must not read direct while Tor is still enforced.
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
       'native-resume',
     ]);
@@ -574,10 +694,11 @@ void main() {
 
     events.clear();
     await container.read(networkPrivacyProvider.notifier).retry();
+    // The runtime switch threw, so the direct value is never saved: a wake
+    // into a cold process must not read direct while Tor is still enforced.
     expect(events, [
       'native-prepare-disable',
       'restart',
-      'store:false',
       'configure:false',
       'native-resume',
     ]);
@@ -962,6 +1083,69 @@ class _PendingBootstrapRuntime implements NetworkPrivacyRuntime {
     configureStarted = true;
     configuredEnable = true;
     return _bootstrap.future;
+  }
+}
+
+class _RecordingStore implements NetworkPrivacyPreferenceStore {
+  _RecordingStore(this.events);
+
+  final List<String> events;
+  bool? saved;
+
+  @override
+  Future<bool> readTorEnabled() async => false;
+
+  @override
+  Future<void> writeTorEnabled(bool enabled) async {
+    saved = enabled;
+    events.add('store:$enabled');
+  }
+}
+
+class _WriteFailingStore implements NetworkPrivacyPreferenceStore {
+  _WriteFailingStore(this.events);
+
+  final List<String> events;
+
+  @override
+  Future<bool> readTorEnabled() async => false;
+
+  @override
+  Future<void> writeTorEnabled(bool enabled) async {
+    events.add('store:write-failed');
+    throw StateError('Could not save the Tor preference.');
+  }
+}
+
+/// Fails the direct drain, the reachable failure between the runtime going
+/// fail-closed and the rest of an enable.
+class _DrainFailingRuntime implements NetworkPrivacyRuntime {
+  _DrainFailingRuntime(this.events);
+
+  final List<String> events;
+  var _torEnabled = false;
+
+  @override
+  void beginEnable() {
+    _torEnabled = true;
+    events.add('begin-enable');
+  }
+
+  @override
+  bool isTorEnabled() => _torEnabled;
+
+  @override
+  Future<void> quiesceDirectRequests() async {
+    events.add('runtime-quiesce');
+    throw StateError('Timed out waiting for direct network connections to stop');
+  }
+
+  @override
+  Future<NetworkPrivacyConnectionStatus> configure({
+    required bool enabled,
+  }) async {
+    events.add('configure:$enabled');
+    return NetworkPrivacyConnectionStatus.connected;
   }
 }
 

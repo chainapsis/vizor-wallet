@@ -342,6 +342,26 @@ void _throwIfDirectDrainFailed(_NetworkPrivacyDrainFailure? failure) {
   Error.throwWithStackTrace(failure.error, failure.stackTrace);
 }
 
+/// Whether a (saved route, enforced route) pair is one a background wake can be
+/// trusted with.
+///
+/// The saved value is the only thing a process that never ran Dart has to go
+/// on. A background wake reads it, declares that route to Rust, and — finding
+/// direct — queries lightwalletd and broadcasts already-signed transactions
+/// over a direct connection. So the saved value may be stricter than what this
+/// process is enforcing, never laxer: a wake that declares Tor and cannot
+/// afford it defers, which costs a delay, while a wake that declares direct
+/// against a session enforcing Tor leaks.
+///
+/// A route change therefore persists in whichever order keeps this true at
+/// every point in between: tightening writes before the runtime switch, so a
+/// failure in between leaves the strict value behind; loosening writes after
+/// it, so the lax value never precedes the runtime it describes.
+bool networkPrivacyPersistedRouteIsSafe({
+  required bool persistedTorEnabled,
+  required bool runtimeTorDesired,
+}) => persistedTorEnabled || !runtimeTorDesired;
+
 NetworkPrivacyConnectionStatus _connectionStatus(
   rust_types.NetworkPrivacyStatus status,
 ) => switch (status) {
@@ -606,6 +626,30 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
       }
       if (generation != _generation) return;
       runtime.beginEnable();
+      // The runtime is fail-closed Tor from this line on, so the saved route
+      // is written here rather than after the drain and transport restart
+      // below. Anything that fails in between — the direct drain timing out is
+      // the reachable one — would otherwise end the toggle with Tor enforced
+      // and direct saved, and the next background wake into a cold process
+      // reads only the saved half.
+      try {
+        await store.writeTorEnabled(true);
+      } catch (error) {
+        if (generation != _generation) return;
+        // Nothing proceeds on a route whose saved half could not be made safe.
+        // The runtime stays fail-closed, so this process leaks nothing while
+        // the user decides whether to retry.
+        state = NetworkPrivacyState(
+          torEnabled: runtime.isTorEnabled(),
+          status: NetworkPrivacyConnectionStatus.failed,
+          targetTorEnabled: true,
+          softwareUpdatesAvailable: false,
+          error: error.toString(),
+          startupNotice: kTorStartupFailureNotice,
+        );
+        return;
+      }
+      if (generation != _generation) return;
     } else {
       state = NetworkPrivacyState(
         torEnabled: previousState.torEnabled,
@@ -654,16 +698,18 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         if (directDrain != null) {
           _throwIfDirectDrainFailed(await directDrain);
         }
-        if (generation != _generation) return;
-        await store.writeTorEnabled(enabled);
         // Re-check after every suspension point: a superseded disable that
         // reached `configure(false)` or `allow()` would reopen clearnet
         // underneath a newer enable that has already gone fail-closed.
         if (generation != _generation) return;
         nextStatus = await runtime.configure(enabled: enabled);
-        if (!enabled && generation == _generation) {
-          directRequests.allow();
-        }
+        if (enabled || generation != _generation) return;
+        // Written only now that the runtime has actually gone direct. Saving
+        // it any earlier would leave a window in which a background wake read
+        // direct while this process was still enforcing Tor.
+        await store.writeTorEnabled(false);
+        if (generation != _generation) return;
+        directRequests.allow();
       });
       if (generation != _generation) return;
       String? startupNotice;

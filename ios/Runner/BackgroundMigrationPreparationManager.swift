@@ -817,6 +817,24 @@ func migrationPreparationRearmFallbackAction(
   )
 }
 
+/// Whether a launching task should stop instead of claiming the tracking slot.
+///
+/// The launch-time inspections between the route gate and the claim are
+/// blocking, and the claim is immediately followed by the bring-up, which holds
+/// the task for as long as a cold bootstrap takes. So the stop flags are read
+/// once more here, before the claim, rather than only inside the tracking loop
+/// on the far side of that bring-up.
+///
+/// A task another run already owns is not this one's to end: it falls through
+/// to the ordinary claim refusal, which leaves the running task's bookkeeping
+/// alone.
+func migrationPreparationLaunchShouldStopBeforeClaiming(
+  stopRequested: Bool,
+  taskAlreadyRunning: Bool
+) -> Bool {
+  stopRequested && !taskAlreadyRunning
+}
+
 func shouldMarkMigrationPreparationForegroundContinuation(
   hasPendingRequest: Bool,
   hasBoundPreparation: Bool,
@@ -1342,7 +1360,9 @@ final class BackgroundMigrationPreparationManager {
     // Only the affordability question is asked here. Submission does no network
     // work, so nothing should pay for a bootstrap before the task that needs
     // one has actually started.
-    guard BackgroundNetworkRoute.allowsBackgroundNetworkPass() else {
+    guard BackgroundNetworkRoute.allowsBackgroundNetworkPass(
+      while: { !self.isSubmissionOwnedElsewhere }
+    ) else {
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
@@ -1730,7 +1750,9 @@ final class BackgroundMigrationPreparationManager {
     // confirmation-trackable run here keeps `pendingTrackableScopes` empty long
     // after the device is plugged back in, so no launch re-arms it and it stays
     // parked until the user opens its migration screen.
-    guard BackgroundNetworkRoute.allowsBackgroundNetworkPass() else {
+    guard BackgroundNetworkRoute.allowsBackgroundNetworkPass(
+      while: { !self.isTaskEndedByOwner }
+    ) else {
       markForegroundContinuationsReadyForHandoff()
       finishTorDeferredTask(task)
       return
@@ -1773,6 +1795,26 @@ final class BackgroundMigrationPreparationManager {
       task.setTaskCompleted(success: true)
       return
     }
+    if migrationPreparationLaunchShouldStopBeforeClaiming(
+      stopRequested: isTaskEndedByOwner,
+      taskAlreadyRunning: stateLock.withPreparationLock({ taskRunning })
+    ) {
+      // Ends through the completion the tracking loop uses, so an expiry that
+      // landed during the gates above still re-arms and an owner still does
+      // not.
+      queue.async { [weak self] in
+        guard let self else {
+          task.setTaskCompleted(success: true)
+          return
+        }
+        self.finishConfirmationTrackingTask(
+          task,
+          taskFailed: false,
+          completionPresentation: nil
+        )
+      }
+      return
+    }
     let cancellation = BackgroundMigrationCancellation()
     let mayRun = stateLock.withPreparationLock { () -> Bool in
       guard !mutationQuiesced
@@ -1813,7 +1855,9 @@ final class BackgroundMigrationPreparationManager {
       // come up ready — or a device unplugged since the gate above — ends the
       // task exactly the way that gate does: fail-closed, no network work, and
       // the run left to the foreground.
-      guard BackgroundNetworkRoute.allowsBackgroundNetworkWork() else {
+      guard BackgroundNetworkRoute.allowsBackgroundNetworkWork(
+        while: { !self.isTaskEndedByOwner }
+      ) else {
         self.standDownForUnavailableTorRoute(task)
         return
       }
@@ -2064,7 +2108,13 @@ final class BackgroundMigrationPreparationManager {
     // Tor not up, the user flipped the route from the foreground while this
     // task ran; that app already owns the run, and re-arming would send wake
     // after wake into a bootstrap this process has no reason to attempt.
-    guard BackgroundNetworkRoute.allowsBackgroundNetworkWork() else {
+    guard BackgroundNetworkRoute.allowsBackgroundNetworkWork(
+      while: { !self.isTaskEndedByOwner }
+    ) else {
+      // An owner that appeared while the sample above ran ends the pass rather
+      // than pausing it for the route; only the route question produces a
+      // deferral the manager can re-arm out of.
+      if isTaskEndedByOwner { return .cancelled }
       return BackgroundNetworkRoute.backgroundNetworkWorkRemainsAllowed
         ? .routeDeferred
         : .cancelled
@@ -2723,6 +2773,30 @@ final class BackgroundMigrationPreparationManager {
     monitor?.cancel()
   }
 
+  /// The flags an owner sets to end a task run, without the route question.
+  ///
+  /// This is what a gate is asked before it spends anything. The route half of
+  /// [`isTrackingStopRequested`] cannot serve there: a task that has not yet
+  /// brought Tor up reads as "route stopped" by construction, which is the
+  /// normal state of every task at launch.
+  private var isTaskEndedByOwner: Bool {
+    stateLock.withPreparationLock {
+      expired || foregroundHandoffRequested || mutationQuiesced
+        || notificationAuthorization.isDisabled
+    }
+  }
+
+  /// The owners that make a submission pointless.
+  ///
+  /// Narrower than [`isTaskEndedByOwner`] on purpose: `expired` and a foreground
+  /// handoff describe a task run and outlive it, and a submission asked for
+  /// outside one must not inherit them.
+  private var isSubmissionOwnedElsewhere: Bool {
+    stateLock.withPreparationLock {
+      mutationQuiesced || notificationAuthorization.isDisabled
+    }
+  }
+
   private var isTrackingStopRequested: Bool {
     // Only the foreground app writes the route preference, so finding Tor set
     // in a process that never brought Tor up means the user flipped it while
@@ -2736,10 +2810,7 @@ final class BackgroundMigrationPreparationManager {
     if !BackgroundNetworkRoute.backgroundNetworkWorkRemainsAllowed {
       return true
     }
-    return stateLock.withPreparationLock {
-      expired || foregroundHandoffRequested || mutationQuiesced
-        || notificationAuthorization.isDisabled
-    }
+    return isTaskEndedByOwner
   }
 
   func hasResumablePreparation() -> Bool {

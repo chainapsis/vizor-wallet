@@ -210,14 +210,19 @@ func ironwoodMigrationOutboxWakeDisposition(
 /// samples power and metering before it starts and can then block for a minute,
 /// so a charger pulled or a link that turned metered during it is a condition
 /// the wake was admitted under and no longer meets.
+///
+/// `routeStillAffordable` comes last and is deferred, because answering it
+/// samples power and the current path and costs up to a second. A wake the
+/// cheap flags have already ended does not spend that second; it has only
+/// seconds left, and they belong to the replacement it still owes.
 func ironwoodMigrationOutboxWakeMayStartNetworkWork(
   expired: Bool,
   disposition: IronwoodMigrationOutboxWakeDisposition,
   mutationQuiesced: Bool,
-  routeStillAffordable: Bool
+  routeStillAffordable: @autoclosure () -> Bool
 ) -> Bool {
-  !expired && !mutationQuiesced && routeStillAffordable
-    && disposition == .continueBackgroundWork
+  !expired && !mutationQuiesced && disposition == .continueBackgroundWork
+    && routeStillAffordable()
 }
 
 final class IronwoodMigrationNotificationAuthorizationMonitor {
@@ -548,6 +553,23 @@ final class BackgroundMigrationManager {
     stateLock.vizorWithLock { foregroundHandoffRequested }
   }
 
+  /// Whether this wake is still worth spending its remaining window on.
+  ///
+  /// The same predicate the wake applies on the far side of the bring-up, with
+  /// affordability supplied as established rather than re-sampled: on this side
+  /// the launch gate has just answered it, and the bring-up is the only step
+  /// that can invalidate the answer. Everything else it reads — the system
+  /// reclaiming the wake, the foreground taking it over, a wallet mutation, a
+  /// revoked permission — can already be true before a single byte is spent.
+  private var wakeMaySpendTime: Bool {
+    ironwoodMigrationOutboxWakeMayStartNetworkWork(
+      expired: isWakeExpired,
+      disposition: wakeDisposition,
+      mutationQuiesced: isMutationQuiesced,
+      routeStillAffordable: true
+    )
+  }
+
   func handoffToForeground() {
     stateLock.vizorWithLock {
       foregroundHandoffRequested = true
@@ -820,6 +842,7 @@ final class BackgroundMigrationManager {
     // costs nothing — this gate never bootstraps.
     guard BackgroundNetworkRoute.backgroundPassIsAllowed(
       routeIsTor: routeIsTor,
+      passIsLive: { self.wakeMaySpendTime },
       isAffordable: BackgroundNetworkRoute.torBackgroundPassIsAffordable
     ) else {
       finishTorDeferredWake(task)
@@ -844,7 +867,9 @@ final class BackgroundMigrationManager {
       // than on the notification-gate callback. A client that does not come up
       // ready ends the wake the same way an unaffordable one does: fail-closed,
       // no network work, the run left to the foreground.
-      guard BackgroundNetworkRoute.allowsBackgroundNetworkWork() else {
+      guard BackgroundNetworkRoute.allowsBackgroundNetworkWork(
+        while: { self.wakeMaySpendTime }
+      ) else {
         self.clearActiveCancellation()
         self.stopAuthorizationMonitoring()
         self.finishTorDeferredWake(task)

@@ -86,15 +86,30 @@ enum BackgroundNetworkRoute {
 
   /// The shape of a background pass gate, written once so a caller that has to
   /// declare the route earlier than it acts on the answer still composes the
-  /// same gate out of the same two questions.
+  /// same gate out of the same questions.
   ///
-  /// `isAffordable` is asked only on a Tor route. Sampling power and the
-  /// current path takes up to a second, and a direct route has nothing to pay
-  /// for.
+  /// `passIsLive` is asked before anything is sampled or brought up, and it is
+  /// required rather than optional. Re-reading a value on the far side of a
+  /// blocking step has a mirror: some values have to be read *before* entering
+  /// one, because entering it at all is the harm. Sampling power and the
+  /// current path costs up to a second, and bringing Tor up holds the caller
+  /// for as long as a cold bootstrap takes and offers no way to interrupt it —
+  /// a pass the system has already reclaimed spends its whole remaining window
+  /// in there and is suspended before it can leave a replacement behind.
+  /// Making it a parameter is what stops a gate from being reached without the
+  /// question being answered.
+  ///
+  /// It is asked ahead of the route, not after it: a pass that has ended has
+  /// nothing to do on a direct route either.
+  ///
+  /// `isAffordable` is asked only on a Tor route. A direct route has nothing to
+  /// pay for.
   static func backgroundPassIsAllowed(
     routeIsTor: Bool,
+    passIsLive: () -> Bool,
     isAffordable: () -> Bool
   ) -> Bool {
+    guard passIsLive() else { return false }
     guard routeIsTor else { return true }
     return isAffordable()
   }
@@ -224,9 +239,16 @@ enum BackgroundNetworkRoute {
   /// This never bootstraps Tor, so it is also the right question for a pass
   /// that has not decided whether it will do network work at all — scheduling
   /// a task, or inspecting local state first.
-  static func allowsBackgroundNetworkPass() -> Bool {
-    backgroundPassIsAllowed(
-      routeIsTor: declareBackgroundNetworkRoute(),
+  static func allowsBackgroundNetworkPass(
+    while passIsLive: () -> Bool
+  ) -> Bool {
+    // The declaration runs whatever the answer below is: it samples nothing,
+    // never bootstraps, and it is what makes a path that still reaches for
+    // lightwalletd in this process fail closed.
+    let routeIsTor = declareBackgroundNetworkRoute()
+    return backgroundPassIsAllowed(
+      routeIsTor: routeIsTor,
+      passIsLive: passIsLive,
       isAffordable: torBackgroundPassIsAffordable
     )
   }
@@ -279,14 +301,24 @@ enum BackgroundNetworkRoute {
   ///
   /// Call it immediately before network work. A pass that only wants to know
   /// whether it should exist at all wants `allowsBackgroundNetworkPass`.
-  static func allowsBackgroundNetworkWork() -> Bool {
-    backgroundPassIsAllowed(
-      routeIsTor: declareBackgroundNetworkRoute(),
+  static func allowsBackgroundNetworkWork(
+    while passIsLive: () -> Bool
+  ) -> Bool {
+    let routeIsTor = declareBackgroundNetworkRoute()
+    return backgroundPassIsAllowed(
+      routeIsTor: routeIsTor,
+      passIsLive: passIsLive,
       isAffordable: {
         torBackgroundPassMayProceed(
           power: currentPowerSupply(),
           metering: currentNetworkMetering(),
-          bringTorUp: bringUpTorForBackgroundWork
+          bringTorUp: {
+            // Asked again on this side of the sample. Sampling power and the
+            // current path is itself a second of the window, and the bring-up
+            // below is the one step that cannot be abandoned once entered.
+            guard passIsLive() else { return false }
+            return bringUpTorForBackgroundWork()
+          }
         )
       }
     )

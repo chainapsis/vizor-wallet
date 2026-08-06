@@ -295,11 +295,37 @@ class RunnerTests: XCTestCase {
   func testDirectRouteAlwaysRemainsAffordable() {
     // Nothing to pay for, so the re-sample is skipped rather than answered.
     XCTAssertTrue(
-      BackgroundNetworkRoute.backgroundPassIsAllowed(routeIsTor: false) {
-        XCTFail("a direct route must not sample power or metering")
-        return false
-      }
+      BackgroundNetworkRoute.backgroundPassIsAllowed(
+        routeIsTor: false,
+        passIsLive: { true },
+        isAffordable: {
+          XCTFail("a direct route must not sample power or metering")
+          return false
+        }
+      )
     )
+  }
+
+  func testEndedPassNeverSpendsTimeOnAGate() {
+    // The mirror of re-reading a value after a blocking step. Sampling power
+    // and the current path costs a second, and the bring-up behind it holds the
+    // caller for as long as a cold bootstrap takes and cannot be abandoned once
+    // entered — a pass the system has already reclaimed spends its whole
+    // remaining window there and is suspended before it can leave a replacement
+    // behind. Asked ahead of the route, because a pass that has ended has
+    // nothing to do on a direct route either.
+    for routeIsTor in [true, false] {
+      XCTAssertFalse(
+        BackgroundNetworkRoute.backgroundPassIsAllowed(
+          routeIsTor: routeIsTor,
+          passIsLive: { false },
+          isAffordable: {
+            XCTFail("an ended pass must not sample power or metering")
+            return true
+          }
+        )
+      )
+    }
   }
 
   func testMigrationPreparationRuntimeStateIsScopedToMatchingRun() {
@@ -770,6 +796,36 @@ class RunnerTests: XCTestCase {
         )
       )
     }
+  }
+
+  func testLaunchStopsBeforeClaimingTheTrackingSlot() {
+    // The inspections between the route gate and the claim are blocking, and
+    // the claim is followed immediately by the bring-up, so a task the system
+    // reclaimed during them must not claim and then spend a minute on a wave it
+    // will never observe.
+    XCTAssertTrue(
+      migrationPreparationLaunchShouldStopBeforeClaiming(
+        stopRequested: true,
+        taskAlreadyRunning: false
+      )
+    )
+  }
+
+  func testLaunchDoesNotEndATaskAnotherRunOwns() {
+    // A run already tracking owns its own bookkeeping; ending it from a second
+    // launch would clear the slot underneath it.
+    XCTAssertFalse(
+      migrationPreparationLaunchShouldStopBeforeClaiming(
+        stopRequested: true,
+        taskAlreadyRunning: true
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationLaunchShouldStopBeforeClaiming(
+        stopRequested: false,
+        taskAlreadyRunning: false
+      )
+    )
   }
 
   func testConfirmedWaveSuccessDoesNotRearmTracking() {
@@ -3250,6 +3306,7 @@ final class NativeLightwalletdClientTests: XCTestCase {
     XCTAssertTrue(
       BackgroundNetworkRoute.backgroundPassIsAllowed(
         routeIsTor: false,
+        passIsLive: { true },
         isAffordable: {
           asked = true
           return false
@@ -3267,6 +3324,7 @@ final class NativeLightwalletdClientTests: XCTestCase {
       XCTAssertEqual(
         BackgroundNetworkRoute.backgroundPassIsAllowed(
           routeIsTor: true,
+          passIsLive: { true },
           isAffordable: { affordable }
         ),
         affordable
