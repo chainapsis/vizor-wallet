@@ -943,6 +943,10 @@ class WidgetbookApp extends StatelessWidget {
                       builder: buildPaymentLinkMessageFilledUseCase,
                     ),
                     WidgetbookUseCase(
+                      name: 'Message interactive',
+                      builder: buildPaymentLinkMessageInteractiveUseCase,
+                    ),
+                    WidgetbookUseCase(
                       name: 'Review',
                       builder: buildPaymentLinkReviewUseCase,
                     ),

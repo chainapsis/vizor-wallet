@@ -485,6 +485,47 @@ void main() {
     },
   );
 
+  testWidgets(
+    'interactive Widgetbook message preview accepts and clears text',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1080, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await _pump(tester, const PaymentLinkInteractiveMessageDesktopPreview());
+
+      final editor = find.byKey(
+        const ValueKey('payment_link_interactive_message_editor'),
+      );
+      expect(editor, findsOneWidget);
+
+      await tester.tap(editor);
+      await tester.enterText(editor, 'A real message');
+      await tester.pump();
+
+      expect(
+        tester.widget<TextField>(editor).controller?.text,
+        'A real message',
+      );
+      expect(find.text('114/128'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(find.widgetWithText(AppButton, 'Continue'))
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(find.bySemanticsLabel('Delete gift card message'));
+      await tester.pump();
+      expect(tester.widget<TextField>(editor).controller?.text, isEmpty);
+      expect(find.text('128/128'), findsOneWidget);
+      expect(
+        tester
+            .widget<AppButton>(find.widgetWithText(AppButton, 'Continue'))
+            .onPressed,
+        isNull,
+      );
+    },
+  );
+
   testWidgets('redeem loading uses the Figma skeleton color hierarchy', (
     tester,
   ) async {
@@ -838,10 +879,7 @@ void main() {
       ),
     );
 
-    expect(
-      find.textContaining('Anyone with the link can redeem the gift'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('contains its claim secret'), findsOneWidget);
     expect(find.textContaining('encrypted and safe to share'), findsNothing);
   });
 

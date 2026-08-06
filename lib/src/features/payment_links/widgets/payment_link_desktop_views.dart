@@ -126,14 +126,16 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
     this.title = 'How Gift Cards work',
     this.subtitle = 'A great way to celebrate anything.',
     this.createDescription =
-        'Enter an amount, pick a design, optionally add a message, and '
-        'create the card.',
+        'Enter amount to gift, pick a design, add a message (optional) '
+        'and create your card with a single click.',
     this.shareDescription =
-        'The card link contains its claim secret. Anyone with the link can '
-        'redeem the gift, so share it only with the intended recipient.',
+        'After the card is created, you will get a uniquely generated link. '
+        'The link contains its claim secret, so share it only with the '
+        'intended recipient.',
     this.redeemDescription =
-        'The recipient can redeem the card in Vizor. A network fee is '
-        'deducted from the card balance when it is claimed.',
+        'Recipient can redeem the card in their Vizor wallet using the link. '
+        'A small fee will be deducted from the card balance in order to make '
+        'a shielded transaction.',
     this.closeLabel = 'Close',
     super.key,
   });
