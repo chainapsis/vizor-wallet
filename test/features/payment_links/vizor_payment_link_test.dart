@@ -6,16 +6,7 @@ import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_lin
 void main() {
   group('VizorPaymentLink', () {
     test('round trips a payment link payload', () {
-      final link = VizorPaymentLink(
-        network: 'main',
-        address: 'u1exampleaddress',
-        amountZatoshi: BigInt.from(123456789),
-        mnemonic:
-            'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
-        birthdayHeight: 3_456_789,
-        label: 'Demo link',
-        createdAt: DateTime.utc(2026, 6, 21, 12),
-      );
+      final link = _link();
 
       final encoded = link.encode();
       final decoded = VizorPaymentLink.decode(encoded);
@@ -35,6 +26,19 @@ void main() {
         () => VizorPaymentLink.decode('https://example.com/pay'),
         throwsFormatException,
       );
+    });
+
+    test('accepts the scheme and host case-insensitively', () {
+      final link = _link();
+      final uppercaseLink = link.encode().replaceFirst(
+        'vizor://payment-link',
+        'VIZOR://PAYMENT-LINK',
+      );
+
+      final decoded = VizorPaymentLink.decode(uppercaseLink);
+
+      expect(decoded.address, link.address);
+      expect(decoded.mnemonic, link.mnemonic);
     });
 
     test('rejects malformed payloads', () {
@@ -85,4 +89,17 @@ void main() {
       expect(() => VizorPaymentLink.decode(encoded), throwsFormatException);
     });
   });
+}
+
+VizorPaymentLink _link() {
+  return VizorPaymentLink(
+    network: 'main',
+    address: 'u1exampleaddress',
+    amountZatoshi: BigInt.from(123456789),
+    mnemonic:
+        'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about',
+    birthdayHeight: 3_456_789,
+    label: 'Demo link',
+    createdAt: DateTime.utc(2026, 6, 21, 12),
+  );
 }
