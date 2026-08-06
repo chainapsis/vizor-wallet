@@ -225,7 +225,7 @@ class PaymentLinkService implements PaymentLinkOperations {
     final fundingResult = await _sendShielded(
       fromAccountUuid: sourceAccountUuid,
       toAddress: link.address,
-      amountZatoshi: amountZatoshi,
+      amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
       memo: null,
     );
     await _recoveryStore.markFunded(

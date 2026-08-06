@@ -108,7 +108,7 @@ class RustPaymentLinkHardwareSigningService
                 accountUuid: sourceAccountUuid,
                 sendFlowId: sendFlowId,
                 toAddress: link.address,
-                amountZatoshi: amountZatoshi,
+                amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
               );
               proposalId = proposal.proposalId;
               final pcztBytes = await rust_sync.createPcztFromProposal(
