@@ -467,21 +467,25 @@ async fn install_bootstrapped_client<E: Display>(
         }
     };
 
-    if !is_tor_desired() {
-        return Ok(NetworkPrivacyStatus::Direct);
-    }
-
     {
-        // Adopting the pending mode under the install lock is what keeps a
-        // request made mid-bootstrap from being overtaken by the client that
-        // request was waiting for.
+        // The route is read and the client published under one lock, because
+        // `disable_tor` takes the same one: a switch to direct that lands
+        // between a check outside and the store would otherwise leave the
+        // status Ready with the route direct, and an orphaned client awake and
+        // padding behind it.
+        //
+        // Adopting the pending mode here too is what keeps a request made
+        // mid-bootstrap from being overtaken by the client it was waiting for.
         let mut slot = client_slot()
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !is_tor_desired() {
+            return Ok(NetworkPrivacyStatus::Direct);
+        }
         client.set_dormant(pending_dormant_mode());
         *slot = Some(client);
+        TOR_STATUS.store(STATUS_READY, Ordering::Release);
     }
-    TOR_STATUS.store(STATUS_READY, Ordering::Release);
     log::info!("network privacy: Tor is ready");
     Ok(NetworkPrivacyStatus::Ready)
 }
@@ -499,18 +503,25 @@ async fn await_tor_bootstrap<T, E: Display>(
 
 pub fn disable_tor() {
     ROUTE_DECIDED.store(true, Ordering::Release);
+    // Under the same lock a finishing bootstrap publishes through, so the two
+    // cannot interleave into a Ready status on a direct route.
+    let mut slot = client_slot()
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     TOR_DESIRED.store(false, Ordering::Release);
     TOR_STATUS.store(STATUS_DIRECT, Ordering::Release);
-    *client_slot()
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    *slot = None;
+    drop(slot);
     log::info!("network privacy: direct route enabled");
 }
 
 fn set_tor_failed() {
-    *client_slot()
+    let mut slot = client_slot()
         .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *slot = None;
+    // Same lock as the publish and the disable: a route that went direct while
+    // this bootstrap was failing keeps its own status.
     if is_tor_desired() {
         TOR_STATUS.store(STATUS_FAILED, Ordering::Release);
     }
@@ -598,7 +609,7 @@ mod tests {
     use super::{
         await_tor_bootstrap, cancel_direct_connections, client_slot, disable_tor,
         enable_tor_for_background_work, init_lock, install_bootstrapped_client, is_tor_desired,
-        mark_tor_desired, pending_dormant_mode, route_decision, set_tor_dormant, status,
+        mark_tor_desired, pending_dormant_mode, route_decision, set_tor_dormant, set_tor_failed, status,
         test_route_policy::lock_route_policy, tor_client_for_route, DirectRouteIo, DormantMode,
         NetworkPrivacyStatus, RouteDecision, TorClient, BACKGROUND_TOR_BOOTSTRAP_TIMEOUT,
         STATUS_READY, TOR_BOOTSTRAP_TIMEOUT, TOR_BOOTSTRAP_TIMEOUT_MESSAGE, TOR_STATUS,
@@ -765,6 +776,31 @@ mod tests {
         // spending the foreground deadline here would consume most windows
         // whole and leave no time for the work the bootstrap is for.
         assert!(BACKGROUND_TOR_BOOTSTRAP_TIMEOUT < TOR_BOOTSTRAP_TIMEOUT);
+    }
+
+    #[test]
+    fn a_route_that_went_direct_keeps_its_status_when_a_bootstrap_fails() {
+        let _policy = lock_route_policy();
+        mark_tor_desired();
+        disable_tor();
+
+        assert_eq!(status(), NetworkPrivacyStatus::Direct);
+        assert!(client_slot()
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_none());
+
+        // A bootstrap started before the switch reports its failure afterwards.
+        // The route is direct now, so the failure is not this route's to
+        // publish — a Failed status here would block requests the user asked to
+        // send directly.
+        set_tor_failed();
+
+        assert_eq!(status(), NetworkPrivacyStatus::Direct);
+        assert_eq!(
+            route_decision(is_tor_desired(), status(), false, false),
+            Ok(RouteDecision::Direct)
+        );
     }
 
     #[tokio::test]
