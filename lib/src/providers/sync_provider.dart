@@ -1633,10 +1633,16 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   }
 
   Future<T> _runWithExclusiveRustSync<T>(Future<T> Function() operation) async {
+    if (_requiresUnlock) {
+      throw StateError('Wallet is locked.');
+    }
     _authoritativeSpendableOperationCount++;
     WalletMutationSyncPause? pause;
     try {
       pause = await pauseForWalletMutation();
+      if (_requiresUnlock) {
+        throw StateError('Wallet is locked.');
+      }
       return await operation();
     } finally {
       if (pause != null) {
