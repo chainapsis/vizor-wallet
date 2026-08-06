@@ -1,6 +1,9 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
+import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_service.dart';
+import 'package:zcash_wallet/src/providers/account_provider.dart';
 
 void main() {
   test('pending and partial claim broadcasts retain their wallet DB', () {
@@ -49,6 +52,72 @@ void main() {
     expect(sameLinkName, isNot(contains(link.address)));
     expect(sameLinkName, isNot(contains('abandon')));
   });
+
+  test(
+    'hardware funding is rejected before creating a recovery draft',
+    () async {
+      final storage = _RecordingPaymentLinkRecoveryStorage();
+      final container = ProviderContainer(
+        overrides: [
+          accountProvider.overrideWith(_HardwareAccountNotifier.new),
+          paymentLinkRecoveryStoreProvider.overrideWithValue(
+            PaymentLinkRecoveryStore(storage),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(accountProvider.future);
+
+      await expectLater(
+        container
+            .read(paymentLinkServiceProvider)
+            .createFundedLink(
+              amountZatoshi: BigInt.from(100000),
+              sourceAccountUuid: 'hardware-account',
+            ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'Keystone payment links require the hardware signing flow.',
+          ),
+        ),
+      );
+      expect(storage.writeCount, 0);
+    },
+  );
+}
+
+class _HardwareAccountNotifier extends AccountNotifier {
+  @override
+  AccountState build() => const AccountState(
+    accounts: [
+      AccountInfo(
+        uuid: 'hardware-account',
+        name: 'Keystone',
+        order: 0,
+        isHardware: true,
+      ),
+    ],
+    activeAccountUuid: 'hardware-account',
+    activeAddress: 'u1hardwareaddress',
+  );
+}
+
+class _RecordingPaymentLinkRecoveryStorage
+    implements PaymentLinkRecoveryStorage {
+  int writeCount = 0;
+
+  @override
+  Future<void> delete() async {}
+
+  @override
+  Future<String?> read() async => null;
+
+  @override
+  Future<void> write(String value) async {
+    writeCount += 1;
+  }
 }
 
 VizorPaymentLink _link() {
