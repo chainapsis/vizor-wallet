@@ -125,6 +125,13 @@ class PaymentLinkService {
         'Payment link amount must be positive.',
       );
     }
+    if (_ref
+        .read(accountProvider.notifier)
+        .isHardwareAccount(sourceAccountUuid)) {
+      throw StateError(
+        'Keystone payment links require the hardware signing flow.',
+      );
+    }
 
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
     final paymentAccount = await rust_wallet.previewNewSoftwareAccount(
