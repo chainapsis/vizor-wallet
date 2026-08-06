@@ -60,6 +60,7 @@ import 'src/features/onboarding/unlock_screen.dart';
 import 'src/features/onboarding/welcome.dart';
 import 'src/features/pay/screens/pay_screen.dart';
 import 'src/features/payment_links/providers/payment_link_intake_provider.dart';
+import 'src/features/payment_links/screens/payment_links_desktop_screen.dart';
 import 'src/features/receive/screens/receive_screen.dart';
 import 'src/features/send/models/send_prefill_args.dart';
 import 'src/features/send/screens/keystone_send_scan_screen.dart';
@@ -802,6 +803,10 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
 /// Main application routes for the desktop (large-form-factor) tree.
 List<RouteBase> _desktopRoutes(Ref ref) => [
   GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
+  GoRoute(
+    path: '/payment-links',
+    builder: (_, _) => const PaymentLinksDesktopScreen(),
+  ),
   GoRoute(
     path: '/migration',
     builder: (_, _) => const IronwoodMigrationEntryScreen(),
