@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::migration_preparation::{self, MigrationPreparationProgress};
+use crate::network_privacy::NetworkPrivacyStatus;
 use crate::wallet::keys;
 use tonic::Code;
 
@@ -97,15 +98,23 @@ fn log_panic(context: &str, panic: Box<dyn std::any::Any + Send>) {
     log::error!("ffi: panic during {context}: {message}");
 }
 
-fn lightwalletd_runtime() -> Result<tokio::runtime::Runtime, String> {
+fn ffi_runtime() -> Result<tokio::runtime::Runtime, String> {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|error| format!("Create lightwalletd runtime: {error}"))
+        .map_err(|error| format!("Create FFI runtime: {error}"))
 }
 
 const LIGHTWALLETD_RESULT_CANCELLED: i32 = 3;
 const LIGHTWALLETD_CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+/// Tor is up and the caller may do network work over it.
+const NETWORK_PRIVACY_TOR_READY: i32 = 0;
+/// Tor is not up. The route stays Tor-desired and fail-closed, so the caller
+/// does no network work and defers to the foreground.
+const NETWORK_PRIVACY_TOR_NOT_READY: i32 = 1;
+/// Matches the panic code the other entry points return; also not ready.
+const NETWORK_PRIVACY_TOR_PANICKED: i32 = 2;
 
 #[repr(C)]
 pub struct CLightwalletdCancellation {
@@ -185,7 +194,7 @@ pub extern "C" fn zcash_lightwalletd_latest_block_height(
         let Some(output) = (unsafe { output.as_mut() }) else {
             return 1;
         };
-        let runtime = match lightwalletd_runtime() {
+        let runtime = match ffi_runtime() {
             Ok(runtime) => runtime,
             Err(error) => {
                 log::error!("ffi: {error}");
@@ -244,7 +253,7 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
         };
         let transaction_id =
             unsafe { std::slice::from_raw_parts(transaction_id, transaction_id_len) }.to_vec();
-        let runtime = match lightwalletd_runtime() {
+        let runtime = match ffi_runtime() {
             Ok(runtime) => runtime,
             Err(error) => {
                 log::error!("ffi: {error}");
@@ -313,7 +322,7 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
         }
         let raw_transaction =
             unsafe { std::slice::from_raw_parts(raw_transaction, raw_transaction_len) }.to_vec();
-        let runtime = match lightwalletd_runtime() {
+        let runtime = match ffi_runtime() {
             Ok(runtime) => runtime,
             Err(error) => {
                 log::error!("ffi: {error}");
@@ -364,6 +373,102 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
         Err(panic) => {
             log_panic("lightwalletd transaction submission", panic);
             2
+        }
+    }
+}
+
+/// Adopt the user's persisted Tor preference before any background network
+/// call. The desired route is process-local and defaults to direct, so a
+/// background wake into a cold process would otherwise reach lightwalletd over
+/// clearnet. The caller must have read the persisted preference itself; this
+/// only makes the process fail closed, and returns without bootstrapping Tor or
+/// touching the filesystem.
+///
+/// This is the whole of what a pass that cannot afford a bootstrap does about
+/// the route: it marks, does no network work, and leaves the run to the
+/// foreground. A pass that can afford one calls
+/// [`zcash_network_privacy_enable_tor_for_background_work`], which marks too.
+///
+/// A preference read outside Dart can be stale, so this is ignored once the
+/// process has decided its own route, and reports success either way — the
+/// caller refuses its network pass on a persisted Tor route regardless.
+#[no_mangle]
+pub extern "C" fn zcash_network_privacy_mark_tor_desired() -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        crate::network_privacy::mark_tor_desired();
+        0
+    });
+
+    match result {
+        Ok(code) => code,
+        Err(panic) => {
+            log_panic("network privacy Tor declaration", panic);
+            2
+        }
+    }
+}
+
+/// Bring Tor up for a background pass and block until it is usable or has
+/// failed, so that pass can do its network work on the user's chosen route
+/// without waiting for the foreground.
+///
+/// Call this only once the pass has established that the device is on external
+/// power and the link is unmetered. A cold bootstrap costs 8.45 MB down,
+/// 744 KB up and 23.7 s and leaves a 46.3 MB cache; the client then pads its
+/// guard connection continuously while awake, roughly 500 B/s against 27 B/s
+/// dormant. A warm one costs 0.64 s and no bytes. Those are charger-and-Wi-Fi
+/// costs, not battery-and-cellular ones. A pass that cannot show both
+/// conditions calls [`zcash_network_privacy_mark_tor_desired`] and defers.
+///
+/// `tor_directory` is the Tor data directory, created if it does not exist.
+///
+/// Returns `NETWORK_PRIVACY_TOR_READY` (0) when Tor is up and the caller may do
+/// network work over it; `NETWORK_PRIVACY_TOR_NOT_READY` (1) when it is not, for
+/// any reason at all — bad argument, bootstrap failure, the bootstrap deadline
+/// expiring, or a process that had already chosen the direct route — in which
+/// case the caller must do no network work and defer to the foreground; and
+/// `NETWORK_PRIVACY_TOR_PANICKED` (2) for a panic, which the caller treats as
+/// not ready. The route is left Tor-desired and fail-closed in every non-ready
+/// case, so a caller that ignores the answer is blocked rather than leaked.
+#[no_mangle]
+pub extern "C" fn zcash_network_privacy_enable_tor_for_background_work(
+    tor_directory: *const c_char,
+) -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        // Before the argument is even looked at: a bad path is still a pass
+        // whose persisted route is Tor, and it must not fall through to
+        // clearnet on its way out of here.
+        crate::network_privacy::mark_tor_desired();
+        let Some(tor_directory) = (unsafe { c_str_to_str(tor_directory) }) else {
+            return NETWORK_PRIVACY_TOR_NOT_READY;
+        };
+        let runtime = match ffi_runtime() {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                log::error!("ffi: {error}");
+                return NETWORK_PRIVACY_TOR_NOT_READY;
+            }
+        };
+        match runtime.block_on(crate::network_privacy::enable_tor_for_background_work(
+            std::path::Path::new(tor_directory),
+        )) {
+            Ok(NetworkPrivacyStatus::Ready) => NETWORK_PRIVACY_TOR_READY,
+            Ok(status) => {
+                log::info!("ffi: background Tor enable declined: {status:?}");
+                NETWORK_PRIVACY_TOR_NOT_READY
+            }
+            Err(error) => {
+                log::error!("ffi: background Tor enable: {error}");
+                NETWORK_PRIVACY_TOR_NOT_READY
+            }
+        }
+    });
+
+    match result {
+        Ok(code) => code,
+        Err(panic) => {
+            log_panic("network privacy background Tor enable", panic);
+            NETWORK_PRIVACY_TOR_PANICKED
         }
     }
 }
@@ -611,7 +716,7 @@ mod tests {
                 cancellation.cancelled.store(true, Ordering::Release);
             });
 
-            let runtime = lightwalletd_runtime().unwrap();
+            let runtime = ffi_runtime().unwrap();
             let started = std::time::Instant::now();
             let result = runtime.block_on(await_lightwalletd_request_or_cancellation(
                 Some(&cancellation),

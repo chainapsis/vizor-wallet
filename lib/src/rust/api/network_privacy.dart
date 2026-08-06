@@ -39,6 +39,14 @@ NetworkPrivacyStatus getNetworkPrivacyStatus() =>
 bool isTorEnabled() =>
     RustLib.instance.api.crateApiNetworkPrivacyIsTorEnabled();
 
+/// Suspends or resumes Tor's circuit maintenance alongside the app lifecycle.
+///
+/// A bootstrapped client otherwise keeps guard connections and directory tasks
+/// running while the app is in the background, which costs battery on mobile
+/// and does work iOS will kill the app for. A no-op until Tor is connected.
+void setNetworkPrivacyDormant({required bool dormant}) => RustLib.instance.api
+    .crateApiNetworkPrivacySetNetworkPrivacyDormant(dormant: dormant);
+
 /// Starts a token-protected loopback server that streams HTTPS update assets
 /// from the embedded Tor client directly to a native desktop updater.
 Future<String> startTorUpdateRelay() =>
