@@ -231,7 +231,7 @@ void main() {
     expect(
       find.text(
         'Vizor’s network requests go through Tor. Links opened in other apps '
-        'do not. Some services may not work over Tor.',
+        'do not.',
       ),
       findsOneWidget,
     );
@@ -288,7 +288,7 @@ void main() {
       expect(
         find.text(
           'Vizor’s network requests go through Tor. Links opened in other apps '
-          'do not. Some services may not work over Tor.',
+          'do not.',
         ),
         findsOneWidget,
       );
