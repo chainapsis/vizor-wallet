@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/formatting/zec_amount.dart';
 import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
+import '../../../providers/sync_provider.dart';
 import '../widgets/payment_link_card_selector_rail.dart';
 import '../widgets/payment_link_desktop_views.dart';
 import '../widgets/payment_link_gift_card.dart';
@@ -39,6 +41,8 @@ class _PaymentLinksDesktopScreenState
 
   final TextEditingController _amountController = TextEditingController();
   final FocusNode _amountFocusNode = FocusNode();
+  final TextEditingController _messageController = TextEditingController();
+  final FocusNode _messageFocusNode = FocusNode();
 
   _PaymentLinksLocalPage _page = _PaymentLinksLocalPage.home;
   PaymentLinkCardArtwork _selectedArtwork = PaymentLinkCardArtwork.gift;
@@ -61,6 +65,8 @@ class _PaymentLinksDesktopScreenState
       ..removeListener(_handleAmountFocus)
       ..dispose();
     _amountController.dispose();
+    _messageFocusNode.dispose();
+    _messageController.dispose();
     super.dispose();
   }
 
@@ -71,6 +77,7 @@ class _PaymentLinksDesktopScreenState
 
   void _showPage(_PaymentLinksLocalPage page) {
     _amountFocusNode.unfocus();
+    _messageFocusNode.unfocus();
     setState(() {
       _page = page;
       _showHelp = false;
@@ -99,6 +106,47 @@ class _PaymentLinksDesktopScreenState
   }
 
   void _handleAmountChanged(String _) => setState(() {});
+
+  bool get _hasMessage => _messageController.text.trim().isNotEmpty;
+
+  String? get _maxAmountText {
+    final sync = ref.watch(syncProvider).value;
+    if (sync == null ||
+        !sync.hasBalanceData ||
+        sync.spendableBalance <= BigInt.zero) {
+      return null;
+    }
+    return formatZecAmount(sync.spendableBalance);
+  }
+
+  void _useMaxAmount() {
+    final sync = ref.read(syncProvider).value;
+    if (sync == null ||
+        !sync.hasBalanceData ||
+        sync.spendableBalance <= BigInt.zero) {
+      return;
+    }
+    final text = formatZecAmount(sync.spendableBalance);
+    _amountController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _amountFocusNode.requestFocus();
+    setState(() {});
+  }
+
+  void _handleMessageChanged(String _) => setState(() {});
+
+  void _clearMessage() {
+    _messageController.clear();
+    _messageFocusNode.requestFocus();
+    setState(() {});
+  }
+
+  void _skipMessage() {
+    _messageController.clear();
+    _showPage(_PaymentLinksLocalPage.review);
+  }
 
   void _selectWizardStep(int step) {
     switch (step) {
@@ -129,13 +177,7 @@ class _PaymentLinksDesktopScreenState
     return switch (_page) {
       _PaymentLinksLocalPage.home => _buildHome(),
       _PaymentLinksLocalPage.amount => _buildAmount(),
-      _PaymentLinksLocalPage.message => PaymentLinkMessageDesktopView(
-        state: PaymentLinkMessageVisualState.empty,
-        card: PaymentLinkGiftCard(artwork: _selectedArtwork, showBack: true),
-        onBack: () => _showPage(_PaymentLinksLocalPage.home),
-        onSkip: () => _showPage(_PaymentLinksLocalPage.review),
-        onStepSelected: _selectWizardStep,
-      ),
+      _PaymentLinksLocalPage.message => _buildMessage(),
       _PaymentLinksLocalPage.review => PaymentLinkReviewDesktopView(
         card: PaymentLinkGiftCard(
           artwork: _selectedArtwork,
@@ -169,6 +211,7 @@ class _PaymentLinksDesktopScreenState
   }
 
   Widget _buildAmount() {
+    final maxAmountText = _maxAmountText;
     return PaymentLinkAmountDesktopView(
       state: _amountVisualState,
       card: PaymentLinkGiftCard(
@@ -178,6 +221,8 @@ class _PaymentLinksDesktopScreenState
         amountEditorKey: const ValueKey('payment_link_amount_editor'),
         amountInputFormatters: [_amountFormatter],
         onAmountChanged: _handleAmountChanged,
+        maxAmountText: maxAmountText,
+        onUseMax: maxAmountText == null ? null : _useMaxAmount,
         semanticLabel: 'Gift card amount input',
       ),
       cardSelector: PaymentLinkCardSelectorRail(
@@ -189,6 +234,31 @@ class _PaymentLinksDesktopScreenState
       onCreate: _hasPositiveAmount
           ? () => _showPage(_PaymentLinksLocalPage.message)
           : null,
+    );
+  }
+
+  Widget _buildMessage() {
+    return PaymentLinkMessageDesktopView(
+      state: _hasMessage
+          ? PaymentLinkMessageVisualState.filled
+          : PaymentLinkMessageVisualState.empty,
+      card: PaymentLinkGiftCard(
+        artwork: _selectedArtwork,
+        showBack: true,
+        messageController: _messageController,
+        messageFocusNode: _messageFocusNode,
+        messageEditorKey: const ValueKey('payment_link_message_editor'),
+        messageInputFormatters: [LengthLimitingTextInputFormatter(128)],
+        onMessageChanged: _handleMessageChanged,
+        onDeleteMessage: _hasMessage ? _clearMessage : null,
+        semanticLabel: 'Gift card message input',
+      ),
+      onBack: () => _showPage(_PaymentLinksLocalPage.home),
+      onSkip: _skipMessage,
+      onContinue: _hasMessage
+          ? () => _showPage(_PaymentLinksLocalPage.review)
+          : null,
+      onStepSelected: _selectWizardStep,
     );
   }
 }
