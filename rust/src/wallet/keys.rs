@@ -78,8 +78,14 @@ struct PersistentSoftwareAccountDerivation {
 /// second isolate/process cannot claim or clear a live operation's journal.
 struct SoftwareAccountDerivationLease {
     db_path: String,
-    _source_account_uuid: String,
+    kind: AccountMutationLeaseKind,
     lock_file: File,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AccountMutationLeaseKind {
+    SoftwareAccountDerivation,
+    WalletReset,
 }
 
 fn software_account_derivation_leases(
@@ -326,7 +332,7 @@ pub fn begin_software_account_derivation_lease(
         token.clone(),
         SoftwareAccountDerivationLease {
             db_path: db_path.to_string(),
-            _source_account_uuid: source_account_uuid.to_string(),
+            kind: AccountMutationLeaseKind::SoftwareAccountDerivation,
             lock_file,
         },
     );
@@ -394,7 +400,7 @@ pub fn resume_software_account_derivation_lease(
             previous_operation_token.to_string(),
             SoftwareAccountDerivationLease {
                 db_path: db_path.to_string(),
-                _source_account_uuid: record.source_account_uuid.clone(),
+                kind: AccountMutationLeaseKind::SoftwareAccountDerivation,
                 lock_file,
             },
         );
@@ -469,7 +475,7 @@ pub fn claim_pending_software_account_derivation_lease(
             record.operation_token,
             SoftwareAccountDerivationLease {
                 db_path: db_path.to_string(),
-                _source_account_uuid: record.source_account_uuid,
+                kind: AccountMutationLeaseKind::SoftwareAccountDerivation,
                 lock_file,
             },
         );
@@ -539,7 +545,12 @@ fn require_software_account_derivation_lease(token: &str, db_path: &str) -> Resu
         .lock()
         .expect("software derivation lease mutex poisoned");
     match leases.get(token) {
-        Some(lease) if lease.db_path == db_path => Ok(()),
+        Some(lease)
+            if lease.db_path == db_path
+                && lease.kind == AccountMutationLeaseKind::SoftwareAccountDerivation =>
+        {
+            Ok(())
+        }
         _ => Err(
             "Software account derivation operation is no longer owned by this process.".to_string(),
         ),
@@ -549,17 +560,73 @@ fn require_software_account_derivation_lease(token: &str, db_path: &str) -> Resu
 /// Finish a derivation operation. Only the process holding `token` can release
 /// its lease; a stale Dart caller cannot unlock another process's journal.
 pub fn finish_software_account_derivation_lease(token: &str) -> Result<(), String> {
-    let lease = software_account_derivation_leases()
+    finish_account_mutation_lease(
+        token,
+        AccountMutationLeaseKind::SoftwareAccountDerivation,
+        "Software account derivation operation is no longer owned by this process.",
+    )
+}
+
+/// Hold the same cross-process gate as software-account derivation across a
+/// full wallet reset. Unlike a derivation lease, this does not create or
+/// modify a persistent recovery record; it only prevents either operation
+/// from interleaving with the other's destructive DB and storage changes.
+pub fn begin_wallet_reset_lease(db_path: &str) -> Result<String, String> {
+    let mut leases = software_account_derivation_leases()
         .lock()
-        .expect("software derivation lease mutex poisoned")
-        .remove(token)
-        .ok_or_else(|| {
-            "Software account derivation operation is no longer owned by this process.".to_string()
-        })?;
+        .expect("software derivation lease mutex poisoned");
+    if leases.values().any(|lease| lease.db_path == db_path) {
+        return Err(DERIVATION_LEASE_BUSY_MESSAGE.to_string());
+    }
+
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(derivation_lock_path(db_path))
+        .map_err(|error| format!("Failed to open software derivation lock: {error}"))?;
+    lock_file
+        .try_lock_exclusive()
+        .map_err(|_| DERIVATION_LEASE_BUSY_MESSAGE.to_string())?;
+
+    let token = uuid::Uuid::new_v4().to_string();
+    leases.insert(
+        token.clone(),
+        SoftwareAccountDerivationLease {
+            db_path: db_path.to_string(),
+            kind: AccountMutationLeaseKind::WalletReset,
+            lock_file,
+        },
+    );
+    Ok(token)
+}
+
+pub fn finish_wallet_reset_lease(token: &str) -> Result<(), String> {
+    finish_account_mutation_lease(
+        token,
+        AccountMutationLeaseKind::WalletReset,
+        "Wallet reset operation is no longer owned by this process.",
+    )
+}
+
+fn finish_account_mutation_lease(
+    token: &str,
+    expected_kind: AccountMutationLeaseKind,
+    missing_message: &str,
+) -> Result<(), String> {
+    let mut leases = software_account_derivation_leases()
+        .lock()
+        .expect("software derivation lease mutex poisoned");
+    let lease = leases
+        .get(token)
+        .filter(|lease| lease.kind == expected_kind)
+        .ok_or_else(|| missing_message.to_string())?;
     lease
         .lock_file
         .unlock()
-        .map_err(|error| format!("Failed to release software derivation lock: {error}"))
+        .map_err(|error| format!("Failed to release software derivation lock: {error}"))?;
+    leases.remove(token);
+    Ok(())
 }
 
 /// Whether any process currently owns a derivation lease for this wallet.
@@ -3609,6 +3676,44 @@ mod tests {
         require_software_account_derivation_lease(&b_token, db_path).unwrap();
         resolve_software_account_derivation_lease(&b_token, None).unwrap();
         finish_software_account_derivation_lease(&b_token).unwrap();
+    }
+
+    #[test]
+    fn wallet_reset_and_software_derivation_share_one_mutation_gate() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("wallet.db");
+        let db_path = db_path.to_str().unwrap();
+        let seed = mnemonic_to_seed(&generate_mnemonic()).unwrap();
+        let (source_uuid, _) =
+            init_db_and_create_account(db_path, WalletNetwork::Main, &seed, None, "Source")
+                .unwrap();
+
+        let reset_token = begin_wallet_reset_lease(db_path).unwrap();
+        let derive_during_reset = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Blocked",
+            "pfp-01",
+            None,
+        )
+        .expect_err("derivation must not start while reset owns the wallet");
+        assert!(derive_during_reset.contains("already in progress"));
+        finish_wallet_reset_lease(&reset_token).unwrap();
+
+        let derive_token = begin_software_account_derivation_lease(
+            db_path,
+            &source_uuid,
+            "Blocked reset",
+            "pfp-01",
+            None,
+        )
+        .unwrap()
+        .operation_token;
+        let reset_during_derive = begin_wallet_reset_lease(db_path)
+            .expect_err("reset must not start while derivation owns the wallet");
+        assert!(reset_during_derive.contains("already in progress"));
+        resolve_software_account_derivation_lease(&derive_token, None).unwrap();
+        finish_software_account_derivation_lease(&derive_token).unwrap();
     }
 
     #[test]

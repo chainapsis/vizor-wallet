@@ -582,6 +582,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       );
       late final rust_wallet.SoftwareAccountDerivationLease nativeLease;
       late final _DerivedAccountRecoveryFence recoveryFence;
+      var sourceSeedFamilyPersistedBeforeLease = false;
       if (existingRawFence != null && existingRawFence.isNotEmpty) {
         final existingFence = _DerivedAccountRecoveryFence.decode(
           existingRawFence,
@@ -628,6 +629,16 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
               'No recovery phrase available for account $sourceAccountUuid',
             );
           }
+          // Bootstrap can recover the opaque family identifier from Rust for
+          // an older wallet without writing it back to secure storage. Make
+          // that authenticated source metadata durable before native records
+          // an allocation intent, so crash recovery can prove the delta.
+          await _persistDurableSourceSeedFamilyMetadata(
+            dbPath: dbPath,
+            network: network,
+            sourceAccountUuid: sourceAccountUuid,
+          );
+          sourceSeedFamilyPersistedBeforeLease = true;
           nativeLease = await rust_wallet.beginSoftwareAccountDerivationLease(
             dbPath: dbPath,
             network: network,
@@ -645,10 +656,18 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // were introduced need not byte-match a fresh encode.
       final recoveryFenceRaw = existingRawFence ?? recoveryFence.encode();
       try {
-        // There is intentionally no work between a no-fence native claim or
-        // begin and this durable write. If it fails without persisting, Rust
-        // proves the baseline still has no delta before aborting; otherwise
-        // its authoritative intent remains claimable on the next restart.
+        if (!sourceSeedFamilyPersistedBeforeLease) {
+          await _persistDurableSourceSeedFamilyMetadata(
+            dbPath: dbPath,
+            network: network,
+            sourceAccountUuid: recoveryFence.sourceAccountUuid,
+          );
+        }
+        // Once source metadata is durable, this is the first persistent Dart
+        // write after a no-fence native claim or begin. If it fails without
+        // persisting, Rust proves the baseline still has no delta before
+        // aborting; otherwise its authoritative intent remains claimable on
+        // the next restart.
         if (existingRawFence == null || existingRawFence.isEmpty) {
           try {
             await _storage.writeString(
@@ -1101,6 +1120,50 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       }
       return AccountInfo.fromJson(entry);
     }).toList();
+  }
+
+  Future<void> _persistDurableSourceSeedFamilyMetadata({
+    required String dbPath,
+    required String network,
+    required String sourceAccountUuid,
+  }) async {
+    final rustSources = (await rust_wallet.listAccounts(
+      dbPath: dbPath,
+      network: network,
+    )).where((account) => account.uuid == sourceAccountUuid).toList();
+    if (rustSources.length != 1 ||
+        rustSources.single.isHardware ||
+        rustSources.single.seedFamilyId == null) {
+      throw StateError(
+        'Cannot derive an account without authenticated software seed family metadata.',
+      );
+    }
+
+    final rustSeedFamilyId = rustSources.single.seedFamilyId!;
+    final durableAccounts = await _readDurableAccounts();
+    final sourceIndex = durableAccounts.indexWhere(
+      (account) => account.uuid == sourceAccountUuid,
+    );
+    if (sourceIndex < 0 || durableAccounts[sourceIndex].isHardware) {
+      throw StateError(
+        'Cannot derive an account without durable software source metadata.',
+      );
+    }
+
+    final durableSeedFamilyId = durableAccounts[sourceIndex].seedFamilyId;
+    if (durableSeedFamilyId != null &&
+        durableSeedFamilyId != rustSeedFamilyId) {
+      throw StateError(
+        'Durable source seed family metadata does not match the wallet database.',
+      );
+    }
+    if (durableSeedFamilyId == rustSeedFamilyId) return;
+
+    final updatedAccounts = [...durableAccounts];
+    updatedAccounts[sourceIndex] = durableAccounts[sourceIndex].copyWith(
+      seedFamilyId: rustSeedFamilyId,
+    );
+    await _saveAccounts(updatedAccounts);
   }
 
   Future<void> _publishDurablyRecoveredAccount(
@@ -1645,6 +1708,22 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
+    // Resolve the DB path before touching anything. Secure storage holds the
+    // randomized wallet DB name, so if this lookup fails we must abort with
+    // NOTHING deleted: wiping storage now would orphan the still-existing DB
+    // file (a retry would generate a fresh name and never find the old one).
+    final dbPath = await _getDbPath();
+    final resetLeaseToken = await rust_wallet.beginWalletResetLease(
+      dbPath: dbPath,
+    );
+    try {
+      await _resetWalletUnderAccountMutationLease(dbPath);
+    } finally {
+      await rust_wallet.finishWalletResetLease(operationToken: resetLeaseToken);
+    }
+  }
+
+  Future<void> _resetWalletUnderAccountMutationLease(String dbPath) async {
     Object? firstError;
     StackTrace? firstStackTrace;
     void recordError(String step, Object e, StackTrace st) {
@@ -1653,11 +1732,6 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       firstStackTrace ??= st;
     }
 
-    // Resolve the DB path before touching anything. Secure storage holds the
-    // randomized wallet DB name, so if this lookup fails we must abort with
-    // NOTHING deleted: wiping storage now would orphan the still-existing DB
-    // file (a retry would generate a fresh name and never find the old one).
-    final dbPath = await _getDbPath();
     final network = await _getNetwork();
     final migrationRevocations = <IronwoodMigrationAccountRevocation>[];
     final migrationLifecycle = IronwoodMigrationBackgroundLifecycle.instance;

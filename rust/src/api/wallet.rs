@@ -706,6 +706,18 @@ pub fn finish_software_account_derivation_lease(operation_token: String) -> Resu
     catch(|| keys::finish_software_account_derivation_lease(&operation_token))
 }
 
+/// Acquire the derivation gate for a full wallet reset. The returned token
+/// must remain held until both the wallet DB and secure storage have finished
+/// their coordinated cleanup.
+pub fn begin_wallet_reset_lease(db_path: String) -> Result<String, String> {
+    catch(|| keys::begin_wallet_reset_lease(&db_path))
+}
+
+/// Release the full-reset lease acquired by [begin_wallet_reset_lease].
+pub fn finish_wallet_reset_lease(operation_token: String) -> Result<(), String> {
+    catch(|| keys::finish_wallet_reset_lease(&operation_token))
+}
+
 /// Fail closed for destructive account operations while a live process owns a
 /// derivation lease. A stale sidecar without a held OS lock is not considered
 /// live after a crash.

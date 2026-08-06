@@ -267,6 +267,18 @@ Future<void> finishSoftwareAccountDerivationLease({
   operationToken: operationToken,
 );
 
+/// Acquire the derivation gate for a full wallet reset. The returned token
+/// must remain held until both the wallet DB and secure storage have finished
+/// their coordinated cleanup.
+Future<String> beginWalletResetLease({required String dbPath}) =>
+    RustLib.instance.api.crateApiWalletBeginWalletResetLease(dbPath: dbPath);
+
+/// Release the full-reset lease acquired by [begin_wallet_reset_lease].
+Future<void> finishWalletResetLease({required String operationToken}) => RustLib
+    .instance
+    .api
+    .crateApiWalletFinishWalletResetLease(operationToken: operationToken);
+
 /// Fail closed for destructive account operations while a live process owns a
 /// derivation lease. A stale sidecar without a held OS lock is not considered
 /// live after a crash.

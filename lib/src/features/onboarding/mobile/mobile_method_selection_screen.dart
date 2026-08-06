@@ -78,7 +78,7 @@ class MobileMethodSelectionScreen extends ConsumerWidget {
                           'mobile_welcome_derive_account',
                         ),
                         iconName: AppIcons.addNew,
-                        label: 'Add Account',
+                        label: 'Add account',
                         illustration:
                             'assets/illustrations/method_create_card_bg.png',
                         onTap: () => context.push(

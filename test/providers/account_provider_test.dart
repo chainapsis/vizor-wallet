@@ -391,6 +391,41 @@ void main() {
     }
 
     test(
+      'persists a bootstrapped source seed family before native allocation',
+      () async {
+        const legacySource = AccountInfo(
+          uuid: 'source',
+          name: 'Source',
+          order: 0,
+          isSeedAnchor: true,
+        );
+        await AppSecureStore.instance.writeString(
+          'zcash_accounts',
+          jsonEncode([legacySource.toJson()]),
+        );
+        rust.pauseDerivation();
+        final container = _deriveAccountContainer(source);
+        addTearDown(container.dispose);
+        await container.read(accountProvider.future);
+
+        final derive = container
+            .read(accountProvider.notifier)
+            .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+        await rust.waitForDerivationStart();
+        try {
+          final stored =
+              (jsonDecode(storage.values['zcash_accounts']!) as List).single
+                  as Map<String, dynamic>;
+          expect(stored['seedFamilyId'], 'software-family');
+          expect(rust.allocatedIndices, isEmpty);
+        } finally {
+          rust.resumeDerivation();
+        }
+        await derive;
+      },
+    );
+
+    test(
       'fences concurrent derive calls before another Rust index is selected',
       () async {
         rust.pauseDerivation();
@@ -462,6 +497,37 @@ void main() {
               .uuid,
           source.uuid,
         );
+      } finally {
+        rust.resumeDerivation();
+      }
+      await first;
+    });
+
+    test('blocks full reset while a derivation lease is live', () async {
+      rust.pauseDerivation();
+      final firstContainer = _deriveAccountContainer(source);
+      final secondContainer = _deriveAccountContainer(source);
+      addTearDown(firstContainer.dispose);
+      addTearDown(secondContainer.dispose);
+      await firstContainer.read(accountProvider.future);
+      await secondContainer.read(accountProvider.future);
+
+      final first = firstContainer
+          .read(accountProvider.notifier)
+          .deriveAccountFromExistingSeed(sourceAccountUuid: source.uuid);
+      await rust.waitForDerivationStart();
+      try {
+        await expectLater(
+          secondContainer.read(accountProvider.notifier).resetWallet(),
+          throwsA(
+            predicate<Object>(
+              (error) => error.toString().contains('already in progress'),
+              'a live native derivation lease blocks full reset',
+            ),
+          ),
+        );
+        expect(storage.values['zcash_accounts'], isNotNull);
+        expect(storage.values['zcash_derived_account_recovery'], isNotNull);
       } finally {
         rust.resumeDerivation();
       }
@@ -1613,6 +1679,7 @@ class _DerivationRustApiFake implements RustLibApi {
   Completer<void>? _derivationStarted;
   bool failNextDelete = false;
   String? _activeLeaseToken;
+  String? _activeResetLeaseToken;
   String? _persistentLeaseToken;
   bool _persistentLeaseIsPending = false;
   String? _persistentRecoveryName;
@@ -1635,6 +1702,7 @@ class _DerivationRustApiFake implements RustLibApi {
     _derivationGate = null;
     _derivationStarted = null;
     _activeLeaseToken = null;
+    _activeResetLeaseToken = null;
     _persistentLeaseToken = null;
     _persistentLeaseIsPending = false;
     _persistentRecoveryName = null;
@@ -1664,7 +1732,7 @@ class _DerivationRustApiFake implements RustLibApi {
     required String recoveryProfilePictureId,
     String? recoveryAccountGroupName,
   }) async {
-    if (_activeLeaseToken != null) {
+    if (_activeLeaseToken != null || _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
     if (_persistentLeaseIsPending) {
@@ -1695,7 +1763,7 @@ class _DerivationRustApiFake implements RustLibApi {
     required String dbPath,
     required String previousOperationToken,
   }) async {
-    if (_activeLeaseToken != null) {
+    if (_activeLeaseToken != null || _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
     // Existing round-three fixtures have only Dart state; materialize the
@@ -1732,7 +1800,7 @@ class _DerivationRustApiFake implements RustLibApi {
   crateApiWalletClaimPendingSoftwareAccountDerivationLease({
     required String dbPath,
   }) async {
-    if (_activeLeaseToken != null) {
+    if (_activeLeaseToken != null || _activeResetLeaseToken != null) {
       throw StateError('A software account derivation is already in progress.');
     }
     if (!_persistentLeaseIsPending || _persistentLeaseToken == null) {
@@ -1777,7 +1845,27 @@ class _DerivationRustApiFake implements RustLibApi {
   @override
   Future<bool> crateApiWalletIsSoftwareAccountDerivationLocked({
     required String dbPath,
-  }) async => _activeLeaseToken != null;
+  }) async => _activeLeaseToken != null || _activeResetLeaseToken != null;
+
+  @override
+  Future<String> crateApiWalletBeginWalletResetLease({
+    required String dbPath,
+  }) async {
+    if (_activeLeaseToken != null || _activeResetLeaseToken != null) {
+      throw StateError('A software account derivation is already in progress.');
+    }
+    return _activeResetLeaseToken = 'reset-lease';
+  }
+
+  @override
+  Future<void> crateApiWalletFinishWalletResetLease({
+    required String operationToken,
+  }) async {
+    if (_activeResetLeaseToken != operationToken) {
+      throw StateError('Wallet reset operation is no longer owned.');
+    }
+    _activeResetLeaseToken = null;
+  }
 
   void pauseDerivation() {
     _derivationGate = Completer<void>();

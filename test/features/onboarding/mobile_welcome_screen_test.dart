@@ -171,7 +171,7 @@ void main() {
       find.byKey(const ValueKey('mobile_welcome_derive_account')),
       findsOneWidget,
     );
-    expect(find.text('Add Account'), findsOneWidget);
+    expect(find.text('Add account'), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile_welcome_create')), findsOneWidget);
   });
 
