@@ -4,6 +4,8 @@ import '../models/vizor_payment_link.dart';
 
 enum PaymentLinkIntakeResult { accepted, ignored, rejected }
 
+const kPaymentLinkIntakeQueueCapacity = 16;
+
 class PaymentLinkIntakeState {
   const PaymentLinkIntakeState({
     this.pendingLinks = const [],
@@ -29,9 +31,25 @@ class PaymentLinkIntakeNotifier extends Notifier<PaymentLinkIntakeState> {
 
     try {
       final link = VizorPaymentLink.decode(rawUri);
-      state = PaymentLinkIntakeState(
-        pendingLinks: [...state.pendingLinks, link],
+      final pendingLinks = state.pendingLinks;
+      final duplicate = pendingLinks.any(
+        (pending) =>
+            pending.network == link.network &&
+            pending.address == link.address &&
+            pending.mnemonic == link.mnemonic,
       );
+      if (duplicate) {
+        state = PaymentLinkIntakeState(pendingLinks: pendingLinks);
+        return PaymentLinkIntakeResult.accepted;
+      }
+      if (pendingLinks.length >= kPaymentLinkIntakeQueueCapacity) {
+        state = PaymentLinkIntakeState(
+          pendingLinks: pendingLinks,
+          errorMessage: 'Too many payment links are waiting to open.',
+        );
+        return PaymentLinkIntakeResult.rejected;
+      }
+      state = PaymentLinkIntakeState(pendingLinks: [...pendingLinks, link]);
       return PaymentLinkIntakeResult.accepted;
     } on FormatException {
       state = PaymentLinkIntakeState(
