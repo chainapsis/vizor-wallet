@@ -158,43 +158,56 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
           child: AppModalCard(
             child: SizedBox(
               height: 393,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      title,
-                      style: AppTypography.labelLarge.copyWith(
-                        color: context.colors.text.accent,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            title,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: context.colors.text.accent,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            subtitle,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: context.colors.text.secondary,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          _HelpStep(
+                            icon: AppIcons.giftCard,
+                            text: createDescription,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          _HelpStep(
+                            icon: AppIcons.link,
+                            text: shareDescription,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          _HelpStep(
+                            icon: AppIcons.arrowDownCircle,
+                            text: redeemDescription,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      subtitle,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: context.colors.text.secondary,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    _HelpStep(icon: AppIcons.giftCard, text: createDescription),
-                    const SizedBox(height: AppSpacing.xs),
-                    _HelpStep(icon: AppIcons.link, text: shareDescription),
-                    const SizedBox(height: AppSpacing.xs),
-                    _HelpStep(
-                      icon: AppIcons.arrowDownCircle,
-                      text: redeemDescription,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    AppButton(
-                      key: const ValueKey('payment_link_help_close_button'),
-                      onPressed: onClose,
-                      variant: AppButtonVariant.ghost,
-                      size: AppButtonSize.mediumLarge,
-                      expand: true,
-                      child: Text(closeLabel),
-                    ),
-                  ],
-                ),
+                  ),
+                  AppButton(
+                    key: const ValueKey('payment_link_help_close_button'),
+                    onPressed: onClose,
+                    variant: AppButtonVariant.ghost,
+                    size: AppButtonSize.mediumLarge,
+                    expand: true,
+                    child: Text(closeLabel),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1150,10 +1163,15 @@ class _WizardStep extends StatelessWidget {
     return PaymentLinkAction(
       onPressed: onTap,
       selected: active,
-      builder: (context, _, focused) => _ActionFocusRing(
+      builder: (context, hovered, focused) => _ActionFocusRing(
         focused: focused,
         borderRadius: AppRadii.small,
-        child: content,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          opacity: hovered ? 0.72 : 1,
+          child: content,
+        ),
       ),
     );
   }
@@ -1455,21 +1473,26 @@ class _TabAction extends StatelessWidget {
       onPressed: onTap,
       selected: selected,
       role: SemanticsRole.tab,
-      builder: (context, _, focused) => _ActionFocusRing(
+      builder: (context, hovered, focused) => _ActionFocusRing(
         focused: focused,
         borderRadius: AppRadii.small,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppIcon(icon, size: 16, color: color),
-              const SizedBox(width: AppSpacing.xxs),
-              Text(
-                label,
-                style: AppTypography.labelLarge.copyWith(color: color),
-              ),
-            ],
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          opacity: hovered ? 0.72 : 1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppIcon(icon, size: 16, color: color),
+                const SizedBox(width: AppSpacing.xxs),
+                Text(
+                  label,
+                  style: AppTypography.labelLarge.copyWith(color: color),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1500,33 +1523,40 @@ class _TextAction extends StatelessWidget {
         : context.colors.text.muted;
     return PaymentLinkAction(
       onPressed: active ? onTap : null,
-      builder: (context, _, focused) => _ActionFocusRing(
+      builder: (context, hovered, focused) => _ActionFocusRing(
+        key: ValueKey('payment_link_text_action_focus_ring_$label'),
         focused: focused,
         borderRadius: AppRadii.small,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xxs,
-            vertical: AppSpacing.xxs,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (leading != null) ...[
-                IconTheme(
-                  data: IconThemeData(color: color, size: 16),
-                  child: leading!,
+        child: AnimatedOpacity(
+          key: ValueKey('payment_link_text_action_hover_$label'),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          opacity: hovered ? 0.72 : 1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.xxs,
+              vertical: AppSpacing.xxs,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (leading != null) ...[
+                  IconTheme(
+                    data: IconThemeData(color: color, size: 16),
+                    child: leading!,
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                ],
+                Text(
+                  label,
+                  style: AppTypography.bodyMedium.copyWith(color: color),
                 ),
-                const SizedBox(width: AppSpacing.xxs),
+                if (trailing != null) ...[
+                  const SizedBox(width: AppSpacing.xxs),
+                  trailing!,
+                ],
               ],
-              Text(
-                label,
-                style: AppTypography.bodyMedium.copyWith(color: color),
-              ),
-              if (trailing != null) ...[
-                const SizedBox(width: AppSpacing.xxs),
-                trailing!,
-              ],
-            ],
+            ),
           ),
         ),
       ),
@@ -1539,6 +1569,7 @@ class _ActionFocusRing extends StatelessWidget {
     required this.focused,
     required this.borderRadius,
     required this.child,
+    super.key,
   });
 
   final bool focused;
