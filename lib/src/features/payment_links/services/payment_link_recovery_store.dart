@@ -16,7 +16,7 @@ final paymentLinkRecoveryStoreProvider = Provider<PaymentLinkRecoveryStore>((
   );
 });
 
-enum PaymentLinkRecoveryState { draft, funded, shared, reclaiming }
+enum PaymentLinkRecoveryState { draft, funded, shared }
 
 const _fieldNotProvided = Object();
 
@@ -27,7 +27,6 @@ class PaymentLinkRecoveryRecord {
     required this.state,
     required this.updatedAt,
     this.fundingTxids,
-    this.reclaimTxids,
     this.archivedAt,
   });
 
@@ -36,7 +35,6 @@ class PaymentLinkRecoveryRecord {
   final PaymentLinkRecoveryState state;
   final DateTime updatedAt;
   final String? fundingTxids;
-  final String? reclaimTxids;
   final DateTime? archivedAt;
 
   bool get isArchived => archivedAt != null;
@@ -45,7 +43,6 @@ class PaymentLinkRecoveryRecord {
     required PaymentLinkRecoveryState state,
     required DateTime updatedAt,
     String? fundingTxids,
-    String? reclaimTxids,
     Object? archivedAt = _fieldNotProvided,
   }) {
     return PaymentLinkRecoveryRecord(
@@ -54,7 +51,6 @@ class PaymentLinkRecoveryRecord {
       state: state,
       updatedAt: updatedAt,
       fundingTxids: fundingTxids ?? this.fundingTxids,
-      reclaimTxids: reclaimTxids ?? this.reclaimTxids,
       archivedAt: identical(archivedAt, _fieldNotProvided)
           ? this.archivedAt
           : archivedAt as DateTime?,
@@ -214,31 +210,6 @@ class PaymentLinkRecoveryStore {
     });
   }
 
-  Future<PaymentLinkRecoveryRecord> markReclaiming({
-    required String address,
-    required String reclaimTxids,
-    DateTime? updatedAt,
-  }) {
-    return _runExclusive(() async {
-      if (reclaimTxids.trim().isEmpty) {
-        throw ArgumentError.value(
-          reclaimTxids,
-          'reclaimTxids',
-          'A reclaiming payment link requires a transaction id.',
-        );
-      }
-      final records = await _loadUnlocked();
-      final existing = _findRequired(records, address);
-      final updated = existing.copyWith(
-        state: PaymentLinkRecoveryState.reclaiming,
-        updatedAt: (updatedAt ?? DateTime.now()).toUtc(),
-        reclaimTxids: reclaimTxids.trim(),
-      );
-      await _writeRecords(_replaceByAddress(records, updated));
-      return updated;
-    });
-  }
-
   Future<List<PaymentLinkRecoveryRecord>> _loadUnlocked() async {
     final raw = await _storage.read();
     if (raw == null || raw.trim().isEmpty) return const [];
@@ -307,21 +278,6 @@ class PaymentLinkFundingRecovery {
   }
 }
 
-class PaymentLinkReclaimRecovery {
-  const PaymentLinkReclaimRecovery(this._store);
-
-  final PaymentLinkRecoveryStore _store;
-
-  Future<String> reclaim({
-    required String address,
-    required Future<String> Function() broadcast,
-  }) async {
-    final reclaimTxids = await broadcast();
-    await _store.markReclaiming(address: address, reclaimTxids: reclaimTxids);
-    return reclaimTxids;
-  }
-}
-
 PaymentLinkRecoveryRecord? _findByAddress(
   List<PaymentLinkRecoveryRecord> records,
   String address,
@@ -367,7 +323,6 @@ Map<String, Object?> _recordToJson(PaymentLinkRecoveryRecord record) {
     'sourceAccountUuid': record.sourceAccountUuid,
     'state': record.state.name,
     'fundingTxids': record.fundingTxids,
-    'reclaimTxids': record.reclaimTxids,
     'archivedAt': record.archivedAt?.toUtc().toIso8601String(),
     'updatedAt': record.updatedAt.toUtc().toIso8601String(),
   };
@@ -383,7 +338,6 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
   final sourceAccountUuid = value['sourceAccountUuid'];
   final stateRaw = value['state'];
   final fundingTxids = value['fundingTxids'];
-  final reclaimTxids = value['reclaimTxids'];
   final archivedAtRaw = value['archivedAt'];
   final updatedAtRaw = value['updatedAt'];
   if (linkRaw is! String ||
@@ -391,7 +345,6 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
       sourceAccountUuid.isEmpty ||
       stateRaw is! String ||
       (fundingTxids != null && fundingTxids is! String) ||
-      (reclaimTxids != null && reclaimTxids is! String) ||
       (archivedAtRaw != null && archivedAtRaw is! String) ||
       updatedAtRaw is! String) {
     throw const PaymentLinkRecoveryStoreFormatException(
@@ -426,7 +379,6 @@ PaymentLinkRecoveryRecord _recordFromJson(Object? value) {
     sourceAccountUuid: sourceAccountUuid,
     state: state,
     fundingTxids: fundingTxids as String?,
-    reclaimTxids: reclaimTxids as String?,
     archivedAt: archivedAt?.toUtc(),
     updatedAt: updatedAt.toUtc(),
   );

@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../main.dart' show log;
@@ -25,7 +26,6 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 class PaymentLinkClaimSession {
   const PaymentLinkClaimSession({
     required this.link,
-    required this.purpose,
     required this.destinationAddress,
     required this.directory,
     required this.dbPath,
@@ -36,7 +36,6 @@ class PaymentLinkClaimSession {
   });
 
   final VizorPaymentLink link;
-  final PaymentLinkSpendPurpose purpose;
   final String destinationAddress;
   final Directory directory;
   final String dbPath;
@@ -48,7 +47,63 @@ class PaymentLinkClaimSession {
   bool get canClaim => claimableZatoshi > BigInt.zero;
 }
 
-enum PaymentLinkSpendPurpose { claim, reclaim }
+enum PaymentLinkClaimBroadcastStatus {
+  broadcasted,
+  pendingBroadcast,
+  partialBroadcast,
+}
+
+@visibleForTesting
+PaymentLinkClaimBroadcastStatus paymentLinkClaimBroadcastStatusFromWire(
+  String status,
+) {
+  return switch (status) {
+    'broadcasted' => PaymentLinkClaimBroadcastStatus.broadcasted,
+    'pending_broadcast' => PaymentLinkClaimBroadcastStatus.pendingBroadcast,
+    'partial_broadcast' => PaymentLinkClaimBroadcastStatus.partialBroadcast,
+    _ => throw StateError('Unknown payment link broadcast status: $status'),
+  };
+}
+
+@visibleForTesting
+bool shouldRetainPaymentLinkClaimWallet(
+  PaymentLinkClaimBroadcastStatus status,
+) {
+  return status != PaymentLinkClaimBroadcastStatus.broadcasted;
+}
+
+@visibleForTesting
+String paymentLinkClaimWalletDirectoryName(VizorPaymentLink link) {
+  final identity = sha256
+      .convert(utf8.encode('${link.network}:${link.address}:${link.mnemonic}'))
+      .toString();
+  return 'payment_link_claim_$identity';
+}
+
+class PaymentLinkClaimResult {
+  const PaymentLinkClaimResult({required this.txids, required this.status});
+
+  final String txids;
+  final PaymentLinkClaimBroadcastStatus status;
+
+  bool get isBroadcasted =>
+      status == PaymentLinkClaimBroadcastStatus.broadcasted;
+}
+
+class PaymentLinkBroadcastPendingException implements Exception {
+  const PaymentLinkBroadcastPendingException({
+    required this.txids,
+    required this.status,
+    required this.message,
+  });
+
+  final String txids;
+  final String status;
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 class PaymentLinkService {
   PaymentLinkService(this._ref, this._recoveryStore);
@@ -96,12 +151,16 @@ class PaymentLinkService {
     await PaymentLinkFundingRecovery(_recoveryStore).fund(
       link: link,
       sourceAccountUuid: sourceAccountUuid,
-      broadcast: () => _sendShielded(
-        fromAccountUuid: sourceAccountUuid,
-        toAddress: ephemeralAddress,
-        amountZatoshi: amountZatoshi,
-        memo: null,
-      ),
+      broadcast: () async {
+        final result = await _sendShielded(
+          fromAccountUuid: sourceAccountUuid,
+          toAddress: ephemeralAddress,
+          amountZatoshi: amountZatoshi,
+          memo: null,
+        );
+        _requireFullyBroadcasted(result);
+        return result.txids;
+      },
     );
 
     unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
@@ -136,51 +195,11 @@ class PaymentLinkService {
         receiverAddress.isEmpty) {
       throw StateError('No active receive account.');
     }
-    return _prepareSpend(
-      link: link,
-      purpose: PaymentLinkSpendPurpose.claim,
-      destinationAddress: receiverAddress,
-    );
-  }
-
-  Future<PaymentLinkClaimSession> prepareCreatedLinkReclaim(
-    PaymentLinkRecoveryRecord record,
-  ) async {
-    if (record.state == PaymentLinkRecoveryState.reclaiming) {
-      throw StateError('Payment link reclaim is already in progress.');
-    }
-    final accountState = _ref.read(accountProvider).value;
-    final sourceAccountExists =
-        accountState?.accounts.any(
-          (account) => account.uuid == record.sourceAccountUuid,
-        ) ??
-        false;
-    if (!sourceAccountExists) {
-      throw StateError('Payment link source account is no longer available.');
-    }
-
-    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    if (record.link.network != endpoint.networkName) {
-      throw StateError(
-        'Payment link is for ${record.link.network}, but this wallet is using '
-        '${endpoint.networkName}.',
-      );
-    }
-    final sourceAddress = await rust_wallet.getUnifiedAddress(
-      dbPath: await getWalletDbPath(),
-      network: endpoint.networkName,
-      accountUuid: record.sourceAccountUuid,
-    );
-    return _prepareSpend(
-      link: record.link,
-      purpose: PaymentLinkSpendPurpose.reclaim,
-      destinationAddress: sourceAddress,
-    );
+    return _prepareSpend(link: link, destinationAddress: receiverAddress);
   }
 
   Future<PaymentLinkClaimSession> _prepareSpend({
     required VizorPaymentLink link,
-    required PaymentLinkSpendPurpose purpose,
     required String destinationAddress,
   }) async {
     await _requireShieldedAddress(destinationAddress);
@@ -192,19 +211,35 @@ class PaymentLinkService {
       );
     }
 
-    final tempWallet = await _createTemporaryWalletDb();
+    final tempWallet = await _createOrOpenTemporaryWalletDb(link);
     try {
-      final imported = await rust_wallet.importWallet(
-        mnemonic: link.mnemonic,
-        bip39Passphrase: '',
-        birthdayHeight: BigInt.from(link.birthdayHeight),
-        network: endpoint.networkName,
-        dbPath: tempWallet.dbPath,
-        accountName: purpose == PaymentLinkSpendPurpose.claim
-            ? 'Payment link claim'
-            : 'Payment link reclaim',
-      );
-      if (imported.unifiedAddress != link.address) {
+      final String importedAddress;
+      final String importedAccountUuid;
+      if (tempWallet.existed) {
+        final accounts = await rust_wallet.listAccounts(
+          dbPath: tempWallet.dbPath,
+          network: endpoint.networkName,
+        );
+        if (accounts.length != 1) {
+          throw StateError(
+            'Saved payment link claim wallet has an invalid account count.',
+          );
+        }
+        importedAddress = accounts.single.unifiedAddress;
+        importedAccountUuid = accounts.single.uuid;
+      } else {
+        final imported = await rust_wallet.importWallet(
+          mnemonic: link.mnemonic,
+          bip39Passphrase: '',
+          birthdayHeight: BigInt.from(link.birthdayHeight),
+          network: endpoint.networkName,
+          dbPath: tempWallet.dbPath,
+          accountName: 'Payment link claim',
+        );
+        importedAddress = imported.unifiedAddress;
+        importedAccountUuid = imported.accountUuid;
+      }
+      if (importedAddress != link.address) {
         throw const FormatException(
           'Payment link address does not match its recovery phrase.',
         );
@@ -214,7 +249,7 @@ class PaymentLinkService {
       final balance = await rust_sync.getBalance(
         dbPath: tempWallet.dbPath,
         network: endpoint.networkName,
-        accountUuid: imported.accountUuid,
+        accountUuid: importedAccountUuid,
       );
       var claimableZatoshi = BigInt.zero;
       var feeZatoshi = BigInt.zero;
@@ -222,7 +257,7 @@ class PaymentLinkService {
         final estimate = await rust_sync.estimateSendMaxMinConfirmations(
           dbPath: tempWallet.dbPath,
           network: endpoint.networkName,
-          accountUuid: imported.accountUuid,
+          accountUuid: importedAccountUuid,
           toAddress: destinationAddress,
         );
         claimableZatoshi = estimate.amountZatoshi;
@@ -236,104 +271,80 @@ class PaymentLinkService {
 
       return PaymentLinkClaimSession(
         link: link,
-        purpose: purpose,
         destinationAddress: destinationAddress,
         directory: tempWallet.directory,
         dbPath: tempWallet.dbPath,
-        accountUuid: imported.accountUuid,
+        accountUuid: importedAccountUuid,
         totalZatoshi: balance.total,
         claimableZatoshi: claimableZatoshi,
         feeZatoshi: feeZatoshi,
       );
     } catch (_) {
-      await _deleteTemporaryWalletDb(tempWallet.directory);
+      if (!tempWallet.existed) {
+        await _deleteTemporaryWalletDb(tempWallet.directory);
+      }
       rethrow;
     }
   }
 
-  Future<String> claimPreparedLink(PaymentLinkClaimSession session) async {
-    if (session.purpose != PaymentLinkSpendPurpose.claim) {
-      throw ArgumentError('A reclaim session cannot be used as a claim.');
-    }
+  Future<PaymentLinkClaimResult> claimPreparedLink(
+    PaymentLinkClaimSession session,
+  ) async {
     return _broadcastPreparedSpend(session);
   }
 
-  Future<String> reclaimPreparedCreatedLink(
-    PaymentLinkRecoveryRecord record,
+  Future<PaymentLinkClaimResult> _broadcastPreparedSpend(
     PaymentLinkClaimSession session,
   ) async {
-    if (session.purpose != PaymentLinkSpendPurpose.reclaim ||
-        session.link.address != record.link.address) {
-      throw ArgumentError('Payment link reclaim session does not match.');
+    if (!session.canClaim) {
+      throw StateError('Payment link has no spendable shielded balance yet.');
     }
-    try {
-      return await PaymentLinkReclaimRecovery(_recoveryStore).reclaim(
-        address: record.link.address,
-        broadcast: () =>
-            _broadcastPreparedSpend(session, discardSession: false),
+    final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
+    if (session.link.network != endpoint.networkName) {
+      throw StateError(
+        'Payment link is for ${session.link.network}, but this wallet is '
+        'using ${endpoint.networkName}.',
       );
-    } finally {
+    }
+    final estimate = await rust_sync.estimateSendMaxMinConfirmations(
+      dbPath: session.dbPath,
+      network: endpoint.networkName,
+      accountUuid: session.accountUuid,
+      toAddress: session.destinationAddress,
+    );
+    if (estimate.amountZatoshi <= BigInt.zero) {
+      throw StateError('Payment link has no spendable shielded balance yet.');
+    }
+
+    final sendResult = await _sendShielded(
+      dbPath: session.dbPath,
+      fromAccountUuid: session.accountUuid,
+      toAddress: session.destinationAddress,
+      amountZatoshi: estimate.amountZatoshi,
+      memo: null,
+      mnemonic: session.link.mnemonic,
+      useMinConfirmations: true,
+    );
+    final claimResult = PaymentLinkClaimResult(
+      txids: sendResult.txids,
+      status: paymentLinkClaimBroadcastStatusFromWire(sendResult.status),
+    );
+    if (!shouldRetainPaymentLinkClaimWallet(claimResult.status)) {
       await discardClaimSession(session);
     }
+    unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
+    return claimResult;
   }
 
-  Future<String> _broadcastPreparedSpend(
-    PaymentLinkClaimSession session, {
-    bool discardSession = true,
-  }) async {
-    try {
-      if (!session.canClaim) {
-        throw StateError('Payment link has no spendable shielded balance yet.');
-      }
-      final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-      if (session.link.network != endpoint.networkName) {
-        throw StateError(
-          'Payment link is for ${session.link.network}, but this wallet is '
-          'using ${endpoint.networkName}.',
-        );
-      }
-      final estimate = await rust_sync.estimateSendMaxMinConfirmations(
-        dbPath: session.dbPath,
-        network: endpoint.networkName,
-        accountUuid: session.accountUuid,
-        toAddress: session.destinationAddress,
-      );
-      if (estimate.amountZatoshi <= BigInt.zero) {
-        throw StateError('Payment link has no spendable shielded balance yet.');
-      }
-
-      final txids = await _sendShielded(
-        dbPath: session.dbPath,
-        fromAccountUuid: session.accountUuid,
-        toAddress: session.destinationAddress,
-        amountZatoshi: estimate.amountZatoshi,
-        memo: null,
-        mnemonic: session.link.mnemonic,
-        useMinConfirmations: true,
-      );
-      unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
-      return txids;
-    } finally {
-      if (discardSession) {
-        await discardClaimSession(session);
-      }
-    }
-  }
-
-  Future<String> claimLink(VizorPaymentLink link) async {
+  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
     final session = await prepareClaim(link);
     return claimPreparedLink(session);
-  }
-
-  Future<String> reclaimCreatedLink(PaymentLinkRecoveryRecord record) async {
-    final session = await prepareCreatedLinkReclaim(record);
-    return reclaimPreparedCreatedLink(record, session);
   }
 
   Future<void> discardClaimSession(PaymentLinkClaimSession session) =>
       _deleteTemporaryWalletDb(session.directory);
 
-  Future<String> _sendShielded({
+  Future<rust_sync.ExecuteProposalResult> _sendShielded({
     String? dbPath,
     required String fromAccountUuid,
     required String toAddress,
@@ -376,10 +387,8 @@ class PaymentLinkService {
         needsSaplingParams: proposal.needsSaplingParams,
         mnemonic: mnemonic,
       );
-      if (result.status != 'broadcasted') {
-        throw StateError(result.message ?? 'Transaction was not broadcast.');
-      }
-      return result.txids;
+      paymentLinkClaimBroadcastStatusFromWire(result.status);
+      return result;
     } catch (e) {
       try {
         await rust_sync.discardProposal(
@@ -453,30 +462,42 @@ class PaymentLinkService {
 
   Future<void> _runBlockingSync({required String dbPath}) async {
     final endpoint = _ref.read(rpcEndpointFailoverProvider).current;
-    await rust_sync.runFullSyncBlocking(
-      dbPath: dbPath,
-      lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
-      network: endpoint.networkName,
-      mode: 1,
-    );
+    await _ref
+        .read(syncProvider.notifier)
+        .runWithExclusiveRustSync(
+          () => rust_sync.runFullSyncBlocking(
+            dbPath: dbPath,
+            lightwalletdUrl: endpoint.normalizedLightwalletdUrl,
+            network: endpoint.networkName,
+            mode: 1,
+          ),
+        );
   }
 
-  Future<({Directory directory, String dbPath})>
-  _createTemporaryWalletDb() async {
+  Future<({Directory directory, String dbPath, bool existed})>
+  _createOrOpenTemporaryWalletDb(VizorPaymentLink link) async {
     final supportDir = await getWalletSupportDirectory();
-    final random = Random.secure();
-    final suffix = List<int>.generate(
-      8,
-      (_) => random.nextInt(256),
-    ).map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
     final separator = Platform.pathSeparator;
     final directory = Directory(
-      '${supportDir.path}${separator}payment_link_claim_$suffix',
+      '${supportDir.path}$separator${paymentLinkClaimWalletDirectoryName(link)}',
     );
+    final dbPath = '${directory.path}${separator}zcash_wallet.db';
+    final existed = await File(dbPath).exists();
     await directory.create(recursive: true);
-    return (
-      directory: directory,
-      dbPath: '${directory.path}${separator}zcash_wallet.db',
+    return (directory: directory, dbPath: dbPath, existed: existed);
+  }
+
+  void _requireFullyBroadcasted(rust_sync.ExecuteProposalResult result) {
+    if (paymentLinkClaimBroadcastStatusFromWire(result.status) ==
+        PaymentLinkClaimBroadcastStatus.broadcasted) {
+      return;
+    }
+    throw PaymentLinkBroadcastPendingException(
+      txids: result.txids,
+      status: result.status,
+      message:
+          result.message ??
+          'Payment link funding transaction is waiting to be broadcast.',
     );
   }
 

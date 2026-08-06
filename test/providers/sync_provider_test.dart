@@ -90,6 +90,43 @@ void main() {
     },
   );
 
+  test('exclusive Rust sync operations are serialized and bracketed', () async {
+    late _ExclusiveRustSyncTestNotifier notifier;
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        syncProvider.overrideWith(
+          () => notifier = _ExclusiveRustSyncTestNotifier(),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+
+    final firstRelease = Completer<void>();
+    final firstStarted = Completer<void>();
+    var secondStarted = false;
+    final first = notifier.runWithExclusiveRustSync(() async {
+      firstStarted.complete();
+      await firstRelease.future;
+      return 'first';
+    });
+    await firstStarted.future;
+    final second = notifier.runWithExclusiveRustSync(() async {
+      secondStarted = true;
+      return 'second';
+    });
+
+    await Future<void>.delayed(Duration.zero);
+    expect(secondStarted, isFalse);
+    firstRelease.complete();
+
+    expect(await Future.wait([first, second]), ['first', 'second']);
+    expect(notifier.pauseCount, 2);
+    expect(notifier.resumeCount, 2);
+  });
+
   test('refreshAfterUnlock propagates DB path resolution failures', () async {
     final container = ProviderContainer(
       overrides: [
@@ -437,6 +474,35 @@ class _LifecycleTestSyncNotifier extends SyncNotifier {
 
   void replaceState(SyncState next) {
     state = AsyncData(next);
+  }
+}
+
+class _ExclusiveRustSyncTestNotifier extends SyncNotifier {
+  _ExclusiveRustSyncTestNotifier()
+    : super(walletDbPathResolver: () async => 'wallet.db');
+
+  var pauseCount = 0;
+  var resumeCount = 0;
+
+  @override
+  Future<SyncState> build() async => SyncState();
+
+  @override
+  Future<WalletMutationSyncPause> pauseForWalletMutation({
+    FutureOr<void> Function()? onStoppingSync,
+  }) async {
+    pauseCount++;
+    await onStoppingSync?.call();
+    return const WalletMutationSyncPause(
+      hadActiveSync: false,
+      hadPolling: false,
+      hadMempoolObserver: false,
+    );
+  }
+
+  @override
+  void resumeAfterWalletMutation(WalletMutationSyncPause pause) {
+    resumeCount++;
   }
 }
 

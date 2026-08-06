@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/features/payment_links/models/vizor_payment_link.dart';
 import 'package:zcash_wallet/src/features/payment_links/services/payment_link_recovery_store.dart';
@@ -108,90 +110,27 @@ void main() {
       expect(restored.single.link.mnemonic, link.mnemonic);
     });
 
-    test('reclaim broadcast keeps the secret and records its txids', () async {
-      final storage = _FakePaymentLinkRecoveryStorage();
-      final store = PaymentLinkRecoveryStore(storage);
+    test('rejects recovery states outside the v1 schema', () async {
       final link = _link();
-
-      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
-      await store.markFunded(
-        address: link.address,
-        fundingTxids: 'funding-txid',
-      );
-      await store.markShared(address: link.address);
-
-      final txids = await PaymentLinkReclaimRecovery(
-        store,
-      ).reclaim(address: link.address, broadcast: () async => 'reclaim-txid');
-
-      expect(txids, 'reclaim-txid');
-      final restarted = await PaymentLinkRecoveryStore(storage).load();
-      expect(restarted.single.state, PaymentLinkRecoveryState.reclaiming);
-      expect(restarted.single.reclaimTxids, 'reclaim-txid');
-      expect(restarted.single.link.mnemonic, link.mnemonic);
-    });
-
-    test(
-      'reclaim metadata failure leaves the shared secret recoverable',
-      () async {
-        final storage = _FakePaymentLinkRecoveryStorage(failOnWrite: 4);
-        final store = PaymentLinkRecoveryStore(storage);
-        final link = _link();
-
-        await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
-        await store.markFunded(
-          address: link.address,
-          fundingTxids: 'funding-txid',
-        );
-        await store.markShared(address: link.address);
-
-        await expectLater(
-          PaymentLinkReclaimRecovery(store).reclaim(
-            address: link.address,
-            broadcast: () async => 'reclaim-txid',
-          ),
-          throwsStateError,
-        );
-
-        final restarted = await PaymentLinkRecoveryStore(storage).load();
-        expect(restarted.single.state, PaymentLinkRecoveryState.shared);
-        expect(restarted.single.reclaimTxids, isNull);
-        expect(restarted.single.link.mnemonic, link.mnemonic);
-      },
-    );
-
-    test('reclaiming records cannot regress to funded or shared', () async {
-      final storage = _FakePaymentLinkRecoveryStorage();
-      final store = PaymentLinkRecoveryStore(storage);
-      final link = _link();
-
-      await store.saveDraft(link: link, sourceAccountUuid: 'source-account');
-      await store.markFunded(
-        address: link.address,
-        fundingTxids: 'funding-txid',
-      );
-      await store.markShared(address: link.address);
-      await store.markReclaiming(
-        address: link.address,
-        reclaimTxids: 'reclaim-txid',
-      );
+      final storage = _FakePaymentLinkRecoveryStorage()
+        ..value = jsonEncode({
+          'version': 1,
+          'records': [
+            {
+              'link': link.encode(),
+              'sourceAccountUuid': 'source-account',
+              'state': 'unsupported',
+              'fundingTxids': 'funding-txid',
+              'archivedAt': null,
+              'updatedAt': DateTime.utc(2026, 8, 5).toIso8601String(),
+            },
+          ],
+        });
 
       await expectLater(
-        store.markFunded(
-          address: link.address,
-          fundingTxids: 'other-funding-txid',
-        ),
-        throwsStateError,
+        PaymentLinkRecoveryStore(storage).load(),
+        throwsA(isA<PaymentLinkRecoveryStoreFormatException>()),
       );
-      await expectLater(
-        store.markShared(address: link.address),
-        throwsStateError,
-      );
-
-      final restarted = await PaymentLinkRecoveryStore(storage).load();
-      expect(restarted.single.state, PaymentLinkRecoveryState.reclaiming);
-      expect(restarted.single.reclaimTxids, 'reclaim-txid');
-      expect(restarted.single.link.mnemonic, link.mnemonic);
     });
 
     test('fails loud instead of hiding corrupted recovery data', () async {
