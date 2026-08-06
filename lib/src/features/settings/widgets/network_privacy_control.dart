@@ -421,7 +421,7 @@ _NetworkPrivacyPresentation _presentationFor(
     (NetworkPrivacyConnectionStatus.connected, _) => _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
       description:
-          'Vizor’s network requests go through Tor. Links opened in other apps do not.',
+          'Vizor’s network requests go through Tor. Links opened in other apps use those apps’ network settings.',
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.accent,
