@@ -573,50 +573,47 @@ class RunnerTests: XCTestCase {
     )
   }
 
-  func testLaunchTimeRouteStandDownRearmsLikeAMidWaveOne() {
-    // A task that stands down before its first query — the device cannot afford
-    // the saved route, or Tor did not come up — has consumed the only armed
-    // request just as surely as one that stood down mid-wave, and the wave it
-    // was launched for is unchanged. Both leave a replacement behind.
-    let launchTimeStandDown = migrationPreparationTrackingShouldAttemptRearm(
-      completionFailed: false,
-      quiesced: false,
-      expired: false,
-      routeDeferred: true,
-      handedOff: false,
-      notificationsDisabled: false
-    )
-    XCTAssertTrue(launchTimeStandDown)
-    // Same verdict the OS reclaiming the slot gets: one lost execution
-    // opportunity, not a verdict on the run.
+  func testRouteStandDownLeavesTheWaitWithTheWakeThatCanHoldIt() {
+    // A stand-down before the first query — the device cannot carry the saved
+    // route, or Tor did not come up — still has confirmations left to observe,
+    // and it consumed the request that was going to observe them. What it
+    // leaves behind is never another request of the same kind: that one is
+    // started rather than held, so it would relaunch onto the same battery.
     XCTAssertEqual(
-      launchTimeStandDown,
-      migrationPreparationTrackingShouldAttemptRearm(
-        completionFailed: false,
+      migrationPreparationRouteDeferralAction(
         quiesced: false,
-        expired: true,
-        routeDeferred: false,
+        expired: false,
         handedOff: false,
         notificationsDisabled: false
-      )
+      ),
+      .waitOnProcessingWake
+    )
+    // An expiry that lands during the stand-down does not change who waits.
+    XCTAssertEqual(
+      migrationPreparationRouteDeferralAction(
+        quiesced: false,
+        expired: true,
+        handedOff: false,
+        notificationsDisabled: false
+      ),
+      .waitOnProcessingWake
     )
   }
 
-  func testLaunchTimeRouteStandDownDoesNotRearmWorkThatHasAnOwner() {
+  func testRouteStandDownLeavesNothingBehindForWorkThatHasAnOwner() {
     for (quiesced, handedOff, disabled) in [
       (true, false, false),
       (false, true, false),
       (false, false, true),
     ] {
-      XCTAssertFalse(
-        migrationPreparationTrackingShouldAttemptRearm(
-          completionFailed: false,
+      XCTAssertEqual(
+        migrationPreparationRouteDeferralAction(
           quiesced: quiesced,
           expired: false,
-          routeDeferred: true,
           handedOff: handedOff,
           notificationsDisabled: disabled
-        )
+        ),
+        .none
       )
     }
   }

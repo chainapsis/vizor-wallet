@@ -747,6 +747,45 @@ func migrationPreparationTrackingShouldAttemptRearm(
     && !notificationsDisabled
 }
 
+enum MigrationPreparationRouteDeferralAction: Equatable {
+  case none
+  case waitOnProcessingWake
+}
+
+/// What a tracking task that stood down for the saved route leaves behind.
+///
+/// Never another continued-processing request. That request type has no usable
+/// start floor — the scheduler substitutes `NSDate.now` for
+/// `earliestBeginDate` and starts the work immediately or shortly after
+/// submission — so arming one to wait for a charger starts it on the same
+/// battery, where it stands down and asks for another. Each turn of that is a
+/// user-visible activity, and none of them is a pause.
+///
+/// The silent processing request is the one that honours a start floor, and
+/// the system runs it when the device is idle on power, which is when this
+/// route becomes affordable again. So the wait goes there, and the wake that
+/// lands on a device that can carry the route is what arms tracking again.
+///
+/// A run that already has an owner — the foreground app, a wallet mutation, a
+/// revoked notification permission — leaves nothing behind at all.
+func migrationPreparationRouteDeferralAction(
+  quiesced: Bool,
+  expired: Bool,
+  handedOff: Bool,
+  notificationsDisabled: Bool
+) -> MigrationPreparationRouteDeferralAction {
+  migrationPreparationTrackingShouldAttemptRearm(
+    completionFailed: false,
+    quiesced: quiesced,
+    expired: expired,
+    routeDeferred: true,
+    handedOff: handedOff,
+    notificationsDisabled: notificationsDisabled
+  )
+    ? .waitOnProcessingWake
+    : .none
+}
+
 func shouldMarkMigrationPreparationForegroundContinuation(
   hasPendingRequest: Bool,
   hasBoundPreparation: Bool,
@@ -1257,25 +1296,50 @@ final class BackgroundMigrationPreparationManager {
     completion: @escaping (Bool) -> Void
   ) {
     // On a Tor route this task can only run when the device is on external
-    // power over an unmetered link. Arming it otherwise produces a task that
-    // wakes, declines every query, and leaves a live activity claiming it is
-    // checking confirmations. Declare the route so this process is fail-closed
-    // and let the foreground carry the run, the same way an otherwise
-    // foreground-only resume target is handled below.
+    // power over an unmetered link. Declare the route so this process is
+    // fail-closed, and when the device cannot carry it, do not submit: the
+    // request would be started immediately on the same battery, decline every
+    // query, and leave a live activity claiming it is checking confirmations.
+    //
+    // Submitting anyway is not a way to wait for that to change.
+    // `BGContinuedProcessingTaskRequest` carries no power or network
+    // constraint, and the scheduler substitutes `NSDate.now` for any
+    // `earliestBeginDate` it is given, so submission is a start rather than a
+    // schedule. The wait belongs to the request type that can hold one, and
+    // the launch-time gate stays authoritative for whether any work happens.
     //
     // Only the affordability question is asked here. Submission does no network
     // work, so nothing should pay for a bootstrap before the task that needs
-    // one has actually started. `BGContinuedProcessingTaskRequest` carries no
-    // power or network constraint of its own, so this check is what stands in
-    // for one — the system starts these requests promptly after submission, so
-    // the conditions measured here are the conditions the task runs under.
+    // one has actually started.
     guard BackgroundNetworkRoute.allowsBackgroundNetworkPass() else {
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
-      recordSchedulingState("foreground_only_tor_route")
-      cancelWatchdog()
-      completion(false)
+      // Submission has no task runtime behind it, so the only owners that can
+      // already hold this run are a wallet mutation and a revoked notification
+      // permission. Both cover the wait themselves, and a wake asked for while
+      // the wallet is mutating is refused and would announce that refusal.
+      let deferralAction = stateLock.withPreparationLock {
+        migrationPreparationRouteDeferralAction(
+          quiesced: mutationQuiesced,
+          expired: false,
+          handedOff: false,
+          notificationsDisabled: notificationAuthorization.isDisabled
+        )
+      }
+      guard deferralAction == .waitOnProcessingWake else {
+        recordSchedulingState("foreground_only_tor_route")
+        cancelWatchdog()
+        completion(false)
+        return
+      }
+      // The watchdog registered for the request this replaces stays: nothing
+      // is armed yet, and it is the boundary if the wake below never lands.
+      deferRouteWaitToProcessingWake { _ in
+        // No tracking task exists, so the run keeps its foreground-only
+        // presentation until the wake that can carry the route arms one.
+        completion(false)
+      }
       return
     }
     pruneForegroundContinuationScopes()
@@ -1541,6 +1605,41 @@ final class BackgroundMigrationPreparationManager {
     postNeedsActionNotification(reason: "processing-reschedule-failed")
   }
 
+  /// Places a wait for the saved route to become carriable on the request type
+  /// that can hold one.
+  ///
+  /// The silent processing request honours a start floor, and the system runs
+  /// it when the device is idle on external power — the same conditions that
+  /// make a Tor route affordable. That wake re-checks the route and arms
+  /// tracking once it can carry it, so a wave paused for the route resumes
+  /// without the user opening the app.
+  ///
+  /// The floor is the outbox's own rolling cadence rather than a longer guess
+  /// at when a charger appears: the system reads it as "no earlier than", and
+  /// a longer one would only push the wake past the moment the device plugs in.
+  ///
+  /// A wake that cannot be scheduled at all is the one outcome the user has to
+  /// hear about, and it announces itself the way every other failed
+  /// preparation handoff does.
+  private func deferRouteWaitToProcessingWake(
+    completion: @escaping (Bool) -> Void
+  ) {
+    BackgroundMigrationManager.shared.schedulePreparationHandoff(
+      after: BackgroundMigrationOutboxCadence.rollingCheckInterval
+    ) { [weak self] scheduled in
+      guard let self else {
+        completion(scheduled)
+        return
+      }
+      if scheduled {
+        self.recordSchedulingState("route_paused_awaiting_processing_wake")
+      } else {
+        self.recordDeferredSchedulingFailure()
+      }
+      completion(scheduled)
+    }
+  }
+
   private func handle(_ task: BGContinuedProcessingTask) {
     let authorizationEpoch = captureNotificationAuthorizationEpoch()
     IronwoodMigrationNotificationGate.shared.status { [weak self] status in
@@ -1768,11 +1867,11 @@ final class BackgroundMigrationPreparationManager {
   /// until then. Runs that need foreground recovery for their own reasons still
   /// send their existing alerts.
   ///
-  /// "Resume by itself" is only true while a request exists to resume with.
-  /// Starting this task consumed the one that was armed, and nothing outside
-  /// the app arms another, so the stand-down submits a replacement on exactly
-  /// the terms a mid-wave stand-down does: the wave is unchanged, still has
-  /// confirmations left to observe, and lost one execution opportunity.
+  /// "Resume by itself" is only true while something is left that can notice
+  /// the device becoming eligible. Starting this task consumed the request that
+  /// was armed, and nothing outside the app arms another, so the stand-down
+  /// hands that job on. It hands it to the silent processing wake rather than
+  /// to another request of this kind, because this kind cannot wait.
   private func finishTorDeferredTask(_ task: BGContinuedProcessingTask) {
     queue.async { [weak self] in
       guard let self else {
@@ -1794,37 +1893,31 @@ final class BackgroundMigrationPreparationManager {
       let recoveryAlertSubmitted =
         !recoveryEvents.isEmpty
         && self.submitNotificationEvents(recoveryEvents)
-      let shouldRearm = migrationPreparationTrackingShouldAttemptRearm(
-        completionFailed: false,
+      let deferralAction = migrationPreparationRouteDeferralAction(
         quiesced: runtime.quiesced,
         expired: runtime.expired,
-        routeDeferred: true,
         handedOff: runtime.handedOff,
         notificationsDisabled: runtime.disabled
       )
-      if !shouldRearm {
-        BGTaskScheduler.shared.cancel(
-          taskRequestWithIdentifier: Self.taskIdentifier
-        )
-      }
-      self.recordSchedulingState(
-        shouldRearm
-          ? "route_paused_rearming"
-          : "waiting_for_foreground_tor_route"
+      // Nothing of this kind is left queued either way. A queued request is
+      // started, not held, so it cannot be what waits for the route.
+      BGTaskScheduler.shared.cancel(
+        taskRequestWithIdentifier: Self.taskIdentifier
       )
       // With no recovery alert delivered, the watchdog registered for this
       // request is the only remaining prompt to reopen Vizor, so it stays.
       if recoveryAlertSubmitted {
         self.cancelWatchdog()
       }
-      guard shouldRearm else {
+      guard deferralAction == .waitOnProcessingWake else {
+        self.recordSchedulingState("waiting_for_foreground_tor_route")
         task.setTaskCompleted(success: true)
         return
       }
-      // Submit the replacement BEFORE completing. `start` is asynchronous, and
+      // Arrange the wait BEFORE completing. The handoff is asynchronous, and
       // once `setTaskCompleted` returns iOS may suspend the process before the
-      // submission runs, which leaves the wave with no armed task at all — the
-      // state this path exists to avoid.
+      // submission runs, which leaves nothing at all watching for the device to
+      // become eligible — the state this path exists to avoid.
       let latch = MigrationPreparationCompletionLatch()
       let complete = {
         guard latch.claim() else { return }
@@ -1834,15 +1927,9 @@ final class BackgroundMigrationPreparationManager {
       self.queue.asyncAfter(deadline: .now() + Self.rearmSubmissionTimeout) {
         complete()
       }
-      self.start { rearmed in
-        if !rearmed {
-          print("[BGPreparation] route-deferred task could not re-arm tracking")
-          // A refused submission takes the watchdog down with it, since the two
-          // share one notification identifier. Without a delivered alert that
-          // leaves no prompt at all, so put the boundary back.
-          if !recoveryAlertSubmitted {
-            self.scheduleWatchdog()
-          }
+      self.deferRouteWaitToProcessingWake { scheduled in
+        if !scheduled {
+          print("[BGPreparation] route-deferred task could not place its wait")
         }
         complete()
       }

@@ -821,6 +821,16 @@ final class BackgroundMigrationManager {
         self.finishWakeWithoutNetworkWork(task)
         return
       }
+      // This wake has established what a confirmation tracker that stood down
+      // for the route is waiting on: a device that can carry it. The tracker's
+      // own request type cannot hold that wait — the scheduler starts it
+      // rather than scheduling it — so this is where it gets armed again.
+      // Self-gating: it submits nothing unless a run is still waiting for
+      // denomination confirmations, and it runs before the outbox so the
+      // submission is not racing this wake's completion.
+      if #available(iOS 26.0, *) {
+        BackgroundMigrationPreparationManager.shared.start { _ in }
+      }
       // This wake is a silent BGProcessingTask. It queries the chain tip,
       // broadcasts transactions that are already signed, and notifies — it does
       // not scan. The separate continued-processing task owns denomination
