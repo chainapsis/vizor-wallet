@@ -843,6 +843,12 @@ class _ImportSecretPassphraseGrid extends StatelessWidget {
                       height: 32,
                       child: Row(
                         children: [
+                          AppIcon(
+                            AppIcons.key,
+                            size: AppIconSize.medium,
+                            color: colors.text.homeCard,
+                          ),
+                          const SizedBox(width: AppSpacing.xxs),
                           Expanded(
                             child: Text(
                               'Secret Passphrase',

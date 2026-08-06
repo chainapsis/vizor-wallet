@@ -23,6 +23,7 @@ import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_secret_passphrase_screen.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
@@ -66,6 +67,32 @@ void main() {
     expect(third.dx, greaterThan(second.dx));
     expect(fourth.dx, first.dx);
     expect(fourth.dy, greaterThan(first.dy));
+  });
+
+  testWidgets('shows the key icon before the mnemonic card title', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+
+    final card = find.byKey(const ValueKey('import_mnemonic_card'));
+    final iconFinder = find.descendant(
+      of: card,
+      matching: find.byType(AppIcon),
+    );
+    final titleFinder = find.descendant(
+      of: card,
+      matching: find.text('Secret Passphrase'),
+    );
+    final icon = tester.widget<AppIcon>(iconFinder);
+
+    expect(icon.name, AppIcons.key);
+    expect(icon.size, AppIconSize.medium);
+    expect(icon.color, AppThemeData.light.colors.text.homeCard);
+    expect(
+      tester.getTopLeft(titleFinder).dx - tester.getTopRight(iconFinder).dx,
+      AppSpacing.xxs,
+    );
   });
 
   testWidgets('centers the BIP39 action in the visible footer area', (
