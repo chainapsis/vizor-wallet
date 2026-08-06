@@ -150,6 +150,30 @@ enum IronwoodMigrationOutboxWakeDisposition: Equatable {
   }
 }
 
+/// Whether a wake that declined the Tor route must leave a replacement request
+/// behind before it completes.
+///
+/// Starting the wake consumed the pending request, and nothing else arms one
+/// until the user opens the app. Without a replacement, a device that reaches a
+/// charger and an unmetered link an hour later gets no execution opportunity at
+/// all, and already-signed items sit past the height they were scheduled for
+/// until they have to be signed again.
+///
+/// The chain ends with the work rather than on a counter, because the reasons
+/// for declining — battery, a metered or constrained link, a Tor client that did
+/// not come up — all change on their own and none of them is evidence about the
+/// next wake. What is permanent is having nothing left to do: no armed item, no
+/// owed announcement, no preparation run to resume. A wake that the foreground
+/// has taken over, or one on a wallet whose accounts are being mutated, also
+/// stops here; those have an owner already.
+func ironwoodMigrationTorDeferredWakeShouldRearm(
+  disposition: IronwoodMigrationOutboxWakeDisposition,
+  mutationQuiesced: Bool,
+  hasRunnableWork: Bool
+) -> Bool {
+  disposition.shouldReschedule && !mutationQuiesced && hasRunnableWork
+}
+
 final class IronwoodMigrationNotificationAuthorizationMonitor {
   typealias StatusProvider =
     (@escaping (IronwoodMigrationNotificationAuthorizationStatus) -> Void) -> Void
@@ -426,6 +450,14 @@ enum IronwoodMigrationProofReadinessCheck {
 final class BackgroundMigrationManager {
   static let shared = BackgroundMigrationManager()
   static let taskIdentifier = "com.keplr.vizor.ironwood-migration"
+
+  /// How long a wake may be held open for its replacement submission.
+  ///
+  /// The hold exists so iOS cannot suspend the process between completing the
+  /// task and filing the replacement. It has to stay short: the wake is being
+  /// completed because it has nothing else to do, and a task that never
+  /// completes is a worse outcome than one that completes unarmed.
+  private static let rearmSubmissionTimeout: TimeInterval = 10
 
   private let queue = DispatchQueue(
     label: "com.keplr.vizor.ironwood-migration.outbox",
@@ -847,13 +879,12 @@ final class BackgroundMigrationManager {
   /// is Tor and this device cannot carry it right now — on battery, on a
   /// metered or constrained link, or with a Tor client that did not come up.
   ///
-  /// It queries no chain tip and broadcasts nothing, and it does not
-  /// reschedule. The foreground is the continuation for a declined wake, as it
-  /// has been for every Tor route: armed items keep their signed bytes and
-  /// their schedule, and the foreground outbox run transports them at the next
-  /// launch — before the item's expiry boundary, or it has to be signed again.
-  /// The task reports success because declining is the policy working, not a
-  /// wake that failed.
+  /// It queries no chain tip and broadcasts nothing. Declining is the policy
+  /// working rather than a wake that failed, but the outbox stays
+  /// background-capable across the deferral: this wake arms the next one, so
+  /// signed items are transported by the first wake that lands on a charger and
+  /// an unmetered link instead of waiting for the user to open the app. The
+  /// foreground remains the other continuation, not the only one.
   private func finishTorDeferredWake(_ task: BGProcessingTask) {
     // Free of network work, and the one thing this wake can still report: a
     // preparation run that needs the foreground for reasons of its own. The
@@ -866,7 +897,45 @@ final class BackgroundMigrationManager {
       BackgroundMigrationPreparationManager.shared
         .notifyPreparationNeedsForeground()
     }
-    task.setTaskCompleted(success: true)
+    guard ironwoodMigrationTorDeferredWakeShouldRearm(
+      disposition: wakeDisposition,
+      mutationQuiesced: isMutationQuiesced,
+      hasRunnableWork: hasRunnableOutboxWork() || hasResumablePreparationWork()
+    ) else {
+      task.setTaskCompleted(success: true)
+      return
+    }
+    // The replacement goes in before the completion. `schedule` runs the
+    // notification-gate status callback first, and once `setTaskCompleted`
+    // returns iOS may suspend the process before the submit gets to run, which
+    // would leave nothing armed — the failure this path exists to prevent.
+    //
+    // The delay is the outbox's own rolling cadence, not a longer wait for
+    // conditions to change. `earliestBeginDate` is a floor the system reads as
+    // "no earlier than", and it schedules these wakes when the device is idle
+    // on power and Wi-Fi anyway, which is when a Tor route is affordable. A
+    // longer floor would only push the wake past the moment the device plugs
+    // in, and signed items expire by height.
+    let latch = MigrationPreparationCompletionLatch()
+    let complete = { (rescheduled: Bool) in
+      guard latch.claim() else { return }
+      task.setTaskCompleted(success: rescheduled)
+    }
+    // The task must finish even if the schedule callback never fires; never
+    // completing it is worse than an unarmed replacement.
+    queue.asyncAfter(deadline: .now() + Self.rearmSubmissionTimeout) {
+      complete(false)
+    }
+    schedule(
+      earliestBeginDate: Date().addingTimeInterval(
+        BackgroundMigrationOutboxCadence.rollingCheckInterval
+      )
+    ) { rescheduled in
+      if !rescheduled {
+        print("[BGMigration] Tor-deferred wake could not re-arm")
+      }
+      complete(rescheduled)
+    }
   }
 
   private func clearActiveCancellation() {

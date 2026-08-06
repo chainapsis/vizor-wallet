@@ -142,10 +142,48 @@ pub(crate) async fn open_isolated_lwd_channel(
     open_lwd_channel_for_route(lightwalletd_url, true).await
 }
 
+/// Which circuit the last channel open asked for.
+///
+/// A shared open and an isolated one are the same transport unless a
+/// bootstrapped Tor client is present, and no unit test can produce one, so a
+/// caller's choice of circuit is only assertable by recording the request.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ObservedLwdRoute {
+    Shared,
+    Isolated,
+}
+
+#[cfg(test)]
+static OBSERVED_LWD_ROUTE: std::sync::Mutex<Option<ObservedLwdRoute>> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+fn record_lwd_route(isolated: bool) {
+    let route = if isolated {
+        ObservedLwdRoute::Isolated
+    } else {
+        ObservedLwdRoute::Shared
+    };
+    *OBSERVED_LWD_ROUTE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(route);
+}
+
+#[cfg(test)]
+fn take_observed_lwd_route() -> Option<ObservedLwdRoute> {
+    OBSERVED_LWD_ROUTE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
+}
+
 async fn open_lwd_channel_for_route(
     lightwalletd_url: &str,
     isolated: bool,
 ) -> Result<CompactTxStreamerClient<Channel>, SyncError> {
+    #[cfg(test)]
+    record_lwd_route(isolated);
+
     static RUSTLS_INIT: std::sync::Once = std::sync::Once::new();
     RUSTLS_INIT.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -740,6 +778,72 @@ mod tests {
             .await
             .expect("accept task")
             .expect("accepted connection");
+    }
+
+    /// A loopback port nothing can listen on, so a connect attempt is refused
+    /// immediately and the route the opener asked for is all that is left to
+    /// observe.
+    const REFUSED_LIGHTWALLETD_URL: &str = "http://127.0.0.1:1";
+
+    #[test]
+    fn background_transaction_submission_takes_its_own_circuit() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let lightwalletd_url =
+            std::ffi::CString::new(REFUSED_LIGHTWALLETD_URL).expect("valid lightwalletd URL");
+        let raw_transaction = [0u8; 4];
+        let mut response_error_code = 0i32;
+        let mut response_error_message = [0 as std::os::raw::c_char; 64];
+        let _ = take_observed_lwd_route();
+
+        let code = crate::ffi::zcash_lightwalletd_send_transaction(
+            lightwalletd_url.as_ptr(),
+            raw_transaction.as_ptr(),
+            raw_transaction.len(),
+            &mut response_error_code,
+            response_error_message.as_mut_ptr(),
+            response_error_message.len(),
+            std::ptr::null(),
+        );
+
+        assert_eq!(code, 1);
+        assert_eq!(take_observed_lwd_route(), Some(ObservedLwdRoute::Isolated));
+    }
+
+    #[test]
+    fn background_chain_queries_stay_on_the_shared_circuit() {
+        // Queries are linkable to one another whatever circuit carries them, so
+        // they buy nothing with a circuit build the wallet would pay for.
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+        let lightwalletd_url =
+            std::ffi::CString::new(REFUSED_LIGHTWALLETD_URL).expect("valid lightwalletd URL");
+        let mut height = 0u64;
+        let _ = take_observed_lwd_route();
+
+        let code = crate::ffi::zcash_lightwalletd_latest_block_height(
+            lightwalletd_url.as_ptr(),
+            &mut height,
+            std::ptr::null(),
+        );
+
+        assert_eq!(code, 1);
+        assert_eq!(take_observed_lwd_route(), Some(ObservedLwdRoute::Shared));
+    }
+
+    #[tokio::test]
+    async fn isolation_leaves_the_direct_route_alone() {
+        let _policy = crate::network_privacy::test_route_policy::lock_route_policy();
+
+        let shared = open_lwd_channel(REFUSED_LIGHTWALLETD_URL)
+            .await
+            .expect_err("refused loopback connect");
+        assert_eq!(take_observed_lwd_route(), Some(ObservedLwdRoute::Shared));
+        let isolated = open_isolated_lwd_channel(REFUSED_LIGHTWALLETD_URL)
+            .await
+            .expect_err("refused loopback connect");
+        assert_eq!(take_observed_lwd_route(), Some(ObservedLwdRoute::Isolated));
+
+        assert!(matches!(shared, SyncError::Network(_)));
+        assert_eq!(format!("{shared:?}"), format!("{isolated:?}"));
     }
 
     #[test]

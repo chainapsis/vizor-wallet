@@ -312,6 +312,15 @@ pub extern "C" fn zcash_lightwalletd_observe_transaction(
 
 /// Submit one transaction through tonic. The error message is copied into the
 /// caller-owned buffer and safely truncated if necessary.
+///
+/// The submission takes its own Tor circuit. Sharing the process circuit would
+/// let one exit tie the transaction to this wallet's chain queries and to every
+/// other transaction it broadcasts, which is the linkage the foreground
+/// broadcast paths spend an isolated channel to avoid; a background pass that
+/// may now run over Tor has to buy the same property. Isolation costs a circuit
+/// build on a route that is already bootstrapped, and nothing at all on the
+/// direct route, where the isolated and shared openers are the same transport.
+/// One call carries one transaction, so one circuit carries one transaction.
 #[no_mangle]
 pub extern "C" fn zcash_lightwalletd_send_transaction(
     lightwalletd_url: *const c_char,
@@ -348,9 +357,10 @@ pub extern "C" fn zcash_lightwalletd_send_transaction(
         match runtime.block_on(await_lightwalletd_request_or_cancellation(
             cancellation,
             async {
-                let mut client = crate::wallet::sync_engine::open_lwd_channel(lightwalletd_url)
-                    .await
-                    .map_err(|error| error.to_string())?;
+                let mut client =
+                    crate::wallet::sync_engine::open_isolated_lwd_channel(lightwalletd_url)
+                        .await
+                        .map_err(|error| error.to_string())?;
                 crate::wallet::sync_engine::send_transaction_with_status(
                     &mut client,
                     &raw_transaction,

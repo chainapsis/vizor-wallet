@@ -38,6 +38,24 @@ int32_t zcash_lightwalletd_observe_transaction(
     void* cancellation
 );
 
+/// Submits one signed transaction to lightwalletd.
+///
+/// On a Tor route the submission gets a circuit of its own, so no exit sees it
+/// alongside this wallet's chain queries or alongside another submission. That
+/// costs a circuit build on a route that is already bootstrapped and nothing on
+/// the direct route, where this behaves exactly like the query calls above.
+///
+/// One call is one circuit, so a caller with several transactions to send pays
+/// per transaction. That cost is the point and must not be optimised away by
+/// putting several transactions behind one circuit, which hands an exit exactly
+/// the linkage this buys.
+///
+/// Returns 0 with the server's SendResponse copied out — its error code into
+/// `response_error_code`, its message into `response_error_message`, truncated
+/// to capacity and always NUL-terminated. Returns 1 for a bad argument or a
+/// transport failure, ZCASH_LIGHTWALLETD_RESULT_CANCELLED when the cancellation
+/// fired, and 2 on a panic. Only 0 means lightwalletd answered; the answer may
+/// still be a rejection, which lives in `response_error_code`.
 int32_t zcash_lightwalletd_send_transaction(
     const char* lightwalletd_url,
     const uint8_t* raw_transaction,

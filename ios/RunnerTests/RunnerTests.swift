@@ -159,6 +159,48 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testTorDeferredWakeArmsItsReplacement() {
+    // Starting the wake consumed the pending request. Without a replacement,
+    // the device reaching a charger on an unmetered link later gets no
+    // execution opportunity, and already-signed items wait for the user.
+    XCTAssertTrue(
+      ironwoodMigrationTorDeferredWakeShouldRearm(
+        disposition: .continueBackgroundWork,
+        mutationQuiesced: false,
+        hasRunnableWork: true
+      )
+    )
+  }
+
+  func testTorDeferredWakeStopsWhenThereIsNothingLeftToDo() {
+    // The one permanent reason. Battery and metering change on their own, so
+    // they are not what ends the chain of replacements; running out of work is.
+    XCTAssertFalse(
+      ironwoodMigrationTorDeferredWakeShouldRearm(
+        disposition: .continueBackgroundWork,
+        mutationQuiesced: false,
+        hasRunnableWork: false
+      )
+    )
+  }
+
+  func testTorDeferredWakeDoesNotRearmWorkThatHasAnOwner() {
+    XCTAssertFalse(
+      ironwoodMigrationTorDeferredWakeShouldRearm(
+        disposition: .finishForegroundOnly,
+        mutationQuiesced: false,
+        hasRunnableWork: true
+      )
+    )
+    XCTAssertFalse(
+      ironwoodMigrationTorDeferredWakeShouldRearm(
+        disposition: .continueBackgroundWork,
+        mutationQuiesced: true,
+        hasRunnableWork: true
+      )
+    )
+  }
+
   func testMigrationPreparationRuntimeStateIsScopedToMatchingRun() {
     XCTAssertEqual(
       migrationPreparationRuntimeState(
@@ -386,6 +428,7 @@ class RunnerTests: XCTestCase {
         completionFailed: true,
         quiesced: false,
         expired: false,
+        routeDeferred: false,
         handedOff: false,
         notificationsDisabled: false
       )
@@ -400,6 +443,7 @@ class RunnerTests: XCTestCase {
         completionFailed: false,
         quiesced: false,
         expired: true,
+        routeDeferred: false,
         handedOff: false,
         notificationsDisabled: false
       )
@@ -412,6 +456,7 @@ class RunnerTests: XCTestCase {
         completionFailed: false,
         quiesced: false,
         expired: true,
+        routeDeferred: false,
         handedOff: true,
         notificationsDisabled: false
       )
@@ -421,6 +466,7 @@ class RunnerTests: XCTestCase {
         completionFailed: false,
         quiesced: false,
         expired: true,
+        routeDeferred: false,
         handedOff: false,
         notificationsDisabled: true
       )
@@ -430,6 +476,56 @@ class RunnerTests: XCTestCase {
         completionFailed: false,
         quiesced: true,
         expired: true,
+        routeDeferred: false,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testRouteDeferredMidWaveTrackingRearmsInsteadOfStopping() {
+    // The charger came out, or the link went metered, while the wave was still
+    // counting. Nothing about the run changed, so this interrupts one execution
+    // opportunity exactly the way expiration does and submits a replacement.
+    XCTAssertTrue(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: false,
+        expired: false,
+        routeDeferred: true,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testRouteDeferredTrackingDoesNotRearmAfterHandoffOrRevocation() {
+    XCTAssertFalse(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: false,
+        expired: false,
+        routeDeferred: true,
+        handedOff: true,
+        notificationsDisabled: false
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: false,
+        expired: false,
+        routeDeferred: true,
+        handedOff: false,
+        notificationsDisabled: true
+      )
+    )
+    XCTAssertFalse(
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: true,
+        expired: false,
+        routeDeferred: true,
         handedOff: false,
         notificationsDisabled: false
       )
@@ -444,6 +540,7 @@ class RunnerTests: XCTestCase {
         completionFailed: false,
         quiesced: false,
         expired: false,
+        routeDeferred: false,
         handedOff: false,
         notificationsDisabled: false
       )

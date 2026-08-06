@@ -319,6 +319,10 @@ func migrationPreparationTrackingBatch(
 private enum BackgroundMigrationPreparationTrackingPass {
   case batch(MigrationPreparationTrackingBatch)
   case cancelled
+  /// The pass stood down because this device stopped being able to afford the
+  /// saved route. The wave is untouched and still needs watching, so this ends
+  /// the task as an interruption rather than as a run that finished.
+  case routeDeferred
 }
 
 private enum BackgroundMigrationPreparationStepResult {
@@ -722,18 +726,24 @@ func migrationPreparationTrackingTaskSucceeded(
 
 /// Whether the manager should submit a replacement tracking request.
 ///
-/// A mid-wave expiry (or a failed completion) still has confirmations left to
-/// observe, so it re-arms. A clean wave-confirm success does not: there is
-/// nothing left for a read-only task to watch, and the foreground app submits
-/// the next wave's task after it syncs and advances the run.
+/// A mid-wave expiry, a mid-wave stand-down because the device stopped being
+/// able to afford the saved route, and a failed completion all leave
+/// confirmations still to observe, so each re-arms. Losing a charger or moving
+/// onto a metered link interrupts one execution opportunity exactly the way the
+/// OS reclaiming the slot does; neither is a verdict on the run.
+///
+/// A clean wave-confirm success does not re-arm: there is nothing left for a
+/// read-only task to watch, and the foreground app submits the next wave's task
+/// after it syncs and advances the run.
 func migrationPreparationTrackingShouldAttemptRearm(
   completionFailed: Bool,
   quiesced: Bool,
   expired: Bool,
+  routeDeferred: Bool,
   handedOff: Bool,
   notificationsDisabled: Bool
 ) -> Bool {
-  (completionFailed || expired) && !quiesced && !handedOff
+  (completionFailed || expired || routeDeferred) && !quiesced && !handedOff
     && !notificationsDisabled
 }
 
@@ -1734,6 +1744,14 @@ final class BackgroundMigrationPreparationManager {
             completionPresentation: nil
           )
           return
+        case .routeDeferred:
+          self.finishConfirmationTrackingTask(
+            task,
+            taskFailed: taskFailureObserved,
+            completionPresentation: nil,
+            routeDeferred: true
+          )
+          return
         }
       }
     }
@@ -1849,8 +1867,19 @@ final class BackgroundMigrationPreparationManager {
     // roughly 500 B/s while awake, so a task that keeps querying past that
     // moment is spending exactly what this policy exists to avoid. Tor itself
     // is already up by now, so a passing check costs a power and path sample.
+    //
+    // The two ways this refuses end differently. With Tor up in this process
+    // the refusal is affordability, the interruption this task can be re-armed
+    // out of: the replacement is gated by the same power and path question, so
+    // it is only submitted once the device can carry the route again, and the
+    // task it starts finds Tor already up instead of paying a bootstrap. With
+    // Tor not up, the user flipped the route from the foreground while this
+    // task ran; that app already owns the run, and re-arming would send wake
+    // after wake into a bootstrap this process has no reason to attempt.
     guard BackgroundNetworkRoute.allowsBackgroundNetworkWork() else {
-      return .cancelled
+      return BackgroundNetworkRoute.backgroundNetworkWorkRemainsAllowed
+        ? .routeDeferred
+        : .cancelled
     }
     guard UIApplication.shared.isProtectedDataAvailable else {
       return .batch(
@@ -2304,7 +2333,8 @@ final class BackgroundMigrationPreparationManager {
   private func finishConfirmationTrackingTask(
     _ task: BGContinuedProcessingTask,
     taskFailed: Bool,
-    completionPresentation: MigrationPreparationTrackingCompletionPresentation?
+    completionPresentation: MigrationPreparationTrackingCompletionPresentation?,
+    routeDeferred: Bool = false
   ) {
     stopAuthorizationMonitoring()
     let runtime = stateLock.withPreparationLock {
@@ -2342,10 +2372,13 @@ final class BackgroundMigrationPreparationManager {
         visibleCompletionPresentation.title,
         subtitle: visibleCompletionPresentation.subtitle
       )
-    } else if runtime.expired && !runtime.quiesced {
+    } else if (runtime.expired || routeDeferred) && !runtime.quiesced {
       // The activity is still captioned "Checking transaction confirmations".
-      // The OS reclaimed this execution slot mid-wave; say that instead of
-      // leaving a caption that implies counting is still happening.
+      // Whether the OS reclaimed this execution slot or the device stopped
+      // being able to carry the route, counting has stopped mid-wave; say so
+      // instead of leaving a caption that implies it is still happening. A
+      // replacement that does get armed replaces this caption with its own,
+      // and when none can be, reopening the app is what resumes the run.
       task.updateTitle(
         "Preparation tracking paused",
         subtitle: "Open Vizor to resume"
@@ -2375,10 +2408,11 @@ final class BackgroundMigrationPreparationManager {
       handedOff: runtime.handedOff,
       notificationsDisabled: runtime.disabled
     )
-    // A mid-wave expiry now completes successfully, but it still has
-    // confirmations left to observe and re-arms below. Cancelling the pending
-    // request here would delete the very submission that re-arm depends on.
-    if success && !runtime.expired {
+    // A mid-wave expiry, and a mid-wave stand-down for the route, both complete
+    // successfully but still have confirmations left to observe and re-arm
+    // below. Cancelling the pending request here would delete the very
+    // submission that re-arm depends on.
+    if success && !runtime.expired && !routeDeferred {
       BGTaskScheduler.shared.cancel(
         taskRequestWithIdentifier: Self.taskIdentifier
       )
@@ -2391,6 +2425,8 @@ final class BackgroundMigrationPreparationManager {
       recordSchedulingState("disabled_for_notifications")
     } else if runtime.expired {
       recordSchedulingState("confirmation_tracking_expired")
+    } else if routeDeferred {
+      recordSchedulingState("confirmation_tracking_route_paused")
     } else if completionFailed {
       recordSchedulingState("confirmation_tracking_failed")
     } else if visibleCompletionPresentation != nil {
@@ -2402,6 +2438,7 @@ final class BackgroundMigrationPreparationManager {
       completionFailed: completionFailed,
       quiesced: runtime.quiesced,
       expired: runtime.expired,
+      routeDeferred: routeDeferred,
       handedOff: runtime.handedOff,
       notificationsDisabled: runtime.disabled
     ) else {
