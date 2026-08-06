@@ -1147,6 +1147,7 @@ const _migrationPreviewPartsPerBatch = 8;
 class _MigrationProgressPreview extends StatelessWidget {
   const _MigrationProgressPreview({
     required this.state,
+    this.isHardware = false,
     this.showPreparationCompleteModal = false,
     this.completedParts,
     this.totalParts = 24,
@@ -1177,6 +1178,7 @@ class _MigrationProgressPreview extends StatelessWidget {
   });
 
   final _MigrationProgressState state;
+  final bool isHardware;
   final bool showPreparationCompleteModal;
   final int? completedParts;
   final int totalParts;
@@ -1309,6 +1311,7 @@ class _MigrationProgressPreview extends StatelessWidget {
                 else
                   _MigrationProgressStatus(
                     state: state,
+                    isHardware: isHardware,
                     currentBatchNumber: currentBatchNumber,
                     bodyOverride: nextActionText,
                   ),
@@ -1859,11 +1862,13 @@ class _MigrationSummaryRows extends StatelessWidget {
 class _MigrationProgressStatus extends StatelessWidget {
   const _MigrationProgressStatus({
     required this.state,
+    required this.isHardware,
     required this.currentBatchNumber,
     this.bodyOverride,
   });
 
   final _MigrationProgressState state;
+  final bool isHardware;
   final int currentBatchNumber;
   final String? bodyOverride;
 
@@ -1896,7 +1901,9 @@ class _MigrationProgressStatus extends StatelessWidget {
       ),
       _MigrationProgressState.broadcasting => (
         AppIcons.notificationBell,
-        'All clear. Processing batch #$currentBatchNumber',
+        isHardware
+            ? 'All clear. Processing batch #$currentBatchNumber'
+            : 'All clear. Migration is in progress',
         'Next migration step expected in\n'
             '~2 hrs 15 mins.\n'
             'Notifications are on. You can leave Vizor and check back later.',
@@ -2103,9 +2110,8 @@ class _PreparationCompleteModalBody extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s),
           Text(
-            'Preparation is complete, but we are waiting for the next '
-            'available signing window.\nWe\'ll let you know when it\'s time '
-            'to take action.',
+            'Preparation is complete. Check your migration status for '
+            'progress and any action needed.',
             textAlign: TextAlign.center,
             style: AppTypography.bodyMedium.copyWith(
               color: context.colors.text.secondary,

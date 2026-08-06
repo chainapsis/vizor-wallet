@@ -5744,9 +5744,8 @@ void main() {
       expect(find.text('Preparation is done'), findsOneWidget);
       expect(
         find.text(
-          'Preparation is complete, but we are waiting for the next '
-          'available signing window.\nWe\'ll let you know when it\'s time '
-          'to take action.',
+          'Preparation is complete. Check your migration status for progress '
+          'and any action needed.',
         ),
         findsOneWidget,
       );
@@ -7342,7 +7341,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Next migration'), findsOneWidget);
-    expect(find.text('All clear. Processing batch #2'), findsOneWidget);
+    expect(find.text('All clear. Migration is in progress'), findsOneWidget);
     // The timing and the notification promise are stated once each.
     expect(
       find.text(
@@ -7352,6 +7351,53 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('keeps the actual batch number for Keystone broadcasting', (
+    tester,
+  ) async {
+    _useMobileViewport(tester);
+    await tester.pumpWidget(
+      _productionApp(
+        initialLocation: '/migration/private/status',
+        migrationService: _migrationService(
+          ios: true,
+          getNotificationAuthorizationStatus: () async =>
+              IronwoodMigrationNotificationAuthorizationStatus.authorized,
+        ),
+        hardware: true,
+        status: _status(
+          phase: kIronwoodMigrationBroadcastingPhase,
+          signingBatchLimit: 8,
+          nextActionHeight: 3_000_020,
+          targetValues: List<int>.filled(9, 100_000_000),
+          parts: [
+            for (var index = 0; index < 9; index++)
+              rust_sync.MigrationPartStatus(
+                partIndex: index,
+                valueZatoshi: BigInt.from(100_000_000),
+                state: index < 8
+                    ? rust_sync.MigrationPartState.completed
+                    : rust_sync.MigrationPartState.scheduled,
+                txidHex: 'tx-$index',
+                scheduledHeight: 3_000_000 + index,
+                confirmationCount: index < 8 ? 3 : 0,
+                confirmationTarget: 3,
+              ),
+          ],
+        ),
+        syncState: SyncState(
+          accountUuid: 'account-1',
+          hasAccountScopedData: true,
+          scannedHeight: 3_000_000,
+          chainTipHeight: 3_000_000,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('All clear. Processing batch #2'), findsOneWidget);
+    expect(find.text('All clear. Migration is in progress'), findsNothing);
   });
 
   testWidgets('broadcasting copy never promises notifications that are off', (
@@ -7376,7 +7422,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('All clear. Processing batch #1'), findsOneWidget);
+    expect(find.text('All clear. Migration is in progress'), findsOneWidget);
     expect(
       find.text(
         'Next migration step expected in\n'
@@ -7418,7 +7464,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('All clear. Processing batch #1'), findsOneWidget);
+    expect(find.text('All clear. Migration is in progress'), findsOneWidget);
     expect(
       find.text('Next migration step expected in\n~25 minutes.'),
       findsOneWidget,

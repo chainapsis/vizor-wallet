@@ -931,6 +931,7 @@ class _MobileMigrationRedesignedStatusState
         );
     return _MigrationProgressPreview(
       state: state,
+      isHardware: widget.isHardware,
       showPreparationCompleteModal: _showPreparationComplete,
       onPreparationCompleteDone: () => unawaited(_dismissPreparationComplete()),
       onBack: () => context.go('/home'),
