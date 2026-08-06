@@ -1767,32 +1767,85 @@ final class BackgroundMigrationPreparationManager {
   /// charger over an unmetered link, and it would say it again on every wake
   /// until then. Runs that need foreground recovery for their own reasons still
   /// send their existing alerts.
+  ///
+  /// "Resume by itself" is only true while a request exists to resume with.
+  /// Starting this task consumed the one that was armed, and nothing outside
+  /// the app arms another, so the stand-down submits a replacement on exactly
+  /// the terms a mid-wave stand-down does: the wave is unchanged, still has
+  /// confirmations left to observe, and lost one execution opportunity.
   private func finishTorDeferredTask(_ task: BGContinuedProcessingTask) {
     queue.async { [weak self] in
       guard let self else {
         task.setTaskCompleted(success: false)
         return
       }
-      let notificationsDisabled = self.stateLock.withPreparationLock {
-        self.notificationAuthorization.isDisabled
+      let runtime = self.stateLock.withPreparationLock {
+        (
+          handedOff: self.foregroundHandoffRequested,
+          expired: self.expired,
+          quiesced: self.mutationQuiesced,
+          disabled: self.notificationAuthorization.isDisabled
+        )
       }
       let recoveryEvents: [MigrationPreparationNotificationEvent] =
-        notificationsDisabled
+        runtime.disabled
         ? []
         : self.foregroundRecoveryNotificationEvents()
       let recoveryAlertSubmitted =
         !recoveryEvents.isEmpty
         && self.submitNotificationEvents(recoveryEvents)
-      BGTaskScheduler.shared.cancel(
-        taskRequestWithIdentifier: Self.taskIdentifier
+      let shouldRearm = migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: runtime.quiesced,
+        expired: runtime.expired,
+        routeDeferred: true,
+        handedOff: runtime.handedOff,
+        notificationsDisabled: runtime.disabled
       )
-      self.recordSchedulingState("waiting_for_foreground_tor_route")
+      if !shouldRearm {
+        BGTaskScheduler.shared.cancel(
+          taskRequestWithIdentifier: Self.taskIdentifier
+        )
+      }
+      self.recordSchedulingState(
+        shouldRearm
+          ? "route_paused_rearming"
+          : "waiting_for_foreground_tor_route"
+      )
       // With no recovery alert delivered, the watchdog registered for this
       // request is the only remaining prompt to reopen Vizor, so it stays.
       if recoveryAlertSubmitted {
         self.cancelWatchdog()
       }
-      task.setTaskCompleted(success: true)
+      guard shouldRearm else {
+        task.setTaskCompleted(success: true)
+        return
+      }
+      // Submit the replacement BEFORE completing. `start` is asynchronous, and
+      // once `setTaskCompleted` returns iOS may suspend the process before the
+      // submission runs, which leaves the wave with no armed task at all — the
+      // state this path exists to avoid.
+      let latch = MigrationPreparationCompletionLatch()
+      let complete = {
+        guard latch.claim() else { return }
+        task.setTaskCompleted(success: true)
+      }
+      // The task must finish even if the submission callback never fires.
+      self.queue.asyncAfter(deadline: .now() + Self.rearmSubmissionTimeout) {
+        complete()
+      }
+      self.start { rearmed in
+        if !rearmed {
+          print("[BGPreparation] route-deferred task could not re-arm tracking")
+          // A refused submission takes the watchdog down with it, since the two
+          // share one notification identifier. Without a delivered alert that
+          // leaves no prompt at all, so put the boundary back.
+          if !recoveryAlertSubmitted {
+            self.scheduleWatchdog()
+          }
+        }
+        complete()
+      }
     }
   }
 

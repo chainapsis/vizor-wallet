@@ -174,6 +174,30 @@ func ironwoodMigrationTorDeferredWakeShouldRearm(
   disposition.shouldReschedule && !mutationQuiesced && hasRunnableWork
 }
 
+/// Whether a wake may still start network work after a step it could not
+/// interrupt.
+///
+/// Bringing Tor up blocks for tens of seconds and takes no cancellation
+/// handle, so a wake can outlive that call but never stop it. Every path that
+/// ends a wake — the system reclaiming it, the foreground taking it over, a
+/// wallet mutation, a revoked notification permission — can land inside that
+/// window and reach nothing.
+///
+/// So the state is read again on the far side. A wake the system has already
+/// reclaimed may be suspended at any moment, and it broadcasts transactions:
+/// suspension between lightwalletd accepting one and the outbox recording that
+/// it did leaves an item that looks unsent and is not. The wake that stops here
+/// instead still holds the one thing it can act on — the ability to leave a
+/// replacement request behind before it completes.
+func ironwoodMigrationOutboxWakeMayStartNetworkWork(
+  expired: Bool,
+  disposition: IronwoodMigrationOutboxWakeDisposition,
+  mutationQuiesced: Bool
+) -> Bool {
+  !expired && !mutationQuiesced
+    && disposition == .continueBackgroundWork
+}
+
 final class IronwoodMigrationNotificationAuthorizationMonitor {
   typealias StatusProvider =
     (@escaping (IronwoodMigrationNotificationAuthorizationStatus) -> Void) -> Void
@@ -475,8 +499,12 @@ final class BackgroundMigrationManager {
 
   private init() {}
 
-  private var shouldRetryCancelledWake: Bool {
+  private var isWakeExpired: Bool {
     stateLock.vizorWithLock { expired }
+  }
+
+  private var shouldRetryCancelledWake: Bool {
+    isWakeExpired
   }
 
   private var isMutationQuiesced: Bool {
@@ -759,19 +787,39 @@ final class BackgroundMigrationManager {
         task.setTaskCompleted(success: false)
         return
       }
+      // Published before the bring-up below, not after it. Expiration, a
+      // foreground handoff, and a wallet mutation all end a wake by cancelling
+      // whatever token is published; a window with none leaves them nothing to
+      // reach, and the work on the far side of it starts uncancelled.
+      let cancellation = BackgroundMigrationCancellation()
+      self.stateLock.vizorWithLock {
+        self.activeCancellation = cancellation
+      }
       // Tor before the first query or broadcast. A cold bootstrap blocks for
       // tens of seconds, so it runs here on this manager's own queue rather
       // than on the notification-gate callback. A client that does not come up
       // ready ends the wake the same way an unaffordable one does: fail-closed,
       // no network work, the run left to the foreground.
       guard BackgroundNetworkRoute.allowsBackgroundNetworkWork() else {
+        self.clearActiveCancellation()
         self.stopAuthorizationMonitoring()
         self.finishTorDeferredWake(task)
         return
       }
-      let cancellation = BackgroundMigrationCancellation()
-      self.stateLock.vizorWithLock {
-        self.activeCancellation = cancellation
+      // The bring-up above cannot be cancelled, only outlived, and it is long
+      // enough to be outlived. Ask again before the first byte goes out: the
+      // outbox is transport for already-signed transactions, so entering it on
+      // a reclaimed wake risks suspension mid-broadcast, and it would consume
+      // this execution opportunity without leaving a replacement.
+      guard ironwoodMigrationOutboxWakeMayStartNetworkWork(
+        expired: self.isWakeExpired,
+        disposition: self.wakeDisposition,
+        mutationQuiesced: self.isMutationQuiesced
+      ) else {
+        self.clearActiveCancellation()
+        self.stopAuthorizationMonitoring()
+        self.finishWakeWithoutNetworkWork(task)
+        return
       }
       // This wake is a silent BGProcessingTask. It queries the chain tip,
       // broadcasts transactions that are already signed, and notifies — it does
@@ -897,6 +945,23 @@ final class BackgroundMigrationManager {
       BackgroundMigrationPreparationManager.shared
         .notifyPreparationNeedsForeground()
     }
+    finishWakeWithoutNetworkWork(task)
+  }
+
+  /// Completes a wake that reached no network at all — refused before its
+  /// first query, or interrupted before it — and leaves a replacement behind
+  /// whenever work remains.
+  ///
+  /// Every reason a wake stops short of the network is temporary: battery, a
+  /// metered or constrained link, a Tor client that did not come up, the
+  /// system reclaiming the execution slot. None of them is evidence about the
+  /// next wake, and none of them is a reason to strand items whose signatures
+  /// expire by height. What is permanent is having nothing left to do.
+  ///
+  /// This is not an announcement path. Anything a wake owes the user is said
+  /// by the caller before it gets here, because an interrupted wake has
+  /// seconds, and the replacement is what those seconds are for.
+  private func finishWakeWithoutNetworkWork(_ task: BGProcessingTask) {
     guard ironwoodMigrationTorDeferredWakeShouldRearm(
       disposition: wakeDisposition,
       mutationQuiesced: isMutationQuiesced,
@@ -932,7 +997,7 @@ final class BackgroundMigrationManager {
       )
     ) { rescheduled in
       if !rescheduled {
-        print("[BGMigration] Tor-deferred wake could not re-arm")
+        print("[BGMigration] wake without network work could not re-arm")
       }
       complete(rescheduled)
     }

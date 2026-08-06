@@ -201,6 +201,47 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testWakeStartsNetworkWorkWhenNothingEndedItDuringBringUp() {
+    XCTAssertTrue(
+      ironwoodMigrationOutboxWakeMayStartNetworkWork(
+        expired: false,
+        disposition: .continueBackgroundWork,
+        mutationQuiesced: false
+      )
+    )
+  }
+
+  func testExpiredWakeDoesNotStartNetworkWorkAfterBringUpReturns() {
+    // Bringing Tor up holds the wake for tens of seconds and cannot be
+    // cancelled, so the system can reclaim the wake while it runs. Broadcasting
+    // signed transactions afterwards risks suspension between lightwalletd
+    // accepting one and the outbox recording that it did.
+    XCTAssertFalse(
+      ironwoodMigrationOutboxWakeMayStartNetworkWork(
+        expired: true,
+        disposition: .continueBackgroundWork,
+        mutationQuiesced: false
+      )
+    )
+  }
+
+  func testWakeDoesNotStartNetworkWorkOnceSomethingElseOwnsIt() {
+    XCTAssertFalse(
+      ironwoodMigrationOutboxWakeMayStartNetworkWork(
+        expired: false,
+        disposition: .continueBackgroundWork,
+        mutationQuiesced: true
+      )
+    )
+    XCTAssertFalse(
+      ironwoodMigrationOutboxWakeMayStartNetworkWork(
+        expired: false,
+        disposition: .finishForegroundOnly,
+        mutationQuiesced: false
+      )
+    )
+  }
+
   func testMigrationPreparationRuntimeStateIsScopedToMatchingRun() {
     XCTAssertEqual(
       migrationPreparationRuntimeState(
@@ -530,6 +571,54 @@ class RunnerTests: XCTestCase {
         notificationsDisabled: false
       )
     )
+  }
+
+  func testLaunchTimeRouteStandDownRearmsLikeAMidWaveOne() {
+    // A task that stands down before its first query — the device cannot afford
+    // the saved route, or Tor did not come up — has consumed the only armed
+    // request just as surely as one that stood down mid-wave, and the wave it
+    // was launched for is unchanged. Both leave a replacement behind.
+    let launchTimeStandDown = migrationPreparationTrackingShouldAttemptRearm(
+      completionFailed: false,
+      quiesced: false,
+      expired: false,
+      routeDeferred: true,
+      handedOff: false,
+      notificationsDisabled: false
+    )
+    XCTAssertTrue(launchTimeStandDown)
+    // Same verdict the OS reclaiming the slot gets: one lost execution
+    // opportunity, not a verdict on the run.
+    XCTAssertEqual(
+      launchTimeStandDown,
+      migrationPreparationTrackingShouldAttemptRearm(
+        completionFailed: false,
+        quiesced: false,
+        expired: true,
+        routeDeferred: false,
+        handedOff: false,
+        notificationsDisabled: false
+      )
+    )
+  }
+
+  func testLaunchTimeRouteStandDownDoesNotRearmWorkThatHasAnOwner() {
+    for (quiesced, handedOff, disabled) in [
+      (true, false, false),
+      (false, true, false),
+      (false, false, true),
+    ] {
+      XCTAssertFalse(
+        migrationPreparationTrackingShouldAttemptRearm(
+          completionFailed: false,
+          quiesced: quiesced,
+          expired: false,
+          routeDeferred: true,
+          handedOff: handedOff,
+          notificationsDisabled: disabled
+        )
+      )
+    }
   }
 
   func testConfirmedWaveSuccessDoesNotRearmTracking() {
