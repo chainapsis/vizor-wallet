@@ -1,8 +1,10 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_flip.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_card_selector_rail.dart';
 import 'package:zcash_wallet/src/features/payment_links/widgets/payment_link_gift_card.dart';
@@ -95,6 +97,86 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('controlled card flip turns to the message and reverses', (
+    tester,
+  ) async {
+    var showBack = false;
+    late StateSetter update;
+    await _pump(
+      tester,
+      StatefulBuilder(
+        builder: (context, setState) {
+          update = setState;
+          return PaymentLinkCardFlip(
+            showBack: showBack,
+            front: const SizedBox(
+              key: ValueKey('test_payment_link_front'),
+              width: PaymentLinkGiftCard.width,
+              height: PaymentLinkGiftCard.height,
+            ),
+            back: const SizedBox(
+              key: ValueKey('test_payment_link_back'),
+              width: PaymentLinkGiftCard.width,
+              height: PaymentLinkGiftCard.height,
+            ),
+          );
+        },
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_front')),
+      findsOneWidget,
+    );
+    update(() => showBack = true);
+    await tester.pump();
+    await tester.pump(PaymentLinkCardFlip.duration ~/ 2);
+    final halfway = tester.widget<Transform>(
+      find.byKey(const ValueKey('payment_link_flip_transform')),
+    );
+    expect(halfway.transform.storage.first.abs(), lessThan(0.99));
+
+    update(() => showBack = false);
+    await tester.pump();
+    await tester.pump(PaymentLinkCardFlip.duration);
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_front')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('reduced motion swaps card faces without scheduling a turn', (
+    tester,
+  ) async {
+    var showBack = false;
+    late StateSetter update;
+    await _pump(
+      tester,
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return PaymentLinkCardFlip(
+              showBack: showBack,
+              front: const Text('Front face'),
+              back: const Text('Back face'),
+            );
+          },
+        ),
+      ),
+    );
+
+    update(() => showBack = true);
+    await tester.pump();
+    expect(find.text('Back face'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('payment_link_flip_transform')),
+      findsNothing,
+    );
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
   testWidgets('selector transitions from default to hover and selected', (
     tester,
   ) async {
@@ -181,6 +263,8 @@ void main() {
   testWidgets('selector rail exposes all designs and reports a selection', (
     tester,
   ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     PaymentLinkCardArtwork? selected;
     await _pump(
       tester,
@@ -194,7 +278,12 @@ void main() {
     final list = tester.widget<ListView>(
       find.byKey(const ValueKey('payment_link_card_selector_scroll')),
     );
+    final rail = find.byKey(const ValueKey('payment_link_card_selector_rail'));
     expect(list.semanticChildCount, PaymentLinkCardArtwork.values.length);
+    expect(
+      find.descendant(of: rail, matching: find.byType(RawScrollbar)),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey('payment_link_card_selector_edge_fade')),
       findsOneWidget,
@@ -204,6 +293,7 @@ void main() {
       find.byKey(const ValueKey('payment_link_card_selector_diamond')),
     );
     expect(selected, PaymentLinkCardArtwork.diamond);
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('selector rail recenters externally selected artwork', (

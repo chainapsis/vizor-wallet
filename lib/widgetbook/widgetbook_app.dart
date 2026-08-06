@@ -923,6 +923,10 @@ class WidgetbookApp extends StatelessWidget {
                       name: 'Fiat resolved',
                       builder: buildPaymentLinkCreateFiatUseCase,
                     ),
+                    WidgetbookUseCase(
+                      name: 'Interactive simulator',
+                      builder: buildPaymentLinkInteractiveUseCase,
+                    ),
                   ],
                 ),
                 WidgetbookComponent(

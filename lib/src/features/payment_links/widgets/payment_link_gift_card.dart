@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_icon.dart';
 import 'payment_link_action.dart';
+import 'payment_link_skeleton.dart';
 
 /// Artwork choices exported from the Figma `_CARD BG IMAGE` component set.
 enum PaymentLinkCardArtwork {
@@ -177,7 +178,7 @@ class _PaymentLinkGiftCardFrontBackground extends StatelessWidget {
           key: ValueKey('payment_link_card_artwork_fade'),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              begin: Alignment(0, -0.05),
+              begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [Color(0x00000000), Color(0xB3000000)],
               stops: [0.48024, 0.73518],
@@ -250,20 +251,18 @@ class _PaymentLinkGiftCardFrontContent extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 2),
-                    Container(
+                    PaymentLinkSkeletonBar(
                       key: const ValueKey(
                         'payment_link_fiat_loading_placeholder',
                       ),
                       width: 48,
                       height: 12,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(AppRadii.full),
-                        gradient: LinearGradient(
-                          colors: [
-                            cardTextColor,
-                            cardTextColor.withValues(alpha: 0.15),
-                          ],
-                        ),
+                      colors: [
+                        cardTextColor,
+                        cardTextColor.withValues(alpha: 0.15),
+                      ],
+                      shimmerKey: const ValueKey(
+                        'payment_link_fiat_loading_shimmer',
                       ),
                     ),
                   ],
