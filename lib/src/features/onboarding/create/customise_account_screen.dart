@@ -138,15 +138,20 @@ class _CustomiseAccountScreenState
       },
     );
 
+    final routerRefresh = ref.read(routerRefreshProvider);
     if (pendingPassword == null) {
-      await createAccount();
-      clearCreateOnboardingSecretState(ref.read);
-      router.go('/home');
+      // Account creation notifies router dependencies before the explicit
+      // home navigation below. Preserve this extra-backed route until both
+      // operations complete, including the derive-account path.
+      await routerRefresh.pauseWhile(() async {
+        await createAccount();
+        clearCreateOnboardingSecretState(ref.read);
+        router.go('/home');
+      });
       return;
     }
 
     final securityNotifier = ref.read(appSecurityProvider.notifier);
-    final routerRefresh = ref.read(routerRefreshProvider);
     var passwordPrepared = false;
     var passwordCommitted = false;
     try {

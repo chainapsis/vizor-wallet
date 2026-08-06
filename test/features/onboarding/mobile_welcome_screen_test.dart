@@ -199,6 +199,31 @@ void main() {
     expect(screen.args.mnemonic, isEmpty);
   });
 
+  testWidgets('derive survives the add-account welcome route stack', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        initialLocation: '/add-account',
+        accountState: _softwareAccountState,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _openMethodSelection(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('mobile_welcome_derive_account')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final screen = tester.widget<MobileCustomiseAccountScreen>(
+      find.byType(MobileCustomiseAccountScreen),
+    );
+    expect(screen.args.isDeriveFlow, isTrue);
+    expect(screen.args.deriveFromAccountUuid, 'software-account');
+  });
+
   testWidgets('method selection hides derive for a hardware-only wallet', (
     tester,
   ) async {

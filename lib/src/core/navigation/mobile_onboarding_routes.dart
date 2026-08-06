@@ -89,12 +89,23 @@ List<RouteBase> mobileOnboardingRoutes() => [
     path: '/onboarding/customise-account',
     redirect: (_, state) =>
         state.extra is CustomiseAccountArgs ? null : '/welcome',
-    pageBuilder: (context, state) => CupertinoPage(
-      key: state.pageKey,
-      child: MobileCustomiseAccountScreen(
-        args: state.extra as CustomiseAccountArgs,
-      ),
-    ),
+    pageBuilder: (context, state) {
+      final args = state.extra;
+      // GoRouter redirects malformed deep links before building in normal
+      // navigation. State restoration can still briefly build this page
+      // without `extra`, so keep the page builder non-throwing as a second
+      // line of defence.
+      if (args is! CustomiseAccountArgs) {
+        return CupertinoPage(
+          key: state.pageKey,
+          child: const MobileWelcomeScreen(showBackButton: true),
+        );
+      }
+      return CupertinoPage(
+        key: state.pageKey,
+        child: MobileCustomiseAccountScreen(args: args),
+      );
+    },
   ),
   GoRoute(
     path: '/onboarding/biometrics',
