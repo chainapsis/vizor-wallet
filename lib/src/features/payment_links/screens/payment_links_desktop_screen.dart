@@ -10,10 +10,7 @@ import '../../../core/layout/app_desktop_shell.dart';
 import '../../../core/layout/app_layout.dart';
 import '../../../core/layout/app_main_sidebar.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../core/widgets/app_modal_card.dart';
-import '../../../core/widgets/app_pane_modal_overlay.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../providers/account_provider.dart';
 import '../../../providers/sync_provider.dart';
@@ -43,8 +40,8 @@ enum _PaymentLinksLocalPage {
 ///
 /// The presentation remains local to this screen, while all secret creation,
 /// recovery persistence, sync, and transaction work stays behind
-/// [PaymentLinkOperations]. Artwork and message are not protocol fields in the
-/// current v1 link, so received links intentionally render a generic card.
+/// [PaymentLinkOperations]. Artwork is an optional, backward-compatible v1
+/// field. The message remains local to the sender in the current protocol.
 class PaymentLinksDesktopScreen extends ConsumerStatefulWidget {
   const PaymentLinksDesktopScreen({super.key});
 
@@ -91,9 +88,9 @@ class _PaymentLinksDesktopScreenState
       PaymentLinkRedeemVisualState.paste;
   PaymentLinkCardsTab _activeCardsTab = PaymentLinkCardsTab.created;
   List<PaymentLinkRecoveryRecord> _recoveries = const [];
+  List<_ReceivedPaymentLinkRecord> _receivedCards = const [];
   VizorPaymentLink? _readyLink;
   VizorPaymentLink? _receivedLink;
-  PaymentLinkRecoveryRecord? _reclaimCandidate;
   _PaymentLinkKeystoneFundingRequest? _keystoneFundingRequest;
   bool _showHelp = false;
   bool _amountFocused = false;
@@ -169,6 +166,7 @@ class _PaymentLinksDesktopScreenState
     if (link == null || !mounted) return;
     setState(() {
       _receivedLink = link;
+      _rememberReceivedLink(link);
       _redeemState = PaymentLinkRedeemVisualState.paste;
       _page = _PaymentLinksLocalPage.received;
       _showHelp = false;
@@ -189,6 +187,45 @@ class _PaymentLinksDesktopScreenState
         _showError('Gift Cards could not be loaded.');
       }
     }
+  }
+
+  void _rememberReceivedLink(VizorPaymentLink link) {
+    final existingIndex = _receivedCards.indexWhere(
+      (record) => record.address == link.address,
+    );
+    final existing = existingIndex < 0 ? null : _receivedCards[existingIndex];
+    final status = existing?.status ?? _ReceivedPaymentLinkStatus.readyToClaim;
+    final updated = _ReceivedPaymentLinkRecord.fromLink(
+      link,
+      status: status,
+      retainClaimLink: status != _ReceivedPaymentLinkStatus.received,
+    );
+    final records = List<_ReceivedPaymentLinkRecord>.of(_receivedCards);
+    if (existingIndex >= 0) records.removeAt(existingIndex);
+    _receivedCards = [updated, ...records];
+  }
+
+  void _setReceivedCardStatus(
+    String address,
+    _ReceivedPaymentLinkStatus status, {
+    bool clearClaimLink = false,
+  }) {
+    _receivedCards = [
+      for (final record in _receivedCards)
+        if (record.address == address)
+          record.withStatus(status, clearClaimLink: clearClaimLink)
+        else
+          record,
+    ];
+  }
+
+  void _openReceivedCard(_ReceivedPaymentLinkRecord record) {
+    final link = record.claimLink;
+    if (link == null || _operationInProgress) return;
+    setState(() {
+      _receivedLink = link;
+      _page = _PaymentLinksLocalPage.received;
+    });
   }
 
   bool get _hasPositiveAmount {
@@ -278,6 +315,7 @@ class _PaymentLinksDesktopScreenState
         _keystoneFundingRequest = _PaymentLinkKeystoneFundingRequest(
           amountZatoshi: amount,
           sourceAccountUuid: sourceAccountUuid,
+          artworkId: _selectedArtwork.protocolId,
         );
       });
       return;
@@ -290,6 +328,7 @@ class _PaymentLinksDesktopScreenState
           .createFundedLink(
             amountZatoshi: amount,
             sourceAccountUuid: sourceAccountUuid,
+            artworkId: _selectedArtwork.protocolId,
           );
       await _loadRecoveries(showError: false);
       if (!mounted) return;
@@ -386,6 +425,7 @@ class _PaymentLinksDesktopScreenState
       if (link == null || !mounted) return;
       setState(() {
         _receivedLink = link;
+        _rememberReceivedLink(link);
         _redeemState = PaymentLinkRedeemVisualState.paste;
         _page = _PaymentLinksLocalPage.received;
       });
@@ -409,51 +449,44 @@ class _PaymentLinksDesktopScreenState
   Future<void> _claimReceivedLink() async {
     final link = _receivedLink;
     if (link == null || _operationInProgress) return;
-    setState(() => _operationInProgress = true);
+    setState(() {
+      _operationInProgress = true;
+      _receivedLink = null;
+      _setReceivedCardStatus(
+        link.address,
+        _ReceivedPaymentLinkStatus.receiving,
+      );
+      _activeCardsTab = PaymentLinkCardsTab.received;
+      _page = _PaymentLinksLocalPage.home;
+      _showHelp = false;
+    });
     try {
-      await ref.read(paymentLinkOperationsProvider).claimLink(link);
+      final result = await ref
+          .read(paymentLinkOperationsProvider)
+          .claimLink(link);
       if (!mounted) return;
-      setState(() {
-        _receivedLink = null;
-        _page = _PaymentLinksLocalPage.home;
-      });
-      showAppToast(context, 'Gift claimed');
+      if (result.isBroadcasted) {
+        setState(() {
+          _setReceivedCardStatus(
+            link.address,
+            _ReceivedPaymentLinkStatus.received,
+            clearClaimLink: true,
+          );
+        });
+        showAppToast(context, 'Gift claimed');
+      } else {
+        showAppToast(context, 'Gift claim submitted');
+      }
     } catch (_) {
       if (mounted) {
+        setState(() {
+          _setReceivedCardStatus(
+            link.address,
+            _ReceivedPaymentLinkStatus.readyToClaim,
+          );
+        });
         _showError(
           'Gift Card claim failed. It may still be waiting for confirmation '
-          'or may already be spent.',
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _operationInProgress = false);
-    }
-  }
-
-  void _requestReclaim(PaymentLinkRecoveryRecord record) {
-    if (_operationInProgress) return;
-    setState(() => _reclaimCandidate = record);
-  }
-
-  void _dismissReclaim() {
-    if (_operationInProgress) return;
-    setState(() => _reclaimCandidate = null);
-  }
-
-  Future<void> _confirmReclaim() async {
-    final record = _reclaimCandidate;
-    if (record == null || _operationInProgress) return;
-    setState(() => _operationInProgress = true);
-    try {
-      await ref.read(paymentLinkOperationsProvider).reclaimCreatedLink(record);
-      await _loadRecoveries(showError: false);
-      if (!mounted) return;
-      setState(() => _reclaimCandidate = null);
-      showAppToast(context, 'Reclaim submitted');
-    } catch (_) {
-      if (mounted) {
-        _showError(
-          'Gift Card reclaim failed. It may still be waiting for confirmation '
           'or may already be spent.',
         );
       }
@@ -489,14 +522,13 @@ class _PaymentLinksDesktopScreenState
                 child: PaymentLinkKeystoneSigningOverlay(
                   amountZatoshi: keystoneRequest.amountZatoshi,
                   sourceAccountUuid: keystoneRequest.sourceAccountUuid,
+                  artworkId: keystoneRequest.artworkId,
                   onCancel: _cancelKeystoneFunding,
                   onFundingBroadcast: _completeKeystoneFunding,
                 ),
               ),
             ],
           )
-        : _reclaimCandidate != null
-        ? _buildReclaimOverlay(currentPage)
         : _showHelp
         ? PaymentLinkHowItWorksDesktopView(
             background: _buildHome(),
@@ -539,7 +571,9 @@ class _PaymentLinksDesktopScreenState
   }
 
   Widget _buildHome() {
-    if (_recoveries.isNotEmpty) return _buildCardsList();
+    if (_recoveries.isNotEmpty || _receivedCards.isNotEmpty) {
+      return _buildCardsList();
+    }
     return PaymentLinksHomeDesktopView(
       illustration: Image.asset(
         'assets/illustrations/payment_links/payment_link_empty_card.png',
@@ -558,12 +592,9 @@ class _PaymentLinksDesktopScreenState
   Widget _buildCardsList() {
     final showingCreated = _activeCardsTab == PaymentLinkCardsTab.created;
     final available = showingCreated
-        ? _recoveries
-              .where(
-                (record) => record.state != PaymentLinkRecoveryState.reclaiming,
-              )
-              .map(_buildRecoveryRow)
-              .toList()
+        ? _recoveries.map(_buildRecoveryRow).toList()
+        : _receivedCards.isNotEmpty
+        ? _receivedCards.map(_buildReceivedRow).toList()
         : <Widget>[
             Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -576,25 +607,15 @@ class _PaymentLinksDesktopScreenState
               ),
             ),
           ];
-    final reclaiming = showingCreated
-        ? _recoveries
-              .where(
-                (record) => record.state == PaymentLinkRecoveryState.reclaiming,
-              )
-              .map(_buildRecoveryRow)
-              .toList()
-        : const <Widget>[];
-
     return PaymentLinkCardsDesktopView(
       pendingCards: available,
-      createdCards: reclaiming,
+      createdCards: const [],
       onBack: () => context.go('/home'),
       onCreate: _startCreate,
       onRedeem: () => _showPage(_PaymentLinksLocalPage.redeem),
       activeTab: _activeCardsTab,
       onTabSelected: (tab) => setState(() => _activeCardsTab = tab),
       pendingLabel: showingCreated ? 'Available' : 'Received',
-      createdSectionLabel: reclaiming.isEmpty ? null : 'Submitted',
     );
   }
 
@@ -602,20 +623,16 @@ class _PaymentLinksDesktopScreenState
     final canUseLink =
         record.state == PaymentLinkRecoveryState.funded ||
         record.state == PaymentLinkRecoveryState.shared;
-    final canReclaim =
-        record.state != PaymentLinkRecoveryState.reclaiming &&
-        !_operationInProgress;
     final copyEnabled = canUseLink && !_operationInProgress;
     final statusText = switch (record.state) {
       PaymentLinkRecoveryState.draft => 'Funding incomplete',
       PaymentLinkRecoveryState.funded ||
       PaymentLinkRecoveryState.shared => 'Copy link',
-      PaymentLinkRecoveryState.reclaiming => 'Reclaiming',
     };
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_recovery_${record.link.address}'),
       thumbnail: Image.asset(
-        PaymentLinkCardArtwork.gift.assetPath,
+        PaymentLinkCardArtwork.fromProtocolId(record.link.artworkId).assetPath,
         fit: BoxFit.cover,
         excludeFromSemantics: true,
       ),
@@ -624,10 +641,30 @@ class _PaymentLinksDesktopScreenState
       statusText: statusText,
       onAction: copyEnabled ? () => _copyPaymentLink(record.link) : null,
       showCopyIcon: canUseLink,
-      secondaryActionText: record.state == PaymentLinkRecoveryState.reclaiming
-          ? null
-          : 'Reclaim',
-      onSecondaryAction: canReclaim ? () => _requestReclaim(record) : null,
+    );
+  }
+
+  Widget _buildReceivedRow(_ReceivedPaymentLinkRecord record) {
+    final statusText = switch (record.status) {
+      _ReceivedPaymentLinkStatus.readyToClaim => 'Claim',
+      _ReceivedPaymentLinkStatus.receiving => 'Receiving',
+      _ReceivedPaymentLinkStatus.received => 'Received',
+    };
+    final canClaim =
+        record.status == _ReceivedPaymentLinkStatus.readyToClaim &&
+        record.claimLink != null &&
+        !_operationInProgress;
+    return PaymentLinkCardListRow(
+      key: ValueKey('payment_link_received_${record.address}'),
+      thumbnail: Image.asset(
+        PaymentLinkCardArtwork.fromProtocolId(record.artworkId).assetPath,
+        fit: BoxFit.cover,
+        excludeFromSemantics: true,
+      ),
+      amountText: '${formatZecAmount(record.amountZatoshi)} ZEC',
+      dateText: _formatCardDate(record.createdAt),
+      statusText: statusText,
+      onAction: canClaim ? () => _openReceivedCard(record) : null,
     );
   }
 
@@ -730,7 +767,7 @@ class _PaymentLinksDesktopScreenState
     if (link == null) return _buildHome();
     return PaymentLinkReceivedDesktopView(
       card: PaymentLinkGiftCard(
-        artwork: PaymentLinkCardArtwork.gift,
+        artwork: PaymentLinkCardArtwork.fromProtocolId(link.artworkId),
         amountText: formatZecAmount(link.amountZatoshi),
         showCaret: false,
       ),
@@ -738,59 +775,6 @@ class _PaymentLinksDesktopScreenState
       onBack: () => _showPage(_PaymentLinksLocalPage.home),
       onClaim: _operationInProgress ? null : _claimReceivedLink,
       claimLabel: _operationInProgress ? 'Claiming...' : 'Claim my gift',
-    );
-  }
-
-  Widget _buildReclaimOverlay(Widget background) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        background,
-        AppPaneModalOverlay(
-          onDismiss: _dismissReclaim,
-          child: AppModalCard(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Reclaim gift card?',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: context.colors.text.accent,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'Any remaining balance will be sent back to the account '
-                  'that created this card. The shared link will stop working '
-                  'after the transaction confirms.',
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: context.colors.text.secondary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                AppModalActions(
-                  onCancel: _operationInProgress ? null : _dismissReclaim,
-                  actionLabel: _operationInProgress
-                      ? 'Reclaiming...'
-                      : 'Reclaim',
-                  onAction: _operationInProgress ? null : _confirmReclaim,
-                  actionVariant: AppButtonVariant.destructive,
-                  actionLeading: _operationInProgress
-                      ? const AppIcon(AppIcons.loader, size: 16)
-                      : null,
-                  cancelKey: const ValueKey(
-                    'payment_link_reclaim_cancel_button',
-                  ),
-                  actionKey: const ValueKey(
-                    'payment_link_reclaim_confirm_button',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -804,8 +788,59 @@ class _PaymentLinkKeystoneFundingRequest {
   const _PaymentLinkKeystoneFundingRequest({
     required this.amountZatoshi,
     required this.sourceAccountUuid,
+    required this.artworkId,
   });
 
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
+  final String artworkId;
+}
+
+enum _ReceivedPaymentLinkStatus { readyToClaim, receiving, received }
+
+class _ReceivedPaymentLinkRecord {
+  const _ReceivedPaymentLinkRecord({
+    required this.address,
+    required this.amountZatoshi,
+    required this.createdAt,
+    required this.artworkId,
+    required this.status,
+    required this.claimLink,
+  });
+
+  factory _ReceivedPaymentLinkRecord.fromLink(
+    VizorPaymentLink link, {
+    _ReceivedPaymentLinkStatus status = _ReceivedPaymentLinkStatus.readyToClaim,
+    bool retainClaimLink = true,
+  }) {
+    return _ReceivedPaymentLinkRecord(
+      address: link.address,
+      amountZatoshi: link.amountZatoshi,
+      createdAt: link.createdAt,
+      artworkId: link.artworkId,
+      status: status,
+      claimLink: retainClaimLink ? link : null,
+    );
+  }
+
+  final String address;
+  final BigInt amountZatoshi;
+  final DateTime createdAt;
+  final String? artworkId;
+  final _ReceivedPaymentLinkStatus status;
+  final VizorPaymentLink? claimLink;
+
+  _ReceivedPaymentLinkRecord withStatus(
+    _ReceivedPaymentLinkStatus nextStatus, {
+    bool clearClaimLink = false,
+  }) {
+    return _ReceivedPaymentLinkRecord(
+      address: address,
+      amountZatoshi: amountZatoshi,
+      createdAt: createdAt,
+      artworkId: artworkId,
+      status: nextStatus,
+      claimLink: clearClaimLink ? null : claimLink,
+    );
+  }
 }
