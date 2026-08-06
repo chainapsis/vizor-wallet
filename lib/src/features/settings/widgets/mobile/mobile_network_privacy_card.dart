@@ -7,6 +7,11 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_icon.dart';
 import '../../../../core/widgets/mobile/mobile_surface_card.dart';
 import '../../../../providers/network_privacy_provider.dart';
+// The widget is deliberately not shared; the decision behind it is, because
+// both form factors drive one provider and the escape hatch has to exist on
+// both.
+import '../network_privacy_control.dart'
+    show NetworkPrivacyToggleActionX, networkPrivacyToggleAction;
 
 const _rowHeight = 44.0;
 
@@ -25,9 +30,12 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
     final state = ref.watch(networkPrivacyProvider);
     final notifier = ref.read(networkPrivacyProvider.notifier);
     final presentation = _presentationFor(state);
-    final onToggle = state.isBusy
-        ? null
-        : () => unawaited(notifier.setTorEnabled(!state.torEnabled));
+    final toggleAction = networkPrivacyToggleAction(state);
+    final onToggle = toggleAction.isInteractive
+        ? () => unawaited(
+            notifier.setTorEnabled(toggleAction.requestedTorEnabled),
+          )
+        : null;
     // `retry()` re-runs the desired route, which is the direct connection when
     // it was the disable that failed.
     final retryLabel = (state.targetTorEnabled ?? state.torEnabled)
@@ -59,8 +67,8 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
           Semantics(
             button: true,
             toggled: state.torEnabled,
-            enabled: !state.isBusy,
-            label: 'Use Tor',
+            enabled: toggleAction.isInteractive,
+            label: toggleAction.semanticsLabel,
             // The excluded subtree holds the status text, and four of the five
             // states report `toggled: true`, so the status has to ride on the
             // node itself to reach assistive technology at all.
@@ -109,7 +117,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
                       _MobileTorToggle(
                         key: const ValueKey('mobile_settings_tor_toggle'),
                         enabled: state.torEnabled,
-                        busy: state.isBusy,
+                        interactive: toggleAction.isInteractive,
                       ),
                     ],
                   ),
@@ -130,7 +138,7 @@ class MobileNetworkPrivacyCard extends ConsumerWidget {
             // whitespace that separates it from the description.
             Semantics(
               button: true,
-              enabled: !state.isBusy,
+              enabled: onRetry != null,
               label: retryLabel,
               onTap: onRetry,
               excludeSemantics: true,
@@ -177,7 +185,13 @@ _MobileTorPresentation _presentationFor(NetworkPrivacyState state) {
   return switch ((state.status, targetTorEnabled)) {
     (NetworkPrivacyConnectionStatus.connecting, true) => _MobileTorPresentation(
       statusLabel: 'Connecting…',
-      description: 'New requests wait until the Tor connection is ready.',
+      // Names the way out. On a network that blocks Tor the wait runs to the
+      // bootstrap deadline with every request failing closed, and relaunching
+      // the app only starts the same wait again, so the escape has to be stated
+      // where the user is looking.
+      description:
+          'New requests wait until the Tor connection is ready. Turn Tor '
+          'off to stop connecting and use a direct connection.',
       statusColor: (colors) => colors.text.secondary,
       iconColor: (colors) => colors.icon.muted,
     ),
@@ -237,12 +251,16 @@ _MobileTorPresentation _presentationFor(NetworkPrivacyState state) {
 class _MobileTorToggle extends StatelessWidget {
   const _MobileTorToggle({
     required this.enabled,
-    required this.busy,
+    required this.interactive,
     super.key,
   });
 
   final bool enabled;
-  final bool busy;
+
+  /// Dimming says the route is not effective yet. A transition the user can
+  /// still leave is not dimmed: the control has to look like something they may
+  /// act on, because acting on it is the way out of the wait.
+  final bool interactive;
 
   @override
   Widget build(BuildContext context) {
@@ -254,7 +272,7 @@ class _MobileTorToggle extends StatelessWidget {
         ? colors.border.brandCrimsonStrong
         : colors.border.regular;
     return Opacity(
-      opacity: busy ? 0.65 : 1,
+      opacity: interactive ? 1 : 0.65,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,

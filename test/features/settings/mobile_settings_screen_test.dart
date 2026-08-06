@@ -319,7 +319,34 @@ void main() {
           .data,
       contains('wait until the Tor connection is ready'),
     );
-    // Busy means the toggle cannot be driven into a second transition.
+    // The bootstrap runs to a three-minute deadline with every request failing
+    // closed, and relaunching starts the same wait, so switching to direct has
+    // to stay reachable for the whole of it.
+    expect(tester.widget<GestureDetector>(row).onTap, isNotNull);
+    await tester.tap(row);
+    await tester.pump();
+    expect(calls, [false]);
+  });
+
+  testWidgets('a switch to direct cannot be driven back into Tor', (
+    tester,
+  ) async {
+    final calls = <bool>[];
+    await tester.pumpWidget(
+      _app(
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connecting,
+          targetTorEnabled: false,
+        ),
+        networkPrivacyCalls: calls,
+      ),
+    );
+    await tester.pump();
+
+    final row = find.byKey(const ValueKey('mobile_settings_tor_row'));
+    await tester.scrollUntilVisible(row, 200);
+    // Nothing to escape from here: the route is already on its way to direct.
     expect(tester.widget<GestureDetector>(row).onTap, isNull);
     await tester.tap(row);
     await tester.pump();

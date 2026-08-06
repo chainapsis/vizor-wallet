@@ -59,6 +59,13 @@ static ROUTE_DECIDED: AtomicBool = AtomicBool::new(false);
 /// that arrives mid-bootstrap has nothing to apply to, and neither the app
 /// lifecycle callbacks nor a background pass about to do work repeat themselves.
 static TOR_DORMANT: AtomicBool = AtomicBool::new(false);
+/// Monotonic milliseconds, from [`process_uptime_ms`], until which a background
+/// pass needs the client awake. Zero means no pass holds one.
+static BACKGROUND_WAKE_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+static PROCESS_START: OnceLock<std::time::Instant> = OnceLock::new();
+/// Serialises reading the intent and applying a mode to the client, so a pass
+/// whose wake lapses cannot overwrite an intent that changed a moment earlier.
+static DORMANT_APPLY_LOCK: Mutex<()> = Mutex::new(());
 static TOR_STATUS: AtomicU8 = AtomicU8::new(STATUS_DIRECT);
 static TOR_CLIENT: OnceLock<RwLock<Option<TorClient>>> = OnceLock::new();
 static TOR_INIT_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -326,28 +333,130 @@ impl<T: hyper::rt::Write + Unpin> hyper::rt::Write for DirectRouteIo<T> {
 /// lifecycle callbacks nor [`enable_tor_for_background_work`] repeat themselves
 /// once it finishes.
 pub fn set_tor_dormant(dormant: bool) {
-    TOR_DORMANT.store(dormant, Ordering::Release);
-    let slot = client_slot()
-        .read()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let Some(client) = slot.as_ref() else {
-        return;
-    };
-    client.set_dormant(pending_dormant_mode());
+    {
+        let _guard = dormant_apply_lock();
+        TOR_DORMANT.store(dormant, Ordering::Release);
+        apply_dormant_mode_locked();
+    }
     log::info!("network privacy: Tor dormant={dormant}");
 }
 
-/// The mode a client is put into as it is installed, so it never lands awake in
-/// a backgrounded process that is not about to use it — the one background
-/// caller that is says so by clearing the intent first. Applying `Soft` to a
-/// client that has just finished bootstrapping is safe: arti lifts it back to
-/// `Normal` on the next use.
-fn pending_dormant_mode() -> DormantMode {
-    if TOR_DORMANT.load(Ordering::Acquire) {
+fn dormant_apply_lock() -> std::sync::MutexGuard<'static, ()> {
+    DORMANT_APPLY_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Pushes the mode the current state implies onto the installed client.
+/// Caller holds [`DORMANT_APPLY_LOCK`], so the value read and the value applied
+/// cannot come from different moments.
+fn apply_dormant_mode_locked() {
+    let mode = pending_dormant_mode();
+    let slot = client_slot()
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(client) = slot.as_ref() {
+        client.set_dormant(mode);
+    }
+}
+
+fn process_uptime_ms() -> u64 {
+    PROCESS_START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
+}
+
+/// How long a background pass's wake survives without being renewed.
+///
+/// A pass renews it every time it brings Tor up, and the confirmation tracker
+/// does that once per polling round, so this only has to outlast one round with
+/// slack. What it actually bounds is the other direction: how long a client
+/// keeps padding its guard connection after the last pass stopped asking for
+/// anything.
+const BACKGROUND_WAKE_LEASE: Duration = Duration::from_secs(2 * 60);
+
+fn background_wake_is_held() -> bool {
+    let until = BACKGROUND_WAKE_UNTIL_MS.load(Ordering::Acquire);
+    until != 0 && process_uptime_ms() < until
+}
+
+/// The mode the client should be in, from the app's intent and whether a
+/// background pass currently needs it awake.
+///
+/// The pass masks the intent rather than overwriting it. There is consequently
+/// nothing for a pass to restore, and no end-of-pass call for any of its exits
+/// to forget: the mask lapses on its own, and a foreground entry that clears the
+/// intent while a pass is still running wins immediately, so a pass can never
+/// put a client to sleep underneath an app that wants it awake.
+fn dormant_mode_for(app_intent_dormant: bool, background_wake_held: bool) -> DormantMode {
+    if app_intent_dormant && !background_wake_held {
         DormantMode::Soft
     } else {
         DormantMode::Normal
     }
+}
+
+/// The mode a client is put into as it is installed, so it never lands awake in
+/// a backgrounded process that is not about to use it. Applying `Soft` to a
+/// client that has just finished bootstrapping is safe: arti lifts it back to
+/// `Normal` on the next use.
+fn pending_dormant_mode() -> DormantMode {
+    dormant_mode_for(
+        TOR_DORMANT.load(Ordering::Acquire),
+        background_wake_is_held(),
+    )
+}
+
+/// Marks the client as needed by a background pass for the next lease window,
+/// and arranges for that to lapse without anything having to say so.
+///
+/// Renewing rather than extending: a later hold always wins, and the release
+/// belongs to whichever hold set the deadline that is still current when it
+/// fires.
+fn hold_background_wake() {
+    let deadline = process_uptime_ms().saturating_add(BACKGROUND_WAKE_LEASE.as_millis() as u64);
+    {
+        let _guard = dormant_apply_lock();
+        BACKGROUND_WAKE_UNTIL_MS.fetch_max(deadline, Ordering::AcqRel);
+        apply_dormant_mode_locked();
+    }
+    schedule_background_wake_release(deadline);
+}
+
+/// Waits out one lease and hands the client back to the app's intent.
+///
+/// A process with no runtime here simply has no timer; the lease still lapses by
+/// time, so the next thing to read the mode computes the released value. What is
+/// lost in that case is only the moment the client is put back to sleep, not
+/// whether it is.
+fn schedule_background_wake_release(deadline: u64) {
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    handle.spawn(async move {
+        loop {
+            let current = BACKGROUND_WAKE_UNTIL_MS.load(Ordering::Acquire);
+            // Released already, or a later hold owns the release now.
+            if current == 0 || current > deadline {
+                return;
+            }
+            let now = process_uptime_ms();
+            if now < current {
+                tokio::time::sleep(Duration::from_millis(current - now)).await;
+                continue;
+            }
+            let _guard = dormant_apply_lock();
+            if BACKGROUND_WAKE_UNTIL_MS
+                .compare_exchange(current, 0, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                apply_dormant_mode_locked();
+            }
+            return;
+        }
+    });
 }
 
 pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, String> {
@@ -385,10 +494,15 @@ pub async fn enable_tor_for_background_work(
     // a process the app has already backgrounded, and a client the app put to
     // sleep on its way out would stay asleep. Neither suits a pass that is about
     // to do work, and this call is the point at which "about to do work" is
-    // known. Waking costs a circuit build, which is why the app does not do this
-    // speculatively; here the work is certain. The app's lifecycle owns the
-    // intent again from its next foreground entry.
-    set_tor_dormant(false);
+    // known.
+    //
+    // Held rather than written. The intent belongs to the app lifecycle, and a
+    // pass that overwrote it would leave the client awake for as long as the
+    // process lived: `onHide` has already run by the time a pass starts, or
+    // never runs at all on a cold background launch, and the next foreground
+    // callback asks for awake too. So nothing would ask for sleep again on
+    // exactly the battery or metered route the caller's gate exists to protect.
+    hold_background_wake();
     bootstrap_tor(tor_directory, BACKGROUND_TOR_BOOTSTRAP_TIMEOUT).await
 }
 
@@ -586,6 +700,9 @@ pub(crate) mod test_route_policy {
         fn drop(&mut self) {
             super::disable_tor();
             super::ROUTE_DECIDED.store(false, Ordering::Release);
+            // A lease outlives the test that took it, and it masks the intent
+            // every later test reads.
+            super::BACKGROUND_WAKE_UNTIL_MS.store(0, Ordering::Release);
         }
     }
 
@@ -608,12 +725,61 @@ mod tests {
 
     use super::{
         await_tor_bootstrap, cancel_direct_connections, client_slot, disable_tor,
-        enable_tor_for_background_work, init_lock, install_bootstrapped_client, is_tor_desired,
-        mark_tor_desired, pending_dormant_mode, route_decision, set_tor_dormant, set_tor_failed, status,
-        test_route_policy::lock_route_policy, tor_client_for_route, DirectRouteIo, DormantMode,
-        NetworkPrivacyStatus, RouteDecision, TorClient, BACKGROUND_TOR_BOOTSTRAP_TIMEOUT,
-        STATUS_READY, TOR_BOOTSTRAP_TIMEOUT, TOR_BOOTSTRAP_TIMEOUT_MESSAGE, TOR_STATUS,
+        dormant_mode_for, enable_tor_for_background_work, init_lock, install_bootstrapped_client,
+        is_tor_desired, mark_tor_desired, pending_dormant_mode, route_decision, set_tor_dormant,
+        set_tor_failed, status, test_route_policy::lock_route_policy, tor_client_for_route,
+        DirectRouteIo, DormantMode, NetworkPrivacyStatus, RouteDecision, TorClient,
+        BACKGROUND_TOR_BOOTSTRAP_TIMEOUT, BACKGROUND_WAKE_UNTIL_MS, STATUS_READY,
+        TOR_BOOTSTRAP_TIMEOUT, TOR_BOOTSTRAP_TIMEOUT_MESSAGE, TOR_STATUS,
     };
+
+    /// Ends whatever lease is outstanding, the way waiting out the lease would.
+    fn lapse_background_wake() {
+        BACKGROUND_WAKE_UNTIL_MS.store(0, Ordering::Release);
+    }
+
+    #[test]
+    fn a_background_pass_masks_the_app_dormancy_intent_without_replacing_it() {
+        assert_eq!(dormant_mode_for(true, false), DormantMode::Soft);
+        assert_eq!(dormant_mode_for(true, true), DormantMode::Normal);
+        assert_eq!(dormant_mode_for(false, false), DormantMode::Normal);
+        // A pass must never put a client to sleep underneath an app that has
+        // asked for it awake.
+        assert_eq!(dormant_mode_for(false, true), DormantMode::Normal);
+    }
+
+    #[tokio::test]
+    async fn a_lapsed_background_wake_returns_the_client_to_the_app_intent() {
+        let _policy = lock_route_policy();
+        let temp = tempfile::tempdir().unwrap();
+        set_tor_dormant(true);
+
+        let _ = enable_tor_for_background_work(&unusable_tor_directory(&temp)).await;
+        assert_eq!(pending_dormant_mode(), DormantMode::Normal);
+
+        lapse_background_wake();
+
+        // The intent the app left behind is still the one in force, so nothing
+        // had to be restored and no exit had to remember to restore it.
+        assert_eq!(pending_dormant_mode(), DormantMode::Soft);
+        set_tor_dormant(false);
+    }
+
+    #[tokio::test]
+    async fn a_foreground_entry_during_a_pass_wins_over_the_passes_wake() {
+        let _policy = lock_route_policy();
+        let temp = tempfile::tempdir().unwrap();
+        set_tor_dormant(true);
+        let _ = enable_tor_for_background_work(&unusable_tor_directory(&temp)).await;
+
+        // The app comes to the foreground while the pass is still holding.
+        set_tor_dormant(false);
+        assert_eq!(pending_dormant_mode(), DormantMode::Normal);
+
+        lapse_background_wake();
+
+        assert_eq!(pending_dormant_mode(), DormantMode::Normal);
+    }
 
     #[test]
     fn direct_route_does_not_require_a_tor_client() {

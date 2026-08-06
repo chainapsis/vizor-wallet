@@ -108,6 +108,13 @@ int32_t zcash_network_privacy_mark_tor_desired(void);
 /// `tor_directory` is the Tor data directory and is created if it is missing.
 /// It is Application Support + "/tor", matching what the foreground passes.
 ///
+/// There is no matching call to end a pass. Keeping the client awake for the
+/// work that follows is a time-bounded hold that lapses on its own, and it
+/// masks the app lifecycle's dormancy setting rather than replacing it, so a
+/// foreground entry during a pass still wins and no exit — including one taken
+/// before any network work, and including the process being suspended — can
+/// leave the client awake by failing to say something.
+///
 /// Returns ZCASH_NETWORK_PRIVACY_TOR_READY when Tor is up;
 /// ZCASH_NETWORK_PRIVACY_TOR_NOT_READY for every other outcome — a bad argument,
 /// a bootstrap failure, the deadline expiring, or a process that had already
