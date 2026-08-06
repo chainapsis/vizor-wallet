@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
@@ -10,6 +12,9 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/sync.dart' as rust_sync;
 
 void main() {
+  // The lifecycle transitions below are delivered over the platform channel.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('a busy network only aborts a restart that changes the route', () {
     // Switching to Tor with a direct channel still up would leak.
     expect(
@@ -146,6 +151,35 @@ void main() {
     await expectLater(Future.wait([firstRefresh, queuedRefresh]), completes);
     expect(pathResolutionCount, 2);
     expect(notifier.balanceReadCount, 1);
+  });
+
+  test('returning to the foreground wakes Tor unprompted', () async {
+    // Rust holds the sleep request process-wide and applies it to the Tor
+    // client whenever that client appears, so a request can outlive whatever
+    // made it. Waking only after a sleep this notifier itself asked for would
+    // leave such a client suspended for the whole foreground session.
+    final dormancy = <bool>[];
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+        syncProvider.overrideWith(
+          () => SyncNotifier(
+            walletDbPathResolver: () async => 'wallet.db',
+            setTorDormant: ({required dormant}) => dormancy.add(dormant),
+          ),
+        ),
+      ],
+    );
+    // Deliberately not disposed: the real notifier's disposal cancels the Rust
+    // sync, and no Rust library is loaded in a widget-test host.
+    container.listen(syncProvider, (_, _) {});
+    await container.read(syncProvider.future);
+
+    // Nothing here asked Tor to sleep.
+    await _sendAppLifecycleState(AppLifecycleState.inactive);
+    await _sendAppLifecycleState(AppLifecycleState.resumed);
+
+    expect(dormancy, [false]);
   });
 
   test('in-flight progress exits quietly after notifier disposal', () async {
@@ -426,6 +460,15 @@ void main() {
       expect(current.recentTransactions, [fetchedTx]);
     },
   );
+}
+
+Future<void> _sendAppLifecycleState(AppLifecycleState state) async {
+  await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+        'flutter/lifecycle',
+        const StringCodec().encodeMessage(state.toString()),
+        (_) {},
+      );
 }
 
 class _LifecycleTestSyncNotifier extends SyncNotifier {

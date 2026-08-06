@@ -107,10 +107,8 @@ Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   log('runtime: initializing RustLib');
   await RustLib.init();
-  if (kAppFormFactor == AppFormFactor.desktop) {
-    log('runtime: applying desktop network privacy policy');
-    await initializeNetworkPrivacyRuntime();
-  }
+  log('runtime: applying network privacy policy');
+  await initializeNetworkPrivacyRuntime();
   await rust_simple.configureFastTestnetMigration(
     enabled: kZcashFastTestnetMigration,
   );
