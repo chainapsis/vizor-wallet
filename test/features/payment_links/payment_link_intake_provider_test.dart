@@ -61,6 +61,29 @@ void main() {
     expect(taken?.address, link.address);
     expect(container.read(paymentLinkIntakeProvider).pendingLink, isNull);
   });
+
+  test('queues multiple accepted links in arrival order', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(paymentLinkIntakeProvider.notifier);
+    final first = _link();
+    final second = VizorPaymentLink(
+      network: first.network,
+      address: 'u1secondpaymentlinkaddress',
+      amountZatoshi: BigInt.from(200000),
+      mnemonic: first.mnemonic,
+      birthdayHeight: first.birthdayHeight,
+      label: first.label,
+      createdAt: first.createdAt.add(const Duration(minutes: 1)),
+    );
+
+    notifier.ingest(first.encode());
+    notifier.ingest(second.encode());
+
+    expect(notifier.takePending()?.address, first.address);
+    expect(notifier.takePending()?.address, second.address);
+    expect(notifier.takePending(), isNull);
+  });
 }
 
 VizorPaymentLink _link() {
