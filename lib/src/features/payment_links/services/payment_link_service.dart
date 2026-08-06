@@ -150,6 +150,7 @@ class PaymentLinkService {
   Future<VizorPaymentLink> createFundedLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
+    PaymentLinkPresentation? presentation,
   }) async {
     if (sourceAccountUuid.isEmpty) {
       throw StateError('No active account.');
@@ -189,6 +190,7 @@ class PaymentLinkService {
       birthdayHeight: birthdayHeight.toInt(),
       label: 'Payment link',
       createdAt: DateTime.now(),
+      presentation: presentation,
     );
 
     final fundingResult = await PaymentLinkFundingRecovery(_recoveryStore)
