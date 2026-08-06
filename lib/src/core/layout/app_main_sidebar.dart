@@ -549,6 +549,16 @@ class _AppMainSidebarState extends ConsumerState<AppMainSidebar> {
                     ],
                     const SizedBox(height: AppSpacing.xs),
                     AppSidebarItem(
+                      key: const ValueKey('sidebar_payment_links_button'),
+                      label: 'Gift Cards',
+                      iconName: AppIcons.giftCard,
+                      active: _matches('/payment-links'),
+                      onTap: isImporting
+                          ? null
+                          : () => _navigateTo('/payment-links'),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    AppSidebarItem(
                       key: const ValueKey('sidebar_voting_button'),
                       label: 'Vote',
                       iconName: AppIcons.scroll,

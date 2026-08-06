@@ -67,6 +67,10 @@ void main() {
     expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar_swap_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar_pay_button')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('sidebar_payment_links_button')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('sidebar_voting_button')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('sidebar_activity_button')),
@@ -75,6 +79,7 @@ void main() {
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Swap'), findsOneWidget);
     expect(find.text('Pay'), findsOneWidget);
+    expect(find.text('Gift Cards'), findsOneWidget);
     expect(find.text('Vote'), findsOneWidget);
     expect(find.text('Activity'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
@@ -401,6 +406,7 @@ void main() {
       (route: '/home', label: 'Home'),
       (route: '/swap', label: 'Swap'),
       (route: '/pay', label: 'Pay'),
+      (route: '/payment-links', label: 'Gift Cards'),
       (route: '/voting', label: 'Vote'),
       (route: '/activity', label: 'Activity'),
       (route: '/settings', label: 'Settings'),
@@ -583,6 +589,20 @@ void main() {
     expect(find.text('pay'), findsOneWidget);
   });
 
+  testWidgets('sidebar Gift Cards item opens the payment links route', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('sidebar_payment_links_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('payment links'), findsOneWidget);
+  });
+
   testWidgets('sidebar Activity item opens the activity route', (tester) async {
     await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
     await tester.pump();
@@ -655,6 +675,7 @@ void main() {
       tester.getTopLeft(find.text('Home')).dy,
       tester.getTopLeft(find.text('Swap')).dy,
       tester.getTopLeft(find.text('Pay')).dy,
+      tester.getTopLeft(find.text('Gift Cards')).dy,
       tester.getTopLeft(find.text('Vote')).dy,
       tester.getTopLeft(find.text('Activity')).dy,
     ];
@@ -1211,6 +1232,13 @@ Widget _sidebarHarness(
         builder: (_, _) => const AppDesktopShell(
           sidebar: AppMainSidebar(),
           pane: AppDesktopPane(child: Text('pay')),
+        ),
+      ),
+      GoRoute(
+        path: '/payment-links',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('payment links')),
         ),
       ),
       GoRoute(
