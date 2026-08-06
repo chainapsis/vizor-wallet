@@ -40,8 +40,8 @@ enum _PaymentLinksLocalPage {
 ///
 /// The presentation remains local to this screen, while all secret creation,
 /// recovery persistence, sync, and transaction work stays behind
-/// [PaymentLinkOperations]. Artwork is an optional, backward-compatible v1
-/// field. The message remains local to the sender in the current protocol.
+/// [PaymentLinkOperations]. Artwork and message are carried by the v1
+/// presentation payload.
 class PaymentLinksDesktopScreen extends ConsumerStatefulWidget {
   const PaymentLinksDesktopScreen({super.key});
 
@@ -95,6 +95,7 @@ class _PaymentLinksDesktopScreenState
   bool _showHelp = false;
   bool _amountFocused = false;
   bool _readyShowsBack = false;
+  bool _receivedShowsBack = false;
   bool _operationInProgress = false;
   bool _pendingIntakeScheduled = false;
 
@@ -166,6 +167,7 @@ class _PaymentLinksDesktopScreenState
     if (link == null || !mounted) return;
     setState(() {
       _receivedLink = link;
+      _receivedShowsBack = false;
       _rememberReceivedLink(link);
       _redeemState = PaymentLinkRedeemVisualState.paste;
       _page = _PaymentLinksLocalPage.received;
@@ -224,6 +226,7 @@ class _PaymentLinksDesktopScreenState
     if (link == null || _operationInProgress) return;
     setState(() {
       _receivedLink = link;
+      _receivedShowsBack = false;
       _page = _PaymentLinksLocalPage.received;
     });
   }
@@ -309,13 +312,17 @@ class _PaymentLinksDesktopScreenState
       _showError('No active account is available.');
       return;
     }
+    final presentation = PaymentLinkPresentation(
+      artworkId: _selectedArtwork.protocolId,
+      message: _messageController.text,
+    );
     if (ref.read(accountProvider.notifier).isActiveAccountHardware) {
       setState(() {
         _operationInProgress = true;
         _keystoneFundingRequest = _PaymentLinkKeystoneFundingRequest(
           amountZatoshi: amount,
           sourceAccountUuid: sourceAccountUuid,
-          artworkId: _selectedArtwork.protocolId,
+          presentation: presentation,
         );
       });
       return;
@@ -328,7 +335,7 @@ class _PaymentLinksDesktopScreenState
           .createFundedLink(
             amountZatoshi: amount,
             sourceAccountUuid: sourceAccountUuid,
-            artworkId: _selectedArtwork.protocolId,
+            presentation: presentation,
           );
       await _loadRecoveries(showError: false);
       if (!mounted) return;
@@ -425,6 +432,7 @@ class _PaymentLinksDesktopScreenState
       if (link == null || !mounted) return;
       setState(() {
         _receivedLink = link;
+        _receivedShowsBack = false;
         _rememberReceivedLink(link);
         _redeemState = PaymentLinkRedeemVisualState.paste;
         _page = _PaymentLinksLocalPage.received;
@@ -452,6 +460,7 @@ class _PaymentLinksDesktopScreenState
     setState(() {
       _operationInProgress = true;
       _receivedLink = null;
+      _receivedShowsBack = false;
       _setReceivedCardStatus(
         link.address,
         _ReceivedPaymentLinkStatus.receiving,
@@ -522,7 +531,7 @@ class _PaymentLinksDesktopScreenState
                 child: PaymentLinkKeystoneSigningOverlay(
                   amountZatoshi: keystoneRequest.amountZatoshi,
                   sourceAccountUuid: keystoneRequest.sourceAccountUuid,
-                  artworkId: keystoneRequest.artworkId,
+                  presentation: keystoneRequest.presentation,
                   onCancel: _cancelKeystoneFunding,
                   onFundingBroadcast: _completeKeystoneFunding,
                 ),
@@ -632,7 +641,9 @@ class _PaymentLinksDesktopScreenState
     return PaymentLinkCardListRow(
       key: ValueKey('payment_link_recovery_${record.link.address}'),
       thumbnail: Image.asset(
-        PaymentLinkCardArtwork.fromProtocolId(record.link.artworkId).assetPath,
+        PaymentLinkCardArtwork.fromProtocolId(
+          record.link.presentation?.artworkId,
+        ).assetPath,
         fit: BoxFit.cover,
         excludeFromSemantics: true,
       ),
@@ -706,7 +717,11 @@ class _PaymentLinksDesktopScreenState
         messageController: _messageController,
         messageFocusNode: _messageFocusNode,
         messageEditorKey: const ValueKey('payment_link_message_editor'),
-        messageInputFormatters: [LengthLimitingTextInputFormatter(128)],
+        messageInputFormatters: [
+          LengthLimitingTextInputFormatter(
+            PaymentLinkPresentation.maxMessageCharacters,
+          ),
+        ],
         onMessageChanged: _handleMessageChanged,
         onDeleteMessage: _hasMessage ? _clearMessage : null,
         semanticLabel: 'Gift card message input',
@@ -724,25 +739,27 @@ class _PaymentLinksDesktopScreenState
     final link = _readyLink;
     if (link == null) return _buildHome();
     final amountText = formatZecAmount(link.amountZatoshi);
-    final message = _messageController.text.trim();
+    final artwork = PaymentLinkCardArtwork.fromProtocolId(
+      link.presentation?.artworkId,
+    );
+    final message = link.presentation?.message ?? '';
     final hasMessage = message.isNotEmpty;
     final card = hasMessage
         ? PaymentLinkCardFlip(
             showBack: _readyShowsBack,
             front: PaymentLinkGiftCard(
-              artwork: _selectedArtwork,
+              artwork: artwork,
               amountText: amountText,
               showCaret: false,
             ),
             back: PaymentLinkGiftCard(
-              artwork: _selectedArtwork,
+              artwork: artwork,
               showBack: true,
               message: message,
-              messageCharacterCount: message.length,
             ),
           )
         : PaymentLinkGiftCard(
-            artwork: _selectedArtwork,
+            artwork: artwork,
             amountText: amountText,
             showCaret: false,
           );
@@ -765,15 +782,38 @@ class _PaymentLinksDesktopScreenState
   Widget _buildReceived() {
     final link = _receivedLink;
     if (link == null) return _buildHome();
+    final artwork = PaymentLinkCardArtwork.fromProtocolId(
+      link.presentation?.artworkId,
+    );
+    final message = link.presentation?.message ?? '';
+    final hasMessage = message.isNotEmpty;
+    final card = hasMessage
+        ? PaymentLinkCardFlip(
+            showBack: _receivedShowsBack,
+            front: PaymentLinkGiftCard(
+              artwork: artwork,
+              amountText: formatZecAmount(link.amountZatoshi),
+              showCaret: false,
+            ),
+            back: PaymentLinkGiftCard(
+              artwork: artwork,
+              showBack: true,
+              message: message,
+            ),
+          )
+        : PaymentLinkGiftCard(
+            artwork: artwork,
+            amountText: formatZecAmount(link.amountZatoshi),
+            showCaret: false,
+          );
     return PaymentLinkReceivedDesktopView(
-      card: PaymentLinkGiftCard(
-        artwork: PaymentLinkCardArtwork.fromProtocolId(link.artworkId),
-        amountText: formatZecAmount(link.amountZatoshi),
-        showCaret: false,
-      ),
+      card: card,
       decoration: const PaymentLinkConfetti(),
       onBack: () => _showPage(_PaymentLinksLocalPage.home),
       onClaim: _operationInProgress ? null : _claimReceivedLink,
+      onRevealMessage: hasMessage
+          ? () => setState(() => _receivedShowsBack = !_receivedShowsBack)
+          : null,
       claimLabel: _operationInProgress ? 'Claiming...' : 'Claim my gift',
     );
   }
@@ -788,12 +828,12 @@ class _PaymentLinkKeystoneFundingRequest {
   const _PaymentLinkKeystoneFundingRequest({
     required this.amountZatoshi,
     required this.sourceAccountUuid,
-    required this.artworkId,
+    required this.presentation,
   });
 
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
-  final String artworkId;
+  final PaymentLinkPresentation presentation;
 }
 
 enum _ReceivedPaymentLinkStatus { readyToClaim, receiving, received }
@@ -817,7 +857,7 @@ class _ReceivedPaymentLinkRecord {
       address: link.address,
       amountZatoshi: link.amountZatoshi,
       createdAt: link.createdAt,
-      artworkId: link.artworkId,
+      artworkId: link.presentation?.artworkId,
       status: status,
       claimLink: retainClaimLink ? link : null,
     );
