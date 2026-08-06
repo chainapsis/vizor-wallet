@@ -129,7 +129,9 @@ class _SecretPassphraseScreenState
 
     context.go(
       OnboardingStep.customiseAccount.routePath,
-      extra: CustomiseAccountArgs(mnemonic: mnemonic),
+      extra: CustomiseAccountArgs(
+        setupArgs: SetPasswordScreenArgs.create(mnemonic: mnemonic),
+      ),
     );
   }
 

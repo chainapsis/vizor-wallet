@@ -9,13 +9,16 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _mnemonic =
-    'abandon ability able about above absent absorb abstract absurd abuse access accident';
+    'abandon ability able about above absent absorb abstract absurd abuse '
+    'access accident account accuse achieve acid acoustic acquire across act '
+    'action actor actress actual';
 const _bip39Passphrase = 'correct horse battery staple with extra words';
 
 const _accountState = AccountState(
@@ -57,8 +60,63 @@ void main() {
     expect(accountNotifier.requestedMnemonicUuids, ['account-2']);
     expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
     expect(find.text('abandon'), findsOneWidget);
-    expect(find.text('BIP39 Passphrase'), findsOneWidget);
-    expect(find.text('correct ho ... xtra words'), findsOneWidget);
+    expect(find.text('BIP39 Passphrase: $_bip39Passphrase'), findsOneWidget);
+
+    for (var index = 1; index <= 24; index++) {
+      expect(
+        find.byKey(ValueKey('settings_seed_phrase_word_$index')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('settings_seed_phrase_underline_$index')),
+        findsOneWidget,
+      );
+    }
+
+    final word1 = tester.getTopLeft(
+      find.byKey(const ValueKey('settings_seed_phrase_word_1')),
+    );
+    final word2 = tester.getTopLeft(
+      find.byKey(const ValueKey('settings_seed_phrase_word_2')),
+    );
+    final word3 = tester.getTopLeft(
+      find.byKey(const ValueKey('settings_seed_phrase_word_3')),
+    );
+    final word4 = tester.getTopLeft(
+      find.byKey(const ValueKey('settings_seed_phrase_word_4')),
+    );
+    expect(word2.dy, word1.dy);
+    expect(word3.dy, word1.dy);
+    expect(word1.dx, lessThan(word2.dx));
+    expect(word2.dx, lessThan(word3.dx));
+    expect(word4.dy, greaterThan(word1.dy));
+
+    final firstUnderline = tester.widget<Positioned>(
+      find.byKey(const ValueKey('settings_seed_phrase_underline_1')),
+    );
+    expect(firstUnderline.left, 22.5);
+    expect(firstUnderline.width, 87);
+
+    final phraseCopyButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('settings_seed_phrase_copy_button')),
+    );
+    expect(phraseCopyButton.variant, AppButtonVariant.secondary);
+    expect(phraseCopyButton.height, 24);
+    expect(phraseCopyButton.trailing, isNull);
+
+    final bip39CopyButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('settings_bip39_passphrase_copy_button')),
+    );
+    expect(bip39CopyButton.variant, AppButtonVariant.ghost);
+    expect(bip39CopyButton.height, 24);
+    expect(bip39CopyButton.trailing, isNull);
+
+    final footer = tester.widget<Container>(
+      find.byKey(const ValueKey('settings_bip39_passphrase_footer')),
+    );
+    final footerDecoration = footer.decoration as BoxDecoration;
+    expect(footerDecoration.color, AppThemeData.light.colors.background.ground);
+    expect(footerDecoration.boxShadow, hasLength(4));
   });
 
   testWidgets('hides the BIP39 section when the account has no passphrase', (
@@ -86,6 +144,10 @@ void main() {
     expect(find.text('abandon'), findsOneWidget);
     expect(find.text('BIP39 Passphrase'), findsNothing);
     expect(find.bySemanticsLabel('Copy BIP39 passphrase'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('settings_bip39_passphrase_footer')),
+      findsNothing,
+    );
   });
 
   testWidgets('describes removal of the requested account accurately', (

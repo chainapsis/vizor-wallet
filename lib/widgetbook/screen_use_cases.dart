@@ -89,6 +89,9 @@ const _previewImportReviewMnemonic =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify active effort merit fossil carbon drift '
     'narrow across raise';
+
+const _previewInvalidImportMnemonic =
+    'abandon ability able about above absent absorb abstract cin';
 const _previewImportReviewMnemonic15 =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify';
@@ -183,6 +186,34 @@ Widget buildCustomiseAccountUseCase(BuildContext context) {
   );
 }
 
+Widget buildImportCustomiseAccountUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.macosUtility.window,
+    child: ProviderScope(
+      overrides: [
+        accountProvider.overrideWith(
+          () => _PreviewAccountNotifier(const AccountState()),
+        ),
+      ],
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.customiseAccount,
+        showPasswordStep: true,
+        child: CustomiseAccountScreen(
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.importWallet(
+              mnemonic: _previewMnemonic,
+              birthdayHeight: 2500000,
+            ),
+            pendingPassword: 'PreviewPassword1!',
+          ),
+          random: Random(1234),
+          onFinish: (_, _) async {},
+        ),
+      ),
+    ),
+  );
+}
+
 Widget buildUnlockLoginUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
@@ -270,7 +301,7 @@ Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
   return _MobilePreviewFrame(
     child: MobileCustomiseAccountScreen(
       args: const CustomiseAccountArgs(
-        mnemonic: _previewMnemonic,
+        setupArgs: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
         pendingPassword: '123456',
       ),
       random: Random(1234),
@@ -313,6 +344,29 @@ Widget buildImportSecretPassphrasePopulatedUseCase(BuildContext context) {
           args: const ImportSecretPassphraseArgs(
             mnemonic: _previewMnemonic,
             bip39Passphrase: 'My BIP39 passphrase',
+          ),
+          wordListOverride: _previewImportWordList,
+          mnemonicValidatorOverride: _previewMnemonicValidator,
+          useEnvironmentPrivacySignals: false,
+        ),
+      ),
+    ),
+  );
+}
+
+Widget buildImportSecretPassphraseInvalidWordUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.background.window,
+    child: ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ],
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.secretPassphrase,
+        showPasswordStep: false,
+        child: ImportSecretPassphraseScreen(
+          args: const ImportSecretPassphraseArgs(
+            mnemonic: _previewInvalidImportMnemonic,
           ),
           wordListOverride: _previewImportWordList,
           mnemonicValidatorOverride: _previewMnemonicValidator,
@@ -2908,7 +2962,9 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
             showPasswordStep: true,
             child: CustomiseAccountScreen(
               args: CustomiseAccountArgs(
-                mnemonic: _previewMnemonic,
+                setupArgs: const SetPasswordScreenArgs.create(
+                  mnemonic: _previewMnemonic,
+                ),
                 pendingPassword: 'PreviewPassword1!',
               ),
               random: Random(1234),

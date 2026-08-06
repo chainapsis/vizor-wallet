@@ -11,6 +11,7 @@ import 'package:zcash_wallet/src/features/onboarding/import/import_account_disco
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_calendar_overlay.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_birthday_estimator.dart';
 import 'package:zcash_wallet/src/features/onboarding/import/import_wallet_birthday_screen.dart';
+import 'package:zcash_wallet/src/features/onboarding/import/import_split_view.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -19,6 +20,14 @@ import 'package:zcash_wallet/src/providers/sync_provider.dart';
 import 'package:zcash_wallet/src/rust/api/wallet.dart' as rust_wallet;
 
 void main() {
+  test('import flow ends with account customisation', () {
+    expect(ImportOnboardingStep.customiseAccount.label, 'Customise wallet');
+    expect(
+      importOnboardingStepFromLocation('/import/customise-account'),
+      ImportOnboardingStep.customiseAccount,
+    );
+  });
+
   testWidgets('birthday tab labels show a click cursor', (tester) async {
     await _setDesktopSurface(tester);
     await tester.pumpWidget(_birthdayHarness());
@@ -97,7 +106,7 @@ void main() {
     expect(textWidget.style?.fontWeight, FontWeight.w400);
   });
 
-  testWidgets('block height submit failure is shown above the CTA', (
+  testWidgets('configured wallet continues to account customisation', (
     tester,
   ) async {
     await _setDesktopSurface(tester);
@@ -118,19 +127,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    const message = 'This account is already in your wallet.';
-    final errorText = find.text(message);
-    expect(errorText, findsOneWidget);
-
-    final textWidget = tester.widget<Text>(errorText);
-    expect(textWidget.maxLines, isNull);
-    expect(textWidget.textAlign, TextAlign.center);
-
-    final errorTop = tester.getTopLeft(errorText).dy;
-    final buttonTop = tester
-        .getTopLeft(find.byKey(const ValueKey('import_birthday_submit_button')))
-        .dy;
-    expect(errorTop, lessThan(buttonTop));
+    expect(find.text('Customise route'), findsOneWidget);
   });
 
   testWidgets('account discovery modal imports all candidates by default', (
@@ -308,6 +305,15 @@ Widget _birthdayRouterHarness({required ImportBirthdayArgs args}) {
       GoRoute(
         path: '/import/set-password',
         builder: (_, _) => const SizedBox.shrink(),
+      ),
+      GoRoute(
+        path: '/import/customise-account',
+        builder: (_, state) {
+          final args = state.extra as CustomiseAccountArgs;
+          expect(args.flow, SetPasswordFlow.importWallet);
+          expect(args.setupArgs.importBirthdayHeight, 1000000);
+          return const Text('Customise route');
+        },
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('Home')),
     ],
@@ -489,6 +495,7 @@ class _FailingImportAccountNotifier extends AccountNotifier {
     String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
+    String profilePictureId = 'pfp-01',
     List<int> additionalAccountIndices = const [],
   }) async {
     throw Exception('This account is already in your wallet.');

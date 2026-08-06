@@ -51,6 +51,7 @@ Widget _routerApp({
   required _RecordingAccountNotifier accountNotifier,
   required AppSecurityNotifier appSecurityNotifier,
   ValueChanged<SetPasswordScreenArgs>? onPasscodeArgs,
+  ValueChanged<CustomiseAccountArgs>? onCustomiseArgs,
 }) {
   final router = GoRouter(
     initialLocation: '/import/birthday',
@@ -68,6 +69,13 @@ Widget _routerApp({
           final args = state.extra as SetPasswordScreenArgs;
           onPasscodeArgs?.call(args);
           return const Text('passcode route');
+        },
+      ),
+      GoRoute(
+        path: '/onboarding/customise-account',
+        builder: (_, state) {
+          onCustomiseArgs?.call(state.extra as CustomiseAccountArgs);
+          return const Text('customise route');
         },
       ),
       GoRoute(path: '/home', builder: (_, _) => const Text('home route')),
@@ -449,41 +457,45 @@ void main() {
     },
   );
 
-  testWidgets('imports selected discovered accounts when passcode exists', (
-    tester,
-  ) async {
-    final accountNotifier = _RecordingAccountNotifier(
-      discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
-        primaryAccountAlreadyExists: false,
-        accounts: _discoveredAccounts,
-      ),
-    );
-
-    await tester.pumpWidget(
-      _routerApp(
-        accountNotifier: accountNotifier,
-        appSecurityNotifier: _StaticAppSecurityNotifier(
-          isPasswordConfigured: true,
+  testWidgets(
+    'forwards discovered accounts to customise when passcode exists',
+    (tester) async {
+      final accountNotifier = _RecordingAccountNotifier(
+        discovery: const rust_wallet.SoftwareWalletImportDiscoveryResult(
+          primaryAccountAlreadyExists: false,
+          accounts: _discoveredAccounts,
         ),
-      ),
-    );
-    await tester.pump();
+      );
 
-    await _enterHeightAndContinue(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_import_account_discovery_row_1')),
-    );
-    await tester.pump();
-    await tester.tap(
-      find.byKey(const ValueKey('mobile_import_account_discovery_confirm')),
-    );
-    await tester.pumpAndSettle();
+      CustomiseAccountArgs? customiseArgs;
+      await tester.pumpWidget(
+        _routerApp(
+          accountNotifier: accountNotifier,
+          appSecurityNotifier: _StaticAppSecurityNotifier(
+            isPasswordConfigured: true,
+          ),
+          onCustomiseArgs: (args) => customiseArgs = args,
+        ),
+      );
+      await tester.pump();
 
-    expect(accountNotifier.importedMnemonic, 'stub mnemonic');
-    expect(accountNotifier.importedBirthdayHeight, 2500000);
-    expect(accountNotifier.importedAdditionalAccountIndices, [2]);
-    expect(find.text('home route'), findsOneWidget);
-  });
+      await _enterHeightAndContinue(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_import_account_discovery_row_1')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('mobile_import_account_discovery_confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(accountNotifier.importedMnemonic, isNull);
+      expect(customiseArgs?.mnemonic, 'stub mnemonic');
+      expect(customiseArgs?.setupArgs.importBirthdayHeight, 2500000);
+      expect(customiseArgs?.setupArgs.selectedAdditionalAccountIndices, [2]);
+      expect(find.text('customise route'), findsOneWidget);
+    },
+  );
 
   testWidgets('cancelling discovery keeps the import on the birthday screen', (
     tester,
@@ -555,6 +567,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
     String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
+    String profilePictureId = 'pfp-01',
     List<int> additionalAccountIndices = const [],
   }) async {
     importedMnemonic = mnemonic;

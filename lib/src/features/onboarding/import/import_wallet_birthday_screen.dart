@@ -14,8 +14,6 @@ import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/rpc_endpoint_failover_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
-import '../../../providers/router_refresh_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/wallet.dart' as rust_wallet;
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
@@ -339,47 +337,22 @@ class _ImportWalletBirthdayScreenState
         return;
       }
 
-      final accountNotifier = ref.read(accountProvider.notifier);
-      final router = GoRouter.of(context);
-      final routerRefresh = ref.read(routerRefreshProvider);
-      await routerRefresh.pauseWhile(() async {
-        final imported = await runWithSyncPausedForAccountMutation(
-          ref,
-          () async {
-            final selectedAdditionalAccountIndices =
-                await _resolveAdditionalAccountIndices(
-                  mnemonic: mnemonic,
-                  birthdayHeight: birthdayHeight,
-                );
-            if (selectedAdditionalAccountIndices == null) return false;
-            if (!mounted) return false;
-            setState(() {
-              _submitPhase = _ImportWalletSubmitPhase.importing;
-            });
-            await accountNotifier.importAccount(
-              mnemonic: mnemonic,
-              bip39Passphrase: widget.args.bip39Passphrase,
-              birthdayHeight: birthdayHeight,
-              additionalAccountIndices: selectedAdditionalAccountIndices,
-            );
-            return true;
-          },
-          onStoppingSync: () {
-            if (!mounted) return;
-            setState(() {
-              _submitPhase = _ImportWalletSubmitPhase.stoppingSync;
-            });
-          },
-          onSyncPaused: () {
-            if (!mounted) return;
-            setState(() {
-              _submitPhase = _ImportWalletSubmitPhase.importing;
-            });
-          },
-        );
-        if (!imported || !mounted) return;
-        router.go('/home');
-      });
+      final selectedAdditionalAccountIndices =
+          await _resolveAdditionalAccountIndices(
+            mnemonic: mnemonic,
+            birthdayHeight: birthdayHeight,
+          );
+      if (selectedAdditionalAccountIndices == null || !mounted) return;
+      final setupArgs = SetPasswordScreenArgs.importWallet(
+        mnemonic: mnemonic,
+        bip39Passphrase: widget.args.bip39Passphrase,
+        birthdayHeight: birthdayHeight,
+        selectedAdditionalAccountIndices: selectedAdditionalAccountIndices,
+      );
+      context.go(
+        '/import/customise-account',
+        extra: CustomiseAccountArgs(setupArgs: setupArgs),
+      );
     } catch (e, st) {
       log('ImportWalletBirthdayScreen._submit: ERROR: $e\n$st');
       if (!mounted) return;

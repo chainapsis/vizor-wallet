@@ -12,6 +12,7 @@ enum ImportOnboardingStep {
   secretPassphrase,
   walletBirthdayHeight,
   setPassword,
+  customiseAccount,
 }
 
 extension ImportOnboardingStepX on ImportOnboardingStep {
@@ -21,16 +22,21 @@ extension ImportOnboardingStepX on ImportOnboardingStep {
     ImportOnboardingStep.secretPassphrase => 'Secret Passphrase',
     ImportOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
     ImportOnboardingStep.setPassword => 'Set Password',
+    ImportOnboardingStep.customiseAccount => 'Customise wallet',
   };
 
   String get iconName => switch (this) {
     ImportOnboardingStep.secretPassphrase => AppIcons.key,
     ImportOnboardingStep.walletBirthdayHeight => AppIcons.block,
     ImportOnboardingStep.setPassword => AppIcons.lock,
+    ImportOnboardingStep.customiseAccount => AppIcons.user,
   };
 }
 
 ImportOnboardingStep importOnboardingStepFromLocation(String location) {
+  if (location.startsWith('/import/customise-account')) {
+    return ImportOnboardingStep.customiseAccount;
+  }
   if (location.startsWith('/import/set-password')) {
     return ImportOnboardingStep.setPassword;
   }
@@ -100,7 +106,14 @@ class _ImportOnboardingWindowBackground extends StatelessWidget {
       // light and dark — same wiring as the create flow.
       ImportOnboardingStep.setPassword =>
         'assets/illustrations/onboarding_set_password_background_light.png',
+      ImportOnboardingStep.customiseAccount => null,
     };
+
+    if (asset == null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(color: context.colors.background.window),
+      );
+    }
 
     return DecoratedBox(
       decoration: BoxDecoration(color: context.colors.background.window),
@@ -148,6 +161,7 @@ class _Sidebar extends StatelessWidget {
     ImportOnboardingStep.secretPassphrase,
     ImportOnboardingStep.walletBirthdayHeight,
     if (showPasswordStep) ImportOnboardingStep.setPassword,
+    ImportOnboardingStep.customiseAccount,
   ];
 
   @override
@@ -190,6 +204,8 @@ class _SidebarIllustration extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
             : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
+      ImportOnboardingStep.customiseAccount =>
+        'assets/illustrations/onboarding_customise_account_sidebar.png',
     };
     return IgnorePointer(
       child: Align(

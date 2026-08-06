@@ -55,6 +55,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildImportSecretPassphrasePopulatedUseCase,
   ),
   FigmaCompareScenario(
+    id: 'import-secret-passphrase-invalid-word',
+    description: 'Desktop wallet import with an invalid mnemonic word',
+    builder: buildImportSecretPassphraseInvalidWordUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'import-secret-passphrase-modal',
     description: 'Desktop wallet import BIP39 passphrase modal',
     builder: buildImportSecretPassphraseModalUseCase,
@@ -113,6 +118,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     id: 'customise-account',
     description: 'Desktop account personalisation onboarding screen',
     builder: buildCustomiseAccountUseCase,
+  ),
+  FigmaCompareScenario(
+    id: 'import-customise-account',
+    description: 'Desktop imported-account personalisation screen',
+    builder: buildImportCustomiseAccountUseCase,
   ),
   FigmaCompareScenario(
     id: 'settings-main',

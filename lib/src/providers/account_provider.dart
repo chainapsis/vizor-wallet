@@ -290,6 +290,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
+    String profilePictureId = kDefaultProfilePictureId,
     List<int> additionalAccountIndices = const [],
   }) async {
     try {
@@ -299,7 +300,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? endpoint.networkName
           : await _getNetwork();
       final accounts = state.value?.accounts ?? [];
-      final accountName = name ?? 'Account ${accounts.length + 1}';
+      final accountName = normalizeAccountName(
+        name ?? 'Account ${accounts.length + 1}',
+      );
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
       final isFirstWalletAccount = accounts.isEmpty;
       final previousActiveAccountUuid = state.value?.activeAccountUuid;
       final previousActiveAddress = state.value?.activeAddress;
@@ -343,6 +357,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             name: result.accounts[i].name,
             order: accounts.length + i,
             isSeedAnchor: result.accounts[i].isSeedAnchor,
+            profilePictureId: i == 0
+                ? normalizedProfilePictureId
+                : kDefaultProfilePictureId,
           ),
       ];
       final updatedAccounts = [...accounts, ...importedAccounts];
@@ -925,8 +942,21 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required List<int> seedFingerprint,
     required int zip32Index,
     required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
   }) async {
     try {
+      final accountName = normalizeAccountName(name);
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
       final prev = state.value ?? const AccountState();
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
@@ -934,7 +964,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final result = await rust_wallet.importHardwareAccount(
         dbPath: dbPath,
         network: network,
-        name: name,
+        name: accountName,
         ufvkString: ufvk,
         seedFingerprint: seedFingerprint,
         zip32Index: zip32Index,
@@ -946,9 +976,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // Save account info (no mnemonic — hardware wallet)
       final newAccount = AccountInfo(
         uuid: accountUuid,
-        name: name,
+        name: accountName,
         order: prev.accounts.length,
         isHardware: true,
+        profilePictureId: normalizedProfilePictureId,
       );
       final updated = [...prev.accounts, newAccount];
       await _saveAccounts(updated);

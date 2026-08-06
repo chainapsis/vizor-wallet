@@ -71,6 +71,18 @@ void main() {
     expect(KeystoneOnboardingStep.howToConnect.iconName, AppIcons.book);
     expect(KeystoneOnboardingStep.selectAccount.label, 'Select Account');
     expect(KeystoneOnboardingStep.selectAccount.iconName, AppIcons.user);
+    expect(KeystoneOnboardingStep.customiseAccount.label, 'Customise wallet');
+    expect(KeystoneOnboardingStep.customiseAccount.iconName, AppIcons.user);
+    expect(
+      KeystoneOnboardingStep.customiseAccount.routePath,
+      '/onboarding/keystone/customise-account',
+    );
+    expect(
+      keystoneOnboardingStepFromLocation(
+        '/onboarding/keystone/customise-account',
+      ),
+      KeystoneOnboardingStep.customiseAccount,
+    );
   });
 }
 
