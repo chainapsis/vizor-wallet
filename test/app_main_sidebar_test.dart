@@ -15,8 +15,11 @@ import 'package:zcash_wallet/src/core/layout/app_desktop_shell.dart';
 import 'package:zcash_wallet/src/core/layout/app_main_sidebar.dart';
 import 'package:zcash_wallet/src/core/profile_pictures.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_announcement_provider.dart';
 import 'package:zcash_wallet/src/features/migration/providers/ironwood_migration_coordinator_provider.dart';
+import 'package:zcash_wallet/src/features/swap/models/swap_models.dart';
+import 'package:zcash_wallet/src/features/swap/providers/pay_selected_asset_store.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_failure.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -63,6 +66,7 @@ void main() {
     );
     expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar_swap_button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar_pay_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('sidebar_voting_button')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('sidebar_activity_button')),
@@ -70,10 +74,15 @@ void main() {
     );
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Swap'), findsOneWidget);
+    expect(find.text('Pay'), findsOneWidget);
     expect(find.text('Vote'), findsOneWidget);
     expect(find.text('Activity'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Sign out'), findsOneWidget);
+    final payItem = tester.widget<AppSidebarItem>(
+      find.byKey(const ValueKey('sidebar_pay_button')),
+    );
+    expect(payItem.iconName, AppIcons.paid);
     expect(find.text('Wallet'), findsNothing);
     expect(find.text('Send'), findsNothing);
     expect(find.text('Receive'), findsNothing);
@@ -391,6 +400,7 @@ void main() {
     final cases = [
       (route: '/home', label: 'Home'),
       (route: '/swap', label: 'Swap'),
+      (route: '/pay', label: 'Pay'),
       (route: '/voting', label: 'Vote'),
       (route: '/activity', label: 'Activity'),
       (route: '/settings', label: 'Settings'),
@@ -532,7 +542,7 @@ void main() {
     );
   });
 
-  testWidgets('sidebar hides Swap when swap feature is disabled', (
+  testWidgets('sidebar hides Swap and Pay when swap feature is disabled', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -541,7 +551,9 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const ValueKey('sidebar_swap_button')), findsNothing);
+    expect(find.byKey(const ValueKey('sidebar_pay_button')), findsNothing);
     expect(find.text('Swap'), findsNothing);
+    expect(find.text('Pay'), findsNothing);
     expect(find.byKey(const ValueKey('sidebar_home_button')), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
     expect(
@@ -559,6 +571,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('swap'), findsOneWidget);
+  });
+
+  testWidgets('sidebar Pay item opens the pay route', (tester) async {
+    await tester.pumpWidget(_sidebarHarness(_syncedSyncState));
+    await tester.pump();
+
+    await tester.tap(find.text('Pay'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('pay'), findsOneWidget);
   });
 
   testWidgets('sidebar Activity item opens the activity route', (tester) async {
@@ -632,6 +654,7 @@ void main() {
     final positions = [
       tester.getTopLeft(find.text('Home')).dy,
       tester.getTopLeft(find.text('Swap')).dy,
+      tester.getTopLeft(find.text('Pay')).dy,
       tester.getTopLeft(find.text('Vote')).dy,
       tester.getTopLeft(find.text('Activity')).dy,
     ];
@@ -645,7 +668,7 @@ void main() {
     }
   });
 
-  testWidgets('sidebar disables Swap, Vote, and Activity while importing', (
+  testWidgets('sidebar disables primary actions while importing', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -665,6 +688,10 @@ void main() {
     await tester.tap(find.text('Swap'));
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('swap'), findsNothing);
+
+    await tester.tap(find.text('Pay'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('pay'), findsNothing);
 
     await tester.tap(find.text('Vote'));
     await tester.pump(const Duration(milliseconds: 50));
@@ -690,7 +717,7 @@ void main() {
   });
 
   testWidgets(
-    'sidebar disables Swap and Vote while Ironwood migration is required',
+    'sidebar disables Swap, Pay, and Vote while Ironwood migration is required',
     (tester) async {
       await tester.pumpWidget(
         _sidebarHarness(
@@ -709,20 +736,27 @@ void main() {
       await tester.pump();
 
       final swap = _sidebarItemWithLabel(tester, 'Swap');
+      final pay = _sidebarItemWithLabel(tester, 'Pay');
       final vote = _sidebarItemWithLabel(tester, 'Vote');
       final activity = _sidebarItemWithLabel(tester, 'Activity');
       final settings = _sidebarItemWithLabel(tester, 'Settings');
 
       expect(swap.onTap, isNull);
+      expect(pay.onTap, isNull);
       expect(vote.onTap, isNull);
       expect(activity.onTap, isNotNull);
       expect(settings.onTap, isNotNull);
       expect(_opacityForText(tester, 'Swap'), 0.5);
+      expect(_opacityForText(tester, 'Pay'), 0.5);
       expect(_opacityForText(tester, 'Vote'), 0.5);
 
       await tester.tap(find.text('Swap'));
       await tester.pump(const Duration(milliseconds: 50));
       expect(find.text('swap'), findsNothing);
+
+      await tester.tap(find.text('Pay'));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('pay'), findsNothing);
 
       await tester.tap(find.text('Vote'));
       await tester.pump(const Duration(milliseconds: 50));
@@ -738,33 +772,42 @@ void main() {
     },
   );
 
-  testWidgets(
-    'sidebar restores ordinary actions once Ironwood migration is active',
-    (tester) async {
-      await tester.pumpWidget(
-        _sidebarHarness(
-          _syncedSyncState,
-          ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
-            network: 'main',
-            accountUuid: 'account-1',
-            status: _mixedMigrationStatus,
-          ),
-          ironwoodPostMigrationState: IronwoodPostMigrationState.inProgress(
-            network: 'main',
-            accountUuid: 'account-1',
-            status: _mixedMigrationStatus,
-          ),
-          migrationCoordinatorState: IronwoodMigrationCoordinatorState(
-            statuses: {'account-1': _mixedMigrationStatus},
-          ),
+  testWidgets('sidebar restores Pay once Ironwood funds are spendable', (
+    tester,
+  ) async {
+    Widget migrationHarness(BigInt ironwoodBalance) {
+      return _sidebarHarness(
+        _syncedSyncState.copyWith(ironwoodBalance: ironwoodBalance),
+        ironwoodHomeMigrationCtaState: IronwoodHomeMigrationCtaState.resume(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _mixedMigrationStatus,
+        ),
+        ironwoodPostMigrationState: IronwoodPostMigrationState.inProgress(
+          network: 'main',
+          accountUuid: 'account-1',
+          status: _mixedMigrationStatus,
+        ),
+        migrationCoordinatorState: IronwoodMigrationCoordinatorState(
+          statuses: {'account-1': _mixedMigrationStatus},
         ),
       );
-      await tester.pump();
+    }
 
-      expect(_sidebarItemWithLabel(tester, 'Swap').onTap, isNotNull);
-      expect(_sidebarItemWithLabel(tester, 'Vote').onTap, isNotNull);
-    },
-  );
+    await tester.pumpWidget(migrationHarness(BigInt.zero));
+    await tester.pump();
+
+    expect(_sidebarItemWithLabel(tester, 'Swap').onTap, isNotNull);
+    expect(_sidebarItemWithLabel(tester, 'Pay').onTap, isNull);
+    expect(_sidebarItemWithLabel(tester, 'Vote').onTap, isNotNull);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.pumpWidget(migrationHarness(BigInt.one));
+    await tester.pump();
+
+    expect(_sidebarItemWithLabel(tester, 'Pay').onTap, isNotNull);
+  });
 
   testWidgets('sidebar sync indicator is pinned to the sidebar edge', (
     tester,
@@ -1164,6 +1207,13 @@ Widget _sidebarHarness(
         ),
       ),
       GoRoute(
+        path: '/pay',
+        builder: (_, _) => const AppDesktopShell(
+          sidebar: AppMainSidebar(),
+          pane: AppDesktopPane(child: Text('pay')),
+        ),
+      ),
+      GoRoute(
         path: '/voting',
         builder: (_, _) => const AppDesktopShell(
           sidebar: AppMainSidebar(),
@@ -1215,6 +1265,9 @@ Widget _sidebarHarness(
       appBootstrapProvider.overrideWithValue(bootstrap),
       syncProvider.overrideWith(() => _FakeSyncNotifier(syncState)),
       swapFeatureEnabledProvider.overrideWithValue(swapEnabled),
+      paySelectedAssetStoreProvider.overrideWithValue(
+        const _FakePaySelectedAssetStore(),
+      ),
       ironwoodHomeMigrationCtaProvider.overrideWith((ref) async {
         return ironwoodHomeMigrationCtaState;
       }),
@@ -1241,6 +1294,21 @@ Widget _sidebarHarness(
       ),
     ),
   );
+}
+
+class _FakePaySelectedAssetStore implements PaySelectedAssetStore {
+  const _FakePaySelectedAssetStore();
+
+  @override
+  Future<SwapAsset?> loadSelectedAsset({required String accountUuid}) async {
+    return SwapAsset.usdc;
+  }
+
+  @override
+  Future<void> saveSelectedAsset({
+    required String accountUuid,
+    required SwapAsset asset,
+  }) async {}
 }
 
 SyncState _networkFailureSyncState() {

@@ -7,6 +7,7 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/keystone.dart';
+import 'api/network_privacy.dart';
 import 'api/secret.dart';
 import 'api/simple.dart';
 import 'api/sync.dart';
@@ -15,6 +16,7 @@ import 'api/wallet.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'frb_generated.dart';
+import 'network_privacy.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 import 'third_party/zcash_voting/config.dart';
 import 'third_party/zcash_voting/delegate.dart';
@@ -232,6 +234,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
+  ImportBirthdayMetadata dco_decode_import_birthday_metadata(dynamic raw);
+
+  @protected
   IronwoodMigrationResult dco_decode_ironwood_migration_result(dynamic raw);
 
   @protected
@@ -364,6 +369,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MigrationStatusEntry> dco_decode_list_migration_status_entry(
     dynamic raw,
   );
+
+  @protected
+  List<NetworkHttpHeader> dco_decode_list_network_http_header(dynamic raw);
 
   @protected
   List<NextStepView> dco_decode_list_next_step_view(dynamic raw);
@@ -506,6 +514,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationStatusEntry dco_decode_migration_status_entry(dynamic raw);
+
+  @protected
+  NetworkHttpHeader dco_decode_network_http_header(dynamic raw);
+
+  @protected
+  NetworkHttpResponse dco_decode_network_http_response(dynamic raw);
+
+  @protected
+  NetworkPrivacyStatus dco_decode_network_privacy_status(dynamic raw);
 
   @protected
   NextStepView dco_decode_next_step_view(dynamic raw);
@@ -697,6 +714,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TxDataRequest dco_decode_tx_data_request(dynamic raw);
+
+  @protected
+  int dco_decode_u_16(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -1021,6 +1041,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
+  ImportBirthdayMetadata sse_decode_import_birthday_metadata(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   IronwoodMigrationResult sse_decode_ironwood_migration_result(
     SseDeserializer deserializer,
   );
@@ -1191,6 +1216,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<MigrationStatusEntry> sse_decode_list_migration_status_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NetworkHttpHeader> sse_decode_list_network_http_header(
     SseDeserializer deserializer,
   );
 
@@ -1367,6 +1397,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MigrationStatusEntry sse_decode_migration_status_entry(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NetworkHttpHeader sse_decode_network_http_header(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NetworkHttpResponse sse_decode_network_http_response(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NetworkPrivacyStatus sse_decode_network_privacy_status(
     SseDeserializer deserializer,
   );
 
@@ -1600,6 +1645,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TxDataRequest sse_decode_tx_data_request(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_u_16(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -1993,6 +2041,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
+  void sse_encode_import_birthday_metadata(
+    ImportBirthdayMetadata self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_ironwood_migration_result(
     IronwoodMigrationResult self,
     SseSerializer serializer,
@@ -2202,6 +2256,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_migration_status_entry(
     List<MigrationStatusEntry> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_network_http_header(
+    List<NetworkHttpHeader> self,
     SseSerializer serializer,
   );
 
@@ -2427,6 +2487,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_migration_status_entry(
     MigrationStatusEntry self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_network_http_header(
+    NetworkHttpHeader self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_network_http_response(
+    NetworkHttpResponse self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_network_privacy_status(
+    NetworkPrivacyStatus self,
     SseSerializer serializer,
   );
 
@@ -2705,6 +2783,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_tx_data_request(TxDataRequest self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_u_16(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

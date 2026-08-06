@@ -59,6 +59,7 @@ import 'package:zcash_wallet/src/features/swap/widgets/swap_review_page_content.
 import 'package:zcash_wallet/src/features/swap/widgets/swap_status_page_content.dart';
 import 'package:zcash_wallet/src/features/swap/widgets/swap_summary_amount_text.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 import 'package:zcash_wallet/src/providers/receive_address_provider.dart';
 import 'package:zcash_wallet/src/providers/rpc_endpoint_failover_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
@@ -4300,6 +4301,209 @@ void main() {
     expect(find.byKey(const ValueKey('swap_rate_line')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('swap_quote_details_strip')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Tor-blocked token list explains Tor instead of asset support', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: _TorBlockedPricingSwapProvider(),
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connected,
+        ),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Swap is unavailable over Tor because the service blocked this '
+        'connection.\nTurn off Tor in Settings to use swap.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('is not currently supported'), findsNothing);
+  });
+
+  testWidgets('Tor-blocked token list closes the Pay recipient step', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(initialLocation: '/pay', routes: [_payRoute()]),
+        swapProvider: _PricingThenTorBlockedSwapProvider(),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_amount_input')),
+      '25',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('pay_amount_continue_button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pay_recipient_search_field')),
+      '0x52908400098527886e0f7030069857d2e4169ee7',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_select_recipient_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PayScreen)),
+      listen: false,
+    );
+    (container.read(networkPrivacyProvider.notifier)
+            as _FakeNetworkPrivacyNotifier)
+        .setStateForTest(
+          const NetworkPrivacyState(
+            torEnabled: true,
+            status: NetworkPrivacyConnectionStatus.connected,
+          ),
+        );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Pay is unavailable over Tor because the service blocked this '
+        'connection.\nTurn off Tor in Settings to pay.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('pay_select_recipient_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
+
+  testWidgets(
+    'initial ordinary token-list failure keeps static assets usable',
+    (tester) async {
+      await _setDesktopViewport(tester);
+
+      await tester.pumpWidget(
+        _routerHarness(
+          GoRouter(
+            initialLocation: '/swap',
+            routes: [_swapRoute(), _swapActivityRoute()],
+          ),
+          swapProvider: _InitialPricingFailureSwapProvider(),
+          seedSwapActivityFixtures: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byKey(const ValueKey('swap_amount_field'))),
+      );
+      final state = container.read(swapStateProvider);
+      expect(state.supportedAssetsError, isNull);
+      expect(state.supportedExternalAssets, isNotEmpty);
+      expect(
+        find.textContaining('Swap tokens could not be loaded'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('turning Tor off retries after the direct route is ready', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _TorThenPricingSwapProvider();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        networkPrivacyState: const NetworkPrivacyState(
+          torEnabled: true,
+          status: NetworkPrivacyConnectionStatus.connected,
+        ),
+        seedSwapActivityFixtures: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const ValueKey('swap_amount_field'))),
+    );
+    final privacyNotifier =
+        container.read(networkPrivacyProvider.notifier)
+            as _FakeNetworkPrivacyNotifier;
+    privacyNotifier.setStateForTest(
+      const NetworkPrivacyState(
+        torEnabled: false,
+        status: NetworkPrivacyConnectionStatus.connecting,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.pricingRequests, 1);
+    expect(find.textContaining('unavailable over Tor'), findsOneWidget);
+
+    privacyNotifier.setStateForTest(const NetworkPrivacyState.off());
+    await tester.pumpAndSettle();
+
+    expect(swapProvider.pricingRequests, 2);
+    expect(find.textContaining('unavailable over Tor'), findsNothing);
+  });
+
+  testWidgets('a transient refresh failure keeps resolved swap assets usable', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    final swapProvider = _PricingThenFailureSwapProvider();
+
+    await tester.pumpWidget(
+      _routerHarness(
+        GoRouter(
+          initialLocation: '/swap',
+          routes: [_swapRoute(), _swapActivityRoute()],
+        ),
+        swapProvider: swapProvider,
+        seedSwapActivityFixtures: false,
+        priceRefreshInterval: const Duration(seconds: 1),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(swapProvider.pricingRequests, greaterThanOrEqualTo(2));
+    expect(
+      find.textContaining('Swap tokens could not be loaded'),
       findsNothing,
     );
   });
@@ -8988,6 +9192,7 @@ Widget _routerHarness(
   RpcEndpointLatestBlockHeightGetter? failoverHeightGetter,
   List<rust_sync.TransactionInfo> recentTransactions = const [],
   PayDepositTransactionLoader? payDepositTransactionLoader,
+  NetworkPrivacyState networkPrivacyState = const NetworkPrivacyState.off(),
 }) {
   final fixtureIntents = seedSwapActivityFixtures
       ? _accountScopedSwapActivityFixtureIntents()
@@ -8997,6 +9202,9 @@ Widget _routerHarness(
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(bootstrap ?? _bootstrap),
+      networkPrivacyProvider.overrideWith(
+        () => _FakeNetworkPrivacyNotifier(networkPrivacyState),
+      ),
       addressBookRepositoryProvider.overrideWithValue(
         addressBookRepository ?? _FakeAddressBookRepository(),
       ),

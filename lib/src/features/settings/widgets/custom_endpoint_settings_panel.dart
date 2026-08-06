@@ -12,6 +12,7 @@ import '../../../core/widgets/app_text_field.dart';
 import '../../../providers/rpc_endpoint_latency_provider.dart';
 import '../../../providers/rpc_endpoint_provider.dart';
 import '../../../providers/sync_provider.dart';
+import 'network_privacy_control.dart';
 
 class CustomEndpointSettingsPanel extends ConsumerStatefulWidget {
   const CustomEndpointSettingsPanel({
@@ -117,12 +118,14 @@ class _CustomEndpointSettingsPanelState
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final isDark = AppTheme.of(context) == AppThemeData.dark;
     final current = ref.watch(rpcEndpointProvider);
     final latencyState = ref.watch(rpcEndpointLatencyProvider);
 
     return DecoratedBox(
+      key: const ValueKey('network_settings_panel_surface'),
       decoration: BoxDecoration(
-        color: colors.background.ground,
+        color: isDark ? colors.background.window : colors.background.ground,
         borderRadius: BorderRadius.circular(AppRadii.large),
         border: Border.all(color: colors.border.subtle),
       ),
@@ -134,7 +137,9 @@ class _CustomEndpointSettingsPanelState
             mainAxisSize: MainAxisSize.min,
             children: [
               _PanelHeader(onClose: widget.onClose),
-              const SizedBox(height: AppSpacing.xs),
+              const SizedBox(height: AppSpacing.sm),
+              const NetworkPrivacyControl(),
+              const SizedBox(height: AppSpacing.md),
               CurrentEndpointText(current: current, latencyState: latencyState),
               const SizedBox(height: AppSpacing.sm),
               SizedBox(
@@ -142,9 +147,10 @@ class _CustomEndpointSettingsPanelState
                 child: CustomEndpointForm(
                   controller: _controller,
                   messageText: _customMessageText(),
-                  onChanged: (_) => setState(() {
-                    _submitError = null;
-                  }),
+                  onChanged:
+                      (_) => setState(() {
+                        _submitError = null;
+                      }),
                   onSubmit: _submit,
                 ),
               ),
@@ -167,7 +173,9 @@ class _CustomEndpointSettingsPanelState
                 variant: AppButtonVariant.primary,
                 minWidth: 256,
                 trailing: const AppIcon(AppIcons.chevronForward),
-                child: Text(_isSubmitting ? 'Updating...' : 'Update'),
+                child: Text(
+                  _isSubmitting ? 'Updating endpoint...' : 'Update endpoint',
+                ),
               ),
             ],
           ),
@@ -192,7 +200,7 @@ class _PanelHeader extends StatelessWidget {
         children: [
           Center(
             child: Text(
-              'Endpoint',
+              'Network settings',
               style: AppTypography.headlineMedium.copyWith(
                 color: colors.text.accent,
               ),
@@ -280,7 +288,7 @@ class CustomEndpointForm extends StatelessWidget {
           SizedBox(
             height: 86,
             child: AppTextField(
-              label: 'Custom Endpoint',
+              label: 'Custom endpoint',
               hintText: '<hostname>:<port>',
               controller: controller,
               autofocus: true,
@@ -290,9 +298,10 @@ class CustomEndpointForm extends StatelessWidget {
               keyboardType: TextInputType.url,
               textInputAction: TextInputAction.done,
               messageText: messageText,
-              tone: messageText == null
-                  ? AppTextFieldTone.neutral
-                  : AppTextFieldTone.destructive,
+              tone:
+                  messageText == null
+                      ? AppTextFieldTone.neutral
+                      : AppTextFieldTone.destructive,
               onChanged: onChanged,
               onSubmitted: (_) => onSubmit(),
             ),

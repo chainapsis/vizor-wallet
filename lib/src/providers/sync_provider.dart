@@ -603,6 +603,19 @@ bool shouldStartSyncForPolledTip(SyncState? current, int latestTipHeight) {
       latestTipHeight > (current?.chainTipHeight ?? 0);
 }
 
+/// Whether a restart must abort because Rust network tasks are still running.
+///
+/// Only a route change has to: starting Tor while a direct channel is still up
+/// would leak, so that caller fails loudly and keeps the old route. A restart
+/// that leaves the transport alone (endpoint change, post-broadcast refresh)
+/// starts anyway — aborting there would leave the wallet with neither sync nor
+/// polling for the rest of the session.
+@visibleForTesting
+bool shouldAbortRestartForBusyNetwork({
+  required bool quiescent,
+  required bool changesTransport,
+}) => !quiescent && changesTransport;
+
 @visibleForTesting
 bool shouldRestartSyncForMigrationEntry({
   required bool hasAttachedSync,
@@ -1654,6 +1667,27 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
   /// silent for the rest of the session if the toggle fires while
   /// sync is already idle.
   Future<void> restartSync() async {
+    await restartSyncAfterTransportChange(
+      () async {},
+      failIfNotQuiescent: false,
+    );
+  }
+
+  /// Quiesces every Rust network lane, applies one transport change, then
+  /// starts sync and polling again. The callback runs only after existing
+  /// direct or Tor channels have been asked to stop, which prevents a runtime
+  /// route toggle from overlapping a newly configured connection.
+  ///
+  /// [failIfNotQuiescent] belongs to the route change alone: switching to Tor
+  /// while a direct channel is still up would leak, so that caller must fail
+  /// loudly. Callers that only want a fresh sync on the same transport
+  /// (endpoint changes, post-broadcast refreshes) keep the older behaviour of
+  /// starting anyway, because aborting there would leave the wallet with no
+  /// sync and no polling for the rest of the session.
+  Future<void> restartSyncAfterTransportChange(
+    Future<void> Function() updateTransport, {
+    bool failIfNotQuiescent = true,
+  }) async {
     ++_syncGen;
     ++_progressEventVersion;
     ++_balanceReadVersion;
@@ -1688,17 +1722,31 @@ class SyncNotifier extends AsyncNotifier<SyncState> {
     // the sync loop's post-batch cancel check nor the observer's
     // 100ms cancel slice should take anywhere near that long,
     // but a network stall mid-broadcast can extend it.
-    await _waitForRustTasksToStop(
+    final stopped = await _waitForRustTasksToStop(
       timeoutMs: 5000,
-      onSyncTimeout:
-          'SyncNotifier: restartSync timed out waiting for Rust sync loop to '
-          'stop after 5s; starting anyway (the startSync guard will log if '
-          'the old run is still around)',
-      onMempoolTimeout:
-          'SyncNotifier: restartSync timed out waiting for mempool observer to '
-          'stop after 5s; the new observer start will skip and the new '
-          'session runs without streaming',
+      onSyncTimeout: failIfNotQuiescent
+          ? 'SyncNotifier: restartSync timed out waiting for Rust sync loop to '
+                'stop after 5s; transport change blocked'
+          : 'SyncNotifier: restartSync timed out waiting for Rust sync loop to '
+                'stop after 5s; starting anyway (the startSync guard will log '
+                'if the old run is still around)',
+      onMempoolTimeout: failIfNotQuiescent
+          ? 'SyncNotifier: restartSync timed out waiting for mempool observer '
+                'to stop after 5s; transport change blocked'
+          : 'SyncNotifier: restartSync timed out waiting for mempool observer '
+                'to stop after 5s; the new observer start will skip and the '
+                'new session runs without streaming',
     );
+    if (shouldAbortRestartForBusyNetwork(
+      quiescent: stopped,
+      changesTransport: failIfNotQuiescent,
+    )) {
+      throw StateError(
+        'Network tasks did not stop before the transport change. Direct '
+        'traffic remains blocked; retry the Tor setting after sync stops.',
+      );
+    }
+    await updateTransport();
     startSync();
     _startPolling();
   }

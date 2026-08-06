@@ -306,7 +306,7 @@ class _PayScreenState extends ConsumerState<PayScreen> {
       addressError: swapState.destinationAddressFormatError,
       contacts: contacts,
       busy: swapState.quoteLoading,
-      enabled: swapState.externalAssetIsSupported,
+      enabled: swapState.externalAssetIsAvailable,
       quoteError: swapState.externalAssetSupportError ?? swapState.quoteError,
       onSelectRecipient: () => unawaited(_openReview()),
       onAddToContacts: network == null

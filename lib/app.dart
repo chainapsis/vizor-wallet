@@ -76,6 +76,7 @@ import 'src/features/settings/screens/settings_endpoint_screen.dart';
 import 'src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'src/features/settings/screens/settings_uninstall_screen.dart';
 import 'src/features/settings/settings_platform.dart';
+import 'src/features/settings/widgets/windows_update_download_flow.dart';
 import 'src/features/wallet_link/screens/wallet_link_desktop_screen.dart';
 import 'src/features/swap/models/swap_activity_navigation.dart';
 import 'src/features/swap/screens/swap_review_screen.dart';
@@ -91,6 +92,7 @@ import 'src/features/voting/screens/voting_submission_confirmation_screen.dart';
 import 'src/providers/theme_mode_provider.dart';
 import 'src/providers/app_security_provider.dart';
 import 'src/providers/linux_update_provider.dart';
+import 'src/providers/network_privacy_provider.dart';
 import 'src/providers/rpc_endpoint_failover_provider.dart';
 import 'src/providers/router_refresh_provider.dart';
 import 'src/providers/wallet_provider.dart';
@@ -105,6 +107,10 @@ Future<void> initializeZcashWalletRuntime() async {
   WidgetsFlutterBinding.ensureInitialized();
   log('runtime: initializing RustLib');
   await RustLib.init();
+  if (kAppFormFactor == AppFormFactor.desktop) {
+    log('runtime: applying desktop network privacy policy');
+    await initializeNetworkPrivacyRuntime();
+  }
   await rust_simple.configureFastTestnetMigration(
     enabled: kZcashFastTestnetMigration,
   );
@@ -193,7 +199,7 @@ class _BootstrappedZcashWalletAppState
         appBootstrapRetryProvider.overrideWithValue(_reloadBootstrap),
         ...widget.overrides,
       ],
-      child: const ZcashWalletApp(),
+      child: const _MacOSUpdatePrivacyChoiceHost(child: ZcashWalletApp()),
     );
   }
 }
@@ -249,10 +255,9 @@ final _routerProvider = Provider<_AppRouter>((ref) {
     observers: kAppFormFactor == AppFormFactor.desktop
         ? [
             SendStatusRoutePayloadObserver(
-              onLeaveStatus: () =>
-                  ref
-                      .read(sendStatusRoutePayloadProvider.notifier)
-                      .clearAfterNavigation(),
+              onLeaveStatus: () => ref
+                  .read(sendStatusRoutePayloadProvider.notifier)
+                  .clearAfterNavigation(),
             ),
           ]
         : const [],
@@ -571,7 +576,10 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       ),
       GoRoute(
         path: '/onboarding/customise-account',
-        redirect: (_, state) => state.extra is CustomiseAccountArgs
+        redirect: (_, state) =>
+            state.extra is CustomiseAccountArgs &&
+                (state.extra as CustomiseAccountArgs).flow ==
+                    SetPasswordFlow.create
             ? null
             : OnboardingStep.secretPassphrase.routePath,
         pageBuilder: (context, state) {
@@ -675,6 +683,25 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),
+      GoRoute(
+        path: KeystoneOnboardingStep.customiseAccount.routePath,
+        redirect: (_, state) {
+          final args = state.extra;
+          return args is CustomiseAccountArgs &&
+                  args.flow == SetPasswordFlow.importKeystone
+              ? null
+              : KeystoneOnboardingStep.walletBirthdayHeight.routePath;
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: CustomiseAccountScreen(
+            args: state.extra as CustomiseAccountArgs,
+          ),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
     ],
   ),
   ShellRoute(
@@ -741,6 +768,25 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             transitionsBuilder: _onboardingFadeTransition,
           );
         },
+      ),
+      GoRoute(
+        path: '/import/customise-account',
+        redirect: (_, state) {
+          final args = state.extra;
+          return args is CustomiseAccountArgs &&
+                  args.flow == SetPasswordFlow.importWallet
+              ? null
+              : '/import/birthday';
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: CustomiseAccountScreen(
+            args: state.extra as CustomiseAccountArgs,
+          ),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
       ),
     ],
   ),
@@ -1138,6 +1184,45 @@ class ZcashWalletApp extends ConsumerWidget {
   }
 }
 
+class _MacOSUpdatePrivacyChoiceHost extends ConsumerStatefulWidget {
+  const _MacOSUpdatePrivacyChoiceHost({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_MacOSUpdatePrivacyChoiceHost> createState() =>
+      _MacOSUpdatePrivacyChoiceHostState();
+}
+
+class _MacOSUpdatePrivacyChoiceHostState
+    extends ConsumerState<_MacOSUpdatePrivacyChoiceHost> {
+  @override
+  void initState() {
+    super.initState();
+    if (!Platform.isMacOS) return;
+    PlatformNetworkPrivacyNativeUpdateCoordinator.registerDisableTorForUpdateHandler(
+      () async {
+        final notifier = ref.read(networkPrivacyProvider.notifier);
+        await notifier.setTorEnabled(false);
+        final state = ref.read(networkPrivacyProvider);
+        return !state.torEnabled &&
+            state.status == NetworkPrivacyConnectionStatus.off;
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    if (Platform.isMacOS) {
+      PlatformNetworkPrivacyNativeUpdateCoordinator.clearDisableTorForUpdateHandler();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
   const _WindowsUpdateStartupCheck({required this.child});
 
@@ -1150,13 +1235,37 @@ class _WindowsUpdateStartupCheck extends ConsumerStatefulWidget {
 
 class _WindowsUpdateStartupCheckState
     extends ConsumerState<_WindowsUpdateStartupCheck> {
+  ProviderSubscription<bool>? _torSubscription;
+
   @override
   void initState() {
     super.initState();
+    _torSubscription = ref.listenManual(
+      networkPrivacyProvider.select(
+        (state) => switch (state.status) {
+          NetworkPrivacyConnectionStatus.off =>
+            !state.torEnabled && state.softwareUpdatesAvailable,
+          NetworkPrivacyConnectionStatus.connected =>
+            state.torEnabled && state.softwareUpdatesAvailable,
+          _ => false,
+        },
+      ),
+      (previous, next) {
+        if (previous == false && next) {
+          unawaited(ref.read(windowsUpdateProvider.notifier).checkOnStartup());
+        }
+      },
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(ref.read(windowsUpdateProvider.notifier).checkOnStartup());
     });
+  }
+
+  @override
+  void dispose() {
+    _torSubscription?.close();
+    super.dispose();
   }
 
   @override
@@ -1230,6 +1339,11 @@ class _WindowsUpdatePromptHostState
   }
 
   String _promptKey(WindowsUpdateState state) {
+    // Each failure gets its own key: dismissing one must not hide the next.
+    final failureOrdinal = state.failure?.ordinal;
+    if (failureOrdinal != null) {
+      return '${state.status.name}:$failureOrdinal';
+    }
     return '${state.status.name}:${state.availableVersion}';
   }
 
@@ -1241,6 +1355,9 @@ class _WindowsUpdatePromptHostState
       WindowsUpdateStatus.downloading ||
       WindowsUpdateStatus.ready ||
       WindowsUpdateStatus.applying => true,
+      // Only a failure the user is waiting on earns an interruption. An
+      // automatic check that fails is re-run once the route recovers.
+      WindowsUpdateStatus.failed => state.failure?.userInitiated ?? false,
       _ => false,
     };
     if (!visibleStatus) return false;
@@ -1251,6 +1368,18 @@ class _WindowsUpdatePromptHostState
     setState(() {
       _dismissedPromptKeys.add(_promptKey(state));
     });
+  }
+
+  Future<void> _handleDownload() async {
+    final dialogContext = widget
+        .router
+        .routerDelegate
+        .navigatorKey
+        .currentState
+        ?.overlay
+        ?.context;
+    if (dialogContext == null) return;
+    await startWindowsUpdateDownload(context: dialogContext, ref: ref);
   }
 
   @override
@@ -1289,17 +1418,20 @@ class _WindowsUpdatePromptHostState
                         key: ValueKey(_promptKey(state)),
                         state: state,
                         onDownload: () {
-                          unawaited(
-                            ref
-                                .read(windowsUpdateProvider.notifier)
-                                .downloadUpdate(),
-                          );
+                          unawaited(_handleDownload());
                         },
                         onRestart: () {
                           unawaited(
                             ref
                                 .read(windowsUpdateProvider.notifier)
                                 .applyUpdateAndRestart(),
+                          );
+                        },
+                        onRetry: () {
+                          unawaited(
+                            ref
+                                .read(windowsUpdateProvider.notifier)
+                                .checkForUpdates(),
                           );
                         },
                         onLater: () => _dismiss(state),
@@ -1321,6 +1453,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
     required this.state,
     required this.onDownload,
     required this.onRestart,
+    required this.onRetry,
     required this.onLater,
     super.key,
   });
@@ -1328,6 +1461,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
   final WindowsUpdateState state;
   final VoidCallback onDownload;
   final VoidCallback onRestart;
+  final VoidCallback onRetry;
   final VoidCallback onLater;
 
   @override
@@ -1410,7 +1544,11 @@ class _WindowsUpdatePrompt extends StatelessWidget {
                         onPressed: onLater,
                         variant: AppButtonVariant.ghost,
                         size: AppButtonSize.small,
-                        child: const Text('Later'),
+                        child: Text(
+                          state.status == WindowsUpdateStatus.failed
+                              ? 'Dismiss'
+                              : 'Later',
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.xxs),
                     ],
@@ -1437,6 +1575,7 @@ class _WindowsUpdatePrompt extends StatelessWidget {
       WindowsUpdateStatus.downloading => 'Downloading update',
       WindowsUpdateStatus.ready => 'Update ready',
       WindowsUpdateStatus.applying => 'Restarting Vizor',
+      WindowsUpdateStatus.failed => 'Update failed',
       _ => 'Update available',
     };
   }
@@ -1448,13 +1587,18 @@ class _WindowsUpdatePrompt extends StatelessWidget {
         '${state.downloadProgress}% downloaded.',
       WindowsUpdateStatus.ready => 'Restart when you are ready.',
       WindowsUpdateStatus.applying => 'Applying after Vizor closes.',
+      WindowsUpdateStatus.failed =>
+        state.message.trim().isEmpty
+            ? "Couldn't complete the update. Try again."
+            : state.message.trim(),
       _ => '',
     };
   }
 
   bool _canDismiss() {
     return state.status == WindowsUpdateStatus.available ||
-        state.status == WindowsUpdateStatus.ready;
+        state.status == WindowsUpdateStatus.ready ||
+        state.status == WindowsUpdateStatus.failed;
   }
 
   _WindowsUpdatePromptAction _primaryAction() {
@@ -1472,6 +1616,10 @@ class _WindowsUpdatePrompt extends StatelessWidget {
       ),
       WindowsUpdateStatus.applying => const _WindowsUpdatePromptAction(
         label: 'Restarting',
+      ),
+      WindowsUpdateStatus.failed => _WindowsUpdatePromptAction(
+        label: 'Try again',
+        onPressed: onRetry,
       ),
       _ => const _WindowsUpdatePromptAction(label: 'Update'),
     };
@@ -1502,9 +1650,15 @@ class _WindowsUpdatePromptIcon extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: AppIcon(
-        status == WindowsUpdateStatus.ready ? AppIcons.check : AppIcons.sync,
+        switch (status) {
+          WindowsUpdateStatus.ready => AppIcons.check,
+          WindowsUpdateStatus.failed => AppIcons.warning,
+          _ => AppIcons.sync,
+        },
         size: 16,
-        color: colors.icon.accent,
+        color: status == WindowsUpdateStatus.failed
+            ? colors.icon.warning
+            : colors.icon.accent,
       ),
     );
   }
@@ -1558,14 +1712,21 @@ class _LinuxUpdateNoticeListener extends ConsumerWidget {
         if (!context.mounted) return;
         final messenger = ScaffoldMessenger.maybeOf(context);
         if (messenger == null) return;
+        final torEnabled = ref.read(networkPrivacyProvider).torEnabled;
 
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Vizor ${update.assetVersion} is available.'),
+            content: Text(
+              torEnabled
+                  ? 'Vizor ${update.assetVersion} is available. The release '
+                        'page opens in your browser, outside Vizor’s Tor '
+                        'connection.'
+                  : 'Vizor ${update.assetVersion} is available.',
+            ),
             duration: const Duration(seconds: 8),
             action: SnackBarAction(
-              label: 'View Release',
+              label: torEnabled ? 'Open in browser' : 'View release',
               onPressed: () => unawaited(_openLinuxUpdateRelease(update)),
             ),
           ),
@@ -1605,8 +1766,49 @@ class _RpcEndpointFailoverToastListener extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return NetworkFallbackToastHost(
-      child: _RpcEndpointFailoverToastBridge(child: child),
+      child: _NetworkPrivacyStartupToastBridge(
+        child: _RpcEndpointFailoverToastBridge(child: child),
+      ),
     );
+  }
+}
+
+class _NetworkPrivacyStartupToastBridge extends ConsumerStatefulWidget {
+  const _NetworkPrivacyStartupToastBridge({required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<_NetworkPrivacyStartupToastBridge> createState() =>
+      _NetworkPrivacyStartupToastBridgeState();
+}
+
+class _NetworkPrivacyStartupToastBridgeState
+    extends ConsumerState<_NetworkPrivacyStartupToastBridge> {
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<String?>(
+      networkPrivacyProvider.select((state) => state.startupNotice),
+      (previous, next) {
+        if (next == null || next == previous) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          showNetworkFallbackToast(
+            context,
+            next,
+            duration: const Duration(seconds: 4),
+          );
+          ref.read(networkPrivacyProvider.notifier).clearStartupNotice();
+        });
+      },
+      fireImmediately: true,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
   }
 }
 

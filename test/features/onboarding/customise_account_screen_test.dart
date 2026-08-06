@@ -153,6 +153,48 @@ void main() {
     expect(routedArgs?.pendingPassword, 'Password1!');
   });
 
+  testWidgets('import password forwards its complete draft to customise', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    CustomiseAccountArgs? routedArgs;
+    const setupArgs = SetPasswordScreenArgs.importWallet(
+      mnemonic: _mnemonic,
+      bip39Passphrase: 'hidden words',
+      birthdayHeight: 2500000,
+      selectedAdditionalAccountIndices: [1, 2],
+    );
+    final router = GoRouter(
+      initialLocation: '/import/set-password',
+      routes: [
+        GoRoute(
+          path: '/import/set-password',
+          builder: (_, _) => const SetPasswordScreen(args: setupArgs),
+        ),
+        GoRoute(
+          path: '/import/customise-account',
+          builder: (_, state) {
+            routedArgs = state.extra! as CustomiseAccountArgs;
+            return const Text('Import customise destination');
+          },
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_routerHarness(router));
+    await tester.enterText(find.byType(TextField).at(0), 'Password1!');
+    await tester.enterText(find.byType(TextField).at(1), 'Password1!');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('set_password_submit_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import customise destination'), findsOneWidget);
+    expect(routedArgs?.flow, SetPasswordFlow.importWallet);
+    expect(routedArgs?.pendingPassword, 'Password1!');
+    expect(routedArgs?.setupArgs.bip39Passphrase, 'hidden words');
+    expect(routedArgs?.setupArgs.selectedAdditionalAccountIndices, [1, 2]);
+  });
+
   testWidgets('generates its draft once and keeps it across rebuilds', (
     tester,
   ) async {
@@ -164,7 +206,9 @@ void main() {
     await tester.pumpWidget(
       _screenHarness(
         CustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
           random: random,
           onFinish: (name, profilePictureId) async {
             submittedName = name;
@@ -200,7 +244,7 @@ void main() {
       tester
           .widget<OnboardingTrailingPane>(find.byType(OnboardingTrailingPane))
           .backTarget,
-      isNull,
+      isNotNull,
     );
   });
 
@@ -210,7 +254,9 @@ void main() {
     await tester.pumpWidget(
       _screenHarness(
         CustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
           onFinish: (name, _) async => submittedName = name,
         ),
       ),
@@ -236,7 +282,9 @@ void main() {
     await tester.pumpWidget(
       _screenHarness(
         CustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
           onFinish: (_, _) async => submitCount += 1,
         ),
       ),
@@ -265,7 +313,9 @@ void main() {
     await tester.pumpWidget(
       _screenHarness(
         CustomiseAccountScreen(
-          args: const CustomiseAccountArgs(mnemonic: _mnemonic),
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
+          ),
           onFinish: (_, profilePictureId) async {
             submittedProfilePictureId = profilePictureId;
           },
@@ -305,7 +355,7 @@ void main() {
       _screenHarness(
         CustomiseAccountScreen(
           args: const CustomiseAccountArgs(
-            mnemonic: _mnemonic,
+            setupArgs: SetPasswordScreenArgs.create(mnemonic: _mnemonic),
             pendingPassword: 'Password1!',
           ),
           onFinish: (_, _) => finish.future,

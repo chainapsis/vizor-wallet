@@ -50,6 +50,11 @@ enum class UpdateStatus {
   kFailed,
 };
 
+enum class UpdateOperationStartResult {
+  kHandled,
+  kRouteTransitionReserved,
+};
+
 struct ManagerDeleter {
   void operator()(vpkc_update_manager_t* value) const {
     if (value != nullptr) {
@@ -85,6 +90,7 @@ AssetPtr g_pending_asset;
 UpdateStatus g_status = UpdateStatus::kIdle;
 bool g_supported = true;
 bool g_busy = false;
+bool g_update_route_transition_reserved = false;
 bool g_pending_restart = false;
 int32_t g_download_progress = 0;
 std::string g_current_version = FLUTTER_VERSION;
@@ -93,6 +99,9 @@ std::string g_available_version;
 std::string g_message;
 std::mutex g_source_error_mutex;
 std::string g_source_error;
+std::mutex g_update_route_mutex;
+bool g_tor_routing_required = false;
+std::string g_tor_proxy_base_url;
 
 void SetSourceError(std::string message) {
   std::lock_guard<std::mutex> lock(g_source_error_mutex);
@@ -178,7 +187,7 @@ std::string UrlEncodePathSegment(const std::string& value) {
   return out.str();
 }
 
-std::string ReleaseBaseUrl() {
+std::string DirectReleaseBaseUrl() {
   std::string base_url = VIZOR_UPDATE_RELEASE_BASE_URL;
   if (base_url.empty()) {
     base_url = std::string(VIZOR_UPDATE_GITHUB_REPO_URL) +
@@ -188,6 +197,53 @@ std::string ReleaseBaseUrl() {
     base_url.pop_back();
   }
   return base_url;
+}
+
+std::string ReleaseBaseUrl() {
+  std::lock_guard<std::mutex> lock(g_update_route_mutex);
+  if (!g_tor_routing_required) {
+    return DirectReleaseBaseUrl();
+  }
+  if (g_tor_proxy_base_url.empty()) {
+    SetSourceError("Tor update route is not ready.");
+  }
+  return g_tor_proxy_base_url;
+}
+
+void SetTorRouting(bool enabled, std::string proxy_base_url) {
+  while (!proxy_base_url.empty() && proxy_base_url.back() == '/') {
+    proxy_base_url.pop_back();
+  }
+  std::lock_guard<std::mutex> lock(g_update_route_mutex);
+  g_tor_routing_required = enabled;
+  g_tor_proxy_base_url = enabled ? std::move(proxy_base_url) : std::string();
+}
+
+bool ReserveTorDisable() {
+  std::lock_guard<std::mutex> lock(g_update_mutex);
+  if (g_update_route_transition_reserved) {
+    return true;
+  }
+  if (g_busy) {
+    return false;
+  }
+  g_update_route_transition_reserved = true;
+  return true;
+}
+
+bool CommitTorRouting(bool enabled, std::string proxy_base_url) {
+  std::lock_guard<std::mutex> lock(g_update_mutex);
+  if (g_busy) {
+    return false;
+  }
+  SetTorRouting(enabled, std::move(proxy_base_url));
+  g_update_route_transition_reserved = false;
+  return true;
+}
+
+bool TorProxyReady() {
+  std::lock_guard<std::mutex> lock(g_update_route_mutex);
+  return g_tor_routing_required && !g_tor_proxy_base_url.empty();
 }
 
 std::string ReleaseAssetUrl(const std::string& file_name) {
@@ -401,6 +457,17 @@ bool HttpGetStream(const std::string& url, ChunkWriter writer) {
   if (session == nullptr) {
     SetSourceError("Could not initialize update HTTP client.");
     return false;
+  }
+
+  if (TorProxyReady()) {
+    constexpr int kTorUpdateTimeoutMs = 2 * 60 * 60 * 1000;
+    if (!WinHttpSetTimeouts(session, kTorUpdateTimeoutMs,
+                            kTorUpdateTimeoutMs, kTorUpdateTimeoutMs,
+                            kTorUpdateTimeoutMs)) {
+      WinHttpCloseHandle(session);
+      SetSourceError("Could not configure Tor update HTTP timeouts.");
+      return false;
+    }
   }
 
   HINTERNET connection =
@@ -726,6 +793,8 @@ flutter::EncodableMap BuildStateMapLocked() {
       flutter::EncodableValue(g_download_progress);
   map[flutter::EncodableValue("pendingRestart")] =
       flutter::EncodableValue(g_pending_restart);
+  map[flutter::EncodableValue("torProxyReady")] =
+      flutter::EncodableValue(TorProxyReady());
   map[flutter::EncodableValue("message")] = flutter::EncodableValue(g_message);
   return map;
 }
@@ -741,16 +810,19 @@ void DownloadProgress(void* user_data, size_t progress) {
       static_cast<int32_t>(std::min<size_t>(progress, 100));
 }
 
-void StartCheckForUpdates() {
+UpdateOperationStartResult StartCheckForUpdates() {
   vpkc_update_manager_t* manager = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
     if (!EnsureManagerLocked() || g_busy) {
-      return;
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     RefreshPendingRestartLocked();
     if (g_status == UpdateStatus::kReady) {
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
     g_busy = true;
     g_status = UpdateStatus::kChecking;
@@ -794,20 +866,24 @@ void StartCheckForUpdates() {
     g_status = UpdateStatus::kNoUpdate;
     g_message.clear();
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
-void StartDownloadUpdate() {
+UpdateOperationStartResult StartDownloadUpdate() {
   vpkc_update_manager_t* manager = nullptr;
   vpkc_update_info_t* update = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
     if (!EnsureManagerLocked() || g_busy) {
-      return;
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     if (!g_update_info) {
       g_status = UpdateStatus::kFailed;
       g_message = "No update is ready to download.";
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
     g_busy = true;
     g_status = UpdateStatus::kDownloading;
@@ -854,15 +930,19 @@ void StartDownloadUpdate() {
     g_status = UpdateStatus::kReady;
     g_message.clear();
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
-void StartApplyUpdateAndRestart() {
+UpdateOperationStartResult StartApplyUpdateAndRestart() {
   vpkc_update_manager_t* manager = nullptr;
   vpkc_asset_t* asset = nullptr;
   {
     std::lock_guard<std::mutex> lock(g_update_mutex);
     if (!EnsureManagerLocked() || g_busy) {
-      return;
+      return UpdateOperationStartResult::kHandled;
+    }
+    if (g_update_route_transition_reserved) {
+      return UpdateOperationStartResult::kRouteTransitionReserved;
     }
     if (g_pending_asset) {
       asset = g_pending_asset.get();
@@ -873,7 +953,7 @@ void StartApplyUpdateAndRestart() {
     if (asset == nullptr) {
       g_status = UpdateStatus::kFailed;
       g_message = "No downloaded update is ready to apply.";
-      return;
+      return UpdateOperationStartResult::kHandled;
     }
 
     g_busy = true;
@@ -896,6 +976,7 @@ void StartApplyUpdateAndRestart() {
     g_status = UpdateStatus::kFailed;
     g_message = CoalesceMessage(error);
   }).detach();
+  return UpdateOperationStartResult::kHandled;
 }
 
 }  // namespace
@@ -908,22 +989,91 @@ CreateVelopackUpdateChannel(flutter::BinaryMessenger* messenger) {
 
   channel->SetMethodCallHandler([](const auto& call, auto result) {
     const std::string& method = call.method_name();
+    if (method == "getUpdateBaseUrl") {
+      result->Success(flutter::EncodableValue(DirectReleaseBaseUrl()));
+      return;
+    }
+    if (method == "prepareForTorDisable") {
+      if (!ReserveTorDisable()) {
+        result->Error(
+            "update_in_progress",
+            "Wait for the current software update operation to finish before "
+            "turning off Tor.");
+        return;
+      }
+      result->Success();
+      return;
+    }
+    if (method == "setTorRouting") {
+      const auto* arguments = call.arguments();
+      if (arguments == nullptr ||
+          !std::holds_alternative<flutter::EncodableMap>(*arguments)) {
+        result->Error("invalid_arguments", "Expected Tor routing options.");
+        return;
+      }
+      const auto& map = std::get<flutter::EncodableMap>(*arguments);
+      const auto enabled_it =
+          map.find(flutter::EncodableValue(std::string("enabled")));
+      if (enabled_it == map.end() ||
+          !std::holds_alternative<bool>(enabled_it->second)) {
+        result->Error("invalid_arguments", "Expected enabled boolean.");
+        return;
+      }
+      std::string proxy_base_url;
+      const auto proxy_it =
+          map.find(flutter::EncodableValue(std::string("proxyBaseUrl")));
+      if (proxy_it != map.end() &&
+          std::holds_alternative<std::string>(proxy_it->second)) {
+        proxy_base_url = std::get<std::string>(proxy_it->second);
+      }
+      if (!CommitTorRouting(std::get<bool>(enabled_it->second),
+                            std::move(proxy_base_url))) {
+        result->Error(
+            "update_in_progress",
+            "Wait for the current software update operation to finish before "
+            "changing Tor routing.");
+        return;
+      }
+      result->Success();
+      return;
+    }
     if (method == "getState") {
       result->Success(BuildStateValue());
       return;
     }
     if (method == "checkForUpdates") {
-      StartCheckForUpdates();
+      if (StartCheckForUpdates() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }
     if (method == "downloadUpdate") {
-      StartDownloadUpdate();
+      if (StartDownloadUpdate() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }
     if (method == "applyUpdateAndRestart") {
-      StartApplyUpdateAndRestart();
+      if (StartApplyUpdateAndRestart() ==
+          UpdateOperationStartResult::kRouteTransitionReserved) {
+        result->Error(
+            "update_route_transition",
+            "Software update routing is changing. Try again when the network "
+            "privacy switch finishes.");
+        return;
+      }
       result->Success(BuildStateValue());
       return;
     }

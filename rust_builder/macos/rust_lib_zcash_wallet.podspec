@@ -20,6 +20,10 @@ A new Flutter FFI plugin project.
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
   s.dependency 'FlutterMacOS'
+  # Arti's directory compression support calls the system liblzma from the
+  # Rust static library. Static libraries do not propagate native link flags
+  # to the final app target, so CocoaPods must link liblzma explicitly.
+  s.libraries = 'lzma'
 
   s.platform = :osx, '10.11'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }

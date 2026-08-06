@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../main.dart' show log;
 import '../app_bootstrap.dart';
@@ -23,6 +24,7 @@ import '../rust/api/voting.dart' as rust_voting;
 import '../rust/api/wallet.dart' as rust_wallet;
 import 'account_models.dart';
 import 'app_security_provider.dart';
+import 'network_privacy_provider.dart';
 import 'rpc_endpoint_failover_provider.dart';
 import 'rpc_endpoint_provider.dart';
 import 'voting/voting_submission_guard_provider.dart';
@@ -1194,6 +1196,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
+    String profilePictureId = kDefaultProfilePictureId,
     List<int> additionalAccountIndices = const [],
   }) async {
     try {
@@ -1203,7 +1206,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
           ? endpoint.networkName
           : await _getNetwork();
       final accounts = state.value?.accounts ?? [];
-      final accountName = name ?? 'Account ${accounts.length + 1}';
+      final accountName = normalizeAccountName(
+        name ?? 'Account ${accounts.length + 1}',
+      );
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
       final isFirstWalletAccount = accounts.isEmpty;
       final previousActiveAccountUuid = state.value?.activeAccountUuid;
       final previousActiveAddress = state.value?.activeAddress;
@@ -1247,6 +1263,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
             name: result.accounts[i].name,
             order: accounts.length + i,
             isSeedAnchor: result.accounts[i].isSeedAnchor,
+            profilePictureId: i == 0
+                ? normalizedProfilePictureId
+                : kDefaultProfilePictureId,
             seedFamilyId: result.accounts[i].seedFamilyId,
             accountGroupName: existingAccountGroupNameForSeedFamily(
               accounts,
@@ -1620,6 +1639,9 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
   /// Migration work must first stop without deleting its credential. After
   /// that fail-closed preflight, the wipe is best-effort: deletion steps remain
   /// retryable and the first error is rethrown after all safe cleanup attempts.
+  ///
+  /// Once the durable wallet data is gone, the Tor route is returned to Direct
+  /// and its on-disk state is cleared too — see [clearTorPrivacyStateForReset].
   Future<void> resetWallet() async {
     ref.read(votingSubmissionGuardProvider.notifier).throwIfActive();
 
@@ -1732,6 +1754,20 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       } catch (e, st) {
         recordError('secure storage wipe', e, st);
       }
+      final privacyRuntime = ref.read(networkPrivacyRuntimeProvider);
+      final directRequests = ref.read(networkPrivacyDirectRequestGateProvider);
+      await clearTorPrivacyStateForReset(
+        switchRouteToDirect: () async {
+          await privacyRuntime.configure(enabled: false);
+          // Fail-closed routing blocks direct requests for the rest of the
+          // session, and the wallet this route belonged to no longer exists.
+          directRequests.allow();
+          // Onboarding can reach the network setting again, so the published
+          // route has to match the one Rust is now on. Going through
+          // setTorEnabled instead would restart sync in the middle of the wipe.
+          ref.read(networkPrivacyProvider.notifier).markRouteDirectAfterReset();
+        },
+      );
     }
 
     final error = firstError;
@@ -1876,8 +1912,21 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
     required List<int> seedFingerprint,
     required int zip32Index,
     required int birthdayHeight,
+    String profilePictureId = kDefaultProfilePictureId,
   }) async {
     try {
+      final accountName = normalizeAccountName(name);
+      validateAccountName(accountName);
+      if (!isKnownProfilePictureId(profilePictureId)) {
+        throw ArgumentError.value(
+          profilePictureId,
+          'profilePictureId',
+          'Unknown profile picture id',
+        );
+      }
+      final normalizedProfilePictureId = normalizeProfilePictureId(
+        profilePictureId,
+      );
       final prev = state.value ?? const AccountState();
       final dbPath = await _getDbPath();
       final network = await _getNetwork();
@@ -1885,7 +1934,7 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       final result = await rust_wallet.importHardwareAccount(
         dbPath: dbPath,
         network: network,
-        name: name,
+        name: accountName,
         ufvkString: ufvk,
         seedFingerprint: seedFingerprint,
         zip32Index: zip32Index,
@@ -1897,9 +1946,10 @@ class AccountNotifier extends AsyncNotifier<AccountState> {
       // Save account info (no mnemonic — hardware wallet)
       final newAccount = AccountInfo(
         uuid: accountUuid,
-        name: name,
+        name: accountName,
         order: prev.accounts.length,
         isHardware: true,
+        profilePictureId: normalizedProfilePictureId,
         seedFamilyId: result.seedFamilyId,
         accountGroupName: existingAccountGroupNameForSeedFamily(
           prev.accounts,
@@ -2340,6 +2390,41 @@ String? resolveNextActiveAccountUuidAfterRemoval({
       .clamp(0, remainingAccounts.length - 1)
       .toInt();
   return remainingAccounts[nextIndex].uuid;
+}
+
+/// Removes the Tor state a wallet reset leaves outside the wallet DB and
+/// secure storage: the arti data directory (persisted guard selection and
+/// directory cache) and the saved route preference. Neither holds key
+/// material, but both are durable evidence of Tor use on this machine.
+///
+/// [switchRouteToDirect] must leave Rust off the Tor client: arti keeps the
+/// files in its data directory open for as long as the client runs, so the
+/// directory is left alone when that step fails.
+///
+/// Best-effort by contract — a reset that already destroyed the wallet must
+/// not be reported as failed because this cleanup could not finish.
+@visibleForTesting
+Future<void> clearTorPrivacyStateForReset({
+  required Future<void> Function() switchRouteToDirect,
+  Future<String> Function() resolveTorDirectory = getTorDataDirectoryPath,
+  Future<SharedPreferences> Function() openPreferences =
+      SharedPreferences.getInstance,
+}) async {
+  try {
+    await switchRouteToDirect();
+    final directory = Directory(await resolveTorDirectory());
+    if (directory.existsSync()) {
+      directory.deleteSync(recursive: true);
+    }
+  } catch (e, st) {
+    log('resetWallet: tor data directory cleanup failed: $e\n$st');
+  }
+  try {
+    final preferences = await openPreferences();
+    await preferences.remove(kTorEnabledPreferenceKey);
+  } catch (e, st) {
+    log('resetWallet: tor route preference cleanup failed: $e\n$st');
+  }
 }
 
 @visibleForTesting

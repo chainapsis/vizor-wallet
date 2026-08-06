@@ -10,9 +10,7 @@ import '../../../core/layout/mobile/app_mobile_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../../../rust/api/keystone.dart' as rust_keystone;
 import '../../../services/qr_scanner.dart'
     show AnimatedUrScannerView, ScanResult;
@@ -647,22 +645,17 @@ class MobileKeystoneBirthdayScreen extends ConsumerWidget {
       return;
     }
 
-    // Add-account path: a passcode already guards the wallet, so the
-    // hardware account imports right here (same as desktop).
-    final router = GoRouter.of(context);
-    final accountNotifier = ref.read(accountProvider.notifier);
-    await runWithSyncPausedForAccountMutation(
-      ref,
-      () => accountNotifier.importKeystoneAccount(
-        name: account.name,
-        ufvk: account.ufvk,
-        seedFingerprint: account.seedFingerprint.toList(),
-        zip32Index: account.index,
-        birthdayHeight: height,
-      ),
+    final setupArgs = SetPasswordScreenArgs.importKeystone(
+      name: account.name,
+      ufvk: account.ufvk,
+      seedFingerprint: account.seedFingerprint.toList(),
+      zip32Index: account.index,
+      birthdayHeight: height,
     );
-    ref.read(keystoneOnboardingProvider.notifier).resetScan();
-    router.go('/home');
+    context.push(
+      '/onboarding/customise-account',
+      extra: CustomiseAccountArgs(setupArgs: setupArgs),
+    );
   }
 
   @override

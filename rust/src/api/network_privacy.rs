@@ -1,0 +1,353 @@
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
+use tokio::io::AsyncWriteExt;
+use tonic::Request;
+use zcash_client_backend::proto::{
+    compact_formats::CompactBlock,
+    service::{compact_tx_streamer_client::CompactTxStreamerClient, BlockId, ChainSpec, Empty},
+};
+use zcash_client_backend::tor::http::{HttpError, TimeoutPhase};
+
+pub use crate::network_privacy::NetworkPrivacyStatus;
+
+const TOR_API_RESPONSE_BODY_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Blocks new policy-aware direct requests immediately. Tor bootstrap is
+/// intentionally separate so the caller can first quiesce channels that were
+/// opened while direct mode was active.
+#[flutter_rust_bridge::frb(sync)]
+pub fn begin_network_privacy_enable() {
+    crate::network_privacy::begin_tor_enable();
+}
+
+/// Waits until direct tonic connections cancelled by
+/// [begin_network_privacy_enable] have released their sockets.
+pub async fn quiesce_network_privacy_direct_requests() -> Result<(), String> {
+    crate::network_privacy::wait_for_direct_connections_to_close(Duration::from_secs(5)).await
+}
+
+/// Configures the process-wide network route used by wallet gRPC and HTTP
+/// clients. Enabling is fail-closed: the desired route changes before Tor
+/// bootstrapping starts, so a bootstrap failure cannot fall back to clearnet.
+pub async fn configure_network_privacy(
+    enabled: bool,
+    tor_directory: String,
+) -> Result<NetworkPrivacyStatus, String> {
+    if enabled {
+        crate::network_privacy::enable_tor(Path::new(&tor_directory)).await
+    } else {
+        crate::network_privacy::disable_tor();
+        Ok(NetworkPrivacyStatus::Direct)
+    }
+}
+
+/// Returns the current runtime state. `Bootstrapping` and `Failed` both mean
+/// that app network requests are blocked while Tor remains the desired route.
+#[flutter_rust_bridge::frb(sync)]
+pub fn get_network_privacy_status() -> NetworkPrivacyStatus {
+    crate::network_privacy::status()
+}
+
+#[flutter_rust_bridge::frb(sync)]
+pub fn is_tor_enabled() -> bool {
+    crate::network_privacy::is_tor_desired()
+}
+
+/// Starts a token-protected loopback server that streams HTTPS update assets
+/// from the embedded Tor client directly to a native desktop updater.
+pub async fn start_tor_update_relay() -> Result<String, String> {
+    crate::tor_update_relay::start().await
+}
+
+/// Stops the loopback update relay and cancels any active package transfer.
+pub async fn stop_tor_update_relay() {
+    crate::tor_update_relay::stop().await;
+}
+
+pub struct ImportBirthdayMetadata {
+    pub sapling_activation_height: u64,
+    pub sapling_activation_time: u32,
+    pub tip_height: u64,
+    pub tip_time: u32,
+}
+
+pub struct NetworkHttpHeader {
+    pub name: String,
+    pub value: String,
+}
+
+pub struct NetworkHttpResponse {
+    pub status_code: u16,
+    pub headers: Vec<NetworkHttpHeader>,
+    pub body: Vec<u8>,
+}
+
+/// Makes a GET request on a fresh Tor circuit. Dart calls this only after its
+/// process-wide route check has selected Tor; direct requests stay in Dart so
+/// existing test injection and platform behaviour remain unchanged.
+pub async fn tor_http_get(
+    url: String,
+    headers: Vec<NetworkHttpHeader>,
+) -> Result<NetworkHttpResponse, String> {
+    let client = crate::network_privacy::tor_client_for_route(true)?
+        .ok_or_else(|| "Tor is not enabled".to_string())?;
+    let uri = url
+        .parse()
+        .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
+    let response = client
+        .http_get(
+            uri,
+            |builder| apply_headers(builder, &headers),
+            collect_body,
+            0,
+            |_| None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    network_http_response(response)
+}
+
+/// Makes a POST request on a fresh Tor circuit. Every app-owned HTTP call is
+/// isolated from wallet gRPC and from other HTTP destinations.
+pub async fn tor_http_post(
+    url: String,
+    headers: Vec<NetworkHttpHeader>,
+    body: Vec<u8>,
+) -> Result<NetworkHttpResponse, String> {
+    let client = crate::network_privacy::tor_client_for_route(true)?
+        .ok_or_else(|| "Tor is not enabled".to_string())?;
+    let uri = url
+        .parse()
+        .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
+    let response = client
+        .http_post(
+            uri,
+            |builder| apply_headers(builder, &headers),
+            Full::new(Bytes::from(body)),
+            collect_body,
+            0,
+            |_| None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    network_http_response(response)
+}
+
+/// Streams an HTTP GET response over an isolated Tor route directly to disk.
+/// This avoids moving large proving-parameter files through Rust and Dart
+/// whole-body buffers.
+pub async fn tor_http_download(
+    url: String,
+    headers: Vec<NetworkHttpHeader>,
+    destination_path: String,
+) -> Result<NetworkHttpResponse, String> {
+    let client = crate::network_privacy::tor_client_for_route(true)?
+        .ok_or_else(|| "Tor is not enabled".to_string())?;
+    let uri = url
+        .parse()
+        .map_err(|error| format!("Invalid HTTP URL: {error}"))?;
+    let destination = PathBuf::from(destination_path);
+    let response = client
+        .http_get(
+            uri,
+            |builder| apply_headers(builder, &headers),
+            move |body| write_body_to_file(body, destination),
+            0,
+            |_| None,
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    network_http_response(response.map(|_| Vec::new()))
+}
+
+fn apply_headers(
+    mut builder: http::request::Builder,
+    headers: &[NetworkHttpHeader],
+) -> http::request::Builder {
+    for header in headers {
+        builder = builder.header(&header.name, &header.value);
+    }
+    builder
+}
+
+async fn collect_body(
+    body: hyper::body::Incoming,
+) -> Result<Vec<u8>, zcash_client_backend::tor::Error> {
+    with_api_response_body_timeout(TOR_API_RESPONSE_BODY_TIMEOUT, async move {
+        Ok(body
+            .collect()
+            .await
+            .map_err(HttpError::from)?
+            .to_bytes()
+            .to_vec())
+    })
+    .await
+}
+
+async fn with_api_response_body_timeout<T>(
+    timeout: Duration,
+    future: impl std::future::Future<Output = Result<T, zcash_client_backend::tor::Error>>,
+) -> Result<T, zcash_client_backend::tor::Error> {
+    tokio::time::timeout(timeout, future)
+        .await
+        .unwrap_or_else(|_| Err(HttpError::Timeout(TimeoutPhase::ResponseBody).into()))
+}
+
+async fn write_body_to_file(
+    mut body: hyper::body::Incoming,
+    destination: PathBuf,
+) -> Result<(), zcash_client_backend::tor::Error> {
+    let mut file = tokio::fs::File::create(destination).await?;
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(HttpError::from)?;
+        if let Ok(data) = frame.into_data() {
+            file.write_all(&data).await?;
+        }
+    }
+    file.flush().await?;
+    Ok(())
+}
+
+fn network_http_response(response: http::Response<Vec<u8>>) -> Result<NetworkHttpResponse, String> {
+    let status_code = response.status().as_u16();
+    let headers = response
+        .headers()
+        .iter()
+        .map(|(name, value)| {
+            Ok(NetworkHttpHeader {
+                name: name.as_str().to_string(),
+                value: value
+                    .to_str()
+                    .map_err(|error| format!("Invalid response header {name}: {error}"))?
+                    .to_string(),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(NetworkHttpResponse {
+        status_code,
+        headers,
+        body: response.into_body(),
+    })
+}
+
+pub async fn get_import_birthday_metadata(
+    lightwalletd_url: String,
+) -> Result<ImportBirthdayMetadata, String> {
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+        .await
+        .map_err(|error| error.to_string())?;
+    let info = client
+        .get_lightd_info(timed_birthday_request(Empty {}))
+        .await
+        .map_err(|error| format!("GetLightdInfo: {error}"))?
+        .into_inner();
+    let tip = client
+        .get_latest_block(timed_birthday_request(ChainSpec {}))
+        .await
+        .map_err(|error| format!("GetLatestBlock: {error}"))?
+        .into_inner();
+    let sapling_activation_height = info.sapling_activation_height;
+    let sapling_activation_time = block_at_height(&mut client, sapling_activation_height)
+        .await?
+        .time;
+    let tip_time = block_at_height(&mut client, tip.height).await?.time;
+
+    Ok(ImportBirthdayMetadata {
+        sapling_activation_height,
+        sapling_activation_time,
+        tip_height: tip.height,
+        tip_time,
+    })
+}
+
+pub async fn estimate_import_birthday_height(
+    lightwalletd_url: String,
+    target_epoch_seconds: i64,
+) -> Result<u64, String> {
+    let mut client = crate::wallet::sync_engine::open_lwd_channel(&lightwalletd_url)
+        .await
+        .map_err(|error| error.to_string())?;
+    let info = client
+        .get_lightd_info(timed_birthday_request(Empty {}))
+        .await
+        .map_err(|error| format!("GetLightdInfo: {error}"))?
+        .into_inner();
+    let tip = client
+        .get_latest_block(timed_birthday_request(ChainSpec {}))
+        .await
+        .map_err(|error| format!("GetLatestBlock: {error}"))?
+        .into_inner();
+
+    let mut low = info.sapling_activation_height;
+    let mut high = tip.height;
+    let sapling_time = i64::from(block_at_height(&mut client, low).await?.time);
+    if target_epoch_seconds <= sapling_time {
+        return Ok(low);
+    }
+    let tip_time = i64::from(block_at_height(&mut client, high).await?.time);
+    if target_epoch_seconds >= tip_time {
+        return Ok(high);
+    }
+
+    while low < high {
+        let mid = low + (high - low) / 2;
+        let mid_time = i64::from(block_at_height(&mut client, mid).await?.time);
+        if mid_time < target_epoch_seconds {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    Ok(low)
+}
+
+async fn block_at_height(
+    client: &mut CompactTxStreamerClient<tonic::transport::Channel>,
+    height: u64,
+) -> Result<CompactBlock, String> {
+    client
+        .get_block(timed_birthday_request(BlockId {
+            height,
+            hash: Vec::new(),
+        }))
+        .await
+        .map_err(|error| format!("GetBlock({height}): {error}"))
+        .map(|response| response.into_inner())
+}
+
+fn timed_birthday_request<T>(message: T) -> Request<T> {
+    let mut request = Request::new(message);
+    request.set_timeout(Duration::from_secs(10));
+    request
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use zcash_client_backend::tor::{
+        http::{HttpError, TimeoutPhase},
+        Error,
+    };
+
+    use super::with_api_response_body_timeout;
+
+    #[tokio::test]
+    async fn ordinary_http_body_stall_is_cancelled_before_download_deadline() {
+        let result = with_api_response_body_timeout(
+            Duration::from_millis(1),
+            std::future::pending::<Result<(), Error>>(),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(Error::Http(HttpError::Timeout(TimeoutPhase::ResponseBody)))
+        ));
+    }
+}

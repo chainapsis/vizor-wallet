@@ -16,6 +16,7 @@ enum KeystoneOnboardingStep {
   selectAccount,
   walletBirthdayHeight,
   setPassword,
+  customiseAccount,
 }
 
 extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
@@ -27,6 +28,7 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
     KeystoneOnboardingStep.selectAccount => 'Select Account',
     KeystoneOnboardingStep.walletBirthdayHeight => 'Wallet Birthday Height',
     KeystoneOnboardingStep.setPassword => 'Set Password',
+    KeystoneOnboardingStep.customiseAccount => 'Customise wallet',
   };
 
   String get iconName => switch (this) {
@@ -35,6 +37,7 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
     KeystoneOnboardingStep.selectAccount => AppIcons.user,
     KeystoneOnboardingStep.walletBirthdayHeight => AppIcons.block,
     KeystoneOnboardingStep.setPassword => AppIcons.lock,
+    KeystoneOnboardingStep.customiseAccount => AppIcons.user,
   };
 
   String get routePath => switch (this) {
@@ -45,10 +48,15 @@ extension KeystoneOnboardingStepX on KeystoneOnboardingStep {
     KeystoneOnboardingStep.walletBirthdayHeight =>
       '/onboarding/keystone/birthday',
     KeystoneOnboardingStep.setPassword => '/onboarding/keystone/set-password',
+    KeystoneOnboardingStep.customiseAccount =>
+      '/onboarding/keystone/customise-account',
   };
 }
 
 KeystoneOnboardingStep keystoneOnboardingStepFromLocation(String location) {
+  if (location.startsWith(KeystoneOnboardingStep.customiseAccount.routePath)) {
+    return KeystoneOnboardingStep.customiseAccount;
+  }
   if (location.startsWith(KeystoneOnboardingStep.setPassword.routePath)) {
     return KeystoneOnboardingStep.setPassword;
   }
@@ -183,6 +191,7 @@ class _KeystoneOnboardingWindowBackground extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_secret_passphrase_background_dark.png'
             : 'assets/illustrations/onboarding_secret_passphrase_background_light.png',
+      KeystoneOnboardingStep.customiseAccount => null,
       _ => null,
     };
 
@@ -238,6 +247,7 @@ class _Sidebar extends StatelessWidget {
     KeystoneOnboardingStep.selectAccount,
     KeystoneOnboardingStep.walletBirthdayHeight,
     if (showPasswordStep) KeystoneOnboardingStep.setPassword,
+    KeystoneOnboardingStep.customiseAccount,
   ];
 
   @override
@@ -280,6 +290,8 @@ class _SidebarIllustration extends StatelessWidget {
         isDark
             ? 'assets/illustrations/onboarding_set_password_sidebar_dark.png'
             : 'assets/illustrations/onboarding_set_password_sidebar_light.png',
+      KeystoneOnboardingStep.customiseAccount =>
+        'assets/illustrations/onboarding_customise_account_sidebar.png',
       _ => isDark ? _darkAsset : _lightAsset,
     };
     return IgnorePointer(

@@ -19,6 +19,7 @@ void main() {
         'pay-in-progress',
         'pay-completed',
         'customise-account',
+        'import-customise-account',
         'mobile-customise-account',
         'mobile-home-default',
         'mobile-home-no-balance',

@@ -87,8 +87,13 @@ List<RouteBase> mobileOnboardingRoutes() => [
   ),
   GoRoute(
     path: '/onboarding/customise-account',
-    redirect: (_, state) =>
-        state.extra is CustomiseAccountArgs ? null : '/welcome',
+    redirect: (_, state) {
+      final args = state.extra;
+      return args is CustomiseAccountArgs &&
+              args.flow != SetPasswordFlow.importWalletLink
+          ? null
+          : '/welcome';
+    },
     pageBuilder: (context, state) {
       final args = state.extra;
       // GoRouter redirects malformed deep links before building in normal

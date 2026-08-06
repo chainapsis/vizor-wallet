@@ -151,7 +151,9 @@ class _MobileSecretPassphraseScreenState
 
     context.go(
       '/onboarding/customise-account',
-      extra: CustomiseAccountArgs(mnemonic: mnemonic),
+      extra: CustomiseAccountArgs(
+        setupArgs: SetPasswordScreenArgs.create(mnemonic: mnemonic),
+      ),
     );
   }
 

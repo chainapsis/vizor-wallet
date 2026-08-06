@@ -7,8 +7,9 @@
 const kMobileCreateStepCount = 8;
 
 /// Import-flow step ordering:
-/// secret passphrase entry (paste or manual) -> review -> birthday -> passcode.
-const kMobileImportStepCount = 4;
+/// secret passphrase entry (paste or manual) -> review -> birthday -> passcode
+/// -> customise account.
+const kMobileImportStepCount = 5;
 
 /// Track fill for step N. Denominator is one past the step count so the
 /// track is never empty on the first step nor full while the last step is
@@ -21,6 +22,7 @@ double mobileImportProgress(int step) => step / (kMobileImportStepCount + 1);
 /// Keep its passcode step on the previous 5/6 fill while create progress
 /// counts welcome and the shared method-selection screen.
 const kMobileKeystonePasscodeProgress = 5 / 6;
+const kMobileKeystoneCustomiseProgress = 6 / 7;
 
 /// Desktop-link import has intro, scan, account selection, contact selection,
 /// then passcode.

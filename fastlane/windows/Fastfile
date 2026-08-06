@@ -123,6 +123,7 @@ end
 
 def windows_code_signing_params_for(metadata)
   return "" unless metadata.fetch(:flavor) == "mainnet"
+  return "" if metadata.fetch(:is_prerelease)
 
   ENV["VIZOR_WINDOWS_CODE_SIGN_PARAMS"].to_s.strip
 end

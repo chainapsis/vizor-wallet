@@ -64,6 +64,7 @@ import '../src/features/onboarding/welcome.dart';
 import '../src/features/settings/screens/mobile/mobile_seed_phrase_screen.dart';
 import '../src/providers/account_provider.dart';
 import '../src/providers/biometric_unlock_provider.dart';
+import '../src/providers/network_privacy_provider.dart';
 import '../src/providers/privacy_mode_provider.dart';
 import '../src/providers/receive_address_provider.dart';
 import '../src/providers/sync_failure.dart';
@@ -88,6 +89,9 @@ const _previewImportReviewMnemonic =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify active effort merit fossil carbon drift '
     'narrow across raise';
+
+const _previewInvalidImportMnemonic =
+    'abandon ability able about above absent absorb abstract cin';
 const _previewImportReviewMnemonic15 =
     'caution dream solar agent witness logic hurdle focus benefit rough index '
     'genuine puzzle sudden modify';
@@ -123,8 +127,51 @@ const _previewManualWordList = [..._previewManualAcceptedWords, 'age', 'agent'];
 /// preview.
 Widget buildWelcomeLargeUseCase(BuildContext context) {
   return ProviderScope(
-    overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+      ),
+    ],
     child: _WelcomeHarness(),
+  );
+}
+
+Widget buildWelcomeNetworkSettingsUseCase(BuildContext context) {
+  return _buildWelcomeNetworkSettingsUseCase(const NetworkPrivacyState.off());
+}
+
+Widget buildWelcomeNetworkSettingsTorConnectingUseCase(BuildContext context) {
+  return _buildWelcomeNetworkSettingsUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connecting,
+    ),
+  );
+}
+
+Widget buildWelcomeNetworkSettingsTorConnectedUseCase(BuildContext context) {
+  return _buildWelcomeNetworkSettingsUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connected,
+    ),
+  );
+}
+
+Widget _buildWelcomeNetworkSettingsUseCase(
+  NetworkPrivacyState networkPrivacyState,
+) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
+      ),
+    ],
+    child: const _WelcomeHarness(showNetworkSettingsInitially: true),
   );
 }
 
@@ -136,6 +183,34 @@ Widget buildCustomiseAccountUseCase(BuildContext context) {
       ),
     ],
     child: const _CustomiseAccountHarness(),
+  );
+}
+
+Widget buildImportCustomiseAccountUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.macosUtility.window,
+    child: ProviderScope(
+      overrides: [
+        accountProvider.overrideWith(
+          () => _PreviewAccountNotifier(const AccountState()),
+        ),
+      ],
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.customiseAccount,
+        showPasswordStep: true,
+        child: CustomiseAccountScreen(
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.importWallet(
+              mnemonic: _previewMnemonic,
+              birthdayHeight: 2500000,
+            ),
+            pendingPassword: 'PreviewPassword1!',
+          ),
+          random: Random(1234),
+          onFinish: (_, _) async {},
+        ),
+      ),
+    ),
   );
 }
 
@@ -226,7 +301,7 @@ Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
   return _MobilePreviewFrame(
     child: MobileCustomiseAccountScreen(
       args: const CustomiseAccountArgs(
-        mnemonic: _previewMnemonic,
+        setupArgs: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
         pendingPassword: '123456',
       ),
       random: Random(1234),
@@ -269,6 +344,29 @@ Widget buildImportSecretPassphrasePopulatedUseCase(BuildContext context) {
           args: const ImportSecretPassphraseArgs(
             mnemonic: _previewMnemonic,
             bip39Passphrase: 'My BIP39 passphrase',
+          ),
+          wordListOverride: _previewImportWordList,
+          mnemonicValidatorOverride: _previewMnemonicValidator,
+          useEnvironmentPrivacySignals: false,
+        ),
+      ),
+    ),
+  );
+}
+
+Widget buildImportSecretPassphraseInvalidWordUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.background.window,
+    child: ProviderScope(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
+      ],
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.secretPassphrase,
+        showPasswordStep: false,
+        child: ImportSecretPassphraseScreen(
+          args: const ImportSecretPassphraseArgs(
+            mnemonic: _previewInvalidImportMnemonic,
           ),
           wordListOverride: _previewImportWordList,
           mnemonicValidatorOverride: _previewMnemonicValidator,
@@ -538,6 +636,58 @@ Widget buildAccountsRemoveUseCase(BuildContext context) {
 }
 
 Widget buildSettingsMainUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(const NetworkPrivacyState.off());
+}
+
+Widget buildSettingsTorConnectingUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connecting,
+    ),
+  );
+}
+
+Widget buildSettingsTorConnectedUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connected,
+    ),
+  );
+}
+
+Widget buildSettingsTorSwitchingToDirectUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connecting,
+      targetTorEnabled: false,
+    ),
+  );
+}
+
+Widget buildSettingsTorUpdatesUnavailableUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.connected,
+      softwareUpdatesAvailable: false,
+    ),
+  );
+}
+
+Widget buildSettingsTorFailedUseCase(BuildContext context) {
+  return _buildSettingsMainUseCase(
+    const NetworkPrivacyState(
+      torEnabled: true,
+      status: NetworkPrivacyConnectionStatus.failed,
+      error: 'Preview Tor bootstrap failure',
+    ),
+  );
+}
+
+Widget _buildSettingsMainUseCase(NetworkPrivacyState networkPrivacyState) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -548,6 +698,9 @@ Widget buildSettingsMainUseCase(BuildContext context) {
       ),
       syncProvider.overrideWith(
         () => _PreviewSyncNotifier(_accountsDesignState.activeAccountUuid),
+      ),
+      networkPrivacyProvider.overrideWith(
+        () => _PreviewNetworkPrivacyNotifier(networkPrivacyState),
       ),
     ],
     child: _SettingsHarness(),
@@ -2729,6 +2882,10 @@ class _IronwoodMigrationHarnessState extends State<_IronwoodMigrationHarness> {
 }
 
 class _WelcomeHarness extends StatefulWidget {
+  const _WelcomeHarness({this.showNetworkSettingsInitially = false});
+
+  final bool showNetworkSettingsInitially;
+
   @override
   State<_WelcomeHarness> createState() => _WelcomeHarnessState();
 }
@@ -2742,7 +2899,12 @@ class _WelcomeHarnessState extends State<_WelcomeHarness> {
     _router = GoRouter(
       initialLocation: '/welcome',
       routes: [
-        GoRoute(path: '/welcome', builder: (_, _) => const WelcomeScreen()),
+        GoRoute(
+          path: '/welcome',
+          builder: (_, _) => WelcomeScreen(
+            showNetworkSettingsInitially: widget.showNetworkSettingsInitially,
+          ),
+        ),
         // Stub destinations so buttons in the preview don't throw when
         // tapped. They render nothing meaningful — the point is just to
         // satisfy the router.
@@ -2800,7 +2962,9 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
             showPasswordStep: true,
             child: CustomiseAccountScreen(
               args: CustomiseAccountArgs(
-                mnemonic: _previewMnemonic,
+                setupArgs: const SetPasswordScreenArgs.create(
+                  mnemonic: _previewMnemonic,
+                ),
                 pendingPassword: 'PreviewPassword1!',
               ),
               random: Random(1234),
@@ -4146,6 +4310,18 @@ rust_sync.MigrationPartStatus _previewMigrationPart(
         (state == rust_sync.MigrationPartState.completed ? 3 : 0),
     confirmationTarget: 3,
   );
+}
+
+class _PreviewNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _PreviewNetworkPrivacyNotifier(this.initialState);
+
+  final NetworkPrivacyState initialState;
+
+  @override
+  NetworkPrivacyState build() => initialState;
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {}
 }
 
 class _PreviewAccountNotifier extends AccountNotifier {

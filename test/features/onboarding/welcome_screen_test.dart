@@ -2,16 +2,19 @@ import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart' show MaterialApp, TextButton;
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
-import 'package:flutter/widgets.dart' show Text, ValueKey, Widget;
+import 'package:flutter/widgets.dart'
+    show BorderRadius, BoxDecoration, DecoratedBox, Text, ValueKey, Widget;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:zcash_wallet/src/app_bootstrap.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
 import 'package:zcash_wallet/src/core/widgets/app_button.dart';
+import 'package:zcash_wallet/src/core/widgets/app_icon.dart';
 import 'package:zcash_wallet/src/features/onboarding/shared/onboarding_flow_args.dart';
 import 'package:zcash_wallet/src/features/onboarding/welcome.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 
 void main() {
   setUpAll(_loadAppFonts);
@@ -33,6 +36,31 @@ void main() {
       find.byKey(const ValueKey('welcome_endpoint_settings_button')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('keeps endpoint settings visible over the light hero', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen());
+
+    final button = find.byKey(
+      const ValueKey('welcome_endpoint_settings_button'),
+    );
+    expect(tester.getSize(button), const Size(32, 32));
+
+    final decoratedBox = tester.widget<DecoratedBox>(
+      find.descendant(of: button, matching: find.byType(DecoratedBox)),
+    );
+    final icon = tester.widget<AppIcon>(
+      find.descendant(of: button, matching: find.byType(AppIcon)),
+    );
+
+    expect(
+      (decoratedBox.decoration as BoxDecoration).color,
+      AppBackgroundColors.light.neutralScrim,
+    );
+    expect(icon.color, AppIconColors.light.inverse);
   });
 
   testWidgets('hides legal links while preserving footer space', (
@@ -64,9 +92,25 @@ void main() {
       find.byKey(const ValueKey('welcome_endpoint_settings_modal')),
       findsOneWidget,
     );
-    expect(find.text('Endpoint'), findsOneWidget);
-    expect(find.text('Custom Endpoint'), findsOneWidget);
-    expect(find.text('Update'), findsOneWidget);
+    expect(find.text('Network settings'), findsOneWidget);
+    expect(find.text('Privacy'), findsOneWidget);
+    expect(find.text('Use Tor'), findsOneWidget);
+    expect(find.text('Direct'), findsOneWidget);
+    expect(find.text('Custom endpoint'), findsOneWidget);
+    expect(find.text('Update endpoint'), findsOneWidget);
+
+    final surface = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('network_privacy_surface')),
+    );
+    final decoration = surface.decoration as BoxDecoration;
+    expect(decoration.borderRadius, BorderRadius.circular(AppRadii.large));
+    expect(decoration.boxShadow, hasLength(4));
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('network_privacy_toggle_track')),
+      ),
+      const Size(44, 20),
+    );
   });
 
   testWidgets('hides derive option when wallet has no accounts', (
@@ -225,6 +269,47 @@ void main() {
     },
   );
 
+  testWidgets('uses the darker modal layer in dark mode', (tester) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_welcomeScreen(theme: AppThemeData.dark));
+
+    await tester.tap(
+      find.byKey(const ValueKey('welcome_endpoint_settings_button')),
+    );
+    await tester.pump();
+
+    final panel = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('network_settings_panel_surface')),
+    );
+    final panelDecoration = panel.decoration as BoxDecoration;
+    expect(panelDecoration.color, AppThemeData.dark.colors.background.window);
+
+    final privacySurface = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('network_privacy_surface')),
+    );
+    final privacyDecoration = privacySurface.decoration as BoxDecoration;
+    expect(privacyDecoration.color, AppThemeData.dark.colors.background.ground);
+    expect(privacyDecoration.border, isNull);
+  });
+
+  testWidgets(
+    'welcome network settings can enable Tor before wallet creation',
+    (tester) async {
+      final calls = <bool>[];
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_welcomeScreen(networkPrivacyCalls: calls));
+
+      await tester.tap(
+        find.byKey(const ValueKey('welcome_endpoint_settings_button')),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('network_privacy_toggle')));
+      await tester.pump();
+
+      expect(calls, [true]);
+    },
+  );
+
   testWidgets('shows Back when adding an account to an existing wallet', (
     tester,
   ) async {
@@ -289,29 +374,52 @@ Future<void> _setDesktopViewport(WidgetTester tester) async {
 Widget _welcomeScreen({
   bool showBackButton = false,
   AccountState accountState = const AccountState(),
+  List<bool>? networkPrivacyCalls,
+  AppThemeData theme = AppThemeData.light,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
+      networkPrivacyProvider.overrideWith(
+        () => _FakeNetworkPrivacyNotifier(networkPrivacyCalls ?? <bool>[]),
+      ),
     ],
     child: MaterialApp(
       home: AppTheme(
-        data: AppThemeData.light,
+        data: theme,
         child: WelcomeScreen(showBackButton: showBackButton),
       ),
     ),
   );
 }
 
+class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _FakeNetworkPrivacyNotifier(this.calls);
+
+  final List<bool> calls;
+
+  @override
+  NetworkPrivacyState build() => const NetworkPrivacyState.off();
+
+  @override
+  Future<void> setTorEnabled(bool enabled) async {
+    calls.add(enabled);
+  }
+}
+
 Widget _welcomeRouter(
   GoRouter router, {
   AccountState accountState = const AccountState(),
+  List<bool>? networkPrivacyCalls,
 }) {
   return ProviderScope(
     overrides: [
       appBootstrapProvider.overrideWithValue(AppBootstrapState.empty),
       accountProvider.overrideWith(() => _FakeAccountNotifier(accountState)),
+      networkPrivacyProvider.overrideWith(
+        () => _FakeNetworkPrivacyNotifier(networkPrivacyCalls ?? <bool>[]),
+      ),
     ],
     child: MaterialApp.router(
       routerConfig: router,

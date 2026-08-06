@@ -40,8 +40,15 @@ Widget _importApp({required _RecordingAccountNotifier accountNotifier}) {
         ),
       ),
       GoRoute(
-        path: '/onboarding/biometrics',
-        builder: (_, _) => const Text('biometrics route'),
+        path: '/onboarding/customise-account',
+        builder: (_, state) {
+          final args = state.extra! as CustomiseAccountArgs;
+          return Text(
+            'customise ${args.mnemonic} '
+            '${args.setupArgs.importBirthdayHeight} '
+            '${args.setupArgs.selectedAdditionalAccountIndices.join(',')}',
+          );
+        },
       ),
     ],
   );
@@ -218,10 +225,11 @@ void main() {
     await _enter(tester, '123456');
     await tester.pumpAndSettle();
 
-    expect(accountNotifier.importedMnemonic, 'stub mnemonic words');
-    expect(accountNotifier.importedBirthdayHeight, 2500000);
-    expect(accountNotifier.importedAdditionalAccountIndices, [1, 2]);
-    expect(find.text('biometrics route'), findsOneWidget);
+    expect(accountNotifier.importedMnemonic, isNull);
+    expect(
+      find.text('customise stub mnemonic words 2500000 1,2'),
+      findsOneWidget,
+    );
   });
 }
 
@@ -240,6 +248,7 @@ class _RecordingAccountNotifier extends AccountNotifier {
     String bip39Passphrase = '',
     int? birthdayHeight,
     String? name,
+    String profilePictureId = 'pfp-01',
     List<int> additionalAccountIndices = const [],
   }) async {
     importedMnemonic = mnemonic;

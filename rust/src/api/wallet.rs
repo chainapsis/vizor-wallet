@@ -813,7 +813,7 @@ fn import_discovered_software_wallet_accounts(
             account_uuid,
             unified_address,
             zip32_account_index: 0,
-            name: first_name,
+            name: first_name.clone(),
             is_seed_anchor: import_as_derived,
             seed_family_id: Some(seed_family_id.clone()),
         });
@@ -834,7 +834,11 @@ fn import_discovered_software_wallet_accounts(
             continue;
         }
 
-        let name = format!("Account {next_name_number}");
+        let name = if accounts.is_empty() && !did_import_primary_account {
+            first_name.clone()
+        } else {
+            format!("Account {next_name_number}")
+        };
         let import_result = if import_as_derived {
             keys::import_derived_account_at_index(
                 db_path,
@@ -1853,7 +1857,7 @@ mod tests {
             db_path_str,
             &seed,
             None,
-            "Account 2".to_string(),
+            "Imported vault".to_string(),
             false,
             2,
             vec![1],
@@ -1863,7 +1867,7 @@ mod tests {
         assert!(!result.did_import_primary_account);
         assert_eq!(result.accounts.len(), 1);
         assert_eq!(result.accounts[0].zip32_account_index, 1);
-        assert_eq!(result.accounts[0].name, "Account 2");
+        assert_eq!(result.accounts[0].name, "Imported vault");
         assert!(result.accounts[0].is_seed_anchor);
 
         let state =

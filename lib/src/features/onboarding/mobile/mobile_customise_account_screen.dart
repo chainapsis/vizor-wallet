@@ -10,15 +10,12 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_icon.dart';
 import '../../../core/widgets/app_profile_picture.dart';
-import '../../../providers/account_provider.dart';
 import '../../../providers/app_security_provider.dart';
 import '../../../providers/router_refresh_provider.dart';
-import '../../../providers/wallet_mutation_guard.dart';
 import '../../accounts/widgets/mobile/account_edit_sheets.dart'
     show showProfilePictureSheet;
 import '../create/account_persona_generator.dart';
-import '../create/onboarding_split_view.dart'
-    show clearCreateOnboardingSecretState;
+import '../shared/customise_account_mutation.dart';
 import '../shared/onboarding_error_messages.dart';
 import '../shared/onboarding_flow_args.dart';
 import 'mobile_onboarding_progress.dart';
@@ -27,7 +24,8 @@ import 'mobile_onboarding_scaffold.dart';
 typedef MobileCustomiseAccountFinishCallback =
     Future<void> Function(String accountName, String profilePictureId);
 
-/// Mobile create-account personalisation — Figma light/dark default frames
+/// Mobile account personalisation shared by create, import, and Keystone.
+/// The original create design is captured by Figma light/dark default frames
 /// 6125:117635 / 6132:117807 and keyboard/error frames 6125:117233 /
 /// 6132:117773.
 class MobileCustomiseAccountScreen extends ConsumerStatefulWidget {
@@ -92,13 +90,17 @@ class _MobileCustomiseAccountScreenState
   Future<void> _goBack() async {
     if (_isSubmitting) return;
     final args = widget.args;
-    if (!args.configuresPassword) return;
+    if (args.isDeriveFlow) return;
     final router = GoRouter.maybeOf(context);
     if (router != null) {
-      router.go(
-        '/onboarding/set-passcode',
-        extra: SetPasswordScreenArgs.create(mnemonic: args.mnemonic),
-      );
+      if (args.configuresPassword) {
+        router.go('/onboarding/set-passcode', extra: args.setupArgs);
+      } else {
+        router.go(
+          args.setupArgs.backRoutePath,
+          extra: args.setupArgs.backRouteExtra,
+        );
+      }
     } else {
       await Navigator.of(context).maybePop();
     }
@@ -149,21 +151,12 @@ class _MobileCustomiseAccountScreenState
   Future<void> _finishSetup() async {
     final args = widget.args;
     final router = GoRouter.of(context);
-    final accountNotifier = ref.read(accountProvider.notifier);
-
-    Future<void> createAccount() => runWithSyncPausedForAccountMutation(
+    Future<void> createAccount() => runCustomisedAccountMutation(
       ref,
-      () => args.isDeriveFlow
-          ? accountNotifier.deriveAccountFromExistingSeed(
-              sourceAccountUuid: args.deriveFromAccountUuid!,
-              name: _normalizedName,
-              profilePictureId: _profilePictureId,
-            )
-          : accountNotifier.createAccountFromMnemonic(
-              mnemonic: args.mnemonic,
-              name: _normalizedName,
-              profilePictureId: _profilePictureId,
-            ),
+      setupArgs: args.setupArgs,
+      accountName: _normalizedName,
+      profilePictureId: _profilePictureId,
+      deriveFromAccountUuid: args.deriveFromAccountUuid,
       onStoppingSync: () {
         if (mounted) {
           setState(() => _submitPhase = _SubmitPhase.stoppingSync);
@@ -185,7 +178,9 @@ class _MobileCustomiseAccountScreenState
       // after the payload has been discarded and crash on a null args cast.
       await routerRefresh.pauseWhile(() async {
         await createAccount();
-        clearCreateOnboardingSecretState(ref.read);
+        if (!args.isDeriveFlow) {
+          clearCustomisedAccountDraft(ref, args.flow);
+        }
         router.go('/home');
       });
       return;
@@ -201,7 +196,7 @@ class _MobileCustomiseAccountScreenState
         await createAccount();
         securityNotifier.commitPasswordSetup();
         passwordCommitted = true;
-        clearCreateOnboardingSecretState(ref.read);
+        clearCustomisedAccountDraft(ref, args.flow);
         router.go('/onboarding/biometrics');
       });
     } catch (_) {
@@ -222,8 +217,15 @@ class _MobileCustomiseAccountScreenState
   @override
   Widget build(BuildContext context) {
     final content = MobileOnboardingStepScaffold(
-      progress: mobileCreateProgress(8),
-      onBack: _isSubmitting || !widget.args.configuresPassword ? null : _goBack,
+      progress: switch (widget.args.flow) {
+        SetPasswordFlow.create => mobileCreateProgress(8),
+        SetPasswordFlow.importWallet => mobileImportProgress(5),
+        SetPasswordFlow.importKeystone => kMobileKeystoneCustomiseProgress,
+        SetPasswordFlow.importWalletLink => throw StateError(
+          'Wallet Link does not use account customisation.',
+        ),
+      },
+      onBack: _isSubmitting || widget.args.isDeriveFlow ? null : _goBack,
       title: 'Customise Account',
       subtitle:
           'Add personality to your account by setting an account name and '
