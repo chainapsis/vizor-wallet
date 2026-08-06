@@ -23,6 +23,7 @@ abstract interface class PaymentLinkHardwareSigningService {
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
+    String? artworkId,
   });
 
   Future<List<String>> encodeSigningUrParts({
@@ -80,10 +81,12 @@ class RustPaymentLinkHardwareSigningService
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
+    String? artworkId,
   }) async {
     final link = await _paymentLinkService.createFundingDraft(
       amountZatoshi: amountZatoshi,
       sourceAccountUuid: sourceAccountUuid,
+      artworkId: artworkId,
     );
     final sendFlowId =
         'payment-link-hw-${DateTime.now().microsecondsSinceEpoch}';

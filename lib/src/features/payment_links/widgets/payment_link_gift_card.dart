@@ -27,6 +27,15 @@ enum PaymentLinkCardArtwork {
   final String semanticLabel;
 
   String get assetPath => 'assets/illustrations/payment_links/$fileName';
+
+  String get protocolId => name;
+
+  static PaymentLinkCardArtwork fromProtocolId(String? id) {
+    for (final artwork in values) {
+      if (artwork.protocolId == id) return artwork;
+    }
+    return gift;
+  }
 }
 
 /// Figma `_CARD` presentation component.

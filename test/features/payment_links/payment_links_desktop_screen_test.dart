@@ -312,6 +312,10 @@ void main() {
 
       await tester.tap(find.text('Create new card'));
       await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('payment_link_card_selector_ruby')),
+      );
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('payment_link_amount_editor')),
         '0.1',
@@ -329,6 +333,7 @@ void main() {
 
       expect(hardwareSigning.createdAmounts, [BigInt.from(10000000)]);
       expect(hardwareSigning.createdFromAccounts, ['hardware-account']);
+      expect(hardwareSigning.createdArtworkIds, ['ruby']);
       expect(find.byType(KeystoneSigningModal), findsOneWidget);
       expect(find.text('Sign Gift Card on Keystone'), findsOneWidget);
 
@@ -341,6 +346,31 @@ void main() {
       expect(find.text('Review your Gift Card'), findsOneWidget);
     },
   );
+
+  testWidgets('sends the selected artwork through creation', (tester) async {
+    final operations = _FakePaymentLinkOperations();
+    await _pumpPaymentLinksScreen(tester, operations: operations);
+
+    await tester.tap(find.text('Create new card'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('payment_link_card_selector_ruby')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('payment_link_amount_editor')),
+      '0.1',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Create card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm & create'));
+    await tester.pumpAndSettle();
+
+    expect(operations.createdArtworkIds, ['ruby']);
+  });
 
   testWidgets('hardware cancel releases a draft that finishes preparing late', (
     tester,
@@ -440,32 +470,145 @@ void main() {
     expect(find.text('Gift claimed'), findsOneWidget);
   });
 
-  testWidgets('copies and reclaims a persisted created link', (tester) async {
+  testWidgets('shows selected artwork and Receiving while claim is pending', (
+    tester,
+  ) async {
+    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final operations = _FakePaymentLinkOperations(
+      claimCompleter: claimCompleter,
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .ingest(_incomingLink.encode());
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<PaymentLinkGiftCard>(find.byType(PaymentLinkGiftCard))
+          .artwork,
+      PaymentLinkCardArtwork.ruby,
+    );
+
+    await tester.tap(find.text('Claim my gift'));
+    await tester.pump();
+
+    expect(find.text('Receiving'), findsOneWidget);
+    expect(find.text('Received'), findsWidgets);
+    expect(find.text('You’ve received a gift!'), findsNothing);
+    final receivedThumbnail = tester.widget<Image>(
+      find
+          .descendant(
+            of: find.byKey(
+              const ValueKey('payment_link_received_u1paymentlinkaddress'),
+            ),
+            matching: find.byType(Image),
+          )
+          .first,
+    );
+    expect(
+      (receivedThumbnail.image as AssetImage).assetName,
+      PaymentLinkCardArtwork.ruby.assetPath,
+    );
+
+    claimCompleter.complete(_broadcastedClaimResult);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Receiving'), findsNothing);
+    expect(find.text('Received'), findsWidgets);
+    expect(find.text('Gift claimed'), findsOneWidget);
+  });
+
+  testWidgets('keeps a pending broadcast in Receiving state', (tester) async {
+    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final operations = _FakePaymentLinkOperations(
+      claimCompleter: claimCompleter,
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .ingest(_incomingLink.encode());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Claim my gift'));
+    await tester.pump();
+
+    claimCompleter.complete(
+      const PaymentLinkClaimResult(
+        txids: 'pending-claim-txid',
+        status: PaymentLinkClaimBroadcastStatus.pendingBroadcast,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Receiving'), findsOneWidget);
+    expect(find.text('Gift claim submitted'), findsOneWidget);
+    expect(find.text('Gift claimed'), findsNothing);
+  });
+
+  testWidgets('returns a failed claim to an actionable Received card', (
+    tester,
+  ) async {
+    final claimCompleter = Completer<PaymentLinkClaimResult>();
+    final operations = _FakePaymentLinkOperations(
+      claimCompleter: claimCompleter,
+    );
+    await _pumpPaymentLinksScreen(
+      tester,
+      operations: operations,
+      bootstrap: _homeBootstrap,
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MaterialApp)),
+    );
+
+    container
+        .read(paymentLinkIntakeProvider.notifier)
+        .ingest(_incomingLink.encode());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Claim my gift'));
+    await tester.pump();
+
+    expect(find.text('Receiving'), findsOneWidget);
+    claimCompleter.completeError(StateError('claim failed'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Receiving'), findsNothing);
+    expect(find.text('Claim'), findsOneWidget);
+    expect(find.textContaining('Gift Card claim failed.'), findsOneWidget);
+  });
+
+  testWidgets('copies a persisted created link without reclaim controls', (
+    tester,
+  ) async {
     final operations = _FakePaymentLinkOperations(records: [_sharedRecovery]);
     await _pumpPaymentLinksScreen(tester, operations: operations);
 
     expect(find.text('4.45 ZEC'), findsOneWidget);
     expect(find.text('Copy link'), findsOneWidget);
-    expect(find.text('Reclaim'), findsOneWidget);
+    expect(find.text('Reclaim'), findsNothing);
 
     await tester.tap(find.text('Copy link'));
     await tester.pumpAndSettle();
     expect(operations.sharedLinks, [_incomingLink]);
-
-    await tester.tap(find.text('Reclaim'));
-    await tester.pumpAndSettle();
-    expect(find.text('Reclaim gift card?'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('payment_link_reclaim_confirm_button')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(operations.reclaimedRecords, hasLength(1));
-    expect(find.text('Reclaiming'), findsOneWidget);
   });
 
-  testWidgets('keeps reclaim available for an interrupted funding draft', (
+  testWidgets('shows an interrupted funding draft without reclaim controls', (
     tester,
   ) async {
     final operations = _FakePaymentLinkOperations(records: [_draftRecovery]);
@@ -473,7 +616,7 @@ void main() {
 
     expect(find.text('Funding incomplete'), findsOneWidget);
     expect(find.text('Copy link'), findsNothing);
-    expect(find.text('Reclaim'), findsOneWidget);
+    expect(find.text('Reclaim'), findsNothing);
   });
 }
 
@@ -608,6 +751,7 @@ final _incomingLink = VizorPaymentLink(
   birthdayHeight: 3000000,
   label: 'Payment link',
   createdAt: DateTime.utc(2026, 8, 6),
+  artworkId: 'ruby',
 );
 
 final _sharedRecovery = PaymentLinkRecoveryRecord(
@@ -628,22 +772,26 @@ final _draftRecovery = PaymentLinkRecoveryRecord(
 class _FakePaymentLinkOperations implements PaymentLinkOperations {
   _FakePaymentLinkOperations({
     List<PaymentLinkRecoveryRecord> records = const [],
+    this.claimCompleter,
   }) : records = List.of(records);
 
+  final Completer<PaymentLinkClaimResult>? claimCompleter;
   final List<PaymentLinkRecoveryRecord> records;
   final List<BigInt> createdAmounts = [];
   final List<String> createdFromAccounts = [];
+  final List<String?> createdArtworkIds = [];
   final List<VizorPaymentLink> sharedLinks = [];
   final List<VizorPaymentLink> claimedLinks = [];
-  final List<PaymentLinkRecoveryRecord> reclaimedRecords = [];
 
   @override
   Future<VizorPaymentLink> createFundedLink({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
+    String? artworkId,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
+    createdArtworkIds.add(artworkId);
     final link = VizorPaymentLink(
       network: 'main',
       address: 'u1createdpaymentlinkaddress',
@@ -652,6 +800,7 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
       birthdayHeight: 3000000,
       label: 'Payment link',
       createdAt: DateTime.utc(2026, 8, 6),
+      artworkId: artworkId,
     );
     records.add(
       PaymentLinkRecoveryRecord(
@@ -687,25 +836,16 @@ class _FakePaymentLinkOperations implements PaymentLinkOperations {
   }
 
   @override
-  Future<String> claimLink(VizorPaymentLink link) async {
+  Future<PaymentLinkClaimResult> claimLink(VizorPaymentLink link) async {
     claimedLinks.add(link);
-    return 'claim-txid';
-  }
-
-  @override
-  Future<String> reclaimCreatedLink(PaymentLinkRecoveryRecord record) async {
-    reclaimedRecords.add(record);
-    final index = records.indexWhere(
-      (candidate) => candidate.link.address == record.link.address,
-    );
-    records[index] = records[index].copyWith(
-      state: PaymentLinkRecoveryState.reclaiming,
-      updatedAt: DateTime.utc(2026, 8, 6, 2),
-      reclaimTxids: 'reclaim-txid',
-    );
-    return 'reclaim-txid';
+    return claimCompleter?.future ?? _broadcastedClaimResult;
   }
 }
+
+const _broadcastedClaimResult = PaymentLinkClaimResult(
+  txids: 'claim-txid',
+  status: PaymentLinkClaimBroadcastStatus.broadcasted,
+);
 
 class _FakePaymentLinkClipboard implements PaymentLinkClipboard {
   _FakePaymentLinkClipboard({this.text});
@@ -737,6 +877,7 @@ class _FakePaymentLinkHardwareSigningService
   final Completer<PaymentLinkHardwarePcztDraft>? createCompleter;
   final createdAmounts = <BigInt>[];
   final createdFromAccounts = <String>[];
+  final createdArtworkIds = <String?>[];
   final discardedDrafts = <BigInt>[];
 
   PaymentLinkHardwarePcztDraft get draft => PaymentLinkHardwarePcztDraft(
@@ -752,9 +893,11 @@ class _FakePaymentLinkHardwareSigningService
   Future<PaymentLinkHardwarePcztDraft> createFundingPczt({
     required BigInt amountZatoshi,
     required String sourceAccountUuid,
+    String? artworkId,
   }) async {
     createdAmounts.add(amountZatoshi);
     createdFromAccounts.add(sourceAccountUuid);
+    createdArtworkIds.add(artworkId);
     return createCompleter?.future ?? draft;
   }
 

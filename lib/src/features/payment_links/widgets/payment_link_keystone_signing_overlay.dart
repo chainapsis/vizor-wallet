@@ -18,11 +18,13 @@ class PaymentLinkKeystoneSigningOverlay extends ConsumerStatefulWidget {
     required this.sourceAccountUuid,
     required this.onCancel,
     required this.onFundingBroadcast,
+    this.artworkId,
     super.key,
   });
 
   final BigInt amountZatoshi;
   final String sourceAccountUuid;
+  final String? artworkId;
   final VoidCallback onCancel;
   final Future<void> Function(
     VizorPaymentLink link,
@@ -76,6 +78,7 @@ class _PaymentLinkKeystoneSigningOverlayState
       final draft = await service.createFundingPczt(
         amountZatoshi: widget.amountZatoshi,
         sourceAccountUuid: widget.sourceAccountUuid,
+        artworkId: widget.artworkId,
       );
       if (!mounted) {
         await service.discardPcztDraft(draft: draft);

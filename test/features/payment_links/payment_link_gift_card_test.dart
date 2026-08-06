@@ -20,6 +20,23 @@ void main() {
     );
   });
 
+  test('card artwork protocol ids round trip with a safe fallback', () {
+    for (final artwork in PaymentLinkCardArtwork.values) {
+      expect(
+        PaymentLinkCardArtwork.fromProtocolId(artwork.protocolId),
+        artwork,
+      );
+    }
+    expect(
+      PaymentLinkCardArtwork.fromProtocolId('future-artwork'),
+      PaymentLinkCardArtwork.gift,
+    );
+    expect(
+      PaymentLinkCardArtwork.fromProtocolId(null),
+      PaymentLinkCardArtwork.gift,
+    );
+  });
+
   testWidgets('gift card renders the fixed Figma size and front states', (
     tester,
   ) async {
