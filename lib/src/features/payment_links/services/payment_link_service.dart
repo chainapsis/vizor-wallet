@@ -210,6 +210,34 @@ class PaymentLinkService implements PaymentLinkOperations {
     required String sourceAccountUuid,
     PaymentLinkPresentation? presentation,
   }) async {
+    final link = await createFundingDraft(
+      amountZatoshi: amountZatoshi,
+      sourceAccountUuid: sourceAccountUuid,
+      presentation: presentation,
+    );
+    final fundingResult = await _sendShielded(
+      fromAccountUuid: sourceAccountUuid,
+      toAddress: link.address,
+      amountZatoshi: amountZatoshi,
+      memo: null,
+    );
+    await _recoveryStore.markFunded(
+      address: link.address,
+      fundingTxids: fundingResult.txids,
+    );
+
+    unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
+    _requireFullyBroadcasted(fundingResult);
+    return link;
+  }
+
+  /// Creates the bearer-secret account and persists its recovery record before
+  /// any funding proposal can be signed or broadcast.
+  Future<VizorPaymentLink> createFundingDraft({
+    required BigInt amountZatoshi,
+    required String sourceAccountUuid,
+    PaymentLinkPresentation? presentation,
+  }) async {
     if (sourceAccountUuid.isEmpty) {
       throw StateError('No active account.');
     }
@@ -250,24 +278,10 @@ class PaymentLinkService implements PaymentLinkOperations {
       createdAt: DateTime.now(),
       presentation: presentation,
     );
-
-    final fundingResult = await PaymentLinkFundingRecovery(_recoveryStore)
-        .fund<rust_sync.ExecuteProposalResult>(
-          link: link,
-          sourceAccountUuid: sourceAccountUuid,
-          createTransaction: () {
-            return _sendShielded(
-              fromAccountUuid: sourceAccountUuid,
-              toAddress: ephemeralAddress,
-              amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
-              memo: null,
-            );
-          },
-          fundingTxids: (result) => result.txids,
-        );
-
-    unawaited(_ref.read(syncProvider.notifier).refreshAfterSend());
-    _requireFullyBroadcasted(fundingResult);
+    await _recoveryStore.saveDraft(
+      link: link,
+      sourceAccountUuid: sourceAccountUuid,
+    );
     return link;
   }
 
