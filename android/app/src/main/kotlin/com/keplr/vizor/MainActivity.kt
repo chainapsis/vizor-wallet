@@ -195,7 +195,12 @@ class MainActivity : FlutterFragmentActivity() {
         val data = intent.data ?: return
         if (!"vizor".equals(data.scheme, ignoreCase = true)) return
         if (!"payment-link".equals(data.host, ignoreCase = true)) return
-        pendingIncomingUris.add(intent.dataString ?: data.toString())
+        val rawUri = intent.dataString ?: data.toString()
+        if (rawUri.length > MAX_INCOMING_URI_BYTES) return
+        if (rawUri.toByteArray(Charsets.UTF_8).size > MAX_INCOMING_URI_BYTES) return
+        if (rawUri in pendingIncomingUris) return
+        if (pendingIncomingUris.size >= MAX_PENDING_INCOMING_URIS) return
+        pendingIncomingUris.add(rawUri)
         flushPendingIncomingUris()
     }
 
@@ -213,5 +218,7 @@ class MainActivity : FlutterFragmentActivity() {
         private const val PRIVACY_SHIELD_CHANNEL = "com.zcash.wallet/privacy_shield"
         private const val SCREEN_AWAKE_CHANNEL = "com.zcash.wallet/screen_awake"
         private const val INCOMING_URI_CHANNEL = "com.zcash.wallet/payment_uri"
+        private const val MAX_INCOMING_URI_BYTES = 16 * 1024
+        private const val MAX_PENDING_INCOMING_URIS = 16
     }
 }
