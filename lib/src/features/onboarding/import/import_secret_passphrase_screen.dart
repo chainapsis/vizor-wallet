@@ -27,9 +27,9 @@ import 'import_split_view.dart';
 
 const _kBip39PassphraseMaxCharacters = 100;
 
-bool _isValidBip39Passphrase(String value) {
+bool _isValidBip39Passphrase(String value, {bool allowEmpty = false}) {
   final length = value.characters.length;
-  return length > 0 && length <= _kBip39PassphraseMaxCharacters;
+  return (allowEmpty || length > 0) && length <= _kBip39PassphraseMaxCharacters;
 }
 
 class ImportSecretPassphraseScreen extends ConsumerStatefulWidget {
@@ -483,7 +483,12 @@ class _ImportSecretPassphraseScreenState
 
   void _saveBip39Passphrase() {
     final passphrase = _bip39PassphraseController.text;
-    if (!_isValidBip39Passphrase(passphrase)) return;
+    if (!_isValidBip39Passphrase(
+      passphrase,
+      allowEmpty: _bip39Passphrase.isNotEmpty,
+    )) {
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _bip39Passphrase = passphrase;
@@ -1008,7 +1013,10 @@ class _Bip39PassphraseModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canSave = _isValidBip39Passphrase(controller.text);
+    final canSave = _isValidBip39Passphrase(
+      controller.text,
+      allowEmpty: isEditing,
+    );
     return AppModalCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,

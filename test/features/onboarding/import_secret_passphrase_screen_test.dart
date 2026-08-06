@@ -378,6 +378,82 @@ void main() {
     expect(submittedArgs?.bip39Passphrase, '  My TREZOR phrase  ');
   });
 
+  testWidgets('removes an existing BIP39 passphrase by saving it empty', (
+    tester,
+  ) async {
+    await _setDesktopViewport(tester);
+    await tester.pumpWidget(_importPassphraseScreen());
+    await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('bip39_passphrase_save_button')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    await tester.enterText(_bip39PassphraseField, 'secret');
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey('bip39_passphrase_save_button')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(_bip39PassphraseField, '');
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<AppButton>(
+            find.byKey(const ValueKey('bip39_passphrase_save_button')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('bip39_passphrase_save_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add BIP39 Passphrase (Optional)'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('bip39_passphrase_preview')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'keeps the existing BIP39 passphrase when clearing then canceling',
+    (tester) async {
+      await _setDesktopViewport(tester);
+      await tester.pumpWidget(_importPassphraseScreen());
+      await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+      await tester.pumpAndSettle();
+      await tester.enterText(_bip39PassphraseField, 'secret');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('bip39_passphrase_save_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('bip39_passphrase_action')));
+      await tester.pumpAndSettle();
+      await tester.enterText(_bip39PassphraseField, '');
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('bip39_passphrase_cancel_button')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('BIP39 Passphrase: secret'), findsOneWidget);
+      expect(find.text('Edit'), findsOneWidget);
+    },
+  );
+
   for (final theme in [AppThemeData.light, AppThemeData.dark]) {
     testWidgets(
       'saved BIP39 passphrase footer matches ${theme == AppThemeData.light ? 'light' : 'dark'} styling',
