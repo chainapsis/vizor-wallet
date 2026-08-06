@@ -25,6 +25,32 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
 
 const kPaymentLinkMaxClaimLookbackBlocks = 100000;
 
+/// The ZIP-317 fee for the payment link's expected one-input, one-output
+/// shielded claim transaction.
+const kPaymentLinkClaimFeeReserveZatoshi = 10000;
+
+BigInt paymentLinkFundingAmountZatoshi(BigInt recipientAmountZatoshi) {
+  if (recipientAmountZatoshi <= BigInt.zero) {
+    throw ArgumentError.value(
+      recipientAmountZatoshi,
+      'recipientAmountZatoshi',
+      'Payment link amount must be positive.',
+    );
+  }
+  return recipientAmountZatoshi +
+      BigInt.from(kPaymentLinkClaimFeeReserveZatoshi);
+}
+
+@visibleForTesting
+BigInt paymentLinkClaimableAmountZatoshi({
+  required BigInt recipientAmountZatoshi,
+  required BigInt maxSpendableZatoshi,
+}) {
+  return maxSpendableZatoshi >= recipientAmountZatoshi
+      ? recipientAmountZatoshi
+      : BigInt.zero;
+}
+
 class PaymentLinkClaimSession {
   const PaymentLinkClaimSession({
     required this.link,
@@ -81,6 +107,13 @@ bool shouldRecreatePaymentLinkClaimWallet({
 }) {
   return accountAddresses.length != 1 ||
       accountAddresses.single != expectedAddress;
+}
+
+@visibleForTesting
+void requireUnlockedPaymentLinkWallet({required bool requiresUnlock}) {
+  if (requiresUnlock) {
+    throw StateError('Wallet is locked.');
+  }
 }
 
 @visibleForTesting
@@ -201,7 +234,7 @@ class PaymentLinkService {
             return _sendShielded(
               fromAccountUuid: sourceAccountUuid,
               toAddress: ephemeralAddress,
-              amountZatoshi: amountZatoshi,
+              amountZatoshi: paymentLinkFundingAmountZatoshi(amountZatoshi),
               memo: null,
             );
           },
@@ -341,7 +374,10 @@ class PaymentLinkService {
           accountUuid: importedAccountUuid,
           toAddress: destinationAddress,
         );
-        claimableZatoshi = estimate.amountZatoshi;
+        claimableZatoshi = paymentLinkClaimableAmountZatoshi(
+          recipientAmountZatoshi: link.amountZatoshi,
+          maxSpendableZatoshi: estimate.amountZatoshi,
+        );
         feeZatoshi = estimate.feeZatoshi;
       } catch (e) {
         final message = e.toString().toLowerCase();
@@ -393,15 +429,18 @@ class PaymentLinkService {
       accountUuid: session.accountUuid,
       toAddress: session.destinationAddress,
     );
-    if (estimate.amountZatoshi <= BigInt.zero) {
-      throw StateError('Payment link has no spendable shielded balance yet.');
+    if (estimate.amountZatoshi < session.link.amountZatoshi) {
+      throw StateError(
+        'Payment link does not yet have enough spendable shielded balance.',
+      );
     }
 
+    _requireWalletUnlocked();
     final sendResult = await _sendShielded(
       dbPath: session.dbPath,
       fromAccountUuid: session.accountUuid,
       toAddress: session.destinationAddress,
-      amountZatoshi: estimate.amountZatoshi,
+      amountZatoshi: session.link.amountZatoshi,
       memo: null,
       mnemonic: session.link.mnemonic,
       useMinConfirmations: true,
@@ -500,6 +539,8 @@ class PaymentLinkService {
       );
       saplingParams = await loadSaplingParamsStatus();
     }
+
+    _requireWalletUnlocked();
 
     if (Platform.isMacOS && mnemonic == null) {
       final password = _ref
@@ -630,6 +671,12 @@ class PaymentLinkService {
             validation.addressType != 'sapling')) {
       throw StateError('Payment links only support shielded addresses.');
     }
+  }
+
+  void _requireWalletUnlocked() {
+    requireUnlockedPaymentLinkWallet(
+      requiresUnlock: _ref.read(appSecurityProvider).requiresUnlock,
+    );
   }
 
   String _newSendFlowId() {
