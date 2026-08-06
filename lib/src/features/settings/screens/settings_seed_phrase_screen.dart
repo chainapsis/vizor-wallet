@@ -711,19 +711,7 @@ class _SeedWordsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.s),
-          Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: [
-              for (var i = 0; i < words.length; i++)
-                _SeedWordChip(
-                  key: ValueKey('settings_seed_phrase_word_${i + 1}'),
-                  index: i + 1,
-                  word: words[i],
-                  textColor: cardTextColor,
-                ),
-            ],
-          ),
+          _SeedWordTable(words: words, textColor: cardTextColor),
         ],
       ),
     );
@@ -752,13 +740,64 @@ class _SeedWordsCard extends StatelessWidget {
   }
 }
 
-class _SeedWordChip extends StatelessWidget {
-  const _SeedWordChip({
+class _SeedWordTable extends StatelessWidget {
+  const _SeedWordTable({required this.words, required this.textColor});
+
+  final List<String> words;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final rowCount = (words.length + 2) ~/ 3;
+
+    return Column(
+      children: [
+        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++) ...[
+          Row(
+            children: [
+              for (var columnIndex = 0; columnIndex < 3; columnIndex++) ...[
+                Expanded(
+                  child: Builder(
+                    builder: (context) {
+                      final wordIndex = rowIndex * 3 + columnIndex;
+                      if (wordIndex >= words.length) {
+                        return const SizedBox(height: _SeedWordCell.height);
+                      }
+                      return _SeedWordCell(
+                        key: ValueKey(
+                          'settings_seed_phrase_word_${wordIndex + 1}',
+                        ),
+                        index: wordIndex + 1,
+                        word: words[wordIndex],
+                        textColor: textColor,
+                      );
+                    },
+                  ),
+                ),
+                if (columnIndex < 2) const SizedBox(width: AppSpacing.xs),
+              ],
+            ],
+          ),
+          if (rowIndex < rowCount - 1) const SizedBox(height: AppSpacing.xxs),
+        ],
+      ],
+    );
+  }
+}
+
+class _SeedWordCell extends StatelessWidget {
+  const _SeedWordCell({
     required this.index,
     required this.word,
     required this.textColor,
     super.key,
   });
+
+  static const height = 33.0;
+  static const _underlineLeft = 22.5;
+  static const _underlineBottom = 1.5;
+  static const _underlineWidth = 87.0;
+  static const _underlineHeight = 1.0;
 
   final int index;
   final String word;
@@ -767,28 +806,48 @@ class _SeedWordChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 90,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xxs),
-        child: Row(
-          children: [
-            Text(
-              index.toString().padLeft(2, '0'),
-              style: AppTypography.codeSmall.copyWith(
-                color: textColor.withValues(alpha: 0.5),
-              ),
+      height: height,
+      child: Stack(
+        children: [
+          Positioned(
+            key: ValueKey('settings_seed_phrase_underline_$index'),
+            left: _underlineLeft,
+            bottom: _underlineBottom,
+            width: _underlineWidth,
+            height: _underlineHeight,
+            child: ColoredBox(color: textColor.withValues(alpha: 0.2)),
+          ),
+          Positioned.fill(
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      index.toString().padLeft(2, '0'),
+                      maxLines: 1,
+                      softWrap: false,
+                      textAlign: TextAlign.right,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: textColor.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    word,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(color: textColor),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: AppSpacing.xxs),
-            Expanded(
-              child: Text(
-                word,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.labelLarge.copyWith(color: textColor),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

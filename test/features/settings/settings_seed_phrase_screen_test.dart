@@ -16,7 +16,9 @@ import 'package:zcash_wallet/src/providers/app_security_provider.dart';
 import 'package:zcash_wallet/src/providers/sync_provider.dart';
 
 const _mnemonic =
-    'abandon ability able about above absent absorb abstract absurd abuse access accident';
+    'abandon ability able about above absent absorb abstract absurd abuse '
+    'access accident account accuse achieve acid acoustic acquire across act '
+    'action actor actress actual';
 const _bip39Passphrase = 'correct horse battery staple with extra words';
 
 const _accountState = AccountState(
@@ -59,6 +61,41 @@ void main() {
     expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
     expect(find.text('abandon'), findsOneWidget);
     expect(find.text('BIP39 Passphrase: $_bip39Passphrase'), findsOneWidget);
+
+    for (var index = 1; index <= 24; index++) {
+      expect(
+        find.byKey(ValueKey('settings_seed_phrase_word_$index')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('settings_seed_phrase_underline_$index')),
+        findsOneWidget,
+      );
+    }
+
+    final word1 = tester.getTopLeft(
+      find.byKey(const ValueKey('settings_seed_phrase_word_1')),
+    );
+    final word2 = tester.getTopLeft(
+      find.byKey(const ValueKey('settings_seed_phrase_word_2')),
+    );
+    final word3 = tester.getTopLeft(
+      find.byKey(const ValueKey('settings_seed_phrase_word_3')),
+    );
+    final word4 = tester.getTopLeft(
+      find.byKey(const ValueKey('settings_seed_phrase_word_4')),
+    );
+    expect(word2.dy, word1.dy);
+    expect(word3.dy, word1.dy);
+    expect(word1.dx, lessThan(word2.dx));
+    expect(word2.dx, lessThan(word3.dx));
+    expect(word4.dy, greaterThan(word1.dy));
+
+    final firstUnderline = tester.widget<Positioned>(
+      find.byKey(const ValueKey('settings_seed_phrase_underline_1')),
+    );
+    expect(firstUnderline.left, 22.5);
+    expect(firstUnderline.width, 87);
 
     final phraseCopyButton = tester.widget<AppButton>(
       find.byKey(const ValueKey('settings_seed_phrase_copy_button')),
