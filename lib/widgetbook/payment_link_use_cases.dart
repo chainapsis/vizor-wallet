@@ -170,9 +170,9 @@ class _PaymentLinkPreviewPane extends StatelessWidget {
             'All data in the link is encrypted and safe to share. send this '
             'Link to the recipient.',
         redeemDescription:
-            'Recipient can redeem the Card in their Vizor wallet using the '
-            'Link. A small fee will be deducted from the recipient balance '
-            'in order to make a Shielded transaction.',
+            'Recipient can redeem the card in their Vizor wallet using the '
+            'link. They receive the full amount shown because the sender '
+            'covers the claim fee.',
       ),
       PaymentLinkPreviewState.createEmpty => _amount(
         visualState: PaymentLinkAmountVisualState.empty,

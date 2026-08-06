@@ -18,8 +18,8 @@ import 'package:zcash_wallet/widgetbook/payment_link_use_cases.dart';
 void main() {
   setUpAll(_loadAppFonts);
 
-  test('preview inventory covers all 17 Figma desktop states', () {
-    expect(PaymentLinkPreviewState.values, hasLength(17));
+  test('preview inventory covers all 18 desktop states', () {
+    expect(PaymentLinkPreviewState.values, hasLength(18));
   });
 
   for (final state in PaymentLinkPreviewState.values) {

@@ -134,8 +134,8 @@ class PaymentLinkHowItWorksDesktopView extends StatelessWidget {
         'intended recipient.',
     this.redeemDescription =
         'Recipient can redeem the card in their Vizor wallet using the link. '
-        'A small fee will be deducted from the card balance in order to make '
-        'a shielded transaction.',
+        'They receive the full amount shown because the sender covers the '
+        'claim fee.',
     this.closeLabel = 'Close',
     super.key,
   });
