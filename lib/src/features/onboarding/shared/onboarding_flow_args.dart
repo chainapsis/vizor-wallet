@@ -9,18 +9,29 @@ class CreateSecretPassphraseArgs {
   final String mnemonic;
 }
 
-/// Ephemeral create-wallet draft passed to the account-personalisation step.
+/// Ephemeral wallet-setup draft passed to the account-personalisation step.
 ///
 /// [pendingPassword] is present only for the first wallet, before password
 /// setup has been persisted. It stays in route memory and is intentionally not
 /// carried when the user navigates back to the password screen.
 class CustomiseAccountArgs {
-  const CustomiseAccountArgs({required this.mnemonic, this.pendingPassword});
+  const CustomiseAccountArgs({required this.setupArgs, this.pendingPassword});
 
-  final String mnemonic;
+  final SetPasswordScreenArgs setupArgs;
   final String? pendingPassword;
 
+  String get mnemonic => setupArgs.requiredMnemonic;
+  SetPasswordFlow get flow => setupArgs.flow;
   bool get configuresPassword => pendingPassword != null;
+
+  String get routePath => switch (flow) {
+    SetPasswordFlow.create => '/onboarding/customise-account',
+    SetPasswordFlow.importWallet => '/import/customise-account',
+    SetPasswordFlow.importKeystone => '/onboarding/keystone/customise-account',
+    SetPasswordFlow.importWalletLink => throw StateError(
+      'Wallet Link does not use account customisation.',
+    ),
+  };
 }
 
 class ImportSecretPassphraseArgs {

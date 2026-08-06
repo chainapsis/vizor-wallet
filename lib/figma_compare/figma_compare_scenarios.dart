@@ -120,6 +120,11 @@ const figmaCompareScenarios = <FigmaCompareScenario>[
     builder: buildCustomiseAccountUseCase,
   ),
   FigmaCompareScenario(
+    id: 'import-customise-account',
+    description: 'Desktop imported-account personalisation screen',
+    builder: buildImportCustomiseAccountUseCase,
+  ),
+  FigmaCompareScenario(
     id: 'settings-main',
     description: 'Desktop settings with Tor privacy control',
     builder: buildSettingsMainUseCase,

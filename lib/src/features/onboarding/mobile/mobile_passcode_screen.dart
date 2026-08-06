@@ -93,9 +93,8 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     }
   }
 
-  /// Create continues to account customisation without persisting the pending
-  /// passcode. Import flows retain the prepare/commit/rollback sequence from
-  /// `SetPasswordScreen._submit`.
+  /// Software and Keystone setup continue to account customisation without
+  /// persisting the pending passcode. Wallet Link remains an immediate import.
   Future<void> _submit(String passcode) async {
     final args = widget.args;
     setState(() {
@@ -104,13 +103,10 @@ class _MobilePasscodeScreenState extends ConsumerState<MobilePasscodeScreen> {
     });
 
     final router = GoRouter.of(context);
-    if (args.flow == SetPasswordFlow.create) {
+    if (args.flow != SetPasswordFlow.importWalletLink) {
       await router.push<void>(
         '/onboarding/customise-account',
-        extra: CustomiseAccountArgs(
-          mnemonic: args.requiredMnemonic,
-          pendingPassword: passcode,
-        ),
+        extra: CustomiseAccountArgs(setupArgs: args, pendingPassword: passcode),
       );
       if (!mounted) return;
       setState(() {

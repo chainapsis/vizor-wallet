@@ -576,7 +576,10 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
       ),
       GoRoute(
         path: '/onboarding/customise-account',
-        redirect: (_, state) => state.extra is CustomiseAccountArgs
+        redirect: (_, state) =>
+            state.extra is CustomiseAccountArgs &&
+                (state.extra as CustomiseAccountArgs).flow ==
+                    SetPasswordFlow.create
             ? null
             : OnboardingStep.secretPassphrase.routePath,
         pageBuilder: (context, state) => CustomTransitionPage<void>(
@@ -677,6 +680,25 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
           transitionsBuilder: _onboardingFadeTransition,
         ),
       ),
+      GoRoute(
+        path: KeystoneOnboardingStep.customiseAccount.routePath,
+        redirect: (_, state) {
+          final args = state.extra;
+          return args is CustomiseAccountArgs &&
+                  args.flow == SetPasswordFlow.importKeystone
+              ? null
+              : KeystoneOnboardingStep.walletBirthdayHeight.routePath;
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: CustomiseAccountScreen(
+            args: state.extra as CustomiseAccountArgs,
+          ),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
+      ),
     ],
   ),
   ShellRoute(
@@ -743,6 +765,25 @@ List<RouteBase> appDesktopOnboardingRoutes(Ref ref) => [
             transitionsBuilder: _onboardingFadeTransition,
           );
         },
+      ),
+      GoRoute(
+        path: '/import/customise-account',
+        redirect: (_, state) {
+          final args = state.extra;
+          return args is CustomiseAccountArgs &&
+                  args.flow == SetPasswordFlow.importWallet
+              ? null
+              : '/import/birthday';
+        },
+        pageBuilder: (context, state) => CustomTransitionPage<void>(
+          key: state.pageKey,
+          transitionDuration: kOnboardingForwardDuration,
+          reverseTransitionDuration: kOnboardingReverseDuration,
+          child: CustomiseAccountScreen(
+            args: state.extra as CustomiseAccountArgs,
+          ),
+          transitionsBuilder: _onboardingFadeTransition,
+        ),
       ),
     ],
   ),

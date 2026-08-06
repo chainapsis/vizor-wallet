@@ -186,6 +186,34 @@ Widget buildCustomiseAccountUseCase(BuildContext context) {
   );
 }
 
+Widget buildImportCustomiseAccountUseCase(BuildContext context) {
+  return ColoredBox(
+    color: context.colors.macosUtility.window,
+    child: ProviderScope(
+      overrides: [
+        accountProvider.overrideWith(
+          () => _PreviewAccountNotifier(const AccountState()),
+        ),
+      ],
+      child: ImportOnboardingShell(
+        activeStep: ImportOnboardingStep.customiseAccount,
+        showPasswordStep: true,
+        child: CustomiseAccountScreen(
+          args: const CustomiseAccountArgs(
+            setupArgs: SetPasswordScreenArgs.importWallet(
+              mnemonic: _previewMnemonic,
+              birthdayHeight: 2500000,
+            ),
+            pendingPassword: 'PreviewPassword1!',
+          ),
+          random: Random(1234),
+          onFinish: (_, _) async {},
+        ),
+      ),
+    ),
+  );
+}
+
 Widget buildUnlockLoginUseCase(BuildContext context) {
   return ProviderScope(
     overrides: [appLayoutProvider.overrideWith(_NoOpLayoutNotifier.new)],
@@ -273,7 +301,7 @@ Widget buildMobileCustomiseAccountUseCase(BuildContext context) {
   return _MobilePreviewFrame(
     child: MobileCustomiseAccountScreen(
       args: const CustomiseAccountArgs(
-        mnemonic: _previewMnemonic,
+        setupArgs: SetPasswordScreenArgs.create(mnemonic: _previewMnemonic),
         pendingPassword: '123456',
       ),
       random: Random(1234),
@@ -2934,7 +2962,9 @@ class _CustomiseAccountHarnessState extends State<_CustomiseAccountHarness> {
             showPasswordStep: true,
             child: CustomiseAccountScreen(
               args: CustomiseAccountArgs(
-                mnemonic: _previewMnemonic,
+                setupArgs: const SetPasswordScreenArgs.create(
+                  mnemonic: _previewMnemonic,
+                ),
                 pendingPassword: 'PreviewPassword1!',
               ),
               random: Random(1234),
