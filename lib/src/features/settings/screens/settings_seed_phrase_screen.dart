@@ -653,90 +653,99 @@ class _SeedWordsCard extends StatelessWidget {
     final colors = context.colors;
     final cardTextColor = colors.text.homeCard;
     final passphrase = bip39Passphrase;
+    final hasPassphrase = passphrase != null && passphrase.isNotEmpty;
 
-    return Container(
+    final seedCard = Container(
       width: _seedPhraseCardWidth,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.sm,
+        AppSpacing.md,
+      ),
       decoration: BoxDecoration(
         color: colors.background.homeCard,
         borderRadius: BorderRadius.circular(AppRadii.large),
-        boxShadow: _seedCardShadows(colors.shadows.subtle),
+        boxShadow: hasPassphrase
+            ? null
+            : _seedCardShadows(colors.shadows.subtle),
       ),
-      child: Stack(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: AppSpacing.md,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+          SizedBox(
+            height: 32,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    AppIcon(
-                      AppIcons.key,
-                      size: AppIconSize.medium,
+                AppIcon(
+                  AppIcons.key,
+                  size: AppIconSize.medium,
+                  color: cardTextColor,
+                ),
+                const SizedBox(width: AppSpacing.xxs),
+                Expanded(
+                  child: Text(
+                    'Secret Passphrase',
+                    style: AppTypography.bodyLarge.copyWith(
                       color: cardTextColor,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(width: AppSpacing.xxs),
-                    Text(
-                      'Secret Passphrase',
-                      style: AppTypography.bodyLarge.copyWith(
-                        color: cardTextColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: [
-                    for (var i = 0; i < words.length; i++)
-                      _SeedWordChip(
-                        key: ValueKey('settings_seed_phrase_word_${i + 1}'),
-                        index: i + 1,
-                        word: words[i],
-                        textColor: cardTextColor,
-                      ),
-                  ],
-                ),
-                if (passphrase != null && passphrase.isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Container(
-                    height: 1,
-                    color: cardTextColor.withValues(alpha: 0.15),
                   ),
-                  const SizedBox(height: AppSpacing.s),
-                  _Bip39PassphraseRow(
-                    passphrase: passphrase,
-                    copied: bip39PassphraseCopied,
-                    textColor: cardTextColor,
-                    onCopyPressed: onCopyBip39PassphrasePressed,
+                ),
+                AppButton(
+                  key: const ValueKey('settings_seed_phrase_copy_button'),
+                  onPressed: () {
+                    onCopyPressed();
+                  },
+                  variant: AppButtonVariant.secondary,
+                  size: AppButtonSize.mediumLarge,
+                  height: 24,
+                  minWidth: 52,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xxs,
                   ),
-                ],
+                  child: Text(phraseCopied ? 'Copied' : 'Copy'),
+                ),
               ],
             ),
           ),
+          const SizedBox(height: AppSpacing.s),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (var i = 0; i < words.length; i++)
+                _SeedWordChip(
+                  key: ValueKey('settings_seed_phrase_word_${i + 1}'),
+                  index: i + 1,
+                  word: words[i],
+                  textColor: cardTextColor,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (!hasPassphrase) return seedCard;
+
+    return SizedBox(
+      width: _seedPhraseCardWidth,
+      child: Stack(
+        children: [
           Positioned(
-            top: AppSpacing.md,
-            right: AppSpacing.sm,
-            child: AppButton(
-              onPressed: () {
-                onCopyPressed();
-              },
-              variant: AppButtonVariant.primary,
-              size: AppButtonSize.small,
-              enabledBackgroundColor: colors.background.raised,
-              pressedBackgroundColor: colors.background.overlay,
-              enabledLabelColor: colors.text.accent,
-              pressedLabelColor: colors.text.accent,
-              trailing: AppIcon(phraseCopied ? AppIcons.check : AppIcons.copy),
-              child: Text(phraseCopied ? 'Copied' : 'Copy'),
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 96,
+            child: _Bip39PassphraseFooter(
+              passphrase: passphrase,
+              copied: bip39PassphraseCopied,
+              onCopyPressed: onCopyBip39PassphrasePressed,
             ),
           ),
+          Padding(padding: const EdgeInsets.only(bottom: 56), child: seedCard),
         ],
       ),
     );
@@ -785,67 +794,72 @@ class _SeedWordChip extends StatelessWidget {
   }
 }
 
-class _Bip39PassphraseRow extends StatelessWidget {
-  const _Bip39PassphraseRow({
+class _Bip39PassphraseFooter extends StatelessWidget {
+  const _Bip39PassphraseFooter({
     required this.passphrase,
     required this.copied,
-    required this.textColor,
     required this.onCopyPressed,
   });
 
   final String passphrase;
   final bool copied;
-  final Color textColor;
   final Future<void> Function() onCopyPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(
-          'BIP39 Passphrase',
-          style: AppTypography.labelLarge.copyWith(color: textColor),
+    final colors = context.colors;
+    return Container(
+      key: const ValueKey('settings_bip39_passphrase_footer'),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colors.background.ground,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(AppRadii.large),
+          bottomRight: Radius.circular(AppRadii.large),
         ),
-        const SizedBox(width: AppSpacing.s),
-        Expanded(
-          child: Text(
-            _compactPassphrase(passphrase),
-            key: const ValueKey('settings_bip39_passphrase_value'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: AppTypography.labelLarge.copyWith(color: textColor),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.xxs),
-        Semantics(
-          button: true,
-          label: copied ? 'BIP39 passphrase copied' : 'Copy BIP39 passphrase',
-          excludeSemantics: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => onCopyPressed(),
-            child: SizedBox.square(
-              dimension: 24,
-              child: Center(
-                child: AppIcon(
-                  copied ? AppIcons.check : AppIcons.copy,
-                  size: AppIconSize.medium,
-                  color: textColor,
+        boxShadow: _seedCardShadows(colors.shadows.subtle),
+      ),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'BIP39 Passphrase: $passphrase',
+                key: const ValueKey('settings_bip39_passphrase_value'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelLarge.copyWith(
+                  color: colors.text.accent,
                 ),
               ),
             ),
-          ),
+            const SizedBox(width: AppSpacing.xs),
+            Semantics(
+              button: true,
+              label: copied
+                  ? 'BIP39 passphrase copied'
+                  : 'Copy BIP39 passphrase',
+              excludeSemantics: true,
+              child: AppButton(
+                key: const ValueKey('settings_bip39_passphrase_copy_button'),
+                onPressed: () {
+                  onCopyPressed();
+                },
+                variant: AppButtonVariant.ghost,
+                size: AppButtonSize.mediumLarge,
+                height: 24,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xxs,
+                ),
+                child: Text(copied ? 'Copied' : 'Copy'),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
-}
-
-String _compactPassphrase(String value) {
-  final characters = value.characters;
-  if (characters.length <= 24) return value;
-  return '${characters.take(10)} ... ${characters.skip(characters.length - 10)}';
 }
 
 class _SeedBirthdayCard extends StatelessWidget {

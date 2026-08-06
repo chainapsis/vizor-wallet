@@ -9,6 +9,7 @@ import 'package:zcash_wallet/src/core/config/rpc_endpoint_config.dart';
 import 'package:zcash_wallet/src/core/privacy/sensitive_privacy_overlay.dart';
 import 'package:zcash_wallet/src/core/security/software_wallet_secret.dart';
 import 'package:zcash_wallet/src/core/theme/app_theme.dart';
+import 'package:zcash_wallet/src/core/widgets/app_button.dart';
 import 'package:zcash_wallet/src/features/settings/screens/settings_seed_phrase_screen.dart';
 import 'package:zcash_wallet/src/providers/account_provider.dart';
 import 'package:zcash_wallet/src/providers/app_security_provider.dart';
@@ -57,8 +58,28 @@ void main() {
     expect(accountNotifier.requestedMnemonicUuids, ['account-2']);
     expect(accountNotifier.state.requireValue.activeAccountUuid, 'account-1');
     expect(find.text('abandon'), findsOneWidget);
-    expect(find.text('BIP39 Passphrase'), findsOneWidget);
-    expect(find.text('correct ho ... xtra words'), findsOneWidget);
+    expect(find.text('BIP39 Passphrase: $_bip39Passphrase'), findsOneWidget);
+
+    final phraseCopyButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('settings_seed_phrase_copy_button')),
+    );
+    expect(phraseCopyButton.variant, AppButtonVariant.secondary);
+    expect(phraseCopyButton.height, 24);
+    expect(phraseCopyButton.trailing, isNull);
+
+    final bip39CopyButton = tester.widget<AppButton>(
+      find.byKey(const ValueKey('settings_bip39_passphrase_copy_button')),
+    );
+    expect(bip39CopyButton.variant, AppButtonVariant.ghost);
+    expect(bip39CopyButton.height, 24);
+    expect(bip39CopyButton.trailing, isNull);
+
+    final footer = tester.widget<Container>(
+      find.byKey(const ValueKey('settings_bip39_passphrase_footer')),
+    );
+    final footerDecoration = footer.decoration as BoxDecoration;
+    expect(footerDecoration.color, AppThemeData.light.colors.background.ground);
+    expect(footerDecoration.boxShadow, hasLength(4));
   });
 
   testWidgets('hides the BIP39 section when the account has no passphrase', (
@@ -86,6 +107,10 @@ void main() {
     expect(find.text('abandon'), findsOneWidget);
     expect(find.text('BIP39 Passphrase'), findsNothing);
     expect(find.bySemanticsLabel('Copy BIP39 passphrase'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('settings_bip39_passphrase_footer')),
+      findsNothing,
+    );
   });
 
   testWidgets('describes removal of the requested account accurately', (
