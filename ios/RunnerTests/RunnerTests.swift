@@ -201,6 +201,38 @@ class RunnerTests: XCTestCase {
     )
   }
 
+  func testWakeThatClearedItsOwnFlagsArmsAReplacementForADeclinedRoute() {
+    XCTAssertTrue(
+      ironwoodMigrationTorDeferredWakeShouldRearm(
+        disposition: ironwoodMigrationOutboxWakeDisposition(
+          foregroundHandoffRequested: false,
+          notificationWorkDisabled: false
+        ),
+        mutationQuiesced: false,
+        hasRunnableWork: true
+      )
+    )
+  }
+
+  func testAPreviousWakesHandoffFlagWouldStopThisWakeFromArmingOne() {
+    // The flag is set whenever the app comes to the foreground and is cleared
+    // only as a wake starts. Read before that, it reports a takeover that
+    // belongs to an earlier wake, and the exit it reaches leaves signed items
+    // with no execution opportunity at all.
+    let staleReading = ironwoodMigrationOutboxWakeDisposition(
+      foregroundHandoffRequested: true,
+      notificationWorkDisabled: false
+    )
+    XCTAssertEqual(staleReading, .finishForegroundOnly)
+    XCTAssertFalse(
+      ironwoodMigrationTorDeferredWakeShouldRearm(
+        disposition: staleReading,
+        mutationQuiesced: false,
+        hasRunnableWork: true
+      )
+    )
+  }
+
   func testWakeStartsNetworkWorkWhenNothingEndedItDuringBringUp() {
     XCTAssertTrue(
       ironwoodMigrationOutboxWakeMayStartNetworkWork(
@@ -3087,6 +3119,37 @@ final class NativeLightwalletdClientTests: XCTestCase {
         bringTorUp: { false }
       )
     )
+  }
+
+  func testBackgroundPassGateAsksAffordabilityOnlyOnATorRoute() {
+    // Sampling power and the current path costs up to a second, and a direct
+    // route has nothing to pay for.
+    var asked = false
+    XCTAssertTrue(
+      BackgroundNetworkRoute.backgroundPassIsAllowed(
+        routeIsTor: false,
+        isAffordable: {
+          asked = true
+          return false
+        }
+      )
+    )
+    XCTAssertFalse(asked)
+  }
+
+  func testBackgroundPassGateComposesTheSameAnswerFromSeparatedQuestions() {
+    // The declaration has to happen before any other native call, and the
+    // affordability answer is acted on later, so the two are asked apart. The
+    // gate they compose is unchanged.
+    for affordable in [true, false] {
+      XCTAssertEqual(
+        BackgroundNetworkRoute.backgroundPassIsAllowed(
+          routeIsTor: true,
+          isAffordable: { affordable }
+        ),
+        affordable
+      )
+    }
   }
 
   func testTorBackgroundPassNeverBootstrapsWhenItCannotAffordTo() {

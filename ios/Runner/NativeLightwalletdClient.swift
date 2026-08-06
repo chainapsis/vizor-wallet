@@ -84,6 +84,21 @@ enum BackgroundNetworkRoute {
     power == .external && metering == .unmetered
   }
 
+  /// The shape of a background pass gate, written once so a caller that has to
+  /// declare the route earlier than it acts on the answer still composes the
+  /// same gate out of the same two questions.
+  ///
+  /// `isAffordable` is asked only on a Tor route. Sampling power and the
+  /// current path takes up to a second, and a direct route has nothing to pay
+  /// for.
+  static func backgroundPassIsAllowed(
+    routeIsTor: Bool,
+    isAffordable: () -> Bool
+  ) -> Bool {
+    guard routeIsTor else { return true }
+    return isAffordable()
+  }
+
   /// The Tor half of the gate, written once so both entry points and the tests
   /// agree on what the policy is.
   ///
@@ -161,44 +176,70 @@ enum BackgroundNetworkRoute {
     return observation.metered ? .metered : .unmetered
   }
 
+  /// Declares the saved route to Rust and reports whether it is Tor.
+  ///
+  /// Separate from the affordability question because the two belong at
+  /// different points. The declaration is what makes a path that still tries to
+  /// reach lightwalletd fail closed instead of leaking, so it has to come
+  /// before any other native call; the answer about whether this pass can carry
+  /// the route is acted on later, once the caller has put its own state in
+  /// order. It samples nothing and never bootstraps.
+  @discardableResult
+  static func declareBackgroundNetworkRoute() -> Bool {
+    guard persistedRouteIsTor else { return false }
+    _ = zcash_network_privacy_mark_tor_desired()
+    return true
+  }
+
+  /// Whether this device can carry a Tor route right now. Samples power and the
+  /// current path, so ask it only once the route has been declared.
+  static func torBackgroundPassIsAffordable() -> Bool {
+    torBackgroundWorkIsAffordable(
+      power: currentPowerSupply(),
+      metering: currentNetworkMetering()
+    )
+  }
+
   /// Declares a persisted Tor route to Rust and reports whether this pass has
   /// established that it may carry that route.
   ///
-  /// Call it before the first native call of a background pass. Declaring
-  /// first means a path that still tries to reach lightwalletd fails closed
-  /// instead of leaking; a declaration that itself fails changes nothing,
-  /// because a refused pass reaches nothing either way.
+  /// Call it before the first native call of a background pass. A declaration
+  /// that itself fails changes nothing, because a refused pass reaches nothing
+  /// either way.
   ///
   /// This never bootstraps Tor, so it is also the right question for a pass
   /// that has not decided whether it will do network work at all — scheduling
   /// a task, or inspecting local state first.
   static func allowsBackgroundNetworkPass() -> Bool {
-    guard persistedRouteIsTor else { return true }
-    _ = zcash_network_privacy_mark_tor_desired()
-    return torBackgroundWorkIsAffordable(
-      power: currentPowerSupply(),
-      metering: currentNetworkMetering()
+    backgroundPassIsAllowed(
+      routeIsTor: declareBackgroundNetworkRoute(),
+      isAffordable: torBackgroundPassIsAffordable
     )
   }
 
   /// Brings Tor up for this process and reports whether it came up ready.
   ///
   /// Blocks: a cold bootstrap is tens of seconds, so callers run it on their
-  /// own queue rather than on a system callback. Success is remembered for the
-  /// process because the loop-style passes ask before every round of queries;
-  /// failure is not, so a later pass in the same process may try again after
-  /// conditions change. A route flip only happens in the foreground, which
-  /// re-decides the process route itself.
+  /// own queue rather than on a system callback.
+  ///
+  /// Always asks, never answers from memory. The client this is about lives in
+  /// Rust, which drops it whenever the route goes direct, so a remembered
+  /// success can outlive the thing it was about: the route goes direct and back
+  /// to Tor, that bootstrap fails, and a pass that trusted the memory proceeds
+  /// with no transport at all, failing every call closed with nothing left to
+  /// recover it in the background. Asking is what re-establishes the client,
+  /// and it costs almost nothing when one is already there — the call returns
+  /// ready without bootstrapping anything.
+  ///
+  /// What is remembered is only that this process reached ready at some point,
+  /// which is a fact about this process rather than about Rust's client. It
+  /// tells a running pass whether the route turned to Tor underneath it; it
+  /// never stands in for the question above.
   ///
   /// A client that does not come up ready leaves the process fail-closed with
   /// no transport. The caller defers; it must never fall back to clearnet.
   @discardableResult
   static func bringUpTorForBackgroundWork() -> Bool {
-    torStateLock.lock()
-    let alreadyUp = torIsUpForBackgroundWork
-    torStateLock.unlock()
-    if alreadyUp { return true }
-
     guard let directory = torDataDirectoryPath() else { return false }
     let code = directory.withCString {
       zcash_network_privacy_enable_tor_for_background_work($0)
@@ -219,12 +260,15 @@ enum BackgroundNetworkRoute {
   /// Call it immediately before network work. A pass that only wants to know
   /// whether it should exist at all wants `allowsBackgroundNetworkPass`.
   static func allowsBackgroundNetworkWork() -> Bool {
-    guard persistedRouteIsTor else { return true }
-    _ = zcash_network_privacy_mark_tor_desired()
-    return torBackgroundPassMayProceed(
-      power: currentPowerSupply(),
-      metering: currentNetworkMetering(),
-      bringTorUp: bringUpTorForBackgroundWork
+    backgroundPassIsAllowed(
+      routeIsTor: declareBackgroundNetworkRoute(),
+      isAffordable: {
+        torBackgroundPassMayProceed(
+          power: currentPowerSupply(),
+          metering: currentNetworkMetering(),
+          bringTorUp: bringUpTorForBackgroundWork
+        )
+      }
     )
   }
 
@@ -234,7 +278,8 @@ enum BackgroundNetworkRoute {
   /// answers only the question that can change between gate evaluations —
   /// whether the saved route turned to Tor inside a process that never brought
   /// Tor up, which is a route this pass cannot carry. Power and metering are
-  /// re-sampled by the gate itself before each round of queries.
+  /// re-sampled by the gate itself before each round of queries, and whether a
+  /// transport exists right now is Rust's answer to give, asked there.
   static var backgroundNetworkWorkRemainsAllowed: Bool {
     guard persistedRouteIsTor else { return true }
     torStateLock.lock()

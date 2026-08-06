@@ -174,6 +174,23 @@ func ironwoodMigrationTorDeferredWakeShouldRearm(
   disposition.shouldReschedule && !mutationQuiesced && hasRunnableWork
 }
 
+/// What a wake is still allowed to do, from the two flags that can take it away
+/// from it.
+///
+/// Both inputs are wake-scoped: they describe the wake that set them, and a
+/// wake clears them as it starts. Reading them before that clearing answers for
+/// the previous wake — most damagingly as `.finishForegroundOnly`, which says
+/// the foreground has taken this work over and stops the wake from arming a
+/// replacement for work nobody has taken.
+func ironwoodMigrationOutboxWakeDisposition(
+  foregroundHandoffRequested: Bool,
+  notificationWorkDisabled: Bool
+) -> IronwoodMigrationOutboxWakeDisposition {
+  foregroundHandoffRequested || notificationWorkDisabled
+    ? .finishForegroundOnly
+    : .continueBackgroundWork
+}
+
 /// Whether a wake may still start network work after a step it could not
 /// interrupt.
 ///
@@ -516,9 +533,10 @@ final class BackgroundMigrationManager {
   }
 
   private var wakeDisposition: IronwoodMigrationOutboxWakeDisposition {
-    isNotificationWorkDisabled || isForegroundHandoffRequested
-      ? .finishForegroundOnly
-      : .continueBackgroundWork
+    ironwoodMigrationOutboxWakeDisposition(
+      foregroundHandoffRequested: isForegroundHandoffRequested,
+      notificationWorkDisabled: isNotificationWorkDisabled
+    )
   }
 
   private var isForegroundHandoffRequested: Bool {
@@ -764,18 +782,32 @@ final class BackgroundMigrationManager {
     // This wake may be a cold launch where Dart never applied the saved route,
     // and it broadcasts signed transactions. Declare the route before any
     // other native call so a path that still reaches lightwalletd fails closed
-    // rather than putting a transaction on clearnet.
+    // rather than putting a transaction on clearnet. Declaring samples nothing
+    // and never bootstraps, so it costs the wake nothing to do it first.
+    let routeIsTor = BackgroundNetworkRoute.declareBackgroundNetworkRoute()
+    // The wake's own flags come next, before anything reads a disposition out
+    // of them. `expired` and `foregroundHandoffRequested` describe the wake
+    // that set them and are cleared only here, so an exit taken ahead of this
+    // answers for a previous wake — a wake that ends up reading "the foreground
+    // has taken this over" when nothing has, and declining to arm a
+    // replacement because of it.
     //
+    // A refusal here is a wake with an owner: the wallet is mid-mutation, whose
+    // resume path arms the next wake, or notification permission is gone, which
+    // stopped background migration deliberately. Neither wants a replacement.
+    guard prepareForBackgroundWake() else {
+      task.setTaskCompleted(success: true)
+      return
+    }
     // On a Tor route the declaration is only half the answer: the wake also has
     // to have established that this device can afford Tor right now. Asking
     // here keeps an unaffordable wake from touching the outbox at all, and
     // costs nothing — this gate never bootstraps.
-    guard BackgroundNetworkRoute.allowsBackgroundNetworkPass() else {
+    guard BackgroundNetworkRoute.backgroundPassIsAllowed(
+      routeIsTor: routeIsTor,
+      isAffordable: BackgroundNetworkRoute.torBackgroundPassIsAffordable
+    ) else {
       finishTorDeferredWake(task)
-      return
-    }
-    guard prepareForBackgroundWake() else {
-      task.setTaskCompleted(success: true)
       return
     }
     startAuthorizationMonitoring()
