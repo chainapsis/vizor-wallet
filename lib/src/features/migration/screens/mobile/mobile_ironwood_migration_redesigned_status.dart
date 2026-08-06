@@ -940,6 +940,7 @@ class _MobileMigrationRedesignedStatusState
       segmentValuesZatoshi: _migrationRingSegmentValues(widget.status),
       completedBatches: batchProgress.completedBatches,
       totalBatches: batchProgress.totalBatches,
+      currentBatchNumber: batchProgress.currentBatchNumber,
       completedRingSegments: _completedRingSegments(widget.status),
       awaitingRingSegments: _awaitingRingSegments(widget.status),
       currentSigningPartIndices: _currentSigningRingSegments(widget.status),
@@ -1110,7 +1111,7 @@ class _MobileMigrationRedesignedStatusState
           'Keep Vizor open.';
     }
     if (state == _MigrationProgressState.confirming) {
-      return 'Confirmations are still arriving. You can leave Vizor and '
+      return 'Confirmations are still arriving.\nYou can leave Vizor and '
           'check again later.';
     }
     if (timing == 'ready now') {

@@ -270,7 +270,7 @@ class _MobileMigrationOptionsState
               title: 'Private',
               body: widget.privateEnabled
                   ? 'Splits transactions into multiple parts to minimize '
-                        'traceability, but takes longer.'
+                        'traceability but will take several hours to days.'
                   : 'Not available on Android.',
               selected: privateSelected,
               icon: _MigrationChoiceIcon.private,
@@ -285,7 +285,7 @@ class _MobileMigrationOptionsState
               title: 'Immediate',
               body:
                   'Migrates your entire balance in one batch. '
-                  'Fast, but less private.',
+                  'Fast (~10 mins) but less private.',
               selected: immediateSelected,
               icon: _MigrationChoiceIcon.immediate,
               onTap: _isContinuing
