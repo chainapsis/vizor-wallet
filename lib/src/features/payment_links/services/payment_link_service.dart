@@ -23,6 +23,8 @@ final paymentLinkServiceProvider = Provider<PaymentLinkService>((ref) {
   return PaymentLinkService(ref, ref.read(paymentLinkRecoveryStoreProvider));
 });
 
+const kPaymentLinkMaxClaimLookbackBlocks = 100000;
+
 class PaymentLinkClaimSession {
   const PaymentLinkClaimSession({
     required this.link,
@@ -79,6 +81,31 @@ bool shouldRecreatePaymentLinkClaimWallet({
 }) {
   return accountAddresses.length != 1 ||
       accountAddresses.single != expectedAddress;
+}
+
+@visibleForTesting
+int validatePaymentLinkClaimBirthday({
+  required int advertisedBirthdayHeight,
+  required int currentTipHeight,
+}) {
+  if (currentTipHeight <= 0) {
+    throw StateError('Current chain tip is unavailable.');
+  }
+  if (advertisedBirthdayHeight > currentTipHeight) {
+    throw const FormatException(
+      'Payment link birthday is ahead of the current chain tip.',
+    );
+  }
+  final earliestSupportedHeight = max(
+    1,
+    currentTipHeight - kPaymentLinkMaxClaimLookbackBlocks,
+  );
+  if (advertisedBirthdayHeight < earliestSupportedHeight) {
+    throw const FormatException(
+      'Payment link birthday is outside the supported claim window.',
+    );
+  }
+  return advertisedBirthdayHeight;
 }
 
 @visibleForTesting
@@ -228,6 +255,14 @@ class PaymentLinkService {
       );
     }
 
+    final currentTipHeight = await _ref
+        .read(rpcEndpointFailoverProvider.notifier)
+        .getLatestBlockHeight();
+    final claimBirthdayHeight = validatePaymentLinkClaimBirthday(
+      advertisedBirthdayHeight: link.birthdayHeight,
+      currentTipHeight: currentTipHeight.toInt(),
+    );
+
     final tempWallet = await _createOrOpenTemporaryWalletDb(link);
     var deleteOnError = !tempWallet.existed;
     try {
@@ -263,6 +298,7 @@ class PaymentLinkService {
           await _resetTemporaryWalletDb(tempWallet.directory);
           final imported = await _importPaymentLinkClaimAccount(
             link: link,
+            birthdayHeight: claimBirthdayHeight,
             dbPath: tempWallet.dbPath,
             network: endpoint.networkName,
           );
@@ -275,6 +311,7 @@ class PaymentLinkService {
       } else {
         final imported = await _importPaymentLinkClaimAccount(
           link: link,
+          birthdayHeight: claimBirthdayHeight,
           dbPath: tempWallet.dbPath,
           network: endpoint.networkName,
         );
@@ -532,13 +569,14 @@ class PaymentLinkService {
   Future<({String address, String accountUuid})>
   _importPaymentLinkClaimAccount({
     required VizorPaymentLink link,
+    required int birthdayHeight,
     required String dbPath,
     required String network,
   }) async {
     final imported = await rust_wallet.importWallet(
       mnemonic: link.mnemonic,
       bip39Passphrase: '',
-      birthdayHeight: BigInt.from(link.birthdayHeight),
+      birthdayHeight: BigInt.from(birthdayHeight),
       network: network,
       dbPath: dbPath,
       accountName: 'Payment link claim',
