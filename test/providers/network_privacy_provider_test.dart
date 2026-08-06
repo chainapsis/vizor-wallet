@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
@@ -39,6 +40,76 @@ void main() {
         directRequests: _FakeDirectRequestGate(<String>[]),
       );
     }
+  });
+
+  test('enabling keeps the Tor directory out of device backups', () async {
+    final excluded = <String>[];
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async => '/tmp/vizor-tor',
+      configureRuntime: ({required enabled, required torDirectory}) async =>
+          rust_types.NetworkPrivacyStatus.ready,
+      excludeTorDirectoryFromBackup: (directory) async =>
+          excluded.add(directory),
+    );
+
+    await runtime.configure(enabled: true);
+
+    expect(excluded, ['/tmp/vizor-tor']);
+  });
+
+  test('a failed bootstrap still excludes the Tor directory', () async {
+    // Rust creates the directory and Arti writes guard state into it before
+    // the bootstrap can fail, so the failure path leaves exactly the state the
+    // exclusion exists to keep off a second device.
+    final excluded = <String>[];
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async => '/tmp/vizor-tor',
+      configureRuntime: ({required enabled, required torDirectory}) async =>
+          throw StateError('bootstrap failed'),
+      excludeTorDirectoryFromBackup: (directory) async =>
+          excluded.add(directory),
+    );
+
+    await expectLater(
+      runtime.configure(enabled: true),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(excluded, ['/tmp/vizor-tor']);
+  });
+
+  test('a backup exclusion failure is reported', () async {
+    final logs = <String>[];
+    final previousDebugPrint = debugPrint;
+    debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+    addTearDown(() => debugPrint = previousDebugPrint);
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async => '/tmp/vizor-tor',
+      configureRuntime: ({required enabled, required torDirectory}) async =>
+          rust_types.NetworkPrivacyStatus.ready,
+      excludeTorDirectoryFromBackup: (_) async =>
+          throw StateError('attribute write refused'),
+    );
+
+    await runtime.configure(enabled: true);
+
+    expect(logs, hasLength(1));
+    expect(logs.single, contains('attribute write refused'));
+  });
+
+  test('a backup exclusion failure does not fail the route', () async {
+    final runtime = RustNetworkPrivacyRuntime(
+      resolveTorDirectory: () async => '/tmp/vizor-tor',
+      configureRuntime: ({required enabled, required torDirectory}) async =>
+          rust_types.NetworkPrivacyStatus.ready,
+      excludeTorDirectoryFromBackup: (_) async =>
+          throw StateError('no native side'),
+    );
+
+    expect(
+      await runtime.configure(enabled: true),
+      NetworkPrivacyConnectionStatus.connected,
+    );
   });
 
   test('direct runtime configuration skips Tor directory lookup', () async {

@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -94,6 +95,7 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   const RustNetworkPrivacyRuntime({
     this.configureRuntime = rust_network_privacy.configureNetworkPrivacy,
     this.resolveTorDirectory = getTorDataDirectoryPath,
+    this.excludeTorDirectoryFromBackup = _excludeFromDeviceBackup,
   });
 
   final Future<rust_types.NetworkPrivacyStatus> Function({
@@ -102,6 +104,7 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   })
   configureRuntime;
   final Future<String> Function() resolveTorDirectory;
+  final Future<void> Function(String directory) excludeTorDirectoryFromBackup;
 
   @override
   void beginEnable() {
@@ -119,11 +122,49 @@ class RustNetworkPrivacyRuntime implements NetworkPrivacyRuntime {
   Future<NetworkPrivacyConnectionStatus> configure({
     required bool enabled,
   }) async {
-    final status = await configureRuntime(
-      enabled: enabled,
-      torDirectory: enabled ? await resolveTorDirectory() : '',
-    );
-    return _connectionStatus(status);
+    final torDirectory = enabled ? await resolveTorDirectory() : '';
+    try {
+      final status = await configureRuntime(
+        enabled: enabled,
+        torDirectory: torDirectory,
+      );
+      return _connectionStatus(status);
+    } finally {
+      // Arti's directory records which guards this wallet chose. Restoring it
+      // onto a second device would carry that choice across, so keep it out of
+      // device backups and let a restored install pick fresh guards. A
+      // bootstrap that errors or times out has already created the directory
+      // and written guard state into it, so the mark has to run on that path
+      // too; failing to mark it must not fail the route.
+      if (enabled) {
+        try {
+          await excludeTorDirectoryFromBackup(torDirectory);
+        } catch (error, stackTrace) {
+          debugPrint(
+            'RustNetworkPrivacyRuntime: failed to keep the Tor directory out '
+            'of device backups: $error\n$stackTrace',
+          );
+        }
+      }
+    }
+  }
+}
+
+const _deviceBackupChannel = MethodChannel('com.zcash.wallet/network_privacy');
+
+Future<void> _excludeFromDeviceBackup(String directory) async {
+  // Android has no runtime equivalent. `android:allowBackup="false"` in the
+  // manifest keeps app files out of cloud backup, but from targetSdk 31 that
+  // attribute no longer covers device-to-device transfer; excluding the
+  // directory from a phone-to-phone migration takes `<device-transfer>`
+  // data-extraction rules in the manifest, which the app does not carry.
+  if (!Platform.isIOS) return;
+  try {
+    await _deviceBackupChannel.invokeMethod<void>('excludeFromBackup', {
+      'path': directory,
+    });
+  } on MissingPluginException {
+    // Test hosts and older builds have no native side to ask.
   }
 }
 
