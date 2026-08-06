@@ -8,26 +8,61 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_version_config.dart';
 import '../core/network/network_http_client.dart';
+import 'network_privacy_provider.dart';
 
 const kLinuxUpdateFeedTimeout = Duration(seconds: 30);
 
 typedef LinuxUpdateHttpClientFactory = NetworkHttpClient Function();
 
-final linuxUpdateProvider = FutureProvider<LinuxUpdateInfo?>((ref) async {
-  if (!kVizorUpdateCheckEnabled ||
-      kVizorReleaseBuildNumber <= 0 ||
-      kIsWeb ||
-      defaultTargetPlatform != TargetPlatform.linux) {
-    return null;
-  }
+typedef LinuxUpdateCheck = Future<LinuxUpdateInfo?> Function();
 
-  return fetchLinuxUpdate(
+/// Whether this build can check the Linux release feed at all.
+final linuxUpdateSupportedProvider = Provider<bool>(
+  (ref) =>
+      kVizorUpdateCheckEnabled &&
+      kVizorReleaseBuildNumber > 0 &&
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.linux,
+);
+
+/// Whether the process-wide route already matches the user's privacy setting.
+///
+/// A check started while Tor is bootstrapping or failed cannot reach the feed
+/// and must not fall back to clearnet, so it is skipped until the route
+/// settles. The native-updater availability flag is deliberately not part of
+/// this gate: Linux has no native updater to pause, and the release feed is a
+/// plain request over whichever route is active.
+final linuxUpdateRouteReadyProvider = Provider<bool>((ref) {
+  return ref.watch(
+    networkPrivacyProvider.select(
+      (state) => switch (state.status) {
+        NetworkPrivacyConnectionStatus.off => !state.torEnabled,
+        NetworkPrivacyConnectionStatus.connected => state.torEnabled,
+        _ => false,
+      },
+    ),
+  );
+});
+
+/// Seam for the feed request so the route gating can be exercised without a
+/// network stack.
+final linuxUpdateCheckProvider = Provider<LinuxUpdateCheck>(
+  (ref) => () => fetchLinuxUpdate(
     clientFactory: NetworkHttpClient.new,
     repository: kVizorReleaseRepository,
     flavor: kVizorReleaseFlavor,
     arch: _linuxReleaseArch(),
     currentBuildNumber: kVizorReleaseBuildNumber,
-  );
+  ),
+);
+
+final linuxUpdateProvider = FutureProvider<LinuxUpdateInfo?>((ref) async {
+  if (!ref.watch(linuxUpdateSupportedProvider)) return null;
+  // Watched, not read: the one-shot check would otherwise be lost for the rest
+  // of the session when it lands while the route is unusable.
+  if (!ref.watch(linuxUpdateRouteReadyProvider)) return null;
+
+  return ref.read(linuxUpdateCheckProvider)();
 });
 
 /// Checks the Linux release feed through the process-wide network route.

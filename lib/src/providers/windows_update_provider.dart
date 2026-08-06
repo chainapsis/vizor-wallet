@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,6 +25,9 @@ const kWindowsTorUpdateRouteUnavailableMessage =
     'The software updater is not connected to Tor. Retry updates in Settings, '
     'or turn off Tor and try again.';
 
+const kWindowsUpdateGenericFailureMessage =
+    "Couldn't complete the update. Try again.";
+
 class WindowsUpdateDownloadResult {
   const WindowsUpdateDownloadResult.started() : started = true, message = '';
 
@@ -31,6 +35,22 @@ class WindowsUpdateDownloadResult {
 
   final bool started;
   final String message;
+}
+
+/// Why an update operation failed, and whether the user was waiting on it.
+///
+/// A background startup check that fails must stay silent — the route recovery
+/// listener re-runs it — while a failure the user asked for has to be visible.
+/// [ordinal] increments per failure so that dismissing one card does not
+/// suppress the next failure carrying the same status and version.
+class WindowsUpdateFailure {
+  const WindowsUpdateFailure({
+    required this.userInitiated,
+    required this.ordinal,
+  });
+
+  final bool userInitiated;
+  final int ordinal;
 }
 
 class WindowsUpdateState {
@@ -45,6 +65,7 @@ class WindowsUpdateState {
     required this.pendingRestart,
     required this.torProxyReady,
     required this.message,
+    this.failure,
   });
 
   factory WindowsUpdateState.initial() {
@@ -64,8 +85,12 @@ class WindowsUpdateState {
     );
   }
 
-  factory WindowsUpdateState.fromSnapshot(WindowsUpdateSnapshot snapshot) {
+  factory WindowsUpdateState.fromSnapshot(
+    WindowsUpdateSnapshot snapshot, {
+    WindowsUpdateFailure? failure,
+  }) {
     return WindowsUpdateState(
+      failure: failure,
       supported: snapshot.supported,
       status: _statusFromName(snapshot.status, snapshot.supported),
       currentVersion: snapshot.currentVersion.isEmpty
@@ -91,6 +116,11 @@ class WindowsUpdateState {
   final bool pendingRestart;
   final bool torProxyReady;
   final String message;
+
+  /// Set only while [status] is [WindowsUpdateStatus.failed]. Carries what the
+  /// prompt needs to decide whether the user should be interrupted, and to tell
+  /// two consecutive failures apart.
+  final WindowsUpdateFailure? failure;
 
   bool get isBusy => switch (status) {
     WindowsUpdateStatus.checking ||
@@ -135,6 +165,10 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   Timer? _pollTimer;
   bool _polling = false;
   bool _startupCheckStarted = false;
+  int _failureOrdinal = 0;
+  // Whether the operation currently in flight — including the poll that
+  // watches it finish — is one the user is waiting on.
+  bool _userInitiatedOperation = true;
 
   @override
   WindowsUpdateState build() {
@@ -146,10 +180,31 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   Future<void> checkOnStartup() async {
-    if (_startupCheckStarted || !Platform.isWindows) return;
+    if (!Platform.isWindows) return;
+    await runStartupCheck();
+  }
+
+  @visibleForTesting
+  Future<void> runStartupCheck() async {
+    if (_startupCheckStarted) return;
+    // The startup check is automatic and re-armed once the route recovers, so
+    // an unusable route stays silent instead of raising a failure the user
+    // never asked for.
     if (!await _updateNetworkReady()) return;
     _startupCheckStarted = true;
-    await checkForUpdates();
+    _userInitiatedOperation = false;
+    try {
+      await _runAndPoll(
+        ref.read(windowsUpdateServiceProvider).checkForUpdates(),
+      );
+    } catch (error) {
+      // Callers start this unawaited, so an escaping error would surface as an
+      // unhandled async error and leave the check permanently spent. Record it
+      // silently and let route recovery run it again.
+      debugPrint('[zcash] Windows startup update check failed: $error');
+      _setFailed(_updateErrorMessage(error));
+      _startupCheckStarted = false;
+    }
   }
 
   Future<void> refresh() async {
@@ -157,7 +212,11 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
   }
 
   Future<void> checkForUpdates() async {
-    if (!await _updateNetworkReady()) return;
+    _userInitiatedOperation = true;
+    if (!await _updateNetworkReady()) {
+      _setFailed(kWindowsTorUpdateRouteUnavailableMessage);
+      return;
+    }
     try {
       await _runAndPoll(
         ref.read(windowsUpdateServiceProvider).checkForUpdates(),
@@ -174,6 +233,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       );
     }
 
+    _userInitiatedOperation = true;
     try {
       if (!await _updateNetworkReady()) {
         return const WindowsUpdateDownloadResult.failed(
@@ -192,7 +252,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
     if (state.status == WindowsUpdateStatus.failed) {
       final message = state.message.trim();
       return WindowsUpdateDownloadResult.failed(
-        message.isEmpty ? "Couldn't complete the update. Try again." : message,
+        message.isEmpty ? kWindowsUpdateGenericFailureMessage : message,
       );
     }
     return const WindowsUpdateDownloadResult.started();
@@ -200,6 +260,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
 
   Future<void> applyUpdateAndRestart() async {
     if (!state.canRestart) return;
+    _userInitiatedOperation = true;
     try {
       await _runAndPoll(
         ref.read(windowsUpdateServiceProvider).applyUpdateAndRestart(),
@@ -225,8 +286,22 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
 
   Future<void> _updateFrom(Future<WindowsUpdateSnapshot> action) async {
     final snapshot = await action;
-    state = WindowsUpdateState.fromSnapshot(snapshot);
+    final next = WindowsUpdateState.fromSnapshot(snapshot);
+    if (next.status != WindowsUpdateStatus.failed) {
+      state = next;
+      return;
+    }
+    state = WindowsUpdateState.fromSnapshot(snapshot, failure: _nextFailure());
+    // The native check runs detached and can report its failure through a
+    // later polled snapshot rather than by throwing, so the startup check has
+    // to be re-armed here too or route recovery can never retry it.
+    if (!_userInitiatedOperation) _startupCheckStarted = false;
   }
+
+  WindowsUpdateFailure _nextFailure() => WindowsUpdateFailure(
+    userInitiated: _userInitiatedOperation,
+    ordinal: ++_failureOrdinal,
+  );
 
   void _setFailed(String message) {
     final current = state;
@@ -241,6 +316,7 @@ class WindowsUpdateNotifier extends Notifier<WindowsUpdateState> {
       pendingRestart: current.pendingRestart,
       torProxyReady: current.torProxyReady,
       message: message,
+      failure: _nextFailure(),
     );
   }
 
@@ -269,8 +345,10 @@ String _updateErrorMessage(Object error) {
     final message = error.message?.trim();
     if (message != null && message.isNotEmpty) return message;
   }
-  final message = error.toString().trim();
-  return message.isEmpty ? "Couldn't complete the update. Try again." : message;
+  // Only the native updater writes copy meant for the user. Anything else can
+  // carry local paths or transport internals, so it stays in the log.
+  debugPrint('[zcash] Windows update failed: $error');
+  return kWindowsUpdateGenericFailureMessage;
 }
 
 final windowsUpdateProvider =

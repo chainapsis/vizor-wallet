@@ -132,12 +132,14 @@ void main() {
     );
 
     expect(state.externalAssetIsSupported, isTrue);
+    expect(state.externalAssetIsAvailable, isFalse);
     expect(state.externalAssetSupportError, error);
     expect(state.canReviewQuote, isFalse);
-    expect(
-      state.copyWith(clearSupportedAssetsError: true).canReviewQuote,
-      isTrue,
-    );
+
+    final cleared = state.copyWith(clearSupportedAssetsError: true);
+
+    expect(cleared.externalAssetIsAvailable, isTrue);
+    expect(cleared.canReviewQuote, isTrue);
   });
 
   test(

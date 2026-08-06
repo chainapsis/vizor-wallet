@@ -69,16 +69,33 @@ class NetworkPrivacyControl extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        presentation.statusLabel,
-                        key: ValueKey(
-                          'network_privacy_status_${state.status.name}_${state.torEnabled}',
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.labelLarge.copyWith(
-                          color: presentation.statusColor(colors),
-                          fontWeight: FontWeight.w400,
-                        ),
+                      Row(
+                        children: [
+                          if (presentation.statusIconName != null) ...[
+                            AppIcon(
+                              presentation.statusIconName!,
+                              key: const ValueKey(
+                                'network_privacy_status_icon',
+                              ),
+                              size: 14,
+                              color: presentation.statusColor(colors),
+                            ),
+                            const SizedBox(width: AppSpacing.xxs),
+                          ],
+                          Flexible(
+                            child: Text(
+                              presentation.statusLabel,
+                              key: ValueKey(
+                                'network_privacy_status_${state.status.name}_${state.torEnabled}',
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelLarge.copyWith(
+                                color: presentation.statusColor(colors),
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -87,6 +104,7 @@ class NetworkPrivacyControl extends ConsumerWidget {
                 _NetworkPrivacyToggle(
                   key: const ValueKey('network_privacy_toggle'),
                   enabled: state.torEnabled,
+                  busy: state.isBusy,
                   onToggle: state.isBusy
                       ? null
                       : () => unawaited(
@@ -198,11 +216,17 @@ class NetworkPrivacyControl extends ConsumerWidget {
 class _NetworkPrivacyToggle extends StatefulWidget {
   const _NetworkPrivacyToggle({
     required this.enabled,
+    required this.busy,
     required this.onToggle,
     super.key,
   });
 
   final bool enabled;
+
+  /// The knob moves to the desired route as soon as the transition starts, so
+  /// the dimmed track is the only signal that the route is not effective yet.
+  final bool busy;
+
   final VoidCallback? onToggle;
 
   @override
@@ -250,7 +274,7 @@ class _NetworkPrivacyToggleState extends State<_NetworkPrivacyToggle> {
     final control = Stack(
       clipBehavior: Clip.none,
       children: [
-        track,
+        Opacity(opacity: widget.busy ? 0.65 : 1, child: track),
         if (_focused)
           Positioned(
             left: -3,
@@ -319,10 +343,12 @@ class _NetworkPrivacyPresentation {
     required this.statusColor,
     required this.iconColor,
     required this.descriptionColor,
+    this.statusIconName,
   });
 
   final String statusLabel;
   final String description;
+  final String? statusIconName;
   final Color Function(AppColors colors) statusColor;
   final Color Function(AppColors colors) iconColor;
   final Color Function(AppColors colors) descriptionColor;
@@ -337,7 +363,7 @@ _NetworkPrivacyPresentation _presentationFor(
     return _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
       description:
-          'Zcash network and in-app service requests use Tor. Software updates are unavailable.',
+          'Wallet sync and most in-app requests go through Tor. Software updates are unavailable.',
       statusColor: (colors) => colors.text.destructive,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.destructive,
@@ -369,12 +395,13 @@ _NetworkPrivacyPresentation _presentationFor(
     ),
     (NetworkPrivacyConnectionStatus.connecting, true) =>
       _NetworkPrivacyPresentation(
-        statusLabel: 'Connecting ...',
+        statusLabel: 'Connecting…',
         description: isLinux
-            ? 'Vizor requests, including software update checks, will use Tor. '
-                  'Update pages and downloads opened in another app use that '
+            ? 'New requests wait until the Tor connection is ready. Update '
+                  'pages and downloads opened in another app use that '
                   'app’s connection.'
-            : 'Requests to the Zcash network, in-app services, and software updates use Tor. Some services may be unavailable over Tor.',
+            : 'New requests wait until the Tor connection is ready.',
+        statusIconName: AppIcons.loader,
         statusColor: (colors) => colors.text.secondary,
         iconColor: (colors) => colors.icon.muted,
         descriptionColor: (colors) => colors.text.accent,
@@ -386,6 +413,7 @@ _NetworkPrivacyPresentation _presentationFor(
             ? 'Vizor is switching its requests, including software update '
                   'checks, to a direct connection.'
             : 'Vizor is switching network requests and software updates to a direct connection.',
+        statusIconName: AppIcons.loader,
         statusColor: (colors) => colors.text.secondary,
         iconColor: (colors) => colors.icon.brandCrimson,
         descriptionColor: (colors) => colors.text.accent,
@@ -393,10 +421,10 @@ _NetworkPrivacyPresentation _presentationFor(
     (NetworkPrivacyConnectionStatus.connected, _) => _NetworkPrivacyPresentation(
       statusLabel: 'Connected',
       description: isLinux
-          ? 'Vizor requests, including software update checks, use Tor. '
-                'Update pages and downloads opened in another app use that '
-                'app’s connection.'
-          : 'Requests to the Zcash network, in-app services, and software updates use Tor. Some services may be unavailable over Tor.',
+          ? 'Wallet sync, most in-app requests, and software update checks go '
+                'through Tor. Update pages and downloads opened in another app '
+                'use that app’s connection.'
+          : 'Wallet sync, most in-app requests, and software updates go through Tor. Some services may be unavailable over Tor.',
       statusColor: (colors) => colors.text.brandCrimson,
       iconColor: (colors) => colors.icon.brandCrimson,
       descriptionColor: (colors) => colors.text.accent,

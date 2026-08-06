@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
@@ -307,9 +308,29 @@ NetworkPrivacyConnectionStatus _connectionStatus(
 
 var _initialNetworkPrivacyState = const NetworkPrivacyState.off();
 
+/// Tor activation left running by [initializeNetworkPrivacyRuntime] when the
+/// persisted route is Tor. `null` on every other startup path.
+Future<NetworkPrivacyState?>? _pendingStartupActivation;
+
+/// Set as soon as the user picks a route, so the startup activation stops
+/// before its next mutation. Rust already refuses a stale enable, but the
+/// native updaters would otherwise be left routed for a Tor session the user
+/// has since turned off.
+var _startupActivationSuperseded = false;
+
+/// A saved Tor preference must not be able to keep the app from launching, so
+/// the fail-closed startup pause waits only this long for an active native
+/// update session to finish.
+const _kStartupNativeUpdatePauseTimeout = Duration(seconds: 10);
+
 /// Applies the persisted route before app bootstrap or providers can start any
 /// network work. Failure is retained as an enabled/failed state; Rust has
 /// already switched to fail-closed routing at that point.
+///
+/// This never waits for Tor to bootstrap. `beginEnable` installs fail-closed
+/// routing synchronously, so blocking here would only delay the first frame —
+/// and on a network that blocks Tor it would delay it forever, leaving the
+/// user no window to turn the setting back off from.
 Future<void> initializeNetworkPrivacyRuntime({
   NetworkPrivacyPreferenceStore store =
       const SharedPreferencesNetworkPrivacyStore(),
@@ -319,13 +340,20 @@ Future<void> initializeNetworkPrivacyRuntime({
   NetworkPrivacyDirectRequestGate directRequests =
       const AppNetworkPrivacyDirectRequestGate(),
 }) async {
+  _pendingStartupActivation = null;
+  _startupActivationSuperseded = false;
   late final bool enabled;
   try {
     enabled = await store.readTorEnabled();
   } catch (error) {
     Object? nativeUpdateError;
     try {
-      await nativeUpdates.pauseForFailClosedStartup();
+      // On macOS this waits for Sparkle to finish an already-running update
+      // cycle. Bound it: an updater that never reports back must not hold the
+      // first frame hostage.
+      await nativeUpdates.pauseForFailClosedStartup().timeout(
+        _kStartupNativeUpdatePauseTimeout,
+      );
     } catch (nativeError) {
       nativeUpdateError = nativeError;
     }
@@ -371,10 +399,27 @@ Future<void> initializeNetworkPrivacyRuntime({
     torEnabled: true,
     status: NetworkPrivacyConnectionStatus.connecting,
   );
+  // Started, deliberately not awaited: the app launches into the connecting
+  // state and `networkPrivacyProvider` publishes the outcome when it arrives.
+  _pendingStartupActivation = _activateTorForStartup(
+    runtime: runtime,
+    nativeUpdates: nativeUpdates,
+    directDrain: directDrain,
+  );
+}
+
+Future<NetworkPrivacyState?> _activateTorForStartup({
+  required NetworkPrivacyRuntime runtime,
+  required NetworkPrivacyNativeUpdateCoordinator nativeUpdates,
+  required Future<_NetworkPrivacyDrainFailure?> directDrain,
+}) async {
   try {
+    if (_startupActivationSuperseded) return null;
     await nativeUpdates.setTorEnabled(true);
     _throwIfDirectDrainFailed(await directDrain);
+    if (_startupActivationSuperseded) return null;
     final status = await runtime.configure(enabled: true);
+    if (_startupActivationSuperseded) return null;
     String? startupNotice;
     var softwareUpdatesAvailable = true;
     if (status == NetworkPrivacyConnectionStatus.connected) {
@@ -385,14 +430,15 @@ Future<void> initializeNetworkPrivacyRuntime({
         softwareUpdatesAvailable = false;
       }
     }
-    _initialNetworkPrivacyState = NetworkPrivacyState(
+    return NetworkPrivacyState(
       torEnabled: true,
       status: status,
       softwareUpdatesAvailable: softwareUpdatesAvailable,
       startupNotice: startupNotice,
     );
   } catch (error) {
-    _initialNetworkPrivacyState = NetworkPrivacyState(
+    if (_startupActivationSuperseded) return null;
+    return NetworkPrivacyState(
       torEnabled: true,
       status: NetworkPrivacyConnectionStatus.failed,
       softwareUpdatesAvailable: false,
@@ -435,7 +481,38 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
   var _generation = 0;
 
   @override
-  NetworkPrivacyState build() => _initialNetworkPrivacyState;
+  NetworkPrivacyState build() {
+    final pending = _pendingStartupActivation;
+    if (pending != null) {
+      _pendingStartupActivation = null;
+      final generation = _generation;
+      var disposed = false;
+      ref.onDispose(() => disposed = true);
+      unawaited(
+        pending.then((activated) {
+          // A user toggle during startup bootstrap owns the route instead.
+          if (activated == null || disposed || generation != _generation) {
+            return;
+          }
+          _initialNetworkPrivacyState = activated;
+          state = activated;
+        }),
+      );
+    }
+    return _initialNetworkPrivacyState;
+  }
+
+  /// Publishes the Direct route a wallet reset has already applied to Rust.
+  ///
+  /// The reset switches the runtime itself, because routing a wipe through
+  /// [setTorEnabled] would restart sync against the database being deleted.
+  /// This keeps the published state from outliving the wallet it belonged to.
+  void markRouteDirectAfterReset() {
+    _startupActivationSuperseded = true;
+    ++_generation;
+    _initialNetworkPrivacyState = const NetworkPrivacyState.off();
+    state = const NetworkPrivacyState.off();
+  }
 
   void clearStartupNotice() {
     if (state.startupNotice == null) return;
@@ -449,6 +526,7 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
   }
 
   Future<void> setTorEnabled(bool enabled) async {
+    _startupActivationSuperseded = true;
     final generation = ++_generation;
     final previousState = state;
     final store = ref.read(networkPrivacyPreferenceStoreProvider);
@@ -530,8 +608,12 @@ class NetworkPrivacyNotifier extends Notifier<NetworkPrivacyState> {
         }
         if (generation != _generation) return;
         await store.writeTorEnabled(enabled);
+        // Re-check after every suspension point: a superseded disable that
+        // reached `configure(false)` or `allow()` would reopen clearnet
+        // underneath a newer enable that has already gone fail-closed.
+        if (generation != _generation) return;
         nextStatus = await runtime.configure(enabled: enabled);
-        if (!enabled) {
+        if (!enabled && generation == _generation) {
           directRequests.allow();
         }
       });

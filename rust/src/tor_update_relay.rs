@@ -187,16 +187,13 @@ fn parse_upstream(target: &str, resource_path: &str) -> Result<(Url, Option<u64>
     if local.path() != resource_path {
         return Err("Unknown Tor update relay path".to_string());
     }
-    let raw_upstream = local
-        .query_pairs()
-        .find_map(|(name, value)| (name == "url").then(|| value.into_owned()))
-        .ok_or_else(|| "Missing Tor update URL".to_string())?;
+    let query = local.query().unwrap_or_default();
+    let raw_upstream =
+        query_parameter(query, "url")?.ok_or_else(|| "Missing Tor update URL".to_string())?;
     let upstream = Url::parse(&raw_upstream)
         .map_err(|error| format!("Invalid upstream update URL: {error}"))?;
     require_https(&upstream)?;
-    let expected_length = local
-        .query_pairs()
-        .find_map(|(name, value)| (name == "length").then(|| value.into_owned()))
+    let expected_length = query_parameter(query, "length")?
         .map(|value| {
             value
                 .parse::<u64>()
@@ -209,6 +206,23 @@ fn parse_upstream(target: &str, resource_path: &str) -> Result<(Url, Option<u64>
         })
         .transpose()?;
     Ok((upstream, expected_length))
+}
+
+/// Reads one relay query parameter with plain percent-decoding.
+/// Form-urlencoded decoding would rewrite a literal `+` as a space, and the
+/// native producers leave `+` unescaped because it is a legal query character,
+/// so an upstream URL carrying one would be corrupted before it is fetched.
+fn query_parameter(query: &str, name: &str) -> Result<Option<String>, String> {
+    let Some((_, value)) = query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(key, _)| *key == name)
+    else {
+        return Ok(None);
+    };
+    percent_decode_utf8(value)
+        .map(Some)
+        .ok_or_else(|| format!("Invalid Tor update relay {name} parameter"))
 }
 
 fn content_disposition_header(upstream: &Url) -> Option<String> {
@@ -330,31 +344,59 @@ async fn stream_response_body(
                     log::info!("network privacy: Tor update relay received first package bytes");
                     received_first_bytes = true;
                 }
-                total_bytes += data.len() as u64;
-                if expected_length.is_some() {
-                    stream.write_all(&data).await?;
-                } else {
-                    write_chunk(&mut stream, &data).await?;
-                }
+                write_body_data(&mut stream, &data, expected_length, &mut total_bytes).await?;
             }
         }
     }
-    if let Some(expected_length) = expected_length {
-        if total_bytes != expected_length {
+    finish_body(&mut stream, expected_length, total_bytes).await?;
+    log::info!("network privacy: Tor update relay completed package stream ({total_bytes} bytes)");
+    Ok(())
+}
+
+/// Writes one upstream frame downstream in the framing the relay announced.
+/// The announced `Content-Length` is what the native updater trusts as the end
+/// of the package, so an upstream that sends more must fail the transfer
+/// instead of having its surplus bytes silently dropped by the updater.
+async fn write_body_data(
+    stream: &mut (impl AsyncWrite + Unpin),
+    data: &[u8],
+    expected_length: Option<u64>,
+    total_bytes: &mut u64,
+) -> Result<(), io::Error> {
+    match expected_length {
+        Some(expected_length) => {
+            if total_bytes.saturating_add(data.len() as u64) > expected_length {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Tor update body is longer than the expected {expected_length} bytes"),
+                ));
+            }
+            stream.write_all(data).await?;
+        }
+        None => write_chunk(stream, data).await?,
+    }
+    *total_bytes += data.len() as u64;
+    Ok(())
+}
+
+async fn finish_body(
+    stream: &mut (impl AsyncWrite + Unpin),
+    expected_length: Option<u64>,
+    total_bytes: u64,
+) -> Result<(), io::Error> {
+    match expected_length {
+        Some(expected_length) if total_bytes != expected_length => {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
                 format!(
                     "Tor update body length mismatch: expected {expected_length}, received {total_bytes}"
                 ),
-            )
-            .into());
+            ));
         }
-    } else {
-        stream.write_all(b"0\r\n\r\n").await?;
+        Some(_) => {}
+        None => stream.write_all(b"0\r\n\r\n").await?,
     }
-    stream.flush().await?;
-    log::info!("network privacy: Tor update relay completed package stream ({total_bytes} bytes)");
-    Ok(())
+    stream.flush().await
 }
 
 async fn write_chunk(writer: &mut (impl AsyncWrite + Unpin), data: &[u8]) -> Result<(), io::Error> {
@@ -394,7 +436,10 @@ mod tests {
     use tokio::io::{duplex, AsyncReadExt};
     use url::Url;
 
-    use super::{content_disposition_header, parse_upstream, relay_response_headers, write_chunk};
+    use super::{
+        content_disposition_header, finish_body, parse_upstream, relay_response_headers,
+        write_body_data, write_chunk,
+    };
 
     #[test]
     fn relay_target_requires_the_secret_path_and_https() {
@@ -454,6 +499,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn relay_target_preserves_a_plus_in_the_upstream_url() {
+        let (upstream, expected_length) = parse_upstream(
+            "/secret/resource?url=https://cdn.example/Vizor+1.2.3%2B456.dmg&length=7",
+            "/secret/resource",
+        )
+        .unwrap();
+        assert_eq!(upstream.as_str(), "https://cdn.example/Vizor+1.2.3+456.dmg");
+        assert_eq!(expected_length, Some(7));
+    }
+
     #[tokio::test]
     async fn chunk_writer_emits_each_frame_without_waiting_for_completion() {
         let (mut writer, mut reader) = duplex(64);
@@ -462,5 +518,35 @@ mod tests {
         let mut encoded = [0_u8; 10];
         reader.read_exact(&mut encoded).await.unwrap();
         assert_eq!(&encoded, b"5\r\nfirst\r\n");
+    }
+
+    #[tokio::test]
+    async fn relayed_body_stops_at_the_announced_content_length() {
+        let (mut writer, mut reader) = duplex(64);
+        let mut total_bytes = 0_u64;
+        write_body_data(&mut writer, b"first", Some(6), &mut total_bytes)
+            .await
+            .unwrap();
+        let error = write_body_data(&mut writer, b"second", Some(6), &mut total_bytes)
+            .await
+            .expect_err("over-long upstream body was relayed as a complete download");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(total_bytes, 5);
+        let mut relayed = [0_u8; 5];
+        reader.read_exact(&mut relayed).await.unwrap();
+        assert_eq!(&relayed, b"first");
+    }
+
+    #[tokio::test]
+    async fn relayed_body_fails_when_the_upstream_stops_early() {
+        let (mut writer, _reader) = duplex(64);
+
+        let error = finish_body(&mut writer, Some(6), 5)
+            .await
+            .expect_err("truncated upstream body completed the transfer");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+        assert!(finish_body(&mut writer, Some(6), 6).await.is_ok());
     }
 }

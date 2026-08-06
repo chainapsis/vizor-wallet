@@ -446,6 +446,32 @@ void main() {
       expect(continued, isTrue);
     });
 
+    testWidgets('a failed token list blocks the amount step', (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          Center(
+            child: PayAmountAction(
+              state: _amountState.copyWith(
+                supportedAssetsError:
+                    'Pay is unavailable over Tor because the service blocked '
+                    'this connection.\nTurn off Tor in Settings to pay.',
+              ),
+              onContinue: () {},
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        tester
+            .widget<AppButton>(
+              find.byKey(const ValueKey('pay_amount_continue_button')),
+            )
+            .onPressed,
+        isNull,
+      );
+    });
+
     testWidgets('long quote errors wrap without ellipsis', (tester) async {
       final controller = TextEditingController(text: '25');
       final focusNode = FocusNode();

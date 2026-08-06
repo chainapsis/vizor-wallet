@@ -6,6 +6,8 @@
 
 use std::{
     collections::HashMap,
+    fmt::Display,
+    future::Future,
     io,
     path::Path,
     pin::Pin,
@@ -18,6 +20,15 @@ use std::{
 };
 
 use zcash_client_backend::tor::{Client as TorClient, Timeouts as TorTimeouts};
+
+/// `TorTimeouts` only bounds connect, request and response-body phases, so
+/// bootstrapping itself is unbounded: arti retries it 128 times with a growing
+/// backoff, which never terminates on a network that blocks Tor. A cold first
+/// bootstrap over a slow link legitimately takes tens of seconds, so the
+/// deadline stays generous enough to let those finish.
+const TOR_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3 * 60);
+const TOR_BOOTSTRAP_TIMEOUT_MESSAGE: &str =
+    "Tor could not connect. Check your internet connection and try again.";
 
 const STATUS_DIRECT: u8 = 0;
 const STATUS_BOOTSTRAPPING: u8 = 1;
@@ -194,6 +205,11 @@ impl<T> DirectRouteIo<T> {
     fn new(inner: T) -> Self {
         DirectRouteLease::new().into_io(inner)
     }
+
+    #[cfg(test)]
+    pub(crate) fn inner(&self) -> &T {
+        &self.inner
+    }
 }
 
 impl<T: hyper::rt::Read + Unpin> hyper::rt::Read for DirectRouteIo<T> {
@@ -277,11 +293,18 @@ pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, St
     // body that is actively streaming enough time to complete. Small app API
     // responses retain their own shorter body deadline.
     let timeouts = TorTimeouts::default().with_response_body(Duration::from_secs(2 * 60 * 60));
-    let client = match TorClient::create_with_timeouts(tor_directory, |_| {}, timeouts).await {
+    // Returning here drops `_init_guard`, so a bootstrap that ran out of time
+    // does not block the next enable attempt.
+    let client = match await_tor_bootstrap(
+        TOR_BOOTSTRAP_TIMEOUT,
+        TorClient::create_with_timeouts(tor_directory, |_| {}, timeouts),
+    )
+    .await
+    {
         Ok(client) => client,
         Err(error) => {
             set_tor_failed();
-            return Err(format!("Bootstrap Tor: {error}"));
+            return Err(error);
         }
     };
 
@@ -295,6 +318,17 @@ pub async fn enable_tor(tor_directory: &Path) -> Result<NetworkPrivacyStatus, St
     TOR_STATUS.store(STATUS_READY, Ordering::Release);
     log::info!("network privacy: Tor is ready");
     Ok(NetworkPrivacyStatus::Ready)
+}
+
+async fn await_tor_bootstrap<T, E: Display>(
+    deadline: Duration,
+    bootstrap: impl Future<Output = Result<T, E>>,
+) -> Result<T, String> {
+    match tokio::time::timeout(deadline, bootstrap).await {
+        Ok(Ok(client)) => Ok(client),
+        Ok(Err(error)) => Err(format!("Bootstrap Tor: {error}")),
+        Err(_) => Err(TOR_BOOTSTRAP_TIMEOUT_MESSAGE.to_string()),
+    }
 }
 
 pub fn disable_tor() {
@@ -353,11 +387,14 @@ pub(crate) fn tor_client_for_route(isolated: bool) -> Result<Option<TorClient>, 
 
 #[cfg(test)]
 mod tests {
-    use std::task::{Context, Poll, Waker};
+    use std::{
+        task::{Context, Poll, Waker},
+        time::Duration,
+    };
 
     use super::{
-        cancel_direct_connections, route_decision, DirectRouteIo, NetworkPrivacyStatus,
-        RouteDecision,
+        await_tor_bootstrap, cancel_direct_connections, init_lock, route_decision, DirectRouteIo,
+        NetworkPrivacyStatus, RouteDecision, TOR_BOOTSTRAP_TIMEOUT_MESSAGE,
     };
 
     #[test]
@@ -420,5 +457,34 @@ mod tests {
             panic!("cancelled direct route remained pending");
         };
         assert_eq!(error.kind(), std::io::ErrorKind::ConnectionAborted);
+    }
+
+    #[tokio::test]
+    async fn a_stalled_tor_bootstrap_fails_instead_of_retrying_forever() {
+        let result = await_tor_bootstrap(
+            Duration::from_millis(1),
+            std::future::pending::<Result<(), String>>(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err(), TOR_BOOTSTRAP_TIMEOUT_MESSAGE);
+    }
+
+    #[tokio::test]
+    async fn a_stalled_tor_bootstrap_releases_the_init_lock_for_the_next_attempt() {
+        let result = {
+            let _init_guard = init_lock().lock().await;
+            await_tor_bootstrap(
+                Duration::from_millis(1),
+                std::future::pending::<Result<(), String>>(),
+            )
+            .await
+        };
+
+        assert!(result.is_err());
+        assert!(
+            init_lock().try_lock().is_ok(),
+            "a timed-out Tor bootstrap kept the init lock"
+        );
     }
 }

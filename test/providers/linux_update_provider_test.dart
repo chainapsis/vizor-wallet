@@ -2,11 +2,77 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zcash_wallet/src/core/network/network_http_client.dart';
 import 'package:zcash_wallet/src/providers/linux_update_provider.dart';
+import 'package:zcash_wallet/src/providers/network_privacy_provider.dart';
 
 void main() {
+  test('the Linux update check resumes when the Tor route recovers', () async {
+    var checks = 0;
+    final privacy = _FakeNetworkPrivacyNotifier(
+      const NetworkPrivacyState(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.connecting,
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        linuxUpdateSupportedProvider.overrideWithValue(true),
+        networkPrivacyProvider.overrideWith(() => privacy),
+        linuxUpdateCheckProvider.overrideWithValue(() async {
+          checks++;
+          return _update;
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.listen(linuxUpdateProvider, (_, _) {});
+
+    expect(await container.read(linuxUpdateProvider.future), isNull);
+    expect(checks, 0);
+
+    privacy.publish(
+      const NetworkPrivacyState(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.failed,
+      ),
+    );
+    expect(await container.read(linuxUpdateProvider.future), isNull);
+    expect(checks, 0);
+
+    privacy.publish(
+      const NetworkPrivacyState(
+        torEnabled: true,
+        status: NetworkPrivacyConnectionStatus.connected,
+      ),
+    );
+
+    expect(await container.read(linuxUpdateProvider.future), _update);
+    expect(checks, 1);
+  });
+
+  test('the Linux update check runs on a settled direct route', () async {
+    var checks = 0;
+    final container = ProviderContainer(
+      overrides: [
+        linuxUpdateSupportedProvider.overrideWithValue(true),
+        networkPrivacyProvider.overrideWith(
+          () => _FakeNetworkPrivacyNotifier(const NetworkPrivacyState.off()),
+        ),
+        linuxUpdateCheckProvider.overrideWithValue(() async {
+          checks++;
+          return _update;
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    expect(await container.read(linuxUpdateProvider.future), _update);
+    expect(checks, 1);
+  });
+
   test(
     'checks the Linux release feed through the configured network route',
     () async {
@@ -167,6 +233,29 @@ void main() {
       isNull,
     );
   });
+}
+
+const _update = LinuxUpdateInfo(
+  version: '0.0.14',
+  assetVersion: '0.0.14',
+  buildNumber: 42,
+  releaseTag: 'release/v0.0.14',
+  releaseUrl: 'https://updates.example.invalid/releases/tag/release/v0.0.14',
+  appImageUrl: 'https://updates.example.invalid/Vizor.AppImage',
+  sha256Url: 'https://updates.example.invalid/Vizor.AppImage.sha256',
+  signatureUrl: 'https://updates.example.invalid/Vizor.AppImage.asc',
+  zsyncUrl: null,
+);
+
+class _FakeNetworkPrivacyNotifier extends NetworkPrivacyNotifier {
+  _FakeNetworkPrivacyNotifier(this.initialState);
+
+  final NetworkPrivacyState initialState;
+
+  @override
+  NetworkPrivacyState build() => initialState;
+
+  void publish(NetworkPrivacyState next) => state = next;
 }
 
 class _LinuxUpdateTorBridge implements TorHttpBridge {
