@@ -200,6 +200,20 @@ enum BackgroundNetworkRoute {
     )
   }
 
+  /// Whether the conditions a Tor pass was admitted under still hold.
+  ///
+  /// Bringing Tor up samples power and metering first and then blocks for as
+  /// long as a cold bootstrap takes, so a charger pulled or a link that turned
+  /// metered during it leaves the pass admitted on conditions it no longer
+  /// meets. Re-samples, so ask it once, before committing to network work — not
+  /// on a heartbeat, which is what `backgroundNetworkWorkRemainsAllowed` is for.
+  ///
+  /// A direct route has nothing to afford and is always allowed.
+  static var torBackgroundPassRemainsAffordable: Bool {
+    guard persistedRouteIsTor else { return true }
+    return torBackgroundPassIsAffordable()
+  }
+
   /// Declares a persisted Tor route to Rust and reports whether this pass has
   /// established that it may carry that route.
   ///

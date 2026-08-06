@@ -238,7 +238,8 @@ class RunnerTests: XCTestCase {
       ironwoodMigrationOutboxWakeMayStartNetworkWork(
         expired: false,
         disposition: .continueBackgroundWork,
-        mutationQuiesced: false
+        mutationQuiesced: false,
+        routeStillAffordable: true
       )
     )
   }
@@ -252,7 +253,8 @@ class RunnerTests: XCTestCase {
       ironwoodMigrationOutboxWakeMayStartNetworkWork(
         expired: true,
         disposition: .continueBackgroundWork,
-        mutationQuiesced: false
+        mutationQuiesced: false,
+        routeStillAffordable: true
       )
     )
   }
@@ -262,15 +264,41 @@ class RunnerTests: XCTestCase {
       ironwoodMigrationOutboxWakeMayStartNetworkWork(
         expired: false,
         disposition: .continueBackgroundWork,
-        mutationQuiesced: true
+        mutationQuiesced: true,
+        routeStillAffordable: true
       )
     )
     XCTAssertFalse(
       ironwoodMigrationOutboxWakeMayStartNetworkWork(
         expired: false,
         disposition: .finishForegroundOnly,
-        mutationQuiesced: false
+        mutationQuiesced: false,
+        routeStillAffordable: true
       )
+    )
+  }
+
+  func testWakeDoesNotStartNetworkWorkOnceTheRouteStoppedBeingAffordable() {
+    // The bring-up samples power and metering before it starts and then blocks
+    // for as long as a cold bootstrap takes, so a charger pulled during it
+    // leaves the wake admitted on conditions it no longer meets.
+    XCTAssertFalse(
+      ironwoodMigrationOutboxWakeMayStartNetworkWork(
+        expired: false,
+        disposition: .continueBackgroundWork,
+        mutationQuiesced: false,
+        routeStillAffordable: false
+      )
+    )
+  }
+
+  func testDirectRouteAlwaysRemainsAffordable() {
+    // Nothing to pay for, so the re-sample is skipped rather than answered.
+    XCTAssertTrue(
+      BackgroundNetworkRoute.backgroundPassIsAllowed(routeIsTor: false) {
+        XCTFail("a direct route must not sample power or metering")
+        return false
+      }
     )
   }
 

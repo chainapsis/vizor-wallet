@@ -206,12 +206,17 @@ func ironwoodMigrationOutboxWakeDisposition(
 /// it did leaves an item that looks unsent and is not. The wake that stops here
 /// instead still holds the one thing it can act on — the ability to leave a
 /// replacement request behind before it completes.
+/// `routeStillAffordable` belongs here for the same reason: the bring-up
+/// samples power and metering before it starts and can then block for a minute,
+/// so a charger pulled or a link that turned metered during it is a condition
+/// the wake was admitted under and no longer meets.
 func ironwoodMigrationOutboxWakeMayStartNetworkWork(
   expired: Bool,
   disposition: IronwoodMigrationOutboxWakeDisposition,
-  mutationQuiesced: Bool
+  mutationQuiesced: Bool,
+  routeStillAffordable: Bool
 ) -> Bool {
-  !expired && !mutationQuiesced
+  !expired && !mutationQuiesced && routeStillAffordable
     && disposition == .continueBackgroundWork
 }
 
@@ -846,7 +851,8 @@ final class BackgroundMigrationManager {
       guard ironwoodMigrationOutboxWakeMayStartNetworkWork(
         expired: self.isWakeExpired,
         disposition: self.wakeDisposition,
-        mutationQuiesced: self.isMutationQuiesced
+        mutationQuiesced: self.isMutationQuiesced,
+        routeStillAffordable: BackgroundNetworkRoute.torBackgroundPassRemainsAffordable
       ) else {
         self.clearActiveCancellation()
         self.stopAuthorizationMonitoring()
